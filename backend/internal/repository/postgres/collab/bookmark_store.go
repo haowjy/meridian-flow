@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,7 +18,7 @@ type PostgresBookmarkStore struct {
 }
 
 // NewBookmarkStore creates a new bookmark store.
-func NewBookmarkStore(config *postgres.RepositoryConfig) collabSvc.BookmarkStore {
+func NewBookmarkStore(config *postgres.RepositoryConfig) collab.BookmarkStore {
 	return &PostgresBookmarkStore{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -26,7 +26,7 @@ func NewBookmarkStore(config *postgres.RepositoryConfig) collabSvc.BookmarkStore
 }
 
 // Create inserts a bookmark and ignores duplicate (document_id, turn_id, bookmark_type).
-func (s *PostgresBookmarkStore) Create(ctx context.Context, bookmark *collabSvc.Bookmark) error {
+func (s *PostgresBookmarkStore) Create(ctx context.Context, bookmark *collab.Bookmark) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			document_id, update_id, state, bookmark_type, turn_id, name, created_by
@@ -62,7 +62,7 @@ func (s *PostgresBookmarkStore) ListByDocumentAndType(
 	ctx context.Context,
 	docID string,
 	bookmarkType string,
-) ([]collabSvc.Bookmark, error) {
+) ([]collab.Bookmark, error) {
 	query := fmt.Sprintf(`
 		SELECT id, document_id, update_id, state, bookmark_type, turn_id, name, created_by, created_at
 		FROM %s
@@ -82,7 +82,7 @@ func (s *PostgresBookmarkStore) ListByDocumentAndType(
 }
 
 // ListByTurnID returns bookmarks linked to one turn.
-func (s *PostgresBookmarkStore) ListByTurnID(ctx context.Context, turnID string) ([]collabSvc.Bookmark, error) {
+func (s *PostgresBookmarkStore) ListByTurnID(ctx context.Context, turnID string) ([]collab.Bookmark, error) {
 	query := fmt.Sprintf(`
 		SELECT id, document_id, update_id, state, bookmark_type, turn_id, name, created_by, created_at
 		FROM %s
@@ -179,10 +179,10 @@ func (s *PostgresBookmarkStore) DeleteByTypeAndCutoff(
 	return nil
 }
 
-func scanBookmarks(rows rowScanner) ([]collabSvc.Bookmark, error) {
-	bookmarks := make([]collabSvc.Bookmark, 0)
+func scanBookmarks(rows rowScanner) ([]collab.Bookmark, error) {
+	bookmarks := make([]collab.Bookmark, 0)
 	for rows.Next() {
-		var b collabSvc.Bookmark
+		var b collab.Bookmark
 		if err := rows.Scan(
 			&b.ID,
 			&b.DocumentID,

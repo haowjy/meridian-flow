@@ -10,34 +10,30 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/skill"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	skillRepo "meridian/internal/domain/repositories/skill"
-	"meridian/internal/domain/services"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	skillSvc "meridian/internal/domain/services/skill"
+	authdomain "meridian/internal/domain/auth"
+	domaindocsys "meridian/internal/domain/docsystem"
+	skilldomain "meridian/internal/domain/skill"
 )
 
 // projectSkillService implements the ProjectSkillService interface
 type projectSkillService struct {
-	skillRepo    skillRepo.ProjectSkillRepository
-	folderRepo   docsysRepo.FolderRepository
-	namespaceSvc docsysSvc.NamespaceService
-	authorizer   services.ResourceAuthorizer
-	txManager    repositories.TransactionManager
+	skillRepo    skilldomain.ProjectSkillStore
+	folderRepo   domaindocsys.FolderStore
+	namespaceSvc domaindocsys.NamespaceService
+	authorizer   authdomain.ResourceAuthorizer
+	txManager    domain.TransactionManager
 	logger       *slog.Logger
 }
 
 // NewProjectSkillService creates a new project skill service
 func NewProjectSkillService(
-	skillRepo skillRepo.ProjectSkillRepository,
-	folderRepo docsysRepo.FolderRepository,
-	namespaceSvc docsysSvc.NamespaceService,
-	authorizer services.ResourceAuthorizer,
-	txManager repositories.TransactionManager,
+	skillRepo skilldomain.ProjectSkillStore,
+	folderRepo domaindocsys.FolderStore,
+	namespaceSvc domaindocsys.NamespaceService,
+	authorizer authdomain.ResourceAuthorizer,
+	txManager domain.TransactionManager,
 	logger *slog.Logger,
-) skillSvc.ProjectSkillService {
+) skilldomain.ProjectSkillService {
 	return &projectSkillService{
 		skillRepo:    skillRepo,
 		folderRepo:   folderRepo,
@@ -79,7 +75,7 @@ func validateSkillDescription(description string) error {
 
 // CreateSkill creates a new skill with its folder structure
 // Content is stored in DB, folder exists for references/export
-func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, req skillSvc.CreateSkillRequest) (*models.ProjectSkill, error) {
+func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, req skilldomain.CreateSkillRequest) (*skilldomain.ProjectSkill, error) {
 	// Validate skill name
 	if err := validateSkillName(req.Name); err != nil {
 		return nil, err
@@ -122,13 +118,13 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 		content = fmt.Sprintf("# %s\n\n<!-- Add your skill instructions here -->\n", req.Name)
 	}
 
-	var skill *models.ProjectSkill
+	var skill *skilldomain.ProjectSkill
 
 	// Use transaction for atomicity
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 		// 1. Create skill folder (/.meridian/skills/<name>/) using shared helper
 		// Folder exists for future reference documents and export functionality
-		skillFolderID, err := s.ensureSkillFolder(txCtx, &models.ProjectSkill{
+		skillFolderID, err := s.ensureSkillFolder(txCtx, &skilldomain.ProjectSkill{
 			ProjectID: req.ProjectID,
 			Name:      req.Name,
 		})
@@ -138,7 +134,7 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 
 		// 2. Create DB record with content (no SKILL.md document)
 		now := time.Now()
-		skill = &models.ProjectSkill{
+		skill = &skilldomain.ProjectSkill{
 			ProjectID:        req.ProjectID,
 			InstanceFolderID: skillFolderID,
 			Name:             req.Name,
@@ -146,14 +142,14 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 			Content:          content,
 			Position:         nextPosition,
 			Enabled:          true, // Skills are enabled by default
-			SyncState:        models.SyncStateDetached,
+			SyncState:        skilldomain.SyncStateDetached,
 			IsDirty:          false,
 			CreatedAt:        now,
 			UpdatedAt:        now,
 		}
 
 		// Store metadata using typed setter
-		skill.SetMetadata(models.SkillMetadata{
+		skill.SetMetadata(skilldomain.SkillMetadata{
 			DisableModelInvocation: req.DisableModelInvocation,
 			UserInvocable:          req.UserInvocable,
 		})
@@ -183,9 +179,8 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 	return skill, nil
 }
 
-
 // ListSkills lists all skills for a project (metadata only)
-func (s *projectSkillService) ListSkills(ctx context.Context, userID, projectID string) ([]*models.ProjectSkill, error) {
+func (s *projectSkillService) ListSkills(ctx context.Context, userID, projectID string) ([]*skilldomain.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
@@ -195,7 +190,7 @@ func (s *projectSkillService) ListSkills(ctx context.Context, userID, projectID 
 }
 
 // GetSkill retrieves a skill by ID (content included in model)
-func (s *projectSkillService) GetSkill(ctx context.Context, userID, projectID, skillID string) (*models.ProjectSkill, error) {
+func (s *projectSkillService) GetSkill(ctx context.Context, userID, projectID, skillID string) (*skilldomain.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
@@ -205,7 +200,7 @@ func (s *projectSkillService) GetSkill(ctx context.Context, userID, projectID, s
 }
 
 // GetSkillByName retrieves a skill by name (content included in model)
-func (s *projectSkillService) GetSkillByName(ctx context.Context, userID, projectID, name string) (*models.ProjectSkill, error) {
+func (s *projectSkillService) GetSkillByName(ctx context.Context, userID, projectID, name string) (*skilldomain.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
@@ -214,9 +209,8 @@ func (s *projectSkillService) GetSkillByName(ctx context.Context, userID, projec
 	return s.skillRepo.GetByName(ctx, name, projectID)
 }
 
-
 // UpdateSkill updates a skill's metadata and/or content
-func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID, skillID string, req skillSvc.UpdateSkillRequest) (*models.ProjectSkill, error) {
+func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID, skillID string, req skilldomain.UpdateSkillRequest) (*skilldomain.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
@@ -257,7 +251,7 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 	if req.Content != nil {
 		skill.Content = *req.Content
 		skill.IsDirty = true
-		skill.SyncState = models.SyncStateModified
+		skill.SyncState = skilldomain.SyncStateModified
 	}
 	if req.Enabled != nil {
 		skill.Enabled = *req.Enabled
@@ -330,7 +324,7 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 
 // ensureSkillFolder ensures the skill's instance folder exists, creating it if missing.
 // Returns the folder ID (may be new if recreated).
-func (s *projectSkillService) ensureSkillFolder(ctx context.Context, skill *models.ProjectSkill) (string, error) {
+func (s *projectSkillService) ensureSkillFolder(ctx context.Context, skill *skilldomain.ProjectSkill) (string, error) {
 	// 1. Ensure /.meridian/skills/ exists
 	skillsFolder, err := s.namespaceSvc.EnsureMeridianSubfolder(ctx, skill.ProjectID, "skills")
 	if err != nil {

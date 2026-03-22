@@ -6,8 +6,7 @@ import (
 	"log/slog"
 
 	"meridian/internal/capabilities"
-	domainllm "meridian/internal/domain/services/llm"
-	llmModels "meridian/internal/domain/models/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/formatting"
 )
 
@@ -37,7 +36,7 @@ func NewMessageBuilderService(
 // The caller must load turn blocks before calling this method.
 func (mb *MessageBuilderService) BuildMessages(
 	ctx context.Context,
-	path []llmModels.Turn,
+	path []domainllm.Turn,
 ) ([]domainllm.Message, error) {
 	messages := make([]domainllm.Message, 0, len(path))
 
@@ -70,10 +69,10 @@ func (mb *MessageBuilderService) BuildMessages(
 		}
 
 		// Convert []TurnBlock to []*TurnBlock
-		contentPtrs := make([]*llmModels.TurnBlock, len(validBlocks))
+		contentPtrs := make([]*domainllm.TurnBlock, len(validBlocks))
 		for i := range validBlocks {
 			// Apply formatting to tool results if needed
-			if validBlocks[i].BlockType == llmModels.BlockTypeToolResult {
+			if validBlocks[i].BlockType == domainllm.BlockTypeToolResult {
 				mb.formatToolResultBlock(&validBlocks[i])
 			}
 			contentPtrs[i] = &validBlocks[i]
@@ -98,19 +97,19 @@ func (mb *MessageBuilderService) BuildMessages(
 // formatToolResultBlock applies tool-specific formatting to a tool_result block's result field.
 // This modifies the block in-place by replacing Content["result"] with the formatted version.
 // Formatting happens on message build (not at storage time), so we keep full data in DB.
-func (mb *MessageBuilderService) formatToolResultBlock(block *llmModels.TurnBlock) {
+func (mb *MessageBuilderService) formatToolResultBlock(block *domainllm.TurnBlock) {
 	formatting.FormatToolResultContent(mb.formatterRegistry, block.Content)
 }
 
 // injectTokenLimitWarningIfNeeded checks if the last assistant turn is approaching the token limit
 // and injects a user message warning if usage is >75%
-func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModels.Turn, messages *[]domainllm.Message) error {
+func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []domainllm.Turn, messages *[]domainllm.Message) error {
 	if len(path) == 0 {
 		return nil
 	}
 
 	// Find the last assistant turn
-	var lastAssistantTurn *llmModels.Turn
+	var lastAssistantTurn *domainllm.Turn
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i].Role == "assistant" {
 			lastAssistantTurn = &path[i]
@@ -163,8 +162,8 @@ func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModel
 		warningText := fmt.Sprintf("Note: You're approaching the context limit (%.1f%% used, %d/%d tokens). Consider wrapping up.", usagePercent, totalTokens, modelCap.ContextWindow)
 
 		// Create a text block for the warning
-		warningBlock := &llmModels.TurnBlock{
-			BlockType: llmModels.BlockTypeText,
+		warningBlock := &domainllm.TurnBlock{
+			BlockType: domainllm.BlockTypeText,
 			Content: map[string]interface{}{
 				"text": warningText,
 			},
@@ -173,7 +172,7 @@ func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModel
 		// Inject as user message
 		*messages = append(*messages, domainllm.Message{
 			Role:    "user",
-			Content: []*llmModels.TurnBlock{warningBlock},
+			Content: []*domainllm.TurnBlock{warningBlock},
 		})
 
 		mb.logger.Debug("injected token limit warning",
@@ -190,18 +189,18 @@ func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModel
 // If a tool_use block has no corresponding tool_result (which can happen if the stream
 // was interrupted), we inject a synthetic error tool_result to satisfy Claude's API
 // requirement that every tool_use must have a corresponding tool_result.
-func (mb *MessageBuilderService) sanitizeTurnBlocks(turn llmModels.Turn) []llmModels.TurnBlock {
-	var validBlocks []llmModels.TurnBlock
+func (mb *MessageBuilderService) sanitizeTurnBlocks(turn domainllm.Turn) []domainllm.TurnBlock {
+	var validBlocks []domainllm.TurnBlock
 
 	for i, block := range turn.Blocks {
-		if block.BlockType == llmModels.BlockTypeToolUse {
+		if block.BlockType == domainllm.BlockTypeToolUse {
 			// Extract this tool's ID for matching
 			thisToolUseID, _ := block.Content["tool_use_id"].(string)
 
 			// Check if there is a subsequent tool_result block matching this tool_use_id
 			hasResult := false
 			for j := i + 1; j < len(turn.Blocks); j++ {
-				if turn.Blocks[j].BlockType == llmModels.BlockTypeToolResult {
+				if turn.Blocks[j].BlockType == domainllm.BlockTypeToolResult {
 					// Check if this result matches our tool_use_id
 					resultToolUseID, _ := turn.Blocks[j].Content["tool_use_id"].(string)
 					if resultToolUseID == thisToolUseID {
@@ -225,9 +224,9 @@ func (mb *MessageBuilderService) sanitizeTurnBlocks(turn llmModels.Turn) []llmMo
 				toolUseID, _ := block.Content["tool_use_id"].(string)
 				toolName, _ := block.Content["tool_name"].(string)
 
-				errorResult := llmModels.TurnBlock{
+				errorResult := domainllm.TurnBlock{
 					TurnID:    turn.ID,
-					BlockType: llmModels.BlockTypeToolResult,
+					BlockType: domainllm.BlockTypeToolResult,
 					Sequence:  block.Sequence + 1, // Immediately after the tool_use
 					Content: map[string]interface{}{
 						"tool_use_id": toolUseID,

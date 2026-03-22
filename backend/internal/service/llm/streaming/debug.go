@@ -10,8 +10,7 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	llmModels "meridian/internal/domain/models/llm"
-	llmSvc "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/adapters"
 	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tools"
@@ -29,7 +28,7 @@ import (
 //   - Appends the hypothetical new user message from turn_blocks
 //   - Converts the backend GenerateRequest -> library GenerateRequest
 //   - Returns the library request as a generic JSON map for debug inspection
-func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.CreateTurnRequest) (map[string]interface{}, error) {
+func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.CreateTurnRequest) (map[string]interface{}, error) {
 	// Normalize empty string to nil for prev_turn_id (matches CreateTurn)
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
 		req.PrevTurnID = nil
@@ -57,7 +56,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 
 	// Extract model from request_params with default fallback from config
-	model := s.config.DefaultModel
+	model := s.config.LLM.DefaultModel
 	if model == "" {
 		model = "claude-haiku-4-5-20251001" // Fallback if config not set
 	}
@@ -66,12 +65,12 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 
 	// Validate and parse request params
-	if err := llmModels.ValidateRequestParams(requestParams); err != nil {
+	if err := domainllm.ValidateRequestParams(requestParams); err != nil {
 		s.logger.Error("invalid request params for debug", "error", err)
 		return nil, fmt.Errorf("invalid request params: %w", err)
 	}
 
-	params, err := llmModels.GetRequestParamStruct(requestParams)
+	params, err := domainllm.GetRequestParamStruct(requestParams)
 	if err != nil {
 		s.logger.Error("failed to parse request params for debug", "error", err)
 		return nil, fmt.Errorf("failed to parse request params: %w", err)
@@ -89,7 +88,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		provider = *params.Provider
 	} else {
 		// Try to infer provider from model name
-		if mappedProvider, found := llmModels.GetProviderForModel(model); found {
+		if mappedProvider, found := domainllm.GetProviderForModel(model); found {
 			provider = mappedProvider
 		} else {
 			// No mapping found - default to openrouter (has all models)
@@ -112,7 +111,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		return nil, fmt.Errorf("failed to load project for tool policy (debug): %w", err)
 	}
 	disabled := parseDisabledTools(project.Preferences)
-	toolNames := resolveServerToolNames(s.config.SearchAPIKey != "", disabled)
+	toolNames := resolveServerToolNames(s.config.LLM.SearchAPIKey != "", disabled)
 	toolsParam, err := toolNamesToRequestParamsTools(toolNames)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tools for request params (debug): %w", err)
@@ -146,7 +145,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 
 	// Build conversation path from prev_turn_id (if provided)
-	var path []llmModels.Turn
+	var path []domainllm.Turn
 	if req.PrevTurnID != nil {
 		path, err = s.turnNavigator.GetTurnPath(ctx, *req.PrevTurnID)
 		if err != nil {
@@ -171,9 +170,9 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 
 	// Append hypothetical new user message from request turn_blocks
 	if len(req.TurnBlocks) > 0 {
-		blocks := make([]*llmModels.TurnBlock, len(req.TurnBlocks))
+		blocks := make([]*domainllm.TurnBlock, len(req.TurnBlocks))
 		for i, blockInput := range req.TurnBlocks {
-			blocks[i] = &llmModels.TurnBlock{
+			blocks[i] = &domainllm.TurnBlock{
 				// ID, TurnID, CreatedAt are omitted for debug-only request
 				BlockType:   blockInput.BlockType,
 				Sequence:    i,
@@ -182,7 +181,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 			}
 		}
 
-		messages = append(messages, llmSvc.Message{
+		messages = append(messages, domainllm.Message{
 			Role:    "user", // CreateTurn only allows user role from client
 			Content: blocks,
 		})
@@ -199,7 +198,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 
 	// Build backend GenerateRequest that matches what we send to the provider
-	generateReq := &llmSvc.GenerateRequest{
+	generateReq := &domainllm.GenerateRequest{
 		Messages: messages,
 		Model:    model,
 		Params:   params,
@@ -213,7 +212,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 
 	// If provider supports debug introspection, use it to build provider-level JSON
 	type debugProvider interface {
-		BuildDebugProviderRequest(ctx context.Context, req *llmSvc.GenerateRequest) (map[string]interface{}, error)
+		BuildDebugProviderRequest(ctx context.Context, req *domainllm.GenerateRequest) (map[string]interface{}, error)
 	}
 
 	if dbg, ok := llmProvider.(debugProvider); ok {

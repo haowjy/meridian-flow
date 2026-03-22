@@ -8,26 +8,25 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 const proposalProjectorPageSize = 200
 
 // ProjectedStateBuilderService builds per-user projected state for proposal creation.
 type ProjectedStateBuilderService struct {
-	stateStore      collabSvc.DocumentStateStore
-	proposalStore   collabSvc.ProposalStore
-	proposalRuntime collabSvc.ProposalRuntime
-	contentLoader   collabSvc.DocumentContentLoader
+	stateStore      collab.DocumentStateStore
+	proposalStore   collab.ProposalStore
+	proposalRuntime collab.DocumentStateManager
+	contentLoader   collab.DocumentContentLoader
 }
 
 // NewProjectedStateBuilder creates a projected-state builder.
 func NewProjectedStateBuilder(
-	stateStore collabSvc.DocumentStateStore,
-	proposalStore collabSvc.ProposalStore,
-	proposalRuntime collabSvc.ProposalRuntime,
-	contentLoader collabSvc.DocumentContentLoader,
+	stateStore collab.DocumentStateStore,
+	proposalStore collab.ProposalStore,
+	proposalRuntime collab.DocumentStateManager,
+	contentLoader collab.DocumentContentLoader,
 ) *ProjectedStateBuilderService {
 	return &ProjectedStateBuilderService{
 		stateStore:      stateStore,
@@ -150,7 +149,7 @@ func (p *ProjectedStateBuilderService) bootstrapFromContent(ctx context.Context,
 }
 
 // buildProjectedDoc creates a base Y.Doc and a projected Y.Doc (base + proposals).
-func buildProjectedDoc(baseState []byte, proposals []collabModels.Proposal) (*ycrdt.Doc, *ycrdt.Doc, error) {
+func buildProjectedDoc(baseState []byte, proposals []collab.Proposal) (*ycrdt.Doc, *ycrdt.Doc, error) {
 	baseDoc := ycrdt.NewDoc("base", true, ycrdt.DefaultGCFilter, nil, false)
 	if len(baseState) > 0 {
 		if err := safeApplyUpdate(baseDoc, baseState, "projected-state-base"); err != nil {
@@ -182,10 +181,10 @@ func (p *ProjectedStateBuilderService) listPendingProposalsForUser(
 	ctx context.Context,
 	documentID uuid.UUID,
 	userID uuid.UUID,
-) ([]collabModels.Proposal, error) {
-	pendingStatus := collabModels.ProposalStatusPending
+) ([]collab.Proposal, error) {
+	pendingStatus := collab.ProposalStatusPending
 	offset := 0
-	proposals := make([]collabModels.Proposal, 0, proposalProjectorPageSize)
+	proposals := make([]collab.Proposal, 0, proposalProjectorPageSize)
 
 	for {
 		batch, err := p.proposalStore.ListByDocument(ctx, documentID, &pendingStatus, proposalProjectorPageSize, offset)
@@ -199,7 +198,7 @@ func (p *ProjectedStateBuilderService) listPendingProposalsForUser(
 		offset += len(batch)
 	}
 
-	userProposals := make([]collabModels.Proposal, 0, len(proposals))
+	userProposals := make([]collab.Proposal, 0, len(proposals))
 	for _, proposal := range proposals {
 		if proposal.CreatedByUserID == userID {
 			userProposals = append(userProposals, proposal)

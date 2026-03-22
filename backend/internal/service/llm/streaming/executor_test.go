@@ -9,11 +9,8 @@ import (
 	"testing"
 	"time"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	billingdomain "meridian/internal/domain/services/billing"
-	domainllm "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -23,22 +20,22 @@ import (
 
 // mockTurnWriter tracks block persistence calls for testing
 type mockTurnWriter struct {
-	blocks       []*llmModels.TurnBlock
+	blocks       []*domainllm.TurnBlock
 	mu           sync.Mutex
 	persistDelay time.Duration // Artificial delay to widen race window
 }
 
 func newMockTurnWriter() *mockTurnWriter {
 	return &mockTurnWriter{
-		blocks: make([]*llmModels.TurnBlock, 0),
+		blocks: make([]*domainllm.TurnBlock, 0),
 	}
 }
 
-func (m *mockTurnWriter) CreateTurn(ctx context.Context, turn *llmModels.Turn) error {
+func (m *mockTurnWriter) CreateTurn(ctx context.Context, turn *domainllm.Turn) error {
 	return nil
 }
 
-func (m *mockTurnWriter) CreateTurnBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+func (m *mockTurnWriter) CreateTurnBlock(ctx context.Context, block *domainllm.TurnBlock) error {
 	// Artificial delay to widen the race window (used by race condition tests)
 	if m.persistDelay > 0 {
 		time.Sleep(m.persistDelay)
@@ -50,7 +47,7 @@ func (m *mockTurnWriter) CreateTurnBlock(ctx context.Context, block *llmModels.T
 	return nil
 }
 
-func (m *mockTurnWriter) CreateTurnBlocks(ctx context.Context, blocks []llmModels.TurnBlock) error {
+func (m *mockTurnWriter) CreateTurnBlocks(ctx context.Context, blocks []domainllm.TurnBlock) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range blocks {
@@ -59,11 +56,11 @@ func (m *mockTurnWriter) CreateTurnBlocks(ctx context.Context, blocks []llmModel
 	return nil
 }
 
-func (m *mockTurnWriter) UpdateTurnStatus(ctx context.Context, turnID, status string, completedAt *llmModels.Turn) error {
+func (m *mockTurnWriter) UpdateTurnStatus(ctx context.Context, turnID string, status domainllm.TurnStatus, completedAt *domainllm.Turn) error {
 	return nil
 }
 
-func (m *mockTurnWriter) UpdateTurn(ctx context.Context, turn *llmModels.Turn) error {
+func (m *mockTurnWriter) UpdateTurn(ctx context.Context, turn *domainllm.Turn) error {
 	return nil
 }
 
@@ -75,44 +72,44 @@ func (m *mockTurnWriter) UpdateTurnError(ctx context.Context, turnID string, err
 	return nil
 }
 
-func (m *mockTurnWriter) UpsertPartialBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+func (m *mockTurnWriter) UpsertPartialBlock(ctx context.Context, block *domainllm.TurnBlock) error {
 	return nil
 }
 
-func (m *mockTurnWriter) AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, tokens *llmRepo.TurnTokenUpdate, completion *llmRepo.TurnCompletionUpdate) error {
+func (m *mockTurnWriter) AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, tokens *domainllm.TurnTokenUpdate, completion *domainllm.TurnCompletionUpdate) error {
 	return nil
 }
 
-func (m *mockTurnWriter) AppendGenerationRecord(ctx context.Context, turnID string, record *llmModels.GenerationRecord) error {
+func (m *mockTurnWriter) AppendGenerationRecord(ctx context.Context, turnID string, record *domainllm.GenerationRecord) error {
 	return nil
 }
 
-func (m *mockTurnWriter) GetPersistedBlocks() []*llmModels.TurnBlock {
+func (m *mockTurnWriter) GetPersistedBlocks() []*domainllm.TurnBlock {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	result := make([]*llmModels.TurnBlock, len(m.blocks))
+	result := make([]*domainllm.TurnBlock, len(m.blocks))
 	copy(result, m.blocks)
 	return result
 }
 
-var _ llmRepo.TurnWriter = (*mockTurnWriter)(nil)
+var _ domainllm.TurnWriter = (*mockTurnWriter)(nil)
 
 // mockTurnReader provides minimal TurnReader implementation
 type mockTurnReader struct{}
 
-func (m *mockTurnReader) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
-	return &llmModels.Turn{ID: turnID}, nil
+func (m *mockTurnReader) GetTurn(ctx context.Context, turnID string) (*domainllm.Turn, error) {
+	return &domainllm.Turn{ID: turnID}, nil
 }
 
-func (m *mockTurnReader) GetRootTurns(ctx context.Context, threadID string) ([]llmModels.Turn, error) {
+func (m *mockTurnReader) GetRootTurns(ctx context.Context, threadID string) ([]domainllm.Turn, error) {
 	return nil, nil
 }
 
-func (m *mockTurnReader) GetTurnBlocks(ctx context.Context, turnID string) ([]llmModels.TurnBlock, error) {
+func (m *mockTurnReader) GetTurnBlocks(ctx context.Context, turnID string) ([]domainllm.TurnBlock, error) {
 	return nil, nil
 }
 
-func (m *mockTurnReader) GetTurnBlocksForTurns(ctx context.Context, turnIDs []string) (map[string][]llmModels.TurnBlock, error) {
+func (m *mockTurnReader) GetTurnBlocksForTurns(ctx context.Context, turnIDs []string) (map[string][]domainllm.TurnBlock, error) {
 	return nil, nil
 }
 
@@ -120,16 +117,16 @@ func (m *mockTurnReader) GetLastBlockSequence(ctx context.Context, turnID string
 	return -1, nil
 }
 
-var _ llmRepo.TurnReader = (*mockTurnReader)(nil)
+var _ domainllm.TurnReader = (*mockTurnReader)(nil)
 
 // mockTurnNavigator provides minimal TurnNavigator implementation
 type mockTurnNavigator struct{}
 
-func (m *mockTurnNavigator) GetTurnPath(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+func (m *mockTurnNavigator) GetTurnPath(ctx context.Context, turnID string) ([]domainllm.Turn, error) {
 	return nil, nil
 }
 
-func (m *mockTurnNavigator) GetTurnSiblings(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+func (m *mockTurnNavigator) GetTurnSiblings(ctx context.Context, turnID string) ([]domainllm.Turn, error) {
 	return nil, nil
 }
 
@@ -137,11 +134,11 @@ func (m *mockTurnNavigator) GetSiblingsForTurns(ctx context.Context, turnIDs []s
 	return nil, nil
 }
 
-func (m *mockTurnNavigator) GetPaginatedTurns(ctx context.Context, threadID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llmModels.PaginatedTurnsResponse, error) {
+func (m *mockTurnNavigator) GetPaginatedTurns(ctx context.Context, threadID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*domainllm.PaginatedTurnsResponse, error) {
 	return nil, nil
 }
 
-var _ llmRepo.TurnNavigator = (*mockTurnNavigator)(nil)
+var _ domainllm.TurnNavigator = (*mockTurnNavigator)(nil)
 
 // mockProvider simulates LLM streaming with controllable behavior
 type mockProvider struct {
@@ -149,7 +146,7 @@ type mockProvider struct {
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
 	cancelled   chan struct{}
-	blockToSend *llmModels.TurnBlock
+	blockToSend *domainllm.TurnBlock
 	sendBlock   chan struct{} // Signal to send the block
 	blockSent   chan struct{} // Signal that block was sent
 	started     chan struct{} // Closed when StreamResponse begins (for test coordination)
@@ -272,22 +269,22 @@ func (m *mockCreditAdmissionChecker) HasPurchasedCredits(ctx context.Context, us
 
 type mockCreditSettler struct{}
 
-func (m *mockCreditSettler) SettleAuthoritativeRequest(ctx context.Context, req billingdomain.SettleRequestInput) error {
+func (m *mockCreditSettler) SettleAuthoritativeRequest(ctx context.Context, req billing.SettleRequestInput) error {
 	return nil
 }
 
-func (m *mockCreditSettler) RetryPendingSettlement(ctx context.Context, req billingdomain.RetryPendingSettlementInput) error {
+func (m *mockCreditSettler) RetryPendingSettlement(ctx context.Context, req billing.RetryPendingSettlementInput) error {
 	return nil
 }
 
-func (m *mockCreditSettler) MarkPendingSettlement(ctx context.Context, req billingdomain.MarkPendingSettlementInput) error {
+func (m *mockCreditSettler) MarkPendingSettlement(ctx context.Context, req billing.MarkPendingSettlementInput) error {
 	return nil
 }
 
 // mockMessageBuilder provides minimal MessageBuilder implementation
 type mockMessageBuilder struct{}
 
-func (m *mockMessageBuilder) BuildMessages(ctx context.Context, path []llmModels.Turn) ([]domainllm.Message, error) {
+func (m *mockMessageBuilder) BuildMessages(ctx context.Context, path []domainllm.Turn) ([]domainllm.Message, error) {
 	return nil, nil
 }
 
@@ -500,7 +497,7 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		logger,
 		&mockCreditAdmissionChecker{},
 		&mockCreditSettler{},
-		billingmodel.CreditSettlementInlineAuthoritative,
+		billing.CreditSettlementInlineAuthoritative,
 		5,     // maxToolRounds
 		false, // debugMode
 		&mockTokenFinalizer{},
@@ -561,7 +558,7 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		logger,
 		&mockCreditAdmissionChecker{},
 		&mockCreditSettler{},
-		billingmodel.CreditSettlementInlineAuthoritative,
+		billing.CreditSettlementInlineAuthoritative,
 		5,
 		false,
 		&mockTokenFinalizer{},
@@ -614,7 +611,7 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		logger,
 		&mockCreditAdmissionChecker{},
 		&mockCreditSettler{},
-		billingmodel.CreditSettlementInlineAuthoritative,
+		billing.CreditSettlementInlineAuthoritative,
 		5,
 		false,
 		&mockTokenFinalizer{},

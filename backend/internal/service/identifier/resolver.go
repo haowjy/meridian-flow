@@ -7,19 +7,19 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/domain"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // ChainedResolver implements the Resolver interface using a strategy chain.
 // It tries UUID first (most common), then slug (projects) or path (documents),
 // allowing extensibility for future identifier types (short codes, aliases, etc.)
 type ChainedResolver struct {
-	projectRepo  docsysRepo.ProjectRepository
-	documentRepo docsysRepo.DocumentRepository
+	projectRepo  domaindocsys.ProjectStore
+	documentRepo domaindocsys.DocumentStore
 }
 
 // NewResolver creates a new ChainedResolver.
-func NewResolver(projectRepo docsysRepo.ProjectRepository, documentRepo docsysRepo.DocumentRepository) *ChainedResolver {
+func NewResolver(projectRepo domaindocsys.ProjectStore, documentRepo domaindocsys.DocumentStore) *ChainedResolver {
 	return &ChainedResolver{
 		projectRepo:  projectRepo,
 		documentRepo: documentRepo,

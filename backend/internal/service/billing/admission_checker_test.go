@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"testing"
 
-	billingmodel "meridian/internal/domain/models/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 func TestCreditAdmissionChecker_PositiveBalanceAdmits(t *testing.T) {
-	store := &mockCreditStore{balance: &billingmodel.CreditBalance{TotalBalanceMillicredits: 10}}
+	store := &mockCreditStore{balance: &billing.CreditBalance{TotalBalanceMillicredits: 10}}
 	svc := NewCreditAdmissionChecker(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := svc.CheckAdmission(context.Background(), "user-1"); err != nil {
@@ -20,7 +20,7 @@ func TestCreditAdmissionChecker_PositiveBalanceAdmits(t *testing.T) {
 }
 
 func TestCreditAdmissionChecker_ZeroBalanceDenies(t *testing.T) {
-	store := &mockCreditStore{balance: &billingmodel.CreditBalance{TotalBalanceMillicredits: 0}}
+	store := &mockCreditStore{balance: &billing.CreditBalance{TotalBalanceMillicredits: 0}}
 	svc := NewCreditAdmissionChecker(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	err := svc.CheckAdmission(context.Background(), "user-1")
@@ -33,7 +33,7 @@ func TestCreditAdmissionChecker_ZeroBalanceDenies(t *testing.T) {
 }
 
 func TestCreditAdmissionChecker_NegativeBalanceDenies(t *testing.T) {
-	store := &mockCreditStore{balance: &billingmodel.CreditBalance{TotalBalanceMillicredits: -500}}
+	store := &mockCreditStore{balance: &billing.CreditBalance{TotalBalanceMillicredits: -500}}
 	svc := NewCreditAdmissionChecker(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	err := svc.CheckAdmission(context.Background(), "user-1")

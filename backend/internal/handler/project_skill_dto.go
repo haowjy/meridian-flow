@@ -3,7 +3,7 @@ package handler
 import (
 	"time"
 
-	skillModels "meridian/internal/domain/models/skill"
+	skill "meridian/internal/domain/skill"
 )
 
 // === Request DTOs ===
@@ -67,7 +67,7 @@ type SkillListResponse struct {
 
 // toSkillResponse converts a ProjectSkill model to a response DTO
 // Extracts metadata from JSONB and flattens for API response
-func toSkillResponse(skill *skillModels.ProjectSkill) SkillResponse {
+func toSkillResponse(skill *skill.ProjectSkill) SkillResponse {
 	meta := skill.GetMetadata()
 	return SkillResponse{
 		ID:                     skill.ID,
@@ -86,7 +86,7 @@ func toSkillResponse(skill *skillModels.ProjectSkill) SkillResponse {
 }
 
 // toSkillWithContentResponse converts a ProjectSkill model to a response DTO with content
-func toSkillWithContentResponse(skill *skillModels.ProjectSkill) SkillWithContentResponse {
+func toSkillWithContentResponse(skill *skill.ProjectSkill) SkillWithContentResponse {
 	return SkillWithContentResponse{
 		SkillResponse: toSkillResponse(skill),
 		Content:       skill.Content,
@@ -94,7 +94,7 @@ func toSkillWithContentResponse(skill *skillModels.ProjectSkill) SkillWithConten
 }
 
 // toSkillListResponse converts a list of ProjectSkill models to a response DTO
-func toSkillListResponse(skills []*skillModels.ProjectSkill) SkillListResponse {
+func toSkillListResponse(skills []*skill.ProjectSkill) SkillListResponse {
 	responses := make([]SkillResponse, len(skills))
 	for i, skill := range skills {
 		responses[i] = toSkillResponse(skill)

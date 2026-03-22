@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 func TestCreditGranter_InitializeSignupCredits_FirstTimeGrant(t *testing.T) {
 	store := &mockCreditStore{
-		balance: &billingmodel.CreditBalance{
+		balance: &billing.CreditBalance{
 			TotalBalanceMillicredits:       300000,
 			PromotionalBalanceMillicredits: 300000,
 		},
@@ -23,7 +21,7 @@ func TestCreditGranter_InitializeSignupCredits_FirstTimeGrant(t *testing.T) {
 	fixedNow := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return fixedNow }
 
-	result, err := svc.InitializeSignupCredits(context.Background(), billingdomain.InitializeSignupCreditsRequest{
+	result, err := svc.InitializeSignupCredits(context.Background(), billing.InitializeSignupCreditsRequest{
 		UserID:        "user-1",
 		Email:         "writer@example.com",
 		AuthProvider:  "google",
@@ -33,8 +31,8 @@ func TestCreditGranter_InitializeSignupCredits_FirstTimeGrant(t *testing.T) {
 		t.Fatalf("InitializeSignupCredits returned error: %v", err)
 	}
 
-	if result.CreditsGranted != billingmodel.MonthlyRefreshMillicredits {
-		t.Fatalf("CreditsGranted = %d, want %d", result.CreditsGranted, billingmodel.MonthlyRefreshMillicredits)
+	if result.CreditsGranted != billing.MonthlyRefreshMillicredits {
+		t.Fatalf("CreditsGranted = %d, want %d", result.CreditsGranted, billing.MonthlyRefreshMillicredits)
 	}
 	if result.AlreadyInitialized {
 		t.Fatalf("AlreadyInitialized = true, want false")
@@ -45,7 +43,7 @@ func TestCreditGranter_InitializeSignupCredits_FirstTimeGrant(t *testing.T) {
 	if store.lastCreateGrantReq.ExpiresAt == nil {
 		t.Fatalf("ExpiresAt is nil")
 	}
-	wantExpiry := fixedNow.AddDate(0, 0, billingmodel.MonthlyRefreshExpirationDays)
+	wantExpiry := fixedNow.AddDate(0, 0, billing.MonthlyRefreshExpirationDays)
 	if !store.lastCreateGrantReq.ExpiresAt.Equal(wantExpiry) {
 		t.Fatalf("ExpiresAt = %v, want %v", store.lastCreateGrantReq.ExpiresAt, wantExpiry)
 	}
@@ -53,15 +51,15 @@ func TestCreditGranter_InitializeSignupCredits_FirstTimeGrant(t *testing.T) {
 
 func TestCreditGranter_InitializeSignupCredits_DuplicateGrantNoop(t *testing.T) {
 	store := &mockCreditStore{
-		createGrantErr: billingrepo.ErrGrantLotAlreadyExists,
-		balance: &billingmodel.CreditBalance{
+		createGrantErr: billing.ErrGrantLotAlreadyExists,
+		balance: &billing.CreditBalance{
 			TotalBalanceMillicredits:       450000,
 			PromotionalBalanceMillicredits: 450000,
 		},
 	}
 	svc := NewCreditGranter(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	result, err := svc.InitializeSignupCredits(context.Background(), billingdomain.InitializeSignupCreditsRequest{
+	result, err := svc.InitializeSignupCredits(context.Background(), billing.InitializeSignupCreditsRequest{
 		UserID:        "user-1",
 		EmailVerified: true,
 	})
@@ -81,7 +79,7 @@ func TestCreditGranter_InitializeSignupCredits_UnverifiedEmailSkipsGrant(t *test
 	store := &mockCreditStore{}
 	svc := NewCreditGranter(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	result, err := svc.InitializeSignupCredits(context.Background(), billingdomain.InitializeSignupCreditsRequest{
+	result, err := svc.InitializeSignupCredits(context.Background(), billing.InitializeSignupCreditsRequest{
 		UserID:        "user-1",
 		EmailVerified: false,
 	})

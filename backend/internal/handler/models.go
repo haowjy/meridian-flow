@@ -76,8 +76,8 @@ func (h *ModelsHandler) GetCapabilities(w http.ResponseWriter, r *http.Request) 
 		name   string
 		apiKey string
 	}{
-		{"anthropic", "Anthropic", h.config.AnthropicAPIKey},
-		{"openrouter", "OpenRouter", h.config.OpenRouterAPIKey},
+		{"anthropic", "Anthropic", h.config.LLM.AnthropicAPIKey},
+		{"openrouter", "OpenRouter", h.config.LLM.OpenRouterAPIKey},
 	}
 
 	for _, p := range providerOrder {

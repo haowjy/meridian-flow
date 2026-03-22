@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/httputil"
 )
 
@@ -57,13 +57,13 @@ func (h *CollabHandler) SetAcceptedAtOffset(w http.ResponseWriter, r *http.Reque
 	}
 
 	userID := httputil.GetUserID(r)
-	if err := h.proposalService.SetProposalOffset(r.Context(), collabSvc.SetProposalOffsetRequest{
+	if err := h.proposalService.SetProposalOffset(r.Context(), collab.SetProposalOffsetRequest{
 		ProposalID:       proposalID,
 		UserID:           userID,
 		AcceptedAtOffset: *req.AcceptedAtOffset,
 		OffsetVersion:    *req.OffsetVersion,
 	}); err != nil {
-		if errors.Is(err, collabSvc.ErrProposalOffsetAccessCheckFailed) {
+		if errors.Is(err, collab.ErrProposalOffsetAccessCheckFailed) {
 			httputil.RespondError(w, http.StatusInternalServerError, "Failed to verify document access")
 			return
 		}

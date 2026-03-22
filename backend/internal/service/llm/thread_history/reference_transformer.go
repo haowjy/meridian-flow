@@ -7,10 +7,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"meridian/internal/domain/models/docsystem"
-	llmModels "meridian/internal/domain/models/llm"
-	domainllm "meridian/internal/domain/services/llm"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/formatting"
 )
 
@@ -23,23 +21,23 @@ const (
 // refWithID carries a reference block together with its assigned synthetic tool ID
 // and pre-fetched entity (to avoid double-fetching in ghost text + resolution).
 type refWithID struct {
-	block       *llmModels.TurnBlock
+	block       *domainllm.TurnBlock
 	syntheticID string
 	// Cached from ghost text resolution to avoid double-fetching
-	resolvedDoc    *docsystem.Document
-	resolvedFolder *docsystem.Folder
+	resolvedDoc    *domaindocsys.Document
+	resolvedFolder *domaindocsys.Folder
 }
 
 // ReferenceMessageTransformer resolves reference blocks into synthetic tool_use/tool_result
 // message pairs. This compiles @-mentions into a format LLMs recognize as "data I already fetched,"
-// preventing redundant tool calls from less capable models.
+// preventing redundant tool calls from less capable domaindocsys.
 //
 // Operates at the message level (post-BuildMessages) because tool_use must be in assistant
 // messages and tool_result in user messages — a block-level transform can't split one user
 // message into a user->assistant->user sequence.
 type ReferenceMessageTransformer struct {
-	documentSvc       docsysSvc.DocumentService    // DIP: interface dependency
-	folderSvc         docsysSvc.FolderService       // For folder reference resolution
+	documentSvc       domaindocsys.DocumentService  // DIP: interface dependency
+	folderSvc         domaindocsys.FolderService    // For folder reference resolution
 	formatterRegistry *formatting.FormatterRegistry // Same instance as MessageBuilder uses
 	userID            string
 	projectID         string // Needed for folderSvc.ListChildren
@@ -51,8 +49,8 @@ type ReferenceMessageTransformer struct {
 // projectID is needed for folder listing via folderSvc.ListChildren.
 // formatterRegistry ensures synthetic tool results get the same formatting as real ones.
 func NewReferenceMessageTransformer(
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
 	formatterRegistry *formatting.FormatterRegistry,
 	userID string,
 	projectID string,
@@ -99,8 +97,8 @@ func (rt *ReferenceMessageTransformer) TransformMessages(
 		}
 
 		// Resolve all references and build synthetic tool_use/tool_result blocks
-		var toolUseBlocks []*llmModels.TurnBlock
-		var toolResultBlocks []*llmModels.TurnBlock
+		var toolUseBlocks []*domainllm.TurnBlock
+		var toolResultBlocks []*domainllm.TurnBlock
 
 		for _, rwid := range refsWithIDs {
 			useBlock, resultBlock, err := rt.resolveToToolPair(ctx, rwid)
@@ -144,12 +142,12 @@ func (rt *ReferenceMessageTransformer) TransformMessages(
 // This lets the LLM connect: user instruction -> ghost text with ID -> matching tool_use -> matching tool_result.
 func (rt *ReferenceMessageTransformer) replaceRefsWithGhostText(
 	ctx context.Context,
-	blocks []*llmModels.TurnBlock,
+	blocks []*domainllm.TurnBlock,
 	msgIdx int,
-) (modifiedBlocks []*llmModels.TurnBlock, refs []refWithID) {
+) (modifiedBlocks []*domainllm.TurnBlock, refs []refWithID) {
 	refIdx := 0
 	for _, block := range blocks {
-		if block.BlockType != llmModels.BlockTypeReference {
+		if block.BlockType != domainllm.BlockTypeReference {
 			modifiedBlocks = append(modifiedBlocks, block)
 			continue
 		}
@@ -160,8 +158,8 @@ func (rt *ReferenceMessageTransformer) replaceRefsWithGhostText(
 		displayPath, doc, folder := rt.resolveRefMetadata(ctx, block)
 
 		ghostText := fmt.Sprintf("@%s (%s)", displayPath, syntheticID)
-		modifiedBlocks = append(modifiedBlocks, &llmModels.TurnBlock{
-			BlockType:   llmModels.BlockTypeText,
+		modifiedBlocks = append(modifiedBlocks, &domainllm.TurnBlock{
+			BlockType:   domainllm.BlockTypeText,
 			TextContent: &ghostText,
 		})
 
@@ -180,8 +178,8 @@ func (rt *ReferenceMessageTransformer) replaceRefsWithGhostText(
 // Returns the display path and the resolved entity (one of doc/folder will be non-nil on success).
 func (rt *ReferenceMessageTransformer) resolveRefMetadata(
 	ctx context.Context,
-	block *llmModels.TurnBlock,
-) (displayPath string, doc *docsystem.Document, folder *docsystem.Folder) {
+	block *domainllm.TurnBlock,
+) (displayPath string, doc *domaindocsys.Document, folder *domaindocsys.Folder) {
 	refType := extractRefType(block.Content)
 	refID := extractRefID(block.Content)
 
@@ -211,9 +209,9 @@ func (rt *ReferenceMessageTransformer) resolveRefMetadata(
 func (rt *ReferenceMessageTransformer) resolveToToolPair(
 	ctx context.Context,
 	rwid refWithID,
-) (*llmModels.TurnBlock, *llmModels.TurnBlock, error) {
+) (*domainllm.TurnBlock, *domainllm.TurnBlock, error) {
 	// Parse reference content
-	var ref llmModels.ReferenceContent
+	var ref domainllm.ReferenceContent
 	jsonBytes, err := json.Marshal(rwid.block.Content)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal reference content: %w", err)
@@ -239,10 +237,10 @@ func (rt *ReferenceMessageTransformer) resolveToToolPair(
 // Result format matches TextEditorTool.formatDocumentWithLineNumbers (text_editor.go:190-221).
 func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 	ctx context.Context,
-	ref llmModels.ReferenceContent,
+	ref domainllm.ReferenceContent,
 	syntheticID string,
-	cachedDoc *docsystem.Document,
-) (*llmModels.TurnBlock, *llmModels.TurnBlock, error) {
+	cachedDoc *domaindocsys.Document,
+) (*domainllm.TurnBlock, *domainllm.TurnBlock, error) {
 	doc := cachedDoc
 	if doc == nil {
 		// Ghost text resolution failed — try again (may still fail -> error tool_result)
@@ -269,8 +267,8 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 	wordCount := doc.WordCount()
 
 	// Synthetic tool_use: "the assistant called str_replace_based_edit_tool view"
-	useBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolUse,
+	useBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolUse,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"tool_name":   syntheticToolName,
@@ -279,8 +277,8 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 	}
 
 	// Synthetic tool_result: matches TextEditorTool output format (with total_lines, view_range)
-	resultBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolResult,
+	resultBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolResult,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"tool_name":   syntheticToolName,
@@ -311,10 +309,10 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 // Result format matches TextEditorTool.listFolderContents (text_editor.go:224-257).
 func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 	ctx context.Context,
-	ref llmModels.ReferenceContent,
+	ref domainllm.ReferenceContent,
 	syntheticID string,
-	cachedFolder *docsystem.Folder,
-) (*llmModels.TurnBlock, *llmModels.TurnBlock, error) {
+	cachedFolder *domaindocsys.Folder,
+) (*domainllm.TurnBlock, *domainllm.TurnBlock, error) {
 	folder := cachedFolder
 	if folder == nil {
 		// Ghost text resolution failed — try again (may still fail -> error tool_result)
@@ -352,8 +350,8 @@ func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 	}
 
 	// Synthetic tool_use: "the assistant called str_replace_based_edit_tool view"
-	useBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolUse,
+	useBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolUse,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"tool_name":   syntheticToolName,
@@ -362,8 +360,8 @@ func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 	}
 
 	// Synthetic tool_result: matches TextEditorTool.listFolderContents output format
-	resultBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolResult,
+	resultBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolResult,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"tool_name":   syntheticToolName,
@@ -387,14 +385,14 @@ func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 // errorToolPair creates a tool_use + error tool_result pair for failed resolution.
 // Error tool_results are how real tools report failures, so the LLM handles them naturally.
 func (rt *ReferenceMessageTransformer) errorToolPair(
-	block *llmModels.TurnBlock,
+	block *domainllm.TurnBlock,
 	syntheticID string,
 	resolveErr error,
-) (*llmModels.TurnBlock, *llmModels.TurnBlock) {
+) (*domainllm.TurnBlock, *domainllm.TurnBlock) {
 	refType := extractRefType(block.Content)
 
-	useBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolUse,
+	useBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolUse,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"tool_name":   syntheticToolName,
@@ -402,8 +400,8 @@ func (rt *ReferenceMessageTransformer) errorToolPair(
 		},
 	}
 
-	resultBlock := &llmModels.TurnBlock{
-		BlockType: llmModels.BlockTypeToolResult,
+	resultBlock := &domainllm.TurnBlock{
+		BlockType: domainllm.BlockTypeToolResult,
 		Content: map[string]any{
 			"tool_use_id": syntheticID,
 			"is_error":    true,

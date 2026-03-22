@@ -13,9 +13,7 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingdomain "meridian/internal/domain/services/billing"
-	domainLLM "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
 	"meridian/internal/middleware"
@@ -50,15 +48,15 @@ func main() {
 	// Create tool limit resolver (tier-ready architecture)
 	// Uses MAX_TOOL_ROUNDS from env (default: 10) - generous while no subscription tiers
 	// When Stripe subscriptions go live, swap in JWTTierResolver (one line change)
-	toolLimitResolver := domainLLM.NewConfigToolLimitResolver(cfg.MaxToolRounds)
+	toolLimitResolver := serviceLLM.NewConfigToolLimitResolver(cfg.LLM.MaxToolRounds)
 
 	// Setup structured logging
-	logLevel := config.ParseLogLevel(cfg.LogLevel)
+	logLevel := config.ParseLogLevel(cfg.Logging.Level)
 
 	// Determine log output destination
 	var logOutput io.Writer = os.Stdout
-	if cfg.LogToFile {
-		f, err := config.SetupLogFile(cfg.LogDir, cfg.LogMaxFiles)
+	if cfg.Logging.ToFile {
+		f, err := config.SetupLogFile(cfg.Logging.Dir, cfg.Logging.MaxFiles)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to setup log file: %v\n", err)
 			os.Exit(1)
@@ -73,15 +71,15 @@ func main() {
 	slog.SetDefault(logger) // Set as default logger
 
 	logger.Info("server starting",
-		"environment", cfg.Environment,
-		"port", cfg.Port,
-		"table_prefix", cfg.TablePrefix,
-		"log_level", cfg.LogLevel,
-		"log_to_file", cfg.LogToFile,
+		"environment", cfg.Server.Environment,
+		"port", cfg.Server.Port,
+		"table_prefix", cfg.Database.TablePrefix,
+		"log_level", cfg.Logging.Level,
+		"log_to_file", cfg.Logging.ToFile,
 	)
 
 	// Create JWT verifier for Supabase authentication
-	jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL, logger)
+	jwtVerifier, err := auth.NewJWTVerifier(cfg.Auth.SupabaseJWKSURL, logger)
 	if err != nil {
 		logger.Error("failed to create JWT verifier", "error", err)
 		os.Exit(1)
@@ -90,7 +88,7 @@ func main() {
 
 	// Create pgx connection pool
 	ctx := context.Background()
-	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL, cfg.DBMaxConns, cfg.DBMinConns)
+	pool, err := postgres.CreateConnectionPool(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.MinConns)
 	if err != nil {
 		logger.Error("failed to create connection pool", "error", err)
 		os.Exit(1)
@@ -98,12 +96,12 @@ func main() {
 	defer pool.Close()
 
 	logger.Info("database connected",
-		"max_conns", cfg.DBMaxConns,
-		"min_conns", cfg.DBMinConns,
+		"max_conns", cfg.Database.MaxConns,
+		"min_conns", cfg.Database.MinConns,
 	)
 
 	// Create table names
-	tables := postgres.NewTableNames(cfg.TablePrefix)
+	tables := postgres.NewTableNames(cfg.Database.TablePrefix)
 
 	// Create repositories
 	repoConfig := &postgres.RepositoryConfig{
@@ -141,7 +139,7 @@ func main() {
 	favoriteRepo := postgresDocsys.NewFavoriteRepository(repoConfig)
 
 	// Create document services (needed by LLM tools for write operations)
-	// Moved before SetupServices for proper dependency injection
+	// Moved before SetupLLMServices for proper dependency injection
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	autoapplyResolver := serviceDocsys.NewAutoapplyResolver(docRepo, folderRepo, projectRepo)
@@ -151,22 +149,22 @@ func main() {
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, projectRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
 
 	// Billing services
-	stripeClient := serviceBilling.NewStripeClient(cfg.StripeSecretKey, cfg.StripeWebhookSecret)
+	stripeClient := serviceBilling.NewStripeClient(cfg.Billing.StripeSecretKey, cfg.Billing.StripeWebhookSecret)
 	creditService := serviceBilling.NewCreditService(creditStore, stripeClient, logger)
 	creditGranter := serviceBilling.NewCreditGranter(creditStore, logger)
 
-	admissionChecker := billingdomain.CreditAdmissionChecker(serviceBilling.NewCreditAdmissionChecker(creditStore, logger))
-	creditSettler := billingdomain.CreditSettler(nil)
+	admissionChecker := billing.CreditAdmissionChecker(serviceBilling.NewCreditAdmissionChecker(creditStore, logger))
+	creditSettler := billing.CreditSettler(nil)
 
-	settlementMode := billingmodel.CreditSettlementDeferredToEnrichment
-	switch strings.ToLower(cfg.DefaultProvider) {
+	settlementMode := billing.CreditSettlementDeferredToEnrichment
+	switch strings.ToLower(cfg.LLM.DefaultProvider) {
 	case "anthropic":
-		settlementMode = billingmodel.CreditSettlementInlineAuthoritative
+		settlementMode = billing.CreditSettlementInlineAuthoritative
 	case "openrouter", "":
-		settlementMode = billingmodel.CreditSettlementDeferredToEnrichment
+		settlementMode = billing.CreditSettlementDeferredToEnrichment
 	default:
 		logger.Warn("unknown default provider; using deferred settlement mode",
-			"default_provider", cfg.DefaultProvider,
+			"default_provider", cfg.LLM.DefaultProvider,
 		)
 	}
 
@@ -185,22 +183,13 @@ func main() {
 	}
 	logger.Info("capability registry initialized")
 
-	pricingResolver := billingdomain.ModelPricingResolver(serviceBilling.NewRegistryPricingResolver(capabilityRegistry, logger))
+	pricingResolver := billing.ModelPricingResolver(serviceBilling.NewRegistryPricingResolver(capabilityRegistry, logger))
 	creditSettler = serviceBilling.NewCreditSettler(creditStore, generationBillingStore, pricingResolver, logger)
-	if cfg.StripeSecretKey == "" || cfg.StripeWebhookSecret == "" {
-		if strings.EqualFold(cfg.Environment, "prod") {
-			logger.Error("stripe keys are required in production; refusing to start",
-				"environment", cfg.Environment,
-				"has_stripe_secret_key", cfg.StripeSecretKey != "",
-				"has_stripe_webhook_secret", cfg.StripeWebhookSecret != "",
-			)
-			os.Exit(1)
-		}
-
+	if cfg.Billing.StripeSecretKey == "" || cfg.Billing.StripeWebhookSecret == "" {
 		logger.Warn("stripe keys are missing; using noop billing collaborators for streaming admission/settlement",
-			"environment", cfg.Environment,
-			"has_stripe_secret_key", cfg.StripeSecretKey != "",
-			"has_stripe_webhook_secret", cfg.StripeWebhookSecret != "",
+			"environment", cfg.Server.Environment,
+			"has_stripe_secret_key", cfg.Billing.StripeSecretKey != "",
+			"has_stripe_webhook_secret", cfg.Billing.StripeWebhookSecret != "",
 		)
 		admissionChecker = serviceBilling.NewNoopCreditAdmissionChecker()
 		creditSettler = serviceBilling.NewNoopCreditSettler()
@@ -276,7 +265,7 @@ func main() {
 	namespaceSvc := serviceDocsys.NewNamespaceService(folderRepo, logger)
 
 	// Create skill service (needed by LLM streaming service for skill tools)
-	// Must be created before SetupServices
+	// Must be created before SetupLLMServices
 	skillService := serviceSkill.NewProjectSkillService(
 		skillRepo,
 		folderRepo,
@@ -349,28 +338,27 @@ func main() {
 
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)
-	llmServices, streamRegistry, err := serviceLLM.SetupServices(
-		threadRepo,
-		turnRepo,
-		projectRepo,
-		docRepo,
-		folderRepo,
-		docService,    // For tool write operations
-		folderService, // For tool write operations
-		skillService,  // For skill_invoke/skill_list tools
-		providerRegistry,
-		cfg,
-		txManager,
-		capabilityRegistry,
-		authorizer,
-		toolLimitResolver,
-		admissionChecker,
-		creditSettler,
-		settlementMode,
-		jobQueue,         // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
-		logger,
-	)
+	llmServices, streamRegistry, err := serviceLLM.SetupLLMServices(serviceLLM.LLMServicesDeps{
+		ThreadRepo:             threadRepo,
+		TurnRepo:               turnRepo,
+		ProjectRepo:            projectRepo,
+		FolderRepo:             folderRepo,
+		DocumentSvc:            docService,
+		FolderSvc:              folderService,
+		SkillService:           skillService,
+		ProviderRegistry:       providerRegistry,
+		Config:                 cfg,
+		TxManager:              txManager,
+		CapabilityRegistry:     capabilityRegistry,
+		Authorizer:             authorizer,
+		ToolLimitResolver:      toolLimitResolver,
+		CreditAdmissionChecker: admissionChecker,
+		CreditSettler:          creditSettler,
+		SettlementMode:         settlementMode,
+		JobQueue:               jobQueue,
+		MutationStrategy:       mutationStrategy,
+		Logger:                 logger,
+	})
 	if err != nil {
 		logger.Error("failed to setup LLM services", "error", err)
 		os.Exit(1)
@@ -448,7 +436,7 @@ func main() {
 
 	// Debug handlers (only in dev environment)
 	var threadDebugHandler *handler.ThreadDebugHandler
-	if cfg.Environment == "dev" {
+	if cfg.Server.Environment == "dev" {
 		threadDebugHandler = handler.NewThreadDebugHandler(llmServices.ThreadHistory, llmServices.Streaming, cfg)
 		logger.Warn("DEBUG MODE: Debug endpoints enabled (NEVER use in production!)")
 	}
@@ -547,7 +535,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/turns/{id}/interjection", threadHandler.ClearInterjection) // Clear interjection
 
 	// Debug routes (only in dev environment)
-	if cfg.Environment == "dev" && threadDebugHandler != nil {
+	if cfg.Server.Environment == "dev" && threadDebugHandler != nil {
 		mux.HandleFunc("POST /debug/api/threads/{id}/turns", threadDebugHandler.CreateAssistantTurn)
 		mux.HandleFunc("GET /debug/api/threads/{id}/tree", threadDebugHandler.GetThreadTree)
 		mux.HandleFunc("POST /debug/api/threads/{id}/llm-request", threadDebugHandler.BuildProviderRequest)
@@ -571,7 +559,7 @@ func main() {
 
 	// CORS - Must be before auth to handle OPTIONS pre-flight requests
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   strings.Split(cfg.CORSOrigins, ","),
+		AllowedOrigins:   strings.Split(cfg.Server.CORSOrigins, ","),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization", "Last-Event-ID"},
 		AllowCredentials: true,
@@ -580,7 +568,7 @@ func main() {
 
 	// Create HTTP server
 	server := &http.Server{
-		Addr:         ":" + cfg.Port,
+		Addr:         ":" + cfg.Server.Port,
 		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 0, // Disabled to allow long-lived SSE streams
@@ -606,7 +594,7 @@ func main() {
 	}()
 
 	// Start server
-	logger.Info("server starting", "port", cfg.Port)
+	logger.Info("server starting", "port", cfg.Server.Port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("failed to start server", "error", err)
 		os.Exit(1)

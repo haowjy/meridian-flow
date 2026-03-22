@@ -6,13 +6,12 @@ import (
 	"flag"
 	"log"
 	"log/slog"
+	"meridian/internal/domain"
 	"os"
 
 	"meridian/internal/auth"
 	"meridian/internal/config"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
@@ -41,7 +40,7 @@ func main() {
 	cfg := config.Load()
 
 	// SAFETY: Prevent destructive operations in production
-	if cfg.Environment == "prod" && *clearData {
+	if cfg.Server.Environment == "prod" && *clearData {
 		log.Fatalf("🚫 BLOCKED: Cannot run destructive operations (--clear-data) in production environment")
 	}
 
@@ -51,24 +50,24 @@ func main() {
 	}))
 
 	if *clearData {
-		log.Printf("🧹 Clearing data only (environment: %s, prefix: %s)", cfg.Environment, cfg.TablePrefix)
+		log.Printf("🧹 Clearing data only (environment: %s, prefix: %s)", cfg.Server.Environment, cfg.Database.TablePrefix)
 	} else {
-		log.Printf("🌱 Seeding database (environment: %s, prefix: %s)", cfg.Environment, cfg.TablePrefix)
+		log.Printf("🌱 Seeding database (environment: %s, prefix: %s)", cfg.Server.Environment, cfg.Database.TablePrefix)
 	}
 
 	// Create database connection pool
 	ctx := context.Background()
-	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL, cfg.DBMaxConns, cfg.DBMinConns)
+	pool, err := postgres.CreateConnectionPool(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.MinConns)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer pool.Close()
 
 	// Create table names
-	tables := postgres.NewTableNames(cfg.TablePrefix)
+	tables := postgres.NewTableNames(cfg.Database.TablePrefix)
 
 	// Create auth admin client for user management
-	authClient := auth.NewAdminClient(cfg.SupabaseURL, cfg.SupabaseKey)
+	authClient := auth.NewAdminClient(cfg.Auth.SupabaseURL, cfg.Auth.SupabaseKey)
 
 	// Resolve test user (optional explicit override via TEST_USER_ID).
 	// Fallback remains idempotent email-based lookup/create for local dev.
@@ -163,7 +162,7 @@ func main() {
 	}
 
 	// Process zip file using import service
-	uploadedFiles := []docsysSvc.UploadedFile{
+	uploadedFiles := []domaindocsys.UploadedFile{
 		{
 			Filename: "seed_data.zip",
 			Content:  bytes.NewReader(zipBuffer.Bytes()),
@@ -208,7 +207,7 @@ func main() {
 }
 
 // ensureTestProject returns an existing "Test Project" ID, or creates it via service layer.
-func ensureTestProject(ctx context.Context, projectService docsysSvc.ProjectService, userID string) (string, error) {
+func ensureTestProject(ctx context.Context, projectService domaindocsys.ProjectService, userID string) (string, error) {
 	projects, err := projectService.ListProjects(ctx, userID)
 	if err != nil {
 		return "", err
@@ -220,7 +219,7 @@ func ensureTestProject(ctx context.Context, projectService docsysSvc.ProjectServ
 		}
 	}
 
-	project, err := projectService.CreateProject(ctx, &docsysSvc.CreateProjectRequest{
+	project, err := projectService.CreateProject(ctx, &domaindocsys.CreateProjectRequest{
 		UserID: userID,
 		Name:   "Test Project",
 	})
@@ -247,14 +246,14 @@ func clearProjectData(ctx context.Context, pool *pgxpool.Pool, tables *postgres.
 	return nil
 }
 
-func bootstrapSystemFolders(ctx context.Context, folderRepo docsysRepo.FolderRepository, txManager repositories.TransactionManager, projectID string) error {
+func bootstrapSystemFolders(ctx context.Context, folderRepo domaindocsys.FolderStore, txManager domain.TransactionManager, projectID string) error {
 	return txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(docsysSvc.NamespaceMeridian), nil); err != nil {
+		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(domaindocsys.NamespaceMeridian), nil); err != nil {
 			return err
 		}
 
 		agentsAutoapply := false
-		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(docsysSvc.NamespaceAgents), &agentsAutoapply); err != nil {
+		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(domaindocsys.NamespaceAgents), &agentsAutoapply); err != nil {
 			return err
 		}
 

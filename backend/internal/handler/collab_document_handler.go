@@ -19,12 +19,12 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 // CollabDocumentHandler serves per-document websocket connections.
 type CollabDocumentHandler struct {
-	sessionManager collabSvc.DocumentSessionProvider
+	sessionManager collab.DocumentSessionProvider
 	authenticator  *collabAuthenticator
 	logger         *slog.Logger
 	config         *config.Config
@@ -53,9 +53,9 @@ const (
 
 // NewCollabDocumentHandler creates a per-document collaboration websocket handler.
 func NewCollabDocumentHandler(
-	sessionManager collabSvc.DocumentSessionProvider,
+	sessionManager collab.DocumentSessionProvider,
 	jwtVerifier auth.JWTVerifier,
-	documentResolver collabSvc.DocumentResolver,
+	documentResolver collab.DocumentResolver,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *CollabDocumentHandler {
@@ -91,8 +91,8 @@ func (h *CollabDocumentHandler) ConnectDocument(w http.ResponseWriter, r *http.R
 	canonicalDocumentID := documentUUID.String()
 
 	originPatterns := []string{}
-	if h.config != nil && h.config.CORSOrigins != "" {
-		for _, pattern := range strings.Split(h.config.CORSOrigins, ",") {
+	if h.config != nil && h.config.Server.CORSOrigins != "" {
+		for _, pattern := range strings.Split(h.config.Server.CORSOrigins, ",") {
 			trimmed := strings.TrimSpace(pattern)
 			if trimmed != "" {
 				originPatterns = append(originPatterns, trimmed)
@@ -101,7 +101,7 @@ func (h *CollabDocumentHandler) ConnectDocument(w http.ResponseWriter, r *http.R
 	}
 
 	opts := &websocket.AcceptOptions{
-		InsecureSkipVerify: h.config != nil && h.config.Environment == "dev",
+		InsecureSkipVerify: h.config != nil && h.config.Server.Environment == "dev",
 		OriginPatterns:     originPatterns,
 		CompressionMode:    websocket.CompressionDisabled,
 	}
@@ -124,7 +124,7 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 
 	var (
 		userID          string
-		session         collabSvc.SyncSession
+		session         collab.SyncSession
 		releaseSession  func()
 		ownsConnSlot    bool
 		isDocConnActive bool

@@ -7,7 +7,7 @@ import (
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/openrouter"
 
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // OpenRouterAdapter wraps the library's OpenRouter provider and implements the backend's LLMProvider interface.

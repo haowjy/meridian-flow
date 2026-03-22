@@ -11,18 +11,18 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 func TestStatusMirrorOnStatusChange_DeleteMapsToPending(t *testing.T) {
 	docID := uuid.New()
 	proposalID := uuid.New()
 	store := &fakeStatusMirrorProposalStore{
-		proposals: map[uuid.UUID]collabModels.Proposal{
+		proposals: map[uuid.UUID]collab.Proposal{
 			proposalID: {
 				ID:         proposalID,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusRejected,
+				Status:     collab.ProposalStatusRejected,
 			},
 		},
 	}
@@ -36,13 +36,13 @@ func TestStatusMirrorOnStatusChange_DeleteMapsToPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load proposal after mirror update: %v", err)
 	}
-	if got.Status != collabModels.ProposalStatusPending {
+	if got.Status != collab.ProposalStatusPending {
 		t.Fatalf("expected pending after delete, got %s", got.Status)
 	}
 }
 
 func TestStatusMirrorOnStatusChange_MissingProposalIsNonFatal(t *testing.T) {
-	store := &fakeStatusMirrorProposalStore{proposals: map[uuid.UUID]collabModels.Proposal{}}
+	store := &fakeStatusMirrorProposalStore{proposals: map[uuid.UUID]collab.Proposal{}}
 	mirror := NewStatusMirror(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	status := "accepted"
@@ -64,36 +64,36 @@ func TestStatusMirrorReconcileAll_RepairsDriftAndSkipsInvalidMissingKey(t *testi
 	pInvalidMissing := uuid.New()
 
 	store := &fakeStatusMirrorProposalStore{
-		proposals: map[uuid.UUID]collabModels.Proposal{
+		proposals: map[uuid.UUID]collab.Proposal{
 			pAccepted: {
 				ID:         pAccepted,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusPending,
+				Status:     collab.ProposalStatusPending,
 			},
 			pRejected: {
 				ID:         pRejected,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusAccepted,
+				Status:     collab.ProposalStatusAccepted,
 			},
 			pStale: {
 				ID:         pStale,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusPending,
+				Status:     collab.ProposalStatusPending,
 			},
 			pReverted: {
 				ID:         pReverted,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusPending,
+				Status:     collab.ProposalStatusPending,
 			},
 			pMissing: {
 				ID:         pMissing,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusStale,
+				Status:     collab.ProposalStatusStale,
 			},
 			pInvalidMissing: {
 				ID:         pInvalidMissing,
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusInvalid,
+				Status:     collab.ProposalStatusInvalid,
 			},
 		},
 	}
@@ -110,19 +110,19 @@ func TestStatusMirrorReconcileAll_RepairsDriftAndSkipsInvalidMissingKey(t *testi
 		t.Fatalf("ReconcileAll returned error: %v", err)
 	}
 
-	assertProposalStatus(t, store, pAccepted, collabModels.ProposalStatusAccepted)
-	assertProposalStatus(t, store, pRejected, collabModels.ProposalStatusRejected)
-	assertProposalStatus(t, store, pStale, collabModels.ProposalStatusStale)
-	assertProposalStatus(t, store, pReverted, collabModels.ProposalStatusReverted)
-	assertProposalStatus(t, store, pMissing, collabModels.ProposalStatusPending)
-	assertProposalStatus(t, store, pInvalidMissing, collabModels.ProposalStatusInvalid)
+	assertProposalStatus(t, store, pAccepted, collab.ProposalStatusAccepted)
+	assertProposalStatus(t, store, pRejected, collab.ProposalStatusRejected)
+	assertProposalStatus(t, store, pStale, collab.ProposalStatusStale)
+	assertProposalStatus(t, store, pReverted, collab.ProposalStatusReverted)
+	assertProposalStatus(t, store, pMissing, collab.ProposalStatusPending)
+	assertProposalStatus(t, store, pInvalidMissing, collab.ProposalStatusInvalid)
 }
 
 func assertProposalStatus(
 	t *testing.T,
 	store *fakeStatusMirrorProposalStore,
 	proposalID uuid.UUID,
-	want collabModels.ProposalStatus,
+	want collab.ProposalStatus,
 ) {
 	t.Helper()
 	proposal, err := store.GetByID(context.Background(), proposalID)
@@ -135,21 +135,21 @@ func assertProposalStatus(
 }
 
 type fakeStatusMirrorProposalStore struct {
-	proposals map[uuid.UUID]collabModels.Proposal
+	proposals map[uuid.UUID]collab.Proposal
 	upserts   []statusUpsertCall
 }
 
 type statusUpsertCall struct {
 	proposalID uuid.UUID
-	status     collabModels.ProposalStatus
+	status     collab.ProposalStatus
 }
 
-func (s *fakeStatusMirrorProposalStore) Create(_ context.Context, proposal *collabModels.Proposal) error {
+func (s *fakeStatusMirrorProposalStore) Create(_ context.Context, proposal *collab.Proposal) error {
 	s.proposals[proposal.ID] = *proposal
 	return nil
 }
 
-func (s *fakeStatusMirrorProposalStore) GetByID(_ context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error) {
+func (s *fakeStatusMirrorProposalStore) GetByID(_ context.Context, proposalID uuid.UUID) (*collab.Proposal, error) {
 	proposal, ok := s.proposals[proposalID]
 	if !ok {
 		return nil, collabProposalNotFound(proposalID)
@@ -161,8 +161,8 @@ func (s *fakeStatusMirrorProposalStore) GetByID(_ context.Context, proposalID uu
 func (s *fakeStatusMirrorProposalStore) CountByDocumentAndStatusAndSource(
 	_ context.Context,
 	_ uuid.UUID,
-	_ collabModels.ProposalStatus,
-	_ collabModels.ProposalSource,
+	_ collab.ProposalStatus,
+	_ collab.ProposalSource,
 ) (int, error) {
 	return 0, nil
 }
@@ -174,11 +174,11 @@ func (s *fakeStatusMirrorProposalStore) CountByDocumentAndTurnID(_ context.Conte
 func (s *fakeStatusMirrorProposalStore) ListByDocument(
 	_ context.Context,
 	documentID uuid.UUID,
-	_ *collabModels.ProposalStatus,
+	_ *collab.ProposalStatus,
 	limit int,
 	offset int,
-) ([]collabModels.Proposal, error) {
-	matching := make([]collabModels.Proposal, 0, len(s.proposals))
+) ([]collab.Proposal, error) {
+	matching := make([]collab.Proposal, 0, len(s.proposals))
 	for _, proposal := range s.proposals {
 		if proposal.DocumentID == documentID {
 			matching = append(matching, proposal)
@@ -198,7 +198,7 @@ func (s *fakeStatusMirrorProposalStore) ListByDocument(
 func (s *fakeStatusMirrorProposalStore) UpsertStatus(
 	_ context.Context,
 	proposalID uuid.UUID,
-	status collabModels.ProposalStatus,
+	status collab.ProposalStatus,
 ) error {
 	proposal, ok := s.proposals[proposalID]
 	if !ok {
@@ -217,7 +217,7 @@ func (s *fakeStatusMirrorProposalStore) SetAcceptedAtOffset(_ context.Context, _
 func (s *fakeStatusMirrorProposalStore) CountRecentByDocumentAndStatus(
 	_ context.Context,
 	_ uuid.UUID,
-	_ collabModels.ProposalStatus,
+	_ collab.ProposalStatus,
 	_ time.Time,
 ) (int, error) {
 	return 0, nil

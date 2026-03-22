@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	skillModels "meridian/internal/domain/models/skill"
-	skillSvc "meridian/internal/domain/services/skill"
+	skill "meridian/internal/domain/skill"
 )
 
 // SkillInvokeToolMetadata returns metadata for the skill_invoke tool.
@@ -22,7 +21,7 @@ func SkillInvokeToolMetadata() *ToolMetadata {
 // BuildSkillInvokeGuideline enriches the skill_invoke guideline with available skills.
 // Called by the builder to compose runtime context into static metadata.
 // Filters out skills with DisableModelInvocation=true.
-func BuildSkillInvokeGuideline(skills []*skillModels.ProjectSkill) string {
+func BuildSkillInvokeGuideline(skills []*skill.ProjectSkill) string {
 	base := "Use skill_invoke when a task matches an available skill"
 
 	if len(skills) == 0 {
@@ -61,7 +60,7 @@ func SkillListToolMetadata() *ToolMetadata {
 type SkillInvokeTool struct {
 	projectID        string
 	userID           string
-	skillService     skillSvc.ProjectSkillService
+	skillService     skill.ProjectSkillService
 	isUserInvocation bool // True if user explicitly invoked via slash command
 	config           *ToolConfig
 }
@@ -70,7 +69,7 @@ type SkillInvokeTool struct {
 func NewSkillInvokeTool(
 	projectID string,
 	userID string,
-	skillService skillSvc.ProjectSkillService,
+	skillService skill.ProjectSkillService,
 	isUserInvocation bool,
 	config *ToolConfig,
 ) *SkillInvokeTool {
@@ -150,7 +149,7 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 type SkillListTool struct {
 	projectID    string
 	userID       string
-	skillService skillSvc.ProjectSkillService
+	skillService skill.ProjectSkillService
 	config       *ToolConfig
 }
 
@@ -158,7 +157,7 @@ type SkillListTool struct {
 func NewSkillListTool(
 	projectID string,
 	userID string,
-	skillService skillSvc.ProjectSkillService,
+	skillService skill.ProjectSkillService,
 	config *ToolConfig,
 ) *SkillListTool {
 	if config == nil {

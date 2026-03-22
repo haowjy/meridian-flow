@@ -14,16 +14,11 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	billingmodel "meridian/internal/domain/models/billing"
-	llmModels "meridian/internal/domain/models/llm"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	"meridian/internal/domain/services"
-	billingSvc "meridian/internal/domain/services/billing"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	llmSvc "meridian/internal/domain/services/llm"
-	skillSvc "meridian/internal/domain/services/skill"
+	authdomain "meridian/internal/domain/auth"
+	billing "meridian/internal/domain/billing"
+	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
+	skill "meridian/internal/domain/skill"
 	"meridian/internal/jobs"
 	"meridian/internal/pkg/sliceutil"
 	"meridian/internal/service/llm/formatting"
@@ -69,107 +64,220 @@ type ThreadValidator interface {
 
 // LLMProviderGetter provides access to LLM providers by model name
 type LLMProviderGetter interface {
-	GetProvider(model string) (llmSvc.LLMProvider, error)
+	GetProvider(model string) (domainllm.LLMProvider, error)
+}
+
+// --- Dependency structs for NewStreamingOrchestrator ---
+
+// PersistenceDeps groups repository dependencies for data access.
+type PersistenceDeps struct {
+	TurnWriter    domainllm.TurnWriter
+	TurnReader    domainllm.TurnReader
+	TurnNavigator domainllm.TurnNavigator
+	ThreadRepo    domainllm.ThreadStore
+	ProjectRepo   domaindocsys.ProjectStore // For validating project access on cold start
+	TxManager     domain.TransactionManager
+}
+
+// Validate checks that all persistence dependencies are provided.
+func (d PersistenceDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.TurnWriter, validation.Required),
+		validation.Field(&d.TurnReader, validation.Required),
+		validation.Field(&d.TurnNavigator, validation.Required),
+		validation.Field(&d.ThreadRepo, validation.Required),
+		validation.Field(&d.ProjectRepo, validation.Required),
+		validation.Field(&d.TxManager, validation.Required),
+	)
+}
+
+// ServiceDeps groups domain service dependencies used during streaming.
+type ServiceDeps struct {
+	DocumentSvc      domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
+	FolderSvc        domaindocsys.FolderService    // For tool operations (SOLID: DIP)
+	NamespaceSvc     domaindocsys.NamespaceService // For namespace routing in tools
+	SkillService     skill.ProjectSkillService     // For skill_invoke/skill_list tools
+	Validator        ThreadValidator
+	Authorizer       authdomain.ResourceAuthorizer
+	MutationStrategy tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+}
+
+// Validate checks that all service dependencies are provided.
+func (d ServiceDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.DocumentSvc, validation.Required),
+		validation.Field(&d.FolderSvc, validation.Required),
+		validation.Field(&d.NamespaceSvc, validation.Required),
+		validation.Field(&d.SkillService, validation.Required),
+		validation.Field(&d.Validator, validation.Required),
+		validation.Field(&d.Authorizer, validation.Required),
+		validation.Field(&d.MutationStrategy, validation.Required),
+	)
+}
+
+// PipelineDeps groups LLM pipeline dependencies (provider routing, prompt building, message formatting).
+type PipelineDeps struct {
+	ProviderGetter       LLMProviderGetter
+	Registry             *mstream.Registry
+	SystemPromptResolver domainllm.SystemPromptResolver
+	MessageBuilder       domainllm.MessageBuilder
+	CapabilityRegistry   *capabilities.Registry        // For checking model capabilities (e.g., supports_tools)
+	FormatterRegistry    *formatting.FormatterRegistry // For formatting synthetic tool results (ref transformer)
+}
+
+// Validate checks that all pipeline dependencies are provided.
+func (d PipelineDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.ProviderGetter, validation.Required),
+		validation.Field(&d.Registry, validation.Required),
+		validation.Field(&d.SystemPromptResolver, validation.Required),
+		validation.Field(&d.MessageBuilder, validation.Required),
+		validation.Field(&d.CapabilityRegistry, validation.Required),
+		validation.Field(&d.FormatterRegistry, validation.Required),
+	)
+}
+
+// BillingDeps groups billing and usage-tracking dependencies.
+type BillingDeps struct {
+	ToolLimitResolver      domainllm.ToolLimitResolver    // Resolves tool round limits (tier-ready)
+	TokenFinalizer         tokens.TokenFinalizer          // For finalizing tokens on completion/interruption
+	CreditAdmissionChecker billing.CreditAdmissionChecker // Pre-stream credit check
+	CreditSettler          billing.CreditSettler          // Post-stream credit settlement
+	SettlementMode         billing.CreditSettlementMode   // Settlement mode (sync/async)
+}
+
+// Validate checks that all billing dependencies are provided.
+func (d BillingDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.ToolLimitResolver, validation.Required),
+		validation.Field(&d.TokenFinalizer, validation.Required),
+		validation.Field(&d.CreditAdmissionChecker, validation.Required),
+		validation.Field(&d.CreditSettler, validation.Required),
+		validation.Field(
+			&d.SettlementMode,
+			validation.Required,
+			validation.In(
+				billing.CreditSettlementInlineAuthoritative,
+				billing.CreditSettlementDeferredToEnrichment,
+			),
+		),
+	)
+}
+
+// InfraDeps groups infrastructure dependencies (config, jobs, logging).
+type InfraDeps struct {
+	Config   *config.Config
+	JobQueue jobs.JobQueue // Background job queue for async operations
+	Logger   *slog.Logger
+}
+
+// Validate checks that all infrastructure dependencies are provided.
+func (d InfraDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.Config, validation.Required),
+		validation.Field(&d.JobQueue, validation.Required),
+		validation.Field(&d.Logger, validation.Required),
+	)
+}
+
+// StreamingDeps is the top-level dependency struct for NewStreamingOrchestrator.
+// Groups 5 sub-structs by concern so callers can see the shape of dependencies at a glance.
+type StreamingDeps struct {
+	Persistence PersistenceDeps
+	Services    ServiceDeps
+	Pipeline    PipelineDeps
+	Billing     BillingDeps
+	Infra       InfraDeps
+}
+
+// Validate checks all sub-structs recursively.
+func (d StreamingDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.Persistence),
+		validation.Field(&d.Services),
+		validation.Field(&d.Pipeline),
+		validation.Field(&d.Billing),
+		validation.Field(&d.Infra),
+	)
 }
 
 // Service implements the StreamingService interface
 // Handles turn creation and streaming orchestration
 // Uses minimal interfaces (ISP compliance): TurnWriter for creating turns, TurnReader for reading blocks
 type Service struct {
-	turnWriter             llmRepo.TurnWriter
-	turnReader             llmRepo.TurnReader
-	turnNavigator          llmRepo.TurnNavigator
-	threadRepo             llmRepo.ThreadRepository
-	projectRepo            docsysRepo.ProjectRepository // For validating project access on cold start
-	documentSvc            docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
-	folderSvc              docsysSvc.FolderService      // For tool operations (SOLID: DIP)
-	namespaceSvc           docsysSvc.NamespaceService   // For namespace routing in tools
-	skillService           skillSvc.ProjectSkillService // For skill_invoke/skill_list tools
+	turnWriter             domainllm.TurnWriter
+	turnReader             domainllm.TurnReader
+	turnNavigator          domainllm.TurnNavigator
+	threadRepo             domainllm.ThreadStore
+	projectRepo            domaindocsys.ProjectStore     // For validating project access on cold start
+	documentSvc            domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
+	folderSvc              domaindocsys.FolderService    // For tool operations (SOLID: DIP)
+	namespaceSvc           domaindocsys.NamespaceService // For namespace routing in tools
+	skillService           skill.ProjectSkillService     // For skill_invoke/skill_list tools
 	validator              ThreadValidator
-	authorizer             services.ResourceAuthorizer
+	authorizer             authdomain.ResourceAuthorizer
 	providerGetter         LLMProviderGetter
 	registry               *mstream.Registry
 	executorRegistry       *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
 	interjectionRegistry   *mstream.InterjectionRegistry // Tracks interjection buffers by turn ID
 	config                 *config.Config
-	txManager              repositories.TransactionManager
-	systemPromptResolver   llmSvc.SystemPromptResolver
-	messageBuilder         llmSvc.MessageBuilder
-	toolLimitResolver      llmSvc.ToolLimitResolver          // Resolves tool round limits (tier-ready)
-	capabilityRegistry     *capabilities.Registry            // For checking model capabilities (e.g., supports_tools)
-	formatterRegistry      *formatting.FormatterRegistry     // For formatting synthetic tool results (ref transformer)
-	tokenFinalizer         tokens.TokenFinalizer             // For finalizing tokens on completion/interruption
-	creditAdmissionChecker billingSvc.CreditAdmissionChecker // Wired in Phase 4; used by executor in Phase 5
-	creditSettler          billingSvc.CreditSettler          // Wired in Phase 4; used by executor in Phase 5
-	settlementMode         billingmodel.CreditSettlementMode // Wired in Phase 4; used by executor in Phase 5
-	jobQueue               jobs.JobQueue                     // NEW: Phase 2 - background job queue for async operations
-	mutationStrategy       tools.DocumentMutationStrategy    // Strategy for AI edit persistence (collab proposal)
-	userStreamTracker      *UserStreamTracker                // Per-user concurrent stream limiter
+	txManager              domain.TransactionManager
+	systemPromptResolver   domainllm.SystemPromptResolver
+	messageBuilder         domainllm.MessageBuilder
+	toolLimitResolver      domainllm.ToolLimitResolver    // Resolves tool round limits (tier-ready)
+	capabilityRegistry     *capabilities.Registry         // For checking model capabilities (e.g., supports_tools)
+	formatterRegistry      *formatting.FormatterRegistry  // For formatting synthetic tool results (ref transformer)
+	tokenFinalizer         tokens.TokenFinalizer          // For finalizing tokens on completion/interruption
+	creditAdmissionChecker billing.CreditAdmissionChecker // Wired in Phase 4; used by executor in Phase 5
+	creditSettler          billing.CreditSettler          // Wired in Phase 4; used by executor in Phase 5
+	settlementMode         billing.CreditSettlementMode   // Wired in Phase 4; used by executor in Phase 5
+	jobQueue               jobs.JobQueue                  // NEW: Phase 2 - background job queue for async operations
+	mutationStrategy       tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+	userStreamTracker      *UserStreamTracker             // Per-user concurrent stream limiter
 	logger                 *slog.Logger
 }
 
-// NewService creates a new streaming service
-func NewService(
-	turnWriter llmRepo.TurnWriter,
-	turnReader llmRepo.TurnReader,
-	turnNavigator llmRepo.TurnNavigator,
-	threadRepo llmRepo.ThreadRepository,
-	projectRepo docsysRepo.ProjectRepository,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
-	namespaceSvc docsysSvc.NamespaceService,
-	skillService skillSvc.ProjectSkillService,
-	validator ThreadValidator,
-	authorizer services.ResourceAuthorizer,
-	providerGetter LLMProviderGetter,
-	registry *mstream.Registry,
-	cfg *config.Config,
-	txManager repositories.TransactionManager,
-	systemPromptResolver llmSvc.SystemPromptResolver,
-	messageBuilder llmSvc.MessageBuilder,
-	toolLimitResolver llmSvc.ToolLimitResolver,
-	capabilityRegistry *capabilities.Registry,
-	formatterRegistry *formatting.FormatterRegistry,
-	tokenFinalizer tokens.TokenFinalizer,
-	creditAdmissionChecker billingSvc.CreditAdmissionChecker,
-	creditSettler billingSvc.CreditSettler,
-	settlementMode billingmodel.CreditSettlementMode,
-	jobQueue jobs.JobQueue,
-	mutationStrategy tools.DocumentMutationStrategy,
-	logger *slog.Logger,
-) llmSvc.StreamingService {
+var _ domainllm.StreamingService = (*Service)(nil)
+
+// NewStreamingOrchestrator creates a new streaming service using grouped dependency structs.
+// Validates all dependencies at construction time; returns an error if any are missing.
+func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, error) {
+	if err := deps.Validate(); err != nil {
+		return nil, fmt.Errorf("streaming orchestrator deps: %w", err)
+	}
+
 	return &Service{
-		turnWriter:             turnWriter,
-		turnReader:             turnReader,
-		turnNavigator:          turnNavigator,
-		threadRepo:             threadRepo,
-		projectRepo:            projectRepo,
-		documentSvc:            documentSvc,
-		folderSvc:              folderSvc,
-		namespaceSvc:           namespaceSvc,
-		skillService:           skillService,
-		validator:              validator,
-		authorizer:             authorizer,
-		providerGetter:         providerGetter,
-		registry:               registry,
+		turnWriter:             deps.Persistence.TurnWriter,
+		turnReader:             deps.Persistence.TurnReader,
+		turnNavigator:          deps.Persistence.TurnNavigator,
+		threadRepo:             deps.Persistence.ThreadRepo,
+		projectRepo:            deps.Persistence.ProjectRepo,
+		documentSvc:            deps.Services.DocumentSvc,
+		folderSvc:              deps.Services.FolderSvc,
+		namespaceSvc:           deps.Services.NamespaceSvc,
+		skillService:           deps.Services.SkillService,
+		validator:              deps.Services.Validator,
+		authorizer:             deps.Services.Authorizer,
+		providerGetter:         deps.Pipeline.ProviderGetter,
+		registry:               deps.Pipeline.Registry,
 		executorRegistry:       NewExecutorRegistry(),
 		interjectionRegistry:   mstream.NewInterjectionRegistry(),
-		config:                 cfg,
-		txManager:              txManager,
-		systemPromptResolver:   systemPromptResolver,
-		messageBuilder:         messageBuilder,
-		toolLimitResolver:      toolLimitResolver,
-		capabilityRegistry:     capabilityRegistry,
-		formatterRegistry:      formatterRegistry,
-		tokenFinalizer:         tokenFinalizer,
-		creditAdmissionChecker: creditAdmissionChecker,
-		creditSettler:          creditSettler,
-		settlementMode:         settlementMode,
-		jobQueue:               jobQueue,
-		mutationStrategy:       mutationStrategy,
-		userStreamTracker:      NewUserStreamTracker(cfg.MaxConcurrentStreamsFree, cfg.MaxConcurrentStreamsPaid),
-		logger:                 logger,
-	}
+		config:                 deps.Infra.Config,
+		txManager:              deps.Persistence.TxManager,
+		systemPromptResolver:   deps.Pipeline.SystemPromptResolver,
+		messageBuilder:         deps.Pipeline.MessageBuilder,
+		toolLimitResolver:      deps.Billing.ToolLimitResolver,
+		capabilityRegistry:     deps.Pipeline.CapabilityRegistry,
+		formatterRegistry:      deps.Pipeline.FormatterRegistry,
+		tokenFinalizer:         deps.Billing.TokenFinalizer,
+		creditAdmissionChecker: deps.Billing.CreditAdmissionChecker,
+		creditSettler:          deps.Billing.CreditSettler,
+		settlementMode:         deps.Billing.SettlementMode,
+		jobQueue:               deps.Infra.JobQueue,
+		mutationStrategy:       deps.Services.MutationStrategy,
+		userStreamTracker:      NewUserStreamTracker(deps.Infra.Config.LLM.MaxConcurrentStreamsFree, deps.Infra.Config.LLM.MaxConcurrentStreamsPaid),
+		logger:                 deps.Infra.Logger,
+	}, nil
 }
 
 // CreateTurn creates a new user turn and triggers assistant streaming response.
@@ -180,7 +288,7 @@ func NewService(
 // 2. Else if ThreadID provided -> use that thread
 // 3. Else if ProjectID provided -> create new thread (cold start, title from first text block)
 // 4. Else -> validation error
-func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmSvc.CreateTurnResponse, error) {
+func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnRequest) (*domainllm.CreateTurnResponse, error) {
 	// Normalize empty strings to nil
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
 		req.PrevTurnID = nil
@@ -219,7 +327,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	}
 
 	disabled := parseDisabledTools(project.Preferences)
-	toolNames := resolveServerToolNames(s.config.SearchAPIKey != "", disabled)
+	toolNames := resolveServerToolNames(s.config.LLM.SearchAPIKey != "", disabled)
 	toolsParam, err := toolNamesToRequestParamsTools(toolNames)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tools for request params: %w", err)
@@ -227,19 +335,19 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	requestParams["tools"] = toolsParam
 
 	// Validate request params first
-	if err := llmModels.ValidateRequestParams(requestParams); err != nil {
+	if err := domainllm.ValidateRequestParams(requestParams); err != nil {
 		s.logger.Error("invalid request params", "error", err)
 		return nil, fmt.Errorf("invalid request params: %w", err)
 	}
 
-	params, err := llmModels.GetRequestParamStruct(requestParams)
+	params, err := domainllm.GetRequestParamStruct(requestParams)
 	if err != nil {
 		s.logger.Error("failed to parse request params", "error", err)
 		return nil, fmt.Errorf("failed to parse request params: %w", err)
 	}
 
 	// Extract model from request_params (pure model name, no provider prefix)
-	model := s.config.DefaultModel
+	model := s.config.LLM.DefaultModel
 	if model == "" {
 		model = "moonshotai/kimi-k2-thinking" // Fallback if config not set
 	}
@@ -254,7 +362,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		provider = *params.Provider
 	} else {
 		// Try to infer provider from model name
-		if mappedProvider, found := llmModels.GetProviderForModel(model); found {
+		if mappedProvider, found := domainllm.GetProviderForModel(model); found {
 			provider = mappedProvider
 		} else {
 			// No mapping found - default to openrouter (has all models)
@@ -362,16 +470,16 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	// Create user turn + blocks and assistant turn atomically in a transaction
 	// If cold start, also create the thread in the same transaction
-	var turn *llmModels.Turn
-	var assistantTurn *llmModels.Turn
-	var createdThread *llmModels.Thread // Only set if we created a new thread
+	var turn *domainllm.Turn
+	var assistantTurn *domainllm.Turn
+	var createdThread *domainllm.Thread // Only set if we created a new thread
 	now := time.Now()
 
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 		// If cold start, create the thread first
 		if threadContext.isNewThread {
 			title := deriveTitleFromTurnBlocks(req.TurnBlocks)
-			createdThread = &llmModels.Thread{
+			createdThread = &domainllm.Thread{
 				ProjectID: threadContext.projectID,
 				UserID:    req.UserID,
 				Title:     title,
@@ -394,11 +502,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 		// Create user turn
 		// Store request_params on user turn so it's available when editing
-		turn = &llmModels.Turn{
+		turn = &domainllm.Turn{
 			ThreadID:      threadContext.threadID,
 			PrevTurnID:    req.PrevTurnID,
 			Role:          req.Role,
-			Status:        "complete", // User turn is immediately complete
+			Status:        domainllm.TurnStatusComplete, // User turn is immediately complete
 			RequestParams: requestParams,
 			CreatedAt:     now,
 		}
@@ -409,9 +517,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 		// Create content blocks if provided
 		if len(req.TurnBlocks) > 0 {
-			blocks := make([]llmModels.TurnBlock, len(req.TurnBlocks))
+			blocks := make([]domainllm.TurnBlock, len(req.TurnBlocks))
 			for i, blockInput := range req.TurnBlocks {
-				blocks[i] = llmModels.TurnBlock{
+				blocks[i] = domainllm.TurnBlock{
 					TurnID:      turn.ID,
 					BlockType:   blockInput.BlockType,
 					Sequence:    i,
@@ -430,11 +538,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		}
 
 		// Create assistant turn with status="streaming"
-		assistantTurn = &llmModels.Turn{
+		assistantTurn = &domainllm.Turn{
 			ThreadID:      threadContext.threadID,
 			PrevTurnID:    &turn.ID, // Assistant turn follows user turn
 			Role:          "assistant",
-			Status:        "streaming",
+			Status:        domainllm.TurnStatusStreaming,
 			Model:         &model,
 			RequestParams: requestParams,
 			CreatedAt:     time.Now(),
@@ -477,7 +585,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	// Get thread to extract project_id for tools
 	// If we just created the thread (cold start), use createdThread; otherwise fetch it
-	var thread *llmModels.Thread
+	var thread *domainllm.Thread
 	if createdThread != nil {
 		thread = createdThread
 	} else {
@@ -515,8 +623,8 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	// Check for provider-specific web search tools
 	if sliceutil.Contains(requestedTools, "tavily_web_search") {
-		if s.config.SearchAPIKey != "" {
-			searchClient := external.NewTavilyClient(s.config.SearchAPIKey)
+		if s.config.LLM.SearchAPIKey != "" {
+			searchClient := external.NewTavilyClient(s.config.LLM.SearchAPIKey)
 			builder.WithWebSearch(searchClient)
 			hasWebSearch = true
 			webSearchProvider = "tavily"
@@ -567,9 +675,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		s.logger.Warn("failed to get tool round limit, using config default",
 			"error", err,
 			"user_id", req.UserID,
-			"fallback_limit", s.config.MaxToolRounds,
+			"fallback_limit", s.config.LLM.MaxToolRounds,
 		)
-		toolRoundLimit = s.config.MaxToolRounds
+		toolRoundLimit = s.config.LLM.MaxToolRounds
 	}
 	settlementMode := s.resolveSettlementMode(provider)
 
@@ -597,13 +705,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		s.creditAdmissionChecker,
 		s.creditSettler,
 		settlementMode,
-		toolRoundLimit,                    // Per-user tool round limit (tier-ready)
-		s.config.Debug,                    // Pass DEBUG flag for optional event IDs
-		s.tokenFinalizer,                  // For finalizing tokens on completion/interruption
-		s.jobQueue,                        // Phase 2: Background job queue for async generation enrichment
-		s.config.SoftCancelTimeoutSeconds, // Timeout for soft cancel cleanup (default: 5 minutes)
-		interjectionBuffer,                // For user interjections during streaming
-		streamSwitchFn,                    // Callback for stream switch on interjection
+		toolRoundLimit,                        // Per-user tool round limit (tier-ready)
+		s.config.Server.Debug,                 // Pass DEBUG flag for optional event IDs
+		s.tokenFinalizer,                      // For finalizing tokens on completion/interruption
+		s.jobQueue,                            // Phase 2: Background job queue for async generation enrichment
+		s.config.LLM.SoftCancelTimeoutSeconds, // Timeout for soft cancel cleanup (default: 5 minutes)
+		interjectionBuffer,                    // For user interjections during streaming
+		streamSwitchFn,                        // Callback for stream switch on interjection
 	)
 
 	// Register stream in registry IMMEDIATELY
@@ -640,7 +748,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Return both turns and stream URL
 	// If cold start, also return the created thread
 	streamURL := fmt.Sprintf("/api/turns/%s/stream", assistantTurn.ID)
-	return &llmSvc.CreateTurnResponse{
+	return &domainllm.CreateTurnResponse{
 		Thread:        createdThread, // Only populated on cold start
 		UserTurn:      turn,
 		AssistantTurn: assistantTurn,
@@ -651,7 +759,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 // startStreamingExecution starts the streaming execution for an assistant turn.
 // This runs in a background goroutine and prepares the request before starting the stream.
 // The executor is already created and registered before this function is called.
-func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID, userID, projectID string, executor *StreamExecutor, params *llmModels.RequestParams) {
+func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID, userID, projectID string, executor *StreamExecutor, params *domainllm.RequestParams) {
 	s.logger.Debug("preparing streaming request",
 		"assistant_turn_id", assistantTurnID,
 	)
@@ -715,7 +823,7 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	}
 
 	// Build GenerateRequest
-	generateReq := &llmSvc.GenerateRequest{
+	generateReq := &domainllm.GenerateRequest{
 		Messages: messages,
 		Model:    executor.model,
 		Params:   params,
@@ -737,17 +845,17 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	// - Registry will clean up stream after retention period
 }
 
-func (s *Service) resolveSettlementMode(provider string) billingmodel.CreditSettlementMode {
+func (s *Service) resolveSettlementMode(provider string) billing.CreditSettlementMode {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "openrouter":
-		return billingmodel.CreditSettlementDeferredToEnrichment
+		return billing.CreditSettlementDeferredToEnrichment
 	case "anthropic":
-		return billingmodel.CreditSettlementInlineAuthoritative
+		return billing.CreditSettlementInlineAuthoritative
 	default:
 		if s.settlementMode != "" {
 			return s.settlementMode
 		}
-		return billingmodel.CreditSettlementInlineAuthoritative
+		return billing.CreditSettlementInlineAuthoritative
 	}
 }
 
@@ -763,7 +871,7 @@ func (s *Service) resolveSettlementMode(provider string) billingmodel.CreditSett
 //
 //	turn, err := s.CreateAssistantTurnDebug(ctx, threadID, userTurnID, blocks, "claude-haiku-4-5-20251001")
 //
-// The ResponseGenerator should:
+// The ProviderResolver should:
 // 1. Call this to create assistant turn with status="streaming"
 // 2. Stream response chunks and append content blocks incrementally
 // 3. Update turn status to "complete" when done
@@ -772,9 +880,9 @@ func (s *Service) CreateAssistantTurnDebug(
 	threadID string,
 	userID string,
 	prevTurnID *string,
-	contentBlocks []llmSvc.TurnBlockInput,
+	contentBlocks []domainllm.TurnBlockInput,
 	model string,
-) (*llmModels.Turn, error) {
+) (*domainllm.Turn, error) {
 	// Validate thread exists and is not deleted
 	if err := s.validator.ValidateThread(ctx, threadID, userID); err != nil {
 		return nil, err
@@ -790,11 +898,11 @@ func (s *Service) CreateAssistantTurnDebug(
 
 	// Create assistant turn
 	now := time.Now()
-	turn := &llmModels.Turn{
+	turn := &domainllm.Turn{
 		ThreadID:   threadID,
 		PrevTurnID: prevTurnID,
 		Role:       "assistant",
-		Status:     "streaming", // Start as streaming
+		Status:     domainllm.TurnStatusStreaming, // Start as streaming
 		Model:      &model,
 		CreatedAt:  now,
 	}
@@ -805,9 +913,9 @@ func (s *Service) CreateAssistantTurnDebug(
 
 	// Create initial content blocks if provided
 	if len(contentBlocks) > 0 {
-		blocks := make([]llmModels.TurnBlock, len(contentBlocks))
+		blocks := make([]domainllm.TurnBlock, len(contentBlocks))
 		for i, blockInput := range contentBlocks {
-			blocks[i] = llmModels.TurnBlock{
+			blocks[i] = domainllm.TurnBlock{
 				TurnID:      turn.ID,
 				BlockType:   blockInput.BlockType,
 				Sequence:    i,
@@ -856,7 +964,7 @@ func (s *Service) resolveSystemPromptForParams(
 	threadID string,
 	projectID string,
 	userID string,
-	params *llmModels.RequestParams,
+	params *domainllm.RequestParams,
 	selectedSkills []string,
 	toolSection string,
 ) error {
@@ -893,7 +1001,7 @@ type threadContext struct {
 // 2. Else if ThreadID provided -> validate and use that thread
 // 3. Else if ProjectID provided -> cold start (will create new thread)
 // 4. Else -> validation error
-func (s *Service) resolveThreadContext(ctx context.Context, req *llmSvc.CreateTurnRequest) (*threadContext, error) {
+func (s *Service) resolveThreadContext(ctx context.Context, req *domainllm.CreateTurnRequest) (*threadContext, error) {
 	// Case 1: PrevTurnID provided - infer thread from the turn
 	if req.PrevTurnID != nil {
 		prevTurn, err := s.turnReader.GetTurn(ctx, *req.PrevTurnID)
@@ -959,7 +1067,7 @@ func (s *Service) resolveThreadContext(ctx context.Context, req *llmSvc.CreateTu
 
 // Validation methods
 
-func (s *Service) validateCreateTurnRequest(req *llmSvc.CreateTurnRequest) error {
+func (s *Service) validateCreateTurnRequest(req *domainllm.CreateTurnRequest) error {
 	// Note: ThreadID validation is handled by resolveThreadContext, not here
 	return validation.ValidateStruct(req,
 		validation.Field(&req.Role,
@@ -971,7 +1079,7 @@ func (s *Service) validateCreateTurnRequest(req *llmSvc.CreateTurnRequest) error
 }
 
 func (s *Service) validateTurnBlock(value interface{}) error {
-	block, ok := value.(llmSvc.TurnBlockInput)
+	block, ok := value.(domainllm.TurnBlockInput)
 	if !ok {
 		return fmt.Errorf("invalid content block type")
 	}
@@ -998,7 +1106,7 @@ func (s *Service) validateTurnBlock(value interface{}) error {
 	}
 
 	// Validate content structure based on block type using typed schemas
-	if err := llmModels.ValidateContent(block.BlockType, block.Content); err != nil {
+	if err := domainllm.ValidateContent(block.BlockType, block.Content); err != nil {
 		return fmt.Errorf("invalid content for %s block: %w", block.BlockType, err)
 	}
 
@@ -1051,7 +1159,7 @@ func extractToolNames(requestParams map[string]interface{}) []string {
 // Returns first N words (default 6), truncated at MaxThreadTitleLength if needed.
 const defaultTitleMaxWords = 6
 
-func deriveTitleFromTurnBlocks(blocks []llmSvc.TurnBlockInput) string {
+func deriveTitleFromTurnBlocks(blocks []domainllm.TurnBlockInput) string {
 	// Find first text block with content
 	for _, block := range blocks {
 		if block.BlockType == "text" && block.TextContent != nil {
@@ -1117,7 +1225,7 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 		executor.RequestSoftCancel()
 
 		// Update turn status to cancelled (best-effort)
-		if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, "cancelled", nil); err != nil {
+		if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, domainllm.TurnStatusCancelled, nil); err != nil {
 			s.logger.Warn("failed to update turn status to cancelled",
 				"turn_id", turnID,
 				"error", err,
@@ -1138,7 +1246,7 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 	}
 
 	// Update turn status to cancelled
-	if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, "cancelled", nil); err != nil {
+	if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, domainllm.TurnStatusCancelled, nil); err != nil {
 		s.logger.Warn("failed to update turn status to cancelled",
 			"turn_id", turnID,
 			"error", err,
@@ -1190,7 +1298,7 @@ func (s *Service) getProviderFromModel(model string) string {
 // UpsertInterjection adds or updates an interjection for a streaming assistant turn.
 // If the turn is actively streaming, the interjection is buffered.
 // If not streaming (race condition), falls back to creating follow-up turns.
-func (s *Service) UpsertInterjection(ctx context.Context, userID string, assistantTurnID string, content string, mode string) (*llmSvc.UpsertInterjectionResponse, error) {
+func (s *Service) UpsertInterjection(ctx context.Context, userID string, assistantTurnID string, content string, mode string) (*domainllm.UpsertInterjectionResponse, error) {
 	if err := s.authorizer.CanAccessTurn(ctx, userID, assistantTurnID); err != nil {
 		return nil, err
 	}
@@ -1229,7 +1337,7 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 			"length", length,
 		)
 
-		return &llmSvc.UpsertInterjectionResponse{
+		return &domainllm.UpsertInterjectionResponse{
 			Mode:            "queued",
 			AssistantTurnID: assistantTurnID,
 			Content:         finalContent,
@@ -1259,12 +1367,12 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 	// Create follow-up turn using the existing CreateTurn flow
 	// The interjection becomes a regular user message
 	textContent := content
-	resp, err := s.CreateTurn(ctx, &llmSvc.CreateTurnRequest{
+	resp, err := s.CreateTurn(ctx, &domainllm.CreateTurnRequest{
 		ThreadID:   &turn.ThreadID,
 		PrevTurnID: &assistantTurnID, // Chain after the (now complete) assistant turn
 		UserID:     thread.UserID,
 		Role:       "user",
-		TurnBlocks: []llmSvc.TurnBlockInput{
+		TurnBlocks: []domainllm.TurnBlockInput{
 			{
 				BlockType:   "text",
 				TextContent: &textContent,
@@ -1277,7 +1385,7 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 		return nil, fmt.Errorf("failed to create follow-up turn: %w", err)
 	}
 
-	return &llmSvc.UpsertInterjectionResponse{
+	return &domainllm.UpsertInterjectionResponse{
 		Mode:             "created",
 		UserTurn:         resp.UserTurn,
 		NewAssistantTurn: resp.AssistantTurn,
@@ -1286,7 +1394,7 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 }
 
 // GetInterjection retrieves the current interjection state for an assistant turn.
-func (s *Service) GetInterjection(ctx context.Context, userID string, assistantTurnID string) (*llmSvc.GetInterjectionResponse, error) {
+func (s *Service) GetInterjection(ctx context.Context, userID string, assistantTurnID string) (*domainllm.GetInterjectionResponse, error) {
 	if err := s.authorizer.CanAccessTurn(ctx, userID, assistantTurnID); err != nil {
 		return nil, err
 	}
@@ -1303,7 +1411,7 @@ func (s *Service) GetInterjection(ctx context.Context, userID string, assistantT
 		}
 	}
 
-	return &llmSvc.GetInterjectionResponse{
+	return &domainllm.GetInterjectionResponse{
 		AssistantTurnID: assistantTurnID,
 		IsStreaming:     isStreaming,
 		Content:         content,
@@ -1337,7 +1445,7 @@ func (s *Service) createStreamSwitchFn(threadID, userID string, requestParams ma
 
 		// 1. Mark the current assistant turn as complete
 		// This ensures the turn graph is consistent before creating new turns
-		if err := s.turnWriter.UpdateTurnStatus(ctx, currentAssistantTurnID, "complete", nil); err != nil {
+		if err := s.turnWriter.UpdateTurnStatus(ctx, currentAssistantTurnID, domainllm.TurnStatusComplete, nil); err != nil {
 			s.logger.Error("failed to complete current turn during stream switch",
 				"turn_id", currentAssistantTurnID,
 				"error", err,
@@ -1348,12 +1456,12 @@ func (s *Service) createStreamSwitchFn(threadID, userID string, requestParams ma
 		// 2. Create follow-up turn using the existing CreateTurn flow
 		// The interjection becomes a regular user message
 		textContent := interjection
-		resp, err := s.CreateTurn(ctx, &llmSvc.CreateTurnRequest{
+		resp, err := s.CreateTurn(ctx, &domainllm.CreateTurnRequest{
 			ThreadID:   &threadID,
 			PrevTurnID: &currentAssistantTurnID, // Chain after the (now complete) assistant turn
 			UserID:     userID,
 			Role:       "user",
-			TurnBlocks: []llmSvc.TurnBlockInput{
+			TurnBlocks: []domainllm.TurnBlockInput{
 				{
 					BlockType:   "text",
 					TextContent: &textContent,

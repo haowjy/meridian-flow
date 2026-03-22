@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/httputil"
 )
 
@@ -16,13 +16,13 @@ import (
 //   - Merge: Upserts documents (creates new, optionally updates existing)
 //   - Replace: Deletes all project documents first, then imports
 type ImportHandler struct {
-	importService docsysSvc.ImportService
+	importService domaindocsys.ImportService
 	logger        *slog.Logger
 	config        *config.Config
 }
 
 // NewImportHandler creates a new import handler
-func NewImportHandler(importService docsysSvc.ImportService, logger *slog.Logger, cfg *config.Config) *ImportHandler {
+func NewImportHandler(importService domaindocsys.ImportService, logger *slog.Logger, cfg *config.Config) *ImportHandler {
 	return &ImportHandler{
 		importService: importService,
 		logger:        logger,
@@ -38,10 +38,10 @@ type importOptions struct {
 
 // ImportResponse represents the response for import operations
 type ImportResponse struct {
-	Success   bool                       `json:"success"`
-	Summary   docsysSvc.ImportSummary    `json:"summary"`
-	Errors    []docsysSvc.ImportError    `json:"errors"`
-	Documents []docsysSvc.ImportDocument `json:"documents"`
+	Success   bool                          `json:"success"`
+	Summary   domaindocsys.ImportSummary    `json:"summary"`
+	Errors    []domaindocsys.ImportError    `json:"errors"`
+	Documents []domaindocsys.ImportDocument `json:"documents"`
 }
 
 // Merge handles bulk import in merge mode (upserts documents).
@@ -131,7 +131,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 	// Convert uploaded files to UploadedFile slice.
 	// Note: defer file.Close() is safe here because all files are processed
 	// before this function returns.
-	uploadedFiles := make([]docsysSvc.UploadedFile, 0, len(files))
+	uploadedFiles := make([]domaindocsys.UploadedFile, 0, len(files))
 	for _, fileHeader := range files {
 		file, err := fileHeader.Open()
 		if err != nil {
@@ -144,7 +144,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 		}
 		defer func() { _ = file.Close() }() // Error ignored: file already processed
 
-		uploadedFiles = append(uploadedFiles, docsysSvc.UploadedFile{
+		uploadedFiles = append(uploadedFiles, domaindocsys.UploadedFile{
 			Filename: fileHeader.Filename,
 			Content:  file,
 		})

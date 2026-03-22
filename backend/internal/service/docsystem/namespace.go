@@ -7,9 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	models "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 var (
@@ -25,15 +23,15 @@ var (
 
 // namespaceService implements the NamespaceService interface
 type namespaceService struct {
-	folderRepo docsysRepo.FolderRepository
+	folderRepo domaindocsys.FolderStore
 	logger     *slog.Logger
 }
 
 // NewNamespaceService creates a new namespace service
 func NewNamespaceService(
-	folderRepo docsysRepo.FolderRepository,
+	folderRepo domaindocsys.FolderStore,
 	logger *slog.Logger,
-) docsysSvc.NamespaceService {
+) domaindocsys.NamespaceService {
 	return &namespaceService{
 		folderRepo: folderRepo,
 		logger:     logger,
@@ -80,7 +78,7 @@ func (s *namespaceService) NormalizePath(path string) (string, error) {
 
 // ParsePath extracts namespace and relative path from a normalized path
 // Only matches namespace at root level (foo/.meridian/bar is NOT in .meridian namespace)
-func (s *namespaceService) ParsePath(path string) (docsysSvc.Namespace, string, error) {
+func (s *namespaceService) ParsePath(path string) (domaindocsys.Namespace, string, error) {
 	// Normalize first
 	normalized, err := s.NormalizePath(path)
 	if err != nil {
@@ -88,38 +86,38 @@ func (s *namespaceService) ParsePath(path string) (docsysSvc.Namespace, string, 
 	}
 
 	// Root-only namespace detection
-	if normalized == string(docsysSvc.NamespaceMeridian) {
-		return docsysSvc.NamespaceMeridian, "", nil
+	if normalized == string(domaindocsys.NamespaceMeridian) {
+		return domaindocsys.NamespaceMeridian, "", nil
 	}
-	if strings.HasPrefix(normalized, string(docsysSvc.NamespaceMeridian)+"/") {
-		relPath := strings.TrimPrefix(normalized, string(docsysSvc.NamespaceMeridian)+"/")
-		return docsysSvc.NamespaceMeridian, relPath, nil
-	}
-
-	if normalized == string(docsysSvc.NamespaceSession) {
-		return docsysSvc.NamespaceSession, "", nil
-	}
-	if strings.HasPrefix(normalized, string(docsysSvc.NamespaceSession)+"/") {
-		relPath := strings.TrimPrefix(normalized, string(docsysSvc.NamespaceSession)+"/")
-		return docsysSvc.NamespaceSession, relPath, nil
+	if strings.HasPrefix(normalized, string(domaindocsys.NamespaceMeridian)+"/") {
+		relPath := strings.TrimPrefix(normalized, string(domaindocsys.NamespaceMeridian)+"/")
+		return domaindocsys.NamespaceMeridian, relPath, nil
 	}
 
-	if normalized == string(docsysSvc.NamespaceAgents) {
-		return docsysSvc.NamespaceAgents, "", nil
+	if normalized == string(domaindocsys.NamespaceSession) {
+		return domaindocsys.NamespaceSession, "", nil
 	}
-	if strings.HasPrefix(normalized, string(docsysSvc.NamespaceAgents)+"/") {
-		relPath := strings.TrimPrefix(normalized, string(docsysSvc.NamespaceAgents)+"/")
-		return docsysSvc.NamespaceAgents, relPath, nil
+	if strings.HasPrefix(normalized, string(domaindocsys.NamespaceSession)+"/") {
+		relPath := strings.TrimPrefix(normalized, string(domaindocsys.NamespaceSession)+"/")
+		return domaindocsys.NamespaceSession, relPath, nil
+	}
+
+	if normalized == string(domaindocsys.NamespaceAgents) {
+		return domaindocsys.NamespaceAgents, "", nil
+	}
+	if strings.HasPrefix(normalized, string(domaindocsys.NamespaceAgents)+"/") {
+		relPath := strings.TrimPrefix(normalized, string(domaindocsys.NamespaceAgents)+"/")
+		return domaindocsys.NamespaceAgents, relPath, nil
 	}
 
 	// Default space namespace
-	return docsysSvc.NamespaceWorkspace, normalized, nil
+	return domaindocsys.NamespaceWorkspace, normalized, nil
 }
 
 // EnsureMeridianFolder creates /.meridian/ folder if it doesn't exist.
 // Deprecated: keep until skills migrate off /.meridian.
-func (s *namespaceService) EnsureMeridianFolder(ctx context.Context, projectID string) (*models.Folder, error) {
-	folder, err := s.folderRepo.CreateSystemIfNotExists(ctx, projectID, string(docsysSvc.NamespaceMeridian), nil)
+func (s *namespaceService) EnsureMeridianFolder(ctx context.Context, projectID string) (*domaindocsys.Folder, error) {
+	folder, err := s.folderRepo.CreateSystemIfNotExists(ctx, projectID, string(domaindocsys.NamespaceMeridian), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +132,7 @@ func (s *namespaceService) EnsureMeridianFolder(ctx context.Context, projectID s
 
 // EnsureMeridianSubfolder creates /.meridian/<name>/ subfolder if it doesn't exist.
 // Deprecated: keep until skills migrate off /.meridian.
-func (s *namespaceService) EnsureMeridianSubfolder(ctx context.Context, projectID, name string) (*models.Folder, error) {
+func (s *namespaceService) EnsureMeridianSubfolder(ctx context.Context, projectID, name string) (*domaindocsys.Folder, error) {
 	// First ensure parent .meridian folder exists
 	meridianFolder, err := s.EnsureMeridianFolder(ctx, projectID)
 	if err != nil {

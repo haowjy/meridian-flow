@@ -5,17 +5,17 @@ import (
 	"log/slog"
 	"os"
 
-	skillSvc "meridian/internal/domain/services/skill"
+	skill "meridian/internal/domain/skill"
 )
 
 // SkillSeeder handles seeding of project skills via the service layer
 type SkillSeeder struct {
-	skillService skillSvc.ProjectSkillService
+	skillService skill.ProjectSkillService
 	logger       *slog.Logger
 }
 
 // NewSkillSeeder creates a new skill seeder
-func NewSkillSeeder(skillService skillSvc.ProjectSkillService, logger *slog.Logger) *SkillSeeder {
+func NewSkillSeeder(skillService skill.ProjectSkillService, logger *slog.Logger) *SkillSeeder {
 	return &SkillSeeder{
 		skillService: skillService,
 		logger:       logger,
@@ -44,7 +44,7 @@ func (s *SkillSeeder) SeedSkills(ctx context.Context, projectID, userID string) 
 	}
 
 	// Create skill via service layer (creates folder + DB record)
-	_, err = s.skillService.CreateSkill(ctx, userID, skillSvc.CreateSkillRequest{
+	_, err = s.skillService.CreateSkill(ctx, userID, skill.CreateSkillRequest{
 		ProjectID:     projectID,
 		Name:          "test-skill",
 		Description:   "Test Skill - Verification Skill",

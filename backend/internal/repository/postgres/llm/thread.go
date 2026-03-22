@@ -8,12 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/repository/postgres"
 )
 
-// PostgresThreadRepository implements the ThreadRepository interface using PostgreSQL
+// PostgresThreadRepository implements the ThreadStore interface using PostgreSQL
 type PostgresThreadRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
@@ -21,7 +20,7 @@ type PostgresThreadRepository struct {
 }
 
 // NewThreadRepository creates a new PostgresThreadRepository
-func NewThreadRepository(config *postgres.RepositoryConfig) llmRepo.ThreadRepository {
+func NewThreadRepository(config *postgres.RepositoryConfig) domainllm.ThreadStore {
 	return &PostgresThreadRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -30,7 +29,7 @@ func NewThreadRepository(config *postgres.RepositoryConfig) llmRepo.ThreadReposi
 }
 
 // CreateThread creates a new thread session
-func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *llmModels.Thread) error {
+func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *domainllm.Thread) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (project_id, user_id, title, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -84,14 +83,14 @@ func (r *PostgresThreadRepository) getExistingThreadID(ctx context.Context, proj
 }
 
 // GetThread retrieves a thread by ID (scoped to user)
-func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, userID string) (*llmModels.Thread, error) {
+func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`, r.tables.Threads)
 
-	var thread llmModels.Thread
+	var thread domainllm.Thread
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, threadID, userID).Scan(
 		&thread.ID,
@@ -117,14 +116,14 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 
 // GetThreadByIDOnly retrieves a thread by UUID only (no user scoping)
 // Used by ResourceAuthorizer when authorization is handled separately
-func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, threadID string) (*llmModels.Thread, error) {
+func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, threadID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Threads)
 
-	var thread llmModels.Thread
+	var thread domainllm.Thread
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, threadID).Scan(
 		&thread.ID,
@@ -149,7 +148,7 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 }
 
 // ListThreadsByProject retrieves all threads for a project
-func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, projectID, userID string) ([]llmModels.Thread, error) {
+func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, projectID, userID string) ([]domainllm.Thread, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
 		FROM %s
@@ -164,9 +163,9 @@ func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, pro
 	}
 	defer rows.Close()
 
-	var threads []llmModels.Thread
+	var threads []domainllm.Thread
 	for rows.Next() {
-		var thread llmModels.Thread
+		var thread domainllm.Thread
 		err := rows.Scan(
 			&thread.ID,
 			&thread.ProjectID,
@@ -190,14 +189,14 @@ func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, pro
 
 	// Return empty slice instead of nil
 	if threads == nil {
-		threads = []llmModels.Thread{}
+		threads = []domainllm.Thread{}
 	}
 
 	return threads, nil
 }
 
 // UpdateThread updates a thread's mutable fields
-func (r *PostgresThreadRepository) UpdateThread(ctx context.Context, thread *llmModels.Thread) error {
+func (r *PostgresThreadRepository) UpdateThread(ctx context.Context, thread *domainllm.Thread) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET title = $1, system_prompt = $2, last_viewed_turn_id = $3, updated_at = $4
@@ -272,7 +271,7 @@ func (r *PostgresThreadRepository) UpdateLastViewedTurn(ctx context.Context, thr
 }
 
 // DeleteThread soft-deletes a thread
-func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, userID string) (*llmModels.Thread, error) {
+func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
@@ -283,7 +282,7 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 	executor := postgres.GetExecutor(ctx, r.pool)
 	row := executor.QueryRow(ctx, query, threadID, userID)
 
-	var thread llmModels.Thread
+	var thread domainllm.Thread
 	err := row.Scan(
 		&thread.ID,
 		&thread.ProjectID,
@@ -306,7 +305,7 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 }
 
 // GetThreadTree retrieves the lightweight tree structure for cache validation
-func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, userID string) (*llmModels.ThreadTree, error) {
+func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, userID string) (*domainllm.ThreadTree, error) {
 	// First verify thread exists and user has access
 	threadQuery := fmt.Sprintf(`
 		SELECT updated_at
@@ -362,9 +361,9 @@ func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, 
 	}
 	defer rows.Close()
 
-	var nodes []llmModels.TurnTreeNode
+	var nodes []domainllm.TurnTreeNode
 	for rows.Next() {
-		var node llmModels.TurnTreeNode
+		var node domainllm.TurnTreeNode
 		err := rows.Scan(&node.ID, &node.PrevTurnID)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn node: %w", err)
@@ -378,10 +377,10 @@ func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, 
 
 	// Return empty slice if no turns (not nil)
 	if nodes == nil {
-		nodes = []llmModels.TurnTreeNode{}
+		nodes = []domainllm.TurnTreeNode{}
 	}
 
-	return &llmModels.ThreadTree{
+	return &domainllm.ThreadTree{
 		Turns:     nodes,
 		UpdatedAt: updatedAt,
 	}, nil

@@ -9,8 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/skill"
-	skillRepo "meridian/internal/domain/repositories/skill"
+	skill "meridian/internal/domain/skill"
 	"meridian/internal/repository/postgres"
 )
 
@@ -20,8 +19,10 @@ type PostgresProjectSkillRepository struct {
 	tables *postgres.TableNames
 }
 
+var _ skill.ProjectSkillStore = (*PostgresProjectSkillRepository)(nil)
+
 // NewProjectSkillRepository creates a new project skill repository
-func NewProjectSkillRepository(config *postgres.RepositoryConfig) skillRepo.ProjectSkillRepository {
+func NewProjectSkillRepository(config *postgres.RepositoryConfig) skill.ProjectSkillStore {
 	return &PostgresProjectSkillRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -29,7 +30,7 @@ func NewProjectSkillRepository(config *postgres.RepositoryConfig) skillRepo.Proj
 }
 
 // Create creates a new project skill
-func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *models.ProjectSkill) error {
+func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *skill.ProjectSkill) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			project_id, instance_folder_id, name, description, content, position, enabled,
@@ -48,7 +49,7 @@ func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *mode
 		skill.Description,
 		skill.Content,
 		skill.Position,
-		skill.Enabled, // enabled defaults to true via DB constraint
+		skill.Enabled,  // enabled defaults to true via DB constraint
 		skill.Metadata, // pgx handles map[string]interface{} -> JSONB automatically
 		skill.SourceTemplateVersionID,
 		skill.SyncState,
@@ -97,7 +98,7 @@ func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *mode
 }
 
 // GetByID retrieves a skill by ID with project scoping
-func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projectID string) (*models.ProjectSkill, error) {
+func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projectID string) (*skill.ProjectSkill, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
@@ -107,7 +108,7 @@ func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projec
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.ProjectSkills)
 
-	var skill models.ProjectSkill
+	var skill skill.ProjectSkill
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, id, projectID).Scan(
 		&skill.ID,
@@ -139,7 +140,7 @@ func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projec
 }
 
 // GetByName retrieves a skill by name with project scoping
-func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, projectID string) (*models.ProjectSkill, error) {
+func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, projectID string) (*skill.ProjectSkill, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
@@ -149,7 +150,7 @@ func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, pr
 		WHERE name = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.ProjectSkills)
 
-	var skill models.ProjectSkill
+	var skill skill.ProjectSkill
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, name, projectID).Scan(
 		&skill.ID,
@@ -181,7 +182,7 @@ func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, pr
 }
 
 // ListByProject lists all skills for a project (ordered by position)
-func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, projectID string) ([]*models.ProjectSkill, error) {
+func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, projectID string) ([]*skill.ProjectSkill, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
@@ -199,9 +200,9 @@ func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, proj
 	}
 	defer rows.Close()
 
-	var skills []*models.ProjectSkill
+	var skills []*skill.ProjectSkill
 	for rows.Next() {
-		var skill models.ProjectSkill
+		var skill skill.ProjectSkill
 		err := rows.Scan(
 			&skill.ID,
 			&skill.ProjectID,
@@ -233,7 +234,7 @@ func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, proj
 }
 
 // Update updates an existing skill
-func (r *PostgresProjectSkillRepository) Update(ctx context.Context, skill *models.ProjectSkill) error {
+func (r *PostgresProjectSkillRepository) Update(ctx context.Context, skill *skill.ProjectSkill) error {
 	skill.UpdatedAt = time.Now()
 
 	query := fmt.Sprintf(`

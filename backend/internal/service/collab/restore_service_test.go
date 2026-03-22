@@ -9,9 +9,8 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 const testRestoreUserID = "user-123"
@@ -73,7 +72,7 @@ func TestRestoreServiceRestoreTurn_CreatesSafetyBookmarksRestoresStateAndReconci
 	})
 
 	bookmarkStore := &fakeRestoreBookmarkStore{
-		listByTurn: []collabSvc.Bookmark{
+		listByTurn: []collab.Bookmark{
 			{
 				ID:           bookmarkID,
 				DocumentID:   docIDStr,
@@ -179,7 +178,7 @@ func TestRestoreServiceUndoRestore_SortsDocumentsAndSkipsSafetyBookmarkCreation(
 	docB := uuid.MustParse("99999999-9999-9999-9999-999999999999")
 
 	bookmarkStore := &fakeRestoreBookmarkStore{
-		listByTurn: []collabSvc.Bookmark{
+		listByTurn: []collab.Bookmark{
 			{
 				ID:           "bookmark-b",
 				DocumentID:   docB.String(),
@@ -268,16 +267,16 @@ func (a *fakeRestoreAuthorizer) CanAccessTurn(_ context.Context, userID, turnID 
 	return a.err
 }
 
-var _ services.ResourceAuthorizer = (*fakeRestoreAuthorizer)(nil)
+var _ authdomain.ResourceAuthorizer = (*fakeRestoreAuthorizer)(nil)
 
 type fakeRestoreBookmarkStore struct {
-	listByTurn          []collabSvc.Bookmark
+	listByTurn          []collab.Bookmark
 	statesByBookmarkID  map[string][]byte
-	createCalls         []collabSvc.Bookmark
+	createCalls         []collab.Bookmark
 	dedupCreateBookmark map[string]struct{}
 }
 
-func (s *fakeRestoreBookmarkStore) Create(_ context.Context, bookmark *collabSvc.Bookmark) error {
+func (s *fakeRestoreBookmarkStore) Create(_ context.Context, bookmark *collab.Bookmark) error {
 	if s.dedupCreateBookmark == nil {
 		s.dedupCreateBookmark = make(map[string]struct{})
 	}
@@ -296,11 +295,11 @@ func (s *fakeRestoreBookmarkStore) Create(_ context.Context, bookmark *collabSvc
 	return nil
 }
 
-func (s *fakeRestoreBookmarkStore) ListByDocumentAndType(_ context.Context, _, _ string) ([]collabSvc.Bookmark, error) {
+func (s *fakeRestoreBookmarkStore) ListByDocumentAndType(_ context.Context, _, _ string) ([]collab.Bookmark, error) {
 	return nil, nil
 }
 
-func (s *fakeRestoreBookmarkStore) ListByTurnID(_ context.Context, _ string) ([]collabSvc.Bookmark, error) {
+func (s *fakeRestoreBookmarkStore) ListByTurnID(_ context.Context, _ string) ([]collab.Bookmark, error) {
 	return s.listByTurn, nil
 }
 
@@ -410,7 +409,7 @@ func (s *fakeRestoreUpdateLogStore) GetNthOldestUpdateID(_ context.Context, _ st
 	return 0, nil
 }
 
-func (s *fakeRestoreUpdateLogStore) ListUpdatesInRange(_ context.Context, _ string, _ int64, _ int64) ([]collabSvc.UpdateLogEntry, error) {
+func (s *fakeRestoreUpdateLogStore) ListUpdatesInRange(_ context.Context, _ string, _ int64, _ int64) ([]collab.UpdateLogEntry, error) {
 	return nil, nil
 }
 
@@ -469,6 +468,6 @@ func (s *fakeRestoreBroadcaster) BroadcastDocumentRestored(documentID string) {
 
 type fakeRestoreTxManager struct{}
 
-func (f *fakeRestoreTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
+func (f *fakeRestoreTxManager) ExecTx(ctx context.Context, fn domain.TxFn) error {
 	return fn(ctx)
 }

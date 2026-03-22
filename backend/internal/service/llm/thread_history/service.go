@@ -5,31 +5,29 @@ import (
 	"fmt"
 
 	"meridian/internal/capabilities"
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	"meridian/internal/domain/services"
-	llmSvc "meridian/internal/domain/services/llm"
+	authdomain "meridian/internal/domain/auth"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // Service implements the ThreadHistoryService interface
 // Handles thread history and navigation operations
 // Uses minimal interfaces (TurnReader, TurnNavigator) for better ISP compliance
 type Service struct {
-	threadRepo         llmRepo.ThreadRepository
-	turnReader         llmRepo.TurnReader
-	turnNavigator      llmRepo.TurnNavigator
+	threadRepo         domainllm.ThreadStore
+	turnReader         domainllm.TurnReader
+	turnNavigator      domainllm.TurnNavigator
 	capabilityRegistry *capabilities.Registry
-	authorizer         services.ResourceAuthorizer
+	authorizer         authdomain.ResourceAuthorizer
 }
 
 // NewService creates a new thread history service
 func NewService(
-	threadRepo llmRepo.ThreadRepository,
-	turnReader llmRepo.TurnReader,
-	turnNavigator llmRepo.TurnNavigator,
+	threadRepo domainllm.ThreadStore,
+	turnReader domainllm.TurnReader,
+	turnNavigator domainllm.TurnNavigator,
 	capabilityRegistry *capabilities.Registry,
-	authorizer services.ResourceAuthorizer,
-) llmSvc.ThreadHistoryService {
+	authorizer authdomain.ResourceAuthorizer,
+) domainllm.ThreadHistoryService {
 	return &Service{
 		threadRepo:         threadRepo,
 		turnReader:         turnReader,
@@ -41,7 +39,7 @@ func NewService(
 
 // GetTurnPath retrieves the turn path from a turn to root
 // Authorization is checked first via the injected authorizer
-func (s *Service) GetTurnPath(ctx context.Context, userID, turnID string) ([]llmModels.Turn, error) {
+func (s *Service) GetTurnPath(ctx context.Context, userID, turnID string) ([]domainllm.Turn, error) {
 	// Authorize: check user can access this turn
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
 		return nil, err
@@ -72,7 +70,7 @@ func (s *Service) GetTurnPath(ctx context.Context, userID, turnID string) ([]llm
 				turns[i].Blocks = blocks
 			} else {
 				// No blocks found for this turn, set empty slice
-				turns[i].Blocks = []llmModels.TurnBlock{}
+				turns[i].Blocks = []domainllm.TurnBlock{}
 			}
 		}
 	}
@@ -82,7 +80,7 @@ func (s *Service) GetTurnPath(ctx context.Context, userID, turnID string) ([]llm
 
 // GetTurnSiblings retrieves all sibling turns (including self) with blocks
 // Authorization is checked first via the injected authorizer
-func (s *Service) GetTurnSiblings(ctx context.Context, userID, turnID string) ([]llmModels.Turn, error) {
+func (s *Service) GetTurnSiblings(ctx context.Context, userID, turnID string) ([]domainllm.Turn, error) {
 	// Authorize: check user can access this turn
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
 		return nil, err
@@ -92,7 +90,7 @@ func (s *Service) GetTurnSiblings(ctx context.Context, userID, turnID string) ([
 }
 
 // GetThreadTree retrieves the lightweight tree structure for cache validation
-func (s *Service) GetThreadTree(ctx context.Context, threadID, userID string) (*llmModels.ThreadTree, error) {
+func (s *Service) GetThreadTree(ctx context.Context, threadID, userID string) (*domainllm.ThreadTree, error) {
 	tree, err := s.threadRepo.GetThreadTree(ctx, threadID, userID)
 	if err != nil {
 		return nil, err
@@ -102,7 +100,7 @@ func (s *Service) GetThreadTree(ctx context.Context, threadID, userID string) (*
 }
 
 // GetPaginatedTurns retrieves turns and blocks in paginated fashion
-func (s *Service) GetPaginatedTurns(ctx context.Context, threadID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llmModels.PaginatedTurnsResponse, error) {
+func (s *Service) GetPaginatedTurns(ctx context.Context, threadID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*domainllm.PaginatedTurnsResponse, error) {
 	// Delegate to repository (validation happens there)
 	response, err := s.turnNavigator.GetPaginatedTurns(ctx, threadID, userID, fromTurnID, limit, direction, updateLastViewed)
 	if err != nil {
@@ -114,7 +112,7 @@ func (s *Service) GetPaginatedTurns(ctx context.Context, threadID, userID string
 
 // GetTurnWithBlocks retrieves a turn's metadata and all its content blocks
 // Authorization is checked first via the injected authorizer
-func (s *Service) GetTurnWithBlocks(ctx context.Context, userID, turnID string) (*llmModels.Turn, error) {
+func (s *Service) GetTurnWithBlocks(ctx context.Context, userID, turnID string) (*domainllm.Turn, error) {
 	// Authorize: check user can access this turn
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
 		return nil, err
@@ -140,7 +138,7 @@ func (s *Service) GetTurnWithBlocks(ctx context.Context, userID, turnID string) 
 
 // GetTurnTokenUsage retrieves token usage statistics for a turn
 // Authorization is checked first via the injected authorizer
-func (s *Service) GetTurnTokenUsage(ctx context.Context, userID, turnID string) (*llmModels.TokenUsageInfo, error) {
+func (s *Service) GetTurnTokenUsage(ctx context.Context, userID, turnID string) (*domainllm.TokenUsageInfo, error) {
 	// Authorize: check user can access this turn
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
 		return nil, err
@@ -153,7 +151,7 @@ func (s *Service) GetTurnTokenUsage(ctx context.Context, userID, turnID string) 
 	}
 
 	// Initialize response
-	info := &llmModels.TokenUsageInfo{
+	info := &domainllm.TokenUsageInfo{
 		TurnID:       turnID,
 		InputTokens:  turn.InputTokens,
 		OutputTokens: turn.OutputTokens,

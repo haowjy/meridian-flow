@@ -6,26 +6,25 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/models/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
-// PathResolver handles resolution of folder paths to folder IDs.
+// DocumentPathResolver handles resolution of folder paths to folder IDs.
 // Uses FolderService for all data access (SOLID: DIP - depends on service interface).
-type PathResolver struct {
+type DocumentPathResolver struct {
 	projectID string
 	userID    string
-	folderSvc docsysSvc.FolderService
+	folderSvc domaindocsys.FolderService
 }
 
-// NewPathResolver creates a new PathResolver instance.
+// NewPathResolver creates a new DocumentPathResolver instance.
 // Uses service interface for all data access (SOLID: DIP - depends on interfaces, not concretions).
 func NewPathResolver(
 	projectID string,
 	userID string,
-	folderSvc docsysSvc.FolderService,
-) *PathResolver {
-	return &PathResolver{
+	folderSvc domaindocsys.FolderService,
+) *DocumentPathResolver {
+	return &DocumentPathResolver{
 		projectID: projectID,
 		userID:    userID,
 		folderSvc: folderSvc,
@@ -39,7 +38,7 @@ func NewPathResolver(
 //   - "" or "/" -> returns (nil, "/", nil) for root folder
 //   - "novels/chapter1" -> returns (&folderId, "/novels/chapter1", nil)
 //   - "nonexistent" -> returns (nil, "", ErrNotFound)
-func (r *PathResolver) ResolveFolderPath(ctx context.Context, path string) (*string, string, error) {
+func (r *DocumentPathResolver) ResolveFolderPath(ctx context.Context, path string) (*string, string, error) {
 	// Normalize path
 	path = strings.Trim(path, "/")
 	if path == "" {
@@ -78,7 +77,7 @@ func (r *PathResolver) ResolveFolderPath(ctx context.Context, path string) (*str
 
 // findFolderByName finds a folder by name within a parent folder.
 // Uses FolderService.ListChildren which returns both folders and documents.
-func (r *PathResolver) findFolderByName(ctx context.Context, parentID *string, name string) (*docsystem.Folder, error) {
+func (r *DocumentPathResolver) findFolderByName(ctx context.Context, parentID *string, name string) (*domaindocsys.Folder, error) {
 	// Get folder contents using service layer (returns both folders and documents)
 	contents, err := r.folderSvc.ListChildren(ctx, r.userID, parentID, r.projectID)
 	if err != nil {

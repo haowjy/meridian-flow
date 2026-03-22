@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresFolderRepository implements the FolderRepository interface
+// PostgresFolderRepository implements the FolderStore interface
 type PostgresFolderRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
@@ -24,7 +23,7 @@ type PostgresFolderRepository struct {
 const folderSelectColumns = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at"
 
 // NewFolderRepository creates a new folder repository
-func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRepository {
+func NewFolderRepository(config *postgres.RepositoryConfig) domaindocsys.FolderStore {
 	return &PostgresFolderRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -32,7 +31,7 @@ func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRep
 }
 
 // Create creates a new folder (is_hidden defaults to false)
-func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Folder) error {
+func (r *PostgresFolderRepository) Create(ctx context.Context, folder *domaindocsys.Folder) error {
 	folder.EnsureMetadata()
 
 	// Guard against duplicates at the application level
@@ -114,13 +113,13 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 }
 
 // CreateHidden creates a new hidden folder (e.g., for /.meridian/)
-func (r *PostgresFolderRepository) CreateHidden(ctx context.Context, folder *models.Folder) error {
+func (r *PostgresFolderRepository) CreateHidden(ctx context.Context, folder *domaindocsys.Folder) error {
 	folder.IsHidden = true
 	return r.Create(ctx, folder)
 }
 
 // CreateSystemIfNotExists creates a root-level system folder only if it doesn't exist.
-func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, projectID, name string, autoapply *bool) (*models.Folder, error) {
+func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, projectID, name string, autoapply *bool) (*domaindocsys.Folder, error) {
 	existing, err := r.getFolderByNameAndParent(ctx, projectID, name, nil)
 	if err != nil {
 		return nil, err
@@ -130,7 +129,7 @@ func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, 
 	}
 
 	now := time.Now()
-	folder := &models.Folder{
+	folder := &domaindocsys.Folder{
 		ProjectID:   projectID,
 		Name:        name,
 		IsHidden:    true,
@@ -150,14 +149,14 @@ func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, 
 }
 
 // GetByID retrieves a folder by ID
-func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID string) (*domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, folderSelectColumns, r.tables.Folders)
 
-	var folder models.Folder
+	var folder domaindocsys.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanFolder(executor.QueryRow(ctx, query, id, projectID), &folder)
 
@@ -174,14 +173,14 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 
 // GetByIDOnly retrieves a folder by UUID only (no project scoping)
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
-func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (*domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, folderSelectColumns, r.tables.Folders)
 
-	var folder models.Folder
+	var folder domaindocsys.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanFolder(executor.QueryRow(ctx, query, id), &folder)
 
@@ -197,7 +196,7 @@ func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (
 }
 
 // Update updates a folder
-func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Folder) error {
+func (r *PostgresFolderRepository) Update(ctx context.Context, folder *domaindocsys.Folder) error {
 	folder.EnsureMetadata()
 
 	query := fmt.Sprintf(`
@@ -293,7 +292,7 @@ func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID str
 
 // ListChildren lists immediate child folders
 // If opts is nil, uses default options (IncludeHidden: false)
-func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *string, projectID string, opts *docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *string, projectID string, opts *domaindocsys.FolderFilterOptions) ([]domaindocsys.Folder, error) {
 	// Default: exclude hidden folders (e.g., .meridian)
 	includeHidden := false
 	if opts != nil {
@@ -332,9 +331,9 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 	}
 	defer rows.Close()
 
-	var folders []models.Folder
+	var folders []domaindocsys.Folder
 	for rows.Next() {
-		var folder models.Folder
+		var folder domaindocsys.Folder
 		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
@@ -350,7 +349,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 }
 
 // CreateIfNotExists creates a folder only if it doesn't exist
-func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*domaindocsys.Folder, error) {
 	// Check if folder already exists
 	existing, err := r.getFolderByNameAndParent(ctx, projectID, name, parentID)
 	if err != nil {
@@ -362,7 +361,7 @@ func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projec
 
 	// Create new folder
 	now := time.Now()
-	folder := &models.Folder{
+	folder := &domaindocsys.Folder{
 		ProjectID: projectID,
 		ParentID:  parentID,
 		Name:      name,
@@ -379,7 +378,7 @@ func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projec
 }
 
 // CreateHiddenIfNotExists creates a hidden folder only if it doesn't exist
-func (r *PostgresFolderRepository) CreateHiddenIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) CreateHiddenIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*domaindocsys.Folder, error) {
 	// Check if folder already exists
 	existing, err := r.getFolderByNameAndParent(ctx, projectID, name, parentID)
 	if err != nil {
@@ -391,7 +390,7 @@ func (r *PostgresFolderRepository) CreateHiddenIfNotExists(ctx context.Context, 
 
 	// Create new hidden folder
 	now := time.Now()
-	folder := &models.Folder{
+	folder := &domaindocsys.Folder{
 		ProjectID: projectID,
 		ParentID:  parentID,
 		Name:      name,
@@ -444,7 +443,7 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 }
 
 // GetAllByProject retrieves all folders in a project (flat list, includes hidden)
-func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectID string) ([]models.Folder, error) {
+func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectID string) ([]domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
@@ -459,9 +458,9 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 	}
 	defer rows.Close()
 
-	var folders []models.Folder
+	var folders []domaindocsys.Folder
 	for rows.Next() {
-		var folder models.Folder
+		var folder domaindocsys.Folder
 		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
@@ -477,7 +476,7 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 }
 
 // GetAllByProjectFiltered retrieves folders with filtering options
-func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, projectID string, opts docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, projectID string, opts domaindocsys.FolderFilterOptions) ([]domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
@@ -496,9 +495,9 @@ func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, 
 	}
 	defer rows.Close()
 
-	var folders []models.Folder
+	var folders []domaindocsys.Folder
 	for rows.Next() {
-		var folder models.Folder
+		var folder domaindocsys.Folder
 		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
@@ -514,7 +513,7 @@ func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, 
 }
 
 // GetByPath retrieves a folder by its full path (helper method, not in interface)
-func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID string, path string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID string, path string) (*domaindocsys.Folder, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) == 0 || (len(segments) == 1 && segments[0] == "") {
 		return nil, domain.NewValidationError("invalid path: path cannot be empty")
@@ -544,7 +543,7 @@ func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID stri
 }
 
 // getFolderByNameAndParent is a helper to find a folder by name and parent
-func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context, projectID string, name string, parentID *string) (*models.Folder, error) {
+func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context, projectID string, name string, parentID *string) (*domaindocsys.Folder, error) {
 	var query string
 	var args []interface{}
 
@@ -564,7 +563,7 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 		args = append(args, projectID, name, *parentID)
 	}
 
-	var folder models.Folder
+	var folder domaindocsys.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanFolder(executor.QueryRow(ctx, query, args...), &folder)
 
@@ -582,7 +581,7 @@ type folderScanner interface {
 	Scan(dest ...interface{}) error
 }
 
-func scanFolder(scanner folderScanner, folder *models.Folder) error {
+func scanFolder(scanner folderScanner, folder *domaindocsys.Folder) error {
 	err := scanner.Scan(
 		&folder.ID,
 		&folder.ProjectID,

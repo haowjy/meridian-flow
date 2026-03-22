@@ -13,8 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/repository/postgres"
 )
 
@@ -26,9 +25,9 @@ type CreditStore struct {
 	logger *slog.Logger
 }
 
-var _ billingrepo.CreditStore = (*CreditStore)(nil)
+var _ billing.CreditStore = (*CreditStore)(nil)
 
-func NewCreditStore(config *postgres.RepositoryConfig) billingrepo.CreditStore {
+func NewCreditStore(config *postgres.RepositoryConfig) billing.CreditStore {
 	return &CreditStore{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -36,7 +35,7 @@ func NewCreditStore(config *postgres.RepositoryConfig) billingrepo.CreditStore {
 	}
 }
 
-func (r *CreditStore) GetBalance(ctx context.Context, userID string) (*billingmodel.CreditBalance, error) {
+func (r *CreditStore) GetBalance(ctx context.Context, userID string) (*billing.CreditBalance, error) {
 	query := fmt.Sprintf(`
 		SELECT
 			total_balance_millicredits,
@@ -47,7 +46,7 @@ func (r *CreditStore) GetBalance(ctx context.Context, userID string) (*billingmo
 		WHERE user_id = $1
 	`, r.tables.CreditBalances)
 
-	balance := &billingmodel.CreditBalance{}
+	balance := &billing.CreditBalance{}
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, userID).Scan(
 		&balance.TotalBalanceMillicredits,
@@ -57,7 +56,7 @@ func (r *CreditStore) GetBalance(ctx context.Context, userID string) (*billingmo
 	)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return &billingmodel.CreditBalance{}, nil
+			return &billing.CreditBalance{}, nil
 		}
 		return nil, fmt.Errorf("get credit balance: %w", err)
 	}
@@ -68,8 +67,8 @@ func (r *CreditStore) GetBalance(ctx context.Context, userID string) (*billingmo
 func (r *CreditStore) ListTransactions(
 	ctx context.Context,
 	userID string,
-	req billingmodel.ListTransactionsRequest,
-) (*billingmodel.CreditTransactionPage, error) {
+	req billing.ListTransactionsRequest,
+) (*billing.CreditTransactionPage, error) {
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM %s
@@ -105,9 +104,9 @@ func (r *CreditStore) ListTransactions(
 	}
 	defer rows.Close()
 
-	items := make([]billingmodel.CreditTransaction, 0)
+	items := make([]billing.CreditTransaction, 0)
 	for rows.Next() {
-		var item billingmodel.CreditTransaction
+		var item billing.CreditTransaction
 		if scanErr := rows.Scan(
 			&item.ID,
 			&item.UserID,
@@ -127,7 +126,7 @@ func (r *CreditStore) ListTransactions(
 		return nil, fmt.Errorf("iterate credit transactions: %w", err)
 	}
 
-	return &billingmodel.CreditTransactionPage{
+	return &billing.CreditTransactionPage{
 		Items:  items,
 		Limit:  req.Limit,
 		Offset: req.Offset,
@@ -135,7 +134,7 @@ func (r *CreditStore) ListTransactions(
 	}, nil
 }
 
-func (r *CreditStore) CreatePurchaseLot(ctx context.Context, req billingrepo.CreatePurchaseLotRequest) error {
+func (r *CreditStore) CreatePurchaseLot(ctx context.Context, req billing.CreatePurchaseLotRequest) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		insertLotQuery := fmt.Sprintf(`
 			INSERT INTO %s (
@@ -194,7 +193,7 @@ func (r *CreditStore) CreatePurchaseLot(ctx context.Context, req billingrepo.Cre
 	})
 }
 
-func (r *CreditStore) CreateGrantLot(ctx context.Context, req billingrepo.CreateGrantLotRequest) error {
+func (r *CreditStore) CreateGrantLot(ctx context.Context, req billing.CreateGrantLotRequest) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		insertLotQuery := fmt.Sprintf(`
 			INSERT INTO %s (
@@ -223,7 +222,7 @@ func (r *CreditStore) CreateGrantLot(ctx context.Context, req billingrepo.Create
 		).Scan(&lotID)
 		if err != nil {
 			if postgres.IsPgNoRowsError(err) {
-				return billingrepo.ErrGrantLotAlreadyExists
+				return billing.ErrGrantLotAlreadyExists
 			}
 			return fmt.Errorf("insert grant lot: %w", err)
 		}
@@ -253,7 +252,7 @@ func (r *CreditStore) CreateGrantLot(ctx context.Context, req billingrepo.Create
 	})
 }
 
-func (r *CreditStore) RefundLot(ctx context.Context, req billingrepo.RefundLotRequest) error {
+func (r *CreditStore) RefundLot(ctx context.Context, req billing.RefundLotRequest) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		selectLotQuery := fmt.Sprintf(`
 			SELECT
@@ -278,7 +277,7 @@ func (r *CreditStore) RefundLot(ctx context.Context, req billingrepo.RefundLotRe
 		)
 		if err != nil {
 			if postgres.IsPgNoRowsError(err) {
-				return billingrepo.ErrRefundLotNotFound
+				return billing.ErrRefundLotNotFound
 			}
 			return fmt.Errorf("select refund lot by stripe session id: %w", err)
 		}
@@ -337,7 +336,7 @@ func (r *CreditStore) RefundLot(ctx context.Context, req billingrepo.RefundLotRe
 	})
 }
 
-func (r *CreditStore) ConsumeFIFO(ctx context.Context, req billingrepo.ConsumeFIFORequest) error {
+func (r *CreditStore) ConsumeFIFO(ctx context.Context, req billing.ConsumeFIFORequest) error {
 	query := fmt.Sprintf(`
 		SELECT lot_id, amount_millicredits
 		FROM %s($1, $2, $3, $4, $5)
@@ -377,9 +376,9 @@ func (r *CreditStore) ConsumeFIFO(ctx context.Context, req billingrepo.ConsumeFI
 	return nil
 }
 
-func (r *CreditStore) ExpireAvailableLots(ctx context.Context, nowUTC string, batchSize int) ([]billingrepo.ExpiredLot, error) {
+func (r *CreditStore) ExpireAvailableLots(ctx context.Context, nowUTC string, batchSize int) ([]billing.ExpiredLot, error) {
 	if batchSize <= 0 {
-		return []billingrepo.ExpiredLot{}, nil
+		return []billing.ExpiredLot{}, nil
 	}
 
 	query := fmt.Sprintf(`
@@ -428,9 +427,9 @@ func (r *CreditStore) ExpireAvailableLots(ctx context.Context, nowUTC string, ba
 	}
 	defer rows.Close()
 
-	expiredLots := make([]billingrepo.ExpiredLot, 0)
+	expiredLots := make([]billing.ExpiredLot, 0)
 	for rows.Next() {
-		var expired billingrepo.ExpiredLot
+		var expired billing.ExpiredLot
 		if err := rows.Scan(&expired.LotID, &expired.UserID, &expired.AmountMillicredits); err != nil {
 			return nil, fmt.Errorf("scan expired lot: %w", err)
 		}

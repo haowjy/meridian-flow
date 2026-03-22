@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/services"
+	authdomain "meridian/internal/domain/auth"
 )
 
 func TestServiceMovedTurnAuthorizationIntoServiceMethods(t *testing.T) {
@@ -49,4 +49,4 @@ func (a *testStreamingAuthorizer) CanAccessDocument(context.Context, string, str
 func (a *testStreamingAuthorizer) CanAccessThread(context.Context, string, string) error { return nil }
 func (a *testStreamingAuthorizer) CanAccessTurn(context.Context, string, string) error   { return a.err }
 
-var _ services.ResourceAuthorizer = (*testStreamingAuthorizer)(nil)
+var _ authdomain.ResourceAuthorizer = (*testStreamingAuthorizer)(nil)

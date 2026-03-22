@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/repositories"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 
 	ycrdt "github.com/haowjy/y-crdt"
 )
@@ -25,10 +24,10 @@ const (
 
 // CompactionWorker periodically compacts append-only Yjs update logs.
 type CompactionWorker struct {
-	updateLogStore  collabSvc.UpdateLogStore
-	checkpointStore collabSvc.CheckpointStore
-	bookmarkStore   collabSvc.BookmarkStore
-	txManager       repositories.TransactionManager
+	updateLogStore  collab.UpdateLogStore
+	checkpointStore collab.CheckpointStore
+	bookmarkStore   collab.BookmarkStore
+	txManager       domain.TransactionManager
 	logger          *slog.Logger
 	interval        time.Duration
 	stop            chan struct{}
@@ -37,10 +36,10 @@ type CompactionWorker struct {
 
 // NewCompactionWorker creates a compaction worker.
 func NewCompactionWorker(
-	updateLogStore collabSvc.UpdateLogStore,
-	checkpointStore collabSvc.CheckpointStore,
-	bookmarkStore collabSvc.BookmarkStore,
-	txManager repositories.TransactionManager,
+	updateLogStore collab.UpdateLogStore,
+	checkpointStore collab.CheckpointStore,
+	bookmarkStore collab.BookmarkStore,
+	txManager domain.TransactionManager,
 	logger *slog.Logger,
 	interval time.Duration,
 ) *CompactionWorker {
@@ -213,7 +212,7 @@ func (w *CompactionWorker) materializeBookmarks(
 func mergeCheckpointAndUpdates(
 	docID string,
 	checkpointState []byte,
-	updates []collabSvc.UpdateLogEntry,
+	updates []collab.UpdateLogEntry,
 ) ([]byte, error) {
 	doc := ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false)
 

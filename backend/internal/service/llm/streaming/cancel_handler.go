@@ -6,8 +6,8 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	domainllm "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -113,8 +113,8 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 
 	// Settlement is best-effort; billing failures must not affect user-visible completion path.
 	if settlementMetadata != nil {
-		se.handleTerminalSettlement(ctx, settlementMetadata, "soft_cancel_timeout", true)
-	} else if se.settlementMode == billingmodel.CreditSettlementDeferredToEnrichment {
+		se.handleFinalSettlement(ctx, settlementMetadata, "soft_cancel_timeout", true)
+	} else if se.settlementMode == billing.CreditSettlementDeferredToEnrichment {
 		generationID := se.getGenerationID()
 		if generationID != "" {
 			phase := "initial"

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 func TestProjectedStateBuilderListPendingProposalsForUser_DeterministicOrder(t *testing.T) {
@@ -17,31 +17,31 @@ func TestProjectedStateBuilderListPendingProposalsForUser_DeterministicOrder(t *
 	otherUserID := uuid.New()
 	now := time.Now().UTC()
 
-	p3 := collabModels.Proposal{
+	p3 := collab.Proposal{
 		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000003"),
 		DocumentID:      docID,
-		Status:          collabModels.ProposalStatusPending,
+		Status:          collab.ProposalStatusPending,
 		CreatedByUserID: userID,
 		CreatedAt:       now.Add(3 * time.Minute),
 	}
-	p1 := collabModels.Proposal{
+	p1 := collab.Proposal{
 		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		DocumentID:      docID,
-		Status:          collabModels.ProposalStatusPending,
+		Status:          collab.ProposalStatusPending,
 		CreatedByUserID: userID,
 		CreatedAt:       now.Add(1 * time.Minute),
 	}
-	p2 := collabModels.Proposal{
+	p2 := collab.Proposal{
 		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000002"),
 		DocumentID:      docID,
-		Status:          collabModels.ProposalStatusPending,
+		Status:          collab.ProposalStatusPending,
 		CreatedByUserID: otherUserID,
 		CreatedAt:       now.Add(2 * time.Minute),
 	}
 
 	builder := &ProjectedStateBuilderService{
 		stateStore:      &fakeProjectorStateStore{},
-		proposalStore:   &fakeProjectorProposalStore{listByDocument: []collabModels.Proposal{p3, p1, p2}},
+		proposalStore:   &fakeProjectorProposalStore{listByDocument: []collab.Proposal{p3, p1, p2}},
 		proposalRuntime: &fakeProjectorRuntime{},
 	}
 
@@ -138,11 +138,11 @@ func TestProjectedStateBuilderBuildProjectedState_WithPendingProposalsForUser(t 
 
 	docStore := &fakeProjectorStateStore{loadedState: baseState}
 	proposalStore := &fakeProjectorProposalStore{
-		listByDocument: []collabModels.Proposal{
+		listByDocument: []collab.Proposal{
 			{
 				ID:              uuid.New(),
 				DocumentID:      docID,
-				Status:          collabModels.ProposalStatusPending,
+				Status:          collab.ProposalStatusPending,
 				YjsUpdate:       proposalUpdate1,
 				CreatedByUserID: userID,
 				CreatedAt:       time.Now().UTC(),
@@ -150,7 +150,7 @@ func TestProjectedStateBuilderBuildProjectedState_WithPendingProposalsForUser(t 
 			{
 				ID:              uuid.New(),
 				DocumentID:      docID,
-				Status:          collabModels.ProposalStatusPending,
+				Status:          collab.ProposalStatusPending,
 				YjsUpdate:       proposalUpdate2,
 				CreatedByUserID: otherUserID,
 				CreatedAt:       time.Now().UTC().Add(1 * time.Minute),
@@ -240,22 +240,22 @@ func (s *fakeProjectorStateStore) SaveState(
 }
 
 type fakeProjectorProposalStore struct {
-	listByDocument []collabModels.Proposal
+	listByDocument []collab.Proposal
 }
 
-func (s *fakeProjectorProposalStore) Create(_ context.Context, _ *collabModels.Proposal) error {
+func (s *fakeProjectorProposalStore) Create(_ context.Context, _ *collab.Proposal) error {
 	return nil
 }
 
-func (s *fakeProjectorProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabModels.Proposal, error) {
+func (s *fakeProjectorProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collab.Proposal, error) {
 	return nil, nil
 }
 
 func (s *fakeProjectorProposalStore) CountByDocumentAndStatusAndSource(
 	_ context.Context,
 	_ uuid.UUID,
-	_ collabModels.ProposalStatus,
-	_ collabModels.ProposalSource,
+	_ collab.ProposalStatus,
+	_ collab.ProposalSource,
 ) (int, error) {
 	return 0, nil
 }
@@ -267,13 +267,13 @@ func (s *fakeProjectorProposalStore) CountByDocumentAndTurnID(_ context.Context,
 func (s *fakeProjectorProposalStore) ListByDocument(
 	_ context.Context,
 	_ uuid.UUID,
-	_ *collabModels.ProposalStatus,
+	_ *collab.ProposalStatus,
 	_, _ int,
-) ([]collabModels.Proposal, error) {
+) ([]collab.Proposal, error) {
 	return s.listByDocument, nil
 }
 
-func (s *fakeProjectorProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+func (s *fakeProjectorProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus) error {
 	return nil
 }
 
@@ -281,7 +281,7 @@ func (s *fakeProjectorProposalStore) SetAcceptedAtOffset(_ context.Context, _ uu
 	return nil
 }
 
-func (s *fakeProjectorProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+func (s *fakeProjectorProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus, _ time.Time) (int, error) {
 	return 0, nil
 }
 

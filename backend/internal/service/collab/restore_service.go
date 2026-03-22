@@ -10,9 +10,8 @@ import (
 	ycrdt "github.com/haowjy/y-crdt"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 const (
@@ -20,6 +19,8 @@ const (
 	restoreBookmarkTypeSafetyRestore = "safety_restore"
 	restoreDeleteAllUpdatesCutoff    = int64(^uint64(0) >> 1)
 )
+
+var _ collab.RestoreService = (*RestoreService)(nil)
 
 type restoreSessionManager interface {
 	Freeze(ctx context.Context, docID string) error
@@ -31,30 +32,30 @@ type restoreBroadcaster interface {
 }
 
 type RestoreService struct {
-	bookmarkStore   collabSvc.BookmarkStore
-	stateStore      collabSvc.DocumentStateStore
-	checkpointStore collabSvc.CheckpointStore
-	updateLogStore  collabSvc.UpdateLogStore
-	statusMirror    collabSvc.StatusMirror
+	bookmarkStore   collab.BookmarkStore
+	stateStore      collab.DocumentStateStore
+	checkpointStore collab.CheckpointStore
+	updateLogStore  collab.UpdateLogStore
+	statusMirror    collab.StatusMirror
 	sessionManager  restoreSessionManager
 	broadcaster     restoreBroadcaster
-	txManager       repositories.TransactionManager
-	authorizer      services.ResourceAuthorizer
+	txManager       domain.TransactionManager
+	authorizer      authdomain.ResourceAuthorizer
 	logger          *slog.Logger
 }
 
 func NewRestoreService(
-	bookmarkStore collabSvc.BookmarkStore,
-	stateStore collabSvc.DocumentStateStore,
-	checkpointStore collabSvc.CheckpointStore,
-	updateLogStore collabSvc.UpdateLogStore,
-	statusMirror collabSvc.StatusMirror,
+	bookmarkStore collab.BookmarkStore,
+	stateStore collab.DocumentStateStore,
+	checkpointStore collab.CheckpointStore,
+	updateLogStore collab.UpdateLogStore,
+	statusMirror collab.StatusMirror,
 	sessionManager restoreSessionManager,
 	broadcaster restoreBroadcaster,
-	txManager repositories.TransactionManager,
-	authorizer services.ResourceAuthorizer,
+	txManager domain.TransactionManager,
+	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
-) collabSvc.RestoreService {
+) collab.RestoreService {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -72,7 +73,7 @@ func NewRestoreService(
 	}
 }
 
-func (s *RestoreService) RestoreTurn(ctx context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *RestoreService) RestoreTurn(ctx context.Context, userID string, turnID uuid.UUID) (*collab.RestoreResult, error) {
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID.String()); err != nil {
 		return nil, err
 	}
@@ -80,7 +81,7 @@ func (s *RestoreService) RestoreTurn(ctx context.Context, userID string, turnID 
 	return s.restoreFromTurn(ctx, turnID, restoreBookmarkTypeAITurn, true)
 }
 
-func (s *RestoreService) UndoRestore(ctx context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *RestoreService) UndoRestore(ctx context.Context, userID string, turnID uuid.UUID) (*collab.RestoreResult, error) {
 	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID.String()); err != nil {
 		return nil, err
 	}
@@ -93,14 +94,14 @@ func (s *RestoreService) restoreFromTurn(
 	turnID uuid.UUID,
 	sourceBookmarkType string,
 	createSafetyBookmarks bool,
-) (*collabSvc.RestoreResult, error) {
+) (*collab.RestoreResult, error) {
 	turnIDStr := turnID.String()
 	allBookmarks, err := s.bookmarkStore.ListByTurnID(ctx, turnIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("list turn bookmarks: %w", err)
 	}
 
-	sourceBookmarks := make(map[string]collabSvc.Bookmark)
+	sourceBookmarks := make(map[string]collab.Bookmark)
 	for _, bookmark := range allBookmarks {
 		if bookmark.BookmarkType != sourceBookmarkType {
 			continue
@@ -146,7 +147,7 @@ func (s *RestoreService) restoreFromTurn(
 				if err != nil {
 					return fmt.Errorf("load current state for safety bookmark %s: %w", docID, err)
 				}
-				bookmark := &collabSvc.Bookmark{
+				bookmark := &collab.Bookmark{
 					DocumentID:   docID,
 					State:        currentState,
 					BookmarkType: restoreBookmarkTypeSafetyRestore,
@@ -233,7 +234,7 @@ func (s *RestoreService) restoreFromTurn(
 		affectedDocumentIDs = append(affectedDocumentIDs, docUUID)
 	}
 
-	return &collabSvc.RestoreResult{
+	return &collab.RestoreResult{
 		AffectedDocumentIDs: affectedDocumentIDs,
 	}, nil
 }

@@ -6,17 +6,15 @@ import (
 	"log/slog"
 	"testing"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 type mockStripeClient struct {
-	event               *billingdomain.StripeEvent
+	event               *billing.StripeEvent
 	eventErr            error
-	retrieveSession     *billingdomain.StripeSession
+	retrieveSession     *billing.StripeSession
 	retrieveSessionErr  error
-	retrieveByRef       *billingdomain.StripeSession
+	retrieveByRef       *billing.StripeSession
 	retrieveByRefErr    error
 	lastSessionID       string
 	lastChargeID        string
@@ -25,20 +23,20 @@ type mockStripeClient struct {
 
 func (m *mockStripeClient) CreateCheckoutSession(
 	ctx context.Context,
-	req billingdomain.CreateStripeSessionRequest,
-) (*billingdomain.StripeSession, error) {
+	req billing.CreateStripeSessionRequest,
+) (*billing.StripeSession, error) {
 	_ = ctx
 	_ = req
 	return nil, nil
 }
 
-func (m *mockStripeClient) ConstructWebhookEvent(payload []byte, signature string) (*billingdomain.StripeEvent, error) {
+func (m *mockStripeClient) ConstructWebhookEvent(payload []byte, signature string) (*billing.StripeEvent, error) {
 	_ = payload
 	_ = signature
 	return m.event, m.eventErr
 }
 
-func (m *mockStripeClient) RetrieveSession(ctx context.Context, sessionID string) (*billingdomain.StripeSession, error) {
+func (m *mockStripeClient) RetrieveSession(ctx context.Context, sessionID string) (*billing.StripeSession, error) {
 	_ = ctx
 	m.lastSessionID = sessionID
 	return m.retrieveSession, m.retrieveSessionErr
@@ -48,7 +46,7 @@ func (m *mockStripeClient) RetrieveSessionByChargeOrPaymentIntent(
 	ctx context.Context,
 	chargeID string,
 	paymentIntentID string,
-) (*billingdomain.StripeSession, error) {
+) (*billing.StripeSession, error) {
 	_ = ctx
 	m.lastChargeID = chargeID
 	m.lastPaymentIntentID = paymentIntentID
@@ -58,19 +56,19 @@ func (m *mockStripeClient) RetrieveSessionByChargeOrPaymentIntent(
 func TestCreditService_HandleStripeWebhook_ChargeRefundedRefundsLot(t *testing.T) {
 	store := &mockCreditStore{}
 	stripeClient := &mockStripeClient{
-		event: &billingdomain.StripeEvent{
+		event: &billing.StripeEvent{
 			ID:              "evt_refund",
-			Type:            billingdomain.StripeEventTypeChargeRefunded,
+			Type:            billing.StripeEventTypeChargeRefunded,
 			ChargeID:        "ch_123",
 			PaymentIntentID: "pi_123",
 		},
-		retrieveByRef: &billingdomain.StripeSession{
+		retrieveByRef: &billing.StripeSession{
 			ID: "cs_refund",
 		},
 	}
 	svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	err := svc.HandleStripeWebhook(context.Background(), billingdomain.StripeWebhookRequest{
+	err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
 		Payload:   []byte(`{}`),
 		Signature: "sig",
 	})
@@ -85,27 +83,27 @@ func TestCreditService_HandleStripeWebhook_ChargeRefundedRefundsLot(t *testing.T
 	if store.lastRefundReq.StripeSessionID != "cs_refund" {
 		t.Fatalf("RefundLot session_id = %q, want %q", store.lastRefundReq.StripeSessionID, "cs_refund")
 	}
-	if got := store.lastRefundReq.Metadata["stripe_event_type"]; got != billingdomain.StripeEventTypeChargeRefunded {
-		t.Fatalf("refund metadata stripe_event_type = %v, want %s", got, billingdomain.StripeEventTypeChargeRefunded)
+	if got := store.lastRefundReq.Metadata["stripe_event_type"]; got != billing.StripeEventTypeChargeRefunded {
+		t.Fatalf("refund metadata stripe_event_type = %v, want %s", got, billing.StripeEventTypeChargeRefunded)
 	}
 }
 
 func TestCreditService_HandleStripeWebhook_ChargeDisputeCreatedRefundsLot(t *testing.T) {
 	store := &mockCreditStore{}
 	stripeClient := &mockStripeClient{
-		event: &billingdomain.StripeEvent{
+		event: &billing.StripeEvent{
 			ID:              "evt_dispute",
-			Type:            billingdomain.StripeEventTypeChargeDisputeCreated,
+			Type:            billing.StripeEventTypeChargeDisputeCreated,
 			ChargeID:        "ch_dispute",
 			PaymentIntentID: "pi_dispute",
 		},
-		retrieveByRef: &billingdomain.StripeSession{
+		retrieveByRef: &billing.StripeSession{
 			ID: "cs_dispute",
 		},
 	}
 	svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	err := svc.HandleStripeWebhook(context.Background(), billingdomain.StripeWebhookRequest{
+	err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
 		Payload:   []byte(`{}`),
 		Signature: "sig",
 	})
@@ -120,22 +118,22 @@ func TestCreditService_HandleStripeWebhook_ChargeDisputeCreatedRefundsLot(t *tes
 
 func TestCreditService_HandleStripeWebhook_ChargeRefundedMissingLotIsNoop(t *testing.T) {
 	store := &mockCreditStore{
-		refundErr: billingrepo.ErrRefundLotNotFound,
+		refundErr: billing.ErrRefundLotNotFound,
 	}
 	stripeClient := &mockStripeClient{
-		event: &billingdomain.StripeEvent{
+		event: &billing.StripeEvent{
 			ID:              "evt_refund",
-			Type:            billingdomain.StripeEventTypeChargeRefunded,
+			Type:            billing.StripeEventTypeChargeRefunded,
 			ChargeID:        "ch_123",
 			PaymentIntentID: "pi_123",
 		},
-		retrieveByRef: &billingdomain.StripeSession{
+		retrieveByRef: &billing.StripeSession{
 			ID: "cs_refund",
 		},
 	}
 	svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	err := svc.HandleStripeWebhook(context.Background(), billingdomain.StripeWebhookRequest{
+	err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
 		Payload:   []byte(`{}`),
 		Signature: "sig",
 	})
@@ -156,12 +154,12 @@ func TestCreditService_HandleStripeWebhook_CheckoutSessionCompleted_IncludesBonu
 
 			store := &mockCreditStore{}
 			stripeClient := &mockStripeClient{
-				event: &billingdomain.StripeEvent{
+				event: &billing.StripeEvent{
 					ID:        "evt_checkout",
-					Type:      billingdomain.StripeEventTypeCheckoutSessionCompleted,
+					Type:      billing.StripeEventTypeCheckoutSessionCompleted,
 					SessionID: "cs_completed",
 				},
-				retrieveSession: &billingdomain.StripeSession{
+				retrieveSession: &billing.StripeSession{
 					ID:               "cs_completed",
 					PaymentStatus:    "paid",
 					Mode:             "payment",
@@ -174,7 +172,7 @@ func TestCreditService_HandleStripeWebhook_CheckoutSessionCompleted_IncludesBonu
 			}
 			svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-			err := svc.HandleStripeWebhook(context.Background(), billingdomain.StripeWebhookRequest{
+			err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
 				Payload:   []byte(`{}`),
 				Signature: "sig",
 			})
@@ -198,7 +196,7 @@ func TestCreditService_HandleStripeWebhook_CheckoutSessionCompleted_IncludesBonu
 
 func TestCreditPacksIncludeBonusForPremiumPacks(t *testing.T) {
 	packs := map[string]int64{}
-	for _, pack := range billingmodel.CreditPacks {
+	for _, pack := range billing.CreditPacks {
 		packs[pack.PackID] = pack.BonusCredits
 	}
 

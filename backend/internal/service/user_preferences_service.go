@@ -5,25 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"meridian/internal/domain"
 	"time"
 
 	"github.com/google/uuid"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
 )
 
 // UserPreferencesService implements the UserPreferencesService interface
 type UserPreferencesService struct {
-	prefsRepo repositories.UserPreferencesRepository
+	prefsRepo domain.UserPreferencesStore
 	logger    *slog.Logger
 }
 
 // NewUserPreferencesService creates a new user preferences service
 func NewUserPreferencesService(
-	prefsRepo repositories.UserPreferencesRepository,
+	prefsRepo domain.UserPreferencesStore,
 	logger *slog.Logger,
-) services.UserPreferencesService {
+) domain.UserPreferencesService {
 	return &UserPreferencesService{
 		prefsRepo: prefsRepo,
 		logger:    logger,
@@ -31,13 +29,13 @@ func NewUserPreferencesService(
 }
 
 // getDefaultPreferences returns default preferences with namespaced structure
-func (s *UserPreferencesService) getDefaultPreferences(userID uuid.UUID) *models.UserPreferences {
+func (s *UserPreferencesService) getDefaultPreferences(userID uuid.UUID) *domain.UserPreferences {
 	now := time.Now()
-	return &models.UserPreferences{
+	return &domain.UserPreferences{
 		UserID: userID,
-		Preferences: models.JSONMap{
+		Preferences: domain.JSONMap{
 			"models": map[string]interface{}{
-				"favorites": []models.ProviderModel{},
+				"favorites": []domain.ProviderModel{},
 				"default":   nil,
 			},
 			"ui": map[string]interface{}{
@@ -53,7 +51,7 @@ func (s *UserPreferencesService) getDefaultPreferences(userID uuid.UUID) *models
 }
 
 // GetPreferences retrieves preferences for a user
-func (s *UserPreferencesService) GetPreferences(ctx context.Context, userID uuid.UUID) (*models.UserPreferences, error) {
+func (s *UserPreferencesService) GetPreferences(ctx context.Context, userID uuid.UUID) (*domain.UserPreferences, error) {
 	prefs, err := s.prefsRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, err // Pass through HTTPError directly
@@ -69,7 +67,7 @@ func (s *UserPreferencesService) GetPreferences(ctx context.Context, userID uuid
 }
 
 // UpdatePreferences updates user preferences (partial or full update)
-func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID uuid.UUID, req *models.UpdatePreferencesRequest) (*models.UserPreferences, error) {
+func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID uuid.UUID, req *domain.UpdatePreferencesRequest) (*domain.UserPreferences, error) {
 	// Get existing preferences or create new ones
 	existing, err := s.prefsRepo.GetByUserID(ctx, userID)
 	if err != nil {
@@ -83,7 +81,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 
 	// Ensure preferences map is initialized
 	if existing.Preferences == nil {
-		existing.Preferences = models.JSONMap{}
+		existing.Preferences = domain.JSONMap{}
 	}
 
 	// Apply partial updates (only update namespaces that are provided)
@@ -137,7 +135,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 }
 
 // updateModelsNamespace updates the models namespace in preferences
-func (s *UserPreferencesService) updateModelsNamespace(prefs *models.UserPreferences, models *models.ModelsPreferences) error {
+func (s *UserPreferencesService) updateModelsNamespace(prefs *domain.UserPreferences, models *domain.ModelsPreferences) error {
 	// Convert to map for storage
 	data, err := json.Marshal(models)
 	if err != nil {
@@ -154,7 +152,7 @@ func (s *UserPreferencesService) updateModelsNamespace(prefs *models.UserPrefere
 }
 
 // updateUINamespace updates the ui namespace in preferences
-func (s *UserPreferencesService) updateUINamespace(prefs *models.UserPreferences, ui *models.UIPreferences) error {
+func (s *UserPreferencesService) updateUINamespace(prefs *domain.UserPreferences, ui *domain.UIPreferences) error {
 	data, err := json.Marshal(ui)
 	if err != nil {
 		return err
@@ -170,7 +168,7 @@ func (s *UserPreferencesService) updateUINamespace(prefs *models.UserPreferences
 }
 
 // updateEditorNamespace updates the editor namespace in preferences
-func (s *UserPreferencesService) updateEditorNamespace(prefs *models.UserPreferences, editor *models.EditorPreferences) error {
+func (s *UserPreferencesService) updateEditorNamespace(prefs *domain.UserPreferences, editor *domain.EditorPreferences) error {
 	data, err := json.Marshal(editor)
 	if err != nil {
 		return err
@@ -186,7 +184,7 @@ func (s *UserPreferencesService) updateEditorNamespace(prefs *models.UserPrefere
 }
 
 // updateNotificationsNamespace updates the notifications namespace in preferences
-func (s *UserPreferencesService) updateNotificationsNamespace(prefs *models.UserPreferences, notifications *models.NotificationPreferences) error {
+func (s *UserPreferencesService) updateNotificationsNamespace(prefs *domain.UserPreferences, notifications *domain.NotificationPreferences) error {
 	data, err := json.Marshal(notifications)
 	if err != nil {
 		return err

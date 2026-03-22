@@ -3,7 +3,7 @@ package docsystem
 import (
 	"sync"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // FileProcessorRegistry manages file processor strategies using the Strategy pattern.
@@ -19,18 +19,18 @@ import (
 // Thread-safe for concurrent access during request handling.
 type FileProcessorRegistry struct {
 	mu         sync.RWMutex
-	processors []docsysSvc.FileProcessor
+	processors []domaindocsys.FileProcessor
 }
 
 // NewFileProcessorRegistry creates a new file processor registry
 func NewFileProcessorRegistry() *FileProcessorRegistry {
 	return &FileProcessorRegistry{
-		processors: make([]docsysSvc.FileProcessor, 0),
+		processors: make([]domaindocsys.FileProcessor, 0),
 	}
 }
 
 // Register adds a file processor to the registry
-func (r *FileProcessorRegistry) Register(processor docsysSvc.FileProcessor) {
+func (r *FileProcessorRegistry) Register(processor domaindocsys.FileProcessor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.processors = append(r.processors, processor)
@@ -42,7 +42,7 @@ func (r *FileProcessorRegistry) Register(processor docsysSvc.FileProcessor) {
 // Note: Uses "first match wins" - processors are checked in registration order.
 // Currently: ZipFileProcessor is registered before IndividualFileProcessor,
 // so .zip files are always handled by ZipFileProcessor.
-func (r *FileProcessorRegistry) GetProcessor(filename string) docsysSvc.FileProcessor {
+func (r *FileProcessorRegistry) GetProcessor(filename string) domaindocsys.FileProcessor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

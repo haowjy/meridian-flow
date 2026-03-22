@@ -8,9 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 const (
@@ -21,19 +19,19 @@ const (
 	maxSettlementRetries = 5
 )
 
-var _ billingdomain.CreditSettler = (*creditSettler)(nil)
+var _ billing.CreditSettler = (*creditSettler)(nil)
 
 type creditSettler struct {
-	store           billingrepo.CreditStore
-	generationStore billingrepo.GenerationBillingStore
-	pricingResolver billingdomain.ModelPricingResolver
+	store           billing.CreditStore
+	generationStore billing.GenerationBillingStore
+	pricingResolver billing.ModelPricingResolver
 	logger          *slog.Logger
 }
 
 func NewCreditSettler(
-	store billingrepo.CreditStore,
-	generationStore billingrepo.GenerationBillingStore,
-	pricingResolver billingdomain.ModelPricingResolver,
+	store billing.CreditStore,
+	generationStore billing.GenerationBillingStore,
+	pricingResolver billing.ModelPricingResolver,
 	logger *slog.Logger,
 ) *creditSettler {
 	if logger == nil {
@@ -48,7 +46,7 @@ func NewCreditSettler(
 	}
 }
 
-func (s *creditSettler) SettleAuthoritativeRequest(ctx context.Context, req billingdomain.SettleRequestInput) error {
+func (s *creditSettler) SettleAuthoritativeRequest(ctx context.Context, req billing.SettleRequestInput) error {
 	if req.UserID == "" {
 		return errors.New("settlement user_id is required")
 	}
@@ -62,15 +60,15 @@ func (s *creditSettler) SettleAuthoritativeRequest(ctx context.Context, req bill
 	pricing := s.resolvePricing(req.Provider, req.Model, req.TurnID, req.RequestIndex)
 
 	usageEventID := fmt.Sprintf("%s:%d", req.TurnID, req.RequestIndex)
-	consumptionGroupID := uuid.NewSHA1(billingmodel.BillingNamespace, []byte(usageEventID))
-	amountMillicredits := billingmodel.CalculateCreditCost(pricing, billingmodel.TokenUsage{
+	consumptionGroupID := uuid.NewSHA1(billing.BillingNamespace, []byte(usageEventID))
+	amountMillicredits := billing.CalculateCreditCost(pricing, billing.TokenUsage{
 		InputTokens:     req.InputTokens,
 		OutputTokens:    req.OutputTokens,
 		ReasoningTokens: req.ReasoningTokens,
 		CachedTokens:    req.CachedTokens,
 	})
 
-	fields := billingrepo.BillingFields{
+	fields := billing.BillingFields{
 		UserID:             req.UserID,
 		UsageEventID:       usageEventID,
 		ConsumptionGroupID: consumptionGroupID,
@@ -82,12 +80,12 @@ func (s *creditSettler) SettleAuthoritativeRequest(ctx context.Context, req bill
 		return fmt.Errorf("persist billing fields: %w", err)
 	}
 
-	consumeReq := billingrepo.ConsumeFIFORequest{
+	consumeReq := billing.ConsumeFIFORequest{
 		UserID:             req.UserID,
 		AmountMillicredits: amountMillicredits,
 		ConsumptionGroupID: consumptionGroupID,
 		UsageEventID:       usageEventID,
-		Metadata: billingmodel.JSONMap{
+		Metadata: billing.JSONMap{
 			"turn_id":       req.TurnID,
 			"request_index": req.RequestIndex,
 			"model":         req.Model,
@@ -114,7 +112,7 @@ func (s *creditSettler) SettleAuthoritativeRequest(ctx context.Context, req bill
 	return nil
 }
 
-func (s *creditSettler) MarkPendingSettlement(ctx context.Context, req billingdomain.MarkPendingSettlementInput) error {
+func (s *creditSettler) MarkPendingSettlement(ctx context.Context, req billing.MarkPendingSettlementInput) error {
 	if req.UserID == "" {
 		return errors.New("pending settlement user_id is required")
 	}
@@ -126,10 +124,10 @@ func (s *creditSettler) MarkPendingSettlement(ctx context.Context, req billingdo
 	}
 
 	usageEventID := fmt.Sprintf("%s:%d", req.TurnID, req.RequestIndex)
-	fields := billingrepo.BillingFields{
+	fields := billing.BillingFields{
 		UserID:             req.UserID,
 		UsageEventID:       usageEventID,
-		ConsumptionGroupID: uuid.NewSHA1(billingmodel.BillingNamespace, []byte(usageEventID)),
+		ConsumptionGroupID: uuid.NewSHA1(billing.BillingNamespace, []byte(usageEventID)),
 		Status:             billingStatusPending,
 		LastError:          req.LastError,
 	}
@@ -141,7 +139,7 @@ func (s *creditSettler) MarkPendingSettlement(ctx context.Context, req billingdo
 	return nil
 }
 
-func (s *creditSettler) RetryPendingSettlement(ctx context.Context, req billingdomain.RetryPendingSettlementInput) error {
+func (s *creditSettler) RetryPendingSettlement(ctx context.Context, req billing.RetryPendingSettlementInput) error {
 	if req.TurnID == "" {
 		return errors.New("retry settlement turn_id is required")
 	}
@@ -160,12 +158,12 @@ func (s *creditSettler) RetryPendingSettlement(ctx context.Context, req billingd
 		return errors.New("billing fields incomplete for retry")
 	}
 
-	consumeReq := billingrepo.ConsumeFIFORequest{
+	consumeReq := billing.ConsumeFIFORequest{
 		UserID:             fields.UserID,
 		AmountMillicredits: fields.AmountMillicredits,
 		ConsumptionGroupID: fields.ConsumptionGroupID,
 		UsageEventID:       fields.UsageEventID,
-		Metadata: billingmodel.JSONMap{
+		Metadata: billing.JSONMap{
 			"turn_id":       req.TurnID,
 			"request_index": req.RequestIndex,
 			"retry":         true,
@@ -200,7 +198,7 @@ func (s *creditSettler) RetryPendingSettlement(ctx context.Context, req billingd
 	return nil
 }
 
-func (s *creditSettler) resolvePricing(provider string, model string, turnID string, requestIndex int) billingmodel.ModelPricing {
+func (s *creditSettler) resolvePricing(provider string, model string, turnID string, requestIndex int) billing.ModelPricing {
 	if s.pricingResolver != nil {
 		pricing, err := s.pricingResolver.ResolvePricing(provider, model)
 		if err == nil {
@@ -213,7 +211,7 @@ func (s *creditSettler) resolvePricing(provider string, model string, turnID str
 			"request_index", requestIndex,
 			"error", err,
 		)
-		return billingmodel.FallbackModelPricing
+		return billing.FallbackModelPricing
 	}
 
 	s.logger.Warn("billing pricing resolver not configured; using fallback pricing",
@@ -222,5 +220,5 @@ func (s *creditSettler) resolvePricing(provider string, model string, turnID str
 		"turn_id", turnID,
 		"request_index", requestIndex,
 	)
-	return billingmodel.FallbackModelPricing
+	return billing.FallbackModelPricing
 }

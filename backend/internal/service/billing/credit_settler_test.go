@@ -7,16 +7,14 @@ import (
 	"log/slog"
 	"testing"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 func TestCreditSettler_SettleAuthoritativeRequest_WriteAheadThenConsume(t *testing.T) {
 	callOrder := []string{}
 	store := &mockCreditStore{callOrder: &callOrder}
 	generationStore := &mockGenerationBillingStore{callOrder: &callOrder}
-	pricing := billingmodel.ModelPricing{
+	pricing := billing.ModelPricing{
 		InputMicrousdPer1K:     2500,
 		OutputMicrousdPer1K:    10000,
 		ReasoningMicrousdPer1K: 10000,
@@ -24,12 +22,12 @@ func TestCreditSettler_SettleAuthoritativeRequest_WriteAheadThenConsume(t *testi
 		MarkupBasisPoints:      1500,
 	}
 	svc := NewCreditSettler(store, generationStore, &mockPricingResolver{
-		pricingByProviderModel: map[string]billingmodel.ModelPricing{
+		pricingByProviderModel: map[string]billing.ModelPricing{
 			"openrouter:gpt-4o": pricing,
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	req := billingdomain.SettleRequestInput{
+	req := billing.SettleRequestInput{
 		UserID:          "user-1",
 		TurnID:          "turn-1",
 		RequestIndex:    2,
@@ -76,7 +74,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_WriteAheadThenConsume(t *testi
 		t.Fatalf("ConsumeFIFO consumption_group_id = %s, want %s", consumeReq.ConsumptionGroupID, wantGroup)
 	}
 
-	wantAmount := billingmodel.CalculateCreditCost(pricing, billingmodel.TokenUsage{
+	wantAmount := billing.CalculateCreditCost(pricing, billing.TokenUsage{
 		InputTokens:     req.InputTokens,
 		OutputTokens:    req.OutputTokens,
 		ReasoningTokens: req.ReasoningTokens,
@@ -95,7 +93,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_DeterministicIDsOnRetry(t *tes
 	store := &mockCreditStore{}
 	generationStore := &mockGenerationBillingStore{}
 	svc := NewCreditSettler(store, generationStore, &mockPricingResolver{
-		pricingByProviderModel: map[string]billingmodel.ModelPricing{
+		pricingByProviderModel: map[string]billing.ModelPricing{
 			"openrouter:gpt-4o-mini": {
 				InputMicrousdPer1K:     150,
 				OutputMicrousdPer1K:    600,
@@ -106,7 +104,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_DeterministicIDsOnRetry(t *tes
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	req := billingdomain.SettleRequestInput{
+	req := billing.SettleRequestInput{
 		UserID:       "user-1",
 		TurnID:       "turn-5",
 		RequestIndex: 1,
@@ -136,7 +134,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_ConsumeFailureMarksPending(t *
 	store := &mockCreditStore{consumeErr: errors.New("db timeout")}
 	generationStore := &mockGenerationBillingStore{}
 	svc := NewCreditSettler(store, generationStore, &mockPricingResolver{
-		pricingByProviderModel: map[string]billingmodel.ModelPricing{
+		pricingByProviderModel: map[string]billing.ModelPricing{
 			"openrouter:gpt-4o": {
 				InputMicrousdPer1K:     2500,
 				OutputMicrousdPer1K:    10000,
@@ -147,7 +145,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_ConsumeFailureMarksPending(t *
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	err := svc.SettleAuthoritativeRequest(context.Background(), billingdomain.SettleRequestInput{
+	err := svc.SettleAuthoritativeRequest(context.Background(), billing.SettleRequestInput{
 		UserID:       "user-1",
 		TurnID:       "turn-1",
 		RequestIndex: 0,
@@ -169,7 +167,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_ConsumeFailureMarksPending(t *
 func TestCreditSettler_RetryPendingSettlement_HappyPath(t *testing.T) {
 	store := &mockCreditStore{}
 	generationStore := &mockGenerationBillingStore{
-		fields: &billingrepo.BillingFields{
+		fields: &billing.BillingFields{
 			UserID:             "user-1",
 			UsageEventID:       "turn-9:3",
 			ConsumptionGroupID: mustConsumptionGroup("turn-9:3"),
@@ -179,7 +177,7 @@ func TestCreditSettler_RetryPendingSettlement_HappyPath(t *testing.T) {
 	}
 	svc := NewCreditSettler(store, generationStore, &mockPricingResolver{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	if err := svc.RetryPendingSettlement(context.Background(), billingdomain.RetryPendingSettlementInput{TurnID: "turn-9", RequestIndex: 3}); err != nil {
+	if err := svc.RetryPendingSettlement(context.Background(), billing.RetryPendingSettlementInput{TurnID: "turn-9", RequestIndex: 3}); err != nil {
 		t.Fatalf("RetryPendingSettlement returned error: %v", err)
 	}
 
@@ -197,7 +195,7 @@ func TestCreditSettler_RetryPendingSettlement_HappyPath(t *testing.T) {
 func TestCreditSettler_RetryPendingSettlement_MaxRetryExceeded(t *testing.T) {
 	store := &mockCreditStore{consumeErr: errors.New("transient db failure")}
 	generationStore := &mockGenerationBillingStore{
-		fields: &billingrepo.BillingFields{
+		fields: &billing.BillingFields{
 			UserID:             "user-1",
 			UsageEventID:       "turn-3:1",
 			ConsumptionGroupID: mustConsumptionGroup("turn-3:1"),
@@ -207,7 +205,7 @@ func TestCreditSettler_RetryPendingSettlement_MaxRetryExceeded(t *testing.T) {
 	}
 	svc := NewCreditSettler(store, generationStore, &mockPricingResolver{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	err := svc.RetryPendingSettlement(context.Background(), billingdomain.RetryPendingSettlementInput{TurnID: "turn-3", RequestIndex: 1})
+	err := svc.RetryPendingSettlement(context.Background(), billing.RetryPendingSettlementInput{TurnID: "turn-3", RequestIndex: 1})
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -236,7 +234,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_UsesFallbackPricingForUnknownM
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	req := billingdomain.SettleRequestInput{
+	req := billing.SettleRequestInput{
 		UserID:          "user-1",
 		TurnID:          "turn-unknown-model",
 		RequestIndex:    0,
@@ -256,7 +254,7 @@ func TestCreditSettler_SettleAuthoritativeRequest_UsesFallbackPricingForUnknownM
 		t.Fatalf("ConsumeFIFO calls = %d, want 1", len(store.consumeCalls))
 	}
 
-	wantAmount := billingmodel.CalculateCreditCost(billingmodel.FallbackModelPricing, billingmodel.TokenUsage{
+	wantAmount := billing.CalculateCreditCost(billing.FallbackModelPricing, billing.TokenUsage{
 		InputTokens:     req.InputTokens,
 		OutputTokens:    req.OutputTokens,
 		ReasoningTokens: req.ReasoningTokens,
@@ -271,7 +269,7 @@ func TestCreditSettler_MarkPendingSettlement_PersistsDeterministicMarker(t *test
 	generationStore := &mockGenerationBillingStore{}
 	svc := NewCreditSettler(&mockCreditStore{}, generationStore, &mockPricingResolver{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	req := billingdomain.MarkPendingSettlementInput{
+	req := billing.MarkPendingSettlementInput{
 		UserID:       "user-1",
 		TurnID:       "turn-2",
 		RequestIndex: 4,

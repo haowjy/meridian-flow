@@ -9,38 +9,37 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	"meridian/internal/domain/services"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	authdomain "meridian/internal/domain/auth"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // documentService implements the DocumentService interface
 type documentService struct {
-	docRepo         docsysRepo.DocumentRepository
-	folderRepo      docsysRepo.FolderRepository
-	projectRepo     docsysRepo.ProjectRepository
-	txManager       repositories.TransactionManager
-	contentAnalyzer docsysSvc.ContentAnalyzer
-	pathResolver    docsysSvc.PathResolver
+	docRepo         domaindocsys.DocumentStore
+	folderRepo      domaindocsys.FolderStore
+	projectRepo     domaindocsys.ProjectStore
+	txManager       domain.TransactionManager
+	contentAnalyzer domaindocsys.ContentAnalyzer
+	pathResolver    domaindocsys.PathNotationResolver
 	validator       *ResourceValidator
-	authorizer      services.ResourceAuthorizer
+	authorizer      authdomain.ResourceAuthorizer
 	logger          *slog.Logger
 }
 
+var _ domaindocsys.DocumentService = (*documentService)(nil)
+
 // NewDocumentService creates a new document service
 func NewDocumentService(
-	docRepo docsysRepo.DocumentRepository,
-	folderRepo docsysRepo.FolderRepository,
-	projectRepo docsysRepo.ProjectRepository,
-	txManager repositories.TransactionManager,
-	contentAnalyzer docsysSvc.ContentAnalyzer,
-	pathResolver docsysSvc.PathResolver,
+	docRepo domaindocsys.DocumentStore,
+	folderRepo domaindocsys.FolderStore,
+	projectRepo domaindocsys.ProjectStore,
+	txManager domain.TransactionManager,
+	contentAnalyzer domaindocsys.ContentAnalyzer,
+	pathResolver domaindocsys.PathNotationResolver,
 	validator *ResourceValidator,
-	authorizer services.ResourceAuthorizer,
+	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
-) docsysSvc.DocumentService {
+) domaindocsys.DocumentService {
 	return &documentService{
 		docRepo:         docRepo,
 		folderRepo:      folderRepo,
@@ -59,17 +58,17 @@ func NewDocumentService(
 //   - "name" -> create document with given name at folder_id
 //   - "a/b/c" -> auto-create intermediate folders (a, b) and document (c) at folder_id
 //   - "/a/b/c" -> absolute path from root (ignore folder_id)
-func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.CreateDocumentRequest) (*models.Document, error) {
+func (s *documentService) CreateDocument(ctx context.Context, req *domaindocsys.CreateDocumentRequest) (*domaindocsys.Document, error) {
 	// Normalize empty string folder_id to nil for root-level documents
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
 	}
 
 	// Normalize and validate extension
-	extension := models.NormalizeExtension(req.Extension)
-	if !models.IsValidExtension(extension) {
+	extension := domaindocsys.NormalizeExtension(req.Extension)
+	if !domaindocsys.IsValidExtension(extension) {
 		return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
-			domain.ErrValidation, extension, models.ValidExtensions())
+			domain.ErrValidation, extension, domaindocsys.ValidExtensions())
 	}
 
 	// Validate parent resources are not deleted
@@ -83,7 +82,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	}
 
 	// Use path notation resolver to handle all path logic (unified)
-	result, err := s.pathResolver.ResolvePathNotation(ctx, &docsysSvc.PathNotationRequest{
+	result, err := s.pathResolver.ResolvePathNotation(ctx, &domaindocsys.PathNotationRequest{
 		ProjectID:     req.ProjectID,
 		Name:          req.Name,
 		FolderID:      req.FolderID,
@@ -120,21 +119,21 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	}
 
 	// Create document
-	doc := &models.Document{
+	doc := &domaindocsys.Document{
 		ProjectID: req.ProjectID,
 		FolderID:  folderID,
 		Name:      docName,
 		Extension: extension,
-		FileType:  string(models.FileTypeFromExtension(extension)),
+		FileType:  string(domaindocsys.FileTypeFromExtension(extension)),
 		Content:   req.Content,
-		Metadata:  models.DocumentMetadata{},
+		Metadata:  domaindocsys.DocumentMetadata{},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
 	// Compute format-specific metadata based on file category
 	// Only markdown-family files get word count
-	if models.IsMarkdownExtension(extension) {
+	if domaindocsys.IsMarkdownExtension(extension) {
 		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(req.Content))
 	}
 
@@ -175,7 +174,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 
 // GetDocument retrieves a document with its computed path
 // Authorization is checked first via the injected authorizer
-func (s *documentService) GetDocument(ctx context.Context, userID, documentID string) (*models.Document, error) {
+func (s *documentService) GetDocument(ctx context.Context, userID, documentID string) (*domaindocsys.Document, error) {
 	// Authorize: check user can access this document
 	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
 		return nil, err
@@ -201,7 +200,7 @@ func (s *documentService) GetDocument(ctx context.Context, userID, documentID st
 
 // UpdateDocument updates a document
 // Authorization is checked first via the injected authorizer
-func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID string, req *docsysSvc.UpdateDocumentRequest) (*models.Document, error) {
+func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID string, req *domaindocsys.UpdateDocumentRequest) (*domaindocsys.Document, error) {
 	// Authorize: check user can access this document
 	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
 		return nil, err
@@ -226,10 +225,10 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	// Update extension if provided
 	if req.Extension != nil {
-		extension := models.NormalizeExtension(*req.Extension)
-		if !models.IsValidExtension(extension) {
+		extension := domaindocsys.NormalizeExtension(*req.Extension)
+		if !domaindocsys.IsValidExtension(extension) {
 			return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
-				domain.ErrValidation, extension, models.ValidExtensions())
+				domain.ErrValidation, extension, domaindocsys.ValidExtensions())
 		}
 		doc.Extension = extension
 	}
@@ -273,7 +272,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	}
 
 	// Word count recalculation — placed AFTER all field mutations (content, extension)
-	if models.IsMarkdownExtension(doc.Extension) {
+	if domaindocsys.IsMarkdownExtension(doc.Extension) {
 		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
 	} else {
 		doc.ClearMarkdownMetadata()
@@ -366,7 +365,7 @@ func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID
 
 // SearchDocuments performs full-text search across documents with path computation
 // userID is required for authorization - verifies user can access the project
-func (s *documentService) SearchDocuments(ctx context.Context, userID string, req *docsysSvc.SearchDocumentsRequest) (*models.SearchResults, error) {
+func (s *documentService) SearchDocuments(ctx context.Context, userID string, req *domaindocsys.SearchDocumentsRequest) (*domaindocsys.SearchResults, error) {
 	// Validate request
 	if req.Query == "" {
 		return nil, domain.NewValidationErrorWithField(
@@ -385,13 +384,13 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 	}
 
 	// Convert string fields to SearchField enum
-	var fields []models.SearchField
+	var fields []domaindocsys.SearchField
 	for _, f := range req.Fields {
 		switch f {
 		case "name":
-			fields = append(fields, models.SearchFieldName)
+			fields = append(fields, domaindocsys.SearchFieldName)
 		case "content":
-			fields = append(fields, models.SearchFieldContent)
+			fields = append(fields, domaindocsys.SearchFieldContent)
 		default:
 			return nil, domain.NewValidationErrorWithField(
 				fmt.Sprintf("invalid search field %q (supported: name, content)", f), "fields")
@@ -400,7 +399,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 
 	// Convert request to repository SearchOptions
 	// Authorization already verified above via CanAccessProject
-	opts := &models.SearchOptions{
+	opts := &domaindocsys.SearchOptions{
 		Query:     req.Query,
 		ProjectID: req.ProjectID,
 		Fields:    fields, // Will default to [name, content] in ApplyDefaults() if empty
@@ -408,7 +407,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 		Offset:    req.Offset,
 		Language:  req.Language,
 		FolderID:  req.FolderID,
-		Strategy:  models.SearchStrategyFullText, // Always use fulltext for now
+		Strategy:  domaindocsys.SearchStrategyFullText, // Always use fulltext for now
 	}
 
 	// Call repository search
@@ -439,7 +438,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 // GetDocumentByPath retrieves a document by its Unix-style path within a project.
 // userID is required for authorization - verifies user can access the project.
 // path is the Unix-style document path (e.g., "/Characters/Aria.md").
-func (s *documentService) GetDocumentByPath(ctx context.Context, userID, path, projectID string) (*models.Document, error) {
+func (s *documentService) GetDocumentByPath(ctx context.Context, userID, path, projectID string) (*domaindocsys.Document, error) {
 	// Authorize: check user can access this project
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err

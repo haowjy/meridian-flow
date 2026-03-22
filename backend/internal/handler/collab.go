@@ -13,15 +13,15 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 // CollabHandler handles collaboration transport entrypoints.
 type CollabHandler struct {
-	documentResolver collabSvc.DocumentResolver
-	proposalService  collabSvc.ProposalService
-	proposalStore    collabSvc.ProposalStore
+	documentResolver collab.DocumentResolver
+	proposalService  collab.ProposalService
+	proposalStore    collab.ProposalStore
 	authenticator    *collabAuthenticator
 	logger           *slog.Logger
 	config           *config.Config
@@ -122,11 +122,11 @@ func (c *websocketDocumentConnection) Close() error {
 
 // NewCollabHandler creates a new collaboration handler.
 func NewCollabHandler(
-	documentResolver collabSvc.DocumentResolver,
-	proposalService collabSvc.ProposalService,
-	proposalStore collabSvc.ProposalStore,
+	documentResolver collab.DocumentResolver,
+	proposalService collab.ProposalService,
+	proposalStore collab.ProposalStore,
 	jwtVerifier auth.JWTVerifier,
-	authorizer services.ResourceAuthorizer,
+	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
 	cfg *config.Config,
 	projectRegistry ProjectConnectionRegistry,

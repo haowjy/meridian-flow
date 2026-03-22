@@ -5,23 +5,22 @@ import (
 	"errors"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	domainServices "meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // DocumentResolverAdapter bridges collab with existing document/authorization services.
 type DocumentResolverAdapter struct {
-	docRepo    docsysRepo.DocumentRepository
-	authorizer domainServices.ResourceAuthorizer
+	docRepo    domaindocsys.DocumentStore
+	authorizer authdomain.ResourceAuthorizer
 }
 
 // NewDocumentResolver creates a DocumentResolver backed by current document domain services.
 func NewDocumentResolver(
-	docRepo docsysRepo.DocumentRepository,
-	authorizer domainServices.ResourceAuthorizer,
-) collabSvc.DocumentResolver {
+	docRepo domaindocsys.DocumentStore,
+	authorizer authdomain.ResourceAuthorizer,
+) collab.DocumentResolver {
 	return &DocumentResolverAdapter{
 		docRepo:    docRepo,
 		authorizer: authorizer,
@@ -31,13 +30,13 @@ func NewDocumentResolver(
 // ResolveDocument returns the minimal metadata collab requires for a document.
 // Phase 1: Not called yet — VerifyOwnership is the only active path.
 // Phase 2+: Used for multi-user room creation where project context is needed.
-func (r *DocumentResolverAdapter) ResolveDocument(ctx context.Context, docID string) (*collabModels.CollabDocRef, error) {
+func (r *DocumentResolverAdapter) ResolveDocument(ctx context.Context, docID string) (*collab.CollabDocRef, error) {
 	doc, err := r.docRepo.GetByIDOnly(ctx, docID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &collabModels.CollabDocRef{
+	return &collab.CollabDocRef{
 		DocumentID: doc.ID,
 		ProjectID:  doc.ProjectID,
 	}, nil

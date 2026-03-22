@@ -1,9 +1,8 @@
 package tools
 
 import (
-	skillModels "meridian/internal/domain/models/skill"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	skillSvc "meridian/internal/domain/services/skill"
+	domaindocsys "meridian/internal/domain/docsystem"
+	skill "meridian/internal/domain/skill"
 	"meridian/internal/service/llm/tools/external"
 )
 
@@ -17,8 +16,8 @@ import (
 type ToolRegistryBuilder struct {
 	registry         *ToolRegistry
 	config           *ToolConfig
-	namespaceSvc     docsysSvc.NamespaceService // Optional, for namespace-aware tools
-	mutationStrategy DocumentMutationStrategy   // Optional, for AI edit persistence strategy
+	namespaceSvc     domaindocsys.NamespaceService // Optional, for namespace-aware tools
+	mutationStrategy DocumentMutationStrategy      // Optional, for AI edit persistence strategy
 }
 
 // NewToolRegistryBuilder creates a new builder with a fresh registry.
@@ -40,7 +39,7 @@ func (b *ToolRegistryBuilder) WithConfig(config *ToolConfig) *ToolRegistryBuilde
 
 // WithNamespaceService sets the namespace service for namespace-aware tools.
 // This enables /.meridian/** path routing and access control.
-func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.NamespaceService) *ToolRegistryBuilder {
+func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc domaindocsys.NamespaceService) *ToolRegistryBuilder {
 	b.namespaceSvc = namespaceSvc
 	return b
 }
@@ -63,8 +62,8 @@ func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStra
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
 ) *ToolRegistryBuilder {
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
 	// Tools self-describe via metadata for system prompt generation (OCP compliance)
@@ -85,8 +84,8 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	enabledTools []string,
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
 ) *ToolRegistryBuilder {
 	// Build set of enabled tools for O(1) lookup
 	toolSet := make(map[string]bool)
@@ -126,9 +125,9 @@ func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolR
 func (b *ToolRegistryBuilder) WithSkillTools(
 	projectID string,
 	userID string,
-	skillService skillSvc.ProjectSkillService,
+	skillService skill.ProjectSkillService,
 	isUserInvocation bool,
-	availableSkills []*skillModels.ProjectSkill,
+	availableSkills []*skill.ProjectSkill,
 ) *ToolRegistryBuilder {
 	if skillService != nil {
 		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
@@ -153,9 +152,9 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 	enabledTools []string,
 	projectID string,
 	userID string,
-	skillService skillSvc.ProjectSkillService,
+	skillService skill.ProjectSkillService,
 	isUserInvocation bool,
-	availableSkills []*skillModels.ProjectSkill,
+	availableSkills []*skill.ProjectSkill,
 ) *ToolRegistryBuilder {
 	if skillService == nil {
 		return b
@@ -193,9 +192,9 @@ func (b *ToolRegistryBuilder) Build() *ToolRegistry {
 func BuildWithDefaults(
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
-	namespaceSvc docsysSvc.NamespaceService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
+	namespaceSvc domaindocsys.NamespaceService,
 	mutationStrategy DocumentMutationStrategy,
 ) *ToolRegistry {
 	return NewToolRegistryBuilder().
@@ -210,9 +209,9 @@ func BuildWithDefaults(
 func BuildWithWebSearch(
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
-	namespaceSvc docsysSvc.NamespaceService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
+	namespaceSvc domaindocsys.NamespaceService,
 	mutationStrategy DocumentMutationStrategy,
 	searchClient external.SearchClient,
 ) *ToolRegistry {

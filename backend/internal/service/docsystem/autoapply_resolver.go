@@ -4,23 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 type autoapplyResolver struct {
-	docRepo     docsysRepo.DocumentRepository
-	folderRepo  docsysRepo.FolderRepository
-	projectRepo docsysRepo.ProjectRepository
+	docRepo     domaindocsys.DocumentStore
+	folderRepo  domaindocsys.FolderStore
+	projectRepo domaindocsys.ProjectStore
 }
 
 // NewAutoapplyResolver resolves effective document autoapply by walking document,
 // folder ancestry, then the project default.
 func NewAutoapplyResolver(
-	docRepo docsysRepo.DocumentRepository,
-	folderRepo docsysRepo.FolderRepository,
-	projectRepo docsysRepo.ProjectRepository,
-) collabSvc.AutoapplyResolver {
+	docRepo domaindocsys.DocumentStore,
+	folderRepo domaindocsys.FolderStore,
+	projectRepo domaindocsys.ProjectStore,
+) collab.AutoapplyResolver {
 	return &autoapplyResolver{
 		docRepo:     docRepo,
 		folderRepo:  folderRepo,

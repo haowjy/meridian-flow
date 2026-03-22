@@ -7,20 +7,19 @@ import (
 
 	"github.com/google/uuid"
 
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
-	"meridian/internal/service/collab"
+	collab "meridian/internal/domain/collab"
+	collabsvc "meridian/internal/service/collab"
 )
 
 // ProposalCreator is an ISP interface for creating proposals (tools package sees only what it needs).
 type ProposalCreator interface {
-	CreateProposal(ctx context.Context, req collabSvc.CreateProposalRequest) (*collabModels.Proposal, error)
+	CreateProposal(ctx context.Context, req collab.CreateProposalRequest) (*collab.Proposal, error)
 }
 
 // ProposalBroadcaster is an ISP interface for broadcasting proposal WS events.
 // Defined in the tools package to avoid circular imports; implemented in the handler package.
 type ProposalBroadcaster interface {
-	BroadcastProposalCreated(documentID string, proposal *collabModels.Proposal) error
+	BroadcastProposalCreated(documentID string, proposal *collab.Proposal) error
 	BroadcastProposalAccepted(documentID string, proposalID uuid.UUID, yjsUpdate []byte) error
 }
 
@@ -28,7 +27,7 @@ type ProposalBroadcaster interface {
 type CollabProposalStrategy struct {
 	proposalCreator       ProposalCreator
 	proposalBroadcaster   ProposalBroadcaster
-	projectedStateBuilder collabSvc.ProjectedStateBuilder
+	projectedStateBuilder collab.ProjectedStateBuilder
 	logger                *slog.Logger
 }
 
@@ -36,7 +35,7 @@ type CollabProposalStrategy struct {
 func NewCollabProposalStrategy(
 	proposalCreator ProposalCreator,
 	proposalBroadcaster ProposalBroadcaster,
-	projectedStateBuilder collabSvc.ProjectedStateBuilder,
+	projectedStateBuilder collab.ProjectedStateBuilder,
 	logger *slog.Logger,
 ) *CollabProposalStrategy {
 	return &CollabProposalStrategy{
@@ -74,12 +73,12 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 	// Build targeted edit info when OldContent is provided (str_replace path).
 	// This produces a positional CRDT update instead of full-doc replacement,
 	// preventing duplicate content when multiple str_replace calls hit the same turn.
-	var edit *collab.TextEdit
+	var edit *collabsvc.TextEdit
 	var regionTextBefore *string
 	var regionTextAfter *string
 	var proposedAtOffset *int
 	if input.OldContent != "" {
-		pos := collab.FindEditPosition(input.Base, input.OldContent)
+		pos := collabsvc.FindEditPosition(input.Base, input.OldContent)
 		if pos >= 0 {
 			position := pos
 			replacement := input.ReplContent
@@ -87,7 +86,7 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 			regionTextAfter = &replacement
 			proposedAtOffset = &position
 
-			edit = &collab.TextEdit{
+			edit = &collabsvc.TextEdit{
 				OldText:  input.OldContent,
 				NewText:  input.ReplContent,
 				Position: pos,
@@ -106,7 +105,7 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 	}
 
 	// Convert text diff to Yjs update bytes
-	yjsUpdate, err := collab.TextToUpdate(projectedState, input.NewContent, edit)
+	yjsUpdate, err := collabsvc.TextToUpdate(projectedState, input.NewContent, edit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert text to Yjs update: %w", err)
 	}
@@ -141,9 +140,9 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		description = &input.Description
 	}
 
-	proposal, err := s.proposalCreator.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+	proposal, err := s.proposalCreator.CreateProposal(ctx, collab.CreateProposalRequest{
 		DocumentID:        docUUID,
-		Source:            collabModels.ProposalSourceAI,
+		Source:            collab.ProposalSourceAI,
 		ProducerAgentType: "text_editor",
 		ThreadID:          threadUUID,
 		TurnID:            turnUUID,
@@ -161,13 +160,13 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 
 	// Broadcast based on proposal status
 	switch proposal.Status {
-	case collabModels.ProposalStatusAccepted:
+	case collab.ProposalStatusAccepted:
 		// Auto-accepted: broadcast Yjs update + status change
 		if err := s.proposalBroadcaster.BroadcastProposalAccepted(input.DocumentID, proposal.ID, proposal.YjsUpdate); err != nil {
 			// Log but don't fail — proposal is persisted, broadcast is best-effort
 			s.logger.Warn("failed to broadcast proposal accepted", "document_id", input.DocumentID, "proposal_id", proposal.ID, "error", err)
 		}
-	case collabModels.ProposalStatusPending:
+	case collab.ProposalStatusPending:
 		// Pending review: broadcast new proposal event
 		if err := s.proposalBroadcaster.BroadcastProposalCreated(input.DocumentID, proposal); err != nil {
 			s.logger.Warn("failed to broadcast proposal created", "document_id", input.DocumentID, "proposal_id", proposal.ID, "error", err)

@@ -3,7 +3,7 @@ package converter
 import (
 	"context"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // textConverter converts plain text files to markdown.
@@ -11,7 +11,7 @@ import (
 type textConverter struct{}
 
 // NewTextConverter creates a new text converter.
-func NewTextConverter() docsysSvc.ContentConverter {
+func NewTextConverter() domaindocsys.ContentConverter {
 	return &textConverter{}
 }
 

@@ -3,7 +3,7 @@ package docsystem
 import (
 	"testing"
 
-	"meridian/internal/domain/models/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // ============================================================================
@@ -13,73 +13,73 @@ import (
 func TestSearchOptions_ApplyDefaults(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *docsystem.SearchOptions
-		expected *docsystem.SearchOptions
+		input    *domaindocsys.SearchOptions
+		expected *domaindocsys.SearchOptions
 	}{
 		{
 			name: "applies all defaults",
-			input: &docsystem.SearchOptions{
+			input: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 			},
-			expected: &docsystem.SearchOptions{
+			expected: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     20,
 				Offset:    0,
 				Language:  "english",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
 		},
 		{
 			name: "preserves custom values",
-			input: &docsystem.SearchOptions{
+			input: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     50,
 				Offset:    10,
 				Language:  "spanish",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
-			expected: &docsystem.SearchOptions{
+			expected: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     50,
 				Offset:    10,
 				Language:  "spanish",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
 		},
 		{
 			name: "corrects invalid limit to default",
-			input: &docsystem.SearchOptions{
+			input: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     0,
 			},
-			expected: &docsystem.SearchOptions{
+			expected: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     20,
 				Offset:    0,
 				Language:  "english",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
 		},
 		{
 			name: "corrects negative offset to default",
-			input: &docsystem.SearchOptions{
+			input: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Offset:    -5,
 			},
-			expected: &docsystem.SearchOptions{
+			expected: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     20,
 				Offset:    0,
 				Language:  "english",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
 		},
 	}
@@ -107,25 +107,25 @@ func TestSearchOptions_ApplyDefaults(t *testing.T) {
 func TestSearchOptions_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
-		options *docsystem.SearchOptions
+		options *domaindocsys.SearchOptions
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name: "valid options",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     20,
 				Offset:    0,
 				Language:  "english",
-				Strategy:  docsystem.SearchStrategyFullText,
+				Strategy:  domaindocsys.SearchStrategyFullText,
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty query",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "",
 				ProjectID: "proj-123",
 			},
@@ -134,7 +134,7 @@ func TestSearchOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "empty project ID",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "",
 			},
@@ -142,7 +142,7 @@ func TestSearchOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "limit at boundary (100 is valid)",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     100,
@@ -151,7 +151,7 @@ func TestSearchOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "limit exceeds maximum",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     101,
@@ -161,7 +161,7 @@ func TestSearchOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "offset at zero (valid)",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Limit:     20,
@@ -171,27 +171,27 @@ func TestSearchOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "unsupported strategy - vector",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
-				Strategy:  docsystem.SearchStrategyVector,
+				Strategy:  domaindocsys.SearchStrategyVector,
 			},
 			wantErr: true,
 			errMsg:  "not yet implemented",
 		},
 		{
 			name: "unsupported strategy - hybrid",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
-				Strategy:  docsystem.SearchStrategyHybrid,
+				Strategy:  domaindocsys.SearchStrategyHybrid,
 			},
 			wantErr: true,
 			errMsg:  "not yet implemented",
 		},
 		{
 			name: "unknown strategy",
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Query:     "test",
 				ProjectID: "proj-123",
 				Strategy:  "invalid",
@@ -229,16 +229,16 @@ func TestSearchOptions_Validate(t *testing.T) {
 func TestNewSearchResults(t *testing.T) {
 	tests := []struct {
 		name        string
-		results     []docsystem.SearchResult
+		results     []domaindocsys.SearchResult
 		totalCount  int
-		options     *docsystem.SearchOptions
+		options     *domaindocsys.SearchOptions
 		wantHasMore bool
 	}{
 		{
 			name:       "has more results",
-			results:    make([]docsystem.SearchResult, 20),
+			results:    make([]domaindocsys.SearchResult, 20),
 			totalCount: 50,
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Limit:  20,
 				Offset: 0,
 			},
@@ -246,9 +246,9 @@ func TestNewSearchResults(t *testing.T) {
 		},
 		{
 			name:       "no more results - last page",
-			results:    make([]docsystem.SearchResult, 10),
+			results:    make([]domaindocsys.SearchResult, 10),
 			totalCount: 30,
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Limit:  20,
 				Offset: 20,
 			},
@@ -256,9 +256,9 @@ func TestNewSearchResults(t *testing.T) {
 		},
 		{
 			name:       "no more results - exact match",
-			results:    make([]docsystem.SearchResult, 20),
+			results:    make([]domaindocsys.SearchResult, 20),
 			totalCount: 20,
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Limit:  20,
 				Offset: 0,
 			},
@@ -266,9 +266,9 @@ func TestNewSearchResults(t *testing.T) {
 		},
 		{
 			name:       "empty results",
-			results:    []docsystem.SearchResult{},
+			results:    []domaindocsys.SearchResult{},
 			totalCount: 0,
-			options: &docsystem.SearchOptions{
+			options: &domaindocsys.SearchOptions{
 				Limit:  20,
 				Offset: 0,
 			},
@@ -278,7 +278,7 @@ func TestNewSearchResults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := docsystem.NewSearchResults(tt.results, tt.totalCount, tt.options)
+			results := domaindocsys.NewSearchResults(tt.results, tt.totalCount, tt.options)
 
 			if results.HasMore != tt.wantHasMore {
 				t.Errorf("HasMore = %v, want %v", results.HasMore, tt.wantHasMore)
@@ -300,7 +300,7 @@ func TestNewSearchResults(t *testing.T) {
 // INTEGRATION TEST NOTES
 // ============================================================================
 //
-// The tests above are unit tests for the domain models. Integration tests
+// The tests above are unit tests for the domain domaindocsys. Integration tests
 // that actually test the database search functionality would require:
 //
 // 1. Test database setup (similar to service tests)
@@ -325,7 +325,7 @@ func TestNewSearchResults(t *testing.T) {
 //     doc2 := createTestDocument(t, repo, projectID, "Knight Tale", "The brave knight fought the dragon")
 //
 //     // Test full-text search
-//     opts := &docsystem.SearchOptions{
+//     opts := &domaindocsys.SearchOptions{
 //         Query:     "dragon",
 //         ProjectID: projectID,
 //     }

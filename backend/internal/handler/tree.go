@@ -5,21 +5,21 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	identifierSvc "meridian/internal/domain/services/identifier"
+	domaindocsys "meridian/internal/domain/docsystem"
+	identifier "meridian/internal/domain/identifier"
 	"meridian/internal/httputil"
 )
 
 // TreeHandler handles HTTP requests for tree operations
 type TreeHandler struct {
-	treeService docsysSvc.TreeService
-	resolver    identifierSvc.Resolver
+	treeService domaindocsys.TreeService
+	resolver    identifier.Resolver
 	logger      *slog.Logger
 	config      *config.Config
 }
 
 // NewTreeHandler creates a new tree handler
-func NewTreeHandler(treeService docsysSvc.TreeService, resolver identifierSvc.Resolver, logger *slog.Logger, cfg *config.Config) *TreeHandler {
+func NewTreeHandler(treeService domaindocsys.TreeService, resolver identifier.Resolver, logger *slog.Logger, cfg *config.Config) *TreeHandler {
 	return &TreeHandler{
 		treeService: treeService,
 		resolver:    resolver,
@@ -54,7 +54,7 @@ func (h *TreeHandler) GetTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the tree with options
-	opts := docsysSvc.TreeOptions{
+	opts := domaindocsys.TreeOptions{
 		IncludeHidden: includeHidden,
 	}
 	tree, err := h.treeService.GetProjectTreeWithOptions(r.Context(), userID, projectID, opts)

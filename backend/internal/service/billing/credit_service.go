@@ -12,9 +12,7 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 
 	"meridian/internal/domain"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 const (
@@ -22,17 +20,17 @@ const (
 	maxTransactionLimit     = 100
 )
 
-var _ billingdomain.CreditService = (*creditService)(nil)
+var _ billing.CreditService = (*creditService)(nil)
 
 type creditService struct {
-	store        billingrepo.CreditStore
-	stripeClient billingdomain.StripeClient
+	store        billing.CreditStore
+	stripeClient billing.StripeClient
 	logger       *slog.Logger
 }
 
 func NewCreditService(
-	store billingrepo.CreditStore,
-	stripeClient billingdomain.StripeClient,
+	store billing.CreditStore,
+	stripeClient billing.StripeClient,
 	logger *slog.Logger,
 ) *creditService {
 	if logger == nil {
@@ -46,22 +44,22 @@ func NewCreditService(
 	}
 }
 
-func (s *creditService) GetBalance(ctx context.Context, userID string) (*billingmodel.CreditBalance, error) {
+func (s *creditService) GetBalance(ctx context.Context, userID string) (*billing.CreditBalance, error) {
 	return s.store.GetBalance(ctx, userID)
 }
 
-func (s *creditService) ListCreditPacks(ctx context.Context) ([]billingmodel.CreditPack, error) {
+func (s *creditService) ListCreditPacks(ctx context.Context) ([]billing.CreditPack, error) {
 	_ = ctx
-	packs := make([]billingmodel.CreditPack, len(billingmodel.CreditPacks))
-	copy(packs, billingmodel.CreditPacks)
+	packs := make([]billing.CreditPack, len(billing.CreditPacks))
+	copy(packs, billing.CreditPacks)
 	return packs, nil
 }
 
 func (s *creditService) ListTransactions(
 	ctx context.Context,
 	userID string,
-	req billingmodel.ListTransactionsRequest,
-) (*billingmodel.CreditTransactionPage, error) {
+	req billing.ListTransactionsRequest,
+) (*billing.CreditTransactionPage, error) {
 	if req.Limit == 0 {
 		req.Limit = defaultTransactionLimit
 	}
@@ -80,8 +78,8 @@ func (s *creditService) ListTransactions(
 func (s *creditService) CreateCheckoutSession(
 	ctx context.Context,
 	userID string,
-	req billingdomain.CreateCheckoutSessionRequest,
-) (*billingmodel.CheckoutSession, error) {
+	req billing.CreateCheckoutSessionRequest,
+) (*billing.CheckoutSession, error) {
 	if err := validation.ValidateStruct(&req,
 		validation.Field(&userID, validation.Required),
 		validation.Field(&req.PackID, validation.Required),
@@ -116,7 +114,7 @@ func (s *creditService) CreateCheckoutSession(
 		return nil, domain.NewValidationErrorWithField("invalid pack_id", "pack_id")
 	}
 
-	stripeSession, err := s.stripeClient.CreateCheckoutSession(ctx, billingdomain.CreateStripeSessionRequest{
+	stripeSession, err := s.stripeClient.CreateCheckoutSession(ctx, billing.CreateStripeSessionRequest{
 		UserID:      userID,
 		PackID:      pack.PackID,
 		PackLabel:   pack.Label,
@@ -130,14 +128,14 @@ func (s *creditService) CreateCheckoutSession(
 		return nil, fmt.Errorf("create stripe checkout session: %w", err)
 	}
 
-	return &billingmodel.CheckoutSession{
+	return &billing.CheckoutSession{
 		SessionID:   stripeSession.ID,
 		CheckoutURL: stripeSession.URL,
 		ExpiresAt:   stripeSession.ExpiresAt,
 	}, nil
 }
 
-func (s *creditService) HandleStripeWebhook(ctx context.Context, req billingdomain.StripeWebhookRequest) error {
+func (s *creditService) HandleStripeWebhook(ctx context.Context, req billing.StripeWebhookRequest) error {
 	if err := validation.ValidateStruct(&req,
 		validation.Field(&req.Payload, validation.Required),
 		validation.Field(&req.Signature, validation.Required),
@@ -151,9 +149,9 @@ func (s *creditService) HandleStripeWebhook(ctx context.Context, req billingdoma
 	}
 
 	switch event.Type {
-	case billingdomain.StripeEventTypeCheckoutSessionCompleted:
+	case billing.StripeEventTypeCheckoutSessionCompleted:
 		return s.handleCheckoutSessionCompletedWebhook(ctx, event)
-	case billingdomain.StripeEventTypeChargeRefunded, billingdomain.StripeEventTypeChargeDisputeCreated:
+	case billing.StripeEventTypeChargeRefunded, billing.StripeEventTypeChargeDisputeCreated:
 		return s.handleRefundOrDisputeWebhook(ctx, event)
 	default:
 		return nil
@@ -162,7 +160,7 @@ func (s *creditService) HandleStripeWebhook(ctx context.Context, req billingdoma
 
 func (s *creditService) handleCheckoutSessionCompletedWebhook(
 	ctx context.Context,
-	event *billingdomain.StripeEvent,
+	event *billing.StripeEvent,
 ) error {
 
 	if event.SessionID == "" {
@@ -199,13 +197,13 @@ func (s *creditService) handleCheckoutSessionCompletedWebhook(
 		return domain.NewValidationError("stripe session amount does not match pack price")
 	}
 
-	purchaseExpiresAt := time.Now().UTC().AddDate(0, 0, billingmodel.PurchasedCreditExpirationDays)
-	if err := s.store.CreatePurchaseLot(ctx, billingrepo.CreatePurchaseLotRequest{
+	purchaseExpiresAt := time.Now().UTC().AddDate(0, 0, billing.PurchasedCreditExpirationDays)
+	if err := s.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{
 		UserID:             userID,
 		AmountMillicredits: (pack.Credits + pack.BonusCredits) * 1000,
 		StripeSessionID:    session.ID,
 		ExpiresAt:          &purchaseExpiresAt,
-		Metadata: billingmodel.JSONMap{
+		Metadata: billing.JSONMap{
 			"pack_id":               pack.PackID,
 			"pack_label":            pack.Label,
 			"credits":               pack.Credits,
@@ -228,7 +226,7 @@ func (s *creditService) handleCheckoutSessionCompletedWebhook(
 
 func (s *creditService) handleRefundOrDisputeWebhook(
 	ctx context.Context,
-	event *billingdomain.StripeEvent,
+	event *billing.StripeEvent,
 ) error {
 	if event.ChargeID == "" && event.PaymentIntentID == "" {
 		return domain.NewValidationError("stripe webhook missing charge id and payment intent id")
@@ -256,16 +254,16 @@ func (s *creditService) handleRefundOrDisputeWebhook(
 		return nil
 	}
 
-	if err := s.store.RefundLot(ctx, billingrepo.RefundLotRequest{
+	if err := s.store.RefundLot(ctx, billing.RefundLotRequest{
 		StripeSessionID: session.ID,
-		Metadata: billingmodel.JSONMap{
+		Metadata: billing.JSONMap{
 			"stripe_event_id":       event.ID,
 			"stripe_event_type":     event.Type,
 			"stripe_charge_id":      event.ChargeID,
 			"stripe_payment_intent": event.PaymentIntentID,
 		},
 	}); err != nil {
-		if errors.Is(err, billingrepo.ErrRefundLotNotFound) {
+		if errors.Is(err, billing.ErrRefundLotNotFound) {
 			s.logger.Warn("stripe refund/dispute event has no matching billing lot",
 				"event_type", event.Type,
 				"event_id", event.ID,
@@ -285,10 +283,10 @@ func (s *creditService) handleRefundOrDisputeWebhook(
 	return nil
 }
 
-func findCreditPack(packID string) (*billingmodel.CreditPack, bool) {
-	for i := range billingmodel.CreditPacks {
-		if billingmodel.CreditPacks[i].PackID == packID {
-			return &billingmodel.CreditPacks[i], true
+func findCreditPack(packID string) (*billing.CreditPack, bool) {
+	for i := range billing.CreditPacks {
+		if billing.CreditPacks[i].PackID == packID {
+			return &billing.CreditPacks[i], true
 		}
 	}
 

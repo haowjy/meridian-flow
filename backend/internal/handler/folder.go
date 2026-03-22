@@ -5,21 +5,20 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	docsystem "meridian/internal/domain/models/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/httputil"
 	"meridian/internal/optional"
 )
 
 // FolderHandler handles folder HTTP requests
 type FolderHandler struct {
-	folderService docsysSvc.FolderService
+	folderService domaindocsys.FolderService
 	logger        *slog.Logger
 	config        *config.Config
 }
 
 // NewFolderHandler creates a new folder handler
-func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger, cfg *config.Config) *FolderHandler {
+func NewFolderHandler(folderService domaindocsys.FolderService, logger *slog.Logger, cfg *config.Config) *FolderHandler {
 	return &FolderHandler{
 		folderService: folderService,
 		logger:        logger,
@@ -32,7 +31,7 @@ func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger
 // Returns 201 if created, 409 with existing folder if duplicate
 func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
-	var req docsysSvc.CreateFolderRequest
+	var req domaindocsys.CreateFolderRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -51,7 +50,7 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	folder, err := h.folderService.CreateFolder(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Folder, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*domaindocsys.Folder, error) {
 			return h.folderService.GetFolder(r.Context(), userID, id)
 		})
 		return
@@ -111,7 +110,7 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map transport DTO to service request
-	req := &docsysSvc.UpdateFolderRequest{
+	req := &domaindocsys.UpdateFolderRequest{
 		Name:     dto.Name,
 		FolderID: dto.FolderID,
 	}

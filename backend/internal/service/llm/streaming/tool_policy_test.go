@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"meridian/internal/domain/models/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 func TestParseDisabledTools(t *testing.T) {
@@ -16,7 +16,7 @@ func TestParseDisabledTools(t *testing.T) {
 	})
 
 	t.Run("string slice", func(t *testing.T) {
-		got := parseDisabledTools(docsystem.JSONMap{
+		got := parseDisabledTools(domaindocsys.JSONMap{
 			"disabled_tools": []string{"str_replace_based_edit_tool", "tavily_web_search"},
 		})
 		if !got["str_replace_based_edit_tool"] || !got["tavily_web_search"] {
@@ -25,7 +25,7 @@ func TestParseDisabledTools(t *testing.T) {
 	})
 
 	t.Run("interface slice", func(t *testing.T) {
-		got := parseDisabledTools(docsystem.JSONMap{
+		got := parseDisabledTools(domaindocsys.JSONMap{
 			"disabled_tools": []interface{}{"doc_search", "tavily_web_search"},
 		})
 		if !got["doc_search"] || !got["tavily_web_search"] {

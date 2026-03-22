@@ -4,26 +4,25 @@ import (
 	"context"
 	"log/slog"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	"meridian/internal/domain/services"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	authdomain "meridian/internal/domain/auth"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // importService implements the ImportService interface
 type importService struct {
-	docRepo               docsysRepo.DocumentRepository
+	docRepo               domaindocsys.DocumentStore
 	fileProcessorRegistry *FileProcessorRegistry
-	authorizer            services.ResourceAuthorizer
+	authorizer            authdomain.ResourceAuthorizer
 	logger                *slog.Logger
 }
 
 // NewImportService creates a new import service
 func NewImportService(
-	docRepo docsysRepo.DocumentRepository,
+	docRepo domaindocsys.DocumentStore,
 	fileProcessorRegistry *FileProcessorRegistry,
-	authorizer services.ResourceAuthorizer,
+	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
-) docsysSvc.ImportService {
+) domaindocsys.ImportService {
 	return &importService{
 		docRepo:               docRepo,
 		fileProcessorRegistry: fileProcessorRegistry,
@@ -60,16 +59,16 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, userID string, p
 // A single file failure does NOT halt the entire batch - this allows partial success
 // (e.g., 8 of 10 files imported successfully). Errors are collected and returned
 // in the ImportResult for the frontend to display.
-func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string, overwrite bool) (*docsysSvc.ImportResult, error) {
+func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []domaindocsys.UploadedFile, folderPath string, overwrite bool) (*domaindocsys.ImportResult, error) {
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
 	}
 
 	// Initialize aggregated result - will collect stats from all processors
-	aggregatedResult := &docsysSvc.ImportResult{
-		Summary:   docsysSvc.ImportSummary{},
-		Errors:    []docsysSvc.ImportError{},
-		Documents: []docsysSvc.ImportDocument{},
+	aggregatedResult := &domaindocsys.ImportResult{
+		Summary:   domaindocsys.ImportSummary{},
+		Errors:    []domaindocsys.ImportError{},
+		Documents: []domaindocsys.ImportDocument{},
 	}
 
 	// Process each file using appropriate processor

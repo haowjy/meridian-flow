@@ -3,7 +3,7 @@ package streaming
 import (
 	"fmt"
 
-	"meridian/internal/domain/models/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // serverDefaultToolOrder is the canonical tool set for a normal user thread.
@@ -20,7 +20,7 @@ var serverDefaultToolOrder = []string{
 	"skill_list",
 }
 
-func parseDisabledTools(preferences docsystem.JSONMap) map[string]bool {
+func parseDisabledTools(preferences domaindocsys.JSONMap) map[string]bool {
 	disabled := make(map[string]bool)
 	if preferences == nil {
 		return disabled

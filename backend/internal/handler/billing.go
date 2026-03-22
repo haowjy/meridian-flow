@@ -8,8 +8,7 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/httputil"
 )
 
@@ -20,13 +19,13 @@ const (
 
 // BillingHandler handles billing HTTP requests.
 type BillingHandler struct {
-	creditService billingdomain.CreditService
+	creditService billing.CreditService
 	logger        *slog.Logger
 	cfg           *config.Config
 }
 
 func NewBillingHandler(
-	creditService billingdomain.CreditService,
+	creditService billing.CreditService,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *BillingHandler {
@@ -66,7 +65,7 @@ func (h *BillingHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if balance == nil {
-		balance = &billingmodel.CreditBalance{}
+		balance = &billing.CreditBalance{}
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
@@ -83,7 +82,7 @@ func (h *BillingHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 
-	req := billingmodel.ListTransactionsRequest{
+	req := billing.ListTransactionsRequest{
 		Limit:  QueryInt(r, "limit", defaultTransactionsLimit, 1, maxTransactionsLimit),
 		Offset: QueryInt(r, "offset", 0, 0, math.MaxInt32),
 	}
@@ -102,7 +101,7 @@ func (h *BillingHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 func (h *BillingHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 
-	var req billingdomain.CreateCheckoutSessionRequest
+	var req billing.CreateCheckoutSessionRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -130,7 +129,7 @@ func (h *BillingHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	req := billingdomain.StripeWebhookRequest{
+	req := billing.StripeWebhookRequest{
 		Payload:   payload,
 		Signature: r.Header.Get("Stripe-Signature"),
 	}

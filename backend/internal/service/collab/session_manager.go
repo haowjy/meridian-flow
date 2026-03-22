@@ -12,7 +12,7 @@ import (
 	ycrdt "github.com/haowjy/y-crdt"
 	"golang.org/x/sync/singleflight"
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 const (
@@ -23,8 +23,9 @@ const (
 
 var errSessionFrozen = errors.New("collab session is frozen")
 
-var _ collabSvc.DocumentSessionProvider = (*DocumentSessionManager)(nil)
-var _ collabSvc.SyncSession = (*DocumentSession)(nil)
+var _ collab.DocumentSessionProvider = (*DocumentSessionManager)(nil)
+var _ collab.DocumentStateManager = (*DocumentSessionManager)(nil)
+var _ collab.SyncSession = (*DocumentSession)(nil)
 
 // DocumentSessionManager manages in-memory Yjs docs for active websocket sessions.
 type DocumentSessionManager struct {
@@ -32,11 +33,11 @@ type DocumentSessionManager struct {
 	sessions       map[string]*DocumentSession
 	frozenDocs     map[string]struct{}
 	loadGroup      singleflight.Group
-	stateStore     collabSvc.DocumentStateStore
-	updateLogStore collabSvc.UpdateLogStore
-	bookmarkStore  collabSvc.BookmarkStore
-	statusMirror   collabSvc.StatusMirror
-	contentLoader  collabSvc.DocumentContentLoader
+	stateStore     collab.DocumentStateStore
+	updateLogStore collab.UpdateLogStore
+	bookmarkStore  collab.BookmarkStore
+	statusMirror   collab.StatusMirror
+	contentLoader  collab.DocumentContentLoader
 	logger         *slog.Logger
 }
 
@@ -47,10 +48,10 @@ type DocumentSessionManager struct {
 type DocumentSession struct {
 	docID              string
 	doc                *ycrdt.Doc
-	stateStore         collabSvc.DocumentStateStore
-	updateLogStore     collabSvc.UpdateLogStore
-	contentLoader      collabSvc.DocumentContentLoader
-	statusMirror       collabSvc.StatusMirror
+	stateStore         collab.DocumentStateStore
+	updateLogStore     collab.UpdateLogStore
+	contentLoader      collab.DocumentContentLoader
+	statusMirror       collab.StatusMirror
 	logger             *slog.Logger
 	lastPersistedSV    []byte
 	lastMutationOrigin string // "human" | "ai_accept" | ...
@@ -65,11 +66,11 @@ type DocumentSession struct {
 // NewDocumentSessionManager creates the collab document runtime cache.
 // contentLoader is separated from persistence stores (ISP) — only session bootstrap needs it.
 func NewDocumentSessionManager(
-	stateStore collabSvc.DocumentStateStore,
-	updateLogStore collabSvc.UpdateLogStore,
-	bookmarkStore collabSvc.BookmarkStore,
-	statusMirror collabSvc.StatusMirror,
-	contentLoader collabSvc.DocumentContentLoader,
+	stateStore collab.DocumentStateStore,
+	updateLogStore collab.UpdateLogStore,
+	bookmarkStore collab.BookmarkStore,
+	statusMirror collab.StatusMirror,
+	contentLoader collab.DocumentContentLoader,
 	logger *slog.Logger,
 ) *DocumentSessionManager {
 	return &DocumentSessionManager{
@@ -85,7 +86,7 @@ func NewDocumentSessionManager(
 }
 
 // GetOrCreateSession returns a live document session, creating and loading it on first connect.
-func (m *DocumentSessionManager) GetOrCreateSession(ctx context.Context, docID string, _ string) (collabSvc.SyncSession, func(), error) {
+func (m *DocumentSessionManager) GetOrCreateSession(ctx context.Context, docID string, _ string) (collab.SyncSession, func(), error) {
 	session, err := m.Acquire(ctx, docID)
 	if err != nil {
 		return nil, nil, err
@@ -410,7 +411,7 @@ func (m *DocumentSessionManager) CreateAITurnBookmark(
 	}
 
 	turnIDStr := turnID.String()
-	bookmark := &collabSvc.Bookmark{
+	bookmark := &collab.Bookmark{
 		DocumentID:   docID,
 		UpdateID:     &latestUpdateID,
 		BookmarkType: "ai_turn",

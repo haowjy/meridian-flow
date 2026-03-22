@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	llmSvc "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/httputil"
 )
 
@@ -15,15 +15,15 @@ import (
 // WARNING: These endpoints are ONLY available when ENVIRONMENT=dev
 // They bypass normal validation to allow manual testing of assistant responses
 type ThreadDebugHandler struct {
-	threadHistoryService llmSvc.ThreadHistoryService
-	streamingService     llmSvc.StreamingService
+	threadHistoryService domainllm.ThreadHistoryService
+	streamingService     domainllm.StreamingService
 	config               *config.Config
 }
 
 // NewThreadDebugHandler creates a new debug thread handler
 func NewThreadDebugHandler(
-	threadHistoryService llmSvc.ThreadHistoryService,
-	streamingService llmSvc.StreamingService,
+	threadHistoryService domainllm.ThreadHistoryService,
+	streamingService domainllm.StreamingService,
 	cfg *config.Config,
 ) *ThreadDebugHandler {
 	return &ThreadDebugHandler{
@@ -57,9 +57,9 @@ func (h *ThreadDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.
 
 	userID := httputil.GetUserID(r)
 	var req struct {
-		PrevTurnID *string                  `json:"prev_turn_id"`
-		Role       string                   `json:"role"`
-		TurnBlocks []llmSvc.TurnBlockInput `json:"turn_blocks"`
+		PrevTurnID *string                    `json:"prev_turn_id"`
+		Role       string                     `json:"role"`
+		TurnBlocks []domainllm.TurnBlockInput `json:"turn_blocks"`
 	}
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
@@ -73,7 +73,7 @@ func (h *ThreadDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.
 	}
 
 	// Create assistant turn via debug service method
-	model := h.config.DefaultModel
+	model := h.config.LLM.DefaultModel
 	if model == "" {
 		model = "claude-haiku-4-5-20251001" // Fallback if config not set
 	}
@@ -109,7 +109,7 @@ func (h *ThreadDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http
 	}
 
 	userID := httputil.GetUserID(r)
-	var req llmSvc.CreateTurnRequest
+	var req domainllm.CreateTurnRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return

@@ -12,24 +12,24 @@ import (
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/webhook"
 
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
-var _ billingdomain.StripeClient = (*stripeClient)(nil)
+var _ billing.StripeClient = (*stripeClient)(nil)
 
 type stripeClient struct {
 	webhookSecret string
 }
 
-func NewStripeClient(apiKey string, webhookSecret string) billingdomain.StripeClient {
+func NewStripeClient(apiKey string, webhookSecret string) billing.StripeClient {
 	stripe.Key = apiKey
 	return &stripeClient{webhookSecret: webhookSecret}
 }
 
 func (c *stripeClient) CreateCheckoutSession(
 	ctx context.Context,
-	req billingdomain.CreateStripeSessionRequest,
-) (*billingdomain.StripeSession, error) {
+	req billing.CreateStripeSessionRequest,
+) (*billing.StripeSession, error) {
 	currency := req.CurrencyISO
 	if currency == "" {
 		currency = "usd"
@@ -66,7 +66,7 @@ func (c *stripeClient) CreateCheckoutSession(
 	return mapStripeSession(session), nil
 }
 
-func (c *stripeClient) ConstructWebhookEvent(payload []byte, signature string) (*billingdomain.StripeEvent, error) {
+func (c *stripeClient) ConstructWebhookEvent(payload []byte, signature string) (*billing.StripeEvent, error) {
 	if c.webhookSecret == "" {
 		return nil, errors.New("stripe webhook secret is not configured")
 	}
@@ -76,7 +76,7 @@ func (c *stripeClient) ConstructWebhookEvent(payload []byte, signature string) (
 		return nil, fmt.Errorf("construct stripe event: %w", err)
 	}
 
-	stripeEvent := &billingdomain.StripeEvent{
+	stripeEvent := &billing.StripeEvent{
 		ID:   event.ID,
 		Type: string(event.Type),
 	}
@@ -114,7 +114,7 @@ func (c *stripeClient) ConstructWebhookEvent(payload []byte, signature string) (
 	return stripeEvent, nil
 }
 
-func (c *stripeClient) RetrieveSession(ctx context.Context, sessionID string) (*billingdomain.StripeSession, error) {
+func (c *stripeClient) RetrieveSession(ctx context.Context, sessionID string) (*billing.StripeSession, error) {
 	session, err := checkoutsession.Get(sessionID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve stripe checkout session: %w", err)
@@ -128,7 +128,7 @@ func (c *stripeClient) RetrieveSessionByChargeOrPaymentIntent(
 	ctx context.Context,
 	chargeID string,
 	paymentIntentID string,
-) (*billingdomain.StripeSession, error) {
+) (*billing.StripeSession, error) {
 	paymentIntent := paymentIntentID
 	if paymentIntent == "" && chargeID != "" {
 		charge, err := stripecharge.Get(chargeID, nil)
@@ -161,7 +161,7 @@ func (c *stripeClient) RetrieveSessionByChargeOrPaymentIntent(
 	return nil, nil
 }
 
-func mapStripeSession(session *stripe.CheckoutSession) *billingdomain.StripeSession {
+func mapStripeSession(session *stripe.CheckoutSession) *billing.StripeSession {
 	if session == nil {
 		return nil
 	}
@@ -176,7 +176,7 @@ func mapStripeSession(session *stripe.CheckoutSession) *billingdomain.StripeSess
 		expiresAt = time.Unix(session.ExpiresAt, 0).UTC()
 	}
 
-	return &billingdomain.StripeSession{
+	return &billing.StripeSession{
 		ID:                session.ID,
 		URL:               session.URL,
 		ExpiresAt:         expiresAt,

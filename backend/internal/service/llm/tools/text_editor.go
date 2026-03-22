@@ -8,8 +8,7 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/models/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // TextEditorToolMetadata returns metadata for the str_replace_based_edit_tool tool.
@@ -33,11 +32,11 @@ func TextEditorToolMetadata() *ToolMetadata {
 // Schema docs: https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 type TextEditorTool struct {
 	projectID        string
-	userID           string                     // Required for service layer authorization
-	documentSvc      docsysSvc.DocumentService  // For document operations
-	folderSvc        docsysSvc.FolderService    // For folder operations
-	namespaceSvc     docsysSvc.NamespaceService // For namespace routing (optional)
-	pathResolver     *PathResolver              // For folder path resolution
+	userID           string                        // Required for service layer authorization
+	documentSvc      domaindocsys.DocumentService  // For document operations
+	folderSvc        domaindocsys.FolderService    // For folder operations
+	namespaceSvc     domaindocsys.NamespaceService // For namespace routing (optional)
+	pathResolver     *DocumentPathResolver         // For folder path resolution
 	config           *ToolConfig
 	normalizers      []TextNormalizer         // For str_replace text normalization (OCP)
 	mutationStrategy DocumentMutationStrategy // Strategy for persisting AI edits (collab proposal)
@@ -48,9 +47,9 @@ type TextEditorTool struct {
 func NewTextEditorTool(
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService,
-	namespaceSvc docsysSvc.NamespaceService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService,
+	namespaceSvc domaindocsys.NamespaceService,
 	config *ToolConfig,
 	mutationStrategy DocumentMutationStrategy,
 ) *TextEditorTool {
@@ -154,7 +153,7 @@ func (t *TextEditorTool) executeView(ctx context.Context, path string, input map
 
 // formatDocumentWithLineNumbers converts a document to the tool result format with line numbers.
 // Output format matches Anthropic's text_editor: "1: line1\n2: line2\n..."
-func (t *TextEditorTool) formatDocumentWithLineNumbers(doc *docsystem.Document, input map[string]interface{}) (interface{}, error) {
+func (t *TextEditorTool) formatDocumentWithLineNumbers(doc *domaindocsys.Document, input map[string]interface{}) (interface{}, error) {
 	content := doc.Content
 
 	lines := strings.Split(content, "\n")
@@ -440,7 +439,7 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 	ext := filepath.Ext(fullName)
 	name := strings.TrimSuffix(fullName, ext)
 	if ext == "" {
-		ext = docsystem.DefaultExtension // Default to .md
+		ext = domaindocsys.DefaultExtension // Default to .md
 	}
 
 	// Prepare folder path for service
@@ -451,7 +450,7 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 	}
 
 	// Create document with empty content
-	createReq := &docsysSvc.CreateDocumentRequest{
+	createReq := &domaindocsys.CreateDocumentRequest{
 		ProjectID:  t.projectID,
 		UserID:     t.userID,
 		FolderPath: folderPathPtr,
@@ -501,12 +500,12 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 func (t *TextEditorTool) checkEditNamespaceAccess(path string) interface{} {
 	if t.namespaceSvc != nil {
 		namespace, _, err := t.namespaceSvc.ParsePath(path)
-		if err == nil && namespace == docsysSvc.NamespaceMeridian {
+		if err == nil && namespace == domaindocsys.NamespaceMeridian {
 			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.meridian/ paths - use skill editor API instead", map[string]any{
 				"path": path,
 			})
 		}
-		if err == nil && namespace == docsysSvc.NamespaceSession {
+		if err == nil && namespace == domaindocsys.NamespaceSession {
 			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.session/ paths", map[string]any{
 				"path": path,
 			})

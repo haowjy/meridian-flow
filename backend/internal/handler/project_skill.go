@@ -5,19 +5,19 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	skillSvc "meridian/internal/domain/services/skill"
+	skill "meridian/internal/domain/skill"
 	"meridian/internal/httputil"
 )
 
 // ProjectSkillHandler handles skill HTTP requests for a project
 type ProjectSkillHandler struct {
-	skillService skillSvc.ProjectSkillService
+	skillService skill.ProjectSkillService
 	logger       *slog.Logger
 	config       *config.Config
 }
 
 // NewProjectSkillHandler creates a new project skill handler
-func NewProjectSkillHandler(skillService skillSvc.ProjectSkillService, logger *slog.Logger, cfg *config.Config) *ProjectSkillHandler {
+func NewProjectSkillHandler(skillService skill.ProjectSkillService, logger *slog.Logger, cfg *config.Config) *ProjectSkillHandler {
 	return &ProjectSkillHandler{
 		skillService: skillService,
 		logger:       logger,
@@ -62,7 +62,7 @@ func (h *ProjectSkillHandler) CreateSkill(w http.ResponseWriter, r *http.Request
 	}
 
 	// Convert to service request
-	svcReq := skillSvc.CreateSkillRequest{
+	svcReq := skill.CreateSkillRequest{
 		ProjectID:              projectID,
 		Name:                   req.Name,
 		Description:            req.Description,
@@ -149,7 +149,7 @@ func (h *ProjectSkillHandler) UpdateSkill(w http.ResponseWriter, r *http.Request
 	userID := httputil.GetUserID(r)
 
 	// Convert to service request
-	svcReq := skillSvc.UpdateSkillRequest{
+	svcReq := skill.UpdateSkillRequest{
 		Name:                   req.Name,
 		Description:            req.Description,
 		Content:                req.Content,

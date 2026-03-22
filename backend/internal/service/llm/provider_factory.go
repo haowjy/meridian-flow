@@ -66,7 +66,7 @@ func (f *ProviderFactory) GetProvider(providerName string) (llmprovider.Provider
 
 // createAnthropicProvider creates an Anthropic provider instance
 func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error) {
-	if f.config.AnthropicAPIKey == "" {
+	if f.config.LLM.AnthropicAPIKey == "" {
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
 	}
 
@@ -79,13 +79,13 @@ func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error
 	httpClient := &http.Client{Timeout: 0}
 
 	// Convert config seconds to time.Duration
-	idleTimeout := time.Duration(f.config.LLMIdleTimeoutSeconds) * time.Second
+	idleTimeout := time.Duration(f.config.LLM.IdleTimeoutSeconds) * time.Second
 
 	provider, err := anthropic.NewProvider(
-		f.config.AnthropicAPIKey,
+		f.config.LLM.AnthropicAPIKey,
 		anthropic.WithHTTPClient(httpClient),
 		anthropic.WithLogger(providerLogger),
-		anthropic.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		anthropic.WithDebugStreamLogs(f.config.LLM.StreamDebugLogs),
 		anthropic.WithStreamingIdleTimeout(idleTimeout),
 	)
 	if err != nil {
@@ -103,14 +103,14 @@ func (f *ProviderFactory) createLoremProvider() (llmprovider.Provider, error) {
 
 	provider := lorem.NewProvider(
 		lorem.WithLogger(providerLogger),
-		lorem.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		lorem.WithDebugStreamLogs(f.config.LLM.StreamDebugLogs),
 	)
 	return provider, nil
 }
 
 // createOpenRouterProvider creates an OpenRouter provider instance
 func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, error) {
-	if f.config.OpenRouterAPIKey == "" {
+	if f.config.LLM.OpenRouterAPIKey == "" {
 		return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable not set")
 	}
 
@@ -123,13 +123,13 @@ func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, erro
 	httpClient := &http.Client{Timeout: 0}
 
 	// Convert config seconds to time.Duration
-	idleTimeout := time.Duration(f.config.LLMIdleTimeoutSeconds) * time.Second
+	idleTimeout := time.Duration(f.config.LLM.IdleTimeoutSeconds) * time.Second
 
 	provider, err := openrouter.NewProvider(
-		f.config.OpenRouterAPIKey,
+		f.config.LLM.OpenRouterAPIKey,
 		openrouter.WithHTTPClient(httpClient),
 		openrouter.WithLogger(providerLogger),
-		openrouter.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		openrouter.WithDebugStreamLogs(f.config.LLM.StreamDebugLogs),
 		openrouter.WithStreamingIdleTimeout(idleTimeout),
 		// WithResponsesAPI(true) - disabled until Responses API is debugged
 	)

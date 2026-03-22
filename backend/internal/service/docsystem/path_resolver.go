@@ -3,25 +3,24 @@ package docsystem
 import (
 	"context"
 	"fmt"
+	"meridian/internal/domain"
 	"strings"
 	"unicode"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 type pathResolverService struct {
-	folderRepo docsysRepo.FolderRepository
-	txManager  repositories.TransactionManager
+	folderRepo domaindocsys.FolderStore
+	txManager  domain.TransactionManager
 }
 
 // NewPathResolver creates a new path resolver service
 func NewPathResolver(
-	folderRepo docsysRepo.FolderRepository,
-	txManager repositories.TransactionManager,
-) docsysSvc.PathResolver {
+	folderRepo domaindocsys.FolderStore,
+	txManager domain.TransactionManager,
+) domaindocsys.PathNotationResolver {
 	return &pathResolverService{
 		folderRepo: folderRepo,
 		txManager:  txManager,
@@ -118,7 +117,7 @@ func (s *pathResolverService) ValidateFolderPath(path string) error {
 }
 
 // ResolvePathNotation handles Unix-style path notation with priority-based folder resolution
-func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docsysSvc.PathNotationRequest) (*docsysSvc.PathNotationResult, error) {
+func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *domaindocsys.PathNotationRequest) (*domaindocsys.PathNotationResult, error) {
 	// Check if name contains path notation
 	if !IsPathNotation(req.Name) {
 		// No path notation - just validate simple name and return
@@ -144,7 +143,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 			resolvedFolderID = nil
 		}
 
-		return &docsysSvc.PathNotationResult{
+		return &domaindocsys.PathNotationResult{
 			ResolvedFolderID: resolvedFolderID,
 			FinalName:        name,
 		}, nil
@@ -215,7 +214,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 		return nil, fmt.Errorf("invalid final name '%s': %w", pathResult.FinalName, err)
 	}
 
-	return &docsysSvc.PathNotationResult{
+	return &domaindocsys.PathNotationResult{
 		ResolvedFolderID: resolvedFolderID,
 		FinalName:        pathResult.FinalName,
 	}, nil

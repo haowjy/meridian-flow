@@ -3,7 +3,7 @@ package converter
 import (
 	"context"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // markdownConverter is a passthrough converter for markdown files.
@@ -11,7 +11,7 @@ import (
 type markdownConverter struct{}
 
 // NewMarkdownConverter creates a new markdown passthrough converter.
-func NewMarkdownConverter() docsysSvc.ContentConverter {
+func NewMarkdownConverter() domaindocsys.ContentConverter {
 	return &markdownConverter{}
 }
 

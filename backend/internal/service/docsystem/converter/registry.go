@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // ConverterRegistry manages content converters and routes files by extension.
@@ -16,13 +16,13 @@ import (
 // Thread-safe for concurrent access.
 type ConverterRegistry struct {
 	mu         sync.RWMutex
-	converters map[string]docsysSvc.ContentConverter // key: file extension (e.g., ".html")
+	converters map[string]domaindocsys.ContentConverter // key: file extension (e.g., ".html")
 }
 
 // NewConverterRegistry creates a registry with standard converters pre-registered.
 func NewConverterRegistry() *ConverterRegistry {
 	registry := &ConverterRegistry{
-		converters: make(map[string]docsysSvc.ContentConverter),
+		converters: make(map[string]domaindocsys.ContentConverter),
 	}
 
 	// Register standard converters
@@ -37,7 +37,7 @@ func NewConverterRegistry() *ConverterRegistry {
 // Enables extension without modification (OCP).
 //
 // Extensions are automatically normalized to lowercase with leading dot.
-func (r *ConverterRegistry) Register(converter docsysSvc.ContentConverter) {
+func (r *ConverterRegistry) Register(converter domaindocsys.ContentConverter) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -54,7 +54,7 @@ func (r *ConverterRegistry) Register(converter docsysSvc.ContentConverter) {
 // Returns nil if no converter is registered for this extension.
 //
 // Extension lookup is case-insensitive.
-func (r *ConverterRegistry) GetConverter(fileExt string) docsysSvc.ContentConverter {
+func (r *ConverterRegistry) GetConverter(fileExt string) domaindocsys.ContentConverter {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.converters[strings.ToLower(fileExt)]

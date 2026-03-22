@@ -11,8 +11,7 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/config"
-	llmModels "meridian/internal/domain/models/llm"
-	llmSvc "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
 )
@@ -20,9 +19,9 @@ import (
 // ThreadHandler handles thread HTTP requests
 // Follows Clean Architecture: handlers only communicate with services, never repositories
 type ThreadHandler struct {
-	threadService        llmSvc.ThreadService
-	threadHistoryService llmSvc.ThreadHistoryService
-	streamingService     llmSvc.StreamingService
+	threadService        domainllm.ThreadService
+	threadHistoryService domainllm.ThreadHistoryService
+	streamingService     domainllm.StreamingService
 	registry             *mstream.Registry
 	logger               *slog.Logger
 	config               *config.Config
@@ -30,9 +29,9 @@ type ThreadHandler struct {
 
 // NewThreadHandler creates a new thread handler
 func NewThreadHandler(
-	threadService llmSvc.ThreadService,
-	threadHistoryService llmSvc.ThreadHistoryService,
-	streamingService llmSvc.StreamingService,
+	threadService domainllm.ThreadService,
+	threadHistoryService domainllm.ThreadHistoryService,
+	streamingService domainllm.StreamingService,
 	registry *mstream.Registry,
 	logger *slog.Logger,
 	cfg *config.Config,
@@ -55,7 +54,7 @@ func (h *ThreadHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 
 	// Parse request
-	var req llmSvc.CreateThreadRequest
+	var req domainllm.CreateThreadRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -65,7 +64,7 @@ func (h *ThreadHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	thread, err := h.threadService.CreateThread(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, h.config, func(id string) (*llmModels.Thread, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*domainllm.Thread, error) {
 			return h.threadService.GetThread(r.Context(), id, userID)
 		})
 		return
@@ -124,7 +123,7 @@ func (h *ThreadHandler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := httputil.GetUserID(r)
-	var req llmSvc.UpdateThreadRequest
+	var req domainllm.UpdateThreadRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -194,7 +193,7 @@ func (h *ThreadHandler) DeleteThread(w http.ResponseWriter, r *http.Request) {
 // 3. Else if project_id provided -> create new thread (cold start)
 func (h *ThreadHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
-	var req llmSvc.CreateTurnRequest
+	var req domainllm.CreateTurnRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -221,7 +220,7 @@ func (h *ThreadHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := httputil.GetUserID(r)
-	var req llmSvc.CreateTurnRequest
+	var req domainllm.CreateTurnRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -320,7 +319,7 @@ type GetTurnBlocksResponse struct {
 	TurnID string                `json:"turn_id"`
 	Status string                `json:"status"`
 	Error  *string               `json:"error,omitempty"`
-	Blocks []llmModels.TurnBlock `json:"blocks"`
+	Blocks []domainllm.TurnBlock `json:"blocks"`
 }
 
 // GetTurnBlocks retrieves all completed turn blocks for a turn
@@ -350,7 +349,7 @@ func (h *ThreadHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 	// Return structured response with turn status and error
 	response := GetTurnBlocksResponse{
 		TurnID: turn.ID,
-		Status: turn.Status,
+		Status: string(turn.Status),
 		Error:  turn.Error,
 		Blocks: turn.Blocks,
 	}

@@ -6,17 +6,17 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/config"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/httputil"
 )
 
 type CollabRestoreHandler struct {
-	restoreService collabSvc.RestoreService
+	restoreService collab.RestoreService
 	config         *config.Config
 }
 
 func NewCollabRestoreHandler(
-	restoreService collabSvc.RestoreService,
+	restoreService collab.RestoreService,
 	cfg *config.Config,
 ) *CollabRestoreHandler {
 	return &CollabRestoreHandler{
@@ -60,7 +60,7 @@ func (h *CollabRestoreHandler) handleRestore(w http.ResponseWriter, r *http.Requ
 
 	userID := httputil.GetUserID(r)
 
-	var result *collabSvc.RestoreResult
+	var result *collab.RestoreResult
 	if isRestore {
 		result, err = h.restoreService.RestoreTurn(r.Context(), userID, turnID)
 	} else {

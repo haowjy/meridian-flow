@@ -5,27 +5,26 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/models/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	identifierSvc "meridian/internal/domain/services/identifier"
+	domaindocsys "meridian/internal/domain/docsystem"
+	identifier "meridian/internal/domain/identifier"
 	"meridian/internal/httputil"
 	"meridian/internal/optional"
 )
 
 // ProjectHandler handles project HTTP requests
 type ProjectHandler struct {
-	projectService  docsysSvc.ProjectService
-	favoriteService docsysSvc.FavoriteService
-	resolver        identifierSvc.Resolver
+	projectService  domaindocsys.ProjectService
+	favoriteService domaindocsys.FavoriteService
+	resolver        identifier.Resolver
 	logger          *slog.Logger
 	config          *config.Config
 }
 
 // NewProjectHandler creates a new project handler
 func NewProjectHandler(
-	projectService docsysSvc.ProjectService,
-	favoriteService docsysSvc.FavoriteService,
-	resolver identifierSvc.Resolver,
+	projectService domaindocsys.ProjectService,
+	favoriteService domaindocsys.FavoriteService,
+	resolver identifier.Resolver,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *ProjectHandler {
@@ -62,7 +61,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 
 	// Parse request
-	var req docsysSvc.CreateProjectRequest
+	var req domaindocsys.CreateProjectRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -72,7 +71,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	// Call service (all business logic is here)
 	project, err := h.projectService.CreateProject(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Project, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*domaindocsys.Project, error) {
 			return h.projectService.GetProject(r.Context(), id, userID)
 		})
 		return
@@ -148,14 +147,14 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map transport DTO to service request
-	req := &docsysSvc.UpdateProjectRequest{
+	req := &domaindocsys.UpdateProjectRequest{
 		Name:         dto.Name,
 		SystemPrompt: dto.SystemPrompt,
 	}
 
 	// Map preferences DTO to JSONMap if provided
 	if dto.Preferences != nil {
-		req.Preferences = docsystem.JSONMap{
+		req.Preferences = domaindocsys.JSONMap{
 			"disabled_tools": dto.Preferences.DisabledTools,
 		}
 	}

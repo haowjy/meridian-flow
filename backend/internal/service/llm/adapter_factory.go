@@ -5,7 +5,7 @@ import (
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/adapters"
 )
 
