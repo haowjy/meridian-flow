@@ -46,7 +46,7 @@ Full architecture reference: `.meridian/fs/backend-architecture.md`
 
 **Dynamic table names** -- always `db.Tables.*`, never hardcode table names. See `internal/repository/postgres/`.
 
-**SQL migrations** -- `backend/migrations/AGENTS.md` for rules. Prefix all tables/indexes/constraints with `${TABLE_PREFIX}`.
+**SQL migrations** -- `backend/migrations/AGENTS.md` for rules. Prefix all tables/indexes/constraints with `${TABLE_PREFIX}`. Lint with `backend/scripts/lint-migrations.sh`.
 
 **Authorization** -- lives in the service layer, not handlers. Services accept `userID` and call `authorizer.CanAccess*` internally. Pattern: `internal/service/docsystem/document.go`.
 

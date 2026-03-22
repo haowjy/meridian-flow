@@ -23,6 +23,10 @@ This file applies to `backend/migrations/`.
 - `-- +goose Down`
 - `-- +goose StatementBegin` / `-- +goose StatementEnd` for PL/pgSQL blocks.
 
+## Lint
+
+Run `backend/scripts/lint-migrations.sh` to validate all migrations, or pass specific files. Checks ENVSUB, Up/Down sections, `${TABLE_PREFIX}` usage, and hardcoded prefixes.
+
 ## Required Workflow Before Editing
 
 Read first:
