@@ -1,7 +1,6 @@
 package domains
 
 import (
-	"context"
 	"net/http"
 
 	"meridian/internal/capabilities"
@@ -80,8 +79,6 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 	if err != nil {
 		return nil, err
 	}
-
-	go streamRegistry.StartCleanup(context.Background())
 
 	threadHandler := handler.NewThreadHandler(
 		llmServices.Thread,
