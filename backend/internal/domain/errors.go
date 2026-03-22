@@ -27,6 +27,13 @@ type (
 	ForbiddenError struct {
 		Message string
 	}
+
+	// InsufficientCreditsError indicates the user's credit balance cannot cover the required amount.
+	InsufficientCreditsError struct {
+		BalanceMillicredits   int64
+		RequiredMillicredits  int64
+		ShortfallMillicredits int64
+	}
 )
 
 // Error implementations
@@ -34,22 +41,29 @@ func (e *NotFoundError) Error() string     { return e.Message }
 func (e *ValidationError) Error() string   { return e.Message }
 func (e *UnauthorizedError) Error() string { return e.Message }
 func (e *ForbiddenError) Error() string    { return e.Message }
+func (e *InsufficientCreditsError) Error() string {
+	return "insufficient credits"
+}
 
 // Is implementations for errors.Is() support with sentinel errors
 func (e *NotFoundError) Is(target error) bool     { return target == ErrNotFound }
 func (e *ValidationError) Is(target error) bool   { return target == ErrValidation }
 func (e *UnauthorizedError) Is(target error) bool { return target == ErrUnauthorized }
 func (e *ForbiddenError) Is(target error) bool    { return target == ErrForbidden }
+func (e *InsufficientCreditsError) Is(target error) bool {
+	return target == ErrInsufficientCredits
+}
 
 // Sentinel errors for backwards compatibility - use with errors.Is()
 var (
-	ErrNotFound     = errors.New("not found")
-	ErrConflict     = errors.New("already exists")
-	ErrValidation   = errors.New("validation failed")
-	ErrBadRequest   = errors.New("bad request")
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrForbidden    = errors.New("forbidden")
-	ErrRateLimit    = errors.New("rate limit exceeded")
+	ErrNotFound            = errors.New("not found")
+	ErrConflict            = errors.New("already exists")
+	ErrValidation          = errors.New("validation failed")
+	ErrBadRequest          = errors.New("bad request")
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrForbidden           = errors.New("forbidden")
+	ErrRateLimit           = errors.New("rate limit exceeded")
+	ErrInsufficientCredits = errors.New("insufficient credits")
 )
 
 // WebSocket transport error sentinels
@@ -71,6 +85,20 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimit }
 // NewRateLimitError creates a structured RateLimitError
 func NewRateLimitError(message string) *RateLimitError {
 	return &RateLimitError{Message: message}
+}
+
+// NewInsufficientCreditsError creates a structured InsufficientCreditsError.
+func NewInsufficientCreditsError(balanceMillicredits, requiredMillicredits int64) *InsufficientCreditsError {
+	shortfall := requiredMillicredits - balanceMillicredits
+	if shortfall < 0 {
+		shortfall = 0
+	}
+
+	return &InsufficientCreditsError{
+		BalanceMillicredits:   balanceMillicredits,
+		RequiredMillicredits:  requiredMillicredits,
+		ShortfallMillicredits: shortfall,
+	}
 }
 
 // ConflictError represents a resource conflict with details about the existing resource

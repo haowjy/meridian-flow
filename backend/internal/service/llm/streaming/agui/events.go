@@ -94,13 +94,46 @@ const MeridianEventTypeInterjectionUpdated = "INTERJECTION_UPDATED"
 // MeridianEventTypeStreamSwitch is emitted when an interjection triggers a stream switch.
 const MeridianEventTypeStreamSwitch = "STREAM_SWITCH"
 
+// MeridianEventTypeCreditsExhausted is emitted when step-level admission denies a provider call.
+const MeridianEventTypeCreditsExhausted = "CREDITS_EXHAUSTED"
+
 // MeridianInterjectionUpdatedEvent is sent when interjection content is updated.
 // Frontend uses this to display the pending interjection to the user.
 type MeridianInterjectionUpdatedEvent struct {
 	Type    string `json:"type"`
-	TurnID  string `json:"turnId"`            // The assistant turn this interjection targets
-	Content string `json:"content"`           // Current interjection buffer content
-	Length  int    `json:"length"`            // Buffer length in bytes
+	TurnID  string `json:"turnId"`  // The assistant turn this interjection targets
+	Content string `json:"content"` // Current interjection buffer content
+	Length  int    `json:"length"`  // Buffer length in bytes
+}
+
+// MeridianCreditsExhaustedEvent is sent when streaming ends due to insufficient credits.
+type MeridianCreditsExhaustedEvent struct {
+	Type         string `json:"type"`
+	ThreadID     string `json:"threadId,omitempty"`
+	RunID        string `json:"runId,omitempty"`
+	TurnID       string `json:"turnId,omitempty"`
+	RequestIndex int    `json:"requestIndex"`
+	Phase        string `json:"phase"`
+	Message      string `json:"message"`
+}
+
+// NewMeridianCreditsExhaustedEvent creates a CREDITS_EXHAUSTED event.
+func NewMeridianCreditsExhaustedEvent(
+	threadID string,
+	runID string,
+	turnID string,
+	requestIndex int,
+	phase string,
+) *MeridianCreditsExhaustedEvent {
+	return &MeridianCreditsExhaustedEvent{
+		Type:         MeridianEventTypeCreditsExhausted,
+		ThreadID:     threadID,
+		RunID:        runID,
+		TurnID:       turnID,
+		RequestIndex: requestIndex,
+		Phase:        phase,
+		Message:      "insufficient credits",
+	}
 }
 
 // NewMeridianInterjectionUpdatedEvent creates an INTERJECTION_UPDATED event.

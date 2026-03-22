@@ -6,6 +6,8 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	billingmodel "meridian/internal/domain/models/billing"
+	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -80,6 +82,7 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 	defer cancel()
 
 	// Use TokenFinalizer to get best-effort tokens
+	var settlementMetadata *domainllm.StreamMetadata
 	if se.tokenFinalizer != nil {
 		result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
 			TurnID:         se.turnID,
@@ -99,7 +102,28 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 				"turn_id", se.turnID,
 				"error", updateErr,
 			)
+		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
+			settlementMetadata = &domainllm.StreamMetadata{
+				Model:        se.model,
+				InputTokens:  result.InputTokens,
+				OutputTokens: result.OutputTokens,
+			}
 		}
+	}
+
+	// Settlement is best-effort; billing failures must not affect user-visible completion path.
+	if settlementMetadata != nil {
+		se.handleTerminalSettlement(ctx, settlementMetadata, "soft_cancel_timeout", true)
+	} else if se.settlementMode == billingmodel.CreditSettlementDeferredToEnrichment {
+		generationID := se.getGenerationID()
+		if generationID != "" {
+			phase := "initial"
+			if se.requestIndex > 0 {
+				phase = "tool_continue"
+			}
+			se.enqueueEnrichmentSettlementJob(generationID, phase, se.model, true)
+		}
+		se.persistCurrentRequestPendingSettlement(ctx, se.model, "soft_cancel_timeout")
 	}
 
 	// Transition to Errored state (terminal)

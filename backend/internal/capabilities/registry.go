@@ -92,6 +92,19 @@ func (r *Registry) ListProviderModels(provider string) ([]ModelCapabilities, err
 	return providerCaps.Models, nil
 }
 
+// GetProviderCapabilities returns the provider-level capabilities document.
+func (r *Registry) GetProviderCapabilities(provider string) (*ProviderCapabilities, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	providerCaps, ok := r.providers[provider]
+	if !ok {
+		return nil, fmt.Errorf("unknown provider: %s", provider)
+	}
+
+	return providerCaps, nil
+}
+
 // GetAllProviders returns a list of all registered providers
 func (r *Registry) GetAllProviders() []string {
 	r.mu.RLock()

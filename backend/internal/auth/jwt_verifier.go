@@ -103,9 +103,11 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaim
 	}
 
 	return &models.AuthClaims{
-		UserID:    claims.Subject,
-		Email:     claims.Email,
-		ExpiresAt: expiresAt,
+		UserID:        claims.Subject,
+		Email:         claims.Email,
+		AuthProvider:  resolveAuthProvider(claims),
+		EmailVerified: resolveEmailVerified(claims),
+		ExpiresAt:     expiresAt,
 	}, nil
 }
 
@@ -115,4 +117,40 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaim
 func (v *SupabaseJWTVerifier) Close() error {
 	v.logger.Debug("JWT verifier closed")
 	return nil
+}
+
+func resolveAuthProvider(claims *SupabaseClaims) string {
+	if claims == nil {
+		return ""
+	}
+
+	if provider, ok := claims.AppMetadata["provider"].(string); ok && provider != "" {
+		return provider
+	}
+	if provider, ok := claims.UserMetadata["provider"].(string); ok && provider != "" {
+		return provider
+	}
+
+	// Supabase issues "email" for native email/password users.
+	return "email"
+}
+
+func resolveEmailVerified(claims *SupabaseClaims) bool {
+	if claims == nil {
+		return false
+	}
+
+	if claims.EmailVerified != nil {
+		return *claims.EmailVerified
+	}
+
+	if claims.EmailConfirmedAt != nil && *claims.EmailConfirmedAt != "" {
+		return true
+	}
+
+	if v, ok := claims.UserMetadata["email_verified"].(bool); ok {
+		return v
+	}
+
+	return false
 }

@@ -7,31 +7,40 @@ import (
 	"meridian/internal/domain"
 )
 
-// UserStreamTracker enforces a per-user limit on concurrent streams.
+// UserStreamTracker enforces per-user limits on concurrent streams.
+// Free users get freeLimit, paid users (purchased_balance > 0) get paidLimit.
 // Uses sync.Mutex (not sync.Map) because Acquire requires an atomic check-and-increment.
 type UserStreamTracker struct {
-	mu     sync.Mutex
-	counts map[string]int // userID -> active stream count
-	limit  int
+	mu        sync.Mutex
+	counts    map[string]int // userID -> active stream count
+	freeLimit int
+	paidLimit int
 }
 
-// NewUserStreamTracker creates a new tracker with the given per-user limit.
-func NewUserStreamTracker(limit int) *UserStreamTracker {
+// NewUserStreamTracker creates a new tracker with free/paid limits.
+func NewUserStreamTracker(freeLimit, paidLimit int) *UserStreamTracker {
 	return &UserStreamTracker{
-		counts: make(map[string]int),
-		limit:  limit,
+		counts:    make(map[string]int),
+		freeLimit: freeLimit,
+		paidLimit: paidLimit,
 	}
 }
 
 // Acquire increments the stream count for a user.
-// Returns a RateLimitError if the user is already at the limit.
-func (t *UserStreamTracker) Acquire(userID string) error {
+// hasPurchasedCredits determines whether the user gets the paid (higher) limit.
+// Returns a RateLimitError if the user is already at their limit.
+func (t *UserStreamTracker) Acquire(userID string, hasPurchasedCredits bool) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.counts[userID] >= t.limit {
+	limit := t.freeLimit
+	if hasPurchasedCredits {
+		limit = t.paidLimit
+	}
+
+	if t.counts[userID] >= limit {
 		return domain.NewRateLimitError(
-			fmt.Sprintf("max concurrent streams (%d) reached, please wait for an existing stream to complete", t.limit),
+			fmt.Sprintf("max concurrent streams (%d) reached, please wait for an existing stream to complete", limit),
 		)
 	}
 
@@ -47,7 +56,6 @@ func (t *UserStreamTracker) Release(userID string) {
 	if t.counts[userID] > 0 {
 		t.counts[userID]--
 	}
-	// Clean up map entry when count hits zero to prevent unbounded growth
 	if t.counts[userID] == 0 {
 		delete(t.counts, userID)
 	}

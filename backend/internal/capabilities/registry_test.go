@@ -33,3 +33,21 @@ func TestGetModelCapabilities_OpenRouterOnlineVariantMatchesBase(t *testing.T) {
 		t.Fatalf("GetModelCapabilities() error: %v", err)
 	}
 }
+
+func TestGetProviderCapabilities_IncludesBillingDefaults(t *testing.T) {
+	r, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error: %v", err)
+	}
+
+	providerCaps, err := r.GetProviderCapabilities("openrouter")
+	if err != nil {
+		t.Fatalf("GetProviderCapabilities() error: %v", err)
+	}
+	if providerCaps.BillingDefaults == nil || providerCaps.BillingDefaults.MarkupBasisPoints == nil {
+		t.Fatalf("expected billing defaults markup basis points to be configured")
+	}
+	if *providerCaps.BillingDefaults.MarkupBasisPoints != 1500 {
+		t.Fatalf("markup_basis_points = %d, want 1500", *providerCaps.BillingDefaults.MarkupBasisPoints)
+	}
+}

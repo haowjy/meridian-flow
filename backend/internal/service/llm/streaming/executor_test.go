@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	billingmodel "meridian/internal/domain/models/billing"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	billingdomain "meridian/internal/domain/services/billing"
 	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/tokens"
 )
@@ -256,6 +258,32 @@ func (m *mockProvider) SupportsModel(model string) bool {
 
 var _ domainllm.LLMProvider = (*mockProvider)(nil)
 
+type mockCreditAdmissionChecker struct {
+	err error
+}
+
+func (m *mockCreditAdmissionChecker) CheckAdmission(ctx context.Context, userID string) error {
+	return m.err
+}
+
+func (m *mockCreditAdmissionChecker) HasPurchasedCredits(ctx context.Context, userID string) bool {
+	return false
+}
+
+type mockCreditSettler struct{}
+
+func (m *mockCreditSettler) SettleAuthoritativeRequest(ctx context.Context, req billingdomain.SettleRequestInput) error {
+	return nil
+}
+
+func (m *mockCreditSettler) RetryPendingSettlement(ctx context.Context, req billingdomain.RetryPendingSettlementInput) error {
+	return nil
+}
+
+func (m *mockCreditSettler) MarkPendingSettlement(ctx context.Context, req billingdomain.MarkPendingSettlementInput) error {
+	return nil
+}
+
 // mockMessageBuilder provides minimal MessageBuilder implementation
 type mockMessageBuilder struct{}
 
@@ -470,6 +498,9 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		nil, // no tool registry
 		&mockMessageBuilder{},
 		logger,
+		&mockCreditAdmissionChecker{},
+		&mockCreditSettler{},
+		billingmodel.CreditSettlementInlineAuthoritative,
 		5,     // maxToolRounds
 		false, // debugMode
 		&mockTokenFinalizer{},
@@ -528,6 +559,9 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		nil,
 		&mockMessageBuilder{},
 		logger,
+		&mockCreditAdmissionChecker{},
+		&mockCreditSettler{},
+		billingmodel.CreditSettlementInlineAuthoritative,
 		5,
 		false,
 		&mockTokenFinalizer{},
@@ -578,6 +612,9 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		nil,
 		&mockMessageBuilder{},
 		logger,
+		&mockCreditAdmissionChecker{},
+		&mockCreditSettler{},
+		billingmodel.CreditSettlementInlineAuthoritative,
 		5,
 		false,
 		&mockTokenFinalizer{},

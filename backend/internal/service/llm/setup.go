@@ -8,10 +8,12 @@ import (
 
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
+	billingmodel "meridian/internal/domain/models/billing"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
+	billingSvc "meridian/internal/domain/services/billing"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	skillSvc "meridian/internal/domain/services/skill"
@@ -83,10 +85,20 @@ func SetupServices(
 	capabilityRegistry *capabilities.Registry,
 	authorizer services.ResourceAuthorizer,
 	toolLimitResolver llmSvc.ToolLimitResolver,
+	creditAdmissionChecker billingSvc.CreditAdmissionChecker,
+	creditSettler billingSvc.CreditSettler,
+	settlementMode billingmodel.CreditSettlementMode,
 	jobQueue jobs.JobQueue,
 	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (collab proposal)
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
+	if creditAdmissionChecker == nil {
+		return nil, nil, fmt.Errorf("credit admission checker is required")
+	}
+	if creditSettler == nil {
+		return nil, nil, fmt.Errorf("credit settler is required")
+	}
+
 	// Create shared validator
 	validator := NewThreadValidator(threadRepo)
 
@@ -178,8 +190,11 @@ func SetupServices(
 		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
 		formatterRegistry,  // For formatting synthetic tool results (ref transformer)
 		tokenFinalizer,     // For finalizing tokens on completion/interruption
-		jobQueue,           // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy,   // Strategy for AI edit persistence (collab proposal)
+		creditAdmissionChecker,
+		creditSettler,
+		settlementMode,
+		jobQueue,         // Phase 2: Background job queue for async generation enrichment
+		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
 		logger,
 	)
 

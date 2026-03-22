@@ -9,8 +9,8 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	llmModels "meridian/internal/domain/models/llm"
-	"meridian/internal/pkg/sliceutil"
 	domainllm "meridian/internal/domain/services/llm"
+	"meridian/internal/pkg/sliceutil"
 	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tools"
 )
@@ -236,11 +236,14 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 			}
 
 			// End current stream cleanly - frontend will connect to new stream
-			// Return nil to complete this stream without error
 			se.logger.Info("stream switch completed, ending current stream",
 				"prev_turn_id", se.turnID,
 				"stream_url", result.StreamURL,
 			)
+			se.transitionTo(StateCompleted)
+			if se.onCleanup != nil {
+				se.onCleanup()
+			}
 			return nil
 		}
 	}
@@ -248,6 +251,18 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 4. Check iteration limit with tiered approach
 	se.toolIteration++
 	se.requestIndex++ // Increment request index for next LLM request (for generation metadata tracking)
+
+	if err := se.creditAdmissionChecker.CheckAdmission(ctx, se.userID); err != nil {
+		se.logger.Warn("credit admission denied before tool continuation provider call",
+			"turn_id", se.turnID,
+			"user_id", se.userID,
+			"request_index", se.requestIndex,
+			"phase", "tool_continue",
+			"error", err,
+		)
+		se.handleCreditsExhausted(ctx, send, se.requestIndex, "tool_continue")
+		return nil
+	}
 
 	// Emit AG-UI STEP_FINISHED for current step, then STEP_STARTED for next step
 	// This signals the transition between LLM requests in the tool continuation loop
@@ -433,8 +448,8 @@ func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func
 // a limit note into the last tool_result, and streams one final LLM response.
 // This allows graceful completion where the LLM synthesizes findings instead of abrupt cutoff.
 func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, send func(mstream.Event)) error {
-	se.requestIndex++ // Increment request index for graceful completion LLM request (for generation metadata tracking)
-
+	// Caller owns requestIndex increment and admission check.
+	// This avoids double-increment when executeToolsAndContinue already advanced state.
 	se.logger.Info("graceful completion: injecting limit note for final LLM response",
 		"iteration", se.toolIteration,
 		"max_rounds", se.maxToolRounds,

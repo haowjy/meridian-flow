@@ -21,17 +21,21 @@ type Config struct {
 	DBMaxConns int
 	DBMinConns int
 	// LLM Configuration
-	AnthropicAPIKey               string
-	OpenRouterAPIKey              string
-	DefaultProvider               string
-	DefaultModel                  string
-	MaxToolRounds                 int // Fallback limit if resolver fails (default: 10)
-	SoftCancelTimeoutSeconds      int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
-	LLMIdleTimeoutSeconds         int // Streaming idle timeout in seconds (default: 120 = 2 minutes)
-	MaxConcurrentStreams int // Max concurrent streams per user (default: 3)
+	AnthropicAPIKey          string
+	OpenRouterAPIKey         string
+	DefaultProvider          string
+	DefaultModel             string
+	MaxToolRounds            int // Fallback limit if resolver fails (default: 10)
+	SoftCancelTimeoutSeconds int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
+	LLMIdleTimeoutSeconds    int // Streaming idle timeout in seconds (default: 120 = 2 minutes)
+	MaxConcurrentStreamsFree int // Max concurrent streams for free users (default: 3)
+	MaxConcurrentStreamsPaid int // Max concurrent streams for paid users (default: 10)
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
+	// Billing configuration
+	StripeSecretKey     string
+	StripeWebhookSecret string
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
 	// Logging configuration
@@ -63,17 +67,21 @@ func Load() *Config {
 		DBMaxConns:            getEnvInt("DB_MAX_CONNS", 25),
 		DBMinConns:            getEnvInt("DB_MIN_CONNS", 5),
 		// LLM Configuration
-		AnthropicAPIKey:               getEnv("ANTHROPIC_API_KEY", ""),
-		OpenRouterAPIKey:              getEnv("OPENROUTER_API_KEY", ""),
-		DefaultProvider:               getEnv("DEFAULT_PROVIDER", "openrouter"),
-		DefaultModel:                  getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
-		MaxToolRounds:                 getEnvInt("MAX_TOOL_ROUNDS", 10),
-		SoftCancelTimeoutSeconds:      getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
-		LLMIdleTimeoutSeconds:         getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),    // 2 minutes default
-		MaxConcurrentStreams:          getEnvInt("MAX_CONCURRENT_STREAMS", 3),        // Per-user concurrent stream limit
+		AnthropicAPIKey:          getEnv("ANTHROPIC_API_KEY", ""),
+		OpenRouterAPIKey:         getEnv("OPENROUTER_API_KEY", ""),
+		DefaultProvider:          getEnv("DEFAULT_PROVIDER", "openrouter"),
+		DefaultModel:             getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
+		MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
+		SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
+		LLMIdleTimeoutSeconds:    getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),    // 2 minutes default
+		MaxConcurrentStreamsFree: getEnvInt("MAX_CONCURRENT_STREAMS_FREE", 3),   // Free-tier concurrent stream limit
+		MaxConcurrentStreamsPaid: getEnvInt("MAX_CONCURRENT_STREAMS_PAID", 10), // Paid-tier concurrent stream limit
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
+		// Billing configuration
+		StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 		// Logging configuration

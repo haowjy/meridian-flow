@@ -152,6 +152,24 @@ func (e *Emitter) EmitRunError(errMsg string, isCancelled bool) {
 	}
 }
 
+// EmitCreditsExhausted sends a CREDITS_EXHAUSTED event and leaves run finalization
+// to the caller (typically followed by RUN_FINISHED with credits_exhausted stop reason).
+func (e *Emitter) EmitCreditsExhausted(requestIndex int, phase string) {
+	threadID := e.idFactory.ThreadID()
+	runID := e.idFactory.RunID()
+	turnID := e.idFactory.TurnID()
+
+	evt := NewMeridianCreditsExhaustedEvent(threadID, runID, turnID, requestIndex, phase)
+	if err := e.emitMeridianEvent(MeridianEventTypeCreditsExhausted, evt); err != nil {
+		e.logger.Warn("failed to emit CREDITS_EXHAUSTED",
+			"turn_id", turnID,
+			"request_index", requestIndex,
+			"phase", phase,
+			"error", err,
+		)
+	}
+}
+
 // EmitStepStarted sends a STEP_STARTED event at the beginning of an LLM request.
 // Useful for tracking individual requests in tool continuation loops.
 func (e *Emitter) EmitStepStarted() {

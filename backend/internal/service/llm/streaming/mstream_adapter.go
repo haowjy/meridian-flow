@@ -9,7 +9,9 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	billingmodel "meridian/internal/domain/models/billing"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	billingdomain "meridian/internal/domain/services/billing"
 	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/streaming/agui"
@@ -65,6 +67,11 @@ type StreamExecutor struct {
 
 	// Token finalization (replaces scattered token logic)
 	tokenFinalizer tokens.TokenFinalizer
+
+	// Billing collaborators (non-optional: use explicit noop implementations in dev/test).
+	creditAdmissionChecker billingdomain.CreditAdmissionChecker
+	creditSettler          billingdomain.CreditSettler
+	settlementMode         billingmodel.CreditSettlementMode
 
 	// Phase 2: Background job queue for async generation enrichment
 	jobQueue jobs.JobQueue // nil for non-OpenRouter deployments
@@ -135,6 +142,9 @@ func NewStreamExecutor(
 	toolRegistry *tools.ToolRegistry,
 	messageBuilder domainllm.MessageBuilder,
 	logger *slog.Logger,
+	creditAdmissionChecker billingdomain.CreditAdmissionChecker,
+	creditSettler billingdomain.CreditSettler,
+	settlementMode billingmodel.CreditSettlementMode,
 	maxToolRounds int,
 	debugMode bool,
 	tokenFinalizer tokens.TokenFinalizer,
@@ -147,31 +157,34 @@ func NewStreamExecutor(
 	idFactory := agui.NewIDFactory(turnID, threadID)
 
 	se := &StreamExecutor{
-		turnID:             turnID,
-		threadID:           threadID,
-		userID:             userID,
-		model:              model,
-		turnRepo:           turnWriter,
-		provider:           provider,
-		logger:             logger,
-		toolRegistry:       toolRegistry,
-		turnNavigator:      turnNavigator,
-		turnReader:         turnReader,
-		messageBuilder:     messageBuilder,
-		toolResultIDs:      make(map[string]bool),
-		toolIteration:      0,
-		requestIndex:       0, // Initial request (increments with each tool continuation)
-		maxToolRounds:      maxToolRounds,
-		maxBlockSequence:   -1, // No blocks persisted yet (so first block is sequence 0)
-		state:              StateStreaming,
-		ctrlCh:             make(chan controlMsg, 1), // Buffered for non-blocking sends
-		tokenFinalizer:     tokenFinalizer,
-		jobQueue:           jobQueue,
-		softCancelTimeout:  time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:   NewPersistenceGuard(), // Armed initially, disarmed on cancel
-		idFactory:          idFactory,             // AG-UI ID generation
-		interjectionBuffer: interjectionBuffer,    // For user interjections
-		streamSwitchFn:     streamSwitchFn,        // For stream switch on interjection
+		turnID:                 turnID,
+		threadID:               threadID,
+		userID:                 userID,
+		model:                  model,
+		turnRepo:               turnWriter,
+		provider:               provider,
+		logger:                 logger,
+		toolRegistry:           toolRegistry,
+		turnNavigator:          turnNavigator,
+		turnReader:             turnReader,
+		messageBuilder:         messageBuilder,
+		toolResultIDs:          make(map[string]bool),
+		toolIteration:          0,
+		requestIndex:           0, // Initial request (increments with each tool continuation)
+		creditAdmissionChecker: creditAdmissionChecker,
+		creditSettler:          creditSettler,
+		settlementMode:         settlementMode,
+		maxToolRounds:          maxToolRounds,
+		maxBlockSequence:       -1, // No blocks persisted yet (so first block is sequence 0)
+		state:                  StateStreaming,
+		ctrlCh:                 make(chan controlMsg, 1), // Buffered for non-blocking sends
+		tokenFinalizer:         tokenFinalizer,
+		jobQueue:               jobQueue,
+		softCancelTimeout:      time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:       NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		idFactory:              idFactory,             // AG-UI ID generation
+		interjectionBuffer:     interjectionBuffer,    // For user interjections
+		streamSwitchFn:         streamSwitchFn,        // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
 		toolCallParentMessageIDs: make(map[string]string),
@@ -252,7 +265,20 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	// For first connection (workFunc), lastBlockSequence is nil (no blocks yet)
 	// Reconnection uses catchup which includes lastBlockSequence
 	se.aguiEmitter.EmitRunStarted(nil)
-	se.aguiEmitter.EmitStepStarted() // Initial LLM request step
+
+	// Step-level admission gate (belt-and-suspenders with HTTP middleware).
+	// IMPORTANT: Denied initial requests must not emit STEP_STARTED and must not mark turn streaming.
+	if err := se.creditAdmissionChecker.CheckAdmission(ctx, se.userID); err != nil {
+		se.logger.Warn("credit admission denied before initial provider call",
+			"turn_id", se.turnID,
+			"user_id", se.userID,
+			"request_index", se.requestIndex,
+			"phase", "initial",
+			"error", err,
+		)
+		se.handleCreditsExhausted(ctx, send, se.requestIndex, "initial")
+		return nil
+	}
 
 	// Update turn status to "streaming"
 	// NOTE: Turn stays "streaming" through all continuation rounds.
@@ -260,6 +286,8 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "streaming", nil); err != nil {
 		return fmt.Errorf("failed to update turn status: %w", err)
 	}
+
+	se.aguiEmitter.EmitStepStarted() // Initial LLM request step
 
 	// NOTE: turn_start (event-0) is emitted by catchup function, not here
 	// Live streaming starts with block events (event-1+)
