@@ -53,6 +53,7 @@ type EnrichGenerationJob struct {
 	phase        string
 	model        string
 	userID       string
+	providerName string // e.g. "openrouter", "anthropic" — for billing pricing resolution
 
 	turnWriter     llmRepo.TurnWriter
 	provider       domainllm.GenerationStatsQuerier
@@ -74,6 +75,7 @@ func NewEnrichGenerationJob(
 	phase string,
 	model string,
 	userID string,
+	providerName string,
 	turnWriter llmRepo.TurnWriter,
 	provider domainllm.GenerationStatsQuerier,
 	creditSettler billingdomain.CreditSettler,
@@ -94,6 +96,7 @@ func NewEnrichGenerationJob(
 		phase:          phase,
 		model:          model,
 		userID:         userID,
+		providerName:   providerName,
 		turnWriter:     turnWriter,
 		provider:       provider,
 		creditSettler:  creditSettler,
@@ -261,7 +264,10 @@ func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
 	}
 
 	// Deferred settlement: enrichment owns the first authoritative settlement attempt.
-	j.settleIfDeferred(ctx, stats)
+	// Return error so the job retries if settlement fails.
+	if err := j.settleIfDeferred(ctx, stats); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -390,14 +396,14 @@ func (j *EnrichGenerationJob) determineTokenUpdate(stats *domainllm.GenerationSt
 	return false, 0, 0, ""
 }
 
-func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domainllm.GenerationStats) {
+func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domainllm.GenerationStats) error {
 	if j.creditSettler == nil {
-		return
+		return nil
 	}
 
 	// Inline-authoritative providers settle inside StreamExecutor terminal handlers.
 	if j.settlementMode == billingmodel.CreditSettlementInlineAuthoritative {
-		return
+		return nil
 	}
 
 	model := stats.Model
@@ -409,7 +415,7 @@ func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domai
 		UserID:          j.userID,
 		TurnID:          j.turnID,
 		RequestIndex:    j.requestIndex,
-		Provider:        "openrouter",
+		Provider:        j.providerName,
 		Model:           model,
 		InputTokens:     int64(stats.NativeTokensPrompt),
 		OutputTokens:    int64(stats.NativeTokensCompletion),
@@ -423,17 +429,17 @@ func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domai
 			"request_index", j.requestIndex,
 			"generation_id", stats.ID,
 		)
-		return
+		return nil
 	}
 
 	if err := j.creditSettler.SettleAuthoritativeRequest(ctx, req); err != nil {
-		j.logger.Warn("deferred settlement failed after enrichment",
+		j.logger.Warn("deferred settlement failed after enrichment, job will retry",
 			"turn_id", j.turnID,
 			"request_index", j.requestIndex,
 			"generation_id", stats.ID,
 			"error", err,
 		)
-		return
+		return fmt.Errorf("deferred settlement: %w", err)
 	}
 
 	j.logger.Debug("deferred settlement completed after enrichment",
@@ -441,4 +447,5 @@ func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domai
 		"request_index", j.requestIndex,
 		"generation_id", stats.ID,
 	)
+	return nil
 }
