@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Check, Circle, CaretRight } from "@phosphor-icons/react"
+import { CaretRight, Check, Circle } from "@phosphor-icons/react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -133,7 +133,7 @@ function DropdownMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
-          <Circle className="size-2 fill-current" />
+          <Circle className="size-2" weight="fill" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}

@@ -44,12 +44,12 @@ export const Default: Story = {
         <ContextMenuLabel>Chapter 18 Actions</ContextMenuLabel>
         <ContextMenuSeparator />
         <ContextMenuItem>
-          <PencilSimple className="mr-2 size-4" />
+          <PencilSimple className="size-4" />
           Edit Chapter
           <ContextMenuShortcut>Cmd+E</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem>
-          <Copy className="mr-2 size-4" />
+          <Copy className="size-4" />
           Duplicate Draft
           <ContextMenuShortcut>Cmd+D</ContextMenuShortcut>
         </ContextMenuItem>
@@ -60,7 +60,7 @@ export const Default: Story = {
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
             <ContextMenuItem>
-              <FileArrowDown className="mr-2 size-4" />
+              <FileArrowDown className="size-4" />
               Markdown
             </ContextMenuItem>
             <ContextMenuItem>PDF</ContextMenuItem>
@@ -69,7 +69,7 @@ export const Default: Story = {
         </ContextMenuSub>
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive">
-          <TrashSimple className="mr-2 size-4" />
+          <TrashSimple className="size-4" />
           Delete
         </ContextMenuItem>
       </ContextMenuContent>

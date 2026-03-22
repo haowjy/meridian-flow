@@ -36,7 +36,7 @@ export const VerticalList: Story = {
 
 export const HorizontalTags: Story = {
   render: () => (
-    <ScrollArea className="w-full max-w-xl rounded-md border whitespace-nowrap">
+    <ScrollArea orientation="horizontal" className="w-full max-w-xl rounded-md border whitespace-nowrap">
       <div className="flex w-max gap-3 p-4">
         {[
           "POV: Mira",

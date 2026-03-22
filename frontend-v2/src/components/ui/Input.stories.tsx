@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { Label } from "./label"
 import { Input } from "./input"
 
 const meta = {
@@ -22,48 +23,47 @@ export const Default: Story = {
 }
 
 export const WithLabel: Story = {
-  args: {
-    label: "Chapter Title",
-    placeholder: "Enter chapter title...",
-  },
+  render: () => (
+    <div className="grid max-w-sm gap-2">
+      <Label htmlFor="chapter-title">Chapter Title</Label>
+      <Input id="chapter-title" placeholder="Enter chapter title..." />
+    </div>
+  ),
 }
 
 export const Email: Story = {
-  args: {
-    type: "email",
-    label: "Email",
-    placeholder: "writer@example.com",
-  },
+  render: () => (
+    <div className="grid max-w-sm gap-2">
+      <Label htmlFor="email">Email</Label>
+      <Input id="email" type="email" placeholder="writer@example.com" />
+    </div>
+  ),
 }
 
 export const Password: Story = {
   args: {
     type: "password",
-    label: "Password",
     placeholder: "Enter password...",
   },
 }
 
-export const WithHelperText: Story = {
-  args: {
-    label: "Display Name",
-    placeholder: "Enter name...",
-    helperText: "This will be visible to other collaborators.",
-  },
-}
-
 export const WithError: Story = {
-  args: {
-    label: "Email",
-    type: "email",
-    defaultValue: "not-an-email",
-    error: "Please enter a valid email address.",
-  },
+  render: () => (
+    <div className="grid max-w-sm gap-2">
+      <Label htmlFor="email-error">Email</Label>
+      <Input
+        id="email-error"
+        type="email"
+        defaultValue="not-an-email"
+        aria-invalid
+      />
+      <p className="text-sm text-destructive">Please enter a valid email address.</p>
+    </div>
+  ),
 }
 
 export const Disabled: Story = {
   args: {
-    label: "Locked Field",
     defaultValue: "This cannot be edited",
     disabled: true,
   },
@@ -72,18 +72,24 @@ export const Disabled: Story = {
 export const AllStates: Story = {
   render: () => (
     <div className="grid max-w-sm gap-6">
-      <Input label="Normal" placeholder="Type here..." />
-      <Input
-        label="With Helper"
-        placeholder="Type here..."
-        helperText="Additional context for the user."
-      />
-      <Input
-        label="Error State"
-        defaultValue="bad input"
-        error="This field is required."
-      />
-      <Input label="Disabled" defaultValue="locked" disabled />
+      <div className="grid gap-2">
+        <Label>Normal</Label>
+        <Input placeholder="Type here..." />
+      </div>
+      <div className="grid gap-2">
+        <Label>With helper text</Label>
+        <Input placeholder="Type here..." />
+        <p className="text-sm text-muted-foreground">Additional context for the user.</p>
+      </div>
+      <div className="grid gap-2">
+        <Label>Error state</Label>
+        <Input defaultValue="bad input" aria-invalid />
+        <p className="text-sm text-destructive">This field is required.</p>
+      </div>
+      <div className="grid gap-2">
+        <Label>Disabled</Label>
+        <Input defaultValue="locked" disabled />
+      </div>
     </div>
   ),
 }

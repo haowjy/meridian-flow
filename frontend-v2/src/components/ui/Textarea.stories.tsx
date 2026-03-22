@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { Label } from "./label"
 import { Textarea } from "./textarea"
 
 const meta = {
@@ -6,7 +7,6 @@ const meta = {
   component: Textarea,
   tags: ["autodocs"],
   argTypes: {
-    autoGrow: { control: "boolean" },
     disabled: { control: "boolean" },
   },
 } satisfies Meta<typeof Textarea>
@@ -19,39 +19,30 @@ export const Default: Story = {
 }
 
 export const WithLabel: Story = {
-  args: {
-    label: "Chapter Notes",
-    placeholder: "Add notes for this chapter...",
-  },
-}
-
-export const AutoGrow: Story = {
-  args: {
-    label: "Auto-Growing Textarea",
-    placeholder: "This textarea grows as you type...",
-    autoGrow: true,
-  },
-}
-
-export const WithCharCount: Story = {
-  args: {
-    label: "Summary",
-    placeholder: "Write a brief summary...",
-    maxCharCount: 200,
-  },
+  render: () => (
+    <div className="grid max-w-md gap-2">
+      <Label htmlFor="notes">Chapter Notes</Label>
+      <Textarea id="notes" placeholder="Add notes for this chapter..." />
+    </div>
+  ),
 }
 
 export const WithError: Story = {
-  args: {
-    label: "Description",
-    defaultValue: "Too short",
-    error: "Description must be at least 50 characters.",
-  },
+  render: () => (
+    <div className="grid max-w-md gap-2">
+      <Label htmlFor="desc-error">Description</Label>
+      <Textarea
+        id="desc-error"
+        defaultValue="Too short"
+        aria-invalid
+      />
+      <p className="text-sm text-destructive">Description must be at least 50 characters.</p>
+    </div>
+  ),
 }
 
 export const Disabled: Story = {
   args: {
-    label: "Locked Field",
     defaultValue: "This content cannot be edited.",
     disabled: true,
   },
@@ -60,23 +51,19 @@ export const Disabled: Story = {
 export const AllStates: Story = {
   render: () => (
     <div className="grid max-w-md gap-6">
-      <Textarea label="Normal" placeholder="Type here..." />
-      <Textarea
-        label="Auto-Grow"
-        placeholder="Grows as you type..."
-        autoGrow
-      />
-      <Textarea
-        label="With Counter"
-        placeholder="Limited to 100 chars..."
-        maxCharCount={100}
-      />
-      <Textarea
-        label="Error State"
-        defaultValue="Bad content"
-        error="This field has an error."
-      />
-      <Textarea label="Disabled" defaultValue="Locked" disabled />
+      <div className="grid gap-2">
+        <Label>Normal</Label>
+        <Textarea placeholder="Type here..." />
+      </div>
+      <div className="grid gap-2">
+        <Label>Error state</Label>
+        <Textarea defaultValue="Bad content" aria-invalid />
+        <p className="text-sm text-destructive">This field has an error.</p>
+      </div>
+      <div className="grid gap-2">
+        <Label>Disabled</Label>
+        <Textarea defaultValue="Locked" disabled />
+      </div>
     </div>
   ),
 }

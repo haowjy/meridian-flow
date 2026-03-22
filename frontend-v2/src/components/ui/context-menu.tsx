@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Check, Circle, CaretRight } from "@phosphor-icons/react"
+import { CaretRight, Check, Circle } from "@phosphor-icons/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -174,7 +174,7 @@ function ContextMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <ContextMenuPrimitive.ItemIndicator>
-          <Circle className="size-2 fill-current" />
+          <Circle className="size-2" weight="fill" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
       {children}
