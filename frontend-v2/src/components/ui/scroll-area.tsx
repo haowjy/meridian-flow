@@ -6,8 +6,28 @@ import { cn } from "@/lib/utils"
 function ScrollArea({
   className,
   children,
+  orientation = "vertical",
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  orientation?: "vertical" | "horizontal"
+}) {
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (orientation !== "horizontal") return
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    function onWheel(e: WheelEvent) {
+      if (e.deltaY === 0) return
+      e.preventDefault()
+      viewport!.scrollLeft += e.deltaY
+    }
+
+    viewport.addEventListener("wheel", onWheel, { passive: false })
+    return () => viewport.removeEventListener("wheel", onWheel)
+  }, [orientation])
+
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -15,12 +35,13 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      <ScrollBar orientation={orientation} />
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

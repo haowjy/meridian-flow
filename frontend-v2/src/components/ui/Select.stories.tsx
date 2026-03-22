@@ -76,6 +76,38 @@ export const Disabled: Story = {
   ),
 }
 
+export const LongList: Story = {
+  render: () => (
+    <Select>
+      <SelectTrigger className="w-[280px]">
+        <SelectValue placeholder="Select a chapter..." />
+      </SelectTrigger>
+      <SelectContent position="item-aligned">
+        <SelectGroup>
+          <SelectLabel>Arc 1: Origins</SelectLabel>
+          {Array.from({ length: 10 }, (_, i) => (
+            <SelectItem key={`a1-${i}`} value={`a1-${i}`}>Chapter {i + 1}</SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectSeparator />
+        <SelectGroup>
+          <SelectLabel>Arc 2: Cultivation</SelectLabel>
+          {Array.from({ length: 10 }, (_, i) => (
+            <SelectItem key={`a2-${i}`} value={`a2-${i}`}>Chapter {i + 11}</SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectSeparator />
+        <SelectGroup>
+          <SelectLabel>Arc 3: Tribulation</SelectLabel>
+          {Array.from({ length: 10 }, (_, i) => (
+            <SelectItem key={`a3-${i}`} value={`a3-${i}`}>Chapter {i + 21}</SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  ),
+}
+
 export const WithDisabledItems: Story = {
   render: () => (
     <Select>
