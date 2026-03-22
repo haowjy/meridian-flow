@@ -12,7 +12,7 @@ CREATE TYPE ${TABLE_PREFIX}credit_transaction_type AS ENUM (
 
 CREATE TABLE ${TABLE_PREFIX}credit_lots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   source_type ${TABLE_PREFIX}credit_source_type NOT NULL,
   original_amount_millicredits bigint NOT NULL CHECK (original_amount_millicredits > 0),
   remaining_millicredits bigint NOT NULL,
@@ -50,7 +50,7 @@ CREATE INDEX ${TABLE_PREFIX}credit_lots_user_created_idx
 
 CREATE TABLE ${TABLE_PREFIX}credit_transactions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   transaction_type ${TABLE_PREFIX}credit_transaction_type NOT NULL,
   amount_millicredits bigint NOT NULL,
   lot_id uuid NULL REFERENCES ${TABLE_PREFIX}credit_lots(id) ON DELETE SET NULL,
