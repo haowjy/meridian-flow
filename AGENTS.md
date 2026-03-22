@@ -1,122 +1,52 @@
-# CLAUDE.md
+# Meridian
 
-## Project Overview
-
-Meridian is an agentic writing platform for fiction writers managing 100+ chapter web serials, inclusive of any kind of writer.
+Agentic writing platform for fiction writers managing 100+ chapter web serials. No real users or user data. No backwards compatibility needed. Schema can change freely.
 
 See `_docs/high-level/1-overview.md` for product details.
 
-No real users or user data. No backwards compatibility needed. Schema can change freely.
-
-## Product Philosophy
-
-**Writer-first**: every feature, UI element, and AI interaction should support the writing process.
-
-See `frontend/CLAUDE.md` for UI-specific implementation.
-
 ## Development Principles
 
-### SOLID
-
-- **SRP**: One file = one purpose. One store = one domain. Split large components.
-- **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
-- **LSP**: All implementations must be substitutable for their interfaces
-- **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
-- **DIP**: Depend on interfaces, not concrete types (especially for external services)
-
-### Code Quality
-
-- **Comment the "weird" and the "why"** -- if it needs a guard, comment why. If it prevents a race, explain the race.
-- **Plan before implementing** -- anything beyond a few lines needs an approved plan. Write plans as markdown in `_docs/plans/`.
-- **Plan for extensibility**
-
-### Before Writing New Code
-
-1. **Search for existing patterns** -- before implementing, search for similar implementations
-2. **Reuse over recreate** -- if a pattern exists, use it or extend it
-3. **Check shared utilities** -- before writing a helper, search for existing ones
-4. **When patterns diverge, consolidate** -- 2+ implementations of the same thing? Refactor to one.
-
-## Documentation Principles
-
-Similarly to code, keep document files single responsibility. 1 file = 1 purpose. 1 folder + README = 1 domain. Split large documentation. This applies to EVERY kind of documentation including architecture, product descriptions, feature descriptions, plans, designs, specs, etc.
+- **SOLID**: SRP (one file = one purpose), OCP (registries/factories), ISP (Reader vs Writer splits), DIP (depend on interfaces)
+- **Comment the "weird" and the "why"** -- guards, races, non-obvious invariants
+- **Search before implementing** -- reuse existing patterns, check shared utilities, consolidate divergences
+- **Plan before implementing** -- anything beyond a few lines needs a plan in `_docs/plans/`
 
 ## Where to Find Things
 
 | Area | Location |
 |------|----------|
-| Backend instructions | `backend/CLAUDE.md` |
-| Frontend instructions | `frontend/CLAUDE.md` |
-| Frontend v2 (rebuild) | `frontend-v2/CLAUDE.md` |
+| Backend | `backend/AGENTS.md` |
+| Frontend | `frontend/CLAUDE.md` |
+| Frontend v2 | `frontend-v2/CLAUDE.md` |
 | Documentation rules | `_docs/CLAUDE.md` |
-| Technical architecture docs | `_docs/technical/` |
+| Technical docs | `_docs/technical/` |
 | Feature docs | `_docs/features/` |
 | Plans | `_docs/plans/` |
 | Agent profiles | `.claude/agents/` |
+| Refactoring backlog | `_docs/future/refactoring-backlog.md` |
 
 ## Dev Environment
 
-The dev environment uses tmux with worktree-aware port allocation.
+Tmux with worktree-aware port allocation. Backend port: `8080 + hash(dir) % 100`. Frontend: always `3000`.
 
 **First-time setup:**
-1. `./scripts/dev/supabase-start.sh` -- starts local Supabase, patches `.env` files, runs migrations
+1. `./scripts/dev/supabase-start.sh` -- starts local Supabase, patches `.env`, runs migrations
 2. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
 3. `./scripts/dev/setup.sh` -- creates tmux session with backend + frontend
 
-**Local Supabase** (Docker-based, no egress charges):
-- Start: `./scripts/dev/supabase-start.sh` -- idempotent, auto-configures backend + frontend env
-- Stop: `./scripts/dev/supabase-stop.sh` -- data preserved in Docker volumes
-- Studio: `http://127.0.0.1:54323`
-- Inbucket (email): `http://127.0.0.1:54324`
-- JWT signing: ES256 via `backend/supabase/signing_keys.json` (copied from `.example` on first start)
-- Prerequisites: Docker, `supabase` CLI, `jq`
-
-**Cloud Supabase** (fallback):
-1. `cp backend/.env.example backend/.env` -- edit with cloud Supabase credentials
-2. `cp frontend/.env.example frontend/.env.local` -- set `VITE_SUPABASE_URL` and key
-
-**Port allocation:**
-- Backend: `8080 + hash(directory_name) % 100` (per worktree)
-- Frontend: always `3000`
-- Check your port: `source scripts/dev/lib.sh && echo $BACKEND_PORT`
-- Override: create `.dev-ports` (gitignored) in repo root
-
-**Daily usage:**
-- Start: `./scripts/dev/setup.sh` (auto-starts local Supabase if available)
-- Restart backend: `./scripts/restart-server.sh`
-- Attach: `tmux attach -t <session_name>`
-
-**Agent permissions:**
-- Can restart backend via `./scripts/restart-server.sh`
-- Can run curl commands to test APIs
-- Can run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` for smoke tests
+**Daily:** `./scripts/dev/setup.sh` (auto-starts Supabase). Restart backend: `./scripts/restart-server.sh`.
 
 ## Build and Test
 
-### Frontend
-- `pnpm` (not npm)
-- `pnpm run lint` after changes
-- `pnpm run format 2>&1 | grep -v "unchanged"` after Tailwind/CSS changes
-
-### Backend
-- See `backend/CLAUDE.md` for Go commands
-
-### Smoke Testing
-- See `backend/CLAUDE.md` -> "Smoke Testing"
-- See `/scratchpad` skill for scratch/smoke file conventions
-
-### Documentation
-- Read `_docs/CLAUDE.md` before updating docs
-- Prefer diagrams over words, point to code locations
-- No emojis
-- Run `.claude/skills/documenting/check-md-links.sh` to verify links
-- When adding/updating a feature: update `_docs/features/<feature-name>/`, then commit code + docs together
+| Stack | Commands |
+|-------|----------|
+| Frontend | `pnpm` (not npm). `pnpm run lint`, `pnpm run format` |
+| Backend | See `backend/AGENTS.md` |
+| Smoke tests | `backend/AGENTS.md` -> "Smoke Testing" |
 
 ## Git Conventions
 
-- Commit after each testable state
-- Confirm with user before committing if they are in the loop
-- Follow repository's commit message style
+Commit after each testable state. Follow repository commit message style.
 
 ## Deployment
 
@@ -126,14 +56,8 @@ The dev environment uses tmux with worktree-aware port allocation.
 | Database | Supabase (PostgreSQL) |
 | Frontend | Vercel |
 
-See `backend/CLAUDE.md` for deployment details.
-
 ## Agent Spawning
 
-- Use `meridian spawn` for delegated work (coding, reviewing, testing, research) — agent profiles route each task to the best model across providers
-- Harness-native Agent types (`Explore`, `Plan`, `general-purpose`) are fine for quick lookups since they use the harness's own models
-- Harness-native tools (Read, Grep, Glob, Bash, Edit, Write) are fine for quick operations you do yourself
-
-## Refactoring Backlog
-
-Tracked in `_docs/future/refactoring-backlog.md`. Review before starting related work.
+- `meridian spawn` for delegated work (coding, reviewing, testing, research)
+- Harness-native Agent types (`Explore`, `Plan`) for quick lookups
+- Harness-native tools (Read, Grep, Glob, Bash, Edit, Write) for quick operations
