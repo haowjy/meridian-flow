@@ -55,7 +55,7 @@ function highlightSnippet(snippet: string, query: string) {
 
 export function DocSearchDetail({ detail }: DocSearchDetailProps) {
   return (
-    <Card variant="outline" className="border-border/70">
+    <Card variant="outline" className="gap-0 rounded-md border-border/70 py-0">
       <CardContent className="space-y-2 p-3">
         {detail.matches.length === 0 ? (
           <p className="text-sm text-muted-foreground">No matches found in the manuscript.</p>

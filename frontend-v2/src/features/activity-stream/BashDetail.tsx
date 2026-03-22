@@ -11,7 +11,7 @@ type BashDetailProps = {
 
 export function BashDetail({ detail }: BashDetailProps) {
   return (
-    <Card variant="outline" className="border-border/70">
+    <Card variant="outline" className="gap-0 rounded-md border-border/70 py-0">
       <CardContent className="space-y-3 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex min-w-0 items-center gap-2 text-sm text-foreground">

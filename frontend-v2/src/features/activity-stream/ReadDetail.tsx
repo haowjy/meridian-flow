@@ -10,7 +10,7 @@ type ReadDetailProps = {
 
 export function ReadDetail({ detail }: ReadDetailProps) {
   return (
-    <Card variant="muted" className="border-border/70">
+    <Card variant="muted" className="gap-0 rounded-md border-border/70 py-0">
       <CardContent className="p-2">
         {detail.previewLines && detail.previewLines.length > 0 ? (
           <div className="space-y-1">

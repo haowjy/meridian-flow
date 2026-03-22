@@ -68,7 +68,7 @@ export function ToolDetail({ tool, depth, renderNestedActivity, className }: Too
 
   return (
     <div className={className}>
-      <Card variant="outline" className="border-border/70">
+      <Card variant="outline" className="gap-0 rounded-md border-border/70 py-0">
         <CardContent className="space-y-2 p-3">
           <pre className="overflow-auto rounded-md bg-muted/60 p-2 font-mono text-xs text-muted-foreground">
             {JSON.stringify(tool.args ?? {}, null, 2)}

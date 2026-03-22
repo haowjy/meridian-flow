@@ -1,6 +1,7 @@
 import { Brain, CaretDown, CaretRight, Check, CircleNotch } from "@phosphor-icons/react"
 
 import { Badge } from "@/components/ui/badge"
+import { CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 
 import { RotatingText } from "./RotatingText"
@@ -11,8 +12,6 @@ type ActivityBlockHeaderProps = {
   items: ActivityItem[]
   isStreaming: boolean
   expanded: boolean
-  onToggle: () => void
-  contentId: string
   className?: string
 }
 
@@ -20,19 +19,12 @@ export function ActivityBlockHeader({
   items,
   isStreaming,
   expanded,
-  onToggle,
-  contentId,
   className,
 }: ActivityBlockHeaderProps) {
   const summary = getActivitySummary(items)
 
   return (
-    <button
-      type="button"
-      aria-expanded={expanded}
-      aria-controls={contentId}
-      aria-label={expanded ? "Collapse activity details" : "Expand activity details"}
-      onClick={onToggle}
+    <CollapsibleTrigger
       className={cn(
         "flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/40",
         className
@@ -70,6 +62,6 @@ export function ActivityBlockHeader({
           <CaretRight className="size-4 text-muted-foreground" aria-hidden="true" />
         )}
       </div>
-    </button>
+    </CollapsibleTrigger>
   )
 }

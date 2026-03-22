@@ -3,6 +3,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { ActivityBlock } from "./ActivityBlock"
 import type { ActivityBlockData, EditReviewStatus, ToolItem } from "./types"
 
+// ---------------------------------------------------------------------------
+// Mock data factories
+// ---------------------------------------------------------------------------
+
 function readTool(id: string, filePath: string, status: ToolItem["status"] = "done"): ToolItem {
   return {
     kind: "tool",
@@ -133,200 +137,39 @@ function bashTool(id: string, command: string, status: ToolItem["status"] = "don
   }
 }
 
-const collapsedActivity: ActivityBlockData = {
-  id: "collapsed",
-  isStreaming: false,
-  items: [
-    readTool("read-a", "chapters/chapter-05.md"),
-    readTool("read-b", "chapters/chapter-06.md"),
-    editTool("edit-a", "chapters/chapter-05.md"),
-  ],
+function genericTool(id: string, toolName: string, args: Record<string, unknown>): ToolItem {
+  return { kind: "tool", id, toolName, status: "done", args }
 }
 
-const streamingCollapsedActivity: ActivityBlockData = {
-  id: "stream-collapsed",
-  isStreaming: true,
-  pendingText:
-    "I found a pacing gap between the sparring and meditation scenes. Drafting a softer transition now...",
-  items: [
-    { kind: "thinking", id: "thinking-stream-1", text: "Checking scene rhythm across chapter beats." },
-    readTool("stream-read", "chapters/chapter-19.md", "done"),
-    searchTool("stream-search", "meditation bell", "running"),
-  ],
-}
-
-const expandedToolListActivity: ActivityBlockData = {
-  id: "expanded-list",
-  isStreaming: false,
-  items: [
-    readTool("exp-read-1", "chapters/chapter-03.md"),
-    readTool("exp-read-2", "chapters/chapter-04.md"),
-    searchTool("exp-search-1", "river gate motif"),
-    editTool("exp-edit-1", "chapters/chapter-04.md"),
-    bashTool("exp-bash-1", "scripts/analyze-motifs.sh"),
-  ],
-}
-
-const thinkingInterleavedActivity: ActivityBlockData = {
-  id: "thinking-interleaved",
-  isStreaming: false,
-  items: [
-    { kind: "thinking", id: "thinking-1", text: "Comparing the emotional tempo of both scenes." },
-    readTool("ti-read-1", "chapters/chapter-27.md"),
-    { kind: "thinking", id: "thinking-2", text: "The handoff needs one sensory beat before silence." },
-    editTool("ti-edit-1", "chapters/chapter-27.md"),
-    { kind: "thinking", id: "thinking-3", text: "Keeping Lin's voice restrained, not melodramatic." },
-    searchTool("ti-search-1", "breath count motif"),
-  ],
-}
-
-const agentSpawnActivity: ActivityBlockData = {
-  id: "agent-spawn",
-  isStreaming: false,
-  items: [
-    readTool("agent-read-1", "notes/world/abbey-rituals.md"),
-    {
-      kind: "tool",
-      id: "agent-tool-1",
-      toolName: "SpawnAgent",
-      status: "done",
-      detail: {
-        kind: "agent",
-        agent: {
-          id: "sub-agent-1",
-          name: "Continuity Scout",
-          activity: {
-            id: "sub-agent-activity",
-            isStreaming: false,
-            items: [
-              readTool("sub-read-1", "chapters/chapter-19.md"),
-              searchTool("sub-search-1", "abbey oath"),
-            ],
-            pendingText: "Cross-checking oath language for consistency.",
-          },
-          response:
-            "Found one inconsistency: chapter 19 says 'second oath' while chapter 7 established 'third oath'.",
-        },
-      },
-    },
-  ],
-}
-
-const fullTurnActivity: ActivityBlockData = {
-  id: "full-turn",
-  isStreaming: false,
-  items: [
-    readTool("full-read-1", "chapters/chapter-18.md"),
-    readTool("full-read-2", "chapters/chapter-19.md"),
-    searchTool("full-search-1", "meditation hall"),
-    editTool("full-edit-1", "chapters/chapter-19.md"),
-  ],
-}
+// ---------------------------------------------------------------------------
+// Stories
+// ---------------------------------------------------------------------------
 
 const meta = {
   title: "Features/ActivityStream/ActivityBlock",
   component: ActivityBlock,
   tags: ["autodocs"],
-  args: {
-    activity: collapsedActivity,
-  },
 } satisfies Meta<typeof ActivityBlock>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Collapsed: Story = {
-  render: () => <ActivityBlock activity={collapsedActivity} />,
-}
-
-export const CollapsedStreaming: Story = {
-  render: () => <ActivityBlock activity={streamingCollapsedActivity} />,
-}
-
-export const ExpandedToolList: Story = {
-  render: () => <ActivityBlock activity={expandedToolListActivity} defaultExpanded />,
-}
-
-export const ExpandedAllTools: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={expandedToolListActivity}
-      defaultExpanded
-      defaultShowAllTools
-    />
-  ),
-}
-
-export const ExpandedEditDetail: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={{
-        id: "edit-detail",
-        isStreaming: false,
-        items: [editTool("edit-detail-1", "chapters/chapter-11.md")],
-      }}
-      defaultExpanded
-      defaultExpandedToolIds={["edit-detail-1"]}
-    />
-  ),
-}
-
-export const ExpandedReadDetail: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={{
-        id: "read-detail",
-        isStreaming: false,
-        items: [readTool("read-detail-1", "chapters/chapter-09.md")],
-      }}
-      defaultExpanded
-      defaultExpandedToolIds={["read-detail-1"]}
-    />
-  ),
-}
-
-export const AcceptedEdit: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={{
-        id: "accepted-edit",
-        isStreaming: false,
-        items: [editTool("accepted-edit-1", "chapters/chapter-22.md", "accepted")],
-      }}
-      defaultExpanded
-      defaultExpandedToolIds={["accepted-edit-1"]}
-    />
-  ),
-}
-
-export const RejectedEdit: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={{
-        id: "rejected-edit",
-        isStreaming: false,
-        items: [editTool("rejected-edit-1", "chapters/chapter-22.md", "rejected")],
-      }}
-      defaultExpanded
-      defaultExpandedToolIds={["rejected-edit-1"]}
-    />
-  ),
-}
-
-export const AgentSpawn: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={agentSpawnActivity}
-      defaultExpanded
-      defaultExpandedToolIds={["agent-tool-1"]}
-    />
-  ),
-}
-
-export const FullTurn: Story = {
+/** Collapsed block with response text below -- the standard completed turn pattern. */
+export const CompletedTurn: Story = {
   render: () => (
     <div className="max-w-3xl space-y-4">
-      <ActivityBlock activity={fullTurnActivity} />
+      <ActivityBlock
+        activity={{
+          id: "completed",
+          isStreaming: false,
+          items: [
+            readTool("c-read-1", "chapters/chapter-18.md"),
+            readTool("c-read-2", "chapters/chapter-19.md"),
+            searchTool("c-search-1", "meditation hall"),
+            editTool("c-edit-1", "chapters/chapter-19.md"),
+          ],
+        }}
+      />
       <p className="font-editor text-base leading-relaxed text-foreground">
         Here is what I changed to improve pacing in the transition scene between the sparring and
         meditation sequence: I added a bridge paragraph that carries Mara from noise into stillness
@@ -336,85 +179,125 @@ export const FullTurn: Story = {
   ),
 }
 
-export const StreamingTurn: Story = {
+/** Streaming turn -- realistic interleaved thinking, text, and tools with mixed statuses. */
+export const Streaming: Story = {
   render: () => (
     <ActivityBlock
       activity={{
-        id: "streaming-turn",
+        id: "streaming",
         isStreaming: true,
-        pendingText: "Applying edits to smooth the emotional handoff.",
+        pendingText: "Now let me adjust the bridge paragraph to carry the bell motif forward...",
         items: [
-          { kind: "thinking", id: "stream-thinking-a", text: "Balancing tension release after sparring." },
-          readTool("streaming-read-1", "chapters/chapter-19.md"),
-          editTool("streaming-edit-1", "chapters/chapter-19.md", "pending-review", "running"),
-          searchTool("streaming-search-1", "breath cadence", "pending"),
+          { kind: "thinking", id: "s-think-1", text: "The user wants me to fix the pacing between chapters 18 and 19. The sparring scene ends abruptly and jumps straight into the meditation hall. I need to check how the transition currently reads and whether there are any sensory anchors I can use as a bridge.\n\nLet me start by reading the end of chapter 19 to see the current state." },
+          readTool("s-read-1", "chapters/chapter-19.md"),
+          { kind: "thinking", id: "s-think-2", text: "The transition is too abrupt — Mara goes from mid-swing to seated meditation in one paragraph break. There's no decompression beat. The bell motif from the abbey rituals could work as a bridge element, but I need to find where it was first introduced to keep the imagery consistent.\n\nLet me search for the meditation bell references across the manuscript." },
+          { kind: "text", id: "s-text-1", text: "I noticed the transition between the sparring and meditation scenes feels rushed. Let me look at how the bell motif was set up earlier." },
+          searchTool("s-search-1", "meditation bell", "done"),
+          { kind: "thinking", id: "s-think-3", text: "Found the bell motif in chapter 18 — three strikes with specific intervals. The first strike signals awareness, the second signals release, the third signals stillness. This three-beat pattern gives me exactly the structure I need for the transitional paragraph.\n\nI should read the full passage to make sure I get the cadence right before editing." },
+          { kind: "text", id: "s-text-2", text: "The bell motif was established in chapter 18 with three strikes. I'll add a transitional beat that echoes that pattern." },
+          readTool("s-read-2", "chapters/chapter-18.md"),
+          { kind: "thinking", id: "s-think-4", text: "Good — the three-strike pattern is consistent with the abbey's established rituals. I'll write a bridge paragraph that mirrors this cadence: one sentence for the last echo of steel, one for the breath between, one for the first bell. This should make the scene transition feel intentional rather than abrupt." },
+          editTool("s-edit-1", "chapters/chapter-19.md", "pending-review", "running"),
+          searchTool("s-search-2", "breath cadence", "pending"),
         ],
       }}
-      defaultExpanded
     />
   ),
 }
 
-export const TextOnlyTurn: Story = {
-  render: () => (
-    <p className="max-w-3xl font-editor text-base leading-relaxed text-foreground">
-      I tightened the transition paragraph so the emotional drop from sparring to meditation feels
-      intentional instead of abrupt.
-    </p>
-  ),
-}
-
-export const ThinkingInterleaved: Story = {
-  render: () => (
-    <ActivityBlock
-      activity={thinkingInterleavedActivity}
-      defaultExpanded
-      defaultShowAllTools
-    />
-  ),
-}
-
-export const WebSearch: Story = {
+/** All tool detail types in a single block -- starts truncated with "Show more". */
+export const AllToolDetails: Story = {
   render: () => (
     <ActivityBlock
       activity={{
-        id: "web-search",
+        id: "all-details",
         isStreaming: false,
         items: [
-          webSearchTool("web-search-1", "meditation bell ceremony traditions"),
+          readTool("d-read-1", "chapters/chapter-03.md"),
+          editTool("d-edit-1", "chapters/chapter-04.md"),
+          searchTool("d-search-1", "river gate motif"),
+          webSearchTool("d-web-1", "monastery bell ceremony traditions"),
+          bashTool("d-bash-1", "scripts/analyze-motifs.sh"),
+          genericTool("d-generic-1", "skill_invoke", { skill_name: "pacing-analysis", chapter: "chapter-19.md" }),
         ],
       }}
       defaultExpanded
-      defaultExpandedToolIds={["web-search-1"]}
     />
   ),
 }
 
-export const GenericTool: Story = {
+/** Edit review states: pending, accepted, rejected side by side. */
+export const EditReviewStates: Story = {
+  render: () => (
+    <div className="max-w-3xl space-y-4">
+      <ActivityBlock
+        activity={{
+          id: "edit-pending",
+          isStreaming: false,
+          items: [editTool("er-pending", "chapters/chapter-11.md", "pending-review")],
+        }}
+        defaultExpanded
+        defaultExpandedToolIds={["er-pending"]}
+      />
+      <ActivityBlock
+        activity={{
+          id: "edit-accepted",
+          isStreaming: false,
+          items: [editTool("er-accepted", "chapters/chapter-22.md", "accepted")],
+        }}
+        defaultExpanded
+        defaultExpandedToolIds={["er-accepted"]}
+      />
+      <ActivityBlock
+        activity={{
+          id: "edit-rejected",
+          isStreaming: false,
+          items: [editTool("er-rejected", "chapters/chapter-22.md", "rejected")],
+        }}
+        defaultExpanded
+        defaultExpandedToolIds={["er-rejected"]}
+      />
+    </div>
+  ),
+}
+
+/** Nested agent spawn with sub-activity. */
+export const AgentSpawn: Story = {
   render: () => (
     <ActivityBlock
       activity={{
-        id: "generic-tool",
+        id: "agent-spawn",
         isStreaming: false,
         items: [
+          readTool("a-read-1", "notes/world/abbey-rituals.md"),
           {
             kind: "tool",
-            id: "skill-invoke-1",
-            toolName: "skill_invoke",
+            id: "a-agent-1",
+            toolName: "SpawnAgent",
             status: "done",
-            args: { skill_name: "pacing-analysis", chapter: "chapter-19.md" },
-          },
-          {
-            kind: "tool",
-            id: "skill-list-1",
-            toolName: "skill_list",
-            status: "done",
-            args: {},
+            detail: {
+              kind: "agent",
+              agent: {
+                id: "sub-agent-1",
+                name: "Continuity Scout",
+                activity: {
+                  id: "sub-agent-activity",
+                  isStreaming: false,
+                  items: [
+                    readTool("sub-read-1", "chapters/chapter-19.md"),
+                    searchTool("sub-search-1", "abbey oath"),
+                  ],
+                  pendingText: "Cross-checking oath language for consistency.",
+                },
+                response:
+                  "Found one inconsistency: chapter 19 says 'second oath' while chapter 7 established 'third oath'.",
+              },
+            },
           },
         ],
       }}
       defaultExpanded
-      defaultExpandedToolIds={["skill-invoke-1"]}
+      defaultExpandedToolIds={["a-agent-1"]}
     />
   ),
 }

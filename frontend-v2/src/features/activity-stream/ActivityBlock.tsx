@@ -1,8 +1,10 @@
-import { useId, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 
+import { Brain, CaretDown, CaretRight } from "@phosphor-icons/react"
+
+import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { Card } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
 import { ActivityBlockHeader } from "./ActivityBlockHeader"
@@ -37,7 +39,6 @@ export function ActivityBlock({
   depth = 0,
   className,
 }: ActivityBlockProps) {
-  const contentId = useId()
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded)
   const [showAllTools, setShowAllTools] = useState(defaultShowAllTools)
   const [expandedTools, setExpandedTools] = useState(() => new Set(defaultExpandedToolIds))
@@ -51,6 +52,18 @@ export function ActivityBlock({
     }
 
     onExpandedChange?.(nextExpanded)
+  }
+
+  const toggleExpanded = (id: string) => {
+    setExpandedTools((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   const tools = useMemo(
@@ -95,37 +108,67 @@ export function ActivityBlock({
       <Collapsible open={isExpanded} onOpenChange={setExpanded}>
         <Card
           variant={depth > 0 ? "outline" : "muted"}
-          className="overflow-hidden border-border/70 bg-card/85"
+          className="gap-0 overflow-hidden rounded-lg border-border/70 bg-card/85 py-0"
         >
           <ActivityBlockHeader
             items={activity.items}
             isStreaming={isStreaming}
             expanded={isExpanded}
-            onToggle={() => setExpanded(!isExpanded)}
-            contentId={contentId}
           />
 
-          <CollapsibleContent id={contentId} className="border-t border-border/70 p-3">
-            {hiddenToolCount > 0 && !showAllTools ? (
+          <CollapsibleContent>
+            {hiddenToolCount > 0 ? (
               <button
                 type="button"
-                onClick={() => setShowAllTools(true)}
-                className="mb-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                onClick={() => setShowAllTools(!showAllTools)}
+                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
-                ({hiddenToolCount} more...)
+                <span className="h-px flex-1 bg-border/70" />
+                <span>
+                  {showAllTools
+                    ? "Collapse"
+                    : `${hiddenToolCount} earlier ${hiddenToolCount === 1 ? "tool" : "tools"}`}
+                </span>
+                <span className="h-px flex-1 bg-border/70" />
               </button>
             ) : null}
 
-            <div className="space-y-2">
+            <div className="divide-y divide-border/70 border-t border-border/70">
               {visibleItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet.</p>
+                <p className="px-3 py-2 text-sm text-muted-foreground">No activity yet.</p>
               ) : (
-                visibleItems.map((item, index) => {
+                visibleItems.map((item) => {
                   if (item.kind === "thinking") {
+                    const isThinkingExpanded = expandedTools.has(item.id)
                     return (
-                      <div key={item.id} className="space-y-2">
-                        {index > 0 ? <Separator /> : null}
-                        <p className="font-editor text-sm italic text-muted-foreground">{item.text}</p>
+                      <div key={item.id}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => toggleExpanded(item.id)}
+                          aria-expanded={isThinkingExpanded}
+                          className="flex min-h-10 w-full items-center justify-start gap-2 rounded-none px-3 py-2 text-sm font-normal text-muted-foreground hover:bg-transparent hover:opacity-70"
+                        >
+                          <Brain className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span className="italic">Thinking</span>
+                          {isThinkingExpanded ? (
+                            <CaretDown className="size-3.5" aria-hidden="true" />
+                          ) : (
+                            <CaretRight className="size-3.5" aria-hidden="true" />
+                          )}
+                        </Button>
+                        {isThinkingExpanded ? (
+                          <div className="px-3 pb-2">
+                            <p className="whitespace-pre-line text-sm italic text-muted-foreground">{item.text}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  }
+
+                  if (item.kind === "text") {
+                    return (
+                      <div key={item.id} className="px-3 py-2">
+                        <p className="text-sm text-foreground">{item.text}</p>
                       </div>
                     )
                   }
@@ -133,28 +176,17 @@ export function ActivityBlock({
                   const isDetailExpanded = expandedTools.has(item.id)
 
                   return (
-                    <div key={item.id} className="space-y-1.5">
-                      {index > 0 ? <Separator /> : null}
+                    <div key={item.id}>
                       <ToolLine
                         tool={item}
                         expanded={isDetailExpanded}
-                        onToggle={() => {
-                          setExpandedTools((current) => {
-                            const next = new Set(current)
-                            if (next.has(item.id)) {
-                              next.delete(item.id)
-                            } else {
-                              next.add(item.id)
-                            }
-                            return next
-                          })
-                        }}
+                        onToggle={() => toggleExpanded(item.id)}
                       />
                       {isDetailExpanded ? (
                         <ToolDetail
                           tool={item}
                           depth={depth}
-                          className="pl-2"
+                          className="px-3 pb-2"
                           renderNestedActivity={renderNestedActivity}
                         />
                       ) : null}
@@ -164,17 +196,12 @@ export function ActivityBlock({
               )}
             </div>
 
-            {isStreaming && activity.pendingText ? (
-              <p className="mt-3 border-t border-border/60 pt-3 font-editor text-sm italic text-muted-foreground">
-                {activity.pendingText}
-              </p>
-            ) : null}
           </CollapsibleContent>
         </Card>
       </Collapsible>
 
-      {!isExpanded && showPendingText && activity.pendingText ? (
-        <p className="px-1 font-editor text-base leading-relaxed text-foreground">{activity.pendingText}</p>
+      {showPendingText && activity.pendingText ? (
+        <p className="px-3 text-sm text-foreground">{activity.pendingText}</p>
       ) : null}
     </div>
   )

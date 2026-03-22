@@ -97,7 +97,13 @@ export type ToolItem = {
   detail?: ToolDetailData
 }
 
-export type ActivityItem = ThinkingItem | ToolItem
+export type TextItem = {
+  kind: "text"
+  id: string
+  text: string
+}
+
+export type ActivityItem = ThinkingItem | TextItem | ToolItem
 
 export type ActivityBlockData = {
   id: string

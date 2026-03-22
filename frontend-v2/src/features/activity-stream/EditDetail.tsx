@@ -26,7 +26,7 @@ export function EditDetail({ detail }: EditDetailProps) {
   return (
     <Card
       className={cn(
-        "border-border/70 border-l-[3px] bg-card/90",
+        "gap-0 rounded-md border-border/70 border-l-[3px] bg-card/90 py-0",
         getReviewBorder(reviewStatus)
       )}
     >

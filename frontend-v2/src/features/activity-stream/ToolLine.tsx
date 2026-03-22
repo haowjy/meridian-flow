@@ -1,6 +1,7 @@
 import { ArrowSquareOut, CaretDown, CaretRight, Check, CircleNotch, X } from "@phosphor-icons/react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import {
@@ -48,53 +49,55 @@ export function ToolLine({ tool, expanded, onToggle, onViewFile, className }: To
   return (
     <div
       className={cn(
-        "flex w-full items-center justify-between rounded-md px-2 py-1.5",
+        "flex min-h-10 w-full items-center justify-between px-3 py-2",
         className
       )}
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onToggle}
         aria-expanded={expanded}
         aria-label={`${expanded ? "Collapse" : "Expand"} detail for ${title}`}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm hover:opacity-70 transition-opacity"
+        className="h-auto min-w-0 flex-1 justify-start gap-2 rounded-none px-0 py-0 text-sm font-normal hover:bg-transparent hover:opacity-70"
       >
         <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-foreground">{title}</span>
-      </button>
+      </Button>
 
       <span className="ml-2 flex shrink-0 items-center gap-2">
         {showViewFile ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation()
               onViewFile?.()
             }}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
             aria-label={`View file ${title}`}
+            className="h-auto gap-1 rounded-none px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
             <ArrowSquareOut className="size-3" aria-hidden="true" />
             View file
-          </button>
+          </Button>
         ) : null}
         <Badge variant={statusVariant} className="h-5 px-2 text-[11px] font-medium">
           <ToolStatusGlyph status={tool.status} />
           {statusText}
         </Badge>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onToggle}
-          className="text-muted-foreground hover:text-foreground transition-colors"
           aria-hidden="true"
           tabIndex={-1}
+          className="size-5 rounded-none text-muted-foreground hover:text-foreground"
         >
           {expanded ? (
             <CaretDown className="size-3.5" />
           ) : (
             <CaretRight className="size-3.5" />
           )}
-        </button>
+        </Button>
       </span>
     </div>
   )
