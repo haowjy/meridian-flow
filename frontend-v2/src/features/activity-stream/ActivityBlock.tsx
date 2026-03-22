@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react"
 
-import { Brain, CaretDown, CaretRight } from "@phosphor-icons/react"
+import { Brain } from "@phosphor-icons/react"
 
-import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 import { ActivityBlockHeader } from "./ActivityBlockHeader"
+import { ItemLine } from "./ItemLine"
 import { ToolDetail } from "./ToolDetail"
 import { ToolLine } from "./ToolLine"
 import type { ActivityBlockData, ActivityItem, ToolItem } from "./types"
@@ -116,7 +116,7 @@ export function ActivityBlock({
             expanded={isExpanded}
           />
 
-          <CollapsibleContent className={hiddenToolCount === 0 ? "border-t border-border/70" : ""}>
+          <CollapsibleContent>
             {hiddenToolCount > 0 ? (
               <div className="relative h-px">
                 <span className="absolute inset-x-0 top-0 h-px bg-border/70" />
@@ -132,7 +132,10 @@ export function ActivityBlock({
               </div>
             ) : null}
 
-            <div className="divide-y divide-border/70">
+            {/* Tree-line guide — sits in the px-3 padding zone, no layout impact */}
+            <div className="relative">
+              <div className="pointer-events-none absolute bottom-2 left-5 top-0 w-px bg-border/50" />
+
               {visibleItems.length === 0 ? (
                 <p className="px-3 py-2 text-sm text-muted-foreground">No activity yet.</p>
               ) : (
@@ -141,20 +144,13 @@ export function ActivityBlock({
                     const isThinkingExpanded = expandedTools.has(item.id)
                     return (
                       <div key={item.id}>
-                        <Button
-                          variant="ghost"
-                          onClick={() => toggleExpanded(item.id)}
-                          aria-expanded={isThinkingExpanded}
-                          className="flex min-h-10 w-full items-center justify-start gap-2 rounded-none px-3 py-2 text-sm font-normal text-muted-foreground hover:bg-transparent hover:opacity-70"
-                        >
-                          <Brain className="size-3.5 shrink-0" aria-hidden="true" />
-                          <span className="italic">Thinking</span>
-                          {isThinkingExpanded ? (
-                            <CaretDown className="size-3.5" aria-hidden="true" />
-                          ) : (
-                            <CaretRight className="size-3.5" aria-hidden="true" />
-                          )}
-                        </Button>
+                        <ItemLine
+                          icon={Brain}
+                          label="Thinking"
+                          labelClassName="italic text-muted-foreground"
+                          expanded={isThinkingExpanded}
+                          onToggle={() => toggleExpanded(item.id)}
+                        />
                         {isThinkingExpanded ? (
                           <div className="px-3 pb-2">
                             <p className="whitespace-pre-line text-sm italic text-muted-foreground">{item.text}</p>
