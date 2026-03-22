@@ -448,11 +448,10 @@ Balance widget and purchase CTA already shipped in F9. This round adds the full 
 
 - Detailed balance view (purchased vs promotional breakdown)
 - Usage history table (model, tokens, credits, action type, date)
-- Monthly usage chart (top actions by cost)
 - Low balance alerts (configurable thresholds)
 - Pre-action cost estimate for expensive operations ("This will use ~15 credits (Opus). Continue?")
 - Burn-rate indicator ("At current pace, credits last ~12 days")
-- Storybook stories: usage table, usage chart, cost estimate popover, burn rate
+- Storybook stories: usage table, cost estimate popover, burn rate
 
 **Verification:** Usage history shows correct data, pre-action estimates render before expensive ops, alerts fire at threshold.
 

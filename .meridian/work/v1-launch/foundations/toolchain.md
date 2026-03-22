@@ -41,7 +41,6 @@ Phase 1 (foundation) done. Phase 2 (atoms) in progress — button + badge built.
 | Shiki | Syntax highlighting for code blocks |
 | KaTeX | Math rendering in editor |
 | Mermaid | Diagram rendering in editor |
-| react-vega (Vega-Lite) | Data chart rendering in editor |
 | compromise | Client-side text analysis (prose analysis, stretch goal) |
 | Phosphor Icons | Icon library |
 | fuse.js | Fuzzy search (command palette, mentions) |
