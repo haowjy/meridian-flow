@@ -118,22 +118,21 @@ export function ActivityBlock({
 
           <CollapsibleContent>
             {hiddenToolCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowAllTools(!showAllTools)}
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <span className="h-px flex-1 bg-border/70" />
-                <span>
+              <div className="relative h-px">
+                <span className="absolute inset-x-0 top-0 h-px bg-border/70" />
+                <button
+                  type="button"
+                  onClick={() => setShowAllTools(!showAllTools)}
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full border border-border/70 bg-card px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                >
                   {showAllTools
                     ? "Collapse"
-                    : `${hiddenToolCount} earlier ${hiddenToolCount === 1 ? "tool" : "tools"}`}
-                </span>
-                <span className="h-px flex-1 bg-border/70" />
-              </button>
+                    : `${hiddenToolCount} earlier ${hiddenToolCount === 1 ? "tool" : "tools"}...`}
+                </button>
+              </div>
             ) : null}
 
-            <div className="divide-y divide-border/70 border-t border-border/70">
+            <div className="divide-y divide-border/70">
               {visibleItems.length === 0 ? (
                 <p className="px-3 py-2 text-sm text-muted-foreground">No activity yet.</p>
               ) : (
