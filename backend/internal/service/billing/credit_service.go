@@ -65,7 +65,6 @@ func (s *creditService) ListTransactions(
 	}
 
 	if err := validation.ValidateStruct(&req,
-		validation.Field(&userID, validation.Required),
 		validation.Field(&req.Limit, validation.Required, validation.Min(1), validation.Max(maxTransactionLimit)),
 		validation.Field(&req.Offset, validation.Min(0)),
 	); err != nil {
@@ -81,7 +80,6 @@ func (s *creditService) CreateCheckoutSession(
 	req billing.CreateCheckoutSessionRequest,
 ) (*billing.CheckoutSession, error) {
 	if err := validation.ValidateStruct(&req,
-		validation.Field(&userID, validation.Required),
 		validation.Field(&req.PackID, validation.Required),
 		validation.Field(&req.SuccessURL, validation.Required),
 		validation.Field(&req.CancelURL, validation.Required),
