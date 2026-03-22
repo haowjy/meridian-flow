@@ -116,7 +116,7 @@ export function ActivityBlock({
             expanded={isExpanded}
           />
 
-          <CollapsibleContent>
+          <CollapsibleContent className={hiddenToolCount === 0 ? "border-t border-border/70" : ""}>
             {hiddenToolCount > 0 ? (
               <div className="relative h-px">
                 <span className="absolute inset-x-0 top-0 h-px bg-border/70" />
