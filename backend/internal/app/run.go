@@ -33,6 +33,8 @@ func Run(cfg *config.Config, infra *Infrastructure, application *Application) er
 	defer stop()
 
 	g, gctx := errgroup.WithContext(ctx)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
 	server := NewHTTPServer(cfg, application)
 
 	g.Go(func() error {
@@ -49,7 +51,7 @@ func Run(cfg *config.Config, infra *Infrastructure, application *Application) er
 		return nil
 	})
 
-	if err := application.Workers.Start(g, gctx); err != nil {
+	if err := application.Workers.Start(g, workerCtx); err != nil {
 		stop()
 		_ = server.Close()
 		return fmt.Errorf("worker startup: %w", err)
@@ -57,15 +59,22 @@ func Run(cfg *config.Config, infra *Infrastructure, application *Application) er
 
 	g.Go(func() error {
 		<-gctx.Done()
+		infra.Logger.Info("shutdown signal received, draining HTTP")
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		httpShutdownCtx, cancelHTTP := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelHTTP()
 
-		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Shutdown(httpShutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("http shutdown: %w", err)
 		}
 
-		if err := application.Workers.Stop(shutdownCtx); err != nil {
+		infra.Logger.Info("HTTP drained, stopping workers")
+		workerCancel()
+
+		workerShutdownCtx, cancelWorkers := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelWorkers()
+
+		if err := application.Workers.Stop(workerShutdownCtx); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				infra.Logger.Warn("workers stop deadline reached", "error", err)
 				return nil

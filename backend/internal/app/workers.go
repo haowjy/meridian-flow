@@ -48,11 +48,11 @@ func NewWorkers(cfg *config.Config, app *Application, logger *slog.Logger) *Work
 }
 
 // Start registers background workers and periodic scheduling loops in the errgroup.
-func (w *Workers) Start(g *errgroup.Group, ctx context.Context) error {
+func (w *Workers) Start(g *errgroup.Group, workerCtx context.Context) error {
 	if g == nil {
 		return fmt.Errorf("errgroup is nil")
 	}
-	if ctx == nil {
+	if workerCtx == nil {
 		return fmt.Errorf("context is nil")
 	}
 	if w.jobQueue == nil {
@@ -65,7 +65,7 @@ func (w *Workers) Start(g *errgroup.Group, ctx context.Context) error {
 	)
 
 	g.Go(func() error {
-		err := w.jobQueue.Start(ctx)
+		err := w.jobQueue.Start(workerCtx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return fmt.Errorf("job queue stopped: %w", err)
 		}
@@ -73,25 +73,25 @@ func (w *Workers) Start(g *errgroup.Group, ctx context.Context) error {
 	})
 
 	g.Go(func() error {
-		w.startBillingReconcileLoop(ctx)
+		w.startBillingReconcileLoop(workerCtx)
 		return nil
 	})
 
 	g.Go(func() error {
-		w.startCreditExpirationLoop(ctx)
+		w.startCreditExpirationLoop(workerCtx)
 		return nil
 	})
 
 	if w.compactionWorker != nil {
 		g.Go(func() error {
-			w.compactionWorker.Start(ctx)
+			w.compactionWorker.Start(workerCtx)
 			return nil
 		})
 	}
 
 	if w.streamRegistry != nil {
 		g.Go(func() error {
-			w.streamRegistry.StartCleanup(ctx)
+			w.streamRegistry.StartCleanup(workerCtx)
 			return nil
 		})
 	}
