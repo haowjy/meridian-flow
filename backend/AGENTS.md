@@ -9,6 +9,7 @@ make run          # Start server
 make dev          # Hot reload (requires air)
 make build        # Build binary
 make test         # Run tests
+make migrate-up   # Apply pending DB migrations
 make seed         # Seed via API
 make seed-fresh   # Drop tables + seed
 make seed-clear   # Clear data (keep schema) -- BLOCKED in prod
@@ -68,8 +69,10 @@ Local dev uses `go.work`. Never use `replace` directives in `go.mod` (breaks Doc
 
 ## Common Issues
 
+- "relation does not exist" -- run `cd backend && make migrate-up` to apply pending migrations
 - "prepared statement already exists" -- ensure port 6543 or add `?default_query_exec_mode=simple_protocol`
 - Seeding fails -- `make seed-fresh`
+- Docker container names -- local Supabase containers are named `supabase_*_backend` (e.g. `supabase_db_backend`), not `supabase-db`
 
 ## HTTP Timeouts
 
