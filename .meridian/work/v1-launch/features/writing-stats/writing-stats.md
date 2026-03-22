@@ -7,7 +7,7 @@ Session-level and project-level writing statistics.
 ## Scope
 
 - **Session word count** — words written since session start, visible in status bar
-- **Daily word count** — today's total, with history chart
+- **Daily word count** — today's total, with history
 - **Writing streaks** — consecutive days with writing activity
 - **Per-document word count** — shown in explorer alongside document name
 - **Deadline projection** — "At current pace, you'll finish by X" (optional, user sets target)
@@ -28,5 +28,5 @@ Session-level and project-level writing statistics.
 
 ## Dependencies
 
-- Design system (status bar widget, chart component)
+- Design system (status bar widget)
 - Editor (word count source)

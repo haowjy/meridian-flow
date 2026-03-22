@@ -110,11 +110,8 @@ Complex blocks rendered as widgets using `Decoration.replace`:
 |---|---|---|---|
 | Math | `$$...$$` or ` ```math ` | KaTeX rendered output | Click to edit raw LaTeX |
 | Diagrams | ` ```mermaid ` | Mermaid SVG | Click to edit raw source |
-| Charts | ` ```vegalite ` | Vega-Lite rendered chart | Click to edit JSON spec |
 | Images | `![alt](url)` | `<img>` element | Click to edit URL/alt |
 | Code | ` ```lang ` | Shiki-highlighted block | Always editable (no widget toggle) |
-
-Vega-Lite enables declarative data charts (bar, line, scatter, pie, heatmaps) in markdown. Same click-to-edit pattern as Mermaid — rendered chart in read mode, JSON spec in edit mode. Useful for world-building data, story structure, and embedded analytics. Uses `react-vega` for rendering.
 
 Click-to-edit pattern:
 
