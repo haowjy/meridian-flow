@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"meridian/internal/app"
@@ -13,8 +12,24 @@ import (
 func main() {
 	_ = godotenv.Load()
 	cfg := config.Load()
-	if err := app.Run(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+
+	infra, err := app.NewInfrastructure(cfg)
+	if err != nil {
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
+		os.Exit(1)
+	}
+	defer infra.Close()
+
+	application, err := app.NewApplication(cfg, infra)
+	if err != nil {
+		infra.Logger.Error("application setup failed", "error", err)
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
+		os.Exit(1)
+	}
+
+	if err := app.Run(cfg, infra, application); err != nil {
+		infra.Logger.Error("application error", "error", err)
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
 		os.Exit(1)
 	}
 }

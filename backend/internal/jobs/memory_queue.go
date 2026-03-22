@@ -71,6 +71,17 @@ func (q *InMemoryQueue) Enqueue(job Job) error {
 		}
 	}
 
+	if q.ctx != nil {
+		select {
+		case <-q.ctx.Done():
+			if jobID != "" {
+				q.inFlight.Delete(jobID)
+			}
+			return fmt.Errorf("job queue stopped")
+		default:
+		}
+	}
+
 	// Non-blocking send (bounded channel)
 	select {
 	case q.jobCh <- job:
@@ -125,13 +136,11 @@ func (q *InMemoryQueue) Stop(ctx context.Context) error {
 	q.stopOnce.Do(func() {
 		q.logger.Info("stopping job queue", "pending", len(q.jobCh))
 
-		// Cancel context to signal workers
+		// Cancel context to signal workers.
+		// Keep channel open so racing producers don't panic on send.
 		if q.cancel != nil {
 			q.cancel()
 		}
-
-		// Close job channel (no new jobs accepted)
-		close(q.jobCh)
 
 		// Wait for workers to finish with timeout
 		done := make(chan struct{})
@@ -173,13 +182,7 @@ func (q *InMemoryQueue) worker(ctx context.Context, workerID int) {
 		case <-ctx.Done():
 			q.logger.Debug("worker stopped", "worker_id", workerID)
 			return
-		case job, ok := <-q.jobCh:
-			if !ok {
-				// Channel closed
-				q.logger.Debug("worker stopped (channel closed)", "worker_id", workerID)
-				return
-			}
-
+		case job := <-q.jobCh:
 			// Decrement pending count
 			q.statsMu.Lock()
 			q.stats.Pending--
@@ -240,9 +243,15 @@ func (q *InMemoryQueue) executeJob(ctx context.Context, job Job, workerID int) {
 			)
 			q.statsMu.Unlock()
 
-			// Exponential backoff: wait before re-enqueue
-			// Job controls backoff timing via its internal state
-			time.Sleep(100 * time.Millisecond) // Base delay between retries
+			// Base delay between retries; shutdown should interrupt this wait.
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				if jobID != "" {
+					q.inFlight.Delete(jobID)
+				}
+				return
+			}
 
 			// Clean up inFlight entry BEFORE re-enqueue (allow retry to pass deduplication)
 			if jobID != "" {
