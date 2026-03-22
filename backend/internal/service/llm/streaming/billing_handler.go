@@ -166,6 +166,7 @@ func (se *StreamExecutor) enqueueEnrichmentSettlementJob(
 		phase,
 		model,
 		se.userID,
+		se.provider.Name(),
 		se.turnRepo,
 		querier,
 		se.creditSettler,
