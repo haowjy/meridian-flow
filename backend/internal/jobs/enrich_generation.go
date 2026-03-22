@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	billingmodel "meridian/internal/domain/models/billing"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	billingdomain "meridian/internal/domain/services/billing"
 	domainllm "meridian/internal/domain/services/llm"
 )
 
@@ -36,9 +38,9 @@ const (
 // Token Accuracy Race Window (Expected Behavior):
 // For reasoning-capable models (o1, Grok, DeepSeek-R1, etc.), there is a brief window
 // where turn.output_tokens is incomplete:
-//   1. Stream completes -> turn.output_tokens set from streaming metadata (NO reasoning tokens)
-//   2. Background job runs (1s - 8.5 min later) -> adds reasoning tokens
-//   3. turn.output_tokens now complete (completion + reasoning)
+//  1. Stream completes -> turn.output_tokens set from streaming metadata (NO reasoning tokens)
+//  2. Background job runs (1s - 8.5 min later) -> adds reasoning tokens
+//  3. turn.output_tokens now complete (completion + reasoning)
 //
 // This is ACCEPTABLE for backend tracking/billing purposes:
 // - Final token counts are eventually consistent
@@ -50,10 +52,13 @@ type EnrichGenerationJob struct {
 	requestIndex int
 	phase        string
 	model        string
+	userID       string
 
-	turnWriter llmRepo.TurnWriter
-	provider   domainllm.GenerationStatsQuerier
-	logger     *slog.Logger
+	turnWriter     llmRepo.TurnWriter
+	provider       domainllm.GenerationStatsQuerier
+	creditSettler  billingdomain.CreditSettler
+	settlementMode billingmodel.CreditSettlementMode
+	logger         *slog.Logger
 
 	isCancelled  bool          // Distinguishes cancel from normal completion (affects retry timing)
 	attempt      int           // Current attempt count (incremented in Execute)
@@ -68,8 +73,11 @@ func NewEnrichGenerationJob(
 	requestIndex int,
 	phase string,
 	model string,
+	userID string,
 	turnWriter llmRepo.TurnWriter,
 	provider domainllm.GenerationStatsQuerier,
+	creditSettler billingdomain.CreditSettler,
+	settlementMode billingmodel.CreditSettlementMode,
 	logger *slog.Logger,
 	isCancelled bool,
 ) *EnrichGenerationJob {
@@ -80,17 +88,20 @@ func NewEnrichGenerationJob(
 	}
 
 	return &EnrichGenerationJob{
-		turnID:       turnID,
-		generationID: generationID,
-		requestIndex: requestIndex,
-		phase:        phase,
-		model:        model,
-		turnWriter:   turnWriter,
-		provider:     provider,
-		logger:       logger,
-		isCancelled:  isCancelled,
-		attempt:      0,
-		backoffDelay: startingBackoff,
+		turnID:         turnID,
+		generationID:   generationID,
+		requestIndex:   requestIndex,
+		phase:          phase,
+		model:          model,
+		userID:         userID,
+		turnWriter:     turnWriter,
+		provider:       provider,
+		creditSettler:  creditSettler,
+		settlementMode: settlementMode,
+		logger:         logger,
+		isCancelled:    isCancelled,
+		attempt:        0,
+		backoffDelay:   startingBackoff,
 	}
 }
 
@@ -245,7 +256,14 @@ func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
 	//
 	// Edge case: If job runs to completion twice due to queue issues, tokens may
 	// accumulate twice. This is mitigated by job queue deduplication.
-	return j.updateTurnTokens(ctx, stats)
+	if err := j.updateTurnTokens(ctx, stats); err != nil {
+		return err
+	}
+
+	// Deferred settlement: enrichment owns the first authoritative settlement attempt.
+	j.settleIfDeferred(ctx, stats)
+
+	return nil
 }
 
 // JobID returns unique identifier for deduplication.
@@ -356,8 +374,8 @@ func (j *EnrichGenerationJob) determineTokenUpdate(stats *domainllm.GenerationSt
 	// Normal completion with reasoning: Update to add reasoning tokens
 	// (streaming metadata does not include reasoning tokens, only /generation API has them)
 	if !j.isCancelled && stats.NativeTokensReasoning > 0 {
-		inputTokens := 0                                // Already set during stream
-		outputTokens := stats.NativeTokensReasoning     // ADD reasoning to existing completion tokens
+		inputTokens := 0                            // Already set during stream
+		outputTokens := stats.NativeTokensReasoning // ADD reasoning to existing completion tokens
 
 		j.logger.Info("adding reasoning tokens to turn output count",
 			"turn_id", j.turnID,
@@ -370,4 +388,57 @@ func (j *EnrichGenerationJob) determineTokenUpdate(stats *domainllm.GenerationSt
 
 	// No token update needed
 	return false, 0, 0, ""
+}
+
+func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domainllm.GenerationStats) {
+	if j.creditSettler == nil {
+		return
+	}
+
+	// Inline-authoritative providers settle inside StreamExecutor terminal handlers.
+	if j.settlementMode == billingmodel.CreditSettlementInlineAuthoritative {
+		return
+	}
+
+	model := stats.Model
+	if model == "" {
+		model = j.model
+	}
+
+	req := billingdomain.SettleRequestInput{
+		UserID:          j.userID,
+		TurnID:          j.turnID,
+		RequestIndex:    j.requestIndex,
+		Provider:        "openrouter",
+		Model:           model,
+		InputTokens:     int64(stats.NativeTokensPrompt),
+		OutputTokens:    int64(stats.NativeTokensCompletion),
+		ReasoningTokens: int64(stats.NativeTokensReasoning),
+		CachedTokens:    int64(stats.NativeTokensCached),
+	}
+
+	if req.UserID == "" {
+		j.logger.Warn("skipping deferred settlement in enrichment: missing user id",
+			"turn_id", j.turnID,
+			"request_index", j.requestIndex,
+			"generation_id", stats.ID,
+		)
+		return
+	}
+
+	if err := j.creditSettler.SettleAuthoritativeRequest(ctx, req); err != nil {
+		j.logger.Warn("deferred settlement failed after enrichment",
+			"turn_id", j.turnID,
+			"request_index", j.requestIndex,
+			"generation_id", stats.ID,
+			"error", err,
+		)
+		return
+	}
+
+	j.logger.Debug("deferred settlement completed after enrichment",
+		"turn_id", j.turnID,
+		"request_index", j.requestIndex,
+		"generation_id", stats.ID,
+	)
 }

@@ -54,6 +54,56 @@ func TestAuthMiddleware_SkipsWebSocketRoutes(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_SkipsStripeWebhookPostRoute(t *testing.T) {
+	verifier := &testAuthJWTVerifier{}
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := AuthMiddleware(verifier, nil)(next)
+	req := httptest.NewRequest(http.MethodPost, "/api/billing/webhooks/stripe", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, recorder.Code)
+	}
+	if !nextCalled {
+		t.Fatalf("expected downstream handler to be called")
+	}
+	if verifier.verifyCalls != 0 {
+		t.Fatalf("expected verifier not to run, got %d calls", verifier.verifyCalls)
+	}
+}
+
+func TestAuthMiddleware_DoesNotSkipStripeWebhookNonPostRoute(t *testing.T) {
+	verifier := &testAuthJWTVerifier{
+		claims: &models.AuthClaims{UserID: "user-1"},
+	}
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := AuthMiddleware(verifier, nil)(next)
+	req := httptest.NewRequest(http.MethodGet, "/api/billing/webhooks/stripe", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+	if nextCalled {
+		t.Fatalf("downstream handler should not be called without auth header")
+	}
+	if verifier.verifyCalls != 0 {
+		t.Fatalf("expected verifier not to run without auth header, got %d calls", verifier.verifyCalls)
+	}
+}
+
 func TestAuthMiddleware_RequiresAuthForAPIRoutes(t *testing.T) {
 	verifier := &testAuthJWTVerifier{
 		claims: &models.AuthClaims{UserID: "user-1"},

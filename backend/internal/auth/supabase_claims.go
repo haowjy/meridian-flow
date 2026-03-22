@@ -7,6 +7,8 @@ import "github.com/golang-jwt/jwt/v5"
 type SupabaseClaims struct {
 	jwt.RegisteredClaims                          // Standard JWT claims (sub, iss, aud, exp, iat, etc.)
 	Email                string                   `json:"email"`
+	EmailVerified        *bool                    `json:"email_verified"`
+	EmailConfirmedAt     *string                  `json:"email_confirmed_at"`
 	Phone                string                   `json:"phone"`
 	AppMetadata          map[string]interface{}   `json:"app_metadata"`
 	UserMetadata         map[string]interface{}   `json:"user_metadata"`

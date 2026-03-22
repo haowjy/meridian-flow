@@ -44,6 +44,12 @@ type TableNames struct {
 	CollabDocumentBookmarks   string
 	CollabDocumentProposals   string
 	TurnDocumentTouches       string
+
+	// Billing tables
+	CreditLots            string
+	CreditTransactions    string
+	CreditBalances        string // view
+	ConsumeCreditLotsFIFO string // function name
 }
 
 // NewTableNames creates table names with the given prefix
@@ -75,6 +81,12 @@ func NewTableNames(prefix string) *TableNames {
 		CollabDocumentBookmarks:   fmt.Sprintf("%scollab_document_bookmarks", prefix),
 		CollabDocumentProposals:   fmt.Sprintf("%scollab_document_edit_proposals", prefix),
 		TurnDocumentTouches:       fmt.Sprintf("%sturn_document_touches", prefix),
+
+		// Billing tables
+		CreditLots:            fmt.Sprintf("%scredit_lots", prefix),
+		CreditTransactions:    fmt.Sprintf("%scredit_transactions", prefix),
+		CreditBalances:        fmt.Sprintf("%scredit_balances", prefix),
+		ConsumeCreditLotsFIFO: fmt.Sprintf("%sconsume_credit_lots_fifo", prefix),
 	}
 }
 

@@ -31,9 +31,12 @@ type ProviderRouting struct {
 
 // PricingTier represents a pricing tier based on context window usage
 type PricingTier struct {
-	Threshold   *int               `yaml:"threshold" json:"threshold"`       // null = unlimited
-	InputPrice  map[string]float64 `yaml:"input_price" json:"input_price"`   // modality -> price (e.g., "text": 5.00, "audio": 15.00)
-	OutputPrice map[string]float64 `yaml:"output_price" json:"output_price"` // modality -> price (e.g., "text": 15.00, "image": 20.00)
+	Threshold         *int               `yaml:"threshold" json:"threshold"`                               // null = unlimited
+	InputPrice        map[string]float64 `yaml:"input_price" json:"input_price"`                           // modality -> price (e.g., "text": 5.00, "audio": 15.00)
+	OutputPrice       map[string]float64 `yaml:"output_price" json:"output_price"`                         // modality -> price (e.g., "text": 15.00, "image": 20.00)
+	ReasoningPrice    map[string]float64 `yaml:"reasoning_price" json:"reasoning_price,omitempty"`         // optional modality -> price override (defaults to output_price)
+	CachedPrice       map[string]float64 `yaml:"cached_price" json:"cached_price,omitempty"`               // optional modality -> price override (defaults to input_price * 0.5)
+	MarkupBasisPoints *int64             `yaml:"markup_basis_points" json:"markup_basis_points,omitempty"` // optional billing markup override for this tier
 }
 
 // ModelCapabilities represents all metadata for a specific model
@@ -76,28 +79,30 @@ type ModelCapabilities struct {
 
 // ProviderCapabilities represents all models for a provider
 type ProviderCapabilities struct {
-	Provider string              `yaml:"provider" json:"provider"`
-	Models   []ModelCapabilities `yaml:"-" json:"models"` // Ordered slice, populated by custom unmarshaler
+	Provider        string              `yaml:"provider" json:"provider"`
+	BillingDefaults *BillingDefaults    `yaml:"billing_defaults" json:"billing_defaults,omitempty"`
+	Models          []ModelCapabilities `yaml:"-" json:"models"` // Ordered slice, populated by custom unmarshaler
+}
+
+type BillingDefaults struct {
+	MarkupBasisPoints *int64 `yaml:"markup_basis_points" json:"markup_basis_points,omitempty"`
 }
 
 // UnmarshalYAML implements custom YAML unmarshaling to preserve model order from YAML file
 func (p *ProviderCapabilities) UnmarshalYAML(node *yaml.Node) error {
-	// First, decode the provider field
-	for i := 0; i < len(node.Content); i += 2 {
-		if node.Content[i].Value == "provider" {
-			p.Provider = node.Content[i+1].Value
-			break
-		}
+	// Decode strongly typed fields first.
+	type providerCapsAux struct {
+		Provider        string                       `yaml:"provider"`
+		BillingDefaults *BillingDefaults             `yaml:"billing_defaults"`
+		Models          map[string]ModelCapabilities `yaml:"models"`
 	}
-
-	// Decode models into a map first to get the full data
-	type modelsOnly struct {
-		Models map[string]ModelCapabilities `yaml:"models"`
-	}
-	var m modelsOnly
-	if err := node.Decode(&m); err != nil {
+	var aux providerCapsAux
+	if err := node.Decode(&aux); err != nil {
 		return err
 	}
+	p.Provider = aux.Provider
+	p.BillingDefaults = aux.BillingDefaults
+	p.Models = nil
 
 	// Now extract model keys in YAML order and build the slice
 	for i := 0; i < len(node.Content); i += 2 {
@@ -106,7 +111,7 @@ func (p *ProviderCapabilities) UnmarshalYAML(node *yaml.Node) error {
 			// modelsNode.Content alternates: key, value, key, value...
 			for j := 0; j < len(modelsNode.Content); j += 2 {
 				modelID := modelsNode.Content[j].Value
-				if model, ok := m.Models[modelID]; ok {
+				if model, ok := aux.Models[modelID]; ok {
 					model.ID = modelID
 					p.Models = append(p.Models, model)
 				}

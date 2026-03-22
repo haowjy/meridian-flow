@@ -14,11 +14,13 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	billingmodel "meridian/internal/domain/models/billing"
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
+	billingSvc "meridian/internal/domain/services/billing"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	skillSvc "meridian/internal/domain/services/skill"
@@ -74,33 +76,36 @@ type LLMProviderGetter interface {
 // Handles turn creation and streaming orchestration
 // Uses minimal interfaces (ISP compliance): TurnWriter for creating turns, TurnReader for reading blocks
 type Service struct {
-	turnWriter           llmRepo.TurnWriter
-	turnReader           llmRepo.TurnReader
-	turnNavigator        llmRepo.TurnNavigator
-	threadRepo           llmRepo.ThreadRepository
-	projectRepo          docsysRepo.ProjectRepository // For validating project access on cold start
-	documentSvc          docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
-	folderSvc            docsysSvc.FolderService      // For tool operations (SOLID: DIP)
-	namespaceSvc         docsysSvc.NamespaceService   // For namespace routing in tools
-	skillService         skillSvc.ProjectSkillService // For skill_invoke/skill_list tools
-	validator            ThreadValidator
-	authorizer           services.ResourceAuthorizer
-	providerGetter       LLMProviderGetter
-	registry             *mstream.Registry
-	executorRegistry     *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
-	interjectionRegistry *mstream.InterjectionRegistry // Tracks interjection buffers by turn ID
-	config               *config.Config
-	txManager            repositories.TransactionManager
-	systemPromptResolver llmSvc.SystemPromptResolver
-	messageBuilder       llmSvc.MessageBuilder
-	toolLimitResolver    llmSvc.ToolLimitResolver       // Resolves tool round limits (tier-ready)
-	capabilityRegistry   *capabilities.Registry         // For checking model capabilities (e.g., supports_tools)
-	formatterRegistry    *formatting.FormatterRegistry  // For formatting synthetic tool results (ref transformer)
-	tokenFinalizer       tokens.TokenFinalizer          // For finalizing tokens on completion/interruption
-	jobQueue             jobs.JobQueue                  // NEW: Phase 2 - background job queue for async operations
-	mutationStrategy     tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
-	userStreamTracker    *UserStreamTracker             // Per-user concurrent stream limiter
-	logger               *slog.Logger
+	turnWriter             llmRepo.TurnWriter
+	turnReader             llmRepo.TurnReader
+	turnNavigator          llmRepo.TurnNavigator
+	threadRepo             llmRepo.ThreadRepository
+	projectRepo            docsysRepo.ProjectRepository // For validating project access on cold start
+	documentSvc            docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
+	folderSvc              docsysSvc.FolderService      // For tool operations (SOLID: DIP)
+	namespaceSvc           docsysSvc.NamespaceService   // For namespace routing in tools
+	skillService           skillSvc.ProjectSkillService // For skill_invoke/skill_list tools
+	validator              ThreadValidator
+	authorizer             services.ResourceAuthorizer
+	providerGetter         LLMProviderGetter
+	registry               *mstream.Registry
+	executorRegistry       *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
+	interjectionRegistry   *mstream.InterjectionRegistry // Tracks interjection buffers by turn ID
+	config                 *config.Config
+	txManager              repositories.TransactionManager
+	systemPromptResolver   llmSvc.SystemPromptResolver
+	messageBuilder         llmSvc.MessageBuilder
+	toolLimitResolver      llmSvc.ToolLimitResolver          // Resolves tool round limits (tier-ready)
+	capabilityRegistry     *capabilities.Registry            // For checking model capabilities (e.g., supports_tools)
+	formatterRegistry      *formatting.FormatterRegistry     // For formatting synthetic tool results (ref transformer)
+	tokenFinalizer         tokens.TokenFinalizer             // For finalizing tokens on completion/interruption
+	creditAdmissionChecker billingSvc.CreditAdmissionChecker // Wired in Phase 4; used by executor in Phase 5
+	creditSettler          billingSvc.CreditSettler          // Wired in Phase 4; used by executor in Phase 5
+	settlementMode         billingmodel.CreditSettlementMode // Wired in Phase 4; used by executor in Phase 5
+	jobQueue               jobs.JobQueue                     // NEW: Phase 2 - background job queue for async operations
+	mutationStrategy       tools.DocumentMutationStrategy    // Strategy for AI edit persistence (collab proposal)
+	userStreamTracker      *UserStreamTracker                // Per-user concurrent stream limiter
+	logger                 *slog.Logger
 }
 
 // NewService creates a new streaming service
@@ -126,38 +131,44 @@ func NewService(
 	capabilityRegistry *capabilities.Registry,
 	formatterRegistry *formatting.FormatterRegistry,
 	tokenFinalizer tokens.TokenFinalizer,
+	creditAdmissionChecker billingSvc.CreditAdmissionChecker,
+	creditSettler billingSvc.CreditSettler,
+	settlementMode billingmodel.CreditSettlementMode,
 	jobQueue jobs.JobQueue,
 	mutationStrategy tools.DocumentMutationStrategy,
 	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
-		turnWriter:           turnWriter,
-		turnReader:           turnReader,
-		turnNavigator:        turnNavigator,
-		threadRepo:           threadRepo,
-		projectRepo:          projectRepo,
-		documentSvc:          documentSvc,
-		folderSvc:            folderSvc,
-		namespaceSvc:         namespaceSvc,
-		skillService:         skillService,
-		validator:            validator,
-		authorizer:           authorizer,
-		providerGetter:       providerGetter,
-		registry:             registry,
-		executorRegistry:     NewExecutorRegistry(),
-		interjectionRegistry: mstream.NewInterjectionRegistry(),
-		config:               cfg,
-		txManager:            txManager,
-		systemPromptResolver: systemPromptResolver,
-		messageBuilder:       messageBuilder,
-		toolLimitResolver:    toolLimitResolver,
-		capabilityRegistry:   capabilityRegistry,
-		formatterRegistry:    formatterRegistry,
-		tokenFinalizer:       tokenFinalizer,
-		jobQueue:             jobQueue,
-		mutationStrategy:     mutationStrategy,
-		userStreamTracker:    NewUserStreamTracker(cfg.MaxConcurrentStreams),
-		logger:               logger,
+		turnWriter:             turnWriter,
+		turnReader:             turnReader,
+		turnNavigator:          turnNavigator,
+		threadRepo:             threadRepo,
+		projectRepo:            projectRepo,
+		documentSvc:            documentSvc,
+		folderSvc:              folderSvc,
+		namespaceSvc:           namespaceSvc,
+		skillService:           skillService,
+		validator:              validator,
+		authorizer:             authorizer,
+		providerGetter:         providerGetter,
+		registry:               registry,
+		executorRegistry:       NewExecutorRegistry(),
+		interjectionRegistry:   mstream.NewInterjectionRegistry(),
+		config:                 cfg,
+		txManager:              txManager,
+		systemPromptResolver:   systemPromptResolver,
+		messageBuilder:         messageBuilder,
+		toolLimitResolver:      toolLimitResolver,
+		capabilityRegistry:     capabilityRegistry,
+		formatterRegistry:      formatterRegistry,
+		tokenFinalizer:         tokenFinalizer,
+		creditAdmissionChecker: creditAdmissionChecker,
+		creditSettler:          creditSettler,
+		settlementMode:         settlementMode,
+		jobQueue:               jobQueue,
+		mutationStrategy:       mutationStrategy,
+		userStreamTracker:      NewUserStreamTracker(cfg.MaxConcurrentStreamsFree, cfg.MaxConcurrentStreamsPaid),
+		logger:                 logger,
 	}
 }
 
@@ -303,8 +314,10 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	}
 
 	// Enforce per-user concurrent stream limit before committing resources.
+	// Paid users (purchased_balance > 0) get a higher limit.
 	// Ownership transfers to the cleanup callback after executor registration.
-	if err := s.userStreamTracker.Acquire(req.UserID); err != nil {
+	hasPurchased := s.creditAdmissionChecker.HasPurchasedCredits(ctx, req.UserID)
+	if err := s.userStreamTracker.Acquire(req.UserID, hasPurchased); err != nil {
 		return nil, err
 	}
 	streamAcquired := true
@@ -558,6 +571,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		)
 		toolRoundLimit = s.config.MaxToolRounds
 	}
+	settlementMode := s.resolveSettlementMode(provider)
 
 	// Get or create interjection buffer for this turn
 	interjectionBuffer := s.interjectionRegistry.GetOrCreate(assistantTurn.ID)
@@ -580,6 +594,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		toolRegistry,           // Per-request ToolRegistry with project-specific tools
 		s.messageBuilder,       // MessageBuilder (for continuation message building)
 		s.logger,
+		s.creditAdmissionChecker,
+		s.creditSettler,
+		settlementMode,
 		toolRoundLimit,                    // Per-user tool round limit (tier-ready)
 		s.config.Debug,                    // Pass DEBUG flag for optional event IDs
 		s.tokenFinalizer,                  // For finalizing tokens on completion/interruption
@@ -718,6 +735,20 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	// - Broadcast events via mstream
 	// - Update turn status on completion/error
 	// - Registry will clean up stream after retention period
+}
+
+func (s *Service) resolveSettlementMode(provider string) billingmodel.CreditSettlementMode {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openrouter":
+		return billingmodel.CreditSettlementDeferredToEnrichment
+	case "anthropic":
+		return billingmodel.CreditSettlementInlineAuthoritative
+	default:
+		if s.settlementMode != "" {
+			return s.settlementMode
+		}
+		return billingmodel.CreditSettlementInlineAuthoritative
+	}
 }
 
 // CreateAssistantTurnDebug creates an assistant turn (DEBUG/INTERNAL USE ONLY)

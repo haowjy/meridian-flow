@@ -23,6 +23,7 @@ func AuthMiddleware(
 			// Skip auth for health check and collab websocket entrypoints.
 			// Collab websocket uses JWT-in-first-message instead of Authorization header.
 			if r.URL.Path == "/health" ||
+				(r.Method == http.MethodPost && r.URL.Path == "/api/billing/webhooks/stripe") ||
 				strings.HasPrefix(r.URL.Path, "/ws/projects/") ||
 				strings.HasPrefix(r.URL.Path, "/ws/documents/") {
 				next.ServeHTTP(w, r)
@@ -61,6 +62,7 @@ func AuthMiddleware(
 
 			// Inject user ID into request context
 			r = httputil.WithUserID(r, userID)
+			r = httputil.WithAuthClaims(r, claims)
 			next.ServeHTTP(w, r)
 		})
 	}

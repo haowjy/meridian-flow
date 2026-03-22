@@ -13,17 +13,21 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
+	billingmodel "meridian/internal/domain/models/billing"
+	billingdomain "meridian/internal/domain/services/billing"
 	domainLLM "meridian/internal/domain/services/llm"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
+	postgresBilling "meridian/internal/repository/postgres/billing"
 	postgresCollab "meridian/internal/repository/postgres/collab"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
 	postgresSkill "meridian/internal/repository/postgres/skill"
 	"meridian/internal/service"
 	serviceAuth "meridian/internal/service/auth"
+	serviceBilling "meridian/internal/service/billing"
 	serviceCollab "meridian/internal/service/collab"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
@@ -122,6 +126,10 @@ func main() {
 	// User preferences repository
 	userPrefsRepo := postgres.NewUserPreferencesRepository(repoConfig)
 
+	// Billing repositories
+	creditStore := postgresBilling.NewCreditStore(repoConfig)
+	generationBillingStore := postgresBilling.NewGenerationBillingStore(repoConfig)
+
 	// Create validators (for soft-delete validation)
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
@@ -142,6 +150,26 @@ func main() {
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, projectRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, projectRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
 
+	// Billing services
+	stripeClient := serviceBilling.NewStripeClient(cfg.StripeSecretKey, cfg.StripeWebhookSecret)
+	creditService := serviceBilling.NewCreditService(creditStore, stripeClient, logger)
+	creditGranter := serviceBilling.NewCreditGranter(creditStore, logger)
+
+	admissionChecker := billingdomain.CreditAdmissionChecker(serviceBilling.NewCreditAdmissionChecker(creditStore, logger))
+	creditSettler := billingdomain.CreditSettler(nil)
+
+	settlementMode := billingmodel.CreditSettlementDeferredToEnrichment
+	switch strings.ToLower(cfg.DefaultProvider) {
+	case "anthropic":
+		settlementMode = billingmodel.CreditSettlementInlineAuthoritative
+	case "openrouter", "":
+		settlementMode = billingmodel.CreditSettlementDeferredToEnrichment
+	default:
+		logger.Warn("unknown default provider; using deferred settlement mode",
+			"default_provider", cfg.DefaultProvider,
+		)
+	}
+
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
 	if err != nil {
@@ -156,6 +184,27 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("capability registry initialized")
+
+	pricingResolver := billingdomain.ModelPricingResolver(serviceBilling.NewRegistryPricingResolver(capabilityRegistry, logger))
+	creditSettler = serviceBilling.NewCreditSettler(creditStore, generationBillingStore, pricingResolver, logger)
+	if cfg.StripeSecretKey == "" || cfg.StripeWebhookSecret == "" {
+		if strings.EqualFold(cfg.Environment, "prod") {
+			logger.Error("stripe keys are required in production; refusing to start",
+				"environment", cfg.Environment,
+				"has_stripe_secret_key", cfg.StripeSecretKey != "",
+				"has_stripe_webhook_secret", cfg.StripeWebhookSecret != "",
+			)
+			os.Exit(1)
+		}
+
+		logger.Warn("stripe keys are missing; using noop billing collaborators for streaming admission/settlement",
+			"environment", cfg.Environment,
+			"has_stripe_secret_key", cfg.StripeSecretKey != "",
+			"has_stripe_webhook_secret", cfg.StripeWebhookSecret != "",
+		)
+		admissionChecker = serviceBilling.NewNoopCreditAdmissionChecker()
+		creditSettler = serviceBilling.NewNoopCreditSettler()
+	}
 
 	// Initialize background job queue for async operations (Phase 2)
 	jobQueue := jobs.NewInMemoryQueue(
@@ -176,6 +225,51 @@ func main() {
 		"worker_pool_size", 5,
 		"queue_capacity", 1000,
 	)
+
+	// Billing periodic jobs
+	// Reconciliation retries pending settlements older than 5 minutes (every 15 minutes).
+	// Expiration zeroes out expired promotional lots (every hour).
+	go func() {
+		enqueue := func() {
+			if err := jobQueue.Enqueue(jobs.NewReconcileBillingJob(generationBillingStore, creditSettler, logger)); err != nil {
+				logger.Warn("failed to enqueue reconcile billing job", "error", err)
+			}
+		}
+
+		enqueue() // run once on startup
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-queueCtx.Done():
+				return
+			case <-ticker.C:
+				enqueue()
+			}
+		}
+	}()
+
+	go func() {
+		enqueue := func() {
+			if err := jobQueue.Enqueue(jobs.NewExpireCreditsJob(creditStore, logger)); err != nil {
+				logger.Warn("failed to enqueue expire credits job", "error", err)
+			}
+		}
+
+		enqueue() // run once on startup
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-queueCtx.Done():
+				return
+			case <-ticker.C:
+				enqueue()
+			}
+		}
+	}()
 
 	// Create namespace service (for skill service path operations)
 	// Must be created before skill service and LLM services
@@ -270,6 +364,9 @@ func main() {
 		capabilityRegistry,
 		authorizer,
 		toolLimitResolver,
+		admissionChecker,
+		creditSettler,
+		settlementMode,
 		jobQueue,         // Phase 2: Background job queue for async generation enrichment
 		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
 		logger,
@@ -306,6 +403,8 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
 	importHandler := handler.NewImportHandler(importService, logger, cfg)
+	billingHandler := handler.NewBillingHandler(creditService, logger, cfg)
+	authHandler := handler.NewAuthHandler(creditGranter, logger, cfg)
 	// Collab handler (doc resolver, registry, and doc handler created above before LLM services)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,
@@ -414,6 +513,16 @@ func main() {
 	mux.HandleFunc("GET /api/users/me/preferences", userPrefsHandler.GetPreferences)
 	mux.HandleFunc("PATCH /api/users/me/preferences", userPrefsHandler.UpdatePreferences)
 
+	// Auth routes
+	mux.HandleFunc("POST /api/auth/initialize", authHandler.Initialize)
+
+	// Billing routes (webhook bypasses JWT in auth middleware)
+	mux.HandleFunc("GET /api/billing/packs", billingHandler.GetPacks)
+	mux.HandleFunc("GET /api/billing/balance", billingHandler.GetBalance)
+	mux.HandleFunc("GET /api/billing/transactions", billingHandler.ListTransactions)
+	mux.HandleFunc("POST /api/billing/checkout-sessions", billingHandler.CreateCheckoutSession)
+	mux.HandleFunc("POST /api/billing/webhooks/stripe", billingHandler.HandleStripeWebhook)
+
 	// Thread routes
 	mux.HandleFunc("POST /api/threads", threadHandler.CreateThread)
 	mux.HandleFunc("GET /api/threads", threadHandler.ListThreads)
@@ -422,7 +531,7 @@ func main() {
 	mux.HandleFunc("PATCH /api/threads/{id}/last-viewed-turn", threadHandler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/threads/{id}", threadHandler.DeleteThread)
 	mux.HandleFunc("GET /api/threads/{id}/turns", threadHandler.GetPaginatedTurns)
-	mux.HandleFunc("POST /api/turns", threadHandler.CreateTurnV2)
+	mux.Handle("POST /api/turns", middleware.CreditGate(admissionChecker)(http.HandlerFunc(threadHandler.CreateTurnV2)))
 	mux.HandleFunc("GET /api/turns/{id}/path", threadHandler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", threadHandler.GetTurnSiblings)
 

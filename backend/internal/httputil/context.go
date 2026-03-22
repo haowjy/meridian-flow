@@ -3,13 +3,16 @@ package httputil
 import (
 	"context"
 	"net/http"
+
+	"meridian/internal/domain/models"
 )
 
 // Context key type to avoid collisions
 type contextKey string
 
 const (
-	userIDKey contextKey = "userID"
+	userIDKey     contextKey = "userID"
+	authClaimsKey contextKey = "authClaims"
 )
 
 // WithUserID adds userID to the request context
@@ -22,4 +25,16 @@ func WithUserID(r *http.Request, userID string) *http.Request {
 func GetUserID(r *http.Request) string {
 	userID, _ := r.Context().Value(userIDKey).(string)
 	return userID
+}
+
+// WithAuthClaims adds validated auth claims to the request context.
+func WithAuthClaims(r *http.Request, claims *models.AuthClaims) *http.Request {
+	ctx := context.WithValue(r.Context(), authClaimsKey, claims)
+	return r.WithContext(ctx)
+}
+
+// GetAuthClaims retrieves auth claims from context, returns nil if unavailable.
+func GetAuthClaims(r *http.Request) *models.AuthClaims {
+	claims, _ := r.Context().Value(authClaimsKey).(*models.AuthClaims)
+	return claims
 }

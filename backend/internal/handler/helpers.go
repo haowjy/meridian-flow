@@ -56,6 +56,11 @@ func domainErrorStatusCode(err error) (int, bool) {
 		return http.StatusForbidden, true
 	}
 
+	var insufficientCreditsErr *domain.InsufficientCreditsError
+	if errors.As(err, &insufficientCreditsErr) {
+		return http.StatusPaymentRequired, true
+	}
+
 	var rateLimitErr *domain.RateLimitError
 	if errors.As(err, &rateLimitErr) {
 		return http.StatusTooManyRequests, true
@@ -88,6 +93,16 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 		}
 
 		// For ValidationError with field, include field in response extras for frontend routing
+		var insufficientCreditsErr *domain.InsufficientCreditsError
+		if errors.As(err, &insufficientCreditsErr) {
+			httputil.RespondErrorWithExtras(w, statusCode, message, map[string]interface{}{
+				"balance_millicredits":   insufficientCreditsErr.BalanceMillicredits,
+				"required_millicredits":  insufficientCreditsErr.RequiredMillicredits,
+				"shortfall_millicredits": insufficientCreditsErr.ShortfallMillicredits,
+			})
+			return
+		}
+
 		var validationErr *domain.ValidationError
 		if errors.As(err, &validationErr) && validationErr.Field != "" {
 			httputil.RespondErrorWithExtras(w, statusCode, message, map[string]interface{}{
@@ -110,6 +125,8 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, domain.ErrForbidden):
 		httputil.RespondError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, domain.ErrInsufficientCredits):
+		httputil.RespondError(w, http.StatusPaymentRequired, err.Error())
 	default:
 		// Log unhandled error for debugging
 		slog.Error("unhandled error in handleError",

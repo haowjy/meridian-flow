@@ -73,6 +73,27 @@ type GenerationRecord struct {
 	// FinalizeLastError stores the last error message from enrichment attempts
 	FinalizeLastError string `json:"finalize_last_error,omitempty"`
 
+	// BillingUsageEventID is the deterministic usage key (<turn_id>:<request_index>).
+	BillingUsageEventID string `json:"billing_usage_event_id,omitempty"`
+
+	// BillingConsumptionGroupID groups all FIFO lot deductions for this request.
+	BillingConsumptionGroupID string `json:"billing_consumption_group_id,omitempty"`
+
+	// BillingAmountMillicredits is the authoritative computed amount used for retries.
+	BillingAmountMillicredits int64 `json:"billing_amount_millicredits,omitempty"`
+
+	// BillingStatus tracks settlement lifecycle (pending, settled, failed).
+	BillingStatus string `json:"billing_status,omitempty"`
+
+	// BillingLastError stores the latest settlement/retry error message.
+	BillingLastError string `json:"billing_last_error,omitempty"`
+
+	// BillingRetryCount increments each failed retry attempt.
+	BillingRetryCount int `json:"billing_retry_count,omitempty"`
+
+	// BillingUpdatedAt is the timestamp for the latest billing status update.
+	BillingUpdatedAt time.Time `json:"billing_updated_at,omitempty"`
+
 	// AdditionalFields preserves unknown JSON fields from OpenRouter API
 	// This provides forward compatibility when OpenRouter adds new fields
 	AdditionalFields map[string]interface{} `json:"-"`
@@ -107,6 +128,8 @@ func (gr *GenerationRecord) UnmarshalJSON(data []byte) error {
 		"total_cost", "finish_reason", "created_at",
 		"upstream_id", "latency", "cancelled",
 		"finalized", "finalize_attempts", "finalize_last_error",
+		"billing_usage_event_id", "billing_consumption_group_id", "billing_amount_millicredits",
+		"billing_status", "billing_last_error", "billing_retry_count", "billing_updated_at",
 	}
 
 	for _, field := range knownFields {

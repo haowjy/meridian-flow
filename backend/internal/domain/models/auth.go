@@ -4,9 +4,11 @@ import "time"
 
 // AuthClaims represents an authenticated user. Pure domain type with no JWT/Supabase imports.
 type AuthClaims struct {
-	UserID    string
-	Email     string
-	ExpiresAt *time.Time
+	UserID        string
+	Email         string
+	AuthProvider  string
+	EmailVerified bool
+	ExpiresAt     *time.Time
 }
 
 // GetUserID returns the user ID from the JWT subject claim.

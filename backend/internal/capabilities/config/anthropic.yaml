@@ -1,4 +1,6 @@
 provider: anthropic
+billing_defaults:
+  markup_basis_points: 1500
 
 models:
 
@@ -55,3 +57,7 @@ models:
           text: 1.00
         output_price:
           text: 5.00
+        reasoning_price:
+          text: 5.00
+        cached_price:
+          text: 0.50

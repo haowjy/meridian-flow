@@ -7,8 +7,8 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	billingmodel "meridian/internal/domain/models/billing"
 	domainllm "meridian/internal/domain/services/llm"
-	"meridian/internal/jobs"
 	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tokens"
 )
@@ -86,6 +86,10 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 		)
 	}
 
+	// Terminal settlement is best-effort and must never fail the user-visible turn.
+	// Deferred mode marks pending billing on the generation record and lets enrichment settle later.
+	se.handleTerminalSettlement(ctx, metadata, "awaiting_enrichment", isDraining)
+
 	// If in DrainMetadata state (soft cancel), skip tool continuation - just cleanup
 	// Turn status is already "cancelled" (set by InterruptTurn)
 	// Token metadata was saved above by updateTurnMetadata()
@@ -124,6 +128,19 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 			if err := se.persistErrorToolResults(ctx, send, errMsg); err != nil {
 				se.handleError(ctx, send, fmt.Errorf("failed to persist error tool results at hard limit: %w", err))
 				return err
+			}
+
+			se.requestIndex++ // Next provider call is the graceful completion request.
+			if err := se.creditAdmissionChecker.CheckAdmission(ctx, se.userID); err != nil {
+				se.logger.Warn("credit admission denied before graceful completion provider call",
+					"turn_id", se.turnID,
+					"user_id", se.userID,
+					"request_index", se.requestIndex,
+					"phase", "graceful_completion",
+					"error", err,
+				)
+				se.handleCreditsExhausted(ctx, send, se.requestIndex, "graceful_completion")
+				return nil
 			}
 
 			// Allow LLM to process one more response to wrap up gracefully
@@ -175,11 +192,14 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 			}
 
 			// End current stream cleanly - frontend will connect to new stream
-			// Return nil to complete this stream without error
 			se.logger.Info("stream switch completed, ending current stream",
 				"prev_turn_id", se.turnID,
 				"stream_url", result.StreamURL,
 			)
+			se.transitionTo(StateCompleted)
+			if se.onCleanup != nil {
+				se.onCleanup()
+			}
 			return nil
 		}
 	}
@@ -198,6 +218,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	// Check if we were in a cancel state
 	currentState := se.getState()
 	wasCancelled := currentState == StateDrainMetadata || currentState == StateHardCancelled
+	var settlementMetadata *domainllm.StreamMetadata
 
 	// Use TokenFinalizer to count tokens for any interruption (cancel, error, timeout)
 	// Do this BEFORE persisting partial blocks to capture all accumulated text
@@ -232,6 +253,13 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 				"error", updateErr,
 			)
 		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
+			settlementMetadata = &domainllm.StreamMetadata{
+				Model:        se.model,
+				InputTokens:  result.InputTokens,
+				OutputTokens: result.OutputTokens,
+			}
+		}
+		if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
 			se.logger.Debug("finalized tokens for interrupted stream",
 				"input_tokens", result.InputTokens,
 				"output_tokens", result.OutputTokens,
@@ -241,51 +269,25 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 		}
 	}
 
+	if settlementMetadata != nil {
+		se.handleTerminalSettlement(persistCtx, settlementMetadata, "interrupted_stream", wasCancelled)
+	}
+
 	// Persist any accumulated partial text blocks BEFORE marking turn as error
 	se.persistPartialBlocks(persistCtx)
 
-	// For OpenRouter: Enqueue /generation query for authoritative tokens (even on cancel)
-	// This is critical because token counting may not be available immediately
-	// Only do this for cancellations (hard-cancel or soft-cancel drain metadata)
+	// Deferred providers must persist pending settlement state on all terminal paths,
+	// even when token finalization cannot provide authoritative usage yet.
 	isCancelState := currentState == StateHardCancelled || currentState == StateDrainMetadata
-	if isCancelState {
-		generationID := se.getGenerationID()
-		if generationID != "" && se.jobQueue != nil {
-			querier, ok := se.provider.(domainllm.GenerationStatsQuerier)
-			if ok {
-				// Determine phase based on request index
-				phase := "initial"
-				if se.requestIndex > 0 {
-					phase = "tool_continue"
-				}
-
-				// Create and enqueue enrichment job (isCancelled: true for longer retry window)
-				job := jobs.NewEnrichGenerationJob(
-					se.turnID,
-					generationID,
-					se.requestIndex,
-					phase,
-					se.model,
-					se.turnRepo,
-					querier,
-					se.logger,
-					true, // isCancelled: true (use longer retry window)
-				)
-
-				if err := se.jobQueue.Enqueue(job); err != nil {
-					se.logger.Error("failed to enqueue generation enrichment job after cancel",
-						"turn_id", se.turnID,
-						"generation_id", generationID,
-						"error", err,
-					)
-				} else {
-					se.logger.Debug("enqueued generation enrichment job after cancel",
-						"turn_id", se.turnID,
-						"generation_id", generationID,
-					)
-				}
+	if se.settlementMode == billingmodel.CreditSettlementDeferredToEnrichment && settlementMetadata == nil {
+		if generationID := se.getGenerationID(); generationID != "" {
+			phase := "initial"
+			if se.requestIndex > 0 {
+				phase = "tool_continue"
 			}
+			se.enqueueEnrichmentSettlementJob(generationID, phase, se.model, isCancelState)
 		}
+		se.persistCurrentRequestPendingSettlement(persistCtx, se.model, "interrupted_stream")
 	}
 
 	// Detect if this is a user cancellation (don't show error toast for these)

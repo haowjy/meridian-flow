@@ -149,8 +149,11 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 					se.requestIndex,
 					phase,
 					metadata.Model,
+					se.userID,
 					se.turnRepo,
 					statsQuerier,
+					se.creditSettler,
+					se.settlementMode,
 					se.logger,
 					false, // isCancelled: false for normal completion
 				)
