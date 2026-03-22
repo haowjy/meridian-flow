@@ -5,37 +5,37 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 const maxProposalYjsUpdateBytes = 256 * 1024
 const maxQueuedAIProposalsPerDocument = 200
 
+var _ collab.ProposalService = (*ProposalService)(nil)
+
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
-	proposalStore     collabSvc.ProposalStore
-	txManager         repositories.TransactionManager
-	authorizer        services.ResourceAuthorizer
-	runtime           collabSvc.ProposalRuntime
+	proposalStore     collab.ProposalStore
+	txManager         domain.TransactionManager
+	authorizer        authdomain.ResourceAuthorizer
+	runtime           collab.DocumentStateManager
 	createGate        *proposalDocumentGate
-	autoapplyResolver collabSvc.AutoapplyResolver
-	ownerTabTracker   collabSvc.OwnerTabPresenceTracker
-	documentResolver  collabSvc.DocumentResolver
+	autoapplyResolver collab.AutoapplyResolver
+	ownerTabTracker   collab.OwnerTabPresenceTracker
+	documentResolver  collab.DocumentResolver
 }
 
 // NewProposalService creates a new proposal service.
 func NewProposalService(
-	proposalStore collabSvc.ProposalStore,
-	txManager repositories.TransactionManager,
-	authorizer services.ResourceAuthorizer,
-	runtime collabSvc.ProposalRuntime,
-	autoapplyResolver collabSvc.AutoapplyResolver,
-	ownerTabTracker collabSvc.OwnerTabPresenceTracker,
-	documentResolver collabSvc.DocumentResolver,
-) collabSvc.ProposalService {
+	proposalStore collab.ProposalStore,
+	txManager domain.TransactionManager,
+	authorizer authdomain.ResourceAuthorizer,
+	runtime collab.DocumentStateManager,
+	autoapplyResolver collab.AutoapplyResolver,
+	ownerTabTracker collab.OwnerTabPresenceTracker,
+	documentResolver collab.DocumentResolver,
+) collab.ProposalService {
 	return &ProposalService{
 		proposalStore:     proposalStore,
 		txManager:         txManager,
@@ -49,7 +49,7 @@ func NewProposalService(
 }
 
 // CreateProposal persists a new proposal row.
-func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
+func (s *ProposalService) CreateProposal(ctx context.Context, req collab.CreateProposalRequest) (*collab.Proposal, error) {
 	if s.authorizer == nil {
 		return nil, fmt.Errorf("proposal authorizer not configured")
 	}
@@ -67,7 +67,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		)
 	}
 
-	proposal := &collabModels.Proposal{
+	proposal := &collab.Proposal{
 		DocumentID:        req.DocumentID,
 		Source:            req.Source,
 		ProducerAgentType: req.ProducerAgentType,
@@ -75,7 +75,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		TurnID:            req.TurnID,
 		AgentRunID:        req.AgentRunID,
 		ProposalGroupID:   req.ProposalGroupID,
-		Status:            collabModels.ProposalStatusPending,
+		Status:            collab.ProposalStatusPending,
 		YjsUpdate:         req.YjsUpdate,
 		Description:       req.Description,
 		RegionTextBefore:  req.RegionTextBefore,
@@ -89,7 +89,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		return nil, fmt.Errorf("load canonical state for yjs validation: %w", err)
 	}
 	if err := ValidateYjsUpdate(canonicalState, req.YjsUpdate); err != nil {
-		proposal.Status = collabModels.ProposalStatusInvalid
+		proposal.Status = collab.ProposalStatusInvalid
 		if txErr := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 			return s.createProposal(txCtx, proposal)
 		}); txErr != nil {
@@ -109,7 +109,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 	hasOwnerTabs := s.ownerTabTracker != nil && s.ownerTabTracker.HasOwnerTabs(req.DocumentID)
 
 	persistFn := func(txCtx context.Context, allowBackendFallback bool) error {
-		if req.Source == collabModels.ProposalSourceAI && req.TurnID != nil {
+		if req.Source == collab.ProposalSourceAI && req.TurnID != nil {
 			count, err := s.proposalStore.CountByDocumentAndTurnID(txCtx, req.DocumentID, *req.TurnID)
 			if err != nil {
 				return fmt.Errorf("count turn proposals for ai_turn bookmark: %w", err)
@@ -139,14 +139,14 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		return proposal, nil
 	}
 
-	if req.Source == collabModels.ProposalSourceAI && hasOwnerTabs {
+	if req.Source == collab.ProposalSourceAI && hasOwnerTabs {
 		if err := s.createGate.WithDocument(req.DocumentID, func() error {
 			return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 				count, err := s.proposalStore.CountByDocumentAndStatusAndSource(
 					txCtx,
 					req.DocumentID,
-					collabModels.ProposalStatusPending,
-					collabModels.ProposalSourceAI,
+					collab.ProposalStatusPending,
+					collab.ProposalSourceAI,
 				)
 				if err != nil {
 					return err
@@ -176,7 +176,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 	return proposal, nil
 }
 
-func (s *ProposalService) createProposal(ctx context.Context, proposal *collabModels.Proposal) error {
+func (s *ProposalService) createProposal(ctx context.Context, proposal *collab.Proposal) error {
 	if err := s.proposalStore.Create(ctx, proposal); err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (s *ProposalService) createProposal(ctx context.Context, proposal *collabMo
 }
 
 // SetProposalOffset persists accepted offset metadata after ownership verification.
-func (s *ProposalService) SetProposalOffset(ctx context.Context, req collabSvc.SetProposalOffsetRequest) error {
+func (s *ProposalService) SetProposalOffset(ctx context.Context, req collab.SetProposalOffsetRequest) error {
 	proposal, err := s.proposalStore.GetByID(ctx, req.ProposalID)
 	if err != nil {
 		return err
@@ -195,7 +195,7 @@ func (s *ProposalService) SetProposalOffset(ctx context.Context, req collabSvc.S
 
 	allowed, err := s.documentResolver.VerifyOwnership(ctx, proposal.DocumentID.String(), req.UserID)
 	if err != nil {
-		return fmt.Errorf("%w: %v", collabSvc.ErrProposalOffsetAccessCheckFailed, err)
+		return fmt.Errorf("%w: %v", collab.ErrProposalOffsetAccessCheckFailed, err)
 	}
 	if !allowed {
 		return domain.NewForbiddenError("access denied")
@@ -211,7 +211,7 @@ func (s *ProposalService) SetProposalOffset(ctx context.Context, req collabSvc.S
 
 func (s *ProposalService) applyBackendFallbackAccept(
 	ctx context.Context,
-	proposal *collabModels.Proposal,
+	proposal *collab.Proposal,
 ) error {
 	if err := s.runtime.ApplyUpdate(ctx, proposal.DocumentID, proposal.YjsUpdate, "proposal:backend_fallback_apply"); err != nil {
 		return fmt.Errorf("apply backend fallback proposal update: %w", err)
@@ -225,10 +225,10 @@ func (s *ProposalService) applyBackendFallbackAccept(
 		return fmt.Errorf("apply backend fallback status update: %w", err)
 	}
 
-	if err := s.proposalStore.UpsertStatus(ctx, proposal.ID, collabModels.ProposalStatusAccepted); err != nil {
+	if err := s.proposalStore.UpsertStatus(ctx, proposal.ID, collab.ProposalStatusAccepted); err != nil {
 		return fmt.Errorf("persist backend fallback accepted status: %w", err)
 	}
 
-	proposal.Status = collabModels.ProposalStatusAccepted
+	proposal.Status = collab.ProposalStatusAccepted
 	return nil
 }

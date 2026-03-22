@@ -9,10 +9,8 @@ import (
 	ycrdt "github.com/haowjy/y-crdt"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t *testing.T) {
@@ -36,9 +34,9 @@ func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t 
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
-	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
 		DocumentID:        docID,
-		Source:            collabModels.ProposalSourceAI,
+		Source:            collab.ProposalSourceAI,
 		ProducerAgentType: "assistant",
 		ThreadID:          uuid.New(),
 		TurnID:            &turnID,
@@ -79,9 +77,9 @@ func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
-	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
 		DocumentID:        docID,
-		Source:            collabModels.ProposalSourceAI,
+		Source:            collab.ProposalSourceAI,
 		ProducerAgentType: "assistant",
 		ThreadID:          uuid.New(),
 		TurnID:            &turnID,
@@ -113,9 +111,9 @@ func TestProposalServiceCreateProposal_EnforcesDocumentAuthorization(t *testing.
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
-	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
 		DocumentID:      docID,
-		Source:          collabModels.ProposalSourceUserSuggestion,
+		Source:          collab.ProposalSourceUserSuggestion,
 		ThreadID:        uuid.New(),
 		AgentRunID:      uuid.New(),
 		YjsUpdate:       update,
@@ -147,9 +145,9 @@ func TestProposalServiceCreateProposal_AutoapplyDisabledKeepsProposalPending(t *
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
-	proposal, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+	proposal, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
 		DocumentID:      docID,
-		Source:          collabModels.ProposalSourceUserSuggestion,
+		Source:          collab.ProposalSourceUserSuggestion,
 		ThreadID:        uuid.New(),
 		AgentRunID:      uuid.New(),
 		YjsUpdate:       update,
@@ -158,7 +156,7 @@ func TestProposalServiceCreateProposal_AutoapplyDisabledKeepsProposalPending(t *
 	if err != nil {
 		t.Fatalf("CreateProposal returned error: %v", err)
 	}
-	if proposal.Status != collabModels.ProposalStatusPending {
+	if proposal.Status != collab.ProposalStatusPending {
 		t.Fatalf("expected pending proposal status, got %s", proposal.Status)
 	}
 	if proposalStore.createCalls != 1 {
@@ -189,7 +187,7 @@ func buildProposalValidationFixture(t *testing.T) ([]byte, []byte) {
 
 type fakeProposalServiceTxManager struct{}
 
-func (f *fakeProposalServiceTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
+func (f *fakeProposalServiceTxManager) ExecTx(ctx context.Context, fn domain.TxFn) error {
 	return fn(ctx)
 }
 
@@ -198,20 +196,20 @@ type fakeProposalServiceStore struct {
 	countByDocumentAndTurnIDResult int
 }
 
-func (s *fakeProposalServiceStore) Create(_ context.Context, _ *collabModels.Proposal) error {
+func (s *fakeProposalServiceStore) Create(_ context.Context, _ *collab.Proposal) error {
 	s.createCalls++
 	return nil
 }
 
-func (s *fakeProposalServiceStore) GetByID(_ context.Context, _ uuid.UUID) (*collabModels.Proposal, error) {
+func (s *fakeProposalServiceStore) GetByID(_ context.Context, _ uuid.UUID) (*collab.Proposal, error) {
 	return nil, nil
 }
 
 func (s *fakeProposalServiceStore) CountByDocumentAndStatusAndSource(
 	_ context.Context,
 	_ uuid.UUID,
-	_ collabModels.ProposalStatus,
-	_ collabModels.ProposalSource,
+	_ collab.ProposalStatus,
+	_ collab.ProposalSource,
 ) (int, error) {
 	return 0, nil
 }
@@ -220,11 +218,11 @@ func (s *fakeProposalServiceStore) CountByDocumentAndTurnID(_ context.Context, _
 	return s.countByDocumentAndTurnIDResult, nil
 }
 
-func (s *fakeProposalServiceStore) ListByDocument(_ context.Context, _ uuid.UUID, _ *collabModels.ProposalStatus, _ int, _ int) ([]collabModels.Proposal, error) {
+func (s *fakeProposalServiceStore) ListByDocument(_ context.Context, _ uuid.UUID, _ *collab.ProposalStatus, _ int, _ int) ([]collab.Proposal, error) {
 	return nil, nil
 }
 
-func (s *fakeProposalServiceStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+func (s *fakeProposalServiceStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus) error {
 	return nil
 }
 
@@ -232,7 +230,7 @@ func (s *fakeProposalServiceStore) SetAcceptedAtOffset(_ context.Context, _ uuid
 	return nil
 }
 
-func (s *fakeProposalServiceStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+func (s *fakeProposalServiceStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus, _ time.Time) (int, error) {
 	return 0, nil
 }
 
@@ -290,7 +288,7 @@ type fakeProposalServiceDocumentResolver struct {
 	err   error
 }
 
-func (r *fakeProposalServiceDocumentResolver) ResolveDocument(_ context.Context, _ string) (*collabModels.CollabDocRef, error) {
+func (r *fakeProposalServiceDocumentResolver) ResolveDocument(_ context.Context, _ string) (*collab.CollabDocRef, error) {
 	return nil, nil
 }
 
@@ -333,5 +331,5 @@ func (r *fakeProposalAutoapplyResolver) ResolveEffectiveAutoapply(context.Contex
 	return r.effectiveAutoapply, nil
 }
 
-var _ services.ResourceAuthorizer = (*fakeProposalServiceAuthorizer)(nil)
-var _ collabSvc.AutoapplyResolver = (*fakeProposalAutoapplyResolver)(nil)
+var _ authdomain.ResourceAuthorizer = (*fakeProposalServiceAuthorizer)(nil)
+var _ collab.AutoapplyResolver = (*fakeProposalAutoapplyResolver)(nil)

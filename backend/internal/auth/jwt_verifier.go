@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
+	authdomain "meridian/internal/domain/auth"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
@@ -45,7 +45,7 @@ func NewJWTVerifier(jwksURL string, logger *slog.Logger) (JWTVerifier, error) {
 
 // VerifyToken validates a JWT token and extracts auth claims.
 // Returns an error if the token is invalid, expired, or has incorrect claims.
-func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaims, error) {
+func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*authdomain.AuthClaims, error) {
 	// Parse and validate the token
 	token, err := jwt.ParseWithClaims(tokenString, &SupabaseClaims{}, v.jwks.Keyfunc)
 	if err != nil {
@@ -102,7 +102,7 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaim
 		expiresAt = &expiry
 	}
 
-	return &models.AuthClaims{
+	return &authdomain.AuthClaims{
 		UserID:        claims.Subject,
 		Email:         claims.Email,
 		AuthProvider:  resolveAuthProvider(claims),

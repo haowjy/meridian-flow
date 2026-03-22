@@ -6,101 +6,187 @@ import (
 	"strings"
 )
 
-type Config struct {
-	Port            string
-	Environment     string
-	SupabaseURL     string
-	SupabaseKey     string
-	SupabaseDBURL   string
-	SupabaseJWKSURL string // Constructed from SupabaseURL + /auth/v1/.well-known/jwks.json
-	// Production access controls
+// ServerConfig holds HTTP server settings.
+type ServerConfig struct {
+	Port        string
+	Environment string
+	CORSOrigins string
+	Debug       bool // Enables DEBUG features like SSE event IDs
+}
+
+// DatabaseConfig holds database connection settings.
+type DatabaseConfig struct {
+	URL         string // Supabase DB connection URL
+	TablePrefix string
+	MaxConns    int
+	MinConns    int
+}
+
+// AuthConfig holds authentication/identity settings.
+type AuthConfig struct {
+	SupabaseURL           string
+	SupabaseKey           string
+	SupabaseJWKSURL       string   // Derived: SupabaseURL + /auth/v1/.well-known/jwks.json
 	BlockedProdIdentities []string // Comma-separated identities from BLOCKED_PROD_IDENTITIES
-	CORSOrigins           string
-	TablePrefix           string
-	// Database pool configuration (pgxpool)
-	DBMaxConns int
-	DBMinConns int
-	// LLM Configuration
+}
+
+// LLMConfig holds LLM provider settings.
+type LLMConfig struct {
 	AnthropicAPIKey          string
 	OpenRouterAPIKey         string
 	DefaultProvider          string
 	DefaultModel             string
-	MaxToolRounds            int // Fallback limit if resolver fails (default: 10)
-	SoftCancelTimeoutSeconds int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
-	LLMIdleTimeoutSeconds    int // Streaming idle timeout in seconds (default: 120 = 2 minutes)
-	MaxConcurrentStreamsFree int // Max concurrent streams for free users (default: 3)
-	MaxConcurrentStreamsPaid int // Max concurrent streams for paid users (default: 10)
-	// Search API Configuration (optional - for web_search tool)
-	SearchAPIKey      string // API key for external search provider
-	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
-	// Billing configuration
+	MaxToolRounds            int    // Fallback limit if resolver fails (default: 10)
+	SoftCancelTimeoutSeconds int    // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
+	IdleTimeoutSeconds       int    // Streaming idle timeout in seconds (default: 120 = 2 minutes)
+	MaxConcurrentStreamsFree int    // Max concurrent streams for free users (default: 3)
+	MaxConcurrentStreamsPaid int    // Max concurrent streams for paid users (default: 10)
+	StreamDebugLogs          bool   // Enables very verbose provider streaming logs (redacted)
+	SearchAPIKey             string // API key for external search provider (optional)
+	SearchAPIProvider        string // Provider name: "tavily", "brave", "serper", etc.
+}
+
+// BillingConfig holds billing/payment settings.
+type BillingConfig struct {
 	StripeSecretKey     string
 	StripeWebhookSecret string
-	// Debug flags
-	Debug bool // Enables DEBUG features like SSE event IDs
-	// Logging configuration
-	LogLevel           string // debug|info|warn|error (default varies by environment)
-	LogToFile          bool   // When enabled, logs to both stdout and a session file
-	LogDir             string // Directory for log files
-	LogMaxFiles        int    // Max session log files to keep
-	LLMStreamDebugLogs bool   // Enables very verbose provider streaming logs (redacted)
 }
 
+// LoggingConfig holds logging settings.
+type LoggingConfig struct {
+	Level    string // debug|info|warn|error (default varies by environment)
+	ToFile   bool   // When enabled, logs to both stdout and a session file
+	Dir      string // Directory for log files
+	MaxFiles int    // Max session log files to keep
+}
+
+// Config is the top-level application configuration.
+// Sub-structs group related settings for clarity and narrower dependency injection.
+type Config struct {
+	Server   ServerConfig
+	Database DatabaseConfig
+	Auth     AuthConfig
+	LLM      LLMConfig
+	Billing  BillingConfig
+	Logging  LoggingConfig
+}
+
+// Load reads environment variables into a Config and applies defaults and validation.
+// Panics if configuration is invalid (fail-fast at startup).
 func Load() *Config {
 	env := getEnv("ENVIRONMENT", "dev")
-	tablePrefix := getTablePrefix(env)
-	supabaseURL := getEnv("SUPABASE_URL", "")
 
-	// Construct JWKS URL from Supabase URL
-	jwksURL := supabaseURL + "/auth/v1/.well-known/jwks.json"
+	cfg := &Config{
+		Server: ServerConfig{
+			Port:        getEnv("PORT", "8080"),
+			Environment: env,
+			CORSOrigins: getEnv("CORS_ORIGINS", "http://localhost:3000"),
+		},
+		Database: DatabaseConfig{
+			URL:      getEnv("SUPABASE_DB_URL", ""),
+			MaxConns: getEnvInt("DB_MAX_CONNS", 25),
+			MinConns: getEnvInt("DB_MIN_CONNS", 5),
+		},
+		Auth: AuthConfig{
+			SupabaseURL:           getEnv("SUPABASE_URL", ""),
+			SupabaseKey:           getEnv("SUPABASE_KEY", ""),
+			BlockedProdIdentities: getEnvListNormalized("BLOCKED_PROD_IDENTITIES"),
+		},
+		LLM: LLMConfig{
+			AnthropicAPIKey:          getEnv("ANTHROPIC_API_KEY", ""),
+			OpenRouterAPIKey:         getEnv("OPENROUTER_API_KEY", ""),
+			DefaultProvider:          getEnv("DEFAULT_PROVIDER", "openrouter"),
+			DefaultModel:             getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
+			MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
+			SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300),
+			IdleTimeoutSeconds:       getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),
+			MaxConcurrentStreamsFree: getEnvInt("MAX_CONCURRENT_STREAMS_FREE", 3),
+			MaxConcurrentStreamsPaid: getEnvInt("MAX_CONCURRENT_STREAMS_PAID", 10),
+			StreamDebugLogs:          getEnv("LLM_STREAM_DEBUG_LOGS", "false") == "true",
+			SearchAPIKey:             getEnv("SEARCH_API_KEY", ""),
+			SearchAPIProvider:        getEnv("SEARCH_API_PROVIDER", "tavily"),
+		},
+		Billing: BillingConfig{
+			StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
+			StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
+		},
+		Logging: LoggingConfig{
+			ToFile:   getEnv("LOG_TO_FILE", "false") == "true",
+			Dir:      getEnv("LOG_DIR", "./logs"),
+			MaxFiles: getEnvInt("LOG_MAX_FILES", 10),
+		},
+	}
 
-	return &Config{
-		Port:                  getEnv("PORT", "8080"),
-		Environment:           env,
-		SupabaseURL:           supabaseURL,
-		SupabaseKey:           getEnv("SUPABASE_KEY", ""),
-		SupabaseDBURL:         getEnv("SUPABASE_DB_URL", ""),
-		SupabaseJWKSURL:       jwksURL,
-		BlockedProdIdentities: getEnvListNormalized("BLOCKED_PROD_IDENTITIES"),
-		CORSOrigins:           getEnv("CORS_ORIGINS", "http://localhost:3000"),
-		TablePrefix:           tablePrefix,
-		DBMaxConns:            getEnvInt("DB_MAX_CONNS", 25),
-		DBMinConns:            getEnvInt("DB_MIN_CONNS", 5),
-		// LLM Configuration
-		AnthropicAPIKey:          getEnv("ANTHROPIC_API_KEY", ""),
-		OpenRouterAPIKey:         getEnv("OPENROUTER_API_KEY", ""),
-		DefaultProvider:          getEnv("DEFAULT_PROVIDER", "openrouter"),
-		DefaultModel:             getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
-		MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
-		SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
-		LLMIdleTimeoutSeconds:    getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),    // 2 minutes default
-		MaxConcurrentStreamsFree: getEnvInt("MAX_CONCURRENT_STREAMS_FREE", 3),   // Free-tier concurrent stream limit
-		MaxConcurrentStreamsPaid: getEnvInt("MAX_CONCURRENT_STREAMS_PAID", 10), // Paid-tier concurrent stream limit
-		// Search API Configuration (optional)
-		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
-		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
-		// Billing configuration
-		StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
-		// Debug flags - default to true in dev/test, false in production
-		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
-		// Logging configuration
-		LogLevel:           getEnv("LOG_LEVEL", getDefaultLogLevel(env)),
-		LogToFile:          getEnv("LOG_TO_FILE", "false") == "true",
-		LogDir:             getEnv("LOG_DIR", "./logs"),
-		LogMaxFiles:        getEnvInt("LOG_MAX_FILES", 10),
-		LLMStreamDebugLogs: getEnv("LLM_STREAM_DEBUG_LOGS", "false") == "true",
+	cfg.CompleteDefaults()
+	if err := cfg.Validate(); err != nil {
+		panic(fmt.Sprintf("invalid configuration: %v", err))
+	}
+
+	return cfg
+}
+
+// CompleteDefaults fills in derived fields that depend on other config values.
+// Called by Load() after env vars are read but before Validate().
+func (c *Config) CompleteDefaults() {
+	env := c.Server.Environment
+
+	// JWKS URL is derived from Supabase URL
+	c.Auth.SupabaseJWKSURL = c.Auth.SupabaseURL + "/auth/v1/.well-known/jwks.json"
+
+	// Table prefix: allow manual override, otherwise derive from environment
+	c.Database.TablePrefix = getTablePrefix(env)
+
+	// Debug default: true in dev/test, false in production
+	if val := os.Getenv("DEBUG"); val != "" {
+		c.Server.Debug = val == "true"
+	} else {
+		c.Server.Debug = env != "prod"
+	}
+
+	// Log level default: debug in dev, info everywhere else
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		c.Logging.Level = val
+	} else {
+		c.Logging.Level = getDefaultLogLevel(env)
 	}
 }
 
-// getDefaultDebug returns the default debug setting based on environment
-func getDefaultDebug(env string) string {
+// Validate checks that required configuration is present and sane.
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.Database.URL) == "" {
+		return fmt.Errorf("config: SUPABASE_DB_URL is required")
+	}
+
+	env := strings.ToLower(strings.TrimSpace(c.Server.Environment))
+	if env != "dev" && env != "test" &&
+		strings.TrimSpace(c.LLM.AnthropicAPIKey) == "" &&
+		strings.TrimSpace(c.LLM.OpenRouterAPIKey) == "" {
+		return fmt.Errorf("config: at least one LLM API key is required (ANTHROPIC_API_KEY or OPENROUTER_API_KEY)")
+	}
+
 	if env == "prod" {
-		return "false"
+		if strings.TrimSpace(c.Billing.StripeSecretKey) == "" {
+			return fmt.Errorf("config: STRIPE_SECRET_KEY is required in prod")
+		}
+		if strings.TrimSpace(c.Billing.StripeWebhookSecret) == "" {
+			return fmt.Errorf("config: STRIPE_WEBHOOK_SECRET is required in prod")
+		}
 	}
-	return "true" // Enable DEBUG in dev/test by default
+
+	// Pool sanity: MinConns must not exceed MaxConns
+	if c.Database.MinConns > c.Database.MaxConns {
+		return fmt.Errorf("config: DB_MIN_CONNS (%d) > DB_MAX_CONNS (%d)", c.Database.MinConns, c.Database.MaxConns)
+	}
+
+	return nil
 }
 
+// IsProd returns true when running in production environment.
+func (c *Config) IsProd() bool {
+	return c.Server.Environment == "prod"
+}
+
+// getDefaultLogLevel returns the default log level based on environment.
 func getDefaultLogLevel(env string) string {
 	if env == "dev" {
 		return "debug"
@@ -108,7 +194,7 @@ func getDefaultLogLevel(env string) string {
 	return "info"
 }
 
-// getTablePrefix returns the table prefix based on environment
+// getTablePrefix returns the table prefix based on environment.
 func getTablePrefix(env string) string {
 	// Allow manual override via TABLE_PREFIX env var
 	if prefix := os.Getenv("TABLE_PREFIX"); prefix != "" {
@@ -181,17 +267,17 @@ func getEnvListNormalized(key string) []string {
 // - test-*@my-domain.com
 // - cccccccc-cccc-cccc-cccc-cccccccccccc
 func (c *Config) IsProdIdentityBlocked(userID, email string) bool {
-	if c == nil || c.Environment != "prod" {
+	if c == nil || c.Server.Environment != "prod" {
 		return false
 	}
 	userID = strings.ToLower(strings.TrimSpace(userID))
 	email = strings.ToLower(strings.TrimSpace(email))
 
-	if len(c.BlockedProdIdentities) == 0 {
+	if len(c.Auth.BlockedProdIdentities) == 0 {
 		return false
 	}
 
-	for _, pattern := range c.BlockedProdIdentities {
+	for _, pattern := range c.Auth.BlockedProdIdentities {
 		if userID != "" && wildcardMatch(pattern, userID) {
 			return true
 		}

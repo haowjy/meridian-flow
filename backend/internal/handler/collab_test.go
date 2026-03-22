@@ -10,18 +10,17 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
-	"meridian/internal/domain/models"
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 // --- shared test doubles used by collab_project_test.go and collab_proposal_test.go ---
 
 type testJWTVerifier struct {
-	tokens map[string]*models.AuthClaims
+	tokens map[string]*authdomain.AuthClaims
 }
 
-func (v *testJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaims, error) {
+func (v *testJWTVerifier) VerifyToken(tokenString string) (*authdomain.AuthClaims, error) {
 	claims, ok := v.tokens[tokenString]
 	if !ok {
 		return nil, errors.New("invalid token")
@@ -73,11 +72,11 @@ func (s *testCollabStore) SaveSnapshot(
 	return "", nil
 }
 
-func (s *testCollabStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+func (s *testCollabStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collab.Snapshot, int, error) {
 	return nil, 0, nil
 }
 
-func (s *testCollabStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *testCollabStore) GetSnapshot(_ context.Context, _ string) (*collab.SnapshotWithState, error) {
 	return nil, nil
 }
 
@@ -97,29 +96,29 @@ type wsErrorResponse struct {
 
 type noopProposalService struct{}
 
-func (s *noopProposalService) CreateProposal(_ context.Context, _ collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
+func (s *noopProposalService) CreateProposal(_ context.Context, _ collab.CreateProposalRequest) (*collab.Proposal, error) {
 	return nil, nil
 }
 
-func (s *noopProposalService) SetProposalOffset(_ context.Context, _ collabSvc.SetProposalOffsetRequest) error {
+func (s *noopProposalService) SetProposalOffset(_ context.Context, _ collab.SetProposalOffsetRequest) error {
 	return nil
 }
 
 type noopProposalStore struct{}
 
-func (s *noopProposalStore) Create(_ context.Context, _ *collabModels.Proposal) error {
+func (s *noopProposalStore) Create(_ context.Context, _ *collab.Proposal) error {
 	return nil
 }
 
-func (s *noopProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabModels.Proposal, error) {
+func (s *noopProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collab.Proposal, error) {
 	return nil, nil
 }
 
 func (s *noopProposalStore) CountByDocumentAndStatusAndSource(
 	_ context.Context,
 	_ uuid.UUID,
-	_ collabModels.ProposalStatus,
-	_ collabModels.ProposalSource,
+	_ collab.ProposalStatus,
+	_ collab.ProposalSource,
 ) (int, error) {
 	return 0, nil
 }
@@ -131,14 +130,14 @@ func (s *noopProposalStore) CountByDocumentAndTurnID(_ context.Context, _ uuid.U
 func (s *noopProposalStore) ListByDocument(
 	_ context.Context,
 	_ uuid.UUID,
-	_ *collabModels.ProposalStatus,
+	_ *collab.ProposalStatus,
 	_ int,
 	_ int,
-) ([]collabModels.Proposal, error) {
+) ([]collab.Proposal, error) {
 	return nil, nil
 }
 
-func (s *noopProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+func (s *noopProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus) error {
 	return nil
 }
 
@@ -146,7 +145,7 @@ func (s *noopProposalStore) SetAcceptedAtOffset(_ context.Context, _ uuid.UUID, 
 	return nil
 }
 
-func (s *noopProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+func (s *noopProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collab.ProposalStatus, _ time.Time) (int, error) {
 	return 0, nil
 }
 

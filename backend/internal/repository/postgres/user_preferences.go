@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"meridian/internal/domain"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
 )
 
 // PostgresUserPreferencesRepository implements the UserPreferencesRepository interface
@@ -20,7 +19,7 @@ type PostgresUserPreferencesRepository struct {
 }
 
 // NewUserPreferencesRepository creates a new PostgresUserPreferencesRepository
-func NewUserPreferencesRepository(config *RepositoryConfig) repositories.UserPreferencesRepository {
+func NewUserPreferencesRepository(config *RepositoryConfig) domain.UserPreferencesStore {
 	return &PostgresUserPreferencesRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -29,14 +28,14 @@ func NewUserPreferencesRepository(config *RepositoryConfig) repositories.UserPre
 }
 
 // GetByUserID retrieves preferences for a specific user
-func (r *PostgresUserPreferencesRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*models.UserPreferences, error) {
+func (r *PostgresUserPreferencesRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*domain.UserPreferences, error) {
 	query := fmt.Sprintf(`
 		SELECT user_id, preferences, created_at, updated_at
 		FROM %s
 		WHERE user_id = $1
 	`, r.tables.UserPreferences)
 
-	var prefs models.UserPreferences
+	var prefs domain.UserPreferences
 	executor := GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, userID).Scan(
 		&prefs.UserID,
@@ -57,7 +56,7 @@ func (r *PostgresUserPreferencesRepository) GetByUserID(ctx context.Context, use
 }
 
 // Upsert creates or updates user preferences
-func (r *PostgresUserPreferencesRepository) Upsert(ctx context.Context, prefs *models.UserPreferences) error {
+func (r *PostgresUserPreferencesRepository) Upsert(ctx context.Context, prefs *domain.UserPreferences) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (user_id, preferences, created_at, updated_at)
 		VALUES ($1, $2, $3, $4)

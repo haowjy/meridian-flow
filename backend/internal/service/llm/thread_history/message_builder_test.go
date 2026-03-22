@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"meridian/internal/capabilities"
-	llmModels "meridian/internal/domain/models/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/formatting"
 )
 
@@ -23,13 +23,13 @@ func TestBuildMessages_NormalThread(t *testing.T) {
 	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
 
 	// Create conversation path: user turn, assistant turn
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:   "turn-1",
 			Role: "user",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
-					BlockType: llmModels.BlockTypeText,
+					BlockType: domainllm.BlockTypeText,
 					Content: map[string]interface{}{
 						"text": "Hello, how are you?",
 					},
@@ -39,15 +39,15 @@ func TestBuildMessages_NormalThread(t *testing.T) {
 		{
 			ID:   "turn-2",
 			Role: "assistant",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
-					BlockType: llmModels.BlockTypeThinking,
+					BlockType: domainllm.BlockTypeThinking,
 					Content: map[string]interface{}{
 						"thinking": "User is greeting me",
 					},
 				},
 				{
-					BlockType: llmModels.BlockTypeText,
+					BlockType: domainllm.BlockTypeText,
 					Content: map[string]interface{}{
 						"text": "I'm doing well, thank you!",
 					},
@@ -100,28 +100,28 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 	// - Round 0: thinking, text, tool_use
 	// - Round 1: tool_result (added by backend), thinking, tool_use
 	// - Round 2: tool_result (added by backend)
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:   "turn-1",
 			Role: "assistant",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
 					Sequence:  0,
-					BlockType: llmModels.BlockTypeThinking,
+					BlockType: domainllm.BlockTypeThinking,
 					Content: map[string]interface{}{
 						"thinking": "I need to search",
 					},
 				},
 				{
 					Sequence:  1,
-					BlockType: llmModels.BlockTypeText,
+					BlockType: domainllm.BlockTypeText,
 					Content: map[string]interface{}{
 						"text": "Let me search for that",
 					},
 				},
 				{
 					Sequence:  2,
-					BlockType: llmModels.BlockTypeToolUse,
+					BlockType: domainllm.BlockTypeToolUse,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-1",
 						"tool_name":   "web_search",
@@ -130,7 +130,7 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 				},
 				{
 					Sequence:  3,
-					BlockType: llmModels.BlockTypeToolResult,
+					BlockType: domainllm.BlockTypeToolResult,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-1",
 						"tool_name":   "web_search",
@@ -139,14 +139,14 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 				},
 				{
 					Sequence:  4,
-					BlockType: llmModels.BlockTypeThinking,
+					BlockType: domainllm.BlockTypeThinking,
 					Content: map[string]interface{}{
 						"thinking": "Need another search",
 					},
 				},
 				{
 					Sequence:  5,
-					BlockType: llmModels.BlockTypeToolUse,
+					BlockType: domainllm.BlockTypeToolUse,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-2",
 						"tool_name":   "web_search",
@@ -155,7 +155,7 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 				},
 				{
 					Sequence:  6,
-					BlockType: llmModels.BlockTypeToolResult,
+					BlockType: domainllm.BlockTypeToolResult,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-2",
 						"tool_name":   "web_search",
@@ -196,13 +196,13 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 
 	// Verify block types are preserved
 	expectedTypes := []string{
-		llmModels.BlockTypeThinking,
-		llmModels.BlockTypeText,
-		llmModels.BlockTypeToolUse,
-		llmModels.BlockTypeToolResult,
-		llmModels.BlockTypeThinking,
-		llmModels.BlockTypeToolUse,
-		llmModels.BlockTypeToolResult,
+		domainllm.BlockTypeThinking,
+		domainllm.BlockTypeText,
+		domainllm.BlockTypeToolUse,
+		domainllm.BlockTypeToolResult,
+		domainllm.BlockTypeThinking,
+		domainllm.BlockTypeToolUse,
+		domainllm.BlockTypeToolResult,
 	}
 
 	for i, expected := range expectedTypes {
@@ -222,14 +222,14 @@ func TestBuildMessages_FormatsStructuredToolErrors(t *testing.T) {
 	}
 	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
 
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:   "turn-1",
 			Role: "assistant",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
 					Sequence:  0,
-					BlockType: llmModels.BlockTypeToolResult,
+					BlockType: domainllm.BlockTypeToolResult,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-1",
 						"tool_name":   "str_replace_based_edit_tool",
@@ -278,18 +278,18 @@ func TestBuildMessages_EmptyTurn(t *testing.T) {
 	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
 
 	// Create path with empty turn
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:     "turn-1",
 			Role:   "user",
-			Blocks: []llmModels.TurnBlock{},
+			Blocks: []domainllm.TurnBlock{},
 		},
 		{
 			ID:   "turn-2",
 			Role: "assistant",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
-					BlockType: llmModels.BlockTypeText,
+					BlockType: domainllm.BlockTypeText,
 					Content: map[string]interface{}{
 						"text": "Hello",
 					},
@@ -327,13 +327,13 @@ func TestBuildMessages_UnsupportedRole(t *testing.T) {
 	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
 
 	// Create path with unsupported role
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:   "turn-1",
 			Role: "system",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
-					BlockType: llmModels.BlockTypeText,
+					BlockType: domainllm.BlockTypeText,
 					Content: map[string]interface{}{
 						"text": "System message",
 					},
@@ -361,13 +361,13 @@ func TestBuildMessages_ToolResultFormatting(t *testing.T) {
 	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
 
 	// Create path with tool_result block
-	path := []llmModels.Turn{
+	path := []domainllm.Turn{
 		{
 			ID:   "turn-1",
 			Role: "assistant",
-			Blocks: []llmModels.TurnBlock{
+			Blocks: []domainllm.TurnBlock{
 				{
-					BlockType: llmModels.BlockTypeToolResult,
+					BlockType: domainllm.BlockTypeToolResult,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-1",
 						"tool_name":   "web_search",
@@ -398,7 +398,7 @@ func TestBuildMessages_ToolResultFormatting(t *testing.T) {
 		t.Fatalf("expected 1 block, got %d", len(messages[0].Content))
 	}
 
-	if messages[0].Content[0].BlockType != llmModels.BlockTypeToolResult {
+	if messages[0].Content[0].BlockType != domainllm.BlockTypeToolResult {
 		t.Errorf("expected block type to be tool_result, got %s", messages[0].Content[0].BlockType)
 	}
 }

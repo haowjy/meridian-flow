@@ -7,21 +7,22 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	models "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	collab "meridian/internal/domain/collab"
+	domaindocsys "meridian/internal/domain/docsystem"
 
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresDocumentRepository implements the DocumentRepository interface
+// PostgresDocumentRepository implements the DocumentStore interface
 type PostgresDocumentRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
 	logger *slog.Logger
 }
+
+var _ domaindocsys.DocumentStore = (*PostgresDocumentRepository)(nil)
 
 const (
 	documentFullSelectColumns     = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, content, metadata, created_at, updated_at"
@@ -30,7 +31,7 @@ const (
 )
 
 // NewDocumentRepository creates a new document repository
-func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.DocumentRepository {
+func NewDocumentRepository(config *postgres.RepositoryConfig) domaindocsys.DocumentStore {
 	return &PostgresDocumentRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -39,7 +40,7 @@ func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.Documen
 }
 
 // Create creates a new document
-func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
+func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *domaindocsys.Document) error {
 	doc.EnsureMetadata()
 	doc.EnsureFileType()
 
@@ -121,7 +122,7 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 }
 
 // GetByID retrieves a document by ID
-func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID string) (*models.Document, error) {
+func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID string) (*domaindocsys.Document, error) {
 	var query string
 	var args []interface{}
 
@@ -141,7 +142,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		args = []interface{}{id}
 	}
 
-	var doc models.Document
+	var doc domaindocsys.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanDocumentFull(executor.QueryRow(ctx, query, args...), &doc)
 
@@ -159,14 +160,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 // GetByIDOnly retrieves a document by UUID only (no project scoping)
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
-func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
+func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*domaindocsys.Document, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, documentFullSelectColumns, r.tables.Documents)
 
-	var doc models.Document
+	var doc domaindocsys.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanDocumentFull(executor.QueryRow(ctx, query, id), &doc)
 
@@ -184,7 +185,7 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 
 // GetByPath retrieves a document by its path (e.g., ".meridian/skills/my-skill/references/guide.md")
 // The path includes the full filename with extension
-func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*models.Document, error) {
+func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*domaindocsys.Document, error) {
 	// Split path into parts
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 0 {
@@ -234,7 +235,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		query += ` AND folder_id IS NULL`
 	}
 
-	var doc models.Document
+	var doc domaindocsys.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanDocumentFull(executor.QueryRow(ctx, query, args...), &doc)
 
@@ -250,7 +251,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 }
 
 // findFolderByName finds a folder by name within a parent folder
-func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
+func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, projectID string, parentID *string, name string) (*domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s
@@ -267,7 +268,7 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 		query += ` AND parent_id IS NULL`
 	}
 
-	var folder models.Folder
+	var folder domaindocsys.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := scanFolderLookup(executor.QueryRow(ctx, query, args...), &folder)
 
@@ -283,7 +284,7 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 }
 
 // Update updates an existing document
-func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Document) error {
+func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *domaindocsys.Document) error {
 	doc.EnsureMetadata()
 	doc.EnsureFileType()
 
@@ -467,7 +468,7 @@ func (r *PostgresDocumentRepository) DeleteAllByProject(ctx context.Context, pro
 }
 
 // ListByFolder lists documents in a folder
-func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID *string, projectID string) ([]models.Document, error) {
+func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID *string, projectID string) ([]domaindocsys.Document, error) {
 	var query string
 	var args []interface{}
 
@@ -496,9 +497,9 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 	}
 	defer rows.Close()
 
-	var documents []models.Document
+	var documents []domaindocsys.Document
 	for rows.Next() {
-		var doc models.Document
+		var doc domaindocsys.Document
 		err := scanDocumentMetadata(rows, &doc)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
@@ -512,14 +513,14 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 
 	// Return empty slice instead of nil
 	if documents == nil {
-		documents = []models.Document{}
+		documents = []domaindocsys.Document{}
 	}
 
 	return documents, nil
 }
 
 // GetAllMetadataByProject retrieves all document metadata in a project (no content)
-func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context, projectID string) ([]models.Document, error) {
+func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context, projectID string) ([]domaindocsys.Document, error) {
 	query := fmt.Sprintf(`
 		SELECT
 			d.id,
@@ -550,15 +551,15 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 	`, r.tables.Documents, r.tables.CollabDocumentProposals)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	rows, err := executor.Query(ctx, query, projectID, collabModels.ProposalStatusPending)
+	rows, err := executor.Query(ctx, query, projectID, collab.ProposalStatusPending)
 	if err != nil {
 		return nil, fmt.Errorf("get all document metadata: %w", err)
 	}
 	defer rows.Close()
 
-	var documents []models.Document
+	var documents []domaindocsys.Document
 	for rows.Next() {
-		var doc models.Document
+		var doc domaindocsys.Document
 		err := rows.Scan(
 			&doc.ID,
 			&doc.ProjectID,
@@ -589,14 +590,14 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 
 	// Return empty slice instead of nil
 	if documents == nil {
-		documents = []models.Document{}
+		documents = []domaindocsys.Document{}
 	}
 
 	return documents, nil
 }
 
 // GetPath computes the full display path for a document (folder path + filename)
-func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Document) (string, error) {
+func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *domaindocsys.Document) (string, error) {
 	if doc.FolderID == nil {
 		// Root level document - path is just the filename (name + extension)
 		return doc.Filename(), nil
@@ -666,7 +667,7 @@ func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, 
 
 // SearchDocuments performs full-text search on document content
 // Currently supports only SearchStrategyFullText
-func (r *PostgresDocumentRepository) SearchDocuments(ctx context.Context, options *models.SearchOptions) (*models.SearchResults, error) {
+func (r *PostgresDocumentRepository) SearchDocuments(ctx context.Context, options *domaindocsys.SearchOptions) (*domaindocsys.SearchResults, error) {
 	// Apply defaults and validate
 	options.ApplyDefaults()
 	if err := options.Validate(); err != nil {
@@ -675,11 +676,11 @@ func (r *PostgresDocumentRepository) SearchDocuments(ctx context.Context, option
 
 	// Route to appropriate search implementation
 	switch options.Strategy {
-	case models.SearchStrategyFullText:
+	case domaindocsys.SearchStrategyFullText:
 		return r.fullTextSearch(ctx, options)
-	case models.SearchStrategyVector:
+	case domaindocsys.SearchStrategyVector:
 		return nil, fmt.Errorf("vector search not yet implemented")
-	case models.SearchStrategyHybrid:
+	case domaindocsys.SearchStrategyHybrid:
 		return nil, fmt.Errorf("hybrid search not yet implemented")
 	default:
 		return nil, fmt.Errorf("unknown search strategy: %s", options.Strategy)
@@ -687,7 +688,7 @@ func (r *PostgresDocumentRepository) SearchDocuments(ctx context.Context, option
 }
 
 // fullTextSearch implements PostgreSQL full-text search with configurable language and fields
-func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *models.SearchOptions) (*models.SearchResults, error) {
+func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *domaindocsys.SearchOptions) (*domaindocsys.SearchResults, error) {
 	// Build dynamic search query based on which fields to search
 	// PostgreSQL full-text search components:
 	// - to_tsvector(language, field): Converts field to searchable tokens
@@ -705,7 +706,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 
 	for _, field := range opts.Fields {
 		switch field {
-		case models.SearchFieldName:
+		case domaindocsys.SearchFieldName:
 			// Search in name/title field
 			searchConditions = append(searchConditions,
 				"to_tsvector($1, name) @@ websearch_to_tsquery($1, $2)")
@@ -713,7 +714,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 			rankExpressions = append(rankExpressions,
 				"ts_rank(to_tsvector($1, name), websearch_to_tsquery($1, $2)) * 2.0")
 
-		case models.SearchFieldContent:
+		case domaindocsys.SearchFieldContent:
 			// Search in content field
 			searchConditions = append(searchConditions,
 				"to_tsvector($1, content) @@ websearch_to_tsquery($1, $2)")
@@ -774,9 +775,9 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 	defer rows.Close()
 
 	// Collect results with scores
-	var searchResults []models.SearchResult
+	var searchResults []domaindocsys.SearchResult
 	for rows.Next() {
-		var doc models.Document
+		var doc domaindocsys.Document
 		var score float64
 
 		err := rows.Scan(
@@ -803,7 +804,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 		doc.EnsureMetadata()
 		doc.EnsureFileType()
 
-		searchResults = append(searchResults, models.SearchResult{
+		searchResults = append(searchResults, domaindocsys.SearchResult{
 			Document: doc,
 			Score:    score,
 			Metadata: map[string]interface{}{
@@ -819,7 +820,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 
 	// Return empty slice instead of nil
 	if searchResults == nil {
-		searchResults = []models.SearchResult{}
+		searchResults = []domaindocsys.SearchResult{}
 	}
 
 	// Get total count for pagination metadata
@@ -829,22 +830,22 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 	}
 
 	// Build results with pagination metadata
-	results := models.NewSearchResults(searchResults, totalCount, opts)
+	results := domaindocsys.NewSearchResults(searchResults, totalCount, opts)
 
 	return results, nil
 }
 
 // countTotalMatches counts total matching documents (without limit/offset)
-func (r *PostgresDocumentRepository) countTotalMatches(ctx context.Context, opts *models.SearchOptions) (int, error) {
+func (r *PostgresDocumentRepository) countTotalMatches(ctx context.Context, opts *domaindocsys.SearchOptions) (int, error) {
 	// Build same search conditions as fullTextSearch
 	var searchConditions []string
 
 	for _, field := range opts.Fields {
 		switch field {
-		case models.SearchFieldName:
+		case domaindocsys.SearchFieldName:
 			searchConditions = append(searchConditions,
 				"to_tsvector($1, name) @@ websearch_to_tsquery($1, $2)")
-		case models.SearchFieldContent:
+		case domaindocsys.SearchFieldContent:
 			searchConditions = append(searchConditions,
 				"to_tsvector($1, content) @@ websearch_to_tsquery($1, $2)")
 		}
@@ -885,64 +886,11 @@ func (r *PostgresDocumentRepository) countTotalMatches(ctx context.Context, opts
 	return total, nil
 }
 
-// GetAllByFolderRecursive returns all documents in a folder and all its descendant folders.
-// Uses a recursive CTE to find all descendant folders, then joins with documents.
-func (r *PostgresDocumentRepository) GetAllByFolderRecursive(ctx context.Context, folderID, projectID string) ([]models.Document, error) {
-	// Recursive CTE to get all descendant folder IDs (including the folder itself)
-	query := fmt.Sprintf(`
-		WITH RECURSIVE folder_descendants AS (
-			-- Base case: the folder itself
-			SELECT id FROM %s
-			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-			UNION ALL
-			-- Recursive case: all children
-			SELECT f.id
-			FROM %s f
-			JOIN folder_descendants fd ON f.parent_id = fd.id
-			WHERE f.deleted_at IS NULL
-		)
-		SELECT d.id, d.project_id, d.folder_id, d.name, d.extension, d.description, d.autoapply,
-		       d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.metadata, d.updated_at
-		FROM %s d
-		JOIN folder_descendants fd ON d.folder_id = fd.id
-		WHERE d.project_id = $2 AND d.deleted_at IS NULL
-		ORDER BY d.updated_at DESC
-	`, r.tables.Folders, r.tables.Folders, r.tables.Documents)
-
-	executor := postgres.GetExecutor(ctx, r.pool)
-	rows, err := executor.Query(ctx, query, folderID, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("get documents by folder recursive: %w", err)
-	}
-	defer rows.Close()
-
-	var documents []models.Document
-	for rows.Next() {
-		var doc models.Document
-		err := scanDocumentMetadata(rows, &doc)
-		if err != nil {
-			return nil, fmt.Errorf("scan document: %w", err)
-		}
-		documents = append(documents, doc)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate documents: %w", err)
-	}
-
-	// Return empty slice instead of nil
-	if documents == nil {
-		documents = []models.Document{}
-	}
-
-	return documents, nil
-}
-
 type documentScanner interface {
 	Scan(dest ...interface{}) error
 }
 
-func scanDocumentFull(scanner documentScanner, doc *models.Document) error {
+func scanDocumentFull(scanner documentScanner, doc *domaindocsys.Document) error {
 	err := scanner.Scan(
 		&doc.ID,
 		&doc.ProjectID,
@@ -969,7 +917,7 @@ func scanDocumentFull(scanner documentScanner, doc *models.Document) error {
 	return nil
 }
 
-func scanDocumentMetadata(scanner documentScanner, doc *models.Document) error {
+func scanDocumentMetadata(scanner documentScanner, doc *domaindocsys.Document) error {
 	err := scanner.Scan(
 		&doc.ID,
 		&doc.ProjectID,
@@ -994,7 +942,7 @@ func scanDocumentMetadata(scanner documentScanner, doc *models.Document) error {
 	return nil
 }
 
-func scanFolderLookup(scanner documentScanner, folder *models.Folder) error {
+func scanFolderLookup(scanner documentScanner, folder *domaindocsys.Folder) error {
 	err := scanner.Scan(
 		&folder.ID,
 		&folder.ProjectID,

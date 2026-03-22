@@ -11,26 +11,24 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	llmModels "meridian/internal/domain/models/llm"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	llmSvc "meridian/internal/domain/services/llm"
+	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // Service implements the ThreadService interface
 // Handles only thread session management (CRUD operations)
 type Service struct {
-	threadRepo  llmRepo.ThreadRepository
-	projectRepo docsysRepo.ProjectRepository
+	threadRepo  domainllm.ThreadStore
+	projectRepo domaindocsys.ProjectStore
 	logger      *slog.Logger
 }
 
 // NewService creates a new thread CRUD service
 func NewService(
-	threadRepo llmRepo.ThreadRepository,
-	projectRepo docsysRepo.ProjectRepository,
+	threadRepo domainllm.ThreadStore,
+	projectRepo domaindocsys.ProjectStore,
 	logger *slog.Logger,
-) llmSvc.ThreadService {
+) domainllm.ThreadService {
 	return &Service{
 		threadRepo:  threadRepo,
 		projectRepo: projectRepo,
@@ -39,7 +37,7 @@ func NewService(
 }
 
 // CreateThread creates a new thread session
-func (s *Service) CreateThread(ctx context.Context, req *llmSvc.CreateThreadRequest) (*llmModels.Thread, error) {
+func (s *Service) CreateThread(ctx context.Context, req *domainllm.CreateThreadRequest) (*domainllm.Thread, error) {
 	// Validate request
 	if err := s.validateCreateThreadRequest(req); err != nil {
 		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
@@ -55,7 +53,7 @@ func (s *Service) CreateThread(ctx context.Context, req *llmSvc.CreateThreadRequ
 	title := strings.TrimSpace(req.Title)
 
 	// Create thread
-	thread := &llmModels.Thread{
+	thread := &domainllm.Thread{
 		ProjectID: req.ProjectID,
 		UserID:    req.UserID,
 		Title:     title,
@@ -86,7 +84,7 @@ func (s *Service) CreateThread(ctx context.Context, req *llmSvc.CreateThreadRequ
 }
 
 // GetThread retrieves a thread by ID
-func (s *Service) GetThread(ctx context.Context, threadID, userID string) (*llmModels.Thread, error) {
+func (s *Service) GetThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	thread, err := s.threadRepo.GetThread(ctx, threadID, userID)
 	if err != nil {
 		return nil, err
@@ -96,7 +94,7 @@ func (s *Service) GetThread(ctx context.Context, threadID, userID string) (*llmM
 }
 
 // ListThreads retrieves all threads for a project
-func (s *Service) ListThreads(ctx context.Context, projectID, userID string) ([]llmModels.Thread, error) {
+func (s *Service) ListThreads(ctx context.Context, projectID, userID string) ([]domainllm.Thread, error) {
 	// Verify project exists and user has access
 	_, err := s.projectRepo.GetByID(ctx, projectID, userID)
 	if err != nil {
@@ -112,7 +110,7 @@ func (s *Service) ListThreads(ctx context.Context, projectID, userID string) ([]
 }
 
 // UpdateThread updates a thread's title
-func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req *llmSvc.UpdateThreadRequest) (*llmModels.Thread, error) {
+func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req *domainllm.UpdateThreadRequest) (*domainllm.Thread, error) {
 	// Validate request
 	if err := s.validateUpdateThreadRequest(req); err != nil {
 		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
@@ -173,7 +171,7 @@ func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID, tu
 }
 
 // DeleteThread soft-deletes a thread
-func (s *Service) DeleteThread(ctx context.Context, threadID, userID string) (*llmModels.Thread, error) {
+func (s *Service) DeleteThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	deletedThread, err := s.threadRepo.DeleteThread(ctx, threadID, userID)
 	if err != nil {
 		return nil, err
@@ -197,7 +195,7 @@ func (s *Service) DeleteThread(ctx context.Context, threadID, userID string) (*l
 
 // Validation methods
 
-func (s *Service) validateCreateThreadRequest(req *llmSvc.CreateThreadRequest) error {
+func (s *Service) validateCreateThreadRequest(req *domainllm.CreateThreadRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.ProjectID, validation.Required),
 		validation.Field(&req.UserID, validation.Required),
@@ -208,7 +206,7 @@ func (s *Service) validateCreateThreadRequest(req *llmSvc.CreateThreadRequest) e
 	)
 }
 
-func (s *Service) validateUpdateThreadRequest(req *llmSvc.UpdateThreadRequest) error {
+func (s *Service) validateUpdateThreadRequest(req *domainllm.UpdateThreadRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.Title,
 			validation.Required,

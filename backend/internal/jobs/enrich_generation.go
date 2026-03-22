@@ -7,11 +7,8 @@ import (
 	"strings"
 	"time"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	billingdomain "meridian/internal/domain/services/billing"
-	domainllm "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
+	domainllm "meridian/internal/domain/llm"
 )
 
 const (
@@ -55,10 +52,10 @@ type EnrichGenerationJob struct {
 	userID       string
 	providerName string // e.g. "openrouter", "anthropic" — for billing pricing resolution
 
-	turnWriter     llmRepo.TurnWriter
+	turnWriter     domainllm.TurnWriter
 	provider       domainllm.GenerationStatsQuerier
-	creditSettler  billingdomain.CreditSettler
-	settlementMode billingmodel.CreditSettlementMode
+	creditSettler  billing.CreditSettler
+	settlementMode billing.CreditSettlementMode
 	logger         *slog.Logger
 
 	isCancelled  bool          // Distinguishes cancel from normal completion (affects retry timing)
@@ -76,10 +73,10 @@ func NewEnrichGenerationJob(
 	model string,
 	userID string,
 	providerName string,
-	turnWriter llmRepo.TurnWriter,
+	turnWriter domainllm.TurnWriter,
 	provider domainllm.GenerationStatsQuerier,
-	creditSettler billingdomain.CreditSettler,
-	settlementMode billingmodel.CreditSettlementMode,
+	creditSettler billing.CreditSettler,
+	settlementMode billing.CreditSettlementMode,
 	logger *slog.Logger,
 	isCancelled bool,
 ) *EnrichGenerationJob {
@@ -161,7 +158,7 @@ func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
 		)
 
 		// Persist failed enrichment record so we know why it failed
-		failedRecord := &llmModels.GenerationRecord{
+		failedRecord := &domainllm.GenerationRecord{
 			ID:                j.generationID,
 			RequestIndex:      j.requestIndex,
 			Phase:             j.phase,
@@ -209,7 +206,7 @@ func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
 	}
 
 	// Success! Build enriched record with COMPLETE API response
-	record := &llmModels.GenerationRecord{
+	record := &domainllm.GenerationRecord{
 		ID:                     stats.ID,
 		RequestIndex:           j.requestIndex,
 		Phase:                  j.phase,
@@ -266,6 +263,7 @@ func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
 	// Deferred settlement: enrichment owns the first authoritative settlement attempt.
 	// Return error so the job retries if settlement fails.
 	if err := j.settleIfDeferred(ctx, stats); err != nil {
+		j.lastError = err.Error()
 		return err
 	}
 
@@ -279,10 +277,12 @@ func (j *EnrichGenerationJob) JobID() string {
 }
 
 // Retryable returns true if job should be retried.
-// Only retry HTTP 404 errors (generation not yet indexed).
+// Retry HTTP 404 errors (generation not yet indexed) and deferred settlement failures.
 func (j *EnrichGenerationJob) Retryable() bool {
-	// Only retry 404 errors
-	if !strings.Contains(j.lastError, "404") {
+	// Retry transient "not indexed yet" and deferred settlement errors.
+	if !strings.Contains(j.lastError, "404") &&
+		!strings.Contains(strings.ToLower(j.lastError), "settlement") &&
+		!strings.Contains(strings.ToLower(j.lastError), "deferred") {
 		return false
 	}
 
@@ -319,11 +319,11 @@ func (j *EnrichGenerationJob) updateTurnTokens(ctx context.Context, stats *domai
 	if err := j.turnWriter.AccumulateTokensAndUpdateMetadata(
 		ctx,
 		j.turnID,
-		&llmRepo.TurnTokenUpdate{
+		&domainllm.TurnTokenUpdate{
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
 		},
-		&llmRepo.TurnCompletionUpdate{
+		&domainllm.TurnCompletionUpdate{
 			Model:            &model,
 			StopReason:       &finishReason,
 			ResponseMetadata: nil, // Already updated via AppendGenerationRecord
@@ -402,7 +402,7 @@ func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domai
 	}
 
 	// Inline-authoritative providers settle inside StreamExecutor terminal handlers.
-	if j.settlementMode == billingmodel.CreditSettlementInlineAuthoritative {
+	if j.settlementMode == billing.CreditSettlementInlineAuthoritative {
 		return nil
 	}
 
@@ -411,7 +411,7 @@ func (j *EnrichGenerationJob) settleIfDeferred(ctx context.Context, stats *domai
 		model = j.model
 	}
 
-	req := billingdomain.SettleRequestInput{
+	req := billing.SettleRequestInput{
 		UserID:          j.userID,
 		TurnID:          j.turnID,
 		RequestIndex:    j.requestIndex,

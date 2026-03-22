@@ -11,11 +11,8 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	"meridian/internal/domain/services"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	authdomain "meridian/internal/domain/auth"
+	domaindocsys "meridian/internal/domain/docsystem"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
@@ -36,29 +33,31 @@ func isReservedRootName(name string, parentID *string) bool {
 }
 
 type folderService struct {
-	folderRepo   docsysRepo.FolderRepository
-	docRepo      docsysRepo.DocumentRepository
-	projectRepo  docsysRepo.ProjectRepository
-	docService   docsysSvc.DocumentService // For delegating document deletion (SRP)
-	pathResolver docsysSvc.PathResolver
-	txManager    repositories.TransactionManager
+	folderRepo   domaindocsys.FolderStore
+	docRepo      domaindocsys.DocumentStore
+	projectRepo  domaindocsys.ProjectStore
+	docService   domaindocsys.DocumentService // For delegating document deletion (SRP)
+	pathResolver domaindocsys.PathNotationResolver
+	txManager    domain.TransactionManager
 	validator    *ResourceValidator
-	authorizer   services.ResourceAuthorizer
+	authorizer   authdomain.ResourceAuthorizer
 	logger       *slog.Logger
 }
 
+var _ domaindocsys.FolderService = (*folderService)(nil)
+
 // NewFolderService creates a new folder service
 func NewFolderService(
-	folderRepo docsysRepo.FolderRepository,
-	docRepo docsysRepo.DocumentRepository,
-	projectRepo docsysRepo.ProjectRepository,
-	docService docsysSvc.DocumentService, // For delegating document deletion (SRP)
-	pathResolver docsysSvc.PathResolver,
-	txManager repositories.TransactionManager,
+	folderRepo domaindocsys.FolderStore,
+	docRepo domaindocsys.DocumentStore,
+	projectRepo domaindocsys.ProjectStore,
+	docService domaindocsys.DocumentService, // For delegating document deletion (SRP)
+	pathResolver domaindocsys.PathNotationResolver,
+	txManager domain.TransactionManager,
 	validator *ResourceValidator,
-	authorizer services.ResourceAuthorizer,
+	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
-) docsysSvc.FolderService {
+) domaindocsys.FolderService {
 	return &folderService{
 		folderRepo:   folderRepo,
 		docRepo:      docRepo,
@@ -77,7 +76,7 @@ func NewFolderService(
 //   - "name" -> create folder with given name at folder_id
 //   - "a/b/c" -> auto-create intermediate folders (a, b) and final folder (c) at folder_id
 //   - "/a/b/c" -> absolute path from root (ignore folder_id)
-func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateFolderRequest) (*models.Folder, error) {
+func (s *folderService) CreateFolder(ctx context.Context, req *domaindocsys.CreateFolderRequest) (*domaindocsys.Folder, error) {
 	// Normalize empty string to nil for root-level folders
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
@@ -94,7 +93,7 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 	}
 
 	// Use path notation resolver to handle all path logic (unified)
-	result, err := s.pathResolver.ResolvePathNotation(ctx, &docsysSvc.PathNotationRequest{
+	result, err := s.pathResolver.ResolvePathNotation(ctx, &domaindocsys.PathNotationRequest{
 		ProjectID:     req.ProjectID,
 		Name:          req.Name,
 		FolderID:      req.FolderID,
@@ -129,7 +128,7 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 	}
 
 	// Create the final folder
-	folder := &models.Folder{
+	folder := &domaindocsys.Folder{
 		ProjectID: req.ProjectID,
 		ParentID:  result.ResolvedFolderID,
 		Name:      result.FinalName,
@@ -172,7 +171,7 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 
 // GetFolder retrieves a folder with its computed path
 // Authorization is checked first via the injected authorizer
-func (s *folderService) GetFolder(ctx context.Context, userID, folderID string) (*models.Folder, error) {
+func (s *folderService) GetFolder(ctx context.Context, userID, folderID string) (*domaindocsys.Folder, error) {
 	// Authorize: check user can access this folder
 	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
 		return nil, err
@@ -198,7 +197,7 @@ func (s *folderService) GetFolder(ctx context.Context, userID, folderID string) 
 
 // UpdateFolder updates a folder (rename or move)
 // Authorization is checked first via the injected authorizer
-func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID string, req *docsysSvc.UpdateFolderRequest) (*models.Folder, error) {
+func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID string, req *domaindocsys.UpdateFolderRequest) (*domaindocsys.Folder, error) {
 	// Authorize: check user can access this folder
 	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
 		return nil, err
@@ -356,7 +355,7 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 // Documents are deleted via DocumentService to maintain SRP.
 func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID, projectID string) error {
 	// 1. Get and recursively delete child folders (include hidden for deletion)
-	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, projectID, &docsysRepo.FolderFilterOptions{IncludeHidden: true})
+	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, projectID, &domaindocsys.FolderFilterOptions{IncludeHidden: true})
 	if err != nil {
 		return err // Pass through HTTPError directly
 	}
@@ -394,12 +393,12 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 
 // ListChildren lists all child folders and documents in a folder
 // Authorization is checked first via the injected authorizer
-func (s *folderService) ListChildren(ctx context.Context, userID string, folderID *string, projectID string) (*docsysSvc.FolderContents, error) {
+func (s *folderService) ListChildren(ctx context.Context, userID string, folderID *string, projectID string) (*domaindocsys.FolderContents, error) {
 	// Authorize: check user can access this project
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
 	}
-	var folder *models.Folder
+	var folder *domaindocsys.Folder
 	var err error
 
 	// If folderID is provided, get the folder
@@ -445,7 +444,7 @@ func (s *folderService) ListChildren(ctx context.Context, userID string, folderI
 		}
 	}
 
-	return &docsysSvc.FolderContents{
+	return &domaindocsys.FolderContents{
 		Folder:    folder,
 		Folders:   childFolders,
 		Documents: docs,
@@ -453,7 +452,7 @@ func (s *folderService) ListChildren(ctx context.Context, userID string, folderI
 }
 
 // validateUpdateRequest validates a folder update request
-func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest) error {
+func (s *folderService) validateUpdateRequest(req *domaindocsys.UpdateFolderRequest) error {
 	// At least one field must be provided
 	if req.Name == nil && !req.FolderID.Present {
 		return fmt.Errorf("at least one field must be provided")

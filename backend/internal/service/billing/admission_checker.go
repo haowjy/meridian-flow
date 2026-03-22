@@ -5,18 +5,17 @@ import (
 	"log/slog"
 
 	"meridian/internal/domain"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
-var _ billingdomain.CreditAdmissionChecker = (*creditAdmissionChecker)(nil)
+var _ billing.CreditAdmissionChecker = (*creditAdmissionChecker)(nil)
 
 type creditAdmissionChecker struct {
-	store  billingrepo.CreditStore
+	store  billing.CreditStore
 	logger *slog.Logger
 }
 
-func NewCreditAdmissionChecker(store billingrepo.CreditStore, logger *slog.Logger) *creditAdmissionChecker {
+func NewCreditAdmissionChecker(store billing.CreditStore, logger *slog.Logger) *creditAdmissionChecker {
 	if logger == nil {
 		logger = slog.Default()
 	}

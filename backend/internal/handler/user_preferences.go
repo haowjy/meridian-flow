@@ -2,24 +2,24 @@ package handler
 
 import (
 	"log/slog"
+	"meridian/internal/domain"
 	"net/http"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/services"
+
 	"meridian/internal/httputil"
 	"meridian/internal/optional"
 )
 
 // UserPreferencesHandler handles user preferences HTTP requests
 type UserPreferencesHandler struct {
-	service services.UserPreferencesService
+	service domain.UserPreferencesService
 	logger  *slog.Logger
 	config  *config.Config
 }
 
 // NewUserPreferencesHandler creates a new user preferences handler
-func NewUserPreferencesHandler(service services.UserPreferencesService, logger *slog.Logger, cfg *config.Config) *UserPreferencesHandler {
+func NewUserPreferencesHandler(service domain.UserPreferencesService, logger *slog.Logger, cfg *config.Config) *UserPreferencesHandler {
 	return &UserPreferencesHandler{
 		service: service,
 		logger:  logger,
@@ -56,11 +56,11 @@ func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.R
 //   - field null = clear
 //   - field has value = set
 type updatePreferencesDTO struct {
-	Models             *models.ModelsPreferences       `json:"models"`
-	UI                 *models.UIPreferences           `json:"ui"`
-	Editor             *models.EditorPreferences       `json:"editor"`
+	Models             *domain.ModelsPreferences       `json:"models"`
+	UI                 *domain.UIPreferences           `json:"ui"`
+	Editor             *domain.EditorPreferences       `json:"editor"`
 	SystemInstructions optional.Optional[string]       `json:"system_instructions"`
-	Notifications      *models.NotificationPreferences `json:"notifications"`
+	Notifications      *domain.NotificationPreferences `json:"notifications"`
 }
 
 // UpdatePreferences updates user preferences
@@ -84,7 +84,7 @@ func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *htt
 	}
 
 	// Map transport DTO to service request
-	req := &models.UpdatePreferencesRequest{
+	req := &domain.UpdatePreferencesRequest{
 		Models:             dto.Models,
 		UI:                 dto.UI,
 		Editor:             dto.Editor,

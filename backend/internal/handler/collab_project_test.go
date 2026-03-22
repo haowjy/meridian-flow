@@ -14,8 +14,8 @@ import (
 	"golang.org/x/net/websocket"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
-	collabModels "meridian/internal/domain/models/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 // --- test resolver with ResolveDocument support ---
@@ -28,13 +28,13 @@ type testProjectCollabResolver struct {
 	ownerErr   error
 }
 
-func (r *testProjectCollabResolver) ResolveDocument(_ context.Context, docID string) (*collabModels.CollabDocRef, error) {
+func (r *testProjectCollabResolver) ResolveDocument(_ context.Context, docID string) (*collab.CollabDocRef, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.resolveErr != nil {
 		return nil, r.resolveErr
 	}
-	return &collabModels.CollabDocRef{
+	return &collab.CollabDocRef{
 		DocumentID: docID,
 		ProjectID:  r.projectID,
 	}, nil
@@ -199,7 +199,7 @@ var (
 // in AUTH_EXPIRED (the token verification step fails).
 func TestProjectWS_AuthExpiredForBadToken(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
-	verifier := &testJWTVerifier{tokens: map[string]*models.AuthClaims{}}
+	verifier := &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{}}
 	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
@@ -221,7 +221,7 @@ func TestProjectWS_AuthExpiredForBadToken(t *testing.T) {
 func TestProjectWS_AuthFailedForBlankToken(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {UserID: testUserID},
 		},
 	}
@@ -245,7 +245,7 @@ func TestProjectWS_AuthFailedForBlankToken(t *testing.T) {
 func TestProjectWS_ProjectAccessDenied(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {UserID: testUserID},
 		},
 	}
@@ -269,7 +269,7 @@ func TestProjectWS_ProjectAccessDenied(t *testing.T) {
 func TestProjectWS_AuthFailedForNonUUIDUserID(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {UserID: "not-a-uuid"},
 		},
 	}
@@ -294,7 +294,7 @@ func TestProjectWS_AuthFailedForNonUUIDUserID(t *testing.T) {
 func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {
 				UserID: testUserID,
 				Email:  "test-9@my-domain.com",
@@ -302,8 +302,8 @@ func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
 		},
 	}
 	server := newTestProjectCollabServer(t, resolver, verifier, nil, &config.Config{
-		Environment:           "prod",
-		BlockedProdIdentities: []string{"test-*@my-domain.com"},
+		Server: config.ServerConfig{Environment: "prod"},
+		Auth:   config.AuthConfig{BlockedProdIdentities: []string{"test-*@my-domain.com"}},
 	})
 	defer server.Close()
 
@@ -325,7 +325,7 @@ func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
 
 func TestProjectWS_MalformedProjectID(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
-	verifier := &testJWTVerifier{tokens: map[string]*models.AuthClaims{}}
+	verifier := &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{}}
 	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
@@ -345,7 +345,7 @@ func TestProjectWS_MalformedProjectID(t *testing.T) {
 func TestProjectWS_HeartbeatAfterConnect(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {UserID: testUserID},
 		},
 	}
@@ -374,7 +374,7 @@ func TestProjectWS_HeartbeatAfterConnect(t *testing.T) {
 func TestProjectWS_UnknownMessageTypeIgnored(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{
-		tokens: map[string]*models.AuthClaims{
+		tokens: map[string]*authdomain.AuthClaims{
 			testToken: {UserID: testUserID},
 		},
 	}

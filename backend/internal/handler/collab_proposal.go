@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 const (
@@ -40,14 +40,14 @@ type proposalNewEvent struct {
 	Proposal proposalEventDTO `json:"proposal"`
 }
 
-func buildProposalNewEvent(proposal collabModels.Proposal) proposalNewEvent {
+func buildProposalNewEvent(proposal collab.Proposal) proposalNewEvent {
 	return proposalNewEvent{
 		Type:     wsTypeProposalNew,
 		Proposal: toProposalEventDTO(proposal, true),
 	}
 }
 
-func toProposalEventDTO(proposal collabModels.Proposal, includeYjsUpdate bool) proposalEventDTO {
+func toProposalEventDTO(proposal collab.Proposal, includeYjsUpdate bool) proposalEventDTO {
 	turnID := uuidToPtrString(proposal.TurnID)
 	groupID := uuidToPtrString(proposal.ProposalGroupID)
 

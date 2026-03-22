@@ -9,46 +9,44 @@ import (
 
 	"github.com/google/uuid"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 type mockCreditStore struct {
-	balance    *billingmodel.CreditBalance
+	balance    *billing.CreditBalance
 	balanceErr error
 
-	transactionsPage *billingmodel.CreditTransactionPage
+	transactionsPage *billing.CreditTransactionPage
 	transactionsErr  error
 
 	createPurchaseErr error
 	createGrantErr    error
 	refundErr         error
 	consumeErr        error
-	expireLots        []billingrepo.ExpiredLot
+	expireLots        []billing.ExpiredLot
 	expireErr         error
 
-	lastCreateGrantReq    billingrepo.CreateGrantLotRequest
-	lastCreatePurchaseReq billingrepo.CreatePurchaseLotRequest
-	lastRefundReq         billingrepo.RefundLotRequest
-	consumeCalls          []billingrepo.ConsumeFIFORequest
+	lastCreateGrantReq    billing.CreateGrantLotRequest
+	lastCreatePurchaseReq billing.CreatePurchaseLotRequest
+	lastRefundReq         billing.RefundLotRequest
+	consumeCalls          []billing.ConsumeFIFORequest
 
 	callOrder *[]string
 }
 
-func (m *mockCreditStore) GetBalance(ctx context.Context, userID string) (*billingmodel.CreditBalance, error) {
+func (m *mockCreditStore) GetBalance(ctx context.Context, userID string) (*billing.CreditBalance, error) {
 	_ = ctx
 	_ = userID
 	if m.balanceErr != nil {
 		return nil, m.balanceErr
 	}
 	if m.balance == nil {
-		return &billingmodel.CreditBalance{}, nil
+		return &billing.CreditBalance{}, nil
 	}
 	return m.balance, nil
 }
 
-func (m *mockCreditStore) ListTransactions(ctx context.Context, userID string, req billingmodel.ListTransactionsRequest) (*billingmodel.CreditTransactionPage, error) {
+func (m *mockCreditStore) ListTransactions(ctx context.Context, userID string, req billing.ListTransactionsRequest) (*billing.CreditTransactionPage, error) {
 	_ = ctx
 	_ = userID
 	_ = req
@@ -56,30 +54,30 @@ func (m *mockCreditStore) ListTransactions(ctx context.Context, userID string, r
 		return nil, m.transactionsErr
 	}
 	if m.transactionsPage == nil {
-		return &billingmodel.CreditTransactionPage{}, nil
+		return &billing.CreditTransactionPage{}, nil
 	}
 	return m.transactionsPage, nil
 }
 
-func (m *mockCreditStore) CreatePurchaseLot(ctx context.Context, req billingrepo.CreatePurchaseLotRequest) error {
+func (m *mockCreditStore) CreatePurchaseLot(ctx context.Context, req billing.CreatePurchaseLotRequest) error {
 	_ = ctx
 	m.lastCreatePurchaseReq = req
 	return m.createPurchaseErr
 }
 
-func (m *mockCreditStore) CreateGrantLot(ctx context.Context, req billingrepo.CreateGrantLotRequest) error {
+func (m *mockCreditStore) CreateGrantLot(ctx context.Context, req billing.CreateGrantLotRequest) error {
 	_ = ctx
 	m.lastCreateGrantReq = req
 	return m.createGrantErr
 }
 
-func (m *mockCreditStore) RefundLot(ctx context.Context, req billingrepo.RefundLotRequest) error {
+func (m *mockCreditStore) RefundLot(ctx context.Context, req billing.RefundLotRequest) error {
 	_ = ctx
 	m.lastRefundReq = req
 	return m.refundErr
 }
 
-func (m *mockCreditStore) ConsumeFIFO(ctx context.Context, req billingrepo.ConsumeFIFORequest) error {
+func (m *mockCreditStore) ConsumeFIFO(ctx context.Context, req billing.ConsumeFIFORequest) error {
 	_ = ctx
 	m.consumeCalls = append(m.consumeCalls, req)
 	if m.callOrder != nil {
@@ -88,7 +86,7 @@ func (m *mockCreditStore) ConsumeFIFO(ctx context.Context, req billingrepo.Consu
 	return m.consumeErr
 }
 
-func (m *mockCreditStore) ExpireAvailableLots(ctx context.Context, nowUTC string, batchSize int) ([]billingrepo.ExpiredLot, error) {
+func (m *mockCreditStore) ExpireAvailableLots(ctx context.Context, nowUTC string, batchSize int) ([]billing.ExpiredLot, error) {
 	_ = ctx
 	_ = nowUTC
 	_ = batchSize
@@ -110,15 +108,15 @@ type mockGenerationBillingStore struct {
 	getErr  error
 	markErr error
 
-	fields *billingrepo.BillingFields
+	fields *billing.BillingFields
 
-	setCalls  []billingrepo.BillingFields
+	setCalls  []billing.BillingFields
 	markCalls []markStatusCall
 
 	callOrder *[]string
 }
 
-func (m *mockGenerationBillingStore) SetBillingFields(ctx context.Context, turnID string, requestIndex int, fields billingrepo.BillingFields) error {
+func (m *mockGenerationBillingStore) SetBillingFields(ctx context.Context, turnID string, requestIndex int, fields billing.BillingFields) error {
 	_ = ctx
 	_ = turnID
 	_ = requestIndex
@@ -134,7 +132,7 @@ func (m *mockGenerationBillingStore) SetBillingFields(ctx context.Context, turnI
 	return nil
 }
 
-func (m *mockGenerationBillingStore) GetBillingFields(ctx context.Context, turnID string, requestIndex int) (*billingrepo.BillingFields, error) {
+func (m *mockGenerationBillingStore) GetBillingFields(ctx context.Context, turnID string, requestIndex int) (*billing.BillingFields, error) {
 	_ = ctx
 	_ = turnID
 	_ = requestIndex
@@ -172,20 +170,20 @@ func (m *mockGenerationBillingStore) MarkBillingStatus(ctx context.Context, turn
 	return nil
 }
 
-func (m *mockGenerationBillingStore) ListPendingSettlements(ctx context.Context, olderThan time.Time, limit int) ([]billingrepo.PendingSettlement, error) {
+func (m *mockGenerationBillingStore) ListPendingSettlements(ctx context.Context, olderThan time.Time, limit int) ([]billing.PendingSettlement, error) {
 	_ = ctx
 	_ = olderThan
 	_ = limit
 	if m.fields == nil {
-		return []billingrepo.PendingSettlement{}, nil
+		return []billing.PendingSettlement{}, nil
 	}
-	return []billingrepo.PendingSettlement{
+	return []billing.PendingSettlement{
 		{TurnID: "turn-1", RequestIndex: 0, Billing: *m.fields},
 	}, nil
 }
 
 func mustConsumptionGroup(usageEventID string) uuid.UUID {
-	return uuid.NewSHA1(billingmodel.BillingNamespace, []byte(usageEventID))
+	return uuid.NewSHA1(billing.BillingNamespace, []byte(usageEventID))
 }
 
 func isInsufficientCreditsError(err error) bool {
@@ -200,19 +198,19 @@ func duplicateGrantErr() error {
 }
 
 type mockPricingResolver struct {
-	pricingByProviderModel map[string]billingmodel.ModelPricing
+	pricingByProviderModel map[string]billing.ModelPricing
 	errByProviderModel     map[string]error
 }
 
-var _ billingdomain.ModelPricingResolver = (*mockPricingResolver)(nil)
+var _ billing.ModelPricingResolver = (*mockPricingResolver)(nil)
 
-func (m *mockPricingResolver) ResolvePricing(provider, model string) (billingmodel.ModelPricing, error) {
+func (m *mockPricingResolver) ResolvePricing(provider, model string) (billing.ModelPricing, error) {
 	key := fmt.Sprintf("%s:%s", provider, model)
 	if err, ok := m.errByProviderModel[key]; ok {
-		return billingmodel.FallbackModelPricing, err
+		return billing.FallbackModelPricing, err
 	}
 	if pricing, ok := m.pricingByProviderModel[key]; ok {
 		return pricing, nil
 	}
-	return billingmodel.FallbackModelPricing, fmt.Errorf("missing pricing for %s", key)
+	return billing.FallbackModelPricing, fmt.Errorf("missing pricing for %s", key)
 }

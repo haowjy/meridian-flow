@@ -7,7 +7,7 @@ import (
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
 
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // AnthropicAdapter wraps the library's Anthropic provider and implements the backend's LLMProvider interface.

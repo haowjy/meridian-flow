@@ -10,23 +10,22 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	docsystem "meridian/internal/domain/models/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	identifierSvc "meridian/internal/domain/services/identifier"
+	domaindocsys "meridian/internal/domain/docsystem"
+	identifier "meridian/internal/domain/identifier"
 	"meridian/internal/httputil"
 	"meridian/internal/optional"
 )
 
 // DocumentHandler handles document HTTP requests
 type DocumentHandler struct {
-	docService docsysSvc.DocumentService
-	resolver   identifierSvc.Resolver // Interface for identifier resolution (DIP)
+	docService domaindocsys.DocumentService
+	resolver   identifier.Resolver // Interface for identifier resolution (DIP)
 	logger     *slog.Logger
 	config     *config.Config
 }
 
 // NewDocumentHandler creates a new document handler
-func NewDocumentHandler(docService docsysSvc.DocumentService, resolver identifierSvc.Resolver, logger *slog.Logger, cfg *config.Config) *DocumentHandler {
+func NewDocumentHandler(docService domaindocsys.DocumentService, resolver identifier.Resolver, logger *slog.Logger, cfg *config.Config) *DocumentHandler {
 	return &DocumentHandler{
 		docService: docService,
 		resolver:   resolver,
@@ -41,7 +40,7 @@ func NewDocumentHandler(docService docsysSvc.DocumentService, resolver identifie
 // Note: project_id is optional for cross-project documents (future feature)
 func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
-	var req docsysSvc.CreateDocumentRequest
+	var req domaindocsys.CreateDocumentRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -54,7 +53,7 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Document, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*domaindocsys.Document, error) {
 			return h.docService.GetDocument(r.Context(), userID, id)
 		})
 		return
@@ -145,7 +144,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Map transport DTO to service request
-	req := &docsysSvc.UpdateDocumentRequest{
+	req := &domaindocsys.UpdateDocumentRequest{
 		ProjectID:  dto.ProjectID,
 		Name:       dto.Name,
 		Extension:  dto.Extension,
@@ -208,7 +207,7 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 	}
 
 	// Build search request
-	req := &docsysSvc.SearchDocumentsRequest{
+	req := &domaindocsys.SearchDocumentsRequest{
 		Query:     query,
 		ProjectID: r.URL.Query().Get("project_id"), // Optional - empty means search all projects
 	}

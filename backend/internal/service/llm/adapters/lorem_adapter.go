@@ -6,7 +6,7 @@ import (
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/lorem"
 
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // LoremAdapter wraps the library's Lorem provider and implements the backend's LLMProvider interface.

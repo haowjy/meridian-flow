@@ -8,9 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	docsysModels "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/service/docsystem/converter"
 )
 
@@ -22,19 +20,19 @@ import (
 //   - Route to appropriate ContentConverter based on extension
 //   - Detect duplicates and handle create/update/skip decisions
 type individualFileProcessor struct {
-	docRepo           docsysRepo.DocumentRepository
-	docService        docsysSvc.DocumentService
+	docRepo           domaindocsys.DocumentStore
+	docService        domaindocsys.DocumentService
 	converterRegistry *converter.ConverterRegistry
 	logger            *slog.Logger
 }
 
 // NewIndividualFileProcessor creates a new individual file processor
 func NewIndividualFileProcessor(
-	docRepo docsysRepo.DocumentRepository,
-	docService docsysSvc.DocumentService,
+	docRepo domaindocsys.DocumentStore,
+	docService domaindocsys.DocumentService,
 	converterRegistry *converter.ConverterRegistry,
 	logger *slog.Logger,
-) docsysSvc.FileProcessor {
+) domaindocsys.FileProcessor {
 	return &individualFileProcessor{
 		docRepo:           docRepo,
 		docService:        docService,
@@ -60,19 +58,19 @@ func (p *individualFileProcessor) Process(
 	filename string,
 	folderPath string,
 	overwrite bool,
-) (*docsysSvc.ImportResult, error) {
+) (*domaindocsys.ImportResult, error) {
 	// Initialize result
-	result := &docsysSvc.ImportResult{
-		Summary:   docsysSvc.ImportSummary{TotalFiles: 1},
-		Errors:    []docsysSvc.ImportError{},
-		Documents: []docsysSvc.ImportDocument{},
+	result := &domaindocsys.ImportResult{
+		Summary:   domaindocsys.ImportSummary{TotalFiles: 1},
+		Errors:    []domaindocsys.ImportError{},
+		Documents: []domaindocsys.ImportDocument{},
 	}
 
 	// Read file content
 	content, err := io.ReadAll(file)
 	if err != nil {
 		result.Summary.Failed = 1
-		result.Errors = append(result.Errors, docsysSvc.ImportError{
+		result.Errors = append(result.Errors, domaindocsys.ImportError{
 			File:  filename,
 			Error: fmt.Sprintf("failed to read file: %v", err),
 		})
@@ -84,7 +82,7 @@ func (p *individualFileProcessor) Process(
 	markdown, err := p.converterRegistry.Convert(ctx, filename, content)
 	if err != nil {
 		result.Summary.Failed = 1
-		result.Errors = append(result.Errors, docsysSvc.ImportError{
+		result.Errors = append(result.Errors, domaindocsys.ImportError{
 			File:  filename,
 			Error: fmt.Sprintf("failed to convert file: %v", err),
 		})
@@ -102,7 +100,7 @@ func (p *individualFileProcessor) Process(
 	// - Keep original if it's a valid markdown extension (.md, .markdown, .txt)
 	// - Default to .md for converted files (e.g., .html -> .md)
 	targetExt := ".md" // default for conversions
-	if docsysModels.IsValidExtension(ext) {
+	if domaindocsys.IsValidExtension(ext) {
 		targetExt = ext
 	}
 
@@ -110,7 +108,7 @@ func (p *individualFileProcessor) Process(
 	existingDoc, err := p.findExistingDocument(ctx, projectID, folderPath, docName, targetExt)
 	if err != nil {
 		result.Summary.Failed = 1
-		result.Errors = append(result.Errors, docsysSvc.ImportError{
+		result.Errors = append(result.Errors, domaindocsys.ImportError{
 			File:  filename,
 			Error: fmt.Sprintf("failed to check for existing document: %v", err),
 		})
@@ -121,13 +119,13 @@ func (p *individualFileProcessor) Process(
 	if existingDoc != nil {
 		if overwrite {
 			// Update existing document
-			doc, err := p.docService.UpdateDocument(ctx, userID, existingDoc.ID, &docsysSvc.UpdateDocumentRequest{
+			doc, err := p.docService.UpdateDocument(ctx, userID, existingDoc.ID, &domaindocsys.UpdateDocumentRequest{
 				ProjectID: projectID,
 				Content:   &markdown,
 			})
 			if err != nil {
 				result.Summary.Failed = 1
-				result.Errors = append(result.Errors, docsysSvc.ImportError{
+				result.Errors = append(result.Errors, domaindocsys.ImportError{
 					File:  filename,
 					Error: fmt.Sprintf("failed to update document: %v", err),
 				})
@@ -136,7 +134,7 @@ func (p *individualFileProcessor) Process(
 			}
 
 			result.Summary.Updated = 1
-			result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+			result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 				ID:     doc.ID,
 				Path:   doc.Path,
 				Name:   doc.Filename(),
@@ -152,7 +150,7 @@ func (p *individualFileProcessor) Process(
 			// Skip duplicate - document already exists and overwrite is false
 			filename := docName + targetExt
 			result.Summary.Skipped = 1
-			result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+			result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 				ID:     existingDoc.ID,
 				Path:   BuildFullPath(folderPath, filename),
 				Name:   filename,
@@ -168,7 +166,7 @@ func (p *individualFileProcessor) Process(
 	}
 
 	// Create new document
-	doc, err := p.docService.CreateDocument(ctx, &docsysSvc.CreateDocumentRequest{
+	doc, err := p.docService.CreateDocument(ctx, &domaindocsys.CreateDocumentRequest{
 		ProjectID:  projectID,
 		UserID:     userID,
 		FolderPath: &folderPath, // Use provided folder path (empty string = root)
@@ -179,7 +177,7 @@ func (p *individualFileProcessor) Process(
 
 	if err != nil {
 		result.Summary.Failed = 1
-		result.Errors = append(result.Errors, docsysSvc.ImportError{
+		result.Errors = append(result.Errors, domaindocsys.ImportError{
 			File:  filename,
 			Error: fmt.Sprintf("failed to create document: %v", err),
 		})
@@ -189,7 +187,7 @@ func (p *individualFileProcessor) Process(
 
 	// Success
 	result.Summary.Created = 1
-	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+	result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
 		Name:   doc.Filename(),
@@ -218,7 +216,7 @@ func (p *individualFileProcessor) findExistingDocument(
 	folderPath string,
 	docName string,
 	extension string,
-) (*docsysModels.Document, error) {
+) (*domaindocsys.Document, error) {
 	// Fetch all documents - see Performance Note above
 	docs, err := p.docRepo.GetAllMetadataByProject(ctx, projectID)
 	if err != nil {

@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"meridian/internal/domain"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/httputil"
 )
 
 // CreditGate denies billable requests when the caller has no spendable credits.
-func CreditGate(checker billingdomain.CreditAdmissionChecker) func(http.Handler) http.Handler {
+func CreditGate(checker billing.CreditAdmissionChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if checker == nil {

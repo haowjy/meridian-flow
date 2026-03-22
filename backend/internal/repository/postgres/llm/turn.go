@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"meridian/internal/domain"
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5"
@@ -40,15 +39,20 @@ const (
 	MaxLeafSearchDepth = 1000
 )
 
-// PostgresTurnRepository implements the TurnRepository interface using PostgreSQL
+// PostgresTurnRepository implements the TurnStore interface using PostgreSQL
 type PostgresTurnRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
 	logger *slog.Logger
 }
 
+var _ domainllm.TurnStore = (*PostgresTurnRepository)(nil)
+var _ domainllm.TurnWriter = (*PostgresTurnRepository)(nil)
+var _ domainllm.TurnReader = (*PostgresTurnRepository)(nil)
+var _ domainllm.TurnNavigator = (*PostgresTurnRepository)(nil)
+
 // NewTurnRepository creates a new PostgresTurnRepository
-func NewTurnRepository(config *postgres.RepositoryConfig) llmRepo.TurnRepository {
+func NewTurnRepository(config *postgres.RepositoryConfig) domainllm.TurnStore {
 	return &PostgresTurnRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -57,7 +61,7 @@ func NewTurnRepository(config *postgres.RepositoryConfig) llmRepo.TurnRepository
 }
 
 // CreateTurn creates a new turn in the conversation
-func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels.Turn) error {
+func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *domainllm.Turn) error {
 	// Validate prev turn exists if provided
 	if turn.PrevTurnID != nil {
 		exists, err := r.turnExists(ctx, *turn.PrevTurnID)
@@ -128,8 +132,8 @@ type scanner interface {
 // scanTurnRow scans a database row into a Turn struct
 // Handles all turn fields including JSONB metadata
 // Works with both pgx.Row (from QueryRow) and pgx.Rows (from Query)
-func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, error) {
-	var turn llmModels.Turn
+func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*domainllm.Turn, error) {
+	var turn domainllm.Turn
 	err := row.Scan(
 		&turn.ID,
 		&turn.ThreadID,
@@ -153,7 +157,7 @@ func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, erro
 }
 
 // GetTurn retrieves a turn by ID
-func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
+func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*domainllm.Turn, error) {
 	query := fmt.Sprintf(`
 		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
@@ -176,7 +180,7 @@ func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*l
 
 // GetTurnPath retrieves the conversation path from a turn to the root
 // Returns turns in order from root to the specified turn
-func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string) ([]domainllm.Turn, error) {
 	// Recursive CTE to traverse from turn to root, then reverse the order
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
@@ -211,7 +215,7 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 	}
 	defer rows.Close()
 
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	for rows.Next() {
 		turn, err := r.scanTurnRow(rows)
 		if err != nil {
@@ -226,7 +230,7 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 
 	// Return empty slice if no turns found
 	if turns == nil {
-		turns = []llmModels.Turn{}
+		turns = []domainllm.Turn{}
 	}
 
 	return turns, nil
@@ -235,7 +239,7 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 // GetTurnSiblings retrieves all sibling turns (including self) for a given turn
 // Siblings are turns that share the same prev_turn_id (alternative conversation branches)
 // Returns turns with blocks nested, ordered by created_at
-func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID string) ([]domainllm.Turn, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
 
 	// First get the turn's prev_turn_id and thread_id
@@ -288,7 +292,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	defer rows.Close()
 
 	// Scan all sibling turns
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	for rows.Next() {
 		turn, err := r.scanTurnRow(rows)
 		if err != nil {
@@ -303,7 +307,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 
 	// Return empty slice if no siblings found
 	if turns == nil {
-		turns = []llmModels.Turn{}
+		turns = []domainllm.Turn{}
 	}
 
 	// Batch load blocks for all siblings
@@ -322,7 +326,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 		if blocks, ok := blocksByTurn[turns[i].ID]; ok {
 			turns[i].Blocks = blocks
 		} else {
-			turns[i].Blocks = []llmModels.TurnBlock{}
+			turns[i].Blocks = []domainllm.TurnBlock{}
 		}
 	}
 
@@ -330,7 +334,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 }
 
 // GetRootTurns retrieves all root turns for a specific thread
-func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID string) ([]llmModels.Turn, error) {
+func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID string) ([]domainllm.Turn, error) {
 	query := fmt.Sprintf(`
 		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
@@ -347,7 +351,7 @@ func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID stri
 	}
 	defer rows.Close()
 
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	for rows.Next() {
 		turn, err := r.scanTurnRow(rows)
 		if err != nil {
@@ -362,14 +366,14 @@ func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID stri
 
 	// Return empty slice if no root turns found
 	if turns == nil {
-		turns = []llmModels.Turn{}
+		turns = []domainllm.Turn{}
 	}
 
 	return turns, nil
 }
 
 // UpdateTurnStatus updates a turn's status and completion time
-func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID, status string, turn *llmModels.Turn) error {
+func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID string, status domainllm.TurnStatus, turn *domainllm.Turn) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET status = $1, completed_at = $2
@@ -382,7 +386,7 @@ func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID, s
 	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, status, completedAt, turnID)
+	result, err := executor.Exec(ctx, query, string(status), completedAt, turnID)
 	if err != nil {
 		return fmt.Errorf("update turn status: %w", err)
 	}
@@ -395,7 +399,7 @@ func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID, s
 }
 
 // UpdateTurn updates a turn's fields (status, model, tokens, metadata, etc.)
-func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *llmModels.Turn) error {
+func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *domainllm.Turn) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET status = $1, model = $2, input_tokens = $3, output_tokens = $4,
@@ -406,7 +410,7 @@ func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *llmModels
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	result, err := executor.Exec(ctx, query,
-		turn.Status,
+		string(turn.Status),
 		turn.Model,
 		turn.InputTokens,
 		turn.OutputTokens,
@@ -460,8 +464,8 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 func (r *PostgresTurnRepository) AccumulateTokensAndUpdateMetadata(
 	ctx context.Context,
 	turnID string,
-	tokens *llmRepo.TurnTokenUpdate,
-	completion *llmRepo.TurnCompletionUpdate,
+	tokens *domainllm.TurnTokenUpdate,
+	completion *domainllm.TurnCompletionUpdate,
 ) error {
 	// Validate inputs
 	if tokens == nil {
@@ -498,9 +502,9 @@ func (r *PostgresTurnRepository) AccumulateTokensAndUpdateMetadata(
 		turnID,
 		tokens.InputTokens,
 		tokens.OutputTokens,
-		completion.Model,        // nil = keep existing
-		completion.StopReason,   // nil = keep existing
-		metadataJSON,            // nil = skip merge (COALESCE handles)
+		completion.Model,      // nil = keep existing
+		completion.StopReason, // nil = keep existing
+		metadataJSON,          // nil = skip merge (COALESCE handles)
 	)
 	if err != nil {
 		return fmt.Errorf("accumulate tokens and update metadata: %w", err)
@@ -581,7 +585,7 @@ func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID 
 }
 
 // CreateTurnBlock creates a single turn block for a turn
-func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *domainllm.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at
@@ -619,7 +623,7 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llm
 }
 
 // CreateTurnBlocks creates turn blocks for a turn (user or assistant)
-func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []llmModels.TurnBlock) error {
+func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []domainllm.TurnBlock) error {
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -678,7 +682,7 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 
 // UpsertPartialBlock creates or updates a partial block (text or thinking).
 // Used during streaming interruption to persist accumulated content.
-func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *domainllm.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			turn_id, block_type, sequence, text_content, status, created_at, updated_at
@@ -713,7 +717,7 @@ func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *
 }
 
 // GetTurnBlocks retrieves all turn blocks for a turn
-func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]llmModels.TurnBlock, error) {
+func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]domainllm.TurnBlock, error) {
 	query := fmt.Sprintf(`
 		SELECT
 			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at
@@ -729,9 +733,9 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 	}
 	defer rows.Close()
 
-	var blocks []llmModels.TurnBlock
+	var blocks []domainllm.TurnBlock
 	for rows.Next() {
-		var block llmModels.TurnBlock
+		var block domainllm.TurnBlock
 		err := rows.Scan(
 			&block.ID,
 			&block.TurnID,
@@ -758,10 +762,10 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 
 	// Return empty slice if no blocks found
 	if blocks == nil {
-		blocks = []llmModels.TurnBlock{}
+		blocks = []domainllm.TurnBlock{}
 	}
 
-	return llmModels.FilterWhitespaceOnlyThinkingBlocks(blocks), nil
+	return domainllm.FilterWhitespaceOnlyThinkingBlocks(blocks), nil
 }
 
 // GetTurnBlocksForTurns retrieves blocks for multiple turns in a single query
@@ -769,10 +773,10 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 	ctx context.Context,
 	turnIDs []string,
-) (map[string][]llmModels.TurnBlock, error) {
+) (map[string][]domainllm.TurnBlock, error) {
 	// Return empty map if no turn IDs provided
 	if len(turnIDs) == 0 {
-		return map[string][]llmModels.TurnBlock{}, nil
+		return map[string][]domainllm.TurnBlock{}, nil
 	}
 
 	query := fmt.Sprintf(`
@@ -791,9 +795,9 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 	defer rows.Close()
 
 	// Group blocks by turn ID
-	blocksByTurn := make(map[string][]llmModels.TurnBlock)
+	blocksByTurn := make(map[string][]domainllm.TurnBlock)
 	for rows.Next() {
-		var block llmModels.TurnBlock
+		var block domainllm.TurnBlock
 		err := rows.Scan(
 			&block.ID,
 			&block.TurnID,
@@ -823,7 +827,7 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 	// Filter out whitespace-only thinking blocks for all turns.
 	// This prevents confusing "empty thinking" history on reload without requiring DB cleanup.
 	for turnID, blocks := range blocksByTurn {
-		blocksByTurn[turnID] = llmModels.FilterWhitespaceOnlyThinkingBlocks(blocks)
+		blocksByTurn[turnID] = domainllm.FilterWhitespaceOnlyThinkingBlocks(blocks)
 	}
 
 	return blocksByTurn, nil
@@ -917,7 +921,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 	limit int,
 	direction string,
 	updateLastViewed bool,
-) (*llmModels.PaginatedTurnsResponse, error) {
+) (*domainllm.PaginatedTurnsResponse, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
 
 	// Verify thread exists and user has access
@@ -1004,8 +1008,8 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		if err != nil {
 			if postgres.IsPgNoRowsError(err) {
 				// No turns in thread - return empty response
-				return &llmModels.PaginatedTurnsResponse{
-					Turns:         []llmModels.Turn{},
+				return &domainllm.PaginatedTurnsResponse{
+					Turns:         []domainllm.Turn{},
 					HasMoreBefore: false,
 					HasMoreAfter:  false,
 				}, nil
@@ -1108,7 +1112,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		afterLimit = limit - beforeLimit
 	}
 
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	var hasMoreBefore, hasMoreAfter bool
 
 	// Fetch turns in "before" direction (follow prev_turn_id backwards)
@@ -1184,7 +1188,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		if blocks, ok := blocksByTurn[turns[i].ID]; ok {
 			turns[i].Blocks = blocks
 		} else {
-			turns[i].Blocks = []llmModels.TurnBlock{}
+			turns[i].Blocks = []domainllm.TurnBlock{}
 		}
 
 		// Add sibling IDs
@@ -1195,7 +1199,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		}
 	}
 
-	return &llmModels.PaginatedTurnsResponse{
+	return &domainllm.PaginatedTurnsResponse{
 		Turns:         turns,
 		HasMoreBefore: hasMoreBefore,
 		HasMoreAfter:  hasMoreAfter,
@@ -1203,7 +1207,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 }
 
 // fetchTurnsBefore follows prev_turn_id chain backwards
-func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurnID string, limit int) ([]llmModels.Turn, error) {
+func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurnID string, limit int) ([]domainllm.Turn, error) {
 	// Recursive CTE to traverse backwards through prev_turn_id
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
@@ -1240,7 +1244,7 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 	}
 	defer rows.Close()
 
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	for rows.Next() {
 		turn, err := r.scanTurnRow(rows)
 		if err != nil {
@@ -1257,7 +1261,7 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 }
 
 // fetchTurnsAfter follows children forward, picking most recent child when multiple exist
-func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnID string, limit int) ([]llmModels.Turn, error) {
+func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnID string, limit int) ([]domainllm.Turn, error) {
 	// Recursive CTE to traverse forward through children (most recent branch)
 	// Uses correlated subquery to select only the most recent child at each level
 	query := fmt.Sprintf(`
@@ -1306,7 +1310,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 	}
 	defer rows.Close()
 
-	var turns []llmModels.Turn
+	var turns []domainllm.Turn
 	for rows.Next() {
 		turn, err := r.scanTurnRow(rows)
 		if err != nil {
@@ -1381,7 +1385,7 @@ func (r *PostgresTurnRepository) findMostRecentLeaf(ctx context.Context, startTu
 // This supports both:
 //   - Initial insertion (complete record with Finalized=true)
 //   - Upsert for enrichment (replace partial record with enriched version)
-func (r *PostgresTurnRepository) AppendGenerationRecord(ctx context.Context, turnID string, record *llmModels.GenerationRecord) error {
+func (r *PostgresTurnRepository) AppendGenerationRecord(ctx context.Context, turnID string, record *domainllm.GenerationRecord) error {
 	// Marshal the generation record to JSONB
 	recordJSON, err := json.Marshal(record)
 	if err != nil {

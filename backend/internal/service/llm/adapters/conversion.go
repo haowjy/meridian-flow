@@ -6,8 +6,7 @@ import (
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 
-	"meridian/internal/domain/models/llm"
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // normalizeToolResultContent converts tool result content to string format.
@@ -60,7 +59,7 @@ func ConvertToLibraryRequest(req *domainllm.GenerateRequest) (*llmprovider.Gener
 
 			// Normalize tool_result blocks: convert Content["result"] to string
 			// This prevents double JSON-encoding in provider adapters
-			if tb.BlockType == llm.BlockTypeToolResult {
+			if tb.BlockType == domainllm.BlockTypeToolResult {
 				normalizeToolResultContent(tb.Content)
 			}
 
@@ -95,7 +94,7 @@ func ConvertToLibraryRequest(req *domainllm.GenerateRequest) (*llmprovider.Gener
 
 // convertFromLibraryResponse converts library GenerateResponse to backend GenerateResponse
 func convertFromLibraryResponse(resp *llmprovider.GenerateResponse) *domainllm.GenerateResponse {
-	blocks := make([]*llm.TurnBlock, len(resp.Blocks))
+	blocks := make([]*domainllm.TurnBlock, len(resp.Blocks))
 	for i, block := range resp.Blocks {
 		// Convert ExecutionSide from library type (*llmprovider.ExecutionSide) to *string
 		var executionSide *string
@@ -104,7 +103,7 @@ func convertFromLibraryResponse(resp *llmprovider.GenerateResponse) *domainllm.G
 			executionSide = &side
 		}
 
-		blocks[i] = &llm.TurnBlock{
+		blocks[i] = &domainllm.TurnBlock{
 			// ID, TurnID, CreatedAt will be added by repository layer
 			BlockType:     block.BlockType,
 			Sequence:      block.Sequence,
@@ -149,7 +148,7 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 			executionSide = &side
 		}
 
-		backendEvent.Block = &llm.TurnBlock{
+		backendEvent.Block = &domainllm.TurnBlock{
 			// ID, TurnID, CreatedAt will be added by repository layer or executor
 			BlockType:     event.Block.BlockType,
 			Sequence:      event.Block.Sequence,
@@ -190,7 +189,7 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 //   - any: provider required
 //   - tool: provider specific (with tool name)
 //   - none: provider none
-func convertToolChoiceToLibrary(choice *llm.ToolChoice) *llmprovider.ToolChoice {
+func convertToolChoiceToLibrary(choice *domainllm.ToolChoice) *llmprovider.ToolChoice {
 	if choice == nil {
 		return nil
 	}
@@ -198,15 +197,15 @@ func convertToolChoiceToLibrary(choice *llm.ToolChoice) *llmprovider.ToolChoice 
 	libChoice := &llmprovider.ToolChoice{}
 
 	switch choice.Mode {
-	case llm.ToolChoiceModeAuto:
+	case domainllm.ToolChoiceModeAuto:
 		libChoice.Mode = llmprovider.ToolChoiceModeAuto
-	case llm.ToolChoiceModeAny, llm.ToolChoiceMode("required"):
+	case domainllm.ToolChoiceModeAny, domainllm.ToolChoiceMode("required"):
 		libChoice.Mode = llmprovider.ToolChoiceModeRequired
-	case llm.ToolChoiceModeTool, llm.ToolChoiceMode("specific"):
+	case domainllm.ToolChoiceModeTool, domainllm.ToolChoiceMode("specific"):
 		libChoice.Mode = llmprovider.ToolChoiceModeSpecific
 		toolName := choice.ToolName
 		libChoice.ToolName = &toolName
-	case llm.ToolChoiceModeNone:
+	case domainllm.ToolChoiceModeNone:
 		libChoice.Mode = llmprovider.ToolChoiceModeNone
 	default:
 		// Pass through unknown values unchanged so provider/library validation behavior remains unchanged.
@@ -219,7 +218,7 @@ func convertToolChoiceToLibrary(choice *llm.ToolChoice) *llmprovider.ToolChoice 
 // convertToLibraryParams converts backend RequestParams to library RequestParams
 // For lorem models, applies lorem_max override if set (debug/testing feature)
 // Converts ToolDefinition[] to library Tool[] using constructors (NewCustomTool, MapToolByName)
-func convertToLibraryParams(params *llm.RequestParams, model string) (*llmprovider.RequestParams, error) {
+func convertToLibraryParams(params *domainllm.RequestParams, model string) (*llmprovider.RequestParams, error) {
 	if params == nil {
 		return nil, nil
 	}
@@ -227,7 +226,7 @@ func convertToLibraryParams(params *llm.RequestParams, model string) (*llmprovid
 	// Convert backend ToolDefinitions to library Tools using constructors
 	var libraryTools []llmprovider.Tool
 	if len(params.Tools) > 0 {
-		convertedTools, err := llm.ToLibraryTools(params.Tools)
+		convertedTools, err := domainllm.ToLibraryTools(params.Tools)
 		if err != nil {
 			return nil, err
 		}

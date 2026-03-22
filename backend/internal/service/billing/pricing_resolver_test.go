@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"meridian/internal/capabilities"
-	billingmodel "meridian/internal/domain/models/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 func TestRegistryPricingResolver_ResolvePricing_UsesBaseTierForTieredModel(t *testing.T) {
@@ -29,12 +29,12 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 	tests := []struct {
 		provider string
 		model    string
-		pricing  billingmodel.ModelPricing
+		pricing  billing.ModelPricing
 	}{
 		{
 			provider: "anthropic",
 			model:    "claude-haiku-4-5",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     1000,
 				OutputMicrousdPer1K:    5000,
 				ReasoningMicrousdPer1K: 5000,
@@ -45,7 +45,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "moonshotai/kimi-k2-thinking",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     500,
 				OutputMicrousdPer1K:    2500,
 				ReasoningMicrousdPer1K: 2500,
@@ -56,7 +56,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "moonshotai/kimi-k2.5",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     600,
 				OutputMicrousdPer1K:    3000,
 				ReasoningMicrousdPer1K: 3000,
@@ -67,7 +67,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "google/gemini-2.5-flash",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     300,
 				OutputMicrousdPer1K:    2500,
 				ReasoningMicrousdPer1K: 2500,
@@ -78,7 +78,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "x-ai/grok-4.1-fast",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     200,
 				OutputMicrousdPer1K:    500,
 				ReasoningMicrousdPer1K: 500,
@@ -89,7 +89,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "deepseek/deepseek-r1-0528",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     200,
 				OutputMicrousdPer1K:    4500,
 				ReasoningMicrousdPer1K: 4500,
@@ -100,7 +100,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "deepseek/deepseek-chat-v3-0324",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     200,
 				OutputMicrousdPer1K:    900,
 				ReasoningMicrousdPer1K: 900,
@@ -111,7 +111,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "qwen/qwen3-vl-235b-a22b-instruct",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     300,
 				OutputMicrousdPer1K:    1200,
 				ReasoningMicrousdPer1K: 1200,
@@ -122,7 +122,7 @@ func TestRegistryPricingResolver_ResolvePricing_AllConfiguredModels(t *testing.T
 		{
 			provider: "openrouter",
 			model:    "prime-intellect/intellect-3",
-			pricing: billingmodel.ModelPricing{
+			pricing: billing.ModelPricing{
 				InputMicrousdPer1K:     200,
 				OutputMicrousdPer1K:    1100,
 				ReasoningMicrousdPer1K: 1100,
@@ -165,8 +165,8 @@ func TestRegistryPricingResolver_ResolvePricing_UnknownModelReturnsFallbackAndEr
 	if err == nil {
 		t.Fatalf("expected error for unknown model")
 	}
-	if got != billingmodel.FallbackModelPricing {
-		t.Fatalf("fallback mismatch:\n got:  %+v\n want: %+v", got, billingmodel.FallbackModelPricing)
+	if got != billing.FallbackModelPricing {
+		t.Fatalf("fallback mismatch:\n got:  %+v\n want: %+v", got, billing.FallbackModelPricing)
 	}
 }
 

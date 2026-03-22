@@ -7,15 +7,12 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	llmModels "meridian/internal/domain/models/llm"
-	billingdomain "meridian/internal/domain/services/billing"
-	domainllm "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/jobs"
 )
 
 const (
-	turnStatusCreditLimited       = "credit_limited"
 	creditLimitedErrorMessage     = "insufficient credits"
 	runStopReasonCreditsExhausted = "credits_exhausted"
 )
@@ -40,18 +37,18 @@ func (se *StreamExecutor) handleCreditsExhausted(ctx context.Context, send func(
 			"error", err,
 		)
 		// Fallback still marks status terminal even if we cannot update error text.
-		fallback := &llmModels.Turn{CompletedAt: &completedAt}
-		if statusErr := se.turnRepo.UpdateTurnStatus(persistCtx, se.turnID, turnStatusCreditLimited, fallback); statusErr != nil {
+		fallback := &domainllm.Turn{CompletedAt: &completedAt}
+		if statusErr := se.turnWriter.UpdateTurnStatus(persistCtx, se.turnID, domainllm.TurnStatusCreditLimited, fallback); statusErr != nil {
 			se.logger.Error("failed to mark turn credit_limited",
 				"turn_id", se.turnID,
 				"error", statusErr,
 			)
 		}
 	} else {
-		turn.Status = turnStatusCreditLimited
+		turn.Status = domainllm.TurnStatusCreditLimited
 		turn.CompletedAt = &completedAt
 		turn.Error = ptrString(creditLimitedErrorMessage)
-		if updateErr := se.turnRepo.UpdateTurn(persistCtx, turn); updateErr != nil {
+		if updateErr := se.turnWriter.UpdateTurn(persistCtx, turn); updateErr != nil {
 			se.logger.Error("failed to persist credit_limited turn state",
 				"turn_id", se.turnID,
 				"error", updateErr,
@@ -86,7 +83,7 @@ func (se *StreamExecutor) settleCurrentRequest(ctx context.Context, metadata *do
 		provider = se.provider.Name()
 	}
 
-	req := billingdomainSettleRequestInput(provider, model, se.turnID, se.userID, se.requestIndex, metadata)
+	req := buildSettleRequestInput(provider, model, se.turnID, se.userID, se.requestIndex, metadata)
 	if err := se.creditSettler.SettleAuthoritativeRequest(ctx, req); err != nil {
 		se.logger.Warn("inline credit settlement failed (turn remains successful)",
 			"turn_id", se.turnID,
@@ -98,7 +95,7 @@ func (se *StreamExecutor) settleCurrentRequest(ctx context.Context, metadata *do
 	}
 }
 
-func (se *StreamExecutor) handleTerminalSettlement(
+func (se *StreamExecutor) handleFinalSettlement(
 	ctx context.Context,
 	metadata *domainllm.StreamMetadata,
 	pendingReason string,
@@ -109,7 +106,7 @@ func (se *StreamExecutor) handleTerminalSettlement(
 	}
 
 	switch se.settlementMode {
-	case billingmodel.CreditSettlementDeferredToEnrichment:
+	case billing.CreditSettlementDeferredToEnrichment:
 		se.markCurrentRequestPendingSettlement(ctx, metadata.Model, pendingReason, isCancelled)
 	default:
 		se.settleCurrentRequest(ctx, metadata)
@@ -167,7 +164,7 @@ func (se *StreamExecutor) enqueueEnrichmentSettlementJob(
 		model,
 		se.userID,
 		se.provider.Name(),
-		se.turnRepo,
+		se.turnWriter,
 		querier,
 		se.creditSettler,
 		se.settlementMode,
@@ -196,7 +193,7 @@ func (se *StreamExecutor) persistCurrentRequestPendingSettlement(
 		model = se.model
 	}
 
-	req := billingdomain.MarkPendingSettlementInput{
+	req := billing.MarkPendingSettlementInput{
 		UserID:       se.userID,
 		TurnID:       se.turnID,
 		RequestIndex: se.requestIndex,
@@ -212,15 +209,15 @@ func (se *StreamExecutor) persistCurrentRequestPendingSettlement(
 	}
 }
 
-func billingdomainSettleRequestInput(
+func buildSettleRequestInput(
 	provider string,
 	model string,
 	turnID string,
 	userID string,
 	requestIndex int,
 	metadata *domainllm.StreamMetadata,
-) billingdomain.SettleRequestInput {
-	return billingdomain.SettleRequestInput{
+) billing.SettleRequestInput {
+	return billing.SettleRequestInput{
 		UserID:          userID,
 		TurnID:          turnID,
 		RequestIndex:    requestIndex,

@@ -7,9 +7,8 @@ import (
 	"testing"
 
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	"meridian/internal/domain/services"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	authdomain "meridian/internal/domain/auth"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 func TestImportServiceDeleteAllDocuments_EnforcesAuthorization(t *testing.T) {
@@ -42,7 +41,7 @@ func TestImportServiceProcessFiles_UsesServiceLayerAuthorization(t *testing.T) {
 	authorizer := &testImportAuthorizer{}
 	svc := NewImportService(&testImportDocumentRepo{}, NewFileProcessorRegistry(), authorizer, slog.Default())
 
-	result, err := svc.ProcessFiles(context.Background(), "project-123", "user-123", []docsysSvc.UploadedFile{
+	result, err := svc.ProcessFiles(context.Background(), "project-123", "user-123", []domaindocsys.UploadedFile{
 		{
 			Filename: "notes.unsupported",
 			Content:  strings.NewReader("ignored"),
@@ -88,19 +87,19 @@ type testImportDocumentRepo struct {
 	lastDeleteSkipSystemFolders bool
 }
 
-func (r *testImportDocumentRepo) Create(context.Context, *models.Document) error {
+func (r *testImportDocumentRepo) Create(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) GetByID(context.Context, string, string) (*models.Document, error) {
+func (r *testImportDocumentRepo) GetByID(context.Context, string, string) (*domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) GetByIDOnly(context.Context, string) (*models.Document, error) {
+func (r *testImportDocumentRepo) GetByIDOnly(context.Context, string) (*domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) GetByPath(context.Context, string, string) (*models.Document, error) {
+func (r *testImportDocumentRepo) GetByPath(context.Context, string, string) (*domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) Update(context.Context, *models.Document) error {
+func (r *testImportDocumentRepo) Update(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
 func (r *testImportDocumentRepo) Delete(context.Context, string, string) error {
@@ -111,23 +110,20 @@ func (r *testImportDocumentRepo) DeleteAllByProject(_ context.Context, projectID
 	r.lastDeleteSkipSystemFolders = skipSystemFolders
 	return nil
 }
-func (r *testImportDocumentRepo) ListByFolder(context.Context, *string, string) ([]models.Document, error) {
+func (r *testImportDocumentRepo) ListByFolder(context.Context, *string, string) ([]domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) GetPath(context.Context, *models.Document) (string, error) {
+func (r *testImportDocumentRepo) GetPath(context.Context, *domaindocsys.Document) (string, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) GetAllMetadataByProject(context.Context, string) ([]models.Document, error) {
+func (r *testImportDocumentRepo) GetAllMetadataByProject(context.Context, string) ([]domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) SearchDocuments(context.Context, *models.SearchOptions) (*models.SearchResults, error) {
-	panic("unexpected call")
-}
-func (r *testImportDocumentRepo) GetAllByFolderRecursive(context.Context, string, string) ([]models.Document, error) {
+func (r *testImportDocumentRepo) SearchDocuments(context.Context, *domaindocsys.SearchOptions) (*domaindocsys.SearchResults, error) {
 	panic("unexpected call")
 }
 
-var _ services.ResourceAuthorizer = (*testImportAuthorizer)(nil)
+var _ authdomain.ResourceAuthorizer = (*testImportAuthorizer)(nil)
 var _ interface {
 	DeleteAllByProject(context.Context, string, bool) error
 } = (*testImportDocumentRepo)(nil)

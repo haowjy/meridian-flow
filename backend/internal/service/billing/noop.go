@@ -3,12 +3,12 @@ package billing
 import (
 	"context"
 
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 var (
-	_ billingdomain.CreditAdmissionChecker = (*NoopCreditAdmissionChecker)(nil)
-	_ billingdomain.CreditSettler          = (*NoopCreditSettler)(nil)
+	_ billing.CreditAdmissionChecker = (*NoopCreditAdmissionChecker)(nil)
+	_ billing.CreditSettler          = (*NoopCreditSettler)(nil)
 )
 
 // NoopCreditAdmissionChecker always admits requests (dev/test wiring only).
@@ -33,14 +33,14 @@ func NewNoopCreditSettler() *NoopCreditSettler {
 	return &NoopCreditSettler{}
 }
 
-func (s *NoopCreditSettler) SettleAuthoritativeRequest(ctx context.Context, req billingdomain.SettleRequestInput) error {
+func (s *NoopCreditSettler) SettleAuthoritativeRequest(ctx context.Context, req billing.SettleRequestInput) error {
 	return nil
 }
 
-func (s *NoopCreditSettler) RetryPendingSettlement(ctx context.Context, req billingdomain.RetryPendingSettlementInput) error {
+func (s *NoopCreditSettler) RetryPendingSettlement(ctx context.Context, req billing.RetryPendingSettlementInput) error {
 	return nil
 }
 
-func (s *NoopCreditSettler) MarkPendingSettlement(ctx context.Context, req billingdomain.MarkPendingSettlementInput) error {
+func (s *NoopCreditSettler) MarkPendingSettlement(ctx context.Context, req billing.MarkPendingSettlementInput) error {
 	return nil
 }

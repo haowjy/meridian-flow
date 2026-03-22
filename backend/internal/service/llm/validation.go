@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	llmRepo "meridian/internal/domain/repositories/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // ThreadValidator validates that threads are not soft-deleted
 // before allowing operations on them or their turns
 type ThreadValidator struct {
-	threadRepo llmRepo.ThreadRepository
+	threadRepo domainllm.ThreadStore
 }
 
 // NewThreadValidator creates a new thread validator
-func NewThreadValidator(threadRepo llmRepo.ThreadRepository) *ThreadValidator {
+func NewThreadValidator(threadRepo domainllm.ThreadStore) *ThreadValidator {
 	return &ThreadValidator{
 		threadRepo: threadRepo,
 	}

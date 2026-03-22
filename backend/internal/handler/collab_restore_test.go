@@ -11,7 +11,7 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/httputil"
 )
 
@@ -20,11 +20,11 @@ func TestCollabRestoreHandlerRestoreTurnSuccess(t *testing.T) {
 	docA := uuid.New()
 	docB := uuid.New()
 	service := &fakeRestoreService{
-		restoreResult: &collabSvc.RestoreResult{
+		restoreResult: &collab.RestoreResult{
 			AffectedDocumentIDs: []uuid.UUID{docA, docB},
 		},
 	}
-	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(service, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -59,7 +59,7 @@ func TestCollabRestoreHandlerUndoRestoreNotFound(t *testing.T) {
 	service := &fakeRestoreService{
 		undoErr: domain.NewNotFoundError("turn_restore", "not found"),
 	}
-	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(service, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/undo-restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -77,7 +77,7 @@ func TestCollabRestoreHandlerUndoRestoreNotFound(t *testing.T) {
 }
 
 func TestCollabRestoreHandlerRejectsInvalidTurnID(t *testing.T) {
-	h := NewCollabRestoreHandler(&fakeRestoreService{}, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(&fakeRestoreService{}, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/not-a-uuid/restore", nil)
 	req.SetPathValue("id", "not-a-uuid")
@@ -93,7 +93,7 @@ func TestCollabRestoreHandlerRejectsInvalidTurnID(t *testing.T) {
 func TestCollabRestoreHandlerRestoreTurnForbidden(t *testing.T) {
 	turnID := uuid.New()
 	service := &fakeRestoreService{restoreErr: domain.NewForbiddenError("access denied")}
-	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(service, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -114,9 +114,9 @@ func TestCollabRestoreHandlerRestoreTurnForbidden(t *testing.T) {
 }
 
 type fakeRestoreService struct {
-	restoreResult  *collabSvc.RestoreResult
+	restoreResult  *collab.RestoreResult
 	restoreErr     error
-	undoResult     *collabSvc.RestoreResult
+	undoResult     *collab.RestoreResult
 	undoErr        error
 	restoreCalls   []uuid.UUID
 	restoreUserIDs []string
@@ -124,13 +124,13 @@ type fakeRestoreService struct {
 	undoUserIDs    []string
 }
 
-func (s *fakeRestoreService) RestoreTurn(_ context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *fakeRestoreService) RestoreTurn(_ context.Context, userID string, turnID uuid.UUID) (*collab.RestoreResult, error) {
 	s.restoreCalls = append(s.restoreCalls, turnID)
 	s.restoreUserIDs = append(s.restoreUserIDs, userID)
 	return s.restoreResult, s.restoreErr
 }
 
-func (s *fakeRestoreService) UndoRestore(_ context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *fakeRestoreService) UndoRestore(_ context.Context, userID string, turnID uuid.UUID) (*collab.RestoreResult, error) {
 	s.undoCalls = append(s.undoCalls, turnID)
 	s.undoUserIDs = append(s.undoUserIDs, userID)
 	return s.undoResult, s.undoErr

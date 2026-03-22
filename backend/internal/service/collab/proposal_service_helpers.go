@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 func buildProposalAcceptedStatusUpdate(proposalID uuid.UUID) ([]byte, error) {
@@ -14,7 +14,7 @@ func buildProposalAcceptedStatusUpdate(proposalID uuid.UUID) ([]byte, error) {
 	statusMap := doc.GetMap("_proposal_status").(*ycrdt.YMap)
 
 	doc.Transact(func(_ *ycrdt.Transaction) {
-		statusMap.Set(proposalID.String(), string(collabModels.ProposalStatusAccepted))
+		statusMap.Set(proposalID.String(), string(collab.ProposalStatusAccepted))
 	}, nil)
 
 	update, err := safeEncodeStateAsUpdateForFallback(doc)

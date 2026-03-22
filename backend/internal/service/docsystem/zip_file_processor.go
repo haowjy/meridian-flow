@@ -10,9 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	docsysModels "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/service/docsystem/converter"
 )
 
@@ -80,19 +78,19 @@ func shouldIgnorePath(path string) bool {
 //   - Route each file to appropriate ContentConverter based on extension
 //   - Handle create/update/skip decisions based on existing documents
 type zipFileProcessor struct {
-	docRepo           docsysRepo.DocumentRepository
-	docService        docsysSvc.DocumentService
+	docRepo           domaindocsys.DocumentStore
+	docService        domaindocsys.DocumentService
 	converterRegistry *converter.ConverterRegistry
 	logger            *slog.Logger
 }
 
 // NewZipFileProcessor creates a new zip file processor
 func NewZipFileProcessor(
-	docRepo docsysRepo.DocumentRepository,
-	docService docsysSvc.DocumentService,
+	docRepo domaindocsys.DocumentStore,
+	docService domaindocsys.DocumentService,
 	converterRegistry *converter.ConverterRegistry,
 	logger *slog.Logger,
-) docsysSvc.FileProcessor {
+) domaindocsys.FileProcessor {
 	return &zipFileProcessor{
 		docRepo:           docRepo,
 		docService:        docService,
@@ -117,7 +115,7 @@ func (p *zipFileProcessor) Process(
 	filename string,
 	folderPath string,
 	overwrite bool,
-) (*docsysSvc.ImportResult, error) {
+) (*domaindocsys.ImportResult, error) {
 	// Read zip file into memory
 	zipData, err := io.ReadAll(file)
 	if err != nil {
@@ -156,10 +154,10 @@ func (p *zipFileProcessor) Process(
 	}
 
 	// Initialize result
-	result := &docsysSvc.ImportResult{
-		Summary:   docsysSvc.ImportSummary{},
-		Errors:    []docsysSvc.ImportError{},
-		Documents: []docsysSvc.ImportDocument{},
+	result := &domaindocsys.ImportResult{
+		Summary:   domaindocsys.ImportSummary{},
+		Errors:    []domaindocsys.ImportError{},
+		Documents: []domaindocsys.ImportDocument{},
 	}
 
 	// Process each file in the zip
@@ -214,7 +212,7 @@ func (p *zipFileProcessor) processZipEntry(
 	file *zip.File,
 	docMap map[string]string,
 	overwrite bool,
-	result *docsysSvc.ImportResult,
+	result *domaindocsys.ImportResult,
 ) {
 	result.Summary.TotalFiles++
 
@@ -267,7 +265,7 @@ func (p *zipFileProcessor) processZipEntry(
 	// - Keep original if it's a valid extension
 	// - Default to .md for converted files (e.g., .html -> .md)
 	targetExt := ".md" // default for conversions
-	if docsysModels.IsValidExtension(ext) {
+	if domaindocsys.IsValidExtension(ext) {
 		targetExt = ext
 	}
 
@@ -300,9 +298,9 @@ func (p *zipFileProcessor) createDocument(
 	docName string,
 	extension string,
 	content string,
-	result *docsysSvc.ImportResult,
+	result *domaindocsys.ImportResult,
 ) {
-	doc, err := p.docService.CreateDocument(ctx, &docsysSvc.CreateDocumentRequest{
+	doc, err := p.docService.CreateDocument(ctx, &domaindocsys.CreateDocumentRequest{
 		ProjectID:  projectID,
 		UserID:     userID,
 		FolderPath: &folderPath,
@@ -317,7 +315,7 @@ func (p *zipFileProcessor) createDocument(
 	}
 
 	result.Summary.Created++
-	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+	result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
 		Name:   doc.Filename(),
@@ -339,9 +337,9 @@ func (p *zipFileProcessor) updateDocument(
 	userID string,
 	docID string,
 	content string,
-	result *docsysSvc.ImportResult,
+	result *domaindocsys.ImportResult,
 ) {
-	doc, err := p.docService.UpdateDocument(ctx, userID, docID, &docsysSvc.UpdateDocumentRequest{
+	doc, err := p.docService.UpdateDocument(ctx, userID, docID, &domaindocsys.UpdateDocumentRequest{
 		ProjectID: projectID,
 		Content:   &content,
 	})
@@ -352,7 +350,7 @@ func (p *zipFileProcessor) updateDocument(
 	}
 
 	result.Summary.Updated++
-	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+	result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
 		Name:   doc.Filename(),
@@ -367,7 +365,7 @@ func (p *zipFileProcessor) updateDocument(
 
 // skipDocument records a skipped duplicate document
 func (p *zipFileProcessor) skipDocument(
-	result *docsysSvc.ImportResult,
+	result *domaindocsys.ImportResult,
 	folderPath string,
 	docName string,
 	extension string,
@@ -375,7 +373,7 @@ func (p *zipFileProcessor) skipDocument(
 	filename := docName + extension
 	fullPath := BuildFullPath(folderPath, filename)
 	result.Summary.Skipped++
-	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+	result.Documents = append(result.Documents, domaindocsys.ImportDocument{
 		ID:     "", // No ID for skipped documents
 		Path:   fullPath,
 		Name:   filename,
@@ -390,9 +388,9 @@ func (p *zipFileProcessor) skipDocument(
 }
 
 // addError adds an error to the result
-func (p *zipFileProcessor) addError(result *docsysSvc.ImportResult, file string, errorMsg string) {
+func (p *zipFileProcessor) addError(result *domaindocsys.ImportResult, file string, errorMsg string) {
 	result.Summary.Failed++
-	result.Errors = append(result.Errors, docsysSvc.ImportError{
+	result.Errors = append(result.Errors, domaindocsys.ImportError{
 		File:  file,
 		Error: errorMsg,
 	})

@@ -10,23 +10,22 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 const reconcileBatchSize = 500
 
 // StatusMirrorService mirrors _proposal_status Y.Map state into proposal rows.
 type StatusMirrorService struct {
-	proposalStore collabSvc.ProposalStore
+	proposalStore collab.ProposalStore
 	logger        *slog.Logger
 }
 
 // NewStatusMirror creates a status mirror service.
 func NewStatusMirror(
-	proposalStore collabSvc.ProposalStore,
+	proposalStore collab.ProposalStore,
 	logger *slog.Logger,
-) collabSvc.StatusMirror {
+) collab.StatusMirror {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -108,15 +107,15 @@ func (s *StatusMirrorService) ReconcileAll(
 
 			rawStatus, inMap := statusMap[proposal.ID.String()]
 			if !inMap {
-				if proposal.Status == collabModels.ProposalStatusInvalid {
+				if proposal.Status == collab.ProposalStatusInvalid {
 					// Invalid proposals are terminal and should not be forced back to pending
 					// when their map key is missing.
 					continue
 				}
-				if proposal.Status == collabModels.ProposalStatusPending {
+				if proposal.Status == collab.ProposalStatusPending {
 					continue
 				}
-				if err := s.proposalStore.UpsertStatus(ctx, proposal.ID, collabModels.ProposalStatusPending); err != nil {
+				if err := s.proposalStore.UpsertStatus(ctx, proposal.ID, collab.ProposalStatusPending); err != nil {
 					return fmt.Errorf("set missing-key proposal status to pending: %w", err)
 				}
 				continue
@@ -150,19 +149,19 @@ func (s *StatusMirrorService) ReconcileAll(
 	return nil
 }
 
-func normalizeProposalStatus(raw *string) (collabModels.ProposalStatus, bool) {
+func normalizeProposalStatus(raw *string) (collab.ProposalStatus, bool) {
 	if raw == nil {
-		return collabModels.ProposalStatusPending, true
+		return collab.ProposalStatusPending, true
 	}
 
-	status := collabModels.ProposalStatus(strings.ToLower(strings.TrimSpace(*raw)))
+	status := collab.ProposalStatus(strings.ToLower(strings.TrimSpace(*raw)))
 	switch status {
-	case collabModels.ProposalStatusPending,
-		collabModels.ProposalStatusAccepted,
-		collabModels.ProposalStatusRejected,
-		collabModels.ProposalStatusStale,
-		collabModels.ProposalStatusReverted,
-		collabModels.ProposalStatusInvalid:
+	case collab.ProposalStatusPending,
+		collab.ProposalStatusAccepted,
+		collab.ProposalStatusRejected,
+		collab.ProposalStatusStale,
+		collab.ProposalStatusReverted,
+		collab.ProposalStatusInvalid:
 		return status, true
 	default:
 		return "", false

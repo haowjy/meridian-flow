@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	billingrepo "meridian/internal/domain/repositories/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/repository/postgres"
 )
 
@@ -29,9 +29,9 @@ type GenerationBillingStore struct {
 	logger *slog.Logger
 }
 
-var _ billingrepo.GenerationBillingStore = (*GenerationBillingStore)(nil)
+var _ billing.GenerationBillingStore = (*GenerationBillingStore)(nil)
 
-func NewGenerationBillingStore(config *postgres.RepositoryConfig) billingrepo.GenerationBillingStore {
+func NewGenerationBillingStore(config *postgres.RepositoryConfig) billing.GenerationBillingStore {
 	return &GenerationBillingStore{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -43,7 +43,7 @@ func (s *GenerationBillingStore) SetBillingFields(
 	ctx context.Context,
 	turnID string,
 	requestIndex int,
-	fields billingrepo.BillingFields,
+	fields billing.BillingFields,
 ) error {
 	if requestIndex < 0 {
 		return fmt.Errorf("billing request_index must be >= 0")
@@ -92,7 +92,7 @@ func (s *GenerationBillingStore) GetBillingFields(
 	ctx context.Context,
 	turnID string,
 	requestIndex int,
-) (*billingrepo.BillingFields, error) {
+) (*billing.BillingFields, error) {
 	metadata, err := s.loadTurnMetadata(ctx, turnID)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (s *GenerationBillingStore) GetBillingFields(
 		return nil, err
 	}
 
-	fields := &billingrepo.BillingFields{
+	fields := &billing.BillingFields{
 		UserID:             record.UserID,
 		UsageEventID:       record.UsageEventID,
 		AmountMillicredits: record.AmountMillicredits,
@@ -169,9 +169,9 @@ func (s *GenerationBillingStore) ListPendingSettlements(
 	ctx context.Context,
 	olderThan time.Time,
 	limit int,
-) ([]billingrepo.PendingSettlement, error) {
+) ([]billing.PendingSettlement, error) {
 	if limit <= 0 {
-		return []billingrepo.PendingSettlement{}, nil
+		return []billing.PendingSettlement{}, nil
 	}
 
 	query := fmt.Sprintf(`
@@ -189,7 +189,7 @@ func (s *GenerationBillingStore) ListPendingSettlements(
 	}
 	defer rows.Close()
 
-	results := make([]billingrepo.PendingSettlement, 0, limit)
+	results := make([]billing.PendingSettlement, 0, limit)
 	for rows.Next() {
 		if len(results) >= limit {
 			break
@@ -243,7 +243,7 @@ func (s *GenerationBillingStore) ListPendingSettlements(
 				continue
 			}
 
-			fields := billingrepo.BillingFields{
+			fields := billing.BillingFields{
 				UserID:             record.UserID,
 				UsageEventID:       record.UsageEventID,
 				AmountMillicredits: record.AmountMillicredits,
@@ -262,7 +262,7 @@ func (s *GenerationBillingStore) ListPendingSettlements(
 				continue
 			}
 
-			results = append(results, billingrepo.PendingSettlement{
+			results = append(results, billing.PendingSettlement{
 				TurnID:       turnID,
 				RequestIndex: requestIndex,
 				Billing:      fields,

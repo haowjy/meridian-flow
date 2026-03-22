@@ -8,8 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 // ProposalBroadcasterImpl implements tools.ProposalBroadcaster by routing JSON
@@ -18,14 +17,14 @@ import (
 type ProposalBroadcasterImpl struct {
 	projectBroadcaster ProjectBroadcaster
 	docBroadcaster     DocumentBroadcaster
-	documentResolver   collabSvc.DocumentResolver
+	documentResolver   collab.DocumentResolver
 }
 
 // NewProposalBroadcasterImpl creates a broadcaster backed by the project/document WS handlers.
 func NewProposalBroadcasterImpl(
 	projectBroadcaster ProjectBroadcaster,
 	docBroadcaster DocumentBroadcaster,
-	documentResolver collabSvc.DocumentResolver,
+	documentResolver collab.DocumentResolver,
 ) *ProposalBroadcasterImpl {
 	return &ProposalBroadcasterImpl{
 		projectBroadcaster: projectBroadcaster,
@@ -36,7 +35,7 @@ func NewProposalBroadcasterImpl(
 
 // BroadcastProposalCreated sends a proposal:new event to all project connections
 // for the proposal's document.
-func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, proposal *collabModels.Proposal) error {
+func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, proposal *collab.Proposal) error {
 	documentUUID, err := parseUUID(documentID)
 	if err != nil {
 		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)

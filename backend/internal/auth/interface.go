@@ -1,6 +1,6 @@
 package auth
 
-import "meridian/internal/domain/models"
+import authdomain "meridian/internal/domain/auth"
 
 // JWTVerifier defines the interface for JWT token verification.
 // This abstraction allows for different JWT verification implementations
@@ -8,7 +8,7 @@ import "meridian/internal/domain/models"
 type JWTVerifier interface {
 	// VerifyToken validates a JWT token string and returns the parsed claims.
 	// Returns an error if the token is invalid, expired, or has an invalid signature.
-	VerifyToken(tokenString string) (*models.AuthClaims, error)
+	VerifyToken(tokenString string) (*authdomain.AuthClaims, error)
 
 	// Close releases any resources held by the verifier (e.g., HTTP connections for JWKS).
 	// Should be called when the verifier is no longer needed.

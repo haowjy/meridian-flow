@@ -8,7 +8,7 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmRepo "meridian/internal/domain/repositories/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/streaming/agui"
 )
 
@@ -20,13 +20,13 @@ import (
 // - lastBlockSequence tells the frontend where to start indexing new blocks
 // - Frontend fetches existing blocks via REST API, then continues from lastBlockSequence+1
 // - This prevents duplicate/out-of-order blocks on reconnection
-func buildCatchupFunc(turnRepo llmRepo.TurnReader, logger *slog.Logger) mstream.CatchupFunc {
+func buildCatchupFunc(turnWriter domainllm.TurnReader, logger *slog.Logger) mstream.CatchupFunc {
 	return func(streamID string, lastEventID string) ([]mstream.Event, error) {
 		ctx := context.Background()
 		turnID := streamID // streamID is the turnID
 
 		// Get turn metadata for thread ID
-		turn, err := turnRepo.GetTurn(ctx, turnID)
+		turn, err := turnWriter.GetTurn(ctx, turnID)
 		if err != nil {
 			logger.Error("failed to get turn for catchup",
 				"turn_id", turnID,
@@ -37,7 +37,7 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, logger *slog.Logger) mstream.
 
 		// Get last block sequence for reconnection support
 		// This tells the frontend where to start indexing new blocks
-		lastBlockSeq, err := turnRepo.GetLastBlockSequence(ctx, turnID)
+		lastBlockSeq, err := turnWriter.GetLastBlockSequence(ctx, turnID)
 		if err != nil {
 			logger.Warn("failed to get last block sequence for catchup, continuing without it",
 				"turn_id", turnID,

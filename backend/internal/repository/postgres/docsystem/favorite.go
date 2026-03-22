@@ -6,18 +6,18 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/repository/postgres"
 )
 
-// PostgresFavoriteRepository implements the FavoriteRepository interface
+// PostgresFavoriteRepository implements the FavoriteStore interface
 type PostgresFavoriteRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
 }
 
 // NewFavoriteRepository creates a new favorite repository
-func NewFavoriteRepository(config *postgres.RepositoryConfig) docsysRepo.FavoriteRepository {
+func NewFavoriteRepository(config *postgres.RepositoryConfig) domaindocsys.FavoriteStore {
 	return &PostgresFavoriteRepository{
 		pool:   config.Pool,
 		tables: config.Tables,

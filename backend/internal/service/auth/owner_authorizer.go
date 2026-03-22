@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
-	llmRepo "meridian/internal/domain/repositories/llm"
+	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // OwnerBasedAuthorizer implements ResourceAuthorizer using ownership checks.
@@ -18,20 +18,20 @@ import (
 // - PermissionBasedAuthorizer: Check specific permissions
 // - SharingAuthorizer: Check if resource is shared with user
 type OwnerBasedAuthorizer struct {
-	projectRepo docsystemRepo.ProjectRepository
-	folderRepo  docsystemRepo.FolderRepository
-	docRepo     docsystemRepo.DocumentRepository
-	threadRepo  llmRepo.ThreadRepository
-	turnRepo    llmRepo.TurnReader
+	projectRepo domaindocsys.ProjectStore
+	folderRepo  domaindocsys.FolderStore
+	docRepo     domaindocsys.DocumentStore
+	threadRepo  domainllm.ThreadStore
+	turnRepo    domainllm.TurnReader
 }
 
 // NewOwnerBasedAuthorizer creates a new ownership-based authorizer
 func NewOwnerBasedAuthorizer(
-	projectRepo docsystemRepo.ProjectRepository,
-	folderRepo docsystemRepo.FolderRepository,
-	docRepo docsystemRepo.DocumentRepository,
-	threadRepo llmRepo.ThreadRepository,
-	turnRepo llmRepo.TurnReader,
+	projectRepo domaindocsys.ProjectStore,
+	folderRepo domaindocsys.FolderStore,
+	docRepo domaindocsys.DocumentStore,
+	threadRepo domainllm.ThreadStore,
+	turnRepo domainllm.TurnReader,
 ) *OwnerBasedAuthorizer {
 	return &OwnerBasedAuthorizer{
 		projectRepo: projectRepo,
@@ -44,7 +44,7 @@ func NewOwnerBasedAuthorizer(
 
 // CanAccessProject checks if user owns the project
 func (a *OwnerBasedAuthorizer) CanAccessProject(ctx context.Context, userID, projectID string) error {
-	// ProjectRepository.GetByID already filters by userID (ownership check)
+	// ProjectStore.GetByID already filters by userID (ownership check)
 	// If it returns not found, user doesn't own the project
 	_, err := a.projectRepo.GetByID(ctx, projectID, userID)
 	if err != nil {

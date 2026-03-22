@@ -7,8 +7,8 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	domainllm "meridian/internal/domain/services/llm"
+	billing "meridian/internal/domain/billing"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tokens"
 )
@@ -77,7 +77,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 
 	// Persist OpenRouter generation record (if applicable)
 	// This captures provider name, native tokens, and cost for each LLM request
-	if err := se.persistOpenRouterGenerationRecord(ctx, metadata); err != nil {
+	if err := se.persistGenerationRecord(ctx, metadata); err != nil {
 		// Log error but don't fail the request - generation metadata is supplemental
 		se.logger.Warn("failed to persist OpenRouter generation record",
 			"error", err,
@@ -88,7 +88,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 
 	// Terminal settlement is best-effort and must never fail the user-visible turn.
 	// Deferred mode marks pending billing on the generation record and lets enrichment settle later.
-	se.handleTerminalSettlement(ctx, metadata, "awaiting_enrichment", isDraining)
+	se.handleFinalSettlement(ctx, metadata, "awaiting_enrichment", isDraining)
 
 	// If in DrainMetadata state (soft cancel), skip tool continuation - just cleanup
 	// Turn status is already "cancelled" (set by InterruptTurn)
@@ -270,7 +270,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	}
 
 	if settlementMetadata != nil {
-		se.handleTerminalSettlement(persistCtx, settlementMetadata, "interrupted_stream", wasCancelled)
+		se.handleFinalSettlement(persistCtx, settlementMetadata, "interrupted_stream", wasCancelled)
 	}
 
 	// Persist any accumulated partial text blocks BEFORE marking turn as error
@@ -279,7 +279,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	// Deferred providers must persist pending settlement state on all terminal paths,
 	// even when token finalization cannot provide authoritative usage yet.
 	isCancelState := currentState == StateHardCancelled || currentState == StateDrainMetadata
-	if se.settlementMode == billingmodel.CreditSettlementDeferredToEnrichment && settlementMetadata == nil {
+	if se.settlementMode == billing.CreditSettlementDeferredToEnrichment && settlementMetadata == nil {
 		if generationID := se.getGenerationID(); generationID != "" {
 			phase := "initial"
 			if se.requestIndex > 0 {
@@ -314,7 +314,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 		)
 	} else {
 		// Only update turn status to "error" for actual errors (not user cancellations)
-		if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, userErrorMsg); updateErr != nil {
+		if updateErr := se.turnWriter.UpdateTurnError(persistCtx, se.turnID, userErrorMsg); updateErr != nil {
 			se.logger.Error("failed to update turn error", "error", updateErr)
 		}
 	}
@@ -350,7 +350,7 @@ func (se *StreamExecutor) completeTurn(
 
 	// Update turn status in database
 	// NOTE: This marks the FINAL completion after all continuation rounds
-	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
+	if err := se.turnWriter.UpdateTurnStatus(ctx, se.turnID, domainllm.TurnStatusComplete, nil); err != nil {
 		se.logger.Error("failed to update turn status", "error", err)
 		// Continue despite error - SSE event is more important
 	}

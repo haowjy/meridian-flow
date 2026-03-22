@@ -5,15 +5,14 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresProjectRepository implements the ProjectRepository interface
+// PostgresProjectRepository implements the ProjectStore interface
 type PostgresProjectRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
@@ -22,7 +21,7 @@ type PostgresProjectRepository struct {
 const projectSelectColumns = "p.id, p.user_id, p.name, p.slug, p.system_prompt, p.autoapply, p.preferences, p.last_activity_at, p.created_at, p.updated_at"
 
 // NewProjectRepository creates a new project repository
-func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectRepository {
+func NewProjectRepository(config *postgres.RepositoryConfig) domaindocsys.ProjectStore {
 	return &PostgresProjectRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -30,7 +29,7 @@ func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectR
 }
 
 // Create creates a new project
-func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.Project) error {
+func (r *PostgresProjectRepository) Create(ctx context.Context, project *domaindocsys.Project) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (user_id, name, slug, autoapply, created_at, updated_at, last_activity_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $6)
@@ -74,7 +73,7 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 }
 
 // GetByID retrieves a project by ID with favorite status
-func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID string) (*models.Project, error) {
+func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID string) (*domaindocsys.Project, error) {
 	query := fmt.Sprintf(`
 		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
@@ -83,7 +82,7 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 		WHERE p.id = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
 	`, projectSelectColumns, r.tables.Projects, r.tables.UserProjectFavorites)
 
-	var project models.Project
+	var project domaindocsys.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, id, userID).Scan(
 		&project.ID,
@@ -111,14 +110,14 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 }
 
 // GetByIDOnly retrieves a project by ID without user scoping.
-func (r *PostgresProjectRepository) GetByIDOnly(ctx context.Context, id string) (*models.Project, error) {
+func (r *PostgresProjectRepository) GetByIDOnly(ctx context.Context, id string) (*domaindocsys.Project, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM %s p
 		WHERE p.id = $1 AND p.deleted_at IS NULL
 	`, projectSelectColumns, r.tables.Projects)
 
-	var project models.Project
+	var project domaindocsys.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, id).Scan(
 		&project.ID,
@@ -145,7 +144,7 @@ func (r *PostgresProjectRepository) GetByIDOnly(ctx context.Context, id string) 
 }
 
 // GetBySlug retrieves a project by slug (unique per user) with favorite status
-func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*models.Project, error) {
+func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*domaindocsys.Project, error) {
 	query := fmt.Sprintf(`
 		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
@@ -154,7 +153,7 @@ func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID 
 		WHERE p.slug = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
 	`, projectSelectColumns, r.tables.Projects, r.tables.UserProjectFavorites)
 
-	var project models.Project
+	var project domaindocsys.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, slug, userID).Scan(
 		&project.ID,
@@ -215,7 +214,7 @@ func (r *PostgresProjectRepository) SlugExists(ctx context.Context, slug, userID
 }
 
 // List retrieves all projects for a user with favorite status, ordered by last_activity_at DESC
-func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]models.Project, error) {
+func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]domaindocsys.Project, error) {
 	query := fmt.Sprintf(`
 		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
@@ -232,9 +231,9 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 	}
 	defer rows.Close()
 
-	var projects []models.Project
+	var projects []domaindocsys.Project
 	for rows.Next() {
-		var project models.Project
+		var project domaindocsys.Project
 		err := rows.Scan(
 			&project.ID,
 			&project.UserID,
@@ -260,14 +259,14 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 
 	// Return empty slice instead of nil if no projects
 	if projects == nil {
-		projects = []models.Project{}
+		projects = []domaindocsys.Project{}
 	}
 
 	return projects, nil
 }
 
 // Update updates a project's name, slug, system_prompt, preferences, and updated_at timestamp
-func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.Project) error {
+func (r *PostgresProjectRepository) Update(ctx context.Context, project *domaindocsys.Project) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET name = $1, slug = $2, system_prompt = $3, autoapply = $4, preferences = $5, updated_at = $6
@@ -312,7 +311,7 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 }
 
 // Delete soft-deletes a project by setting deleted_at timestamp and returns the deleted project
-func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID string) (*models.Project, error) {
+func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID string) (*domaindocsys.Project, error) {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
@@ -320,7 +319,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		RETURNING id, user_id, name, slug, system_prompt, autoapply, preferences, last_activity_at, created_at, updated_at, deleted_at
 	`, r.tables.Projects)
 
-	var project models.Project
+	var project domaindocsys.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, id, userID).Scan(
 		&project.ID,

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,7 +18,7 @@ type PostgresUpdateLogStore struct {
 }
 
 // NewUpdateLogStore creates a new update-log store.
-func NewUpdateLogStore(config *postgres.RepositoryConfig) collabSvc.UpdateLogStore {
+func NewUpdateLogStore(config *postgres.RepositoryConfig) collab.UpdateLogStore {
 	return &PostgresUpdateLogStore{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -197,7 +197,7 @@ func (s *PostgresUpdateLogStore) ListUpdatesInRange(
 	docID string,
 	afterID int64,
 	upToID int64,
-) ([]collabSvc.UpdateLogEntry, error) {
+) ([]collab.UpdateLogEntry, error) {
 	updateRows, err := loadUpdateRowsInRange(
 		ctx,
 		postgres.GetExecutor(ctx, s.pool),
@@ -210,9 +210,9 @@ func (s *PostgresUpdateLogStore) ListUpdatesInRange(
 		return nil, err
 	}
 
-	entries := make([]collabSvc.UpdateLogEntry, 0, len(updateRows))
+	entries := make([]collab.UpdateLogEntry, 0, len(updateRows))
 	for _, row := range updateRows {
-		entries = append(entries, collabSvc.UpdateLogEntry{
+		entries = append(entries, collab.UpdateLogEntry{
 			ID:     row.id,
 			Update: row.update,
 		})

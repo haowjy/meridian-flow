@@ -5,20 +5,20 @@ import (
 	"log/slog"
 	"time"
 
-	billingrepo "meridian/internal/domain/repositories/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 const defaultExpireCreditsBatchSize = 500
 
 // ExpireCreditsJob expires promotional credit lots that reached their expiry timestamp.
 type ExpireCreditsJob struct {
-	creditStore billingrepo.CreditStore
+	creditStore billing.CreditStore
 	batchSize   int
 	nowFn       func() time.Time
 	logger      *slog.Logger
 }
 
-func NewExpireCreditsJob(creditStore billingrepo.CreditStore, logger *slog.Logger) *ExpireCreditsJob {
+func NewExpireCreditsJob(creditStore billing.CreditStore, logger *slog.Logger) *ExpireCreditsJob {
 	if logger == nil {
 		logger = slog.Default()
 	}

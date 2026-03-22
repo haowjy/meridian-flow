@@ -9,10 +9,7 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	models "meridian/internal/domain/models/docsystem"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/service/identifier"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -20,19 +17,21 @@ import (
 
 // projectService implements the ProjectService interface
 type projectService struct {
-	projectRepo docsysRepo.ProjectRepository
-	folderRepo  docsysRepo.FolderRepository
-	txManager   repositories.TransactionManager
+	projectRepo domaindocsys.ProjectStore
+	folderRepo  domaindocsys.FolderStore
+	txManager   domain.TransactionManager
 	logger      *slog.Logger
 }
 
+var _ domaindocsys.ProjectService = (*projectService)(nil)
+
 // NewProjectService creates a new project service
 func NewProjectService(
-	projectRepo docsysRepo.ProjectRepository,
-	folderRepo docsysRepo.FolderRepository,
-	txManager repositories.TransactionManager,
+	projectRepo domaindocsys.ProjectStore,
+	folderRepo domaindocsys.FolderStore,
+	txManager domain.TransactionManager,
 	logger *slog.Logger,
-) docsysSvc.ProjectService {
+) domaindocsys.ProjectService {
 	return &projectService{
 		projectRepo: projectRepo,
 		folderRepo:  folderRepo,
@@ -42,7 +41,7 @@ func NewProjectService(
 }
 
 // CreateProject creates a new project
-func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.CreateProjectRequest) (*models.Project, error) {
+func (s *projectService) CreateProject(ctx context.Context, req *domaindocsys.CreateProjectRequest) (*domaindocsys.Project, error) {
 	// Validate request
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -59,7 +58,7 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 	})
 
 	// Create project
-	project := &models.Project{
+	project := &domaindocsys.Project{
 		UserID:    req.UserID,
 		Name:      name,
 		Slug:      slug,
@@ -73,12 +72,12 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 			return err
 		}
 
-		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(docsysSvc.NamespaceMeridian), nil); err != nil {
+		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(domaindocsys.NamespaceMeridian), nil); err != nil {
 			return err
 		}
 
 		agentsAutoapply := false
-		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(docsysSvc.NamespaceAgents), &agentsAutoapply); err != nil {
+		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(domaindocsys.NamespaceAgents), &agentsAutoapply); err != nil {
 			return err
 		}
 
@@ -98,7 +97,7 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 }
 
 // GetProject retrieves a project by ID
-func (s *projectService) GetProject(ctx context.Context, id, userID string) (*models.Project, error) {
+func (s *projectService) GetProject(ctx context.Context, id, userID string) (*domaindocsys.Project, error) {
 	project, err := s.projectRepo.GetByID(ctx, id, userID)
 	if err != nil {
 		return nil, err
@@ -108,7 +107,7 @@ func (s *projectService) GetProject(ctx context.Context, id, userID string) (*mo
 }
 
 // ListProjects retrieves all projects for a user
-func (s *projectService) ListProjects(ctx context.Context, userID string) ([]models.Project, error) {
+func (s *projectService) ListProjects(ctx context.Context, userID string) ([]domaindocsys.Project, error) {
 	projects, err := s.projectRepo.List(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -119,7 +118,7 @@ func (s *projectService) ListProjects(ctx context.Context, userID string) ([]mod
 
 // UpdateProject updates a project's fields (name, system_prompt).
 // Only provided fields are updated - nil fields are left unchanged.
-func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *docsysSvc.UpdateProjectRequest) (*models.Project, error) {
+func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *domaindocsys.UpdateProjectRequest) (*domaindocsys.Project, error) {
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -190,7 +189,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 //   - Should cleanup projects, folders, documents, and threads
 //   - Can be implemented as a cron job or background worker
 //   - Consider adding a "restore" API endpoint before implementing hard delete
-func (s *projectService) DeleteProject(ctx context.Context, id, userID string) (*models.Project, error) {
+func (s *projectService) DeleteProject(ctx context.Context, id, userID string) (*domaindocsys.Project, error) {
 	// Verify project exists first (provides better error message)
 	_, err := s.projectRepo.GetByID(ctx, id, userID)
 	if err != nil {
@@ -212,7 +211,7 @@ func (s *projectService) DeleteProject(ctx context.Context, id, userID string) (
 }
 
 // validateCreateRequest validates a create project request
-func (s *projectService) validateCreateRequest(req *docsysSvc.CreateProjectRequest) error {
+func (s *projectService) validateCreateRequest(req *domaindocsys.CreateProjectRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.UserID, validation.Required),
 		validation.Field(&req.Name,
@@ -224,7 +223,7 @@ func (s *projectService) validateCreateRequest(req *docsysSvc.CreateProjectReque
 }
 
 // validateUpdateRequest validates an update project request
-func (s *projectService) validateUpdateRequest(req *docsysSvc.UpdateProjectRequest) error {
+func (s *projectService) validateUpdateRequest(req *domaindocsys.UpdateProjectRequest) error {
 	// Name is optional but if provided, must be valid
 	if req.Name != nil {
 		if err := validation.Validate(*req.Name,

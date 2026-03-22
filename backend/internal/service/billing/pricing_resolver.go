@@ -6,11 +6,10 @@ import (
 	"strings"
 
 	"meridian/internal/capabilities"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
-var _ billingdomain.ModelPricingResolver = (*RegistryPricingResolver)(nil)
+var _ billing.ModelPricingResolver = (*RegistryPricingResolver)(nil)
 
 // RegistryPricingResolver resolves settlement pricing from capability YAML.
 type RegistryPricingResolver struct {
@@ -23,30 +22,30 @@ func NewRegistryPricingResolver(registry *capabilities.Registry, _ *slog.Logger)
 	}
 }
 
-func (r *RegistryPricingResolver) ResolvePricing(provider, model string) (billingmodel.ModelPricing, error) {
+func (r *RegistryPricingResolver) ResolvePricing(provider, model string) (billing.ModelPricing, error) {
 	if r.registry == nil {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("capability registry is required")
+		return billing.FallbackModelPricing, fmt.Errorf("capability registry is required")
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider == "" {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("provider is required")
+		return billing.FallbackModelPricing, fmt.Errorf("provider is required")
 	}
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("model is required")
+		return billing.FallbackModelPricing, fmt.Errorf("model is required")
 	}
 
 	providerCaps, err := r.registry.GetProviderCapabilities(provider)
 	if err != nil {
-		return billingmodel.FallbackModelPricing, err
+		return billing.FallbackModelPricing, err
 	}
 
 	modelCaps, err := r.registry.GetModelCapabilities(provider, model)
 	if err != nil {
-		return billingmodel.FallbackModelPricing, err
+		return billing.FallbackModelPricing, err
 	}
 	if len(modelCaps.PricingTiers) == 0 {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("model %q has no pricing tiers", model)
+		return billing.FallbackModelPricing, fmt.Errorf("model %q has no pricing tiers", model)
 	}
 
 	// Billing currently uses the base tier (threshold: null). Request-level tiering
@@ -59,7 +58,7 @@ func (r *RegistryPricingResolver) ResolvePricing(provider, model string) (billin
 		}
 	}
 	if baseTier == nil {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("model %q has no base pricing tier", model)
+		return billing.FallbackModelPricing, fmt.Errorf("model %q has no base pricing tier", model)
 	}
 
 	var providerMarkup *int64
@@ -67,7 +66,7 @@ func (r *RegistryPricingResolver) ResolvePricing(provider, model string) (billin
 		providerMarkup = providerCaps.BillingDefaults.MarkupBasisPoints
 	}
 
-	pricing, err := billingmodel.ConvertTierToModelPricing(billingmodel.TierPricingInput{
+	pricing, err := billing.ConvertTierToModelPricing(billing.TierPricingInput{
 		InputPrice:        baseTier.InputPrice,
 		OutputPrice:       baseTier.OutputPrice,
 		ReasoningPrice:    baseTier.ReasoningPrice,
@@ -75,7 +74,7 @@ func (r *RegistryPricingResolver) ResolvePricing(provider, model string) (billin
 		MarkupBasisPoints: baseTier.MarkupBasisPoints,
 	}, providerMarkup)
 	if err != nil {
-		return billingmodel.FallbackModelPricing, fmt.Errorf("convert pricing tier for %s/%s: %w", provider, model, err)
+		return billing.FallbackModelPricing, fmt.Errorf("convert pricing tier for %s/%s: %w", provider, model, err)
 	}
 
 	return pricing, nil

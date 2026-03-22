@@ -7,19 +7,19 @@ import (
 	"strings"
 
 	"meridian/internal/config"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/httputil"
 )
 
 // AuthHandler handles authentication-adjacent endpoints.
 type AuthHandler struct {
-	creditGranter billingdomain.CreditGranter
+	creditGranter billing.CreditGranter
 	logger        *slog.Logger
 	cfg           *config.Config
 }
 
 func NewAuthHandler(
-	creditGranter billingdomain.CreditGranter,
+	creditGranter billing.CreditGranter,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *AuthHandler {
@@ -49,7 +49,7 @@ func (h *AuthHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.creditGranter.InitializeSignupCredits(r.Context(), billingdomain.InitializeSignupCreditsRequest{
+	result, err := h.creditGranter.InitializeSignupCredits(r.Context(), billing.InitializeSignupCreditsRequest{
 		UserID:        userID,
 		Email:         claims.Email,
 		AuthProvider:  claims.AuthProvider,
@@ -63,7 +63,7 @@ func (h *AuthHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result == nil {
-		result = &billingdomain.InitializeSignupCreditsResult{}
+		result = &billing.InitializeSignupCreditsResult{}
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{

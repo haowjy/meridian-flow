@@ -8,20 +8,18 @@ import (
 	"strings"
 	"time"
 
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
-var _ billingdomain.CreditGranter = (*creditGranter)(nil)
+var _ billing.CreditGranter = (*creditGranter)(nil)
 
 type creditGranter struct {
-	store  billingrepo.CreditStore
+	store  billing.CreditStore
 	logger *slog.Logger
 	now    func() time.Time
 }
 
-func NewCreditGranter(store billingrepo.CreditStore, logger *slog.Logger) *creditGranter {
+func NewCreditGranter(store billing.CreditStore, logger *slog.Logger) *creditGranter {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -37,10 +35,10 @@ func NewCreditGranter(store billingrepo.CreditStore, logger *slog.Logger) *credi
 // There is no separate signup bonus — all users get the same monthly refresh on login.
 func (g *creditGranter) InitializeSignupCredits(
 	ctx context.Context,
-	req billingdomain.InitializeSignupCreditsRequest,
-) (*billingdomain.InitializeSignupCreditsResult, error) {
+	req billing.InitializeSignupCreditsRequest,
+) (*billing.InitializeSignupCreditsResult, error) {
 	if !req.EmailVerified {
-		return &billingdomain.InitializeSignupCreditsResult{}, nil
+		return &billing.InitializeSignupCreditsResult{}, nil
 	}
 
 	result, err := g.RefreshMonthlyCredits(ctx, req.UserID)
@@ -53,15 +51,15 @@ func (g *creditGranter) InitializeSignupCredits(
 		return nil, fmt.Errorf("get balance after signup: %w", err)
 	}
 	if balance == nil {
-		balance = &billingmodel.CreditBalance{}
+		balance = &billing.CreditBalance{}
 	}
 
 	var creditsGranted int64
 	if result.CreditsGranted {
-		creditsGranted = billingmodel.MonthlyRefreshMillicredits
+		creditsGranted = billing.MonthlyRefreshMillicredits
 	}
 
-	return &billingdomain.InitializeSignupCreditsResult{
+	return &billing.InitializeSignupCreditsResult{
 		CreditsGranted:                 creditsGranted,
 		AlreadyInitialized:             !result.CreditsGranted,
 		PromotionalBalanceMillicredits: balance.PromotionalBalanceMillicredits,
@@ -73,25 +71,25 @@ func (g *creditGranter) InitializeSignupCredits(
 func (g *creditGranter) RefreshMonthlyCredits(
 	ctx context.Context,
 	userID string,
-) (*billingdomain.MonthlyRefreshResult, error) {
+) (*billing.MonthlyRefreshResult, error) {
 	// Grant reason is unique per calendar month — idempotent via unique index.
 	now := g.now().UTC()
 	grantReason := fmt.Sprintf("monthly_refresh_%s", now.Format("2006_01"))
 
-	expiresAt := now.AddDate(0, 0, billingmodel.MonthlyRefreshExpirationDays)
-	grantErr := g.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	expiresAt := now.AddDate(0, 0, billing.MonthlyRefreshExpirationDays)
+	grantErr := g.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
-		AmountMillicredits: billingmodel.MonthlyRefreshMillicredits,
+		AmountMillicredits: billing.MonthlyRefreshMillicredits,
 		ExpiresAt:          &expiresAt,
 		GrantReason:        grantReason,
-		Metadata: billingmodel.JSONMap{
+		Metadata: billing.JSONMap{
 			"type": "monthly_refresh",
 		},
 	})
 	if grantErr != nil {
-		if errors.Is(grantErr, billingrepo.ErrGrantLotAlreadyExists) || isDuplicateGrantError(grantErr) {
+		if errors.Is(grantErr, billing.ErrGrantLotAlreadyExists) || isDuplicateGrantError(grantErr) {
 			// Already granted this month — no-op
-			return &billingdomain.MonthlyRefreshResult{
+			return &billing.MonthlyRefreshResult{
 				CreditsGranted: false,
 				GrantReason:    grantReason,
 			}, nil
@@ -102,10 +100,10 @@ func (g *creditGranter) RefreshMonthlyCredits(
 	g.logger.Info("granted monthly credit refresh",
 		"user_id", userID,
 		"grant_reason", grantReason,
-		"amount_millicredits", billingmodel.MonthlyRefreshMillicredits,
+		"amount_millicredits", billing.MonthlyRefreshMillicredits,
 	)
 
-	return &billingdomain.MonthlyRefreshResult{
+	return &billing.MonthlyRefreshResult{
 		CreditsGranted: true,
 		GrantReason:    grantReason,
 	}, nil

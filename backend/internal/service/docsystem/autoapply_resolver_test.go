@@ -4,8 +4,7 @@ import (
 	"context"
 	"testing"
 
-	models "meridian/internal/domain/models/docsystem"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 func TestAutoapplyResolver_UsesDocumentOverrideOutsideSystemFolders(t *testing.T) {
@@ -15,7 +14,7 @@ func TestAutoapplyResolver_UsesDocumentOverrideOutsideSystemFolders(t *testing.T
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 				FolderID:  &folderID,
@@ -23,7 +22,7 @@ func TestAutoapplyResolver_UsesDocumentOverrideOutsideSystemFolders(t *testing.T
 			},
 		},
 		&testAutoapplyFolderRepo{
-			folders: map[string]*models.Folder{
+			folders: map[string]*domaindocsys.Folder{
 				folderID: {
 					ID:        folderID,
 					ProjectID: "project-1",
@@ -31,7 +30,7 @@ func TestAutoapplyResolver_UsesDocumentOverrideOutsideSystemFolders(t *testing.T
 			},
 		},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: projectAutoapply},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
 		},
 	)
 
@@ -53,7 +52,7 @@ func TestAutoapplyResolver_SystemFolderOverridesDocumentSetting(t *testing.T) {
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 				FolderID:  &childFolderID,
@@ -61,7 +60,7 @@ func TestAutoapplyResolver_SystemFolderOverridesDocumentSetting(t *testing.T) {
 			},
 		},
 		&testAutoapplyFolderRepo{
-			folders: map[string]*models.Folder{
+			folders: map[string]*domaindocsys.Folder{
 				childFolderID: {
 					ID:        childFolderID,
 					ProjectID: "project-1",
@@ -76,7 +75,7 @@ func TestAutoapplyResolver_SystemFolderOverridesDocumentSetting(t *testing.T) {
 			},
 		},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: projectAutoapply},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
 		},
 	)
 
@@ -94,14 +93,14 @@ func TestAutoapplyResolver_FallsBackToProjectDefault(t *testing.T) {
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 			},
 		},
 		&testAutoapplyFolderRepo{},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: projectAutoapply},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
 		},
 	)
 
@@ -126,14 +125,14 @@ func TestAutoapplyResolver_SystemFolderDominatesNonSystemChildOverride(t *testin
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 				FolderID:  &fooFolderID,
 			},
 		},
 		&testAutoapplyFolderRepo{
-			folders: map[string]*models.Folder{
+			folders: map[string]*domaindocsys.Folder{
 				fooFolderID: {
 					ID:        fooFolderID,
 					ProjectID: "project-1",
@@ -154,7 +153,7 @@ func TestAutoapplyResolver_SystemFolderDominatesNonSystemChildOverride(t *testin
 			},
 		},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: true},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: true},
 		},
 	)
 
@@ -178,14 +177,14 @@ func TestAutoapplyResolver_NonSystemFolderChainInnermostWins(t *testing.T) {
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 				FolderID:  &innerFolderID,
 			},
 		},
 		&testAutoapplyFolderRepo{
-			folders: map[string]*models.Folder{
+			folders: map[string]*domaindocsys.Folder{
 				innerFolderID: {
 					ID:        innerFolderID,
 					ProjectID: "project-1",
@@ -200,7 +199,7 @@ func TestAutoapplyResolver_NonSystemFolderChainInnermostWins(t *testing.T) {
 			},
 		},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: true},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: true},
 		},
 	)
 
@@ -222,14 +221,14 @@ func TestAutoapplyResolver_SystemFolderWithNullAutoapplyFallsBackToProject(t *te
 
 	resolver := NewAutoapplyResolver(
 		&testAutoapplyDocumentRepo{
-			document: &models.Document{
+			document: &domaindocsys.Document{
 				ID:        "doc-1",
 				ProjectID: "project-1",
 				FolderID:  &systemFolderID,
 			},
 		},
 		&testAutoapplyFolderRepo{
-			folders: map[string]*models.Folder{
+			folders: map[string]*domaindocsys.Folder{
 				systemFolderID: {
 					ID:        systemFolderID,
 					ProjectID: "project-1",
@@ -239,7 +238,7 @@ func TestAutoapplyResolver_SystemFolderWithNullAutoapplyFallsBackToProject(t *te
 			},
 		},
 		&testAutoapplyProjectRepo{
-			project: &models.Project{ID: "project-1", Autoapply: projectAutoapply},
+			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
 		},
 	)
 
@@ -253,22 +252,22 @@ func TestAutoapplyResolver_SystemFolderWithNullAutoapplyFallsBackToProject(t *te
 }
 
 type testAutoapplyDocumentRepo struct {
-	document *models.Document
+	document *domaindocsys.Document
 }
 
-func (r *testAutoapplyDocumentRepo) Create(context.Context, *models.Document) error {
+func (r *testAutoapplyDocumentRepo) Create(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) GetByID(context.Context, string, string) (*models.Document, error) {
+func (r *testAutoapplyDocumentRepo) GetByID(context.Context, string, string) (*domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) GetByIDOnly(context.Context, string) (*models.Document, error) {
+func (r *testAutoapplyDocumentRepo) GetByIDOnly(context.Context, string) (*domaindocsys.Document, error) {
 	return r.document, nil
 }
-func (r *testAutoapplyDocumentRepo) GetByPath(context.Context, string, string) (*models.Document, error) {
+func (r *testAutoapplyDocumentRepo) GetByPath(context.Context, string, string) (*domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) Update(context.Context, *models.Document) error {
+func (r *testAutoapplyDocumentRepo) Update(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
 func (r *testAutoapplyDocumentRepo) Delete(context.Context, string, string) error {
@@ -277,101 +276,98 @@ func (r *testAutoapplyDocumentRepo) Delete(context.Context, string, string) erro
 func (r *testAutoapplyDocumentRepo) DeleteAllByProject(context.Context, string, bool) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) ListByFolder(context.Context, *string, string) ([]models.Document, error) {
+func (r *testAutoapplyDocumentRepo) ListByFolder(context.Context, *string, string) ([]domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) GetPath(context.Context, *models.Document) (string, error) {
+func (r *testAutoapplyDocumentRepo) GetPath(context.Context, *domaindocsys.Document) (string, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) GetAllMetadataByProject(context.Context, string) ([]models.Document, error) {
+func (r *testAutoapplyDocumentRepo) GetAllMetadataByProject(context.Context, string) ([]domaindocsys.Document, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) SearchDocuments(context.Context, *models.SearchOptions) (*models.SearchResults, error) {
-	panic("unexpected call")
-}
-func (r *testAutoapplyDocumentRepo) GetAllByFolderRecursive(context.Context, string, string) ([]models.Document, error) {
+func (r *testAutoapplyDocumentRepo) SearchDocuments(context.Context, *domaindocsys.SearchOptions) (*domaindocsys.SearchResults, error) {
 	panic("unexpected call")
 }
 
 type testAutoapplyFolderRepo struct {
-	folders map[string]*models.Folder
+	folders map[string]*domaindocsys.Folder
 }
 
-func (r *testAutoapplyFolderRepo) Create(context.Context, *models.Folder) error {
+func (r *testAutoapplyFolderRepo) Create(context.Context, *domaindocsys.Folder) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) CreateHidden(context.Context, *models.Folder) error {
+func (r *testAutoapplyFolderRepo) CreateHidden(context.Context, *domaindocsys.Folder) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) GetByID(context.Context, string, string) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) GetByID(context.Context, string, string) (*domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) GetByIDOnly(_ context.Context, id string) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) GetByIDOnly(_ context.Context, id string) (*domaindocsys.Folder, error) {
 	return r.folders[id], nil
 }
-func (r *testAutoapplyFolderRepo) Update(context.Context, *models.Folder) error {
+func (r *testAutoapplyFolderRepo) Update(context.Context, *domaindocsys.Folder) error {
 	panic("unexpected call")
 }
 func (r *testAutoapplyFolderRepo) Delete(context.Context, string, string) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) ListChildren(context.Context, *string, string, *docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+func (r *testAutoapplyFolderRepo) ListChildren(context.Context, *string, string, *domaindocsys.FolderFilterOptions) ([]domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) CreateIfNotExists(context.Context, string, *string, string) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) CreateIfNotExists(context.Context, string, *string, string) (*domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) CreateHiddenIfNotExists(context.Context, string, *string, string) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) CreateHiddenIfNotExists(context.Context, string, *string, string) (*domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) CreateSystemIfNotExists(context.Context, string, string, *bool) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) CreateSystemIfNotExists(context.Context, string, string, *bool) (*domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
 func (r *testAutoapplyFolderRepo) GetPath(context.Context, *string, string) (string, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) GetAllByProject(context.Context, string) ([]models.Folder, error) {
+func (r *testAutoapplyFolderRepo) GetAllByProject(context.Context, string) ([]domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) GetAllByProjectFiltered(context.Context, string, docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+func (r *testAutoapplyFolderRepo) GetAllByProjectFiltered(context.Context, string, domaindocsys.FolderFilterOptions) ([]domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) GetByPath(context.Context, string, string) (*models.Folder, error) {
+func (r *testAutoapplyFolderRepo) GetByPath(context.Context, string, string) (*domaindocsys.Folder, error) {
 	panic("unexpected call")
 }
 
 type testAutoapplyProjectRepo struct {
-	project *models.Project
+	project *domaindocsys.Project
 }
 
-func (r *testAutoapplyProjectRepo) Create(context.Context, *models.Project) error {
+func (r *testAutoapplyProjectRepo) Create(context.Context, *domaindocsys.Project) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyProjectRepo) GetByID(context.Context, string, string) (*models.Project, error) {
+func (r *testAutoapplyProjectRepo) GetByID(context.Context, string, string) (*domaindocsys.Project, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyProjectRepo) GetByIDOnly(context.Context, string) (*models.Project, error) {
+func (r *testAutoapplyProjectRepo) GetByIDOnly(context.Context, string) (*domaindocsys.Project, error) {
 	return r.project, nil
 }
-func (r *testAutoapplyProjectRepo) GetBySlug(context.Context, string, string) (*models.Project, error) {
+func (r *testAutoapplyProjectRepo) GetBySlug(context.Context, string, string) (*domaindocsys.Project, error) {
 	panic("unexpected call")
 }
 func (r *testAutoapplyProjectRepo) SlugExists(context.Context, string, string, *string) (bool, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyProjectRepo) List(context.Context, string) ([]models.Project, error) {
+func (r *testAutoapplyProjectRepo) List(context.Context, string) ([]domaindocsys.Project, error) {
 	panic("unexpected call")
 }
-func (r *testAutoapplyProjectRepo) Update(context.Context, *models.Project) error {
+func (r *testAutoapplyProjectRepo) Update(context.Context, *domaindocsys.Project) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyProjectRepo) Delete(context.Context, string, string) (*models.Project, error) {
+func (r *testAutoapplyProjectRepo) Delete(context.Context, string, string) (*domaindocsys.Project, error) {
 	panic("unexpected call")
 }
 func (r *testAutoapplyProjectRepo) TouchLastActivityAt(context.Context, string) error {
 	panic("unexpected call")
 }
 
-var _ docsysRepo.DocumentRepository = (*testAutoapplyDocumentRepo)(nil)
-var _ docsysRepo.FolderRepository = (*testAutoapplyFolderRepo)(nil)
-var _ docsysRepo.ProjectRepository = (*testAutoapplyProjectRepo)(nil)
+var _ domaindocsys.DocumentStore = (*testAutoapplyDocumentRepo)(nil)
+var _ domaindocsys.FolderStore = (*testAutoapplyFolderRepo)(nil)
+var _ domaindocsys.ProjectStore = (*testAutoapplyProjectRepo)(nil)

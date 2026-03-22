@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 func TestDocumentSessionCurrentStateLocked_DerivesContentFromAppliedUpdate(t *testing.T) {
@@ -353,7 +353,7 @@ func (s *fakeSessionUpdateLogStore) GetNthOldestUpdateID(_ context.Context, _ st
 	return 0, nil
 }
 
-func (s *fakeSessionUpdateLogStore) ListUpdatesInRange(_ context.Context, _ string, _, _ int64) ([]collabSvc.UpdateLogEntry, error) {
+func (s *fakeSessionUpdateLogStore) ListUpdatesInRange(_ context.Context, _ string, _, _ int64) ([]collab.UpdateLogEntry, error) {
 	return nil, nil
 }
 
@@ -363,15 +363,15 @@ func (s *fakeSessionUpdateLogStore) AcquireCompactionLock(_ context.Context, _ s
 
 type fakeSessionBookmarkStore struct{}
 
-func (s *fakeSessionBookmarkStore) Create(_ context.Context, _ *collabSvc.Bookmark) error {
+func (s *fakeSessionBookmarkStore) Create(_ context.Context, _ *collab.Bookmark) error {
 	return nil
 }
 
-func (s *fakeSessionBookmarkStore) ListByDocumentAndType(_ context.Context, _, _ string) ([]collabSvc.Bookmark, error) {
+func (s *fakeSessionBookmarkStore) ListByDocumentAndType(_ context.Context, _, _ string) ([]collab.Bookmark, error) {
 	return nil, nil
 }
 
-func (s *fakeSessionBookmarkStore) ListByTurnID(_ context.Context, _ string) ([]collabSvc.Bookmark, error) {
+func (s *fakeSessionBookmarkStore) ListByTurnID(_ context.Context, _ string) ([]collab.Bookmark, error) {
 	return nil, nil
 }
 

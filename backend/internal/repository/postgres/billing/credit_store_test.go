@@ -13,13 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	billingmodel "meridian/internal/domain/models/billing"
-	billingrepo "meridian/internal/domain/repositories/billing"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/repository/postgres"
 )
 
 type integrationHarness struct {
-	store  billingrepo.CreditStore
+	store  billing.CreditStore
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
 }
@@ -177,7 +176,7 @@ func TestCreditStore_CreatePurchaseLot_Idempotent(t *testing.T) {
 	userID := h.createTestUser(t)
 
 	stripeSessionID := "cs_test_" + uuid.NewString()
-	req := billingrepo.CreatePurchaseLotRequest{
+	req := billing.CreatePurchaseLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 500_000,
 		StripeSessionID:    stripeSessionID,
@@ -212,7 +211,7 @@ func TestCreditStore_CreateGrantLot_Idempotent(t *testing.T) {
 
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
 	grantReason := "signup_bonus_test_" + uuid.NewString()
-	req := billingrepo.CreateGrantLotRequest{
+	req := billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 300_000,
 		ExpiresAt:          &expiresAt,
@@ -223,7 +222,7 @@ func TestCreditStore_CreateGrantLot_Idempotent(t *testing.T) {
 	if err := h.store.CreateGrantLot(context.Background(), req); err != nil {
 		t.Fatalf("first CreateGrantLot failed: %v", err)
 	}
-	if err := h.store.CreateGrantLot(context.Background(), req); !errors.Is(err, billingrepo.ErrGrantLotAlreadyExists) {
+	if err := h.store.CreateGrantLot(context.Background(), req); !errors.Is(err, billing.ErrGrantLotAlreadyExists) {
 		t.Fatalf("second CreateGrantLot error = %v, want ErrGrantLotAlreadyExists", err)
 	}
 
@@ -248,7 +247,7 @@ func TestCreditStore_RefundLot_ClawsBackSpentCreditsAndIsIdempotent(t *testing.T
 	userID := h.createTestUser(t)
 
 	stripeSessionID := "cs_refund_" + uuid.NewString()
-	if err := h.store.CreatePurchaseLot(ctx, billingrepo.CreatePurchaseLotRequest{
+	if err := h.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 1000,
 		StripeSessionID:    stripeSessionID,
@@ -257,7 +256,7 @@ func TestCreditStore_RefundLot_ClawsBackSpentCreditsAndIsIdempotent(t *testing.T
 	}
 	lotID := h.getLotIDByStripeSession(t, stripeSessionID)
 
-	if err := h.store.ConsumeFIFO(ctx, billingrepo.ConsumeFIFORequest{
+	if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
 		UserID:             userID,
 		AmountMillicredits: 600,
 		ConsumptionGroupID: uuid.New(),
@@ -266,13 +265,13 @@ func TestCreditStore_RefundLot_ClawsBackSpentCreditsAndIsIdempotent(t *testing.T
 		t.Fatalf("ConsumeFIFO failed: %v", err)
 	}
 
-	if err := h.store.RefundLot(ctx, billingrepo.RefundLotRequest{
+	if err := h.store.RefundLot(ctx, billing.RefundLotRequest{
 		StripeSessionID: stripeSessionID,
 		Metadata:        map[string]interface{}{"source": "test"},
 	}); err != nil {
 		t.Fatalf("first RefundLot failed: %v", err)
 	}
-	if err := h.store.RefundLot(ctx, billingrepo.RefundLotRequest{
+	if err := h.store.RefundLot(ctx, billing.RefundLotRequest{
 		StripeSessionID: stripeSessionID,
 		Metadata:        map[string]interface{}{"source": "test"},
 	}); err != nil {
@@ -307,7 +306,7 @@ func TestCreditStore_ConsumeFIFO_PromotionalBeforePurchased(t *testing.T) {
 
 	grantReason := "promo_fifo_" + uuid.NewString()
 	expiresAt := time.Now().UTC().Add(48 * time.Hour)
-	if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 1_000,
 		ExpiresAt:          &expiresAt,
@@ -319,7 +318,7 @@ func TestCreditStore_ConsumeFIFO_PromotionalBeforePurchased(t *testing.T) {
 	promoLotID := h.getLotIDByGrantReason(t, userID, grantReason)
 
 	stripeSessionID := "cs_fifo_" + uuid.NewString()
-	if err := h.store.CreatePurchaseLot(ctx, billingrepo.CreatePurchaseLotRequest{
+	if err := h.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 2_000,
 		StripeSessionID:    stripeSessionID,
@@ -330,7 +329,7 @@ func TestCreditStore_ConsumeFIFO_PromotionalBeforePurchased(t *testing.T) {
 	purchaseLotID := h.getLotIDByStripeSession(t, stripeSessionID)
 
 	groupID := uuid.New()
-	if err := h.store.ConsumeFIFO(ctx, billingrepo.ConsumeFIFORequest{
+	if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
 		UserID:             userID,
 		AmountMillicredits: 1_500,
 		ConsumptionGroupID: groupID,
@@ -385,7 +384,7 @@ func TestCreditStore_ConsumeFIFO_IdempotentByConsumptionGroupID(t *testing.T) {
 	userID := h.createTestUser(t)
 
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
-	if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 2_000,
 		ExpiresAt:          &expiresAt,
@@ -395,7 +394,7 @@ func TestCreditStore_ConsumeFIFO_IdempotentByConsumptionGroupID(t *testing.T) {
 	}
 
 	groupID := uuid.New()
-	consumeReq := billingrepo.ConsumeFIFORequest{
+	consumeReq := billing.ConsumeFIFORequest{
 		UserID:             userID,
 		AmountMillicredits: 1_000,
 		ConsumptionGroupID: groupID,
@@ -428,7 +427,7 @@ func TestCreditStore_ConsumeFIFO_NegativeAnchorAndMissingAnchorBehavior(t *testi
 	ctx := context.Background()
 
 	anchoredUserID := h.createTestUser(t)
-	if err := h.store.CreatePurchaseLot(ctx, billingrepo.CreatePurchaseLotRequest{
+	if err := h.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{
 		UserID:             anchoredUserID,
 		AmountMillicredits: 100,
 		StripeSessionID:    "cs_anchor_" + uuid.NewString(),
@@ -436,7 +435,7 @@ func TestCreditStore_ConsumeFIFO_NegativeAnchorAndMissingAnchorBehavior(t *testi
 		t.Fatalf("CreatePurchaseLot failed: %v", err)
 	}
 
-	if err := h.store.ConsumeFIFO(ctx, billingrepo.ConsumeFIFORequest{
+	if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
 		UserID:             anchoredUserID,
 		AmountMillicredits: 300,
 		ConsumptionGroupID: uuid.New(),
@@ -457,7 +456,7 @@ func TestCreditStore_ConsumeFIFO_NegativeAnchorAndMissingAnchorBehavior(t *testi
 	}
 
 	emptyUserID := h.createTestUser(t)
-	err = h.store.ConsumeFIFO(ctx, billingrepo.ConsumeFIFORequest{
+	err = h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
 		UserID:             emptyUserID,
 		AmountMillicredits: 50,
 		ConsumptionGroupID: uuid.New(),
@@ -477,7 +476,7 @@ func TestCreditStore_ConsumeFIFO_ExpiredLotCanAnchorFallback(t *testing.T) {
 	userID := h.createTestUser(t)
 
 	expiredAt := time.Now().UTC().Add(-10 * time.Minute)
-	if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 100,
 		ExpiresAt:          &expiredAt,
@@ -486,7 +485,7 @@ func TestCreditStore_ConsumeFIFO_ExpiredLotCanAnchorFallback(t *testing.T) {
 		t.Fatalf("CreateGrantLot failed: %v", err)
 	}
 
-	if err := h.store.ConsumeFIFO(ctx, billingrepo.ConsumeFIFORequest{
+	if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
 		UserID:             userID,
 		AmountMillicredits: 50,
 		ConsumptionGroupID: uuid.New(),
@@ -503,7 +502,7 @@ func TestCreditStore_ExpireAvailableLots_FiltersExpiredBalanceAndLogsTransaction
 
 	pastExpiry := time.Now().UTC().Add(-2 * time.Hour)
 	pastReason := "expired_lot_" + uuid.NewString()
-	if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 1_000,
 		ExpiresAt:          &pastExpiry,
@@ -514,7 +513,7 @@ func TestCreditStore_ExpireAvailableLots_FiltersExpiredBalanceAndLogsTransaction
 	pastLotID := h.getLotIDByGrantReason(t, userID, pastReason)
 
 	futureExpiry := time.Now().UTC().Add(24 * time.Hour)
-	if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+	if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 		UserID:             userID,
 		AmountMillicredits: 2_000,
 		ExpiresAt:          &futureExpiry,
@@ -578,7 +577,7 @@ func TestCreditStore_ListTransactions_Pagination(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		reason := fmt.Sprintf("pagination_%d_%s", i, uuid.NewString())
 		expiresAt := time.Now().UTC().Add(48 * time.Hour)
-		if err := h.store.CreateGrantLot(ctx, billingrepo.CreateGrantLotRequest{
+		if err := h.store.CreateGrantLot(ctx, billing.CreateGrantLotRequest{
 			UserID:             userID,
 			AmountMillicredits: int64(100 + i),
 			ExpiresAt:          &expiresAt,
@@ -589,7 +588,7 @@ func TestCreditStore_ListTransactions_Pagination(t *testing.T) {
 		}
 	}
 
-	page, err := h.store.ListTransactions(ctx, userID, billingmodel.ListTransactionsRequest{Limit: 2, Offset: 1})
+	page, err := h.store.ListTransactions(ctx, userID, billing.ListTransactionsRequest{Limit: 2, Offset: 1})
 	if err != nil {
 		t.Fatalf("ListTransactions failed: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 // --- test resolver for authenticator unit tests ---
@@ -19,11 +19,11 @@ type testAuthResolver struct {
 	resolveErr error
 }
 
-func (r *testAuthResolver) ResolveDocument(_ context.Context, docID string) (*collabModels.CollabDocRef, error) {
+func (r *testAuthResolver) ResolveDocument(_ context.Context, docID string) (*collab.CollabDocRef, error) {
 	if r.resolveErr != nil {
 		return nil, r.resolveErr
 	}
-	return &collabModels.CollabDocRef{
+	return &collab.CollabDocRef{
 		DocumentID: docID,
 		ProjectID:  r.projectID,
 	}, nil

@@ -4,23 +4,22 @@ import (
 	"context"
 	"log/slog"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // favoriteService implements the FavoriteService interface
 type favoriteService struct {
-	favoriteRepo docsysRepo.FavoriteRepository
-	projectRepo  docsysRepo.ProjectRepository
+	favoriteRepo domaindocsys.FavoriteStore
+	projectRepo  domaindocsys.ProjectStore
 	logger       *slog.Logger
 }
 
 // NewFavoriteService creates a new favorite service
 func NewFavoriteService(
-	favoriteRepo docsysRepo.FavoriteRepository,
-	projectRepo docsysRepo.ProjectRepository,
+	favoriteRepo domaindocsys.FavoriteStore,
+	projectRepo domaindocsys.ProjectStore,
 	logger *slog.Logger,
-) docsysSvc.FavoriteService {
+) domaindocsys.FavoriteService {
 	return &favoriteService{
 		favoriteRepo: favoriteRepo,
 		projectRepo:  projectRepo,

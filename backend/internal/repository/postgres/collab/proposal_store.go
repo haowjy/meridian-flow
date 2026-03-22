@@ -9,8 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/repository/postgres"
 )
 
@@ -21,7 +20,7 @@ type PostgresProposalStore struct {
 }
 
 // NewProposalStore creates a new proposal store.
-func NewProposalStore(config *postgres.RepositoryConfig) collabSvc.ProposalStore {
+func NewProposalStore(config *postgres.RepositoryConfig) collab.ProposalStore {
 	return &PostgresProposalStore{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -29,7 +28,7 @@ func NewProposalStore(config *postgres.RepositoryConfig) collabSvc.ProposalStore
 }
 
 // Create inserts a new proposal row.
-func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabModels.Proposal) error {
+func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collab.Proposal) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
@@ -43,7 +42,7 @@ func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabMode
 
 	status := proposal.Status
 	if status == "" {
-		status = collabModels.ProposalStatusPending
+		status = collab.ProposalStatusPending
 	}
 
 	executor := postgres.GetExecutor(ctx, s.pool)
@@ -75,7 +74,7 @@ func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabMode
 }
 
 // GetByID returns one proposal by ID.
-func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error) {
+func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUID) (*collab.Proposal, error) {
 	query := fmt.Sprintf(`
 		SELECT id, document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
 		       proposal_group_id, status, yjs_update, description, region_text_before,
@@ -85,7 +84,7 @@ func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUI
 		WHERE id = $1
 	`, s.tables.CollabDocumentProposals)
 
-	var proposal collabModels.Proposal
+	var proposal collab.Proposal
 	executor := postgres.GetExecutor(ctx, s.pool)
 	if err := executor.QueryRow(ctx, query, proposalID).Scan(
 		&proposal.ID,
@@ -120,8 +119,8 @@ func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUI
 func (s *PostgresProposalStore) CountByDocumentAndStatusAndSource(
 	ctx context.Context,
 	documentID uuid.UUID,
-	status collabModels.ProposalStatus,
-	source collabModels.ProposalSource,
+	status collab.ProposalStatus,
+	source collab.ProposalSource,
 ) (int, error) {
 	query := fmt.Sprintf(`
 		SELECT COUNT(*)
@@ -161,10 +160,10 @@ func (s *PostgresProposalStore) CountByDocumentAndTurnID(
 func (s *PostgresProposalStore) ListByDocument(
 	ctx context.Context,
 	documentID uuid.UUID,
-	status *collabModels.ProposalStatus,
+	status *collab.ProposalStatus,
 	limit int,
 	offset int,
-) ([]collabModels.Proposal, error) {
+) ([]collab.Proposal, error) {
 	base := fmt.Sprintf(`
 		SELECT id, document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
 		       proposal_group_id, status, yjs_update, description, region_text_before,
@@ -192,7 +191,7 @@ func (s *PostgresProposalStore) ListByDocument(
 func (s *PostgresProposalStore) UpsertStatus(
 	ctx context.Context,
 	proposalID uuid.UUID,
-	status collabModels.ProposalStatus,
+	status collab.ProposalStatus,
 ) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
@@ -251,7 +250,7 @@ func (s *PostgresProposalStore) SetAcceptedAtOffset(
 func (s *PostgresProposalStore) CountRecentByDocumentAndStatus(
 	ctx context.Context,
 	documentID uuid.UUID,
-	status collabModels.ProposalStatus,
+	status collab.ProposalStatus,
 	since time.Time,
 ) (int, error) {
 	query := fmt.Sprintf(`
@@ -268,7 +267,7 @@ func (s *PostgresProposalStore) CountRecentByDocumentAndStatus(
 	return count, nil
 }
 
-func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string, args ...any) ([]collabModels.Proposal, error) {
+func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string, args ...any) ([]collab.Proposal, error) {
 	executor := postgres.GetExecutor(ctx, s.pool)
 	rows, err := executor.Query(ctx, query, args...)
 	if err != nil {
@@ -276,9 +275,9 @@ func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string
 	}
 	defer rows.Close()
 
-	proposals := []collabModels.Proposal{}
+	proposals := []collab.Proposal{}
 	for rows.Next() {
-		var proposal collabModels.Proposal
+		var proposal collab.Proposal
 		if err := rows.Scan(
 			&proposal.ID,
 			&proposal.DocumentID,

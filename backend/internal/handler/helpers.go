@@ -85,7 +85,7 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 		message := err.Error()
 
 		// In dev/test, add internal details for ConstraintViolationError
-		if cfg.Environment != "prod" {
+		if !cfg.IsProd() {
 			var constraintErr *domain.ConstraintViolationError
 			if errors.As(err, &constraintErr) && constraintErr.InternalDetail != "" {
 				message = fmt.Sprintf("%s (debug: %s)", message, constraintErr.InternalDetail)
@@ -136,7 +136,7 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 
 		// In dev/test, expose error type to help debugging
 		message := "internal server error"
-		if cfg.Environment != "prod" {
+		if !cfg.IsProd() {
 			message = fmt.Sprintf("internal server error (type: %T, error: %v)", err, err)
 		}
 		httputil.RespondError(w, http.StatusInternalServerError, message)

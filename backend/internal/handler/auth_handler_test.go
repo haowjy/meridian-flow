@@ -9,18 +9,18 @@ import (
 	"testing"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/models"
-	billingdomain "meridian/internal/domain/services/billing"
+	authdomain "meridian/internal/domain/auth"
+	billing "meridian/internal/domain/billing"
 	"meridian/internal/httputil"
 )
 
 type mockAuthCreditGranter struct {
-	result  *billingdomain.InitializeSignupCreditsResult
+	result  *billing.InitializeSignupCreditsResult
 	err     error
-	lastReq billingdomain.InitializeSignupCreditsRequest
+	lastReq billing.InitializeSignupCreditsRequest
 }
 
-func (m *mockAuthCreditGranter) InitializeSignupCredits(ctx context.Context, req billingdomain.InitializeSignupCreditsRequest) (*billingdomain.InitializeSignupCreditsResult, error) {
+func (m *mockAuthCreditGranter) InitializeSignupCredits(ctx context.Context, req billing.InitializeSignupCreditsRequest) (*billing.InitializeSignupCreditsResult, error) {
 	_ = ctx
 	m.lastReq = req
 	if m.err != nil {
@@ -29,7 +29,7 @@ func (m *mockAuthCreditGranter) InitializeSignupCredits(ctx context.Context, req
 	return m.result, nil
 }
 
-func (m *mockAuthCreditGranter) RefreshMonthlyCredits(ctx context.Context, userID string) (*billingdomain.MonthlyRefreshResult, error) {
+func (m *mockAuthCreditGranter) RefreshMonthlyCredits(ctx context.Context, userID string) (*billing.MonthlyRefreshResult, error) {
 	_ = ctx
 	_ = userID
 	return nil, nil
@@ -37,7 +37,7 @@ func (m *mockAuthCreditGranter) RefreshMonthlyCredits(ctx context.Context, userI
 
 func TestAuthHandlerInitialize_Success(t *testing.T) {
 	granter := &mockAuthCreditGranter{
-		result: &billingdomain.InitializeSignupCreditsResult{
+		result: &billing.InitializeSignupCreditsResult{
 			CreditsGranted:                 100000,
 			AlreadyInitialized:             false,
 			PromotionalBalanceMillicredits: 200000,
@@ -45,14 +45,14 @@ func TestAuthHandlerInitialize_Success(t *testing.T) {
 			TotalBalanceMillicredits:       250000,
 		},
 	}
-	h := NewAuthHandler(granter, nil, &config.Config{Environment: "test"})
+	h := NewAuthHandler(granter, nil, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/initialize", nil)
 	req.RemoteAddr = "203.0.113.5:4321"
 	req.Header.Set("User-Agent", "meridian-test")
 	req.Header.Set("X-Forwarded-For", "198.51.100.10, 10.0.0.1")
 	req = httputil.WithUserID(req, "user-123")
-	req = httputil.WithAuthClaims(req, &models.AuthClaims{
+	req = httputil.WithAuthClaims(req, &authdomain.AuthClaims{
 		UserID:        "user-123",
 		Email:         "writer@example.com",
 		AuthProvider:  "google",
@@ -95,7 +95,7 @@ func TestAuthHandlerInitialize_Success(t *testing.T) {
 }
 
 func TestAuthHandlerInitialize_MissingClaimsReturnsUnauthorized(t *testing.T) {
-	h := NewAuthHandler(&mockAuthCreditGranter{}, nil, &config.Config{Environment: "test"})
+	h := NewAuthHandler(&mockAuthCreditGranter{}, nil, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/initialize", nil)
 	req = httputil.WithUserID(req, "user-123")
 
@@ -109,11 +109,11 @@ func TestAuthHandlerInitialize_MissingClaimsReturnsUnauthorized(t *testing.T) {
 
 func TestAuthHandlerInitialize_ServiceErrorHandled(t *testing.T) {
 	granter := &mockAuthCreditGranter{err: errors.New("boom")}
-	h := NewAuthHandler(granter, nil, &config.Config{Environment: "test"})
+	h := NewAuthHandler(granter, nil, &config.Config{Server: config.ServerConfig{Environment: "test"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/initialize", nil)
 	req = httputil.WithUserID(req, "user-123")
-	req = httputil.WithAuthClaims(req, &models.AuthClaims{UserID: "user-123"})
+	req = httputil.WithAuthClaims(req, &authdomain.AuthClaims{UserID: "user-123"})
 
 	rr := httptest.NewRecorder()
 	h.Initialize(rr, req)

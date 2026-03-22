@@ -12,8 +12,8 @@ import (
 	"golang.org/x/net/websocket"
 	"meridian/internal/auth"
 	"meridian/internal/domain"
-	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
+	authdomain "meridian/internal/domain/auth"
+	collab "meridian/internal/domain/collab"
 )
 
 // collabAuthResult holds the outcome of a successful websocket auth bootstrap.
@@ -28,16 +28,16 @@ type collabAuthResult struct {
 // active subscription invalidation.
 type collabAuthenticator struct {
 	jwtVerifier       auth.JWTVerifier
-	authorizer        services.ResourceAuthorizer
-	documentResolver  collabSvc.DocumentResolver
+	authorizer        authdomain.ResourceAuthorizer
+	documentResolver  collab.DocumentResolver
 	isIdentityBlocked func(string, string) bool
 	logger            *slog.Logger
 }
 
 func newCollabAuthenticator(
 	jwtVerifier auth.JWTVerifier,
-	authorizer services.ResourceAuthorizer,
-	documentResolver collabSvc.DocumentResolver,
+	authorizer authdomain.ResourceAuthorizer,
+	documentResolver collab.DocumentResolver,
 	isIdentityBlocked func(string, string) bool,
 	logger *slog.Logger,
 ) *collabAuthenticator {

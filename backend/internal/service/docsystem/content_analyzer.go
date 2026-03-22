@@ -4,13 +4,13 @@ import (
 	"strings"
 	"unicode"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 type contentAnalyzerService struct{}
 
 // NewContentAnalyzer creates a new content analyzer service
-func NewContentAnalyzer() docsysSvc.ContentAnalyzer {
+func NewContentAnalyzer() domaindocsys.ContentAnalyzer {
 	return &contentAnalyzerService{}
 }
 

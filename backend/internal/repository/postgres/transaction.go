@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"meridian/internal/domain"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"meridian/internal/domain/repositories"
 )
 
 // TransactionManager implements the TransactionManager interface
@@ -16,12 +16,12 @@ type TransactionManager struct {
 }
 
 // NewTransactionManager creates a new transaction manager
-func NewTransactionManager(pool *pgxpool.Pool) repositories.TransactionManager {
+func NewTransactionManager(pool *pgxpool.Pool) domain.TransactionManager {
 	return &TransactionManager{pool: pool}
 }
 
 // ExecTx executes a function within a transaction
-func (tm *TransactionManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
+func (tm *TransactionManager) ExecTx(ctx context.Context, fn domain.TxFn) error {
 	tx, err := tm.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)

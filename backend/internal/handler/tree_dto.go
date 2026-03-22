@@ -3,7 +3,7 @@ package handler
 import (
 	"time"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // treeResponseDTO is the transport-layer response for GET /api/projects/{id}/tree.
@@ -44,7 +44,7 @@ type treeDocumentDTO struct {
 	UpdatedAt            time.Time `json:"updated_at"`
 }
 
-func toTreeResponseDTO(tree *docsysSvc.ProjectTree) *treeResponseDTO {
+func toTreeResponseDTO(tree *domaindocsys.ProjectTree) *treeResponseDTO {
 	if tree == nil {
 		return &treeResponseDTO{
 			Folders:   []*treeFolderDTO{},
@@ -68,7 +68,7 @@ func toTreeResponseDTO(tree *docsysSvc.ProjectTree) *treeResponseDTO {
 	}
 }
 
-func toTreeFolderDTO(folder *docsysSvc.TreeFolder) *treeFolderDTO {
+func toTreeFolderDTO(folder *domaindocsys.TreeFolder) *treeFolderDTO {
 	if folder == nil {
 		return &treeFolderDTO{
 			Folders:   []*treeFolderDTO{},
@@ -104,7 +104,7 @@ func toTreeFolderDTO(folder *docsysSvc.TreeFolder) *treeFolderDTO {
 	}
 }
 
-func toTreeDocumentDTO(doc docsysSvc.TreeDocument) treeDocumentDTO {
+func toTreeDocumentDTO(doc domaindocsys.TreeDocument) treeDocumentDTO {
 	return treeDocumentDTO{
 		ID:                   doc.ID,
 		ProjectID:            doc.ProjectID,

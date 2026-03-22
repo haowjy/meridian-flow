@@ -6,9 +6,7 @@ import (
 	"strings"
 	"time"
 
-	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
 )
@@ -30,12 +28,12 @@ func (se *StreamExecutor) getGenerationID() string {
 // updateTurnMetadata updates the turn with final metadata.
 // Accumulates tokens (adds to existing) and overwrites other metadata atomically.
 func (se *StreamExecutor) updateTurnMetadata(ctx context.Context, metadata *domainllm.StreamMetadata) error {
-	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
-		&llmRepo.TurnTokenUpdate{
+	return se.turnWriter.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
+		&domainllm.TurnTokenUpdate{
 			InputTokens:  metadata.InputTokens,
 			OutputTokens: metadata.OutputTokens,
 		},
-		&llmRepo.TurnCompletionUpdate{
+		&domainllm.TurnCompletionUpdate{
 			Model:            &metadata.Model,
 			StopReason:       &metadata.StopReason,
 			ResponseMetadata: metadata.ResponseMetadata,
@@ -66,12 +64,12 @@ func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *toke
 	// Note: StopReason is nil (keep existing) since this is partial/error recovery
 	// Model is updated to ensure it's captured even on early termination
 	model := se.model
-	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
-		&llmRepo.TurnTokenUpdate{
+	return se.turnWriter.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
+		&domainllm.TurnTokenUpdate{
 			InputTokens:  result.InputTokens,
 			OutputTokens: result.OutputTokens,
 		},
-		&llmRepo.TurnCompletionUpdate{
+		&domainllm.TurnCompletionUpdate{
 			Model:            &model,
 			StopReason:       nil, // Keep existing stop_reason (intentional)
 			ResponseMetadata: responseMeta,
@@ -79,10 +77,10 @@ func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *toke
 	)
 }
 
-// persistOpenRouterGenerationRecord persists an OpenRouter generation record to response_metadata.
+// persistGenerationRecord persists an OpenRouter generation record to response_metadata.
 // This captures provider name, native tokens, and cost for each LLM request (initial + tool continuations).
 // Generation records are stored in response_metadata.openrouter.generations[] array.
-func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context, metadata *domainllm.StreamMetadata) error {
+func (se *StreamExecutor) persistGenerationRecord(ctx context.Context, metadata *domainllm.StreamMetadata) error {
 	// Check if we have a generation ID
 	generationID := se.getGenerationID()
 	if generationID == "" {
@@ -101,7 +99,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 	if !ok {
 		// Provider doesn't support stats API - finalize with available metadata
 		// This ensures records are always finalized, even without enrichment
-		basicRecord := &llmModels.GenerationRecord{
+		basicRecord := &domainllm.GenerationRecord{
 			ID:           generationID,
 			RequestIndex: se.requestIndex,
 			Phase:        phase,
@@ -109,7 +107,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 			Finalized:    true, // Finalized without enrichment
 		}
 
-		if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
+		if err := se.turnWriter.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
 			return fmt.Errorf("failed to append basic generation record: %w", err)
 		}
 
@@ -151,7 +149,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 					metadata.Model,
 					se.userID,
 					se.provider.Name(),
-					se.turnRepo,
+					se.turnWriter,
 					statsQuerier,
 					se.creditSettler,
 					se.settlementMode,
@@ -173,7 +171,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 		}
 
 		// Other errors (auth, network, etc.) - finalize immediately with error
-		basicRecord := &llmModels.GenerationRecord{
+		basicRecord := &domainllm.GenerationRecord{
 			ID:                generationID,
 			RequestIndex:      se.requestIndex,
 			Phase:             phase,
@@ -183,7 +181,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 			FinalizeLastError: err.Error(),
 		}
 
-		if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
+		if err := se.turnWriter.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
 			return fmt.Errorf("failed to append basic generation record: %w", err)
 		}
 
@@ -199,7 +197,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 	}
 
 	// Success - enrich and finalize with complete API data
-	enrichedRecord := &llmModels.GenerationRecord{
+	enrichedRecord := &domainllm.GenerationRecord{
 		ID:                     stats.ID,
 		RequestIndex:           se.requestIndex,
 		Phase:                  phase,
@@ -220,7 +218,7 @@ func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context,
 	}
 
 	// Persist to database (atomic JSONB upsert-by-id)
-	if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, enrichedRecord); err != nil {
+	if err := se.turnWriter.AppendGenerationRecord(ctx, se.turnID, enrichedRecord); err != nil {
 		return fmt.Errorf("failed to append enriched generation record: %w", err)
 	}
 

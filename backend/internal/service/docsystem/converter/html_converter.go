@@ -6,7 +6,7 @@ import (
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 	"meridian/internal/service/docsystem/converter/sanitizer"
 )
 
@@ -21,7 +21,7 @@ type htmlConverter struct {
 
 // NewHTMLConverter creates a new HTML to markdown converter.
 // The converter automatically sanitizes HTML before conversion to prevent XSS attacks.
-func NewHTMLConverter() docsysSvc.ContentConverter {
+func NewHTMLConverter() domaindocsys.ContentConverter {
 	return &htmlConverter{
 		sanitizer: sanitizer.NewHTMLSanitizer(),
 		converter: md.NewConverter("", true, nil),

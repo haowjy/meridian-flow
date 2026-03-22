@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // ProviderRegistry manages LLM providers and routes model requests to the appropriate provider.

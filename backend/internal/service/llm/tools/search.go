@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	docsysSvc "meridian/internal/domain/services/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // SearchToolMetadata returns metadata for the doc_search tool.
@@ -26,9 +26,9 @@ func SearchToolMetadata() *ToolMetadata {
 type SearchTool struct {
 	projectID    string
 	userID       string                        // Required for service layer authorization
-	documentSvc  docsysSvc.DocumentService     // For search operations (replaces documentRepo)
-	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
-	pathResolver *PathResolver                 // For folder path resolution
+	documentSvc  domaindocsys.DocumentService  // For search operations (replaces documentRepo)
+	namespaceSvc domaindocsys.NamespaceService // For namespace routing (optional)
+	pathResolver *DocumentPathResolver         // For folder path resolution
 	config       *ToolConfig
 }
 
@@ -37,9 +37,9 @@ type SearchTool struct {
 func NewSearchTool(
 	projectID string,
 	userID string,
-	documentSvc docsysSvc.DocumentService,
-	folderSvc docsysSvc.FolderService, // For PathResolver
-	namespaceSvc docsysSvc.NamespaceService,
+	documentSvc domaindocsys.DocumentService,
+	folderSvc domaindocsys.FolderService, // For DocumentPathResolver
+	namespaceSvc domaindocsys.NamespaceService,
 	config *ToolConfig,
 ) *SearchTool {
 	if config == nil {
@@ -80,12 +80,12 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 			// Check namespace access - doc_search DENIED for /.meridian/**
 			if t.namespaceSvc != nil {
 				namespace, _, err := t.namespaceSvc.ParsePath(folderPath)
-				if err == nil && namespace == docsysSvc.NamespaceMeridian {
+				if err == nil && namespace == domaindocsys.NamespaceMeridian {
 					return ErrorResult(ErrInvalidInput, "doc_search cannot access /.meridian/ paths - skills are not searchable", map[string]any{
 						"path": folderPath,
 					}), nil
 				}
-				if err == nil && namespace == docsysSvc.NamespaceSession {
+				if err == nil && namespace == domaindocsys.NamespaceSession {
 					return ErrorResult(ErrInvalidInput, "doc_search cannot access /.session/ paths", map[string]any{
 						"path": folderPath,
 					}), nil
@@ -129,7 +129,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 	}
 
 	// Build search request for service layer
-	searchReq := &docsysSvc.SearchDocumentsRequest{
+	searchReq := &domaindocsys.SearchDocumentsRequest{
 		Query:     query,
 		ProjectID: t.projectID,
 		Limit:     limit,

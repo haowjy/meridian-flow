@@ -6,10 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	llmSvc "meridian/internal/domain/services/llm"
-	skillSvc "meridian/internal/domain/services/skill"
+	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
+	skill "meridian/internal/domain/skill"
 )
 
 // baseIdentityPrompt is the foundational identity prompt for Meridian.
@@ -17,25 +16,25 @@ import (
 const baseIdentityPrompt = `You are Meridian, an AI assistant with access to the user's document repository.`
 
 // systemPromptResolver builds the final system prompt from project, thread, and skills
-// Implements llmSvc.SystemPromptResolver interface
+// Implements domainllm.SystemPromptResolver interface
 //
 // Skills metadata (names/descriptions) is NOT handled here — it flows through the tool
 // system via skill_invoke's enriched ToolMetadata. This ensures skills metadata is
 // naturally absent when a model doesn't support tools (SRP compliance).
 type systemPromptResolver struct {
-	projectRepo  docsysRepo.ProjectRepository
-	threadRepo   llmRepo.ThreadRepository
-	skillService skillSvc.ProjectSkillService
+	projectRepo  domaindocsys.ProjectStore
+	threadRepo   domainllm.ThreadStore
+	skillService skill.ProjectSkillService
 	logger       *slog.Logger
 }
 
 // NewSystemPromptResolver creates a new system prompt resolver
 func NewSystemPromptResolver(
-	projectRepo docsysRepo.ProjectRepository,
-	threadRepo llmRepo.ThreadRepository,
-	skillService skillSvc.ProjectSkillService,
+	projectRepo domaindocsys.ProjectStore,
+	threadRepo domainllm.ThreadStore,
+	skillService skill.ProjectSkillService,
 	logger *slog.Logger,
-) llmSvc.SystemPromptResolver {
+) domainllm.SystemPromptResolver {
 	return &systemPromptResolver{
 		projectRepo:  projectRepo,
 		threadRepo:   threadRepo,

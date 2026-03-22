@@ -8,15 +8,14 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmModels "meridian/internal/domain/models/llm"
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/pkg/sliceutil"
 	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tools"
 )
 
 // collectToolUse extracts tool use information from a tool_use block and adds it to the collection.
-func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
+func (se *StreamExecutor) collectToolUse(block *domainllm.TurnBlock) {
 	// Extract tool use info from block.Content
 	// Expected format: {"tool_use_id": "...", "tool_name": "...", "input": {...}}
 	if block.Content == nil {
@@ -135,9 +134,9 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	nextSequence := se.maxBlockSequence + 1
 
 	for i, toolResult := range toolResults {
-		block := &llmModels.TurnBlock{
+		block := &domainllm.TurnBlock{
 			TurnID:    se.turnID,
-			BlockType: llmModels.BlockTypeToolResult,
+			BlockType: domainllm.BlockTypeToolResult,
 			Sequence:  nextSequence + i,
 			Content: map[string]interface{}{
 				"tool_use_id": toolResult.ID,
@@ -155,7 +154,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 		if err := se.persistToolResult(ctx, block); err != nil {
 			// Update turn status to error before returning
-			if updateErr := se.turnRepo.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
+			if updateErr := se.turnWriter.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
 				se.logger.Error("failed to update turn error status", "error", updateErr)
 			}
 			return err
@@ -320,9 +319,9 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 		notificationMsg := domainllm.Message{
 			Role: "user",
-			Content: []*llmModels.TurnBlock{
+			Content: []*domainllm.TurnBlock{
 				{
-					BlockType:   llmModels.BlockTypeText,
+					BlockType:   domainllm.BlockTypeText,
 					TextContent: &notificationText,
 				},
 			},
@@ -379,9 +378,9 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 // This is the shared helper used by both executeToolsAndContinue (real results)
 // and persistErrorToolResults (error results) to avoid code duplication.
 // NOTE: Legacy SSE block events have been removed - AG-UI handles streaming display.
-func (se *StreamExecutor) persistToolResult(ctx context.Context, block *llmModels.TurnBlock) error {
+func (se *StreamExecutor) persistToolResult(ctx context.Context, block *domainllm.TurnBlock) error {
 	// 1. Persist to database
-	if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
+	if err := se.turnWriter.CreateTurnBlock(ctx, block); err != nil {
 		se.logger.Error("failed to persist tool result block",
 			"error", err,
 			"tool_use_id", block.Content["tool_use_id"],
@@ -419,9 +418,9 @@ func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func
 	nextSequence := se.maxBlockSequence + 1
 
 	for i, tool := range se.collectedTools {
-		block := &llmModels.TurnBlock{
+		block := &domainllm.TurnBlock{
 			TurnID:    se.turnID,
-			BlockType: llmModels.BlockTypeToolResult,
+			BlockType: domainllm.BlockTypeToolResult,
 			Sequence:  nextSequence + i,
 			Content: map[string]interface{}{
 				"tool_use_id": tool.ID,
@@ -548,7 +547,7 @@ func injectToolLimitNote(messages []domainllm.Message, currentRound, maxRounds i
 			// Find last tool_result block in this message
 			blocks := messages[i].Content
 			for j := len(blocks) - 1; j >= 0; j-- {
-				if blocks[j].BlockType == llmModels.BlockTypeToolResult {
+				if blocks[j].BlockType == domainllm.BlockTypeToolResult {
 					// Inject limit note into the result field
 					// Content is already map[string]interface{} - no type assertion needed
 					content := blocks[j].Content

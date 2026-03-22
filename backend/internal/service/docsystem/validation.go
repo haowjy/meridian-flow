@@ -3,20 +3,20 @@ package docsystem
 import (
 	"context"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domaindocsys "meridian/internal/domain/docsystem"
 )
 
 // ResourceValidator validates that parent resources are not soft-deleted
 // before allowing operations on child resources
 type ResourceValidator struct {
-	projectRepo docsysRepo.ProjectRepository
-	folderRepo  docsysRepo.FolderRepository
+	projectRepo domaindocsys.ProjectStore
+	folderRepo  domaindocsys.FolderStore
 }
 
 // NewResourceValidator creates a new resource validator
 func NewResourceValidator(
-	projectRepo docsysRepo.ProjectRepository,
-	folderRepo docsysRepo.FolderRepository,
+	projectRepo domaindocsys.ProjectStore,
+	folderRepo domaindocsys.FolderStore,
 ) *ResourceValidator {
 	return &ResourceValidator{
 		projectRepo: projectRepo,

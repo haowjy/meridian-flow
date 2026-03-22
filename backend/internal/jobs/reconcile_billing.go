@@ -5,8 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	billingrepo "meridian/internal/domain/repositories/billing"
-	billingdomain "meridian/internal/domain/services/billing"
+	billing "meridian/internal/domain/billing"
 )
 
 const (
@@ -17,16 +16,16 @@ const (
 // ReconcileBillingJob retries pending billing settlements that were write-ahead persisted
 // but failed to deduct from credits on the first attempt.
 type ReconcileBillingJob struct {
-	generationStore  billingrepo.GenerationBillingStore
-	creditSettler    billingdomain.CreditSettler
+	generationStore  billing.GenerationBillingStore
+	creditSettler    billing.CreditSettler
 	pendingOlderThan time.Duration
 	scanLimit        int
 	logger           *slog.Logger
 }
 
 func NewReconcileBillingJob(
-	generationStore billingrepo.GenerationBillingStore,
-	creditSettler billingdomain.CreditSettler,
+	generationStore billing.GenerationBillingStore,
+	creditSettler billing.CreditSettler,
 	logger *slog.Logger,
 ) *ReconcileBillingJob {
 	if logger == nil {
@@ -50,7 +49,7 @@ func (j *ReconcileBillingJob) Execute(ctx context.Context) error {
 	}
 
 	for _, item := range pending {
-		retryErr := j.creditSettler.RetryPendingSettlement(ctx, billingdomain.RetryPendingSettlementInput{
+		retryErr := j.creditSettler.RetryPendingSettlement(ctx, billing.RetryPendingSettlementInput{
 			TurnID:       item.TurnID,
 			RequestIndex: item.RequestIndex,
 		})

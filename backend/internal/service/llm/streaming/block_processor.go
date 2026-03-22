@@ -10,14 +10,13 @@ import (
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 
-	llmModels "meridian/internal/domain/models/llm"
-	domainllm "meridian/internal/domain/services/llm"
+	domainllm "meridian/internal/domain/llm"
 )
 
 // canPersistPartialBlock returns true for block types that are useful when partial.
 // Text and thinking are human-readable; tool_use JSON is unparseable when incomplete.
 func canPersistPartialBlock(blockType string) bool {
-	return blockType == llmModels.BlockTypeText || blockType == llmModels.BlockTypeThinking
+	return blockType == domainllm.BlockTypeText || blockType == domainllm.BlockTypeThinking
 }
 
 // processAGUIEvent handles AG-UI protocol events from the library.
@@ -87,7 +86,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 		if se.blockTypes == nil {
 			se.blockTypes = make(map[int]string)
 		}
-		se.blockTypes[blockIdx] = llmModels.BlockTypeText
+		se.blockTypes[blockIdx] = domainllm.BlockTypeText
 
 	case *events.ThinkingTextMessageContentEvent:
 		if e.Delta != "" {
@@ -108,7 +107,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 		if se.blockTypes == nil {
 			se.blockTypes = make(map[int]string)
 		}
-		se.blockTypes[blockIdx] = llmModels.BlockTypeThinking
+		se.blockTypes[blockIdx] = domainllm.BlockTypeThinking
 
 	case *events.ToolCallStartEvent:
 		// Record parent message correlation for backend-emitted TOOL_CALL_RESULT.
@@ -130,7 +129,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 		if se.blockTypes == nil {
 			se.blockTypes = make(map[int]string)
 		}
-		se.blockTypes[blockIdx] = llmModels.BlockTypeToolUse
+		se.blockTypes[blockIdx] = domainllm.BlockTypeToolUse
 		// NOTE: Legacy tool metadata tracking removed - AG-UI handles tool streaming display
 
 	case *events.ToolCallArgsEvent:
@@ -153,7 +152,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 // processCompleteBlock handles a complete, normalized block from the library.
 // The library has already normalized provider-specific types (web_search_tool_result -> tool_result).
 // streamStartSequence is used to remap provider block indices to turn-level sequences
-func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock, streamStartSequence int) error {
+func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *domainllm.TurnBlock, streamStartSequence int) error {
 	// Set turn ID
 	block.TurnID = se.turnID
 
@@ -225,7 +224,7 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		}
 
 		// Persist the block to database
-		if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
+		if err := se.turnWriter.CreateTurnBlock(ctx, block); err != nil {
 			return fmt.Errorf("create turn block: %w", err)
 		}
 		persisted = true
@@ -255,7 +254,7 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 
 	// Track tool_result IDs from provider (e.g., decode error results)
 	// This prevents backend from executing tools that already have results
-	if block.BlockType == llmModels.BlockTypeToolResult {
+	if block.BlockType == domainllm.BlockTypeToolResult {
 		if toolUseID, ok := block.Content["tool_use_id"].(string); ok {
 			se.toolResultIDs[toolUseID] = true
 		}
@@ -317,7 +316,7 @@ func (se *StreamExecutor) processGenerationIDDiscovered(
 
 	// Build partial GenerationRecord (only ID + metadata fields)
 	// This will be enriched later via background job when stream completes/cancels
-	partialRecord := &llmModels.GenerationRecord{
+	partialRecord := &domainllm.GenerationRecord{
 		ID:           event.GenerationID,
 		RequestIndex: se.requestIndex,
 		Phase:        phase,
@@ -328,7 +327,7 @@ func (se *StreamExecutor) processGenerationIDDiscovered(
 	// Persist partial record to database (upsert-by-id)
 	// If this fails, log but don't stop stream - enrichment can still happen
 	// via final metadata event as fallback
-	if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, partialRecord); err != nil {
+	if err := se.turnWriter.AppendGenerationRecord(ctx, se.turnID, partialRecord); err != nil {
 		return fmt.Errorf("append partial generation record: %w", err)
 	}
 
@@ -353,7 +352,7 @@ func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 		}
 
 		// Only persist text/thinking blocks - tool_use JSON is unparseable when partial
-		blockType := llmModels.BlockTypeText // default to text
+		blockType := domainllm.BlockTypeText // default to text
 		if bt, exists := se.blockTypes[providerBlockIndex]; exists {
 			blockType = bt
 		}
@@ -373,7 +372,7 @@ func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 		turnSequence := se.maxBlockSequence + 1 + providerBlockIndex
 
 		// Create partial block
-		partialBlock := &llmModels.TurnBlock{
+		partialBlock := &domainllm.TurnBlock{
 			TurnID:      se.turnID,
 			BlockType:   blockType,
 			Sequence:    turnSequence,
@@ -382,7 +381,7 @@ func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 		}
 
 		// Persist the partial block
-		if err := se.turnRepo.UpsertPartialBlock(ctx, partialBlock); err != nil {
+		if err := se.turnWriter.UpsertPartialBlock(ctx, partialBlock); err != nil {
 			se.logger.Error("failed to persist partial text block",
 				"error", err,
 				"sequence", turnSequence,

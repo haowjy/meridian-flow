@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 
-	collabModels "meridian/internal/domain/models/collab"
+	collab "meridian/internal/domain/collab"
 )
 
 func TestBuildProjectedStateParity_KnownExpectedText(t *testing.T) {
@@ -23,11 +23,11 @@ func TestBuildProjectedStateParity_KnownExpectedText(t *testing.T) {
 	otherUserUpdate := buildAppendUpdate(t, baseState, " other")
 
 	now := time.Now().UTC()
-	proposalStore := &fakeProjectorProposalStore{listByDocument: []collabModels.Proposal{
+	proposalStore := &fakeProjectorProposalStore{listByDocument: []collab.Proposal{
 		{
 			ID:              uuid.New(),
 			DocumentID:      docID,
-			Status:          collabModels.ProposalStatusPending,
+			Status:          collab.ProposalStatusPending,
 			YjsUpdate:       update2,
 			CreatedByUserID: userID,
 			CreatedAt:       now.Add(2 * time.Minute),
@@ -35,7 +35,7 @@ func TestBuildProjectedStateParity_KnownExpectedText(t *testing.T) {
 		{
 			ID:              uuid.New(),
 			DocumentID:      docID,
-			Status:          collabModels.ProposalStatusPending,
+			Status:          collab.ProposalStatusPending,
 			YjsUpdate:       otherUserUpdate,
 			CreatedByUserID: otherUserID,
 			CreatedAt:       now.Add(1 * time.Minute),
@@ -43,7 +43,7 @@ func TestBuildProjectedStateParity_KnownExpectedText(t *testing.T) {
 		{
 			ID:              uuid.New(),
 			DocumentID:      docID,
-			Status:          collabModels.ProposalStatusPending,
+			Status:          collab.ProposalStatusPending,
 			YjsUpdate:       update1,
 			CreatedByUserID: userID,
 			CreatedAt:       now.Add(1 * time.Minute),

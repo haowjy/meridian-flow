@@ -3,200 +3,178 @@ package llm
 import (
 	"fmt"
 	"log/slog"
+	"meridian/internal/domain"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
-	billingmodel "meridian/internal/domain/models/billing"
-	"meridian/internal/domain/repositories"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	llmRepo "meridian/internal/domain/repositories/llm"
-	"meridian/internal/domain/services"
-	billingSvc "meridian/internal/domain/services/billing"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	llmSvc "meridian/internal/domain/services/llm"
-	skillSvc "meridian/internal/domain/services/skill"
+	"meridian/internal/domain/auth"
+	"meridian/internal/domain/billing"
+	"meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
+	"meridian/internal/domain/skill"
 	"meridian/internal/jobs"
-	docsysSvcImpl "meridian/internal/service/docsystem"
+	docsystemsvc "meridian/internal/service/docsystem"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
 	"meridian/internal/service/llm/thread"
-	threadhistory "meridian/internal/service/llm/thread_history"
+	"meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 )
 
 // SetupProviders initializes the provider factory and registry for routing.
-// Returns a configured ProviderRegistry or an error if setup fails.
 func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry, error) {
-	// Create provider factory with config (manages API keys, creates providers)
 	providerFactory := NewProviderFactory(cfg, logger)
-
-	// Create adapter factory (maps provider names to adapter constructors)
-	// Enables adding new providers without modifying existing code (OCP compliance)
 	adapterFactory := NewDefaultAdapterFactory()
-
-	// Create registry with both factories (DIP compliance - depends on abstractions)
 	registry := NewProviderRegistry(providerFactory, adapterFactory)
-
-	// Validate factories are configured
 	if err := registry.Validate(); err != nil {
 		return nil, fmt.Errorf("provider registry validation failed: %w", err)
 	}
 
-	// Log available providers based on config
-	if cfg.AnthropicAPIKey != "" {
+	if cfg.LLM.AnthropicAPIKey != "" {
 		logger.Debug("provider available", "name", "anthropic", "models", "claude-*")
 	} else {
 		logger.Info("ANTHROPIC_API_KEY not set - Anthropic provider not available")
 	}
 
-	// Future: Log other providers when added
-	// if cfg.OpenAIAPIKey != "" {
-	//     logger.Info("provider available", "name", "openai", "models", "gpt-*, o1-*")
-	// }
-
 	logger.Info("provider registry initialized with factory-based routing")
-
 	return registry, nil
 }
 
-// Services holds all LLM-related services
+// Services holds all LLM-related services.
 type Services struct {
-	Thread        llmSvc.ThreadService
-	ThreadHistory llmSvc.ThreadHistoryService
-	Streaming     llmSvc.StreamingService
+	Thread        domainllm.ThreadService
+	ThreadHistory domainllm.ThreadHistoryService
+	Streaming     domainllm.StreamingService
 }
 
-// SetupServices initializes all LLM services with proper dependency injection
-func SetupServices(
-	threadRepo llmRepo.ThreadRepository,
-	turnRepo llmRepo.TurnRepository,
-	projectRepo docsysRepo.ProjectRepository,
-	documentRepo docsysRepo.DocumentRepository,
-	folderRepo docsysRepo.FolderRepository,
-	documentSvc docsysSvc.DocumentService, // For tool write operations (SOLID: DIP)
-	folderSvc docsysSvc.FolderService, // For tool write operations (SOLID: DIP)
-	skillService skillSvc.ProjectSkillService, // For skill_invoke/skill_list tools
-	providerRegistry *ProviderRegistry,
-	cfg *config.Config,
-	txManager repositories.TransactionManager,
-	capabilityRegistry *capabilities.Registry,
-	authorizer services.ResourceAuthorizer,
-	toolLimitResolver llmSvc.ToolLimitResolver,
-	creditAdmissionChecker billingSvc.CreditAdmissionChecker,
-	creditSettler billingSvc.CreditSettler,
-	settlementMode billingmodel.CreditSettlementMode,
-	jobQueue jobs.JobQueue,
-	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (collab proposal)
-	logger *slog.Logger,
-) (*Services, *mstream.Registry, error) {
-	if creditAdmissionChecker == nil {
-		return nil, nil, fmt.Errorf("credit admission checker is required")
-	}
-	if creditSettler == nil {
-		return nil, nil, fmt.Errorf("credit settler is required")
+// LLMServicesDeps groups dependencies for SetupLLMServices.
+type LLMServicesDeps struct {
+	ThreadRepo             domainllm.ThreadStore
+	TurnRepo               domainllm.TurnStore
+	ProjectRepo            docsystem.ProjectStore
+	FolderRepo             docsystem.FolderStore
+	DocumentSvc            docsystem.DocumentService
+	FolderSvc              docsystem.FolderService
+	SkillService           skill.ProjectSkillService
+	ProviderRegistry       *ProviderRegistry
+	Config                 *config.Config
+	TxManager              domain.TransactionManager
+	CapabilityRegistry     *capabilities.Registry
+	Authorizer             auth.ResourceAuthorizer
+	ToolLimitResolver      domainllm.ToolLimitResolver
+	CreditAdmissionChecker billing.CreditAdmissionChecker
+	CreditSettler          billing.CreditSettler
+	SettlementMode         billing.CreditSettlementMode
+	JobQueue               jobs.JobQueue
+	MutationStrategy       tools.DocumentMutationStrategy
+	Logger                 *slog.Logger
+}
+
+// Validate checks that all required dependencies are configured.
+func (d LLMServicesDeps) Validate() error {
+	return validation.ValidateStruct(&d,
+		validation.Field(&d.ThreadRepo, validation.Required),
+		validation.Field(&d.TurnRepo, validation.Required),
+		validation.Field(&d.ProjectRepo, validation.Required),
+		validation.Field(&d.FolderRepo, validation.Required),
+		validation.Field(&d.DocumentSvc, validation.Required),
+		validation.Field(&d.FolderSvc, validation.Required),
+		validation.Field(&d.SkillService, validation.Required),
+		validation.Field(&d.ProviderRegistry, validation.Required),
+		validation.Field(&d.Config, validation.Required),
+		validation.Field(&d.TxManager, validation.Required),
+		validation.Field(&d.CapabilityRegistry, validation.Required),
+		validation.Field(&d.Authorizer, validation.Required),
+		validation.Field(&d.ToolLimitResolver, validation.Required),
+		validation.Field(&d.CreditAdmissionChecker, validation.Required),
+		validation.Field(&d.CreditSettler, validation.Required),
+		validation.Field(&d.SettlementMode, validation.Required),
+		validation.Field(&d.JobQueue, validation.Required),
+		validation.Field(&d.MutationStrategy, validation.Required),
+		validation.Field(&d.Logger, validation.Required),
+	)
+}
+
+// SetupLLMServices initializes all LLM services with proper dependency injection.
+func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error) {
+	if err := deps.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("llm services deps: %w", err)
 	}
 
-	// Create shared validator
-	validator := NewThreadValidator(threadRepo)
-
-	// Create mstream registry (for SSE streaming)
+	validator := NewThreadValidator(deps.ThreadRepo)
 	streamRegistry := mstream.NewRegistry()
 
-	// Create response generator (uses TurnReader + TurnNavigator for ISP compliance)
-	responseGenerator := streaming.NewResponseGenerator(
-		providerRegistry,
-		turnRepo, // TurnReader
-		turnRepo, // TurnNavigator (same repo implements both)
-		logger,
-	)
+	providerResolver := streaming.NewProviderResolver(deps.ProviderRegistry)
 
-	// Create thread service (CRUD only)
-	threadService := thread.NewService(
-		threadRepo,
-		projectRepo,
-		logger,
-	)
+	threadService := thread.NewService(deps.ThreadRepo, deps.ProjectRepo, deps.Logger)
 
-	// Create thread history service (uses TurnReader + TurnNavigator for ISP compliance)
 	threadHistoryService := threadhistory.NewService(
-		threadRepo,
-		turnRepo, // TurnReader
-		turnRepo, // TurnNavigator (same repo implements both)
-		capabilityRegistry,
-		authorizer,
+		deps.ThreadRepo,
+		deps.TurnRepo,
+		deps.TurnRepo,
+		deps.CapabilityRegistry,
+		deps.Authorizer,
 	)
 
-	// Create system prompt resolver
-	// Skills content is loaded from DB via skillService (not document repo).
-	// Skills metadata is handled by the tool system (skill_invoke metadata enrichment).
-	systemPromptResolver := streaming.NewSystemPromptResolver(
-		projectRepo,
-		threadRepo,
-		skillService,
-		logger,
-	)
+	systemPromptResolver := streaming.NewSystemPromptResolver(deps.ProjectRepo, deps.ThreadRepo, deps.SkillService, deps.Logger)
 
-	// Create formatter registry and register doc tool formatters
-	// str_replace_based_edit_tool handles view (document->text, folder->listing) and edit formatting
 	formatterRegistry := formatting.NewFormatterRegistry()
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
 	formatterRegistry.Register("str_replace_based_edit_tool", &formatting.TextEditorFormatter{})
 
-	// Create MessageBuilder service (pure conversion, no data loading)
-	messageBuilder := threadhistory.NewMessageBuilderService(
-		formatterRegistry,
-		capabilityRegistry,
-		logger,
-	)
+	messageBuilder := threadhistory.NewMessageBuilderService(formatterRegistry, deps.CapabilityRegistry, deps.Logger)
 
-	// Create TokenFinalizer
-	// Centralizes token acquisition strategy: provider tokens -> OpenRouter API -> fallback to 0
-	// Background enrichment job will update turn tokens asynchronously for cancellations
-	tokenFinalizer := tokens.NewDefaultTokenFinalizer(
-		cfg.OpenRouterAPIKey,
-		logger,
-	)
+	tokenFinalizer := tokens.NewDefaultTokenFinalizer(deps.Config.LLM.OpenRouterAPIKey, deps.Logger)
+	deps.Logger.Info("token finalizer initialized")
 
-	logger.Info("token finalizer initialized")
+	namespaceSvc := docsystemsvc.NewNamespaceService(deps.FolderRepo, deps.Logger)
 
-	// Create namespace service for document tool routing
-	namespaceSvc := docsysSvcImpl.NewNamespaceService(folderRepo, logger)
-
-	// Create streaming service (turn creation/orchestration)
-	// Tools are created per-request with project-specific context
-	// Uses minimal interfaces (ISP compliance)
-	streamingService := streaming.NewService(
-		turnRepo, // TurnWriter
-		turnRepo, // TurnReader
-		turnRepo, // TurnNavigator (same repo implements all three)
-		threadRepo,
-		projectRepo,  // For validating project access on cold start
-		documentSvc,  // For tool operations (SOLID: DIP)
-		folderSvc,    // For tool operations (SOLID: DIP)
-		namespaceSvc, // For namespace routing in tools
-		skillService, // For skill_invoke/skill_list tools
-		validator,
-		authorizer,
-		responseGenerator,
-		streamRegistry,
-		cfg,
-		txManager,
-		systemPromptResolver,
-		messageBuilder,
-		toolLimitResolver,  // Tool round limit resolver (tier-ready)
-		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
-		formatterRegistry,  // For formatting synthetic tool results (ref transformer)
-		tokenFinalizer,     // For finalizing tokens on completion/interruption
-		creditAdmissionChecker,
-		creditSettler,
-		settlementMode,
-		jobQueue,         // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
-		logger,
-	)
+	streamingService, err := streaming.NewStreamingOrchestrator(streaming.StreamingDeps{
+		Persistence: streaming.PersistenceDeps{
+			TurnWriter:    deps.TurnRepo,
+			TurnReader:    deps.TurnRepo,
+			TurnNavigator: deps.TurnRepo,
+			ThreadRepo:    deps.ThreadRepo,
+			ProjectRepo:   deps.ProjectRepo,
+			TxManager:     deps.TxManager,
+		},
+		Services: streaming.ServiceDeps{
+			DocumentSvc:      deps.DocumentSvc,
+			FolderSvc:        deps.FolderSvc,
+			NamespaceSvc:     namespaceSvc,
+			SkillService:     deps.SkillService,
+			Validator:        validator,
+			Authorizer:       deps.Authorizer,
+			MutationStrategy: deps.MutationStrategy,
+		},
+		Pipeline: streaming.PipelineDeps{
+			ProviderGetter:       providerResolver,
+			Registry:             streamRegistry,
+			SystemPromptResolver: systemPromptResolver,
+			MessageBuilder:       messageBuilder,
+			CapabilityRegistry:   deps.CapabilityRegistry,
+			FormatterRegistry:    formatterRegistry,
+		},
+		Billing: streaming.BillingDeps{
+			ToolLimitResolver:      deps.ToolLimitResolver,
+			TokenFinalizer:         tokenFinalizer,
+			CreditAdmissionChecker: deps.CreditAdmissionChecker,
+			CreditSettler:          deps.CreditSettler,
+			SettlementMode:         deps.SettlementMode,
+		},
+		Infra: streaming.InfraDeps{
+			Config:   deps.Config,
+			JobQueue: deps.JobQueue,
+			Logger:   deps.Logger,
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create streaming service: %w", err)
+	}
 
 	return &Services{
 		Thread:        threadService,
