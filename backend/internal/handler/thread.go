@@ -149,7 +149,7 @@ func (h *ThreadHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Requ
 
 	userID := httputil.GetUserID(r)
 	var req struct {
-		TurnID string `json:"turn_id"`
+		TurnID *string `json:"turn_id"`
 	}
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")

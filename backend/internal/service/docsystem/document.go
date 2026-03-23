@@ -127,8 +127,8 @@ func (s *documentService) CreateDocument(ctx context.Context, req *domaindocsys.
 		FileType:  string(domaindocsys.FileTypeFromExtension(extension)),
 		Content:   req.Content,
 		Metadata:  domaindocsys.DocumentMetadata{},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	// Compute format-specific metadata based on file category
@@ -295,7 +295,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		}
 	}
 
-	doc.UpdatedAt = time.Now()
+	doc.UpdatedAt = time.Now().UTC()
 
 	if err := s.docRepo.Update(ctx, doc); err != nil {
 		return nil, err

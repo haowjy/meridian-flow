@@ -102,7 +102,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *domainllm
 
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("thread %s: %w", turn.ThreadID, domain.ErrNotFound)
+			return fmt.Errorf("thread %s not found: %w", turn.ThreadID, domain.ErrNotFound)
 		}
 		return fmt.Errorf("create turn: %w", err)
 	}
@@ -936,7 +936,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 	err := executor.QueryRow(ctx, threadQuery, threadID, userID).Scan(&threadExists, &lastViewedTurnID)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("thread %s: %w", threadID, domain.ErrNotFound)
+			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("verify thread access: %w", err)
 	}

@@ -76,7 +76,7 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
 		} else if errors.Is(err, domain.ErrBadRequest) {
 			httputil.RespondError(w, http.StatusBadRequest, err.Error())
 		} else {
@@ -122,7 +122,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
 		} else if errors.Is(err, domain.ErrBadRequest) {
 			httputil.RespondError(w, http.StatusBadRequest, err.Error())
 		} else {
@@ -177,7 +177,7 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
 		} else if errors.Is(err, domain.ErrBadRequest) {
 			httputil.RespondError(w, http.StatusBadRequest, err.Error())
 		} else {
