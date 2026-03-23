@@ -1,19 +1,17 @@
-import type { ReactNode } from "react"
-
 import { Robot } from "@phosphor-icons/react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
-import type { ActivityBlockData, AgentToolDetail } from "./types"
+import { useActivityNesting } from "./activity-context"
+import type { AgentToolDetail } from "./types"
 
 type AgentDetailProps = {
   detail: AgentToolDetail
-  depth: number
-  renderNestedActivity: (activity: ActivityBlockData, depth: number) => ReactNode
 }
 
-export function AgentDetail({ detail, depth, renderNestedActivity }: AgentDetailProps) {
+export function AgentDetail({ detail }: AgentDetailProps) {
+  const { depth, renderNestedActivity } = useActivityNesting()
   const { agent } = detail
 
   return (

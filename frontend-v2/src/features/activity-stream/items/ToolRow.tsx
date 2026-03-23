@@ -4,17 +4,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-import { ItemLine } from "./ItemLine"
+import { ItemLine } from "../ItemLine"
+import { ToolDetail } from "../ToolDetail"
 import {
   getToolCategory,
   getToolIcon,
   getToolLineTitle,
   getToolStatusLabel,
   getToolStatusVariant,
-} from "./tool-utils"
-import type { ToolItem } from "./types"
+} from "../tool-utils"
+import type { ToolItem } from "../types"
 
-type ToolLineProps = {
+type ToolRowProps = {
   tool: ToolItem
   expanded: boolean
   onToggle: () => void
@@ -39,7 +40,7 @@ function ToolStatusGlyph({ status }: Pick<ToolItem, "status">) {
   )
 }
 
-export function ToolLine({ tool, expanded, onToggle, onViewFile, className }: ToolLineProps) {
+export function ToolRow({ tool, expanded, onToggle, onViewFile, className }: ToolRowProps) {
   const category = getToolCategory(tool)
   const Icon = getToolIcon(category)
   const title = getToolLineTitle(tool)
@@ -54,6 +55,7 @@ export function ToolLine({ tool, expanded, onToggle, onViewFile, className }: To
       expanded={expanded}
       onToggle={onToggle}
       className={className}
+      detail={expanded ? <ToolDetail tool={tool} /> : undefined}
     >
       {showViewFile ? (
         <Button
