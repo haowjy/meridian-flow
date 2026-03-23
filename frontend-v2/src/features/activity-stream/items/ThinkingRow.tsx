@@ -19,9 +19,11 @@ export function ThinkingRow({ item, expanded, onToggle }: ThinkingRowProps) {
       onToggle={onToggle}
       detail={
         expanded ? (
-          <p className="whitespace-pre-line text-sm italic text-muted-foreground">
-            {item.text}
-          </p>
+          <div className="rounded-md border-l-2 border-l-muted-foreground/30 pl-2.5">
+            <p className="whitespace-pre-line text-sm italic text-muted-foreground">
+              {item.text}
+            </p>
+          </div>
         ) : undefined
       }
     />
