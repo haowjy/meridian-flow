@@ -27,7 +27,7 @@ type ThreadService interface {
 
 	// UpdateLastViewedTurn updates the last_viewed_turn_id field for a thread
 	// Validates user has access to the thread
-	UpdateLastViewedTurn(ctx context.Context, threadID, userID, turnID string) error
+	UpdateLastViewedTurn(ctx context.Context, threadID, userID string, turnID *string) error
 
 	// DeleteThread soft-deletes a thread and returns the deleted thread object
 	// Validates user has access

@@ -191,7 +191,8 @@ func (s *Service) createStreamSwitchFn(threadID, userID string, requestParams ma
 
 		// Update last_viewed_turn_id to the new assistant turn
 		// This ensures reload scrolls to the correct position after stream switch
-		if err := s.threadRepo.UpdateLastViewedTurn(ctx, threadID, userID, resp.AssistantTurn.ID); err != nil {
+		assistantTurnID := resp.AssistantTurn.ID
+		if err := s.threadRepo.UpdateLastViewedTurn(ctx, threadID, userID, &assistantTurnID); err != nil {
 			// Log but don't fail - bookmark update is non-critical
 			s.logger.Warn("failed to update last_viewed_turn_id during stream switch",
 				"thread_id", threadID,

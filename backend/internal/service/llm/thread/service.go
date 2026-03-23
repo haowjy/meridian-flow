@@ -57,8 +57,8 @@ func (s *Service) CreateThread(ctx context.Context, req *domainllm.CreateThreadR
 		ProjectID: req.ProjectID,
 		UserID:    req.UserID,
 		Title:     title,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.threadRepo.CreateThread(ctx, thread); err != nil {
@@ -127,7 +127,7 @@ func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req
 
 	// Update thread
 	thread.Title = title
-	thread.UpdatedAt = time.Now()
+	thread.UpdatedAt = time.Now().UTC()
 
 	if err := s.threadRepo.UpdateThread(ctx, thread); err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req
 }
 
 // UpdateLastViewedTurn updates the last_viewed_turn_id field for a thread
-func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID, turnID string) error {
+func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID string, turnID *string) error {
 	// Validate input
 	if threadID == "" {
 		return domain.NewValidationErrorWithField("thread ID is required", "thread_id")
@@ -151,8 +151,8 @@ func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID, tu
 	if userID == "" {
 		return domain.NewValidationErrorWithField("user ID is required", "user_id")
 	}
-	if turnID == "" {
-		return domain.NewValidationErrorWithField("turn ID is required", "turn_id")
+	if turnID != nil && *turnID == "" {
+		return domain.NewValidationErrorWithField("turn ID cannot be empty string; use null to clear", "turn_id")
 	}
 
 	// Update the last_viewed_turn_id
@@ -161,11 +161,18 @@ func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID, tu
 		return err
 	}
 
-	s.logger.Debug("last_viewed_turn_id updated",
-		"thread_id", threadID,
-		"turn_id", turnID,
-		"user_id", userID,
-	)
+	if turnID == nil {
+		s.logger.Debug("last_viewed_turn_id cleared",
+			"thread_id", threadID,
+			"user_id", userID,
+		)
+	} else {
+		s.logger.Debug("last_viewed_turn_id updated",
+			"thread_id", threadID,
+			"turn_id", *turnID,
+			"user_id", userID,
+		)
+	}
 
 	return nil
 }

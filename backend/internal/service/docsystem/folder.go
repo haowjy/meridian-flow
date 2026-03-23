@@ -133,8 +133,8 @@ func (s *folderService) CreateFolder(ctx context.Context, req *domaindocsys.Crea
 		ParentID:  result.ResolvedFolderID,
 		Name:      result.FinalName,
 		IsHidden:  false, // Explicit initialization per CLAUDE.md principle #4
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.folderRepo.Create(ctx, folder); err != nil {
@@ -272,7 +272,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 		}
 	}
 
-	folder.UpdatedAt = time.Now()
+	folder.UpdatedAt = time.Now().UTC()
 
 	// Update folder in database
 	// Note: Document paths are computed on-the-fly, so no cascade updates needed

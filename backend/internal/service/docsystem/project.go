@@ -63,8 +63,8 @@ func (s *projectService) CreateProject(ctx context.Context, req *domaindocsys.Cr
 		Name:      name,
 		Slug:      slug,
 		Autoapply: true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
@@ -165,7 +165,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		project.Preferences = req.Preferences
 	}
 
-	project.UpdatedAt = time.Now()
+	project.UpdatedAt = time.Now().UTC()
 
 	if err := s.projectRepo.Update(ctx, project); err != nil {
 		return nil, err

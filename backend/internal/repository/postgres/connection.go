@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -129,6 +131,12 @@ func CreateConnectionPool(ctx context.Context, databaseURL string, maxConns, min
 		return nil, fmt.Errorf("parse connection string: %w", err)
 	}
 
+	if _, ok := config.ConnConfig.RuntimeParams["TimeZone"]; !ok {
+		if _, lowercaseOK := config.ConnConfig.RuntimeParams["timezone"]; !lowercaseOK {
+			config.ConnConfig.RuntimeParams["TimeZone"] = "UTC"
+		}
+	}
+
 	// Configure pool size
 	// If unset/misconfigured, fall back to previous defaults.
 	if maxConns < 1 {
@@ -162,6 +170,24 @@ func CreateConnectionPool(ctx context.Context, databaseURL string, maxConns, min
 	if config.ConnConfig.Port == 6543 && config.ConnConfig.DefaultQueryExecMode == pgx.QueryExecModeCacheStatement {
 		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 		slog.Debug("auto-configured cache_describe mode for PgBouncer compatibility", "port", 6543)
+	}
+
+	existingAfterConnect := config.AfterConnect
+	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name:  "timestamp",
+			OID:   pgtype.TimestampOID,
+			Codec: &pgtype.TimestampCodec{ScanLocation: time.UTC},
+		})
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name:  "timestamptz",
+			OID:   pgtype.TimestamptzOID,
+			Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC},
+		})
+		if existingAfterConnect != nil {
+			return existingAfterConnect(ctx, conn)
+		}
+		return nil
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)

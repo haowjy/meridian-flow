@@ -128,7 +128,7 @@ func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, 
 		return existing, nil
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 	folder := &domaindocsys.Folder{
 		ProjectID:   projectID,
 		Name:        name,
@@ -345,6 +345,10 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 		return nil, fmt.Errorf("iterate folders: %w", err)
 	}
 
+	if folders == nil {
+		folders = []domaindocsys.Folder{}
+	}
+
 	return folders, nil
 }
 
@@ -360,7 +364,7 @@ func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projec
 	}
 
 	// Create new folder
-	now := time.Now()
+	now := time.Now().UTC()
 	folder := &domaindocsys.Folder{
 		ProjectID: projectID,
 		ParentID:  parentID,
@@ -389,7 +393,7 @@ func (r *PostgresFolderRepository) CreateHiddenIfNotExists(ctx context.Context, 
 	}
 
 	// Create new hidden folder
-	now := time.Now()
+	now := time.Now().UTC()
 	folder := &domaindocsys.Folder{
 		ProjectID: projectID,
 		ParentID:  parentID,
@@ -472,6 +476,10 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 		return nil, fmt.Errorf("iterate folders: %w", err)
 	}
 
+	if folders == nil {
+		folders = []domaindocsys.Folder{}
+	}
+
 	return folders, nil
 }
 
@@ -507,6 +515,10 @@ func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, 
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate folders: %w", err)
+	}
+
+	if folders == nil {
+		folders = []domaindocsys.Folder{}
 	}
 
 	return folders, nil

@@ -164,24 +164,24 @@ type SearchResult struct {
 // SearchResults contains the full search response with pagination metadata
 type SearchResults struct {
 	// Results is the list of matching documents with scores
-	Results []SearchResult
+	Results []SearchResult `json:"results"`
 
 	// TotalCount is the total number of matches (regardless of limit/offset)
 	// Used for pagination UI (e.g., "Showing 1-20 of 150 results")
-	TotalCount int
+	TotalCount int `json:"total_count"`
 
 	// HasMore indicates if there are more results beyond this page
 	// Equivalent to: (Offset + len(Results)) < TotalCount
-	HasMore bool
+	HasMore bool `json:"has_more"`
 
 	// Offset is the number of results skipped (from SearchOptions)
-	Offset int
+	Offset int `json:"offset"`
 
 	// Limit is the maximum number of results requested (from SearchOptions)
-	Limit int
+	Limit int `json:"limit"`
 
 	// Strategy indicates which search algorithm was used
-	Strategy SearchStrategy
+	Strategy SearchStrategy `json:"strategy"`
 }
 
 // NewSearchResults creates a SearchResults with calculated HasMore flag

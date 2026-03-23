@@ -28,7 +28,7 @@ type ThreadStore interface {
 
 	// UpdateLastViewedTurn updates only the last_viewed_turn_id field
 	// Returns domain.ErrNotFound if thread not found
-	UpdateLastViewedTurn(ctx context.Context, threadID, userID, turnID string) error
+	UpdateLastViewedTurn(ctx context.Context, threadID, userID string, turnID *string) error
 
 	// DeleteThread soft-deletes a thread and returns the deleted thread object
 	// Returns domain.ErrNotFound if not found or already deleted
