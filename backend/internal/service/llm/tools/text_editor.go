@@ -274,7 +274,7 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
+			return ErrorResult(ErrDocNotFound, "document not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
@@ -359,7 +359,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
+			return ErrorResult(ErrDocNotFound, "document not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}

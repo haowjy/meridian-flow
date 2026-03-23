@@ -20,7 +20,7 @@ func SetupLogFile(dir string, maxFiles int) (*os.File, error) {
 
 	// Create timestamped log file
 	filename := filepath.Join(dir, fmt.Sprintf("server-%s.log",
-		time.Now().Format("2006-01-02T15-04-05")))
+		time.Now().UTC().Format("2006-01-02T15-04-05")))
 
 	f, err := os.Create(filename)
 	if err != nil {

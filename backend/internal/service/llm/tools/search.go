@@ -96,7 +96,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 			resolvedID, _, err := t.pathResolver.ResolveFolderPath(ctx, folderPath)
 			if err != nil {
 				if errors.Is(err, domain.ErrNotFound) {
-					return ErrorResult(ErrNotFound, "Folder not found", map[string]any{"path": folderPath}), nil
+					return ErrorResult(ErrNotFound, "folder not found", map[string]any{"path": folderPath}), nil
 				}
 				return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 			}

@@ -211,7 +211,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 	var turn *domainllm.Turn
 	var assistantTurn *domainllm.Turn
 	var createdThread *domainllm.Thread // Only set if we created a new thread
-	now := time.Now()
+	now := time.Now().UTC()
 
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 		// If cold start, create the thread first
@@ -283,7 +283,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 			Status:        domainllm.TurnStatusStreaming,
 			Model:         &model,
 			RequestParams: requestParams,
-			CreatedAt:     time.Now(),
+			CreatedAt:     time.Now().UTC(),
 		}
 
 		if err := s.turnWriter.CreateTurn(txCtx, assistantTurn); err != nil {
@@ -635,7 +635,7 @@ func (s *Service) CreateAssistantTurnDebug(
 	}
 
 	// Create assistant turn
-	now := time.Now()
+	now := time.Now().UTC()
 	turn := &domainllm.Turn{
 		ThreadID:   threadID,
 		PrevTurnID: prevTurnID,
