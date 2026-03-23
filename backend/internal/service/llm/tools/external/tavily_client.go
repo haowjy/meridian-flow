@@ -134,7 +134,7 @@ func (c *TavilyClient) Search(ctx context.Context, query string, opts SearchOpti
 	return &SearchResponse{
 		Results:   results,
 		Query:     query,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().UTC(),
 	}, nil
 }
 

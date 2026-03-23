@@ -133,7 +133,7 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 		}
 
 		// 2. Create DB record with content (no SKILL.md document)
-		now := time.Now()
+		now := time.Now().UTC()
 		skill = &skilldomain.ProjectSkill{
 			ProjectID:        req.ProjectID,
 			InstanceFolderID: skillFolderID,
@@ -295,7 +295,7 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 			} else if folder.Name != skill.Name {
 				// Folder exists - rename it
 				folder.Name = skill.Name
-				folder.UpdatedAt = time.Now()
+				folder.UpdatedAt = time.Now().UTC()
 				if err := s.folderRepo.Update(txCtx, folder); err != nil {
 					return err
 				}

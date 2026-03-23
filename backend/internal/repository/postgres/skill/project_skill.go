@@ -235,7 +235,7 @@ func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, proj
 
 // Update updates an existing skill
 func (r *PostgresProjectSkillRepository) Update(ctx context.Context, skill *skill.ProjectSkill) error {
-	skill.UpdatedAt = time.Now()
+	skill.UpdatedAt = time.Now().UTC()
 
 	query := fmt.Sprintf(`
 		UPDATE %s

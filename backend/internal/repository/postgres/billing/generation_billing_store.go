@@ -284,7 +284,7 @@ func (s *GenerationBillingStore) loadTurnMetadata(ctx context.Context, turnID st
 	var rawMetadata []byte
 	if err := executor.QueryRow(ctx, query, turnID).Scan(&rawMetadata); err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 		}
 		return nil, fmt.Errorf("load turn metadata: %w", err)
 	}
@@ -303,7 +303,7 @@ func (s *GenerationBillingStore) withTurnMetadataTx(
 		var rawMetadata []byte
 		if err := tx.QueryRow(txCtx, loadQuery, turnID).Scan(&rawMetadata); err != nil {
 			if postgres.IsPgNoRowsError(err) {
-				return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+				return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 			}
 			return fmt.Errorf("load turn metadata for billing mutation: %w", err)
 		}

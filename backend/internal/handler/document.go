@@ -253,6 +253,6 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 func (h *DocumentHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
-		"time":   time.Now(),
+		"time":   time.Now().UTC(),
 	})
 }

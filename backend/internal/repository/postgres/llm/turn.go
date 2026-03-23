@@ -441,7 +441,7 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 	`, r.tables.Turns)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, errorMsg, time.Now(), turnID)
+	result, err := executor.Exec(ctx, query, errorMsg, time.Now().UTC(), turnID)
 	if err != nil {
 		return fmt.Errorf("update turn error: %w", err)
 	}
@@ -596,7 +596,7 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *dom
 
 	// Set created_at if not provided
 	if block.CreatedAt.IsZero() {
-		block.CreatedAt = time.Now()
+		block.CreatedAt = time.Now().UTC()
 	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -643,7 +643,7 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	for i, block := range blocks {
 		// Set created_at if not provided (consistent with CreateTurnBlock)
 		if block.CreatedAt.IsZero() {
-			block.CreatedAt = time.Now()
+			block.CreatedAt = time.Now().UTC()
 		}
 
 		if i > 0 {
@@ -696,7 +696,7 @@ func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *
 		RETURNING id, created_at, updated_at
 	`, r.tables.TurnBlocks)
 
-	now := time.Now()
+	now := time.Now().UTC()
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query,
 		block.TurnID,
@@ -1257,6 +1257,10 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 		return nil, fmt.Errorf("iterate turns: %w", err)
 	}
 
+	if turns == nil {
+		turns = []domainllm.Turn{}
+	}
+
 	return turns, nil
 }
 
@@ -1321,6 +1325,10 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate turns: %w", err)
+	}
+
+	if turns == nil {
+		turns = []domainllm.Turn{}
 	}
 
 	return turns, nil

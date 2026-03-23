@@ -28,7 +28,7 @@ func NewLLMSeeder(pool *pgxpool.Pool, tables *postgres.TableNames, logger *slog.
 
 // SeedThreadData creates sample thread data demonstrating tree structure and branching
 func (s *LLMSeeder) SeedThreadData(ctx context.Context, projectID, userID string) error {
-	now := time.Now()
+	now := time.Now().UTC()
 
 	// Create a sample thread
 	threadID := "11111111-1111-1111-1111-111111111111"

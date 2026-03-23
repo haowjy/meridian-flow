@@ -30,7 +30,7 @@ func NewUserPreferencesService(
 
 // getDefaultPreferences returns default preferences with namespaced structure
 func (s *UserPreferencesService) getDefaultPreferences(userID uuid.UUID) *domain.UserPreferences {
-	now := time.Now()
+	now := time.Now().UTC()
 	return &domain.UserPreferences{
 		UserID: userID,
 		Preferences: domain.JSONMap{
@@ -115,7 +115,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 	}
 
 	// Update timestamp
-	existing.UpdatedAt = time.Now()
+	existing.UpdatedAt = time.Now().UTC()
 
 	// Persist changes
 	if err := s.prefsRepo.Upsert(ctx, existing); err != nil {

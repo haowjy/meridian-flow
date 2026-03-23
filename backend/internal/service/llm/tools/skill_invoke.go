@@ -111,7 +111,7 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 	// Get skill metadata first to check invocation permissions
 	skill, err := t.skillService.GetSkillByName(ctx, t.userID, t.projectID, skillName)
 	if err != nil {
-		return ErrorResult(ErrNotFound, fmt.Sprintf("Skill '%s' not found", skillName), map[string]any{
+		return ErrorResult(ErrNotFound, fmt.Sprintf("skill '%s' not found", skillName), map[string]any{
 			"skill_name": skillName,
 		}), nil
 	}
