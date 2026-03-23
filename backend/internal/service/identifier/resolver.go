@@ -3,6 +3,7 @@ package identifier
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -55,7 +56,7 @@ func (r *ChainedResolver) ResolveProject(ctx context.Context, identifier, userID
 
 	// Future Strategy 3: Try as short code, alias, etc.
 
-	return "", domain.ErrNotFound
+	return "", domain.NewNotFoundError("project", fmt.Sprintf("project %s not found", identifier))
 }
 
 // ResolveDocument resolves an identifier (UUID or path) to a document UUID.
@@ -87,7 +88,7 @@ func (r *ChainedResolver) ResolveDocument(ctx context.Context, identifier, proje
 
 	// Future Strategy 3: Try as short code, alias, etc.
 
-	return "", domain.ErrNotFound
+	return "", domain.NewNotFoundError("document", fmt.Sprintf("document %s not found", identifier))
 }
 
 // ResolveDocumentIDOnly resolves an identifier to a document UUID without project scoping.
@@ -104,7 +105,7 @@ func (r *ChainedResolver) ResolveDocumentIDOnly(ctx context.Context, identifier 
 			return "", err
 		}
 		// UUID format but not found - return not found
-		return "", domain.ErrNotFound
+		return "", domain.NewNotFoundError("document", fmt.Sprintf("document %s not found", identifier))
 	}
 
 	// Not a UUID - likely a path, which requires project context
