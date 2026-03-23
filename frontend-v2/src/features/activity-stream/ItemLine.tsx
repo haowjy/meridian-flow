@@ -9,9 +9,10 @@ type ItemLineProps = {
   icon: ComponentType<{ className?: string }>
   label: string
   labelClassName?: string
-  expanded: boolean
-  onToggle: () => void
+  expanded?: boolean
+  onToggle?: () => void
   children?: ReactNode
+  detail?: ReactNode
   className?: string
 }
 
@@ -22,43 +23,56 @@ export function ItemLine({
   expanded,
   onToggle,
   children,
+  detail,
   className,
 }: ItemLineProps) {
-  return (
-    <div
-      className={cn(
-        "flex min-h-10 w-full items-center justify-between px-3 py-2",
-        className
-      )}
-    >
-      <Button
-        variant="ghost"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-        className="h-auto min-w-0 flex-1 justify-start gap-2 rounded-none px-0 py-0 text-sm font-normal hover:bg-transparent hover:opacity-70"
-      >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className={cn("truncate text-foreground", labelClassName)}>{label}</span>
-      </Button>
+  const isExpandable = typeof expanded === "boolean" && typeof onToggle === "function"
 
-      <span className="ml-2 flex shrink-0 items-center gap-2">
-        {children}
+  return (
+    <div className={cn("grid grid-cols-[1.375rem_1fr_auto] px-3", className)}>
+      {isExpandable ? (
         <Button
           variant="ghost"
-          size="icon"
           onClick={onToggle}
-          aria-hidden="true"
-          tabIndex={-1}
-          className="size-5 rounded-none text-muted-foreground hover:text-foreground"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+          className="col-span-2 flex min-h-10 min-w-0 items-center justify-start gap-0 rounded-none px-0 py-2 text-sm font-normal has-[>svg]:px-0 hover:bg-transparent hover:opacity-70"
         >
-          {expanded ? (
-            <CaretDown className="size-3.5" />
-          ) : (
-            <CaretRight className="size-3.5" />
-          )}
+          <span className="flex w-[1.375rem] shrink-0 items-center justify-center">
+            <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          </span>
+          <span className={cn("truncate text-foreground", labelClassName)}>{label}</span>
         </Button>
+      ) : (
+        <div className="col-span-2 flex min-h-10 min-w-0 items-center gap-0 py-2">
+          <span className="flex w-[1.375rem] shrink-0 items-center justify-center">
+            <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          </span>
+          <span className={cn("truncate text-foreground", labelClassName)}>{label}</span>
+        </div>
+      )}
+
+      <span className="flex min-h-10 items-center gap-2 py-2">
+        {children}
+        {isExpandable ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            aria-hidden="true"
+            tabIndex={-1}
+            className="size-5 rounded-none text-muted-foreground hover:text-foreground"
+          >
+            {expanded ? (
+              <CaretDown className="size-3.5" />
+            ) : (
+              <CaretRight className="size-3.5" />
+            )}
+          </Button>
+        ) : null}
       </span>
+
+      {detail ? <div className="col-span-3 pb-2 pl-[11px]">{detail}</div> : null}
     </div>
   )
 }

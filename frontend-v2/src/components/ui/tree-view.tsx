@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils"
 export { createTreeCollection, useTreeViewNodeContext } from "@ark-ui/react/tree-view"
 export type { TreeView as TreeViewTypes } from "@ark-ui/react/tree-view"
 
+/* -------------------------------- Shared -------------------------------- */
+
+/** Interactive row styles shared between leaf items and branch controls. */
+const treeRowStyles =
+  "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-sm outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+
 /* --------------------------------- Root --------------------------------- */
 
 function TreeViewRoot({
@@ -61,10 +67,7 @@ function TreeViewItem({
   return (
     <ArkTreeView.Item
       data-slot="tree-view-item"
-      className={cn(
-        "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-sm text-foreground outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
-        className
-      )}
+      className={cn(treeRowStyles, "text-foreground", className)}
       {...props}
     />
   )
@@ -127,10 +130,7 @@ function TreeViewBranchControl({
   return (
     <ArkTreeView.BranchControl
       data-slot="tree-view-branch-control"
-      className={cn(
-        "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-sm outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
-        className
-      )}
+      className={cn(treeRowStyles, className)}
       {...props}
     />
   )
