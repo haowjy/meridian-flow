@@ -102,7 +102,7 @@ func (r *testImportDocumentRepo) GetByPath(context.Context, string, string) (*do
 func (r *testImportDocumentRepo) Update(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
-func (r *testImportDocumentRepo) Delete(context.Context, string, string) (*domaindocsys.Document, error) {
+func (r *testImportDocumentRepo) Delete(context.Context, string, string) error {
 	panic("unexpected call")
 }
 func (r *testImportDocumentRepo) DeleteAllByProject(_ context.Context, projectID string, skipSystemFolders bool) error {

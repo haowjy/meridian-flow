@@ -168,7 +168,7 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, project)
 }
 
-// DeleteProject soft-deletes a project and returns it with deleted_at timestamp
+// DeleteProject soft-deletes a project
 // DELETE /api/projects/{id}
 func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
@@ -185,13 +185,12 @@ func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, err := h.projectService.DeleteProject(r.Context(), projectID, userID)
-	if err != nil {
+	if _, err := h.projectService.DeleteProject(r.Context(), projectID, userID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, project)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // AddFavorite marks a project as favorite for the user

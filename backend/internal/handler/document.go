@@ -188,13 +188,12 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 
 	userID := httputil.GetUserID(r)
 
-	deletedDoc, err := h.docService.DeleteDocument(r.Context(), userID, documentID)
-	if err != nil {
+	if err := h.docService.DeleteDocument(r.Context(), userID, documentID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, deletedDoc)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // SearchDocuments performs full-text search across documents
