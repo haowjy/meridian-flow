@@ -309,29 +309,30 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 
 // DeleteFolder deletes a folder and all its contents (documents and subfolders) recursively.
 // Authorization is checked first via the injected authorizer.
-func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID string) error {
+func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID string) (*domaindocsys.Folder, error) {
 	// Authorize: check user can access this folder
 	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Get folder (authorization already done, use GetByIDOnly)
 	folder, err := s.folderRepo.GetByIDOnly(ctx, folderID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if folder.IsSystem {
-		return domain.NewForbiddenError("cannot modify system folder")
+		return nil, domain.NewForbiddenError("cannot modify system folder")
 	}
 
 	// Recursively delete all descendants (child folders and documents)
 	if err := s.deleteDescendants(ctx, userID, folderID, folder.ProjectID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Delete the folder itself
-	if err := s.folderRepo.Delete(ctx, folderID, folder.ProjectID); err != nil {
-		return err
+	deletedFolder, err := s.folderRepo.Delete(ctx, folderID, folder.ProjectID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Touch project activity (non-fatal)
@@ -348,7 +349,7 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 		"project_id", folder.ProjectID,
 	)
 
-	return nil
+	return deletedFolder, nil
 }
 
 // deleteDescendants recursively deletes all child folders and documents.
@@ -369,7 +370,7 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 			return err
 		}
 		// Then delete the child folder itself
-		if err := s.folderRepo.Delete(ctx, child.ID, projectID); err != nil {
+		if _, err := s.folderRepo.Delete(ctx, child.ID, projectID); err != nil {
 			return err // Pass through HTTPError directly
 		}
 		s.logger.Debug("deleted child folder", "id", child.ID, "name", child.Name)
@@ -382,7 +383,7 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 	}
 
 	for _, doc := range docs {
-		if err := s.docService.DeleteDocument(ctx, userID, doc.ID); err != nil {
+		if _, err := s.docService.DeleteDocument(ctx, userID, doc.ID); err != nil {
 			return err // Pass through HTTPError directly
 		}
 		s.logger.Debug("deleted document", "id", doc.ID, "name", doc.Name)

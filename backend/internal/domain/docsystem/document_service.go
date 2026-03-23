@@ -26,7 +26,7 @@ type DocumentService interface {
 
 	// DeleteDocument deletes a document
 	// userID is used for authorization check
-	DeleteDocument(ctx context.Context, userID, documentID string) error
+	DeleteDocument(ctx context.Context, userID, documentID string) (*Document, error)
 
 	// SearchDocuments performs full-text search across documents
 	// userID is used to filter results to user's accessible projects

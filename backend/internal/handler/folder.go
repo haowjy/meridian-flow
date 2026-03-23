@@ -137,12 +137,13 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 	userID := httputil.GetUserID(r)
 
-	if err := h.folderService.DeleteFolder(r.Context(), userID, id); err != nil {
+	deletedFolder, err := h.folderService.DeleteFolder(r.Context(), userID, id)
+	if err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	httputil.RespondJSON(w, http.StatusOK, deletedFolder)
 }
 
 // ListChildren lists all child folders and documents in a folder

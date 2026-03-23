@@ -20,7 +20,7 @@ type PostgresFolderRepository struct {
 	tables *postgres.TableNames
 }
 
-const folderSelectColumns = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at"
+const folderSelectColumns = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at, deleted_at"
 
 // NewFolderRepository creates a new folder repository
 func NewFolderRepository(config *postgres.RepositoryConfig) domaindocsys.FolderStore {
@@ -269,25 +269,26 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *domaindoc
 }
 
 // Delete soft-deletes a folder by setting deleted_at timestamp
-func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID string) error {
+func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID string) (*domaindocsys.Folder, error) {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-	`, r.tables.Folders)
+		RETURNING %s
+	`, r.tables.Folders, folderSelectColumns)
 
+	var folder domaindocsys.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, id, projectID)
+	err := scanFolder(executor.QueryRow(ctx, query, id, projectID), &folder)
 	if err != nil {
-		return fmt.Errorf("delete folder: %w", err)
+		if postgres.IsPgNoRowsError(err) {
+			return nil, domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder %s not found", id))
+		}
+		return nil, fmt.Errorf("delete folder: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
-		return domain.NewNotFoundError("folder",
-			fmt.Sprintf("folder %s not found", id))
-	}
-
-	return nil
+	return &folder, nil
 }
 
 // ListChildren lists immediate child folders
@@ -606,6 +607,7 @@ func scanFolder(scanner folderScanner, folder *domaindocsys.Folder) error {
 		&folder.Metadata,
 		&folder.CreatedAt,
 		&folder.UpdatedAt,
+		&folder.DeletedAt,
 	)
 	if err != nil {
 		return err

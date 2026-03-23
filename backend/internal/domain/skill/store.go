@@ -25,5 +25,5 @@ type ProjectSkillStore interface {
 	UpdatePositions(ctx context.Context, projectID string, skillIDs []string) error
 
 	// Delete soft-deletes a skill
-	Delete(ctx context.Context, id, projectID string) error
+	Delete(ctx context.Context, id, projectID string) (*ProjectSkill, error)
 }

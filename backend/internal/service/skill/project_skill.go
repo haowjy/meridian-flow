@@ -351,28 +351,31 @@ func (s *projectSkillService) ReorderSkills(ctx context.Context, userID, project
 }
 
 // DeleteSkill soft-deletes a skill and its associated folder
-func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID, skillID string) error {
+func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID, skillID string) (*skilldomain.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Get skill to retrieve folder ID before deletion
 	skill, err := s.skillRepo.GetByID(ctx, skillID, projectID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var deletedSkill *skilldomain.ProjectSkill
+
 	// Use transaction to ensure atomicity of skill + folder deletion
-	return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 		// 1. Soft-delete the skill record first (source of truth)
-		if err := s.skillRepo.Delete(txCtx, skillID, projectID); err != nil {
+		deletedSkill, err = s.skillRepo.Delete(txCtx, skillID, projectID)
+		if err != nil {
 			return err
 		}
 
 		// 2. Soft-delete the skill folder (content is in DB, folder is for references)
 		// Handle missing folder gracefully - skill record is source of truth
-		if err := s.folderRepo.Delete(txCtx, skill.InstanceFolderID, projectID); err != nil {
+		if _, err := s.folderRepo.Delete(txCtx, skill.InstanceFolderID, projectID); err != nil {
 			var notFoundErr *domain.NotFoundError
 			if !errors.As(err, &notFoundErr) {
 				return err // Unexpected error - fail
@@ -392,6 +395,12 @@ func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID
 
 		return nil
 	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return deletedSkill, nil
 }
 
 // LoadSkillContent loads the content of a skill (from DB)
