@@ -28,7 +28,7 @@ type FolderStore interface {
 	Update(ctx context.Context, folder *Folder) error
 
 	// Delete deletes a folder
-	Delete(ctx context.Context, id, projectID string) error
+	Delete(ctx context.Context, id, projectID string) (*Folder, error)
 
 	// ListChildren lists immediate child folders
 	// If opts is nil, uses default options (IncludeHidden: false)

@@ -210,10 +210,11 @@ func (h *ProjectSkillHandler) DeleteSkill(w http.ResponseWriter, r *http.Request
 
 	userID := httputil.GetUserID(r)
 
-	if err := h.skillService.DeleteSkill(r.Context(), userID, projectID, skillID); err != nil {
+	deletedSkill, err := h.skillService.DeleteSkill(r.Context(), userID, projectID, skillID)
+	if err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	httputil.RespondJSON(w, http.StatusOK, toSkillResponse(deletedSkill))
 }
