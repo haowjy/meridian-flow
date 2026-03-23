@@ -69,7 +69,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *domainllm
 			return fmt.Errorf("validate prev turn: %w", err)
 		}
 		if !exists {
-			return fmt.Errorf("prev turn %s: %w", *turn.PrevTurnID, domain.ErrNotFound)
+			return domain.NewNotFoundError("turn", fmt.Sprintf("prev turn %s not found", *turn.PrevTurnID))
 		}
 	}
 
@@ -170,7 +170,7 @@ func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*d
 	turn, err := r.scanTurnRow(executor.QueryRow(ctx, query, turnID))
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 		}
 		return nil, fmt.Errorf("get turn: %w", err)
 	}
@@ -253,7 +253,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	err := executor.QueryRow(ctx, query, turnID).Scan(&prevTurnID, &threadID)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 		}
 		return nil, fmt.Errorf("get turn prev_turn_id: %w", err)
 	}
@@ -392,7 +392,7 @@ func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID st
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 	}
 
 	return nil
@@ -426,7 +426,7 @@ func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *domainllm
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s: %w", turn.ID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turn.ID))
 	}
 
 	return nil
@@ -447,7 +447,7 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 	}
 
 	return nil
@@ -511,7 +511,7 @@ func (r *PostgresTurnRepository) AccumulateTokensAndUpdateMetadata(
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 	}
 
 	return nil
@@ -578,7 +578,7 @@ func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID 
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 	}
 
 	return nil

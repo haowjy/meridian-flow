@@ -11,8 +11,10 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/config"
+	"meridian/internal/domain"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/handler/sse"
+	"meridian/internal/optional"
 	"meridian/internal/httputil"
 )
 
@@ -149,15 +151,21 @@ func (h *ThreadHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Requ
 
 	userID := httputil.GetUserID(r)
 	var req struct {
-		TurnID *string `json:"turn_id"`
+		TurnID optional.Optional[string] `json:"turn_id"`
 	}
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
+	// Tri-state: absent = no-op, null = clear, value = set
+	if !req.TurnID.Present {
+		httputil.RespondError(w, http.StatusBadRequest, domain.NewValidationErrorWithField("turn_id is required", "turn_id").Error())
+		return
+	}
+
 	// Call service (all validation handled by service layer)
-	if err := h.threadService.UpdateLastViewedTurn(r.Context(), threadID, userID, req.TurnID); err != nil {
+	if err := h.threadService.UpdateLastViewedTurn(r.Context(), threadID, userID, req.TurnID.Value); err != nil {
 		handleError(w, err, h.config)
 		return
 	}
