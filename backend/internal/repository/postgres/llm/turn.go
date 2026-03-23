@@ -102,7 +102,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *domainllm
 
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("thread %s not found: %w", turn.ThreadID, domain.ErrNotFound)
+			return domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", turn.ThreadID))
 		}
 		return fmt.Errorf("create turn: %w", err)
 	}
@@ -614,7 +614,7 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *dom
 
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
+			return domain.NewNotFoundError("turn", "turn not found")
 		}
 		return fmt.Errorf("create turn block: %w", err)
 	}
@@ -672,7 +672,7 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	_, err := executor.Exec(ctx, query, args...)
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
+			return domain.NewNotFoundError("turn", "turn not found")
 		}
 		return fmt.Errorf("create turn blocks: %w", err)
 	}
@@ -708,7 +708,7 @@ func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *
 
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
+			return domain.NewNotFoundError("turn", "turn not found")
 		}
 		return fmt.Errorf("upsert partial block: %w", err)
 	}
@@ -936,7 +936,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 	err := executor.QueryRow(ctx, threadQuery, threadID, userID).Scan(&threadExists, &lastViewedTurnID)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil, fmt.Errorf("verify thread access: %w", err)
 	}
@@ -1366,7 +1366,7 @@ func (r *PostgresTurnRepository) findMostRecentLeaf(ctx context.Context, startTu
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
 			// This shouldn't happen if startTurnID exists, but handle gracefully
-			return "", fmt.Errorf("turn %s not found: %w", startTurnID, domain.ErrNotFound)
+			return "", domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", startTurnID))
 		}
 		return "", fmt.Errorf("find leaf: %w", err)
 	}
@@ -1425,7 +1425,7 @@ func (r *PostgresTurnRepository) AppendGenerationRecord(ctx context.Context, tur
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("turn %s not found: %w", turnID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found", turnID))
 	}
 
 	return nil

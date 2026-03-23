@@ -106,7 +106,7 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil, fmt.Errorf("get thread: %w", err)
 	}
@@ -139,7 +139,7 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil, fmt.Errorf("get thread: %w", err)
 	}
@@ -230,7 +230,7 @@ func (r *PostgresThreadRepository) UpdateThread(ctx context.Context, thread *dom
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("thread %s not found: %w", thread.ID, domain.ErrNotFound)
+		return domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", thread.ID))
 	}
 
 	return nil
@@ -253,7 +253,7 @@ func (r *PostgresThreadRepository) UpdateLastViewedTurn(ctx context.Context, thr
 			return fmt.Errorf("clear last_viewed_turn_id: %w", err)
 		}
 		if result.RowsAffected() == 0 {
-			return fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil
 	}
@@ -287,9 +287,9 @@ func (r *PostgresThreadRepository) UpdateLastViewedTurn(ctx context.Context, thr
 			return existsErr
 		}
 		if !threadExists {
-			return fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
-		return fmt.Errorf("turn %s not found in thread %s: %w", *turnID, threadID, domain.ErrNotFound)
+		return domain.NewNotFoundError("turn", fmt.Sprintf("turn %s not found in thread %s", *turnID, threadID))
 	}
 
 	return nil
@@ -321,7 +321,7 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 	)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
-			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil, fmt.Errorf("delete thread: %w", err)
 	}
@@ -344,7 +344,7 @@ func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, 
 	err := executor.QueryRow(ctx, threadQuery, threadID, userID).Scan(&updatedAt)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("thread %s not found: %w", threadID, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
 		}
 		return nil, fmt.Errorf("get thread for tree: %w", err)
 	}

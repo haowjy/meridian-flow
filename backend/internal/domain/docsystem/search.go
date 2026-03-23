@@ -145,20 +145,20 @@ func (opts *SearchOptions) Validate() error {
 // SearchResult represents a single search result with relevance scoring
 type SearchResult struct {
 	// Document is the matched document with full content
-	Document Document
+	Document Document `json:"document"`
 
 	// Score represents relevance (higher = better match)
 	// - For FTS: ts_rank score (typically 0.0 to 1.0, but can be higher)
 	// - For Vector: cosine similarity (0.0 to 1.0)
 	// - For Hybrid: normalized combined score (0.0 to 1.0)
-	Score float64
+	Score float64 `json:"score"`
 
 	// Metadata contains strategy-specific information
 	// Examples:
 	// - FTS: {"rank_method": "ts_rank", "language": "english"}
 	// - Vector: {"model": "text-embedding-ada-002", "similarity": "cosine"}
 	// - Hybrid: {"fts_score": 0.8, "vector_score": 0.6, "rrf_score": 0.7}
-	Metadata map[string]interface{}
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 // SearchResults contains the full search response with pagination metadata
