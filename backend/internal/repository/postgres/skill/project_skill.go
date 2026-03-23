@@ -351,44 +351,23 @@ func (r *PostgresProjectSkillRepository) UpdatePositions(ctx context.Context, pr
 }
 
 // Delete soft-deletes a skill
-func (r *PostgresProjectSkillRepository) Delete(ctx context.Context, id, projectID string) (*skill.ProjectSkill, error) {
+func (r *PostgresProjectSkillRepository) Delete(ctx context.Context, id, projectID string) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-		RETURNING id, project_id, instance_folder_id, name, description, content, position, enabled,
-		          metadata,
-		          source_template_version_id, sync_state, is_dirty, last_synced_at,
-		          created_at, updated_at, deleted_at
 	`, r.tables.ProjectSkills)
 
-	var deleted skill.ProjectSkill
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, id, projectID).Scan(
-		&deleted.ID,
-		&deleted.ProjectID,
-		&deleted.InstanceFolderID,
-		&deleted.Name,
-		&deleted.Description,
-		&deleted.Content,
-		&deleted.Position,
-		&deleted.Enabled,
-		&deleted.Metadata,
-		&deleted.SourceTemplateVersionID,
-		&deleted.SyncState,
-		&deleted.IsDirty,
-		&deleted.LastSyncedAt,
-		&deleted.CreatedAt,
-		&deleted.UpdatedAt,
-		&deleted.DeletedAt,
-	)
+	result, err := executor.Exec(ctx, query, id, projectID)
 	if err != nil {
-		if postgres.IsPgNoRowsError(err) {
-			return nil, domain.NewNotFoundError("skill",
-				fmt.Sprintf("skill %s not found", id))
-		}
-		return nil, fmt.Errorf("delete project skill: %w", err)
+		return fmt.Errorf("delete project skill: %w", err)
 	}
 
-	return &deleted, nil
+	if result.RowsAffected() == 0 {
+		return domain.NewNotFoundError("skill",
+			fmt.Sprintf("skill %s not found", id))
+	}
+
+	return nil
 }

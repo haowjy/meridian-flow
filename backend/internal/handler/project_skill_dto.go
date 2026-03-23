@@ -37,19 +37,18 @@ type ReorderSkillsRequest struct {
 // SkillResponse is the response for a single skill (metadata only)
 // API shape remains flat - backend extracts fields from JSONB metadata
 type SkillResponse struct {
-	ID                     string     `json:"id"`
-	ProjectID              string     `json:"project_id"`
-	Name                   string     `json:"name"`
-	Description            string     `json:"description"`
-	Position               int        `json:"position"`
-	Enabled                bool       `json:"enabled"` // Whether skill is active
-	DisableModelInvocation bool       `json:"disable_model_invocation"`
-	UserInvocable          bool       `json:"user_invocable"`
-	SyncState              string     `json:"sync_state"`
-	IsDirty                bool       `json:"is_dirty"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
-	DeletedAt              *time.Time `json:"deleted_at,omitempty"`
+	ID                     string    `json:"id"`
+	ProjectID              string    `json:"project_id"`
+	Name                   string    `json:"name"`
+	Description            string    `json:"description"`
+	Position               int       `json:"position"`
+	Enabled                bool      `json:"enabled"` // Whether skill is active
+	DisableModelInvocation bool      `json:"disable_model_invocation"`
+	UserInvocable          bool      `json:"user_invocable"`
+	SyncState              string    `json:"sync_state"`
+	IsDirty                bool      `json:"is_dirty"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // SkillWithContentResponse is the response for a skill with content
@@ -83,7 +82,6 @@ func toSkillResponse(skill *skill.ProjectSkill) SkillResponse {
 		IsDirty:                skill.IsDirty,
 		CreatedAt:              skill.CreatedAt,
 		UpdatedAt:              skill.UpdatedAt,
-		DeletedAt:              skill.DeletedAt,
 	}
 }
 

@@ -270,7 +270,7 @@ func (r *testAutoapplyDocumentRepo) GetByPath(context.Context, string, string) (
 func (r *testAutoapplyDocumentRepo) Update(context.Context, *domaindocsys.Document) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyDocumentRepo) Delete(context.Context, string, string) (*domaindocsys.Document, error) {
+func (r *testAutoapplyDocumentRepo) Delete(context.Context, string, string) error {
 	panic("unexpected call")
 }
 func (r *testAutoapplyDocumentRepo) DeleteAllByProject(context.Context, string, bool) error {
@@ -308,7 +308,7 @@ func (r *testAutoapplyFolderRepo) GetByIDOnly(_ context.Context, id string) (*do
 func (r *testAutoapplyFolderRepo) Update(context.Context, *domaindocsys.Folder) error {
 	panic("unexpected call")
 }
-func (r *testAutoapplyFolderRepo) Delete(context.Context, string, string) (*domaindocsys.Folder, error) {
+func (r *testAutoapplyFolderRepo) Delete(context.Context, string, string) error {
 	panic("unexpected call")
 }
 func (r *testAutoapplyFolderRepo) ListChildren(context.Context, *string, string, *domaindocsys.FolderFilterOptions) ([]domaindocsys.Folder, error) {

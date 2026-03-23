@@ -21,7 +21,7 @@ type FolderService interface {
 
 	// DeleteFolder deletes a folder (must be empty)
 	// userID is used for authorization check
-	DeleteFolder(ctx context.Context, userID, folderID string) (*Folder, error)
+	DeleteFolder(ctx context.Context, userID, folderID string) error
 
 	// ListChildren lists all child folders and documents
 	// userID is used for authorization check, folderID is optional (nil for root)

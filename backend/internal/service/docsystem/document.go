@@ -331,21 +331,20 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 // DeleteDocument deletes a document
 // Authorization is checked first via the injected authorizer
-func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID string) (*domaindocsys.Document, error) {
+func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID string) error {
 	// Authorize: check user can access this document
 	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Get document (authorization already done, use GetByIDOnly)
 	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	deletedDoc, err := s.docRepo.Delete(ctx, documentID, doc.ProjectID)
-	if err != nil {
-		return nil, err
+	if err := s.docRepo.Delete(ctx, documentID, doc.ProjectID); err != nil {
+		return err
 	}
 
 	// Touch project activity (non-fatal)
@@ -357,11 +356,11 @@ func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID
 	}
 
 	s.logger.Info("document deleted",
-		"id", deletedDoc.ID,
+		"id", documentID,
 		"project_id", doc.ProjectID,
 	)
 
-	return deletedDoc, nil
+	return nil
 }
 
 // SearchDocuments performs full-text search across documents with path computation

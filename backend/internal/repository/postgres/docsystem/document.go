@@ -25,7 +25,7 @@ type PostgresDocumentRepository struct {
 var _ domaindocsys.DocumentStore = (*PostgresDocumentRepository)(nil)
 
 const (
-	documentFullSelectColumns     = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, content, metadata, created_at, updated_at, deleted_at"
+	documentFullSelectColumns     = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, content, metadata, created_at, updated_at"
 	documentMetadataSelectColumns = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, metadata, updated_at"
 	folderLookupSelectColumns     = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at"
 )
@@ -396,7 +396,7 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *domaindocs
 }
 
 // Delete soft-deletes a document by setting deleted_at timestamp
-func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID string) (*domaindocsys.Document, error) {
+func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID string) error {
 	var query string
 	var args []interface{}
 
@@ -405,31 +405,29 @@ func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID s
 			UPDATE %s
 			SET deleted_at = NOW()
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-			RETURNING %s
-		`, r.tables.Documents, documentFullSelectColumns)
+		`, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
 			UPDATE %s
 			SET deleted_at = NOW()
 			WHERE id = $1 AND deleted_at IS NULL
-			RETURNING %s
-		`, r.tables.Documents, documentFullSelectColumns)
+		`, r.tables.Documents)
 		args = []interface{}{id}
 	}
 
-	var doc domaindocsys.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := scanDocumentFull(executor.QueryRow(ctx, query, args...), &doc)
+	result, err := executor.Exec(ctx, query, args...)
 	if err != nil {
-		if postgres.IsPgNoRowsError(err) {
-			return nil, domain.NewNotFoundError("document",
-				fmt.Sprintf("document %s not found", id))
-		}
-		return nil, fmt.Errorf("delete document: %w", err)
+		return fmt.Errorf("delete document: %w", err)
 	}
 
-	return &doc, nil
+	if result.RowsAffected() == 0 {
+		return domain.NewNotFoundError("document",
+			fmt.Sprintf("document %s not found", id))
+	}
+
+	return nil
 }
 
 // DeleteAllByProject soft-deletes all documents in a project.
@@ -909,7 +907,6 @@ func scanDocumentFull(scanner documentScanner, doc *domaindocsys.Document) error
 		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
-		&doc.DeletedAt,
 	)
 	if err != nil {
 		return err

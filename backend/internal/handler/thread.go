@@ -183,13 +183,12 @@ func (h *ThreadHandler) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := httputil.GetUserID(r)
-	deletedThread, err := h.threadService.DeleteThread(r.Context(), threadID, userID)
-	if err != nil {
+	if _, err := h.threadService.DeleteThread(r.Context(), threadID, userID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, deletedThread)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // CreateTurnV2 creates a new turn (user message) with thread_id in request body

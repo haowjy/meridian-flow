@@ -46,7 +46,7 @@ type ProjectSkillService interface {
 	ReorderSkills(ctx context.Context, userID, projectID string, skillIDs []string) error
 
 	// DeleteSkill soft-deletes a skill
-	DeleteSkill(ctx context.Context, userID, projectID, skillID string) (*ProjectSkill, error)
+	DeleteSkill(ctx context.Context, userID, projectID, skillID string) error
 
 	// LoadSkillContent loads the content of a skill (from DB)
 	LoadSkillContent(ctx context.Context, userID, projectID, name string) (string, error)
