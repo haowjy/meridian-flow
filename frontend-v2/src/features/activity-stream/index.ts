@@ -1,6 +1,7 @@
 export { ActivityBlock } from "./ActivityBlock"
 export { ActivityBlockHeader } from "./ActivityBlockHeader"
 export { AgentDetail } from "./AgentDetail"
+export { DetailCard } from "./DetailCard"
 export { BashDetail } from "./BashDetail"
 export { EditDetail } from "./EditDetail"
 export { ReadDetail } from "./ReadDetail"
