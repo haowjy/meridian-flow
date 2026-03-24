@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { Fragment, useCallback, useMemo, useState } from "react"
 
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { Card } from "@/components/ui/card"
@@ -135,39 +135,34 @@ export function ActivityBlock({
                 </button>
               ) : null}
 
-              {/* Tree-line guide — sits in the px-3 padding gutter, clear of content */}
-              <div className="relative">
-                <div className="pointer-events-none absolute bottom-2 left-2 top-2 w-px bg-foreground/10" />
-
+              <div>
                 {visibleItems.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-muted-foreground">No activity yet.</p>
                 ) : (
-                  visibleItems.map((item) => {
-                    if (item.kind === "text") {
-                      return <TextRow key={item.id} item={item} />
-                    }
-
-                    const isExpandedItem = expandedTools.has(item.id)
-                    const toggle = () => toggleExpanded(item.id)
-
-                    if (item.kind === "thinking") {
-                      return (
+                  visibleItems.map((item, index) => {
+                    const row =
+                      item.kind === "text" ? (
+                        <TextRow item={item} />
+                      ) : item.kind === "thinking" ? (
                         <ThinkingRow
-                          key={item.id}
                           item={item}
-                          expanded={isExpandedItem}
-                          onToggle={toggle}
+                          expanded={expandedTools.has(item.id)}
+                          onToggle={() => toggleExpanded(item.id)}
+                        />
+                      ) : (
+                        <ToolRow
+                          tool={item}
+                          expanded={expandedTools.has(item.id)}
+                          onToggle={() => toggleExpanded(item.id)}
                         />
                       )
-                    }
 
                     return (
-                      <ToolRow
-                        key={item.id}
-                        tool={item}
-                        expanded={isExpandedItem}
-                        onToggle={toggle}
-                      />
+                      <Fragment key={item.id}>
+                        {/* Separator between items — matches inset-x-4 of "earlier tools" pill */}
+                        {index > 0 && <div className="mx-4 h-px bg-border/30" />}
+                        {row}
+                      </Fragment>
                     )
                   })
                 )}

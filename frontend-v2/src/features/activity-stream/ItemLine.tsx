@@ -29,7 +29,14 @@ export function ItemLine({
   const isExpandable = typeof expanded === "boolean" && typeof onToggle === "function"
 
   return (
-    <div className={cn("grid grid-cols-[1.375rem_1fr_auto] px-3", className)}>
+    <div
+      className={cn(
+        "grid grid-cols-[1.375rem_1fr_auto] px-3",
+        // Hover highlight on expandable items (tools, thinking)
+        isExpandable && "rounded-sm transition-colors hover:bg-foreground/[0.04]",
+        className
+      )}
+    >
       {isExpandable ? (
         <Button
           variant="ghost"

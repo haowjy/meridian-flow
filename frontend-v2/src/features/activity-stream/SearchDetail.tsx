@@ -1,8 +1,8 @@
 import type { ReactNode } from "react"
 
-import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+import { DetailCard } from "./DetailCard"
 import type { DocSearchToolDetail } from "./types"
 
 type DocSearchDetailProps = {
@@ -55,30 +55,28 @@ function highlightSnippet(snippet: string, query: string) {
 
 export function DocSearchDetail({ detail }: DocSearchDetailProps) {
   return (
-    <Card variant="outline" className="gap-0 rounded-md border-border/70 py-0">
-      <CardContent className="space-y-2 p-3">
-        {detail.matches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matches found in the manuscript.</p>
-        ) : (
-          <div className="space-y-2">
-            {detail.matches.map((match, index) => (
-              <div key={match.id} className="space-y-1">
-                {index > 0 ? <Separator /> : null}
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <p className="font-medium text-foreground">{match.filePath}</p>
-                  <p className="text-muted-foreground">
-                    Lines {match.lineStart}
-                    {typeof match.lineEnd === "number" ? `-${match.lineEnd}` : null}
-                  </p>
-                </div>
-                <p className="font-editor text-sm italic text-muted-foreground">
-                  {highlightSnippet(match.snippet, detail.query)}
+    <DetailCard className="[&>div]:space-y-2 [&>div]:p-3">
+      {detail.matches.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No matches found in the manuscript.</p>
+      ) : (
+        <div className="space-y-2">
+          {detail.matches.map((match, index) => (
+            <div key={match.id} className="space-y-1">
+              {index > 0 ? <Separator /> : null}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <p className="font-medium text-foreground">{match.filePath}</p>
+                <p className="text-muted-foreground">
+                  Lines {match.lineStart}
+                  {typeof match.lineEnd === "number" ? `-${match.lineEnd}` : null}
                 </p>
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <p className="font-editor text-sm italic text-muted-foreground">
+                {highlightSnippet(match.snippet, detail.query)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </DetailCard>
   )
 }
