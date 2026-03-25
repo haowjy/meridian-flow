@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	domainerrors "meridian/internal/domain/errors"
 	"meridian/internal/httputil"
 )
 
@@ -79,8 +80,29 @@ func domainErrorStatusCode(err error) (int, bool) {
 	return 0, false
 }
 
+// domainErrResponse is the JSON shape for *domainerrors.DomainError responses.
+// Distinct from RFC 7807 Problem Details — callers that need typed error handling
+// can switch on the code string rather than inspecting the message.
+type domainErrResponse struct {
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Detail  interface{} `json:"detail,omitempty"`
+}
+
 // handleError converts domain errors to HTTP responses.
 func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
+	// DomainError carries its own status and code — short-circuit before the
+	// legacy type-switch so new callers get {code, message, detail} JSON.
+	var de *domainerrors.DomainError
+	if errors.As(err, &de) {
+		httputil.RespondJSON(w, de.Status, domainErrResponse{
+			Code:    de.Code,
+			Message: de.Message,
+			Detail:  de.Detail,
+		})
+		return
+	}
+
 	if statusCode, ok := domainErrorStatusCode(err); ok {
 		message := err.Error()
 
