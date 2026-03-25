@@ -58,7 +58,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	// Extract model from request_params with default fallback from config
 	model := s.config.LLM.DefaultModel
 	if model == "" {
-		model = "claude-haiku-4-5-20251001" // Fallback if config not set
+		model = defaultFallbackModel // Fallback if config not set
 	}
 	if modelParam, ok := requestParams["model"].(string); ok && modelParam != "" {
 		model = modelParam
