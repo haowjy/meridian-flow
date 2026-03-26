@@ -119,7 +119,7 @@ CREATE OR REPLACE FUNCTION ${TABLE_PREFIX}consume_credit_lots_fifo(
 )
 RETURNS TABLE(lot_id uuid, amount_millicredits bigint)
 LANGUAGE plpgsql
-AS $func$
+AS $$$$
 DECLARE
   v_remaining bigint;
   v_lot RECORD;
@@ -132,8 +132,8 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(p_consumption_group_id::text));
 
   IF p_amount_millicredits <= 0 THEN
-    RAISE EXCEPTION '${TABLE_PREFIX}invalid_credit_amount'
-      USING MESSAGE = 'p_amount_millicredits must be greater than zero';
+    RAISE EXCEPTION 'p_amount_millicredits must be greater than zero'
+      USING HINT = '${TABLE_PREFIX}invalid_credit_amount';
   END IF;
 
   IF EXISTS (
@@ -213,11 +213,8 @@ BEGIN
     END IF;
 
     IF v_anchor_lot_id IS NULL THEN
-      RAISE EXCEPTION '${TABLE_PREFIX}credit_anchor_missing'
-        USING MESSAGE = format(
-          'cannot anchor negative balance for user %s because no credit lot exists',
-          p_user_id
-        );
+      RAISE EXCEPTION 'cannot anchor negative balance for user %s because no credit lot exists', p_user_id
+        USING HINT = '${TABLE_PREFIX}credit_anchor_missing';
     END IF;
 
     UPDATE ${TABLE_PREFIX}credit_lots
@@ -256,7 +253,7 @@ BEGIN
 
   RETURN;
 END;
-$func$;
+$$$$;
 -- +goose StatementEnd
 -- +goose Down
 -- +goose ENVSUB ON

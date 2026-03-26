@@ -22,7 +22,7 @@ CREATE TABLE ${TABLE_PREFIX}work_items (
     CONSTRAINT ${TABLE_PREFIX}work_items_slug_check
         CHECK (
             char_length(slug) BETWEEN 1 AND 80
-            AND slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+            AND slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$$'
         ),
     CONSTRAINT ${TABLE_PREFIX}work_items_metadata_check
         CHECK (jsonb_typeof(metadata) = 'object')
