@@ -23,6 +23,7 @@ func NewHTTPServer(cfg *config.Config, app *Application) *http.Server {
 	app.UserPrefs.RegisterRoutes(mux)
 	app.Auth.RegisterRoutes(mux)
 	app.Billing.RegisterRoutes(mux)
+	app.WorkItem.RegisterRoutes(mux)
 	app.LLM.RegisterRoutes(mux, app.Billing.AdmissionChecker)
 	mux.HandleFunc("GET /api/models/capabilities", app.LLM.ModelsHandler.GetCapabilities)
 

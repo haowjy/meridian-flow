@@ -28,15 +28,6 @@ func NewToolRegistryBuilder() *ToolRegistryBuilder {
 	}
 }
 
-// WithConfig sets custom tool configuration.
-// If not called, defaults will be used.
-func (b *ToolRegistryBuilder) WithConfig(config *ToolConfig) *ToolRegistryBuilder {
-	if config != nil {
-		b.config = config
-	}
-	return b
-}
-
 // WithNamespaceService sets the namespace service for namespace-aware tools.
 // This enables /.meridian/** path routing and access control.
 func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc domaindocsys.NamespaceService) *ToolRegistryBuilder {
@@ -48,31 +39,6 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc domaindocsys.Nam
 // Must be called — panics at tool construction time if nil.
 func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStrategy) *ToolRegistryBuilder {
 	b.mutationStrategy = strategy
-	return b
-}
-
-// WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search).
-// These tools operate on the project's document system.
-// All tools use services for data access (SOLID: DIP - depends on interfaces).
-// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
-//
-// The str_replace_based_edit_tool is a unified tool that combines view and edit operations,
-// matching Anthropic's text_editor_20250728 API for seamless provider mapping.
-// Folder viewing is handled by str_replace_based_edit_tool's "view" command on folder paths.
-func (b *ToolRegistryBuilder) WithDocumentTools(
-	projectID string,
-	userID string,
-	documentSvc domaindocsys.DocumentService,
-	folderSvc domaindocsys.FolderService,
-) *ToolRegistryBuilder {
-	// All tools use service layer for data access (Phase 4: zero repo dependencies)
-	// Tools self-describe via metadata for system prompt generation (OCP compliance)
-	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
-	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
-
-	b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
-	b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
-
 	return b
 }
 
@@ -113,32 +79,6 @@ func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolR
 	if client != nil {
 		webSearchTool := NewWebSearchTool(client, b.config)
 		b.registry.RegisterWithMetadata("web_search", webSearchTool, WebSearchToolMetadata())
-	}
-	return b
-}
-
-// WithSkillTools registers skill-related tools (skill_invoke, skill_list).
-// Only registers if a valid skill service is provided.
-// availableSkills is used to enrich skill_invoke metadata with the list of available skills,
-// so the system prompt includes skill names/descriptions only when tools are actually registered.
-// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
-func (b *ToolRegistryBuilder) WithSkillTools(
-	projectID string,
-	userID string,
-	skillService skill.ProjectSkillService,
-	isUserInvocation bool,
-	availableSkills []*skill.ProjectSkill,
-) *ToolRegistryBuilder {
-	if skillService != nil {
-		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
-		listTool := NewSkillListTool(projectID, userID, skillService, b.config)
-
-		// Enrich skill_invoke metadata with available skills list (runtime context)
-		invokeMetadata := SkillInvokeToolMetadata()
-		invokeMetadata.Guideline = BuildSkillInvokeGuideline(availableSkills)
-
-		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, invokeMetadata)
-		b.registry.RegisterWithMetadata("skill_list", listTool, SkillListToolMetadata())
 	}
 	return b
 }
@@ -185,40 +125,4 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 // Build returns the constructed tool registry.
 func (b *ToolRegistryBuilder) Build() *ToolRegistry {
 	return b.registry
-}
-
-// BuildWithDefaults is a convenience method that builds a registry with default document tools.
-// Equivalent to: NewToolRegistryBuilder().WithMutationStrategy(...).WithDocumentTools(...).Build()
-func BuildWithDefaults(
-	projectID string,
-	userID string,
-	documentSvc domaindocsys.DocumentService,
-	folderSvc domaindocsys.FolderService,
-	namespaceSvc domaindocsys.NamespaceService,
-	mutationStrategy DocumentMutationStrategy,
-) *ToolRegistry {
-	return NewToolRegistryBuilder().
-		WithNamespaceService(namespaceSvc).
-		WithMutationStrategy(mutationStrategy).
-		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
-		Build()
-}
-
-// BuildWithWebSearch is a convenience method for document tools + web search.
-// Equivalent to: NewToolRegistryBuilder().WithMutationStrategy(...).WithDocumentTools(...).WithWebSearch(...).Build()
-func BuildWithWebSearch(
-	projectID string,
-	userID string,
-	documentSvc domaindocsys.DocumentService,
-	folderSvc domaindocsys.FolderService,
-	namespaceSvc domaindocsys.NamespaceService,
-	mutationStrategy DocumentMutationStrategy,
-	searchClient external.SearchClient,
-) *ToolRegistry {
-	return NewToolRegistryBuilder().
-		WithNamespaceService(namespaceSvc).
-		WithMutationStrategy(mutationStrategy).
-		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
-		WithWebSearch(searchClient).
-		Build()
 }

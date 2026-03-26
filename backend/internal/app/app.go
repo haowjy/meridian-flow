@@ -14,6 +14,7 @@ type Application struct {
 	Skill     *domains.SkillModule
 	Collab    *domains.CollabModule
 	LLM       *domains.LLMModule
+	WorkItem  *domains.WorkItemModule
 	UserPrefs *domains.UserPrefsModule
 	Workers   *Workers
 	JobQueue  jobs.JobQueue

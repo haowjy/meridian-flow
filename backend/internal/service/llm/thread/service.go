@@ -13,30 +13,38 @@ import (
 	"meridian/internal/domain"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	domainwi "meridian/internal/domain/workitem"
 )
 
 // Service implements the ThreadService interface
 // Handles only thread session management (CRUD operations)
 type Service struct {
-	threadRepo  domainllm.ThreadStore
-	projectRepo domaindocsys.ProjectStore
-	logger      *slog.Logger
+	threadRepo   domainllm.ThreadStore
+	projectRepo  domaindocsys.ProjectStore
+	workitemSvc  domainwi.Service // optional; nil disables ephemeral provisioning
+	logger       *slog.Logger
 }
 
-// NewService creates a new thread CRUD service
+// NewService creates a new thread CRUD service.
+// workitemSvc may be nil to disable automatic ephemeral work item provisioning
+// (used in tests or when the work item module is not wired).
 func NewService(
 	threadRepo domainllm.ThreadStore,
 	projectRepo domaindocsys.ProjectStore,
+	workitemSvc domainwi.Service,
 	logger *slog.Logger,
 ) domainllm.ThreadService {
 	return &Service{
 		threadRepo:  threadRepo,
 		projectRepo: projectRepo,
+		workitemSvc: workitemSvc,
 		logger:      logger,
 	}
 }
 
-// CreateThread creates a new thread session
+// CreateThread creates a new thread session.
+// If req.WorkItemID is nil and a work item service is configured, an ephemeral
+// work item is auto-provisioned and attached to the thread.
 func (s *Service) CreateThread(ctx context.Context, req *domainllm.CreateThreadRequest) (*domainllm.Thread, error) {
 	// Validate request
 	if err := s.validateCreateThreadRequest(req); err != nil {
@@ -52,17 +60,34 @@ func (s *Service) CreateThread(ctx context.Context, req *domainllm.CreateThreadR
 	// Trim and normalize title
 	title := strings.TrimSpace(req.Title)
 
-	// Create thread
+	// Create thread — work_item_id may be nil or an explicit value from the caller.
 	thread := &domainllm.Thread{
-		ProjectID: req.ProjectID,
-		UserID:    req.UserID,
-		Title:     title,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		ProjectID:  req.ProjectID,
+		UserID:     req.UserID,
+		Title:      title,
+		WorkItemID: req.WorkItemID,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
 	}
 
 	if err := s.threadRepo.CreateThread(ctx, thread); err != nil {
 		return nil, err
+	}
+
+	// Auto-provision an ephemeral work item when none was explicitly provided.
+	// This is non-fatal: if provisioning fails the thread still exists; the
+	// missing work_item_id will surface as nil in the response.
+	if req.WorkItemID == nil && s.workitemSvc != nil {
+		wi, ensureErr := s.workitemSvc.EnsureThreadWorkItem(ctx, req.ProjectID, thread.ID, req.UserID, thread.WorkItemID)
+		if ensureErr != nil {
+			s.logger.Warn("failed to ensure thread work item (non-fatal)",
+				"thread_id", thread.ID,
+				"project_id", req.ProjectID,
+				"error", ensureErr,
+			)
+		} else {
+			thread.WorkItemID = &wi.ID
+		}
 	}
 
 	// Touch project activity (non-fatal)
@@ -78,6 +103,7 @@ func (s *Service) CreateThread(ctx context.Context, req *domainllm.CreateThreadR
 		"title", thread.Title,
 		"project_id", req.ProjectID,
 		"user_id", req.UserID,
+		"work_item_id", thread.WorkItemID,
 	)
 
 	return thread, nil

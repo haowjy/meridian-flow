@@ -43,6 +43,19 @@ func WorkItemDone(slug string) *DomainError {
 	}
 }
 
+// WorkItemHasActiveStreams returns a DomainError indicating the work item cannot be
+// completed because one or more associated threads have in-flight streaming turns.
+// The code is intentionally set to WORK_ITEM_HAS_ACTIVE_STREAMS to distinguish from
+// the "already done" case, even though both result in 409 Conflict.
+func WorkItemHasActiveStreams(slug string) *DomainError {
+	return &DomainError{
+		Code:    CodeWorkItemHasActiveStreams,
+		Status:  http.StatusConflict,
+		Message: "work item has active streaming threads; wait for streams to finish before completing",
+		Detail:  map[string]interface{}{"slug": slug},
+	}
+}
+
 // WorkItemDeleted returns a DomainError indicating the target work item has been deleted.
 func WorkItemDeleted(slug string) *DomainError {
 	return &DomainError{

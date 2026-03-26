@@ -31,9 +31,9 @@ func NewThreadRepository(config *postgres.RepositoryConfig) domainllm.ThreadStor
 // CreateThread creates a new thread session
 func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *domainllm.Thread) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, user_id, title, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
+		INSERT INTO %s (project_id, user_id, title, work_item_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, work_item_id, created_at, updated_at
 	`, r.tables.Threads)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -41,9 +41,10 @@ func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *dom
 		thread.ProjectID,
 		thread.UserID,
 		thread.Title,
+		thread.WorkItemID, // nil if not provided
 		thread.CreatedAt,
 		thread.UpdatedAt,
-	).Scan(&thread.ID, &thread.CreatedAt, &thread.UpdatedAt)
+	).Scan(&thread.ID, &thread.WorkItemID, &thread.CreatedAt, &thread.UpdatedAt)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -85,7 +86,7 @@ func (r *PostgresThreadRepository) getExistingThreadID(ctx context.Context, proj
 // GetThread retrieves a thread by ID (scoped to user)
 func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`, r.tables.Threads)
@@ -99,6 +100,7 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 		&thread.Title,
 		&thread.SystemPrompt,
 		&thread.LastViewedTurnID,
+		&thread.WorkItemID,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,
@@ -118,7 +120,7 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 // Used by ResourceAuthorizer when authorization is handled separately
 func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, threadID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Threads)
@@ -132,6 +134,7 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 		&thread.Title,
 		&thread.SystemPrompt,
 		&thread.LastViewedTurnID,
+		&thread.WorkItemID,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,
@@ -150,7 +153,7 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 // ListThreadsByProject retrieves all threads for a project
 func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, projectID, userID string) ([]domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, created_at, updated_at, deleted_at
 		FROM %s
 		WHERE project_id = $1 AND user_id = $2 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
@@ -173,6 +176,7 @@ func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, pro
 			&thread.Title,
 			&thread.SystemPrompt,
 			&thread.LastViewedTurnID,
+			&thread.WorkItemID,
 			&thread.CreatedAt,
 			&thread.UpdatedAt,
 			&thread.DeletedAt,
@@ -301,7 +305,7 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, project_id, user_id, title, system_prompt, last_viewed_turn_id, created_at, updated_at, deleted_at
+		RETURNING id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, created_at, updated_at, deleted_at
 	`, r.tables.Threads)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -315,6 +319,7 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 		&thread.Title,
 		&thread.SystemPrompt,
 		&thread.LastViewedTurnID,
+		&thread.WorkItemID,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,

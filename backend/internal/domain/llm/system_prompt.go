@@ -30,7 +30,8 @@ type PromptContext struct {
 	ToolSection    string // pre-built by ToolRegistry.BuildSystemPromptSection()
 	// Extension points — nil = no-op (position produces empty string)
 	PersonaBody  *string      // pre-rendered markdown body of a persona; position 7
-	PersonaModel *string      // model override from persona (consumed by caller, not resolver)
+	// TODO: wire when P3 (persona model override) is implemented in Round 5
+	PersonaModel *string // model override from persona (consumed by caller, not resolver)
 	WorkContext  *WorkContext // active work session context; position 3
 }
 
