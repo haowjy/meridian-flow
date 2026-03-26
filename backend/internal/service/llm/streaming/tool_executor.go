@@ -150,6 +150,11 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 			block.Content["error"] = toolResult.Error.Error()
 		} else {
 			block.Content["result"] = toolResult.Result
+			// Compute human-readable summary for the turn_block collapsed view.
+			// Only set for successful results where we have a matching call.
+			if i < len(toolsToExecute) {
+				block.CollapsedContent = computeCollapsedContent(toolResult.Name, toolsToExecute[i].Input, toolResult.Result)
+			}
 		}
 
 		if err := se.persistToolResult(ctx, block); err != nil {
@@ -534,6 +539,20 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 
 	// 7. Process final stream (will complete with end_turn stop_reason)
 	return se.processProviderStream(ctx, contStreamChan, send)
+}
+
+// computeCollapsedContent returns a human-readable summary for a tool result, used as
+// collapsed_content on the turn_block row. Dispatches to per-tool helpers.
+// Returns nil when no summary can be computed (unknown tool, missing fields, etc.).
+func computeCollapsedContent(toolName string, input map[string]interface{}, result interface{}) *string {
+	switch toolName {
+	case "str_replace_based_edit_tool":
+		return tools.ComputeTextEditorCollapsedContent(input, result)
+	case "doc_search":
+		return tools.ComputeSearchCollapsedContent(input, result)
+	default:
+		return nil
+	}
 }
 
 // injectToolLimitNote appends a limit notification to the last tool_result block.

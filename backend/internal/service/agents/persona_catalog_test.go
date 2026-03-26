@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"meridian/internal/capabilities"
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainerrors "meridian/internal/domain/errors"
@@ -57,7 +58,7 @@ func TestFilePersonaCatalog_ResolvePersona_HappyPath(t *testing.T) {
 		},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nopLogger())
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nil, nopLogger())
 
 	persona, err := catalog.ResolvePersona(context.Background(), projectID, slug)
 	if err != nil {
@@ -80,7 +81,7 @@ func TestFilePersonaCatalog_ResolvePersona_HappyPath(t *testing.T) {
 func TestFilePersonaCatalog_ResolvePersona_MissingFile_ReturnsPersonaNotFound(t *testing.T) {
 	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
-	catalog := NewFilePersonaCatalog(&testDocReader{byPath: map[string]*domaindocsys.Document{}}, &testFolderStore{}, nopLogger())
+	catalog := NewFilePersonaCatalog(&testDocReader{byPath: map[string]*domaindocsys.Document{}}, &testFolderStore{}, nil, nopLogger())
 
 	_, err := catalog.ResolvePersona(context.Background(), projectID, "ghost")
 	if err == nil {
@@ -112,7 +113,7 @@ func TestFilePersonaCatalog_ResolvePersona_InvalidFrontmatter_ReturnsPersonaInva
 		},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nopLogger())
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nil, nopLogger())
 
 	_, err := catalog.ResolvePersona(context.Background(), projectID, "bad-persona")
 	if err == nil {
@@ -144,7 +145,7 @@ func TestFilePersonaCatalog_ResolvePersona_MissingName_ReturnsPersonaInvalid(t *
 		},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nopLogger())
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, nil, nopLogger())
 
 	_, err := catalog.ResolvePersona(context.Background(), projectID, "noname")
 	if err == nil {
@@ -204,7 +205,7 @@ func buildListSetup() (*filePersonaCatalog, uuid.UUID) {
 		},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, folderStore, nopLogger()).(*filePersonaCatalog)
+	catalog := NewFilePersonaCatalog(docRepo, folderStore, nil, nopLogger()).(*filePersonaCatalog)
 	return catalog, projectID
 }
 
@@ -258,7 +259,7 @@ func TestFilePersonaCatalog_ListSpawnablePersonas_FiltersCorrectly(t *testing.T)
 
 func TestFilePersonaCatalog_ListUserPersonas_NoAgentsFolder_ReturnsEmpty(t *testing.T) {
 	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
-	catalog := NewFilePersonaCatalog(&testDocReader{}, &testFolderStore{}, nopLogger())
+	catalog := NewFilePersonaCatalog(&testDocReader{}, &testFolderStore{}, nil, nopLogger())
 
 	personas, issues, err := catalog.ListUserPersonas(context.Background(), projectID)
 	if err != nil {
@@ -303,7 +304,7 @@ func TestFilePersonaCatalog_ListUserPersonas_InvalidPersona_RecordedAsIssue(t *t
 		},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, folderStore, nopLogger())
+	catalog := NewFilePersonaCatalog(docRepo, folderStore, nil, nopLogger())
 	personas, issues, err := catalog.ListUserPersonas(context.Background(), projectID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -336,7 +337,7 @@ func TestFilePersonaCatalog_ListUserPersonas_NonMdFilesIgnored(t *testing.T) {
 		byID: map[string]*domaindocsys.Document{},
 	}
 
-	catalog := NewFilePersonaCatalog(docRepo, folderStore, nopLogger())
+	catalog := NewFilePersonaCatalog(docRepo, folderStore, nil, nopLogger())
 	personas, issues, err := catalog.ListUserPersonas(context.Background(), projectID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -346,6 +347,180 @@ func TestFilePersonaCatalog_ListUserPersonas_NonMdFilesIgnored(t *testing.T) {
 	}
 	if len(issues) != 0 {
 		t.Errorf("expected 0 issues, got %v", issues)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Model validation tests (require a real CapabilityRegistry)
+// ---------------------------------------------------------------------------
+
+// mustRegistry returns a real capabilities.Registry or fatals the test.
+// NewRegistry loads only embedded YAML, so no external I/O is needed.
+func mustRegistry(t *testing.T) *capabilities.Registry {
+	t.Helper()
+	reg, err := capabilities.NewRegistry()
+	if err != nil {
+		t.Fatalf("capabilities.NewRegistry: %v", err)
+	}
+	return reg
+}
+
+// personaDocWithModel is like personaDoc but also sets a model (and optionally
+// a provider) in the frontmatter.
+func personaDocWithModel(id, name, model, provider string) *domaindocsys.Document {
+	content := "---\nname: " + name + "\ndescription: test persona\nmodel: " + model + "\n"
+	if provider != "" {
+		content += "provider: " + provider + "\n"
+	}
+	content += "---\nSystem prompt here.\n"
+	return &domaindocsys.Document{
+		ID:        id,
+		Name:      name,
+		Extension: ".md",
+		Content:   content,
+	}
+}
+
+func TestFilePersonaCatalog_ResolvePersona_UnknownModel_ReturnsPersonaInvalid(t *testing.T) {
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	slug := "bad-model"
+	doc := personaDocWithModel("doc-bm", "Bad Model", "totally-unknown-model-xyz", "")
+
+	docRepo := &testDocReader{
+		byPath: map[string]*domaindocsys.Document{
+			".agents/agents/bad-model.md": doc,
+		},
+	}
+
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, mustRegistry(t), nopLogger())
+
+	_, err := catalog.ResolvePersona(context.Background(), projectID, slug)
+	if err == nil {
+		t.Fatal("expected error for unknown model, got nil")
+	}
+
+	var domErr *domainerrors.DomainError
+	if !errors.As(err, &domErr) {
+		t.Fatalf("expected *DomainError, got %T: %v", err, err)
+	}
+	if domErr.Code != domainerrors.CodePersonaInvalid {
+		t.Errorf("code: got %q, want %q", domErr.Code, domainerrors.CodePersonaInvalid)
+	}
+}
+
+func TestFilePersonaCatalog_ResolvePersona_KnownModel_Succeeds(t *testing.T) {
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000011")
+	slug := "good-model"
+	// claude-haiku-4-5 is the only active Anthropic model in the embedded YAML.
+	doc := personaDocWithModel("doc-gm", "Good Model", "claude-haiku-4-5", "anthropic")
+
+	docRepo := &testDocReader{
+		byPath: map[string]*domaindocsys.Document{
+			".agents/agents/good-model.md": doc,
+		},
+	}
+
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, mustRegistry(t), nopLogger())
+
+	persona, err := catalog.ResolvePersona(context.Background(), projectID, slug)
+	if err != nil {
+		t.Fatalf("unexpected error for known model: %v", err)
+	}
+	if persona.Model != "claude-haiku-4-5" {
+		t.Errorf("model: got %q, want %q", persona.Model, "claude-haiku-4-5")
+	}
+}
+
+func TestFilePersonaCatalog_ResolvePersona_EmptyModel_Succeeds(t *testing.T) {
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000012")
+	slug := "inherit-model"
+	// No model field — inherits from context, should always succeed.
+	doc := personaDoc("doc-im", "Inherit Model", nil, false)
+
+	docRepo := &testDocReader{
+		byPath: map[string]*domaindocsys.Document{
+			".agents/agents/inherit-model.md": doc,
+		},
+	}
+
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, mustRegistry(t), nopLogger())
+
+	_, err := catalog.ResolvePersona(context.Background(), projectID, slug)
+	if err != nil {
+		t.Fatalf("unexpected error for empty model (inherit): %v", err)
+	}
+}
+
+func TestFilePersonaCatalog_ResolvePersona_UnknownProvider_ReturnsPersonaInvalid(t *testing.T) {
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000013")
+	slug := "bad-provider"
+	doc := personaDocWithModel("doc-bp", "Bad Provider", "claude-haiku-4-5", "not-a-real-provider")
+
+	docRepo := &testDocReader{
+		byPath: map[string]*domaindocsys.Document{
+			".agents/agents/bad-provider.md": doc,
+		},
+	}
+
+	catalog := NewFilePersonaCatalog(docRepo, &testFolderStore{}, mustRegistry(t), nopLogger())
+
+	_, err := catalog.ResolvePersona(context.Background(), projectID, slug)
+	if err == nil {
+		t.Fatal("expected error for unknown provider, got nil")
+	}
+
+	var domErr *domainerrors.DomainError
+	if !errors.As(err, &domErr) {
+		t.Fatalf("expected *DomainError, got %T: %v", err, err)
+	}
+	if domErr.Code != domainerrors.CodePersonaInvalid {
+		t.Errorf("code: got %q, want %q", domErr.Code, domainerrors.CodePersonaInvalid)
+	}
+}
+
+func TestFilePersonaCatalog_ListAll_UnknownModel_IssueRecordedPersonaKept(t *testing.T) {
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000014")
+	agentsFolderID := "folder-agents"
+
+	goodDoc := personaDoc("doc-good", "Good Persona", nil, false)
+	badModelDoc := personaDocWithModel("doc-bm", "bad-model-persona", "totally-unknown-model-xyz", "")
+
+	folderStore := &testFolderStore{
+		byPath: map[string]*domaindocsys.Folder{
+			".agents/agents": {ID: agentsFolderID, Name: "agents"},
+		},
+	}
+
+	docRepo := &testDocReader{
+		byFolder: map[string][]domaindocsys.Document{
+			agentsFolderID: {
+				{ID: "doc-good", Name: "good-persona", Extension: ".md"},
+				{ID: "doc-bm", Name: "bad-model-persona", Extension: ".md"},
+			},
+		},
+		byID: map[string]*domaindocsys.Document{
+			"doc-good": goodDoc,
+			"doc-bm":   badModelDoc,
+		},
+	}
+
+	catalog := NewFilePersonaCatalog(docRepo, folderStore, mustRegistry(t), nopLogger())
+	personas, issues, err := catalog.ListUserPersonas(context.Background(), projectID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both personas must be in the list — unknown model does not exclude.
+	if len(personas) != 2 {
+		t.Errorf("expected 2 personas (model issue does not exclude), got %d: %v", len(personas), personaSlugs(personas))
+	}
+
+	// The unknown-model persona must produce a validation issue.
+	if len(issues) != 1 {
+		t.Errorf("expected 1 issue (for unknown model), got %d: %v", len(issues), issues)
+	}
+	if len(issues) == 1 && issues[0].Field != "model" {
+		t.Errorf("issue.Field: got %q, want %q", issues[0].Field, "model")
 	}
 }
 

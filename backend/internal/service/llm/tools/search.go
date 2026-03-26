@@ -169,3 +169,29 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 		"has_more":    results.HasMore,
 	}, nil
 }
+
+// ComputeSearchCollapsedContent returns a human-readable summary of a doc_search tool
+// result for use as collapsed_content on the turn_block row.
+// Returns nil when the input does not contain a recognizable query.
+//
+// Format: "[Searched '<query>': <N> results]"
+func ComputeSearchCollapsedContent(input map[string]interface{}, result interface{}) *string {
+	query, _ := input["query"].(string)
+	if query == "" {
+		return nil
+	}
+
+	// Extract total_count from result map (JSON numbers unmarshal to float64)
+	totalCount := 0
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		switch v := resultMap["total_count"].(type) {
+		case int:
+			totalCount = v
+		case float64:
+			totalCount = int(v)
+		}
+	}
+
+	s := fmt.Sprintf("[Searched '%s': %d results]", query, totalCount)
+	return &s
+}

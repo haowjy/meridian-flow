@@ -43,10 +43,11 @@ type TurnBlock struct {
 	Content       map[string]interface{} `json:"content,omitempty" db:"content"` // JSONB for type-specific data
 	Provider      *string                `json:"provider,omitempty" db:"provider"`
 	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"`   // JSONB for raw provider-specific data (opaque bytes)
-	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"` // "provider", "local", or "client" for tool_use blocks
-	Status        string                 `json:"status,omitempty" db:"status"`                 // "complete" or "partial" (for interrupted streams)
-	CreatedAt     time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt     *time.Time             `json:"updated_at,omitempty" db:"updated_at"`
+	ExecutionSide    *string                `json:"execution_side,omitempty" db:"execution_side"`       // "provider", "local", or "client" for tool_use blocks
+	Status           string                 `json:"status,omitempty" db:"status"`                       // "complete" or "partial" (for interrupted streams)
+	CollapsedContent *string                `json:"collapsed_content,omitempty" db:"collapsed_content"` // Human-readable summary for tool results (e.g. "[Read /path: 1234 chars]")
+	CreatedAt        time.Time              `json:"created_at" db:"created_at"`
+	UpdatedAt        *time.Time             `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // IsUserBlock returns true if this is a user turn block

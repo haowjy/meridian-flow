@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"meridian/internal/capabilities"
 	"meridian/internal/domain"
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
@@ -23,9 +24,10 @@ import (
 // This is acceptable because persona catalogues are small (< ~20 per project)
 // and only loaded at agent-spawn time, not on every request.
 type filePersonaCatalog struct {
-	docRepo    domaindocsys.DocumentReader
-	folderRepo domaindocsys.FolderStore
-	logger     *slog.Logger
+	docRepo            domaindocsys.DocumentReader
+	folderRepo         domaindocsys.FolderStore
+	capabilityRegistry *capabilities.Registry // nil means skip model validation
+	logger             *slog.Logger
 }
 
 // Compile-time interface assertion.
@@ -33,15 +35,18 @@ var _ domainagents.PersonaCatalog = (*filePersonaCatalog)(nil)
 
 // NewFilePersonaCatalog creates a PersonaCatalog backed by the .agents/
 // document tree. Both docRepo and folderRepo are required.
+// capabilityRegistry is optional; pass nil to skip model availability checks.
 func NewFilePersonaCatalog(
 	docRepo domaindocsys.DocumentReader,
 	folderRepo domaindocsys.FolderStore,
+	capabilityRegistry *capabilities.Registry,
 	logger *slog.Logger,
 ) domainagents.PersonaCatalog {
 	return &filePersonaCatalog{
-		docRepo:    docRepo,
-		folderRepo: folderRepo,
-		logger:     logger,
+		docRepo:            docRepo,
+		folderRepo:         folderRepo,
+		capabilityRegistry: capabilityRegistry,
+		logger:             logger,
 	}
 }
 
@@ -70,6 +75,16 @@ func (c *filePersonaCatalog) ResolvePersona(ctx context.Context, projectID uuid.
 			"error", parseErr,
 		)
 		return nil, domainerrors.PersonaInvalid(parseErr.Error())
+	}
+
+	if modelErr := c.validatePersonaModel(persona); modelErr != nil {
+		c.logger.Warn("persona model unavailable",
+			"slug", slug,
+			"path", path,
+			"model", persona.Model,
+			"error", modelErr,
+		)
+		return nil, domainerrors.PersonaInvalid(modelErr.Error())
 	}
 
 	return persona, nil
@@ -175,10 +190,61 @@ func (c *filePersonaCatalog) listAll(ctx context.Context, projectID uuid.UUID) (
 			)
 			continue
 		}
+
+		// Model validation: add issue but keep persona in list for visibility.
+		// Callers that need the persona to be fully runnable (ResolvePersona)
+		// apply a stricter check; list operations surface the issue without
+		// hiding the entry from the catalog view.
+		if modelErr := c.validatePersonaModel(persona); modelErr != nil {
+			issues = append(issues, domainagents.ValidationIssue{
+				Path:    path,
+				Field:   "model",
+				Message: modelErr.Error(),
+			})
+			c.logger.Warn("persona model unavailable",
+				"slug", slug,
+				"path", path,
+				"model", persona.Model,
+				"error", modelErr,
+			)
+			// Intentional fall-through: keep persona in result.
+		}
+
 		personas = append(personas, *persona)
 	}
 
 	return personas, issues, nil
+}
+
+// validatePersonaModel checks that the persona's model field names a model
+// that is registered in the capability registry. Returns nil when:
+//   - no registry is configured (validation skipped)
+//   - persona.Model is empty (model is inherited from caller context)
+//   - the model is found in the registry
+//
+// When persona.Provider is set the check is scoped to that provider; otherwise
+// all configured providers are searched in iteration order.
+func (c *filePersonaCatalog) validatePersonaModel(persona *domainagents.Persona) error {
+	if c.capabilityRegistry == nil || persona.Model == "" {
+		return nil
+	}
+
+	if persona.Provider != "" {
+		_, err := c.capabilityRegistry.GetModelCapabilities(persona.Provider, persona.Model)
+		if err != nil {
+			return fmt.Errorf("model %q unavailable for provider %q", persona.Model, persona.Provider)
+		}
+		return nil
+	}
+
+	// No provider specified — accept if model is known in any configured provider.
+	for _, provider := range c.capabilityRegistry.GetAllProviders() {
+		_, err := c.capabilityRegistry.GetModelCapabilities(provider, persona.Model)
+		if err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q not found in any configured provider", persona.Model)
 }
 
 // parsePersonaDoc parses the content of a persona .md file into a Persona.
