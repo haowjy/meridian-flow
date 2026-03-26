@@ -44,6 +44,9 @@ type LLMConfig struct {
 	StreamDebugLogs          bool   // Enables very verbose provider streaming logs (redacted)
 	SearchAPIKey             string // API key for external search provider (optional)
 	SearchAPIProvider        string // Provider name: "tavily", "brave", "serper", etc.
+	MaxSpawnDepth            int    // Maximum spawn recursion depth (default: 3)
+	MaxConcurrentSpawns      int    // Maximum concurrent running spawns per work item (default: 5)
+	SpawnTimeoutSeconds      int    // Foreground spawn timeout in seconds (default: 300 = 5 minutes)
 }
 
 // BillingConfig holds billing/payment settings.
@@ -105,6 +108,9 @@ func Load() *Config {
 			StreamDebugLogs:          getEnv("LLM_STREAM_DEBUG_LOGS", "false") == "true",
 			SearchAPIKey:             getEnv("SEARCH_API_KEY", ""),
 			SearchAPIProvider:        getEnv("SEARCH_API_PROVIDER", "tavily"),
+			MaxSpawnDepth:            getEnvInt("MAX_SPAWN_DEPTH", 3),
+			MaxConcurrentSpawns:      getEnvInt("MAX_CONCURRENT_SPAWNS", 5),
+			SpawnTimeoutSeconds:      getEnvInt("SPAWN_TIMEOUT_SECONDS", 300),
 		},
 		Billing: BillingConfig{
 			StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),

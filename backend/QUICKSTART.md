@@ -26,11 +26,11 @@ PORT=8080
 ENVIRONMENT=dev
 
 # Cloud Supabase - Transaction mode (port 6543)
-# From: Supabase Dashboard -> Settings -> Database -> Connection String -> Transaction mode
+# From: Supabase Dashboard → Settings → Database → Connection String → Transaction mode
 SUPABASE_DB_URL=postgresql://postgres.[PROJECT]:[PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 
 # Cloud Supabase - API settings
-# From: Supabase Dashboard -> Settings -> API
+# From: Supabase Dashboard → Settings → API
 SUPABASE_URL=https://[PROJECT].supabase.co
 SUPABASE_KEY=sb_secret_...
 

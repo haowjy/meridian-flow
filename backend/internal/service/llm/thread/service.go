@@ -203,6 +203,22 @@ func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID str
 	return nil
 }
 
+// ListChildThreads retrieves all child threads spawned from a parent thread.
+// Verifies the caller has access to the parent thread before returning children.
+func (s *Service) ListChildThreads(ctx context.Context, parentThreadID, userID string) ([]domainllm.Thread, error) {
+	// Authorization: verify caller has access to the parent thread.
+	if _, err := s.threadRepo.GetThread(ctx, parentThreadID, userID); err != nil {
+		return nil, err
+	}
+
+	children, err := s.threadRepo.ListChildThreads(ctx, parentThreadID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list child threads: %w", err)
+	}
+
+	return children, nil
+}
+
 // DeleteThread soft-deletes a thread
 func (s *Service) DeleteThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	deletedThread, err := s.threadRepo.DeleteThread(ctx, threadID, userID)

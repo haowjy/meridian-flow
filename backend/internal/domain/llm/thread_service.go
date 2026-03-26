@@ -32,6 +32,11 @@ type ThreadService interface {
 	// DeleteThread soft-deletes a thread and returns the deleted thread object
 	// Validates user has access
 	DeleteThread(ctx context.Context, threadID, userID string) (*Thread, error)
+
+	// ListChildThreads retrieves all child threads spawned from a parent thread.
+	// Validates the caller has access to the parent thread before returning children.
+	// Returns an empty slice (not an error) if the parent has no children.
+	ListChildThreads(ctx context.Context, parentThreadID, userID string) ([]Thread, error)
 }
 
 // CreateThreadRequest is the DTO for creating a new thread

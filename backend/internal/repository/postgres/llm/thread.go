@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -31,9 +32,9 @@ func NewThreadRepository(config *postgres.RepositoryConfig) domainllm.ThreadStor
 // CreateThread creates a new thread session
 func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *domainllm.Thread) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, user_id, title, work_item_id, persona, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, work_item_id, persona, created_at, updated_at
+		INSERT INTO %s (project_id, user_id, title, work_item_id, persona, parent_thread_id, spawn_status, spawn_result, spawn_depth, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, work_item_id, persona, parent_thread_id, spawn_status, spawn_result, spawn_depth, created_at, updated_at
 	`, r.tables.Threads)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -41,11 +42,15 @@ func (r *PostgresThreadRepository) CreateThread(ctx context.Context, thread *dom
 		thread.ProjectID,
 		thread.UserID,
 		thread.Title,
-		thread.WorkItemID, // nil if not provided
-		thread.Persona,    // nil if not provided
+		thread.WorkItemID,      // nil if not provided
+		thread.Persona,         // nil if not provided
+		thread.ParentThreadID,  // nil for top-level threads
+		thread.SpawnStatus,     // nil for non-spawn threads
+		thread.SpawnResultJSON, // nil until spawn completes
+		thread.SpawnDepth,      // 0 for top-level threads
 		thread.CreatedAt,
 		thread.UpdatedAt,
-	).Scan(&thread.ID, &thread.WorkItemID, &thread.Persona, &thread.CreatedAt, &thread.UpdatedAt)
+	).Scan(&thread.ID, &thread.WorkItemID, &thread.Persona, &thread.ParentThreadID, &thread.SpawnStatus, &thread.SpawnResultJSON, &thread.SpawnDepth, &thread.CreatedAt, &thread.UpdatedAt)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -87,7 +92,9 @@ func (r *PostgresThreadRepository) getExistingThreadID(ctx context.Context, proj
 // GetThread retrieves a thread by ID (scoped to user)
 func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, userID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona,
+		       parent_thread_id, spawn_status, spawn_result, spawn_depth,
+		       created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`, r.tables.Threads)
@@ -103,6 +110,10 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 		&thread.LastViewedTurnID,
 		&thread.WorkItemID,
 		&thread.Persona,
+		&thread.ParentThreadID,
+		&thread.SpawnStatus,
+		&thread.SpawnResultJSON,
+		&thread.SpawnDepth,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,
@@ -122,7 +133,9 @@ func (r *PostgresThreadRepository) GetThread(ctx context.Context, threadID, user
 // Used by ResourceAuthorizer when authorization is handled separately
 func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, threadID string) (*domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona,
+		       parent_thread_id, spawn_status, spawn_result, spawn_depth,
+		       created_at, updated_at, deleted_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Threads)
@@ -138,6 +151,10 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 		&thread.LastViewedTurnID,
 		&thread.WorkItemID,
 		&thread.Persona,
+		&thread.ParentThreadID,
+		&thread.SpawnStatus,
+		&thread.SpawnResultJSON,
+		&thread.SpawnDepth,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,
@@ -156,7 +173,9 @@ func (r *PostgresThreadRepository) GetThreadByIDOnly(ctx context.Context, thread
 // ListThreadsByProject retrieves all threads for a project
 func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, projectID, userID string) ([]domainllm.Thread, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona, created_at, updated_at, deleted_at
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona,
+		       parent_thread_id, spawn_status, spawn_result, spawn_depth,
+		       created_at, updated_at, deleted_at
 		FROM %s
 		WHERE project_id = $1 AND user_id = $2 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
@@ -181,6 +200,10 @@ func (r *PostgresThreadRepository) ListThreadsByProject(ctx context.Context, pro
 			&thread.LastViewedTurnID,
 			&thread.WorkItemID,
 			&thread.Persona,
+			&thread.ParentThreadID,
+			&thread.SpawnStatus,
+			&thread.SpawnResultJSON,
+			&thread.SpawnDepth,
 			&thread.CreatedAt,
 			&thread.UpdatedAt,
 			&thread.DeletedAt,
@@ -309,7 +332,9 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona, created_at, updated_at, deleted_at
+		RETURNING id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona,
+		          parent_thread_id, spawn_status, spawn_result, spawn_depth,
+		          created_at, updated_at, deleted_at
 	`, r.tables.Threads)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -325,6 +350,10 @@ func (r *PostgresThreadRepository) DeleteThread(ctx context.Context, threadID, u
 		&thread.LastViewedTurnID,
 		&thread.WorkItemID,
 		&thread.Persona,
+		&thread.ParentThreadID,
+		&thread.SpawnStatus,
+		&thread.SpawnResultJSON,
+		&thread.SpawnDepth,
 		&thread.CreatedAt,
 		&thread.UpdatedAt,
 		&thread.DeletedAt,
@@ -419,6 +448,106 @@ func (r *PostgresThreadRepository) GetThreadTree(ctx context.Context, threadID, 
 		Turns:     nodes,
 		UpdatedAt: updatedAt,
 	}, nil
+}
+
+// UpdateSpawnStatus atomically updates a thread's spawn_status and optionally spawn_result.
+func (r *PostgresThreadRepository) UpdateSpawnStatus(ctx context.Context, threadID string, status domainllm.SpawnStatus, spawnResult *json.RawMessage) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET spawn_status = $1, spawn_result = $2, updated_at = $3
+		WHERE id = $4 AND deleted_at IS NULL
+	`, r.tables.Threads)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
+		status,
+		spawnResult,
+		time.Now().UTC(),
+		threadID,
+	)
+	if err != nil {
+		return fmt.Errorf("update spawn status: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return domain.NewNotFoundError("thread", fmt.Sprintf("thread %s not found", threadID))
+	}
+
+	return nil
+}
+
+// CountRunningSpawnsByWorkItem counts child threads with spawn_status='running' for a work item.
+func (r *PostgresThreadRepository) CountRunningSpawnsByWorkItem(ctx context.Context, workItemID string) (int, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE work_item_id = $1
+		  AND spawn_status = 'running'
+		  AND deleted_at IS NULL
+	`, r.tables.Threads)
+
+	var count int
+	executor := postgres.GetExecutor(ctx, r.pool)
+	if err := executor.QueryRow(ctx, query, workItemID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count running spawns by work item: %w", err)
+	}
+
+	return count, nil
+}
+
+// ListChildThreads retrieves all non-deleted child threads of a parent.
+func (r *PostgresThreadRepository) ListChildThreads(ctx context.Context, parentThreadID string) ([]domainllm.Thread, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, user_id, title, system_prompt, last_viewed_turn_id, work_item_id, persona,
+		       parent_thread_id, spawn_status, spawn_result, spawn_depth,
+		       created_at, updated_at, deleted_at
+		FROM %s
+		WHERE parent_thread_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC
+	`, r.tables.Threads)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, parentThreadID)
+	if err != nil {
+		return nil, fmt.Errorf("list child threads: %w", err)
+	}
+	defer rows.Close()
+
+	var threads []domainllm.Thread
+	for rows.Next() {
+		var thread domainllm.Thread
+		err := rows.Scan(
+			&thread.ID,
+			&thread.ProjectID,
+			&thread.UserID,
+			&thread.Title,
+			&thread.SystemPrompt,
+			&thread.LastViewedTurnID,
+			&thread.WorkItemID,
+			&thread.Persona,
+			&thread.ParentThreadID,
+			&thread.SpawnStatus,
+			&thread.SpawnResultJSON,
+			&thread.SpawnDepth,
+			&thread.CreatedAt,
+			&thread.UpdatedAt,
+			&thread.DeletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan child thread: %w", err)
+		}
+		threads = append(threads, thread)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate child threads: %w", err)
+	}
+
+	if threads == nil {
+		threads = []domainllm.Thread{}
+	}
+
+	return threads, nil
 }
 
 func (r *PostgresThreadRepository) threadExists(ctx context.Context, threadID, userID string) (bool, error) {

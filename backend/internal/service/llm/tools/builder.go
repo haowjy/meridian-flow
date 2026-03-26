@@ -3,6 +3,7 @@ package tools
 import (
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
+	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/tools/external"
 )
 
@@ -90,6 +91,28 @@ func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolR
 		webSearchTool := NewWebSearchTool(client, b.config)
 		b.registry.RegisterWithMetadata("web_search", webSearchTool, WebSearchToolMetadata())
 	}
+	return b
+}
+
+// WithSpawnTool registers the spawn_agent tool when conditions are met.
+//
+// Guards (either condition → no-op):
+//   - spawnInvoker is nil (spawn service not wired yet, e.g. during testing)
+//   - workItemID is empty (thread not linked to a work item; spawn would have no parent context)
+//
+// The tool is registered with metadata for dynamic system prompt generation (OCP compliance).
+func (b *ToolRegistryBuilder) WithSpawnTool(
+	parentThreadID string,
+	workItemID string,
+	projectID string,
+	userID string,
+	spawnInvoker domainllm.SpawnInvoker,
+) *ToolRegistryBuilder {
+	if spawnInvoker == nil || workItemID == "" {
+		return b
+	}
+	spawnTool := NewSpawnAgentTool(parentThreadID, workItemID, projectID, userID, spawnInvoker)
+	b.registry.RegisterWithMetadata("spawn_agent", spawnTool, SpawnAgentToolMetadata())
 	return b
 }
 

@@ -50,6 +50,25 @@ func (r *ExecutorRegistry) Remove(turnID string) {
 	r.executors.Delete(turnID)
 }
 
+// GetByThread finds the active executor for a given thread ID by scanning the registry.
+// Returns nil if no active executor is found for the thread.
+//
+// Used by the cancellation cascade to find child executors when a parent is interrupted.
+// Linear scan is acceptable because the total number of active executors is small
+// (bounded by MaxConcurrentStreams config) and this path is infrequent.
+func (r *ExecutorRegistry) GetByThread(threadID string) *StreamExecutor {
+	var result *StreamExecutor
+	r.executors.Range(func(_, v interface{}) bool {
+		exec := v.(*StreamExecutor)
+		if exec.threadID == threadID {
+			result = exec
+			return false // stop iteration
+		}
+		return true
+	})
+	return result
+}
+
 // ThreadValidator is shared validation logic for thread operations
 type ThreadValidator interface {
 	ValidateThread(ctx context.Context, threadID, userID string) error
@@ -175,6 +194,10 @@ type InfraDeps struct {
 	Config   *config.Config
 	JobQueue jobs.JobQueue // Background job queue for async operations
 	Logger   *slog.Logger
+	// ExecutorRegistry is optional. When non-nil, it is used as the shared executor
+	// registry so that external components (e.g. SpawnService) can cancel child
+	// executors. When nil, a new private registry is created inside the service.
+	ExecutorRegistry *ExecutorRegistry
 }
 
 // Validate checks that all infrastructure dependencies are provided.

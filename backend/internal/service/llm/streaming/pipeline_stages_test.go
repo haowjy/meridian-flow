@@ -14,6 +14,7 @@ package streaming
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -96,6 +97,15 @@ func (m *mockThreadStoreForPipeline) DeleteThread(ctx context.Context, threadID,
 	return nil, nil
 }
 func (m *mockThreadStoreForPipeline) GetThreadTree(ctx context.Context, threadID, userID string) (*domainllm.ThreadTree, error) {
+	return nil, nil
+}
+func (m *mockThreadStoreForPipeline) UpdateSpawnStatus(ctx context.Context, threadID string, status domainllm.SpawnStatus, spawnResult *json.RawMessage) error {
+	return nil
+}
+func (m *mockThreadStoreForPipeline) CountRunningSpawnsByWorkItem(ctx context.Context, workItemID string) (int, error) {
+	return 0, nil
+}
+func (m *mockThreadStoreForPipeline) ListChildThreads(ctx context.Context, parentThreadID string) ([]domainllm.Thread, error) {
 	return nil, nil
 }
 

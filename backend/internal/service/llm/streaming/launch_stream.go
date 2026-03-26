@@ -166,12 +166,23 @@ func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *to
 		workItemSlug = p.resolvedWorkItem.Slug
 	}
 
+	// Resolve work item ID for spawn tool registration.
+	// Prefer resolvedWorkItem (set by EnsureThreadWorkItem for persona turns) over the
+	// raw thread field, since resolvedWorkItem is authoritative for the current turn.
+	workItemID := ""
+	if p.resolvedWorkItem != nil {
+		workItemID = p.resolvedWorkItem.ID
+	} else if thread.WorkItemID != nil {
+		workItemID = *thread.WorkItemID
+	}
+
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
 		WithWorkItemSlug(workItemSlug).
 		WithEnabledDocumentTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.documentSvc, svc.folderSvc).
-		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills)
+		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills).
+		WithSpawnTool(thread.ID, workItemID, thread.ProjectID, p.req.UserID, svc.spawnInvoker)
 
 	// Add web search tool if requested via provider-specific tool name.
 	// Web-search registration must happen before WithPersonaToolFilter so it can be pruned too.

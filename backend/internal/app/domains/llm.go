@@ -136,7 +136,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 	}, nil
 }
 
-// RegisterRoutes registers thread + streaming + interjection routes.
+// RegisterRoutes registers thread + streaming + interjection + spawn routes.
 func (m *LLMModule) RegisterRoutes(mux *http.ServeMux, admissionChecker billing.CreditAdmissionChecker) {
 	mux.HandleFunc("POST /api/threads", m.Handler.CreateThread)
 	mux.HandleFunc("GET /api/threads", m.Handler.ListThreads)
@@ -146,6 +146,7 @@ func (m *LLMModule) RegisterRoutes(mux *http.ServeMux, admissionChecker billing.
 	mux.HandleFunc("DELETE /api/threads/{id}", m.Handler.DeleteThread)
 	mux.HandleFunc("GET /api/threads/{id}/turns", m.Handler.GetPaginatedTurns)
 	mux.HandleFunc("GET /api/threads/{id}/context-budget", m.ContextBudgetHandler.GetContextBudget)
+	mux.HandleFunc("GET /api/threads/{id}/spawns", m.Handler.ListSpawns)
 	mux.Handle("POST /api/turns", middleware.CreditGate(admissionChecker)(http.HandlerFunc(m.Handler.CreateTurnV2)))
 	mux.HandleFunc("GET /api/turns/{id}/path", m.Handler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", m.Handler.GetTurnSiblings)

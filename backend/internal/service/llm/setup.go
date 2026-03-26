@@ -50,6 +50,7 @@ type Services struct {
 	Thread        domainllm.ThreadService
 	ThreadHistory domainllm.ThreadHistoryService
 	Streaming     domainllm.StreamingService
+	Spawn         *streaming.SpawnService // Manages child thread lifecycle; nil if not wired
 }
 
 // LLMServicesDeps groups dependencies for SetupLLMServices.
@@ -118,6 +119,10 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	validator := NewThreadValidator(deps.ThreadRepo)
 	streamRegistry := mstream.NewRegistry()
 
+	// Create a shared ExecutorRegistry so SpawnService can cancel child executors
+	// that are running inside the streaming service (cascade cancellation).
+	executorRegistry := streaming.NewExecutorRegistry()
+
 	providerResolver := streaming.NewProviderResolver(deps.ProviderRegistry)
 
 	threadService := thread.NewService(deps.ThreadRepo, deps.ProjectRepo, deps.WorkItemSvc, deps.Logger)
@@ -180,18 +185,41 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			SettlementMode:         deps.SettlementMode,
 		},
 		Infra: streaming.InfraDeps{
-			Config:   deps.Config,
-			JobQueue: deps.JobQueue,
-			Logger:   deps.Logger,
+			Config:           deps.Config,
+			JobQueue:         deps.JobQueue,
+			Logger:           deps.Logger,
+			ExecutorRegistry: executorRegistry, // shared with SpawnService for cascade cancel
 		},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create streaming service: %w", err)
 	}
 
+	// Wire SpawnService: bootstrapper depends on streamingService (CreateTurn path),
+	// and SpawnService depends on the shared executorRegistry for executor-level cancellation.
+	// The circular dependency is broken by SetSpawnInvoker (called after both are created).
+	bootstrapper := streaming.NewChildThreadBootstrapper(streamingService, deps.Logger)
+	spawnSvc := streaming.NewSpawnService(
+		deps.ThreadRepo,
+		deps.TxManager,
+		deps.Config,
+		bootstrapper,
+		executorRegistry,
+		deps.Logger,
+	)
+
+	// Wire SpawnInvoker back into the streaming service so the spawn_agent tool can call
+	// CreateSpawn without a direct import cycle.
+	if svc, ok := streamingService.(interface {
+		SetSpawnInvoker(domainllm.SpawnInvoker)
+	}); ok {
+		svc.SetSpawnInvoker(spawnSvc)
+	}
+
 	return &Services{
 		Thread:        threadService,
 		ThreadHistory: threadHistoryService,
 		Streaming:     streamingService,
+		Spawn:         spawnSvc,
 	}, streamRegistry, nil
 }

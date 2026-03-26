@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -19,6 +20,18 @@ type Thread struct {
 	// Persona stores the persona slug used when this thread was created or
 	// when a persona turn was first sent on it. Null for non-persona threads.
 	Persona          *string    `json:"persona,omitempty" db:"persona"`
+	// ParentThreadID links this thread to its parent when created via spawn_agent.
+	// Null for top-level threads. FK to threads(id).
+	ParentThreadID   *string    `json:"parent_thread_id,omitempty" db:"parent_thread_id"`
+	// SpawnStatus tracks the lifecycle of a spawned child thread.
+	// Null for non-spawn threads. Values: running, succeeded, failed, cancelled, timed_out.
+	SpawnStatus      *SpawnStatus `json:"spawn_status,omitempty" db:"spawn_status"`
+	// SpawnResultJSON stores the structured outcome of a completed spawn as JSONB.
+	// Null while the spawn is running or for non-spawn threads.
+	SpawnResultJSON  *json.RawMessage `json:"spawn_result,omitempty" db:"spawn_result"`
+	// SpawnDepth is denormalized: child.SpawnDepth = parent.SpawnDepth + 1.
+	// 0 for top-level threads. Used for O(1) depth limit checks without chain walking.
+	SpawnDepth       int        `json:"spawn_depth" db:"spawn_depth"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
