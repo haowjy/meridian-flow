@@ -21,7 +21,7 @@ import (
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
 	"meridian/internal/service/llm/thread"
-	"meridian/internal/service/llm/thread_history"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 )
@@ -76,6 +76,12 @@ type LLMServicesDeps struct {
 	// WorkItemSvc is optional. When set, threads created without an explicit
 	// work_item_id automatically get an ephemeral work item provisioned.
 	WorkItemSvc domainwi.Service
+	// PersonaCatalog resolves persona profiles from .agents/agents/*.md.
+	// Optional: nil disables persona resolution.
+	PersonaCatalog domainagents.PersonaCatalog
+	// WorkItemStore is used by the streaming pipeline's contextResolver.
+	// Optional: nil disables work context resolution.
+	WorkItemStore domainwi.Store
 }
 
 // Validate checks that all required dependencies are configured.
@@ -145,6 +151,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			ThreadRepo:    deps.ThreadRepo,
 			ProjectRepo:   deps.ProjectRepo,
 			TxManager:     deps.TxManager,
+			WorkItemStore: deps.WorkItemStore, // Optional: nil disables context resolution
 		},
 		Services: streaming.ServiceDeps{
 			DocumentSvc:      deps.DocumentSvc,
@@ -154,6 +161,8 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			Validator:        validator,
 			Authorizer:       deps.Authorizer,
 			MutationStrategy: deps.MutationStrategy,
+			PersonaCatalog:   deps.PersonaCatalog, // Optional: nil disables persona resolution
+			WorkItemSvc:      deps.WorkItemSvc,    // Optional: nil disables work item gates
 		},
 		Pipeline: streaming.PipelineDeps{
 			ProviderGetter:       providerResolver,

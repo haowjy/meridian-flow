@@ -159,7 +159,8 @@ func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *to
 		WithEnabledDocumentTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.documentSvc, svc.folderSvc).
 		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills)
 
-	// Add web search tool if requested via provider-specific tool name
+	// Add web search tool if requested via provider-specific tool name.
+	// Web-search registration must happen before WithPersonaToolFilter so it can be pruned too.
 	requestedTools := p.enabledTools
 
 	if sliceutil.Contains(requestedTools, "tavily_web_search") {
@@ -191,6 +192,12 @@ func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *to
 			"web_search_enabled", false,
 			"web_search_provider", "",
 		)
+	}
+
+	// Persona tool filter: prune tools AFTER all are registered (including web search).
+	// This mirrors the same filter applied to the temp registry in assemblePrompt.
+	if p.resolvedPersona != nil {
+		builder.WithPersonaToolFilter(p.resolvedPersona.Tools, p.resolvedPersona.DisallowedTools)
 	}
 
 	return builder.Build()

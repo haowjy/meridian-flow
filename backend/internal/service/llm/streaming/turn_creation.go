@@ -19,6 +19,7 @@ import (
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	domainwi "meridian/internal/domain/workitem"
 )
 
 // defaultFallbackModel is used when config.LLM.DefaultModel is not set.
@@ -36,14 +37,17 @@ type turnPipeline struct {
 	req *domainllm.CreateTurnRequest
 
 	// Stage 1: gatherContext outputs
-	threadCtx      *threadContext
-	project        *domaindocsys.Project
-	requestParams  map[string]interface{}
-	params         *domainllm.RequestParams
-	model          string
-	provider       string
-	createdThread  *domainllm.Thread // Only set on cold start
-	streamAcquired bool              // True if stream slot acquired; cleanup transfers ownership
+	threadCtx        *threadContext
+	project          *domaindocsys.Project
+	requestParams    map[string]interface{}
+	params           *domainllm.RequestParams
+	model            string
+	provider         string
+	createdThread    *domainllm.Thread         // Only set on cold start
+	streamAcquired   bool                      // True if stream slot acquired; cleanup transfers ownership
+	resolvedPersona  *domainagents.Persona     // Resolved persona (nil if no persona slug)
+	resolvedWorkItem *domainwi.WorkItem        // Work item after EnsureThreadWorkItem (persona turns only)
+	workContext      *domainllm.WorkContext    // Resolved work context (persona turns only)
 
 	// Stage 2: assemblePrompt outputs
 	availableSkills []domainagents.RuntimeSkill
@@ -79,6 +83,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 	}
 	if req.ProjectID != nil && *req.ProjectID == "" {
 		req.ProjectID = nil
+	}
+	if req.PersonaSlug != nil && *req.PersonaSlug == "" {
+		req.PersonaSlug = nil
 	}
 
 	// Validate basic request fields (role, turn blocks)

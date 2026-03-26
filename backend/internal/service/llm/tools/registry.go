@@ -145,6 +145,19 @@ func (r *ToolRegistry) BuildSystemPromptSection() string {
 	return sb.String()
 }
 
+// Prune removes all registered tools for which the keep predicate returns false.
+// Call after all tool registration is complete (e.g. from builder.WithPersonaToolFilter).
+// Thread-safe: acquires a write lock for the duration of the prune.
+func (r *ToolRegistry) Prune(keep func(name string) bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name := range r.tools {
+		if !keep(name) {
+			delete(r.tools, name)
+		}
+	}
+}
+
 // Execute runs a single tool and returns the result.
 // Returns an error if the tool is not found or execution fails.
 func (r *ToolRegistry) Execute(ctx context.Context, call ToolCall) ToolResult {

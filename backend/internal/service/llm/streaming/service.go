@@ -14,6 +14,7 @@ import (
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
@@ -52,6 +53,9 @@ type Service struct {
 	settlementMode         billing.CreditSettlementMode   // Wired in Phase 4; used by executor in Phase 5
 	jobQueue               jobs.JobQueue                  // NEW: Phase 2 - background job queue for async operations
 	mutationStrategy       tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+	personaCatalog         domainagents.PersonaCatalog    // Resolves persona profiles; nil = feature disabled
+	workItemSvc            domainwi.Service               // Work item lifecycle gates + EnsureThreadWorkItem; nil = feature disabled
+	contextResolver        *contextResolver               // Resolves work context variables for persona turns
 	userStreamTracker      *UserStreamTracker             // Per-user concurrent stream limiter
 	logger                 *slog.Logger
 }
@@ -63,6 +67,12 @@ var _ domainllm.StreamingService = (*Service)(nil)
 func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, error) {
 	if err := deps.Validate(); err != nil {
 		return nil, fmt.Errorf("streaming orchestrator deps: %w", err)
+	}
+
+	// Build contextResolver only when WorkItemStore is available.
+	var ctxResolver *contextResolver
+	if deps.Persistence.WorkItemStore != nil {
+		ctxResolver = NewContextResolver(deps.Persistence.WorkItemStore)
 	}
 
 	return &Service{
@@ -94,6 +104,9 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		settlementMode:         deps.Billing.SettlementMode,
 		jobQueue:               deps.Infra.JobQueue,
 		mutationStrategy:       deps.Services.MutationStrategy,
+		personaCatalog:         deps.Services.PersonaCatalog,
+		workItemSvc:            deps.Services.WorkItemSvc,
+		contextResolver:        ctxResolver,
 		userStreamTracker:      NewUserStreamTracker(deps.Infra.Config.LLM.MaxConcurrentStreamsFree, deps.Infra.Config.LLM.MaxConcurrentStreamsPaid),
 		logger:                 deps.Infra.Logger,
 	}, nil

@@ -16,6 +16,9 @@ type Thread struct {
 	// yet been associated with a work item (legacy or newly created before
 	// ephemeral provisioning runs).
 	WorkItemID       *string    `json:"work_item_id,omitempty" db:"work_item_id"`
+	// Persona stores the persona slug used when this thread was created or
+	// when a persona turn was first sent on it. Null for non-persona threads.
+	Persona          *string    `json:"persona,omitempty" db:"persona"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`

@@ -149,7 +149,8 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	// Resolve system prompt from user, project, thread, and selected skills (mirror CreateTurn)
 	// Always resolve if skills are selected, or if no user system prompt provided
 	// Pass toolSection so the system prompt only mentions tools the LLM can actually use
-	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, thread.ProjectID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
+	// Debug endpoint does not support persona/work context — pass nil for both
+	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, thread.ProjectID, req.UserID, params, req.SelectedSkills, toolSection, nil, nil); err != nil {
 		s.logger.Error("failed to resolve system prompt for debug", "error", err)
 		return nil, err
 	}

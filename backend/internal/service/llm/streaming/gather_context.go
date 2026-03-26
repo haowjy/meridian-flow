@@ -2,14 +2,28 @@ package streaming
 
 // gather_context.go — Pipeline stage 1: resolve thread, project, model, provider, and request params.
 // On cold start, creates the thread in a transaction so threadID exists before prompt resolution.
+//
+// Persona integration (P2): when req.PersonaSlug is non-nil, this stage also:
+//   - Resolves the persona via PersonaCatalog (422 if not found)
+//   - Ensures the thread has a work item via EnsureThreadWorkItem
+//   - Gates on work item lifecycle (409 if done/deleted)
+//   - Resolves work context variables for system prompt injection
+//
+// All persona logic is gated on req.PersonaSlug being non-nil, so existing
+// non-persona turns are completely unaffected.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"meridian/internal/domain"
+	domainerrors "meridian/internal/domain/errors"
 	domainllm "meridian/internal/domain/llm"
+	domainwi "meridian/internal/domain/workitem"
 )
 
 // gatherContext resolves all context needed before prompt assembly.
@@ -18,8 +32,15 @@ import (
 // is valid before assemblePrompt runs. This fixes the bug where
 // resolveSystemPromptForParams was called with threadID="" on cold start.
 //
+// When a persona slug is provided, this stage additionally:
+//   - Resolves the persona via PersonaCatalog (422 if not found/invalid)
+//   - Ensures the thread has a work item (EnsureThreadWorkItem)
+//   - Gates on work item lifecycle (409 if done/deleted)
+//   - Resolves work context variables for system prompt position 3
+//
 // Outputs populated on p: threadCtx, project, requestParams, params, model, provider,
-// createdThread (cold start only), streamAcquired.
+// createdThread (cold start only), streamAcquired, resolvedPersona, resolvedWorkItem,
+// workContext (persona turns only).
 func (p *turnPipeline) gatherContext(ctx context.Context) error {
 	svc := p.svc
 	req := p.req
@@ -30,6 +51,12 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 		return err
 	}
 	p.threadCtx = threadCtx
+
+	// Resolve persona early (before thread creation) so we can set the persona
+	// slug on the cold-start thread and fail fast on invalid slugs.
+	if err := p.resolvePersona(ctx); err != nil {
+		return err
+	}
 
 	// Cold-start fix: create thread BEFORE prompt resolution so threadID is valid.
 	// Previously this happened inside the turn-creation ExecTx, which meant
@@ -43,6 +70,11 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 			Title:     title,
 			CreatedAt: now,
 			UpdatedAt: now,
+		}
+
+		// Set persona slug on thread if a persona was resolved.
+		if p.resolvedPersona != nil {
+			thread.Persona = &p.resolvedPersona.Slug
 		}
 
 		if err := svc.txManager.ExecTx(ctx, func(txCtx context.Context) error {
@@ -59,7 +91,16 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 			"title", thread.Title,
 			"project_id", threadCtx.projectID,
 			"user_id", req.UserID,
+			"persona", thread.Persona,
 		)
+	}
+
+	// Persona-only: work item gate + context resolution.
+	// Skipped entirely for non-persona turns to preserve backwards compatibility.
+	if p.resolvedPersona != nil {
+		if err := p.ensureWorkItemAndResolveContext(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Load project for tool policy enforcement
@@ -77,6 +118,11 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 	// Resolve model and provider from params
 	p.resolveModelAndProvider()
 
+	// Apply persona overrides (model, temperature, max_tokens) AFTER request-param
+	// resolution and BEFORE capability filtering so capability lookups use the
+	// overridden model name.
+	p.applyPersonaOverrides()
+
 	// Filter tools/capabilities based on model
 	p.applyModelCapabilities()
 
@@ -87,6 +133,136 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 	}
 	p.streamAcquired = true
 
+	return nil
+}
+
+// resolvePersona resolves the persona from req.PersonaSlug via PersonaCatalog.
+// No-op when PersonaSlug is nil/empty (existing non-persona turns unaffected).
+//
+// Sets p.resolvedPersona on success. Returns a DomainError on failure:
+//   - PERSONA_NOT_FOUND (422) if the slug references a non-existent persona
+//   - PERSONA_INVALID (422) if the persona file has malformed frontmatter
+//   - ValidationError if PersonaCatalog is not configured but a slug was provided
+func (p *turnPipeline) resolvePersona(ctx context.Context) error {
+	svc := p.svc
+	req := p.req
+
+	// No persona slug → no-op (existing behaviour preserved)
+	if req.PersonaSlug == nil || *req.PersonaSlug == "" {
+		return nil
+	}
+
+	// PersonaCatalog must be configured if a slug is provided.
+	if svc.personaCatalog == nil {
+		return domain.NewValidationError("persona_slug provided but persona catalog is not configured")
+	}
+
+	projectUUID, err := uuid.Parse(p.threadCtx.projectID)
+	if err != nil {
+		return fmt.Errorf("invalid project UUID for persona resolution: %w", err)
+	}
+
+	persona, err := svc.personaCatalog.ResolvePersona(ctx, projectUUID, *req.PersonaSlug)
+	if err != nil {
+		// DomainErrors (PersonaNotFound, PersonaInvalid) propagate directly
+		// to the handler for proper HTTP status mapping.
+		var domErr *domainerrors.DomainError
+		if errors.As(err, &domErr) {
+			return err
+		}
+		return fmt.Errorf("failed to resolve persona %q: %w", *req.PersonaSlug, err)
+	}
+
+	p.resolvedPersona = persona
+	svc.logger.Debug("persona resolved",
+		"slug", persona.Slug,
+		"name", persona.Name,
+		"model", persona.Model,
+		"project_id", p.threadCtx.projectID,
+	)
+	return nil
+}
+
+// ensureWorkItemAndResolveContext guarantees the thread has a work item,
+// checks the work item lifecycle, and resolves work context variables.
+//
+// Only called for persona turns. This ensures:
+//   - Thread has a work item (creates ephemeral if needed via EnsureThreadWorkItem)
+//   - Work item is active (409 if done, 409 if deleted)
+//   - Work context variables are resolved for system prompt injection
+func (p *turnPipeline) ensureWorkItemAndResolveContext(ctx context.Context) error {
+	svc := p.svc
+	req := p.req
+	threadCtx := p.threadCtx
+
+	// WorkItemSvc must be configured for persona turns.
+	if svc.workItemSvc == nil {
+		svc.logger.Warn("persona turn requested but WorkItemSvc not configured; skipping work item gate")
+		return nil
+	}
+
+	// Get thread's current work_item_id. On cold start, the thread was just
+	// created so we have it in p.createdThread. On warm start, we need to load it.
+	var workItemID *string
+	if p.createdThread != nil {
+		workItemID = p.createdThread.WorkItemID
+	} else {
+		thread, err := svc.threadRepo.GetThread(ctx, threadCtx.threadID, req.UserID)
+		if err != nil {
+			return fmt.Errorf("failed to load thread for work item gate: %w", err)
+		}
+		workItemID = thread.WorkItemID
+	}
+
+	// EnsureThreadWorkItem: creates ephemeral work item if thread has none.
+	workItem, err := svc.workItemSvc.EnsureThreadWorkItem(
+		ctx, threadCtx.projectID, threadCtx.threadID, req.UserID, workItemID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to ensure thread work item: %w", err)
+	}
+	p.resolvedWorkItem = workItem
+
+	// Work item lifecycle gate: reject turns on done or deleted work items.
+	// EnsureThreadWorkItem returns the work item with current status. If it
+	// was soft-deleted, GetByID inside EnsureThreadWorkItem returns NotFound
+	// and a new ephemeral is created, so we only gate on "done" here.
+	if workItem.Status == domainwi.StatusDone {
+		return domainerrors.WorkItemDone(workItem.Slug)
+	}
+	// Defensive: if somehow a deleted work item is returned (shouldn't happen
+	// because Store.GetByID filters deleted), gate on it.
+	if workItem.DeletedAt != nil {
+		return domainerrors.WorkItemDeleted(workItem.Slug)
+	}
+
+	// Resolve work context variables for system prompt injection (position 3).
+	if svc.contextResolver != nil {
+		resolved, err := svc.contextResolver.ResolveWorkContext(ctx, threadCtx.threadID, &workItem.ID)
+		if err != nil {
+			svc.logger.Warn("failed to resolve work context; continuing without work context",
+				"thread_id", threadCtx.threadID,
+				"work_item_id", workItem.ID,
+				"error", err,
+			)
+			// Non-fatal: continue without work context rather than failing the turn.
+		} else {
+			p.workContext = &domainllm.WorkContext{
+				WorkDir:  resolved.WorkDir,
+				FSDir:    resolved.FSDir,
+				ThreadID: resolved.ThreadID,
+				WorkItem: resolved.WorkItem,
+			}
+		}
+	}
+
+	svc.logger.Debug("work item gate passed",
+		"thread_id", threadCtx.threadID,
+		"work_item_id", workItem.ID,
+		"work_item_slug", workItem.Slug,
+		"work_item_status", workItem.Status,
+		"has_work_context", p.workContext != nil,
+	)
 	return nil
 }
 
@@ -210,6 +386,68 @@ func (p *turnPipeline) applyModelCapabilities() {
 			p.params.ProviderSort = modelCap.ProviderRouting.Sort
 			p.requestParams["provider_sort"] = *modelCap.ProviderRouting.Sort
 		}
+	}
+}
+
+// applyPersonaOverrides applies model, temperature, and max_tokens overrides
+// from the resolved persona. No-op when no persona is resolved.
+//
+// Called after resolveModelAndProvider() and before applyModelCapabilities() so that
+// capability-based tool filtering uses the persona's model rather than the request model.
+//
+// Persona.Model values:
+//   - "" or "inherit" → use the model already determined by resolveModelAndProvider (no change).
+//   - any other value → override p.model, p.params.Model, and re-derive p.provider.
+//
+// Temperature and MaxTokens are only overridden when the persona frontmatter contains
+// an explicit value (non-nil pointer); nil means "inherit from request params".
+func (p *turnPipeline) applyPersonaOverrides() {
+	if p.resolvedPersona == nil {
+		return
+	}
+	persona := p.resolvedPersona
+
+	// Model override: skip when empty or explicitly set to "inherit".
+	if persona.Model != "" && persona.Model != "inherit" {
+		p.model = persona.Model
+		p.params.Model = &persona.Model
+		p.requestParams["model"] = persona.Model
+
+		// Re-derive provider from the overridden model name, respecting explicit persona provider.
+		if persona.Provider != "" {
+			p.provider = persona.Provider
+		} else if mappedProvider, found := domainllm.GetProviderForModel(persona.Model); found {
+			p.provider = mappedProvider
+		} else {
+			p.provider = "openrouter"
+		}
+		p.requestParams["provider"] = p.provider
+
+		p.svc.logger.Debug("persona model override applied",
+			"slug", persona.Slug,
+			"model", p.model,
+			"provider", p.provider,
+		)
+	}
+
+	// Temperature override: nil means "inherit from request params".
+	if persona.Temperature != nil {
+		p.params.Temperature = persona.Temperature
+		p.requestParams["temperature"] = *persona.Temperature
+		p.svc.logger.Debug("persona temperature override applied",
+			"slug", persona.Slug,
+			"temperature", *persona.Temperature,
+		)
+	}
+
+	// MaxTokens override: nil means "inherit from request params".
+	if persona.MaxTokens != nil {
+		p.params.MaxTokens = persona.MaxTokens
+		p.requestParams["max_tokens"] = *persona.MaxTokens
+		p.svc.logger.Debug("persona max_tokens override applied",
+			"slug", persona.Slug,
+			"max_tokens", *persona.MaxTokens,
+		)
 	}
 }
 
