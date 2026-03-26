@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"meridian/internal/config"
 	authdomain "meridian/internal/domain/auth"
@@ -96,10 +97,14 @@ func (h *AgentImportHandler) ImportFromGit(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Sanitize the URL before any logging to strip embedded credentials
+	// (e.g. https://user:token@github.com/...).
+	sanitizedURL := sanitizeImportURL(body.URL)
+
 	if err := h.importSvc.ImportFromGit(r.Context(), projectID, body.URL); err != nil {
 		h.logger.Warn("agent import failed",
 			"project_id", projectIDStr,
-			"url", body.URL,
+			"url", sanitizedURL,
 			"error", err,
 		)
 		handleError(w, err, h.config)
@@ -108,8 +113,19 @@ func (h *AgentImportHandler) ImportFromGit(w http.ResponseWriter, r *http.Reques
 
 	h.logger.Info("agent import succeeded",
 		"project_id", projectIDStr,
-		"url", body.URL,
+		"url", sanitizedURL,
 	)
 
 	httputil.RespondJSON(w, http.StatusOK, importGitResponse{Status: "ok"})
+}
+
+// sanitizeImportURL strips userinfo (credentials) from rawURL before logging.
+// Prevents https://user:token@host/... from appearing in log output.
+func sanitizeImportURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "[unparseable URL]"
+	}
+	u.User = nil
+	return u.String()
 }

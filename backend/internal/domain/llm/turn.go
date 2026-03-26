@@ -4,13 +4,27 @@ import (
 	"time"
 )
 
+// Turn role constants — match the DB CHECK constraint (see migration 00038).
+const (
+	TurnRoleUser      = "user"
+	TurnRoleAssistant = "assistant"
+	TurnRoleSystem    = "system" // bookmark turns: compaction, collapse_marker
+)
+
+// TurnType constants are stored in request_params["turn_type"] for system turns.
+// They identify the kind of bookmark a system turn represents.
+const (
+	TurnTypeCompaction    = "compaction"     // LLM-generated summary of prior turns
+	TurnTypeCollapseMarker = "collapse_marker" // marks where tool results should use collapsed_content
+)
+
 // Turn represents a single turn in a conversation (user or assistant)
 // Turns form a tree structure via prev_turn_id for branching conversations
 type Turn struct {
 	ID           string     `json:"id" db:"id"`
 	ThreadID     string     `json:"thread_id" db:"thread_id"`
 	PrevTurnID   *string    `json:"prev_turn_id" db:"prev_turn_id"`
-	Role         string     `json:"role" db:"role"`     // "user" or "assistant"
+	Role         string     `json:"role" db:"role"`     // "user", "assistant", or "system" (bookmark turns)
 	Status       TurnStatus `json:"status" db:"status"` // "pending", "streaming", "waiting_subagents", "complete", "cancelled", "error"
 	Error        *string    `json:"error,omitempty" db:"error"`
 	Model        *string    `json:"model,omitempty" db:"model"` // LLM model used for assistant turns
@@ -61,4 +75,39 @@ type TurnStore interface {
 	TurnWriter
 	TurnReader
 	TurnNavigator
+}
+
+// --- Bookmark turn helpers ---
+
+// turnType extracts the "turn_type" field from RequestParams.
+// Returns "" if not set.
+func (t *Turn) turnType() string {
+	if t.RequestParams == nil {
+		return ""
+	}
+	v, _ := t.RequestParams["turn_type"].(string)
+	return v
+}
+
+// IsCompactionTurn returns true when this turn is an LLM-generated compaction
+// bookmark (role="system", turn_type="compaction").
+// Compaction turns contain a summary of prior turns in their text block; the
+// MessageBuilder uses them to truncate the effective path and inject the summary.
+func (t *Turn) IsCompactionTurn() bool {
+	return t.Role == TurnRoleSystem && t.turnType() == TurnTypeCompaction
+}
+
+// IsCollapseMarker returns true when this turn is a collapse marker bookmark
+// (role="system", turn_type="collapse_marker").
+// Collapse markers signal that tool_result blocks before this point should be
+// substituted with their collapsed_content when building LLM messages.
+func (t *Turn) IsCollapseMarker() bool {
+	return t.Role == TurnRoleSystem && t.turnType() == TurnTypeCollapseMarker
+}
+
+// IsBookmarkTurn returns true for any system bookmark turn (compaction or collapse marker).
+// Bookmark turns are not included in LLM messages directly; they influence how the
+// MessageBuilder processes the surrounding turns.
+func (t *Turn) IsBookmarkTurn() bool {
+	return t.IsCompactionTurn() || t.IsCollapseMarker()
 }

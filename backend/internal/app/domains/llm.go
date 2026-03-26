@@ -16,6 +16,7 @@ import (
 	"meridian/internal/jobs"
 	"meridian/internal/middleware"
 	"meridian/internal/service/llm"
+	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 
 	mstream "github.com/haowjy/meridian-stream-go"
@@ -52,11 +53,12 @@ type LLMCrossDeps struct {
 
 // LLMModule wires thread/history/streaming handlers and debug routes.
 type LLMModule struct {
-	Services       *llm.Services
-	StreamRegistry *mstream.Registry
-	Handler        *handler.ThreadHandler
-	DebugHandler   *handler.ThreadDebugHandler
-	ModelsHandler  *handler.ModelsHandler
+	Services             *llm.Services
+	StreamRegistry       *mstream.Registry
+	Handler              *handler.ThreadHandler
+	DebugHandler         *handler.ThreadDebugHandler
+	ModelsHandler        *handler.ModelsHandler
+	ContextBudgetHandler *handler.ContextBudgetHandler
 }
 
 func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCrossDeps) (*LLMModule, error) {
@@ -110,12 +112,27 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 
 	modelsHandler := handler.NewModelsHandler(cfg, infra.Logger, crossDeps.CapabilityRegistry)
 
+	// TokenEstimator powers the context-budget endpoint (tiktoken cl100k_base, ~±5% accuracy).
+	tokenEstimator, err := tokens.NewTiktokenEstimator(crossDeps.CapabilityRegistry)
+	if err != nil {
+		return nil, err
+	}
+
+	contextBudgetHandler := handler.NewContextBudgetHandler(
+		llmServices.Thread,
+		llmServices.ThreadHistory,
+		tokenEstimator,
+		cfg,
+		infra.Logger,
+	)
+
 	return &LLMModule{
-		Services:       llmServices,
-		StreamRegistry: streamRegistry,
-		Handler:        threadHandler,
-		DebugHandler:   threadDebugHandler,
-		ModelsHandler:  modelsHandler,
+		Services:             llmServices,
+		StreamRegistry:       streamRegistry,
+		Handler:              threadHandler,
+		DebugHandler:         threadDebugHandler,
+		ModelsHandler:        modelsHandler,
+		ContextBudgetHandler: contextBudgetHandler,
 	}, nil
 }
 
@@ -128,6 +145,7 @@ func (m *LLMModule) RegisterRoutes(mux *http.ServeMux, admissionChecker billing.
 	mux.HandleFunc("PATCH /api/threads/{id}/last-viewed-turn", m.Handler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/threads/{id}", m.Handler.DeleteThread)
 	mux.HandleFunc("GET /api/threads/{id}/turns", m.Handler.GetPaginatedTurns)
+	mux.HandleFunc("GET /api/threads/{id}/context-budget", m.ContextBudgetHandler.GetContextBudget)
 	mux.Handle("POST /api/turns", middleware.CreditGate(admissionChecker)(http.HandlerFunc(m.Handler.CreateTurnV2)))
 	mux.HandleFunc("GET /api/turns/{id}/path", m.Handler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", m.Handler.GetTurnSiblings)

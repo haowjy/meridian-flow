@@ -103,8 +103,9 @@ func (f *gitFetcher) Clone(ctx context.Context, rawURL string) (string, error) {
 
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", domainerrors.ImportValidationFailed(
-			fmt.Sprintf("git clone failed: %s", combined.String()))
+		// Do NOT include combined.String() (git stderr) — it may echo the clone URL
+		// verbatim, leaking embedded credentials (https://user:token@host/...).
+		return "", domainerrors.ImportValidationFailed("git clone failed: remote rejected or unreachable")
 	}
 
 	// Guard against large repos consuming excessive disk space.
@@ -120,6 +121,18 @@ func (f *gitFetcher) Clone(ctx context.Context, rawURL string) (string, error) {
 	}
 
 	return tmpDir, nil
+}
+
+// sanitizeURL returns rawURL with any userinfo (credentials) stripped.
+// Use this whenever a URL is included in a log message or error string to
+// prevent https://user:token@host/... credentials from appearing in logs.
+func sanitizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "[unparseable URL]"
+	}
+	u.User = nil
+	return u.String()
 }
 
 // dirSize returns the sum of the sizes of all regular files under root.

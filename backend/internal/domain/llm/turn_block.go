@@ -17,6 +17,7 @@ const (
 	BlockTypePartialReference = "partial_reference"
 	BlockTypeWebSearch        = "web_search_use"    // Server-executed web search invocation (LLM request)
 	BlockTypeWebSearchResult  = "web_search_result" // Server-executed web search result (provider response)
+	BlockTypeCollapseMarker   = "collapse_marker"   // CM2/CM3: marks context collapse boundary in "system" turns
 )
 
 // TurnBlock represents a multimodal content block in a turn (user or assistant)

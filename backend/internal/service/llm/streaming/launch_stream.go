@@ -108,6 +108,11 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 		streamSwitchFn,
 	)
 
+	// Wire token monitor for context budget tracking (nil-safe; monitoring optional)
+	if svc.tokenMonitor != nil {
+		executor.SetTokenMonitor(svc.tokenMonitor)
+	}
+
 	// Register stream in registry IMMEDIATELY
 	// This must happen before returning response to prevent race with SSE connections
 	stream := executor.GetStream()
@@ -153,9 +158,18 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *tools.ToolRegistry {
 	svc := p.svc
 
+	// Derive work item slug for .meridian/work/<slug>/ path isolation.
+	// Empty string when no work item is active (non-persona turns), which correctly
+	// denies all .meridian/work/ writes per the text editor's path guard.
+	workItemSlug := ""
+	if p.resolvedWorkItem != nil {
+		workItemSlug = p.resolvedWorkItem.Slug
+	}
+
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
+		WithWorkItemSlug(workItemSlug).
 		WithEnabledDocumentTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.documentSvc, svc.folderSvc).
 		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills)
 
