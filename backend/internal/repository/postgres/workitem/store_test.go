@@ -659,8 +659,8 @@ func TestWorkItemStore_HasStreamingThreads(t *testing.T) {
 	// Insert a streaming turn directly.
 	turnID := uuid.NewString()
 	insertTurn := fmt.Sprintf(`
-		INSERT INTO %s (id, thread_id, role, status, created_at, updated_at)
-		VALUES ($1, $2, 'assistant', 'streaming', NOW(), NOW())
+		INSERT INTO %s (id, thread_id, role, status, created_at)
+		VALUES ($1, $2, 'assistant', 'streaming', NOW())
 	`, h.tables.Turns)
 	if _, err := h.pool.Exec(ctx, insertTurn, turnID, threadID); err != nil {
 		t.Fatalf("insert streaming turn: %v", err)
