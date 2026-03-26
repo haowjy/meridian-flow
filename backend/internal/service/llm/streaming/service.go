@@ -57,6 +57,7 @@ type Service struct {
 	workItemSvc            domainwi.Service               // Work item lifecycle gates + EnsureThreadWorkItem; nil = feature disabled
 	contextResolver        *contextResolver               // Resolves work context variables for persona turns
 	userStreamTracker      *UserStreamTracker             // Per-user concurrent stream limiter
+	tokenMonitor           *TokenMonitor                  // Context budget monitor; nil when monitoring is disabled
 	logger                 *slog.Logger
 }
 
@@ -73,6 +74,18 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 	var ctxResolver *contextResolver
 	if deps.Persistence.WorkItemStore != nil {
 		ctxResolver = NewContextResolver(deps.Persistence.WorkItemStore)
+	}
+
+	// Build TokenMonitor for context budget tracking (autocollapse at 60%, warn at 90%).
+	// Non-fatal if estimator creation fails — monitoring is optional; turns proceed normally.
+	var tokenMon *TokenMonitor
+	tokenEst, estErr := tokens.NewTiktokenEstimator(deps.Pipeline.CapabilityRegistry)
+	if estErr != nil {
+		deps.Infra.Logger.Warn("failed to create token estimator; context budget monitoring disabled",
+			"error", estErr,
+		)
+	} else {
+		tokenMon = NewTokenMonitor(tokenEst, deps.Pipeline.CapabilityRegistry, deps.Infra.Logger)
 	}
 
 	return &Service{
@@ -108,6 +121,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		workItemSvc:            deps.Services.WorkItemSvc,
 		contextResolver:        ctxResolver,
 		userStreamTracker:      NewUserStreamTracker(deps.Infra.Config.LLM.MaxConcurrentStreamsFree, deps.Infra.Config.LLM.MaxConcurrentStreamsPaid),
+		tokenMonitor:           tokenMon,
 		logger:                 deps.Infra.Logger,
 	}, nil
 }

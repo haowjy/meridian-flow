@@ -137,7 +137,12 @@ func (p *turnPipeline) gatherContext(ctx context.Context) error {
 }
 
 // resolvePersona resolves the persona from req.PersonaSlug via PersonaCatalog.
-// No-op when PersonaSlug is nil/empty (existing non-persona turns unaffected).
+// No-op when PersonaSlug is nil/empty AND the thread has no stored persona.
+//
+// Slug priority:
+//  1. Explicit req.PersonaSlug (client-provided).
+//  2. Thread's stored persona slug (warm-start fallback): restores persona context
+//     on follow-up turns when the client does not resend the slug.
 //
 // Sets p.resolvedPersona on success. Returns a DomainError on failure:
 //   - PERSONA_NOT_FOUND (422) if the slug references a non-existent persona
@@ -147,8 +152,27 @@ func (p *turnPipeline) resolvePersona(ctx context.Context) error {
 	svc := p.svc
 	req := p.req
 
-	// No persona slug → no-op (existing behaviour preserved)
-	if req.PersonaSlug == nil || *req.PersonaSlug == "" {
+	// Determine the effective persona slug.
+	var personaSlug string
+	switch {
+	case req.PersonaSlug != nil && *req.PersonaSlug != "":
+		// Explicit slug from the current request — highest priority.
+		personaSlug = *req.PersonaSlug
+
+	case p.threadCtx.thread != nil &&
+		p.threadCtx.thread.Persona != nil &&
+		*p.threadCtx.thread.Persona != "":
+		// Warm-start fallback: client omitted persona slug but the thread was
+		// created with one. Restore persona context so the model override,
+		// persona system-prompt body, and tool filter all apply on follow-up turns.
+		personaSlug = *p.threadCtx.thread.Persona
+		svc.logger.Debug("persona slug inherited from thread",
+			"thread_id", p.threadCtx.threadID,
+			"persona_slug", personaSlug,
+		)
+
+	default:
+		// No persona slug → no-op (existing non-persona turns unaffected).
 		return nil
 	}
 
@@ -162,7 +186,7 @@ func (p *turnPipeline) resolvePersona(ctx context.Context) error {
 		return fmt.Errorf("invalid project UUID for persona resolution: %w", err)
 	}
 
-	persona, err := svc.personaCatalog.ResolvePersona(ctx, projectUUID, *req.PersonaSlug)
+	persona, err := svc.personaCatalog.ResolvePersona(ctx, projectUUID, personaSlug)
 	if err != nil {
 		// DomainErrors (PersonaNotFound, PersonaInvalid) propagate directly
 		// to the handler for proper HTTP status mapping.
@@ -170,7 +194,7 @@ func (p *turnPipeline) resolvePersona(ctx context.Context) error {
 		if errors.As(err, &domErr) {
 			return err
 		}
-		return fmt.Errorf("failed to resolve persona %q: %w", *req.PersonaSlug, err)
+		return fmt.Errorf("failed to resolve persona %q: %w", personaSlug, err)
 	}
 
 	p.resolvedPersona = persona
@@ -481,6 +505,7 @@ func (s *Service) resolveThreadContext(ctx context.Context, req *domainllm.Creat
 			threadID:    prevTurn.ThreadID,
 			projectID:   thread.ProjectID,
 			isNewThread: false,
+			thread:      thread, // Retained for persona fallback in resolvePersona
 		}, nil
 	}
 
@@ -500,6 +525,7 @@ func (s *Service) resolveThreadContext(ctx context.Context, req *domainllm.Creat
 			threadID:    *req.ThreadID,
 			projectID:   thread.ProjectID,
 			isNewThread: false,
+			thread:      thread, // Retained for persona fallback in resolvePersona
 		}, nil
 	}
 

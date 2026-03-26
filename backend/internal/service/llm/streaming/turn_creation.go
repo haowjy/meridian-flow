@@ -60,9 +60,10 @@ type turnPipeline struct {
 
 // threadContext holds resolved thread information for turn creation.
 type threadContext struct {
-	threadID    string // Resolved thread ID (empty until created on cold start)
-	projectID   string // Project ID (always set)
-	isNewThread bool   // True if cold start (new thread)
+	threadID    string            // Resolved thread ID (empty until created on cold start)
+	projectID   string            // Project ID (always set)
+	isNewThread bool              // True if cold start (new thread)
+	thread      *domainllm.Thread // Loaded on warm start; nil on cold start (thread not yet created)
 }
 
 // CreateTurn creates a new user turn and triggers assistant streaming response.

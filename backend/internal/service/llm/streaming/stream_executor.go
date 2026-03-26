@@ -92,6 +92,10 @@ type StreamExecutor struct {
 	// Used by service layer to clean up executor registry
 	onCleanup func()
 
+	// Token budget monitor — checks context usage after turn completion and
+	// triggers autocollapse/autocompact. nil when monitoring is disabled.
+	tokenMonitor *TokenMonitor
+
 	// Identity: who triggered this stream (for provenance tracking in tool execution)
 	userID string // User who initiated this streaming turn
 

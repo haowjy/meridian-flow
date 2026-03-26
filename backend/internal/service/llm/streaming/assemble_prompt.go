@@ -45,9 +45,17 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	// Build tool registry to generate tool section for system prompt (OCP compliance).
 	// Tools self-describe via metadata; registry generates the section dynamically.
 	// WithPersonaToolFilter is applied last so it prunes after all tools are registered.
+	//
+	// WorkItemSlug must match the production registry so the tool section accurately
+	// reflects which .meridian/work/ paths are accessible.
+	workItemSlug := ""
+	if p.resolvedWorkItem != nil {
+		workItemSlug = p.resolvedWorkItem.Slug
+	}
 	tempRegistryBuilder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
+		WithWorkItemSlug(workItemSlug).
 		WithEnabledDocumentTools(p.enabledTools, p.threadCtx.projectID, req.UserID, svc.documentSvc, svc.folderSvc).
 		WithEnabledSkillTools(p.enabledTools, p.threadCtx.projectID, svc.skillResolver, false, p.availableSkills)
 

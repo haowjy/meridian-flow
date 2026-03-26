@@ -34,33 +34,87 @@ func NewMessageBuilderService(
 // BuildMessages converts a turn path (with blocks already loaded) to LLM messages
 // suitable for provider requests. The path should be ordered from oldest to newest.
 // The caller must load turn blocks before calling this method.
+//
+// Bookmark handling (when bookmark turns are present in the path):
+//  1. Compaction turn: all turns before it (inclusive) are skipped; the turn's summary
+//     text is injected as a leading user context message.
+//  2. Collapse marker: tool_result blocks in turns before the marker get their full
+//     content replaced by collapsed_content (if set on the block).
+//  3. Multiple bookmarks: most-recent of each type wins; collapse markers earlier than
+//     the compaction turn are ignored (superseded by the compaction cutoff).
+//
+// No bookmarks → output is identical to pre-bookmark behaviour (regression-safe).
 func (mb *MessageBuilderService) BuildMessages(
 	ctx context.Context,
 	path []domainllm.Turn,
 ) ([]domainllm.Message, error) {
+	// --- Bookmark boundary detection ---
+	// Find the latest compaction turn (hard cutoff: skip everything at or before it).
+	compactionIdx := domainllm.FindLastCompactionTurn(path)
+
+	// Find the latest collapse marker. A collapse marker at or before the compaction
+	// cutoff is irrelevant — the compaction already skips those turns.
+	collapseMarkerIdx := domainllm.FindLastCollapseMarker(path)
+	if compactionIdx >= 0 && collapseMarkerIdx <= compactionIdx {
+		collapseMarkerIdx = -1
+	}
+
 	messages := make([]domainllm.Message, 0, len(path))
 
-	for _, turn := range path {
-		// Determine role
+	// --- Inject compaction summary ---
+	// The summary is prepended as a user context message so the LLM understands
+	// what happened before the bookmark cut-off.
+	if compactionIdx >= 0 {
+		summary := domainllm.ExtractCompactionSummary(path[compactionIdx])
+		if summary != "" {
+			summaryText := "[Previous conversation summary]\n" + summary
+			summaryBlock := &domainllm.TurnBlock{
+				BlockType:   domainllm.BlockTypeText,
+				TextContent: &summaryText,
+			}
+			messages = append(messages, domainllm.Message{
+				Role:    domainllm.TurnRoleUser,
+				Content: []*domainllm.TurnBlock{summaryBlock},
+			})
+			mb.logger.Debug("injected compaction summary",
+				"compaction_turn_index", compactionIdx,
+				"summary_len", len(summary),
+			)
+		}
+	}
+
+	// --- Process turns ---
+	for i, turn := range path {
+		// Skip all turns up to and including the compaction bookmark.
+		if compactionIdx >= 0 && i <= compactionIdx {
+			continue
+		}
+
+		// Skip bookmark turns — they are not sent to the LLM directly.
+		if turn.IsBookmarkTurn() {
+			continue
+		}
+
+		// Determine role.
 		var role string
 		switch turn.Role {
-		case "user":
+		case domainllm.TurnRoleUser:
 			role = "user"
-		case "assistant":
+		case domainllm.TurnRoleAssistant:
 			role = "assistant"
 		default:
 			return nil, fmt.Errorf("unsupported turn role: %s", turn.Role)
 		}
 
-		// Get content blocks for this turn
+		// Get content blocks for this turn.
 		if len(turn.Blocks) == 0 {
-			// Empty turn - skip it
+			// Empty turn - skip it.
 			mb.logger.Debug("skipping turn with no content blocks", "turn_id", turn.ID)
 			continue
 		}
 
-		// Filter out dangling tool_use blocks (those without a corresponding tool_result)
-		// This prevents 400 errors from providers when resuming interrupted conversations
+		// Filter out dangling tool_use blocks (those without a corresponding tool_result).
+		// This prevents 400 errors from providers when resuming interrupted conversations.
 		validBlocks := mb.sanitizeTurnBlocks(turn)
 
 		if len(validBlocks) == 0 {
@@ -68,14 +122,21 @@ func (mb *MessageBuilderService) BuildMessages(
 			continue
 		}
 
-		// Convert []TurnBlock to []*TurnBlock
+		// Apply collapse substitution: for turns before the collapse marker, replace
+		// tool_result content with collapsed_content (if available).
+		// This keeps context-window usage low for tool results we no longer need verbatim.
+		if collapseMarkerIdx >= 0 && i < collapseMarkerIdx {
+			validBlocks = mb.applyCollapseToBlocks(validBlocks)
+		}
+
+		// Convert []TurnBlock to []*TurnBlock, applying formatter to tool results.
 		contentPtrs := make([]*domainllm.TurnBlock, len(validBlocks))
-		for i := range validBlocks {
-			// Apply formatting to tool results if needed
-			if validBlocks[i].BlockType == domainllm.BlockTypeToolResult {
-				mb.formatToolResultBlock(&validBlocks[i])
+		for j := range validBlocks {
+			// Apply formatting to tool results if needed.
+			if validBlocks[j].BlockType == domainllm.BlockTypeToolResult {
+				mb.formatToolResultBlock(&validBlocks[j])
 			}
-			contentPtrs[i] = &validBlocks[i]
+			contentPtrs[j] = &validBlocks[j]
 		}
 
 		messages = append(messages, domainllm.Message{
@@ -84,7 +145,7 @@ func (mb *MessageBuilderService) BuildMessages(
 		})
 	}
 
-	// Optional: Inject token limit warning if last assistant turn is approaching limit
+	// Optional: Inject token limit warning if last assistant turn is approaching limit.
 	// TODO: Experiment with system prompt injection instead of user message
 	if err := mb.injectTokenLimitWarningIfNeeded(path, &messages); err != nil {
 		mb.logger.Debug("failed to inject token limit warning", "error", err)
@@ -92,6 +153,35 @@ func (mb *MessageBuilderService) BuildMessages(
 	}
 
 	return messages, nil
+}
+
+// applyCollapseToBlocks substitutes collapsed_content into tool_result blocks that
+// have it set. Returns a new slice with deep-copied content maps for modified blocks
+// to avoid mutating the caller's turn data.
+//
+// Only tool_result blocks with a non-nil CollapsedContent are affected; all other
+// block types are returned unchanged (same pointer references).
+func (mb *MessageBuilderService) applyCollapseToBlocks(blocks []domainllm.TurnBlock) []domainllm.TurnBlock {
+	result := make([]domainllm.TurnBlock, len(blocks))
+	copy(result, blocks)
+
+	for i := range result {
+		block := &result[i]
+		if block.BlockType != domainllm.BlockTypeToolResult || block.CollapsedContent == nil {
+			continue
+		}
+
+		// Deep-copy the content map before mutating, since maps are reference types.
+		// The original block's content map must not be modified (may be reused by callers).
+		newContent := make(map[string]interface{}, len(block.Content))
+		for k, v := range block.Content {
+			newContent[k] = v
+		}
+		newContent["result"] = *block.CollapsedContent
+		block.Content = newContent
+	}
+
+	return result
 }
 
 // formatToolResultBlock applies tool-specific formatting to a tool_result block's result field.

@@ -355,6 +355,11 @@ func (se *StreamExecutor) completeTurn(
 		// Continue despite error - SSE event is more important
 	}
 
+	// Check context budget and emit context_warning SSE event if threshold crossed.
+	// Must run BEFORE RUN_FINISHED so the frontend receives the warning while the
+	// connection is still open. The call is synchronous but fast (~1 ms in-memory).
+	budget := se.checkBudgetAndAct(ctx, send)
+
 	// Emit AG-UI lifecycle events
 	// STEP_FINISHED signals the end of the current LLM request step
 	// RUN_FINISHED signals successful completion with LLM metadata
@@ -370,6 +375,13 @@ func (se *StreamExecutor) completeTurn(
 
 		// RUN_FINISHED includes stopReason and token counts for frontend display/tracking
 		se.aguiEmitter.EmitRunFinished(stopReason, inputTokens, outputTokens)
+	}
+
+	// If collapse threshold (60%) was crossed, create a collapse_marker system turn
+	// asynchronously so CM3's MessageBuilder can detect it in future conversation builds.
+	// Must run after emitting RUN_FINISHED to avoid blocking the stream response.
+	if budget.ShouldCollapse {
+		se.createCollapseMarkerAsync(budget.UsagePercent)
 	}
 
 	// Call cleanup callback if registered
