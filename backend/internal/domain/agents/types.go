@@ -57,8 +57,7 @@ type Persona struct {
 }
 
 // RuntimeSkill is the resolved, runtime view of a skill. It is assembled
-// from .agents/skills/<slug>/SKILL.md (file-first) with a fallback to the
-// legacy project_skills table when no file copy exists.
+// exclusively from .agents/skills/<slug>/SKILL.md — there is no DB fallback.
 //
 // Invocation policy note: earlier specs modelled invocation as a single
 // "Trigger" enum. That was decomposed into UserInvocable + ModelInvocable
@@ -93,11 +92,10 @@ type RuntimeSkill struct {
 	Version  *string `json:"version,omitempty"`
 
 	// Source indicates where the skill was loaded from.
-	// "file" for .agents/ document-tree; "db" for legacy project_skills.
+	// Always "file" for .agents/ document-tree.
 	Source string `json:"source"`
 
-	// SourcePath is the document-tree path of the SKILL.md file, when Source
-	// is "file". Empty when Source is "db".
+	// SourcePath is the document-tree path of the SKILL.md file.
 	SourcePath string `json:"source_path,omitempty"`
 }
 

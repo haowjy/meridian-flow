@@ -198,7 +198,7 @@ func main() {
 	log.Println("🧠 Seeding skills...")
 	skillRepo := postgresSkill.NewProjectSkillRepository(repoConfig)
 	namespaceSvc := serviceDocsys.NewNamespaceService(folderRepo, logger)
-	skillService := serviceSkill.NewProjectSkillService(skillRepo, folderRepo, namespaceSvc, authorizer, txManager, logger)
+	skillService := serviceSkill.NewProjectSkillService(skillRepo, docRepo, folderRepo, namespaceSvc, authorizer, txManager, logger)
 	skillSeeder := seed.NewSkillSeeder(skillService, logger)
 	if err := skillSeeder.SeedSkills(ctx, projectID, userID); err != nil {
 		log.Fatalf("Failed to seed skills: %v", err)

@@ -9,6 +9,7 @@ import (
 
 	"meridian/internal/domain"
 	domaindocsys "meridian/internal/domain/docsystem"
+	domainerrors "meridian/internal/domain/errors"
 )
 
 // TextEditorToolMetadata returns metadata for the str_replace_based_edit_tool tool.
@@ -40,10 +41,13 @@ type TextEditorTool struct {
 	config           *ToolConfig
 	normalizers      []TextNormalizer         // For str_replace text normalization (OCP)
 	mutationStrategy DocumentMutationStrategy // Strategy for persisting AI edits (collab proposal)
+	workItemSlug     string                   // Current work item slug for .meridian/work/<slug>/ isolation
 }
 
 // NewTextEditorTool creates a new TextEditorTool instance.
 // Uses service interfaces for all data access (SOLID: DIP - depends on interfaces, not concretions).
+// workItemSlug constrains .meridian/work/<slug>/ write access to the current work item only.
+// Pass an empty string when no work item context is active (all work dirs will be denied).
 func NewTextEditorTool(
 	projectID string,
 	userID string,
@@ -52,6 +56,7 @@ func NewTextEditorTool(
 	namespaceSvc domaindocsys.NamespaceService,
 	config *ToolConfig,
 	mutationStrategy DocumentMutationStrategy,
+	workItemSlug string,
 ) *TextEditorTool {
 	if config == nil {
 		config = DefaultToolConfig()
@@ -69,6 +74,7 @@ func NewTextEditorTool(
 		config:           config,
 		normalizers:      DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
 		mutationStrategy: mutationStrategy,
+		workItemSlug:     workItemSlug,
 	}
 }
 
@@ -258,9 +264,9 @@ func (t *TextEditorTool) listFolderContents(ctx context.Context, folderID *strin
 // like including line number prefixes from view output. Normalizers are tried in order
 // until a match is found, allowing easy extension without modifying this function.
 func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Check namespace access for reserved read-only namespaces.
-	if err := t.checkEditNamespaceAccess(path); err != nil {
-		return err, nil
+	// Check namespace access before any write operation.
+	if nsErr := t.checkEditNamespaceAccess(path); nsErr != nil {
+		return t.namespaceErrToToolResult(nsErr), nil
 	}
 
 	// Extract parameters
@@ -338,9 +344,9 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 // executeInsert handles the insert command.
 // Inserts new text after a specific line number.
 func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Check namespace access
-	if err := t.checkEditNamespaceAccess(path); err != nil {
-		return err, nil
+	// Check namespace access before any write operation.
+	if nsErr := t.checkEditNamespaceAccess(path); nsErr != nil {
+		return t.namespaceErrToToolResult(nsErr), nil
 	}
 
 	// Extract parameters
@@ -406,9 +412,9 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 // executeCreate handles the create command.
 // Creates a new document via the mutation strategy for human review.
 func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Check namespace access
-	if err := t.checkEditNamespaceAccess(path); err != nil {
-		return err, nil
+	// Check namespace access before any write operation.
+	if nsErr := t.checkEditNamespaceAccess(path); nsErr != nil {
+		return t.namespaceErrToToolResult(nsErr), nil
 	}
 
 	// Extract parameters
@@ -495,23 +501,95 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 	}, nil
 }
 
-// checkEditNamespaceAccess checks if edit operations are allowed for the given path.
-// Returns an ErrorResult if access is denied, nil otherwise.
-func (t *TextEditorTool) checkEditNamespaceAccess(path string) interface{} {
-	if t.namespaceSvc != nil {
-		namespace, _, err := t.namespaceSvc.ParsePath(path)
-		if err == nil && namespace == domaindocsys.NamespaceMeridian {
-			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.meridian/ paths - use skill editor API instead", map[string]any{
-				"path": path,
-			})
-		}
-		if err == nil && namespace == domaindocsys.NamespaceSession {
-			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.session/ paths", map[string]any{
-				"path": path,
-			})
+// checkEditNamespaceAccess enforces namespace isolation rules for write operations.
+// Returns a *domainerrors.DomainError if access is denied, nil if allowed.
+//
+// Mandatory order: canonicalize → detect namespace → check isolation.
+// filepath.Clean MUST run before any prefix matching so that path traversal (..)
+// is resolved to its canonical form before we decide which namespace it targets.
+//
+// Rules:
+//   - .meridian/work/<slug>/  → only the current workItemSlug may write here
+//   - .meridian/fs/           → any thread may write (shared FS namespace)
+//   - .agents/                → allowed; review-gated via folder autoapply
+//   - .meridian/<anything>    → denied (NamespaceAccessDenied)
+//   - .session/<anything>     → denied (NamespaceAccessDenied)
+//   - everything else         → allowed (user workspace)
+func (t *TextEditorTool) checkEditNamespaceAccess(path string) error {
+	// Step 1: Canonicalize — resolve all . and .. segments.
+	// MUST happen before any prefix matching; otherwise a path like
+	// ".meridian/work/slug/../../other/secret" could bypass namespace detection.
+	clean := filepath.Clean(path)
+
+	// Step 2: Reject raw traversal segments on the original (pre-Clean) path.
+	// filepath.Clean already ran in Step 1, but we also check the original input
+	// so that an explicit ".." segment returns PathTraversalDenied rather than
+	// silently resolving to a different namespace after canonicalisation.
+	for _, seg := range strings.Split(path, "/") {
+		if seg == ".." {
+			return domainerrors.PathTraversalDenied(path)
 		}
 	}
+
+	// Step 3: Namespace detection and isolation check on the canonical path.
+	// Strip the leading "/" so prefix matching works uniformly against the
+	// namespace constants (which do not carry a leading slash).
+	cleanRel := strings.TrimPrefix(clean, "/")
+
+	// .meridian/work/<slug>/ — work item isolation
+	const workPrefix = ".meridian/work/"
+	if cleanRel == ".meridian/work" || strings.HasPrefix(cleanRel, workPrefix) {
+		rest := strings.TrimPrefix(cleanRel, workPrefix)
+		// Extract just the slug component (everything before the first "/")
+		slugEnd := strings.Index(rest, "/")
+		var pathSlug string
+		if slugEnd == -1 {
+			pathSlug = rest // path is the slug directory itself
+		} else {
+			pathSlug = rest[:slugEnd]
+		}
+		if pathSlug == "" || pathSlug != t.workItemSlug {
+			return domainerrors.NamespaceAccessDenied(".meridian/work/" + pathSlug)
+		}
+		return nil
+	}
+
+	// .meridian/fs/ — shared filesystem namespace, any thread allowed
+	if cleanRel == ".meridian/fs" || strings.HasPrefix(cleanRel, ".meridian/fs/") {
+		return nil
+	}
+
+	// .agents/ — writable; review is enforced via folder autoapply, not write-blocking
+	if cleanRel == string(domaindocsys.NamespaceAgents) ||
+		strings.HasPrefix(cleanRel, string(domaindocsys.NamespaceAgents)+"/") {
+		return nil
+	}
+
+	// Other .meridian/ paths — denied
+	if cleanRel == string(domaindocsys.NamespaceMeridian) ||
+		strings.HasPrefix(cleanRel, string(domaindocsys.NamespaceMeridian)+"/") {
+		return domainerrors.NamespaceAccessDenied(string(domaindocsys.NamespaceMeridian))
+	}
+
+	// .session/ — ephemeral, no persistence
+	if cleanRel == string(domaindocsys.NamespaceSession) ||
+		strings.HasPrefix(cleanRel, string(domaindocsys.NamespaceSession)+"/") {
+		return domainerrors.NamespaceAccessDenied(string(domaindocsys.NamespaceSession))
+	}
+
+	// Workspace paths — allowed
 	return nil
+}
+
+// namespaceErrToToolResult converts a *domainerrors.DomainError from checkEditNamespaceAccess
+// into a tool-facing ErrorResult map.  Any non-DomainError is wrapped as INVALID_INPUT.
+func (t *TextEditorTool) namespaceErrToToolResult(err error) map[string]interface{} {
+	var de *domainerrors.DomainError
+	if errors.As(err, &de) {
+		detail, _ := de.Detail.(map[string]interface{})
+		return ErrorResult(de.Code, de.Message, detail)
+	}
+	return ErrorResult(ErrInvalidInput, err.Error(), nil)
 }
 
 // =============================================================================

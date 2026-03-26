@@ -16,6 +16,7 @@ type Application struct {
 	LLM       *domains.LLMModule
 	WorkItem  *domains.WorkItemModule
 	UserPrefs *domains.UserPrefsModule
+	Agent     *domains.AgentModule
 	Workers   *Workers
 	JobQueue  jobs.JobQueue
 }

@@ -13,9 +13,9 @@ import (
 	"meridian/internal/domain"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
@@ -85,10 +85,10 @@ func (d PersistenceDeps) Validate() error {
 
 // ServiceDeps groups domain service dependencies used during streaming.
 type ServiceDeps struct {
-	DocumentSvc      domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
-	FolderSvc        domaindocsys.FolderService    // For tool operations (SOLID: DIP)
-	NamespaceSvc     domaindocsys.NamespaceService // For namespace routing in tools
-	SkillService     skill.ProjectSkillService     // For skill_invoke/skill_list tools
+	DocumentSvc      domaindocsys.DocumentService    // For tool operations (SOLID: DIP)
+	FolderSvc        domaindocsys.FolderService      // For tool operations (SOLID: DIP)
+	NamespaceSvc     domaindocsys.NamespaceService   // For namespace routing in tools
+	SkillResolver    domainagents.SkillResolver      // File-backed skill resolution (.agents/skills/)
 	Validator        ThreadValidator
 	Authorizer       authdomain.ResourceAuthorizer
 	MutationStrategy tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
@@ -100,7 +100,7 @@ func (d ServiceDeps) Validate() error {
 		validation.Field(&d.DocumentSvc, validation.Required),
 		validation.Field(&d.FolderSvc, validation.Required),
 		validation.Field(&d.NamespaceSvc, validation.Required),
-		validation.Field(&d.SkillService, validation.Required),
+		validation.Field(&d.SkillResolver, validation.Required),
 		validation.Field(&d.Validator, validation.Required),
 		validation.Field(&d.Authorizer, validation.Required),
 		validation.Field(&d.MutationStrategy, validation.Required),

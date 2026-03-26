@@ -12,14 +12,17 @@ package streaming
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 )
 
 // =============================================================================
@@ -97,50 +100,29 @@ func (s *stubProjectStore) TouchLastActivityAt(_ context.Context, _ string) erro
 
 var _ domaindocsys.ProjectStore = (*stubProjectStore)(nil)
 
-// stubSkillService satisfies skill.ProjectSkillService.
-// LoadSkillContent returns from the configured map; panics on unexpected calls.
-type stubSkillService struct {
-	// skillContent maps skill name → content; missing key returns error
-	skillContent map[string]string
+// stubSkillResolver satisfies domainagents.SkillResolver.
+// Resolve returns from the configured map; List panics (not called by Resolve).
+type stubSkillResolver struct {
+	// skills maps slug → RuntimeSkill; missing key returns not-found error
+	skills map[string]domainagents.RuntimeSkill
 }
 
-func (s *stubSkillService) LoadSkillContent(_ context.Context, _, _, name string) (string, error) {
-	if s.skillContent == nil {
-		return "", &skillNotFoundError{name: name}
+func (s *stubSkillResolver) Resolve(_ context.Context, _ uuid.UUID, slug string) (*domainagents.RuntimeSkill, error) {
+	if s.skills == nil {
+		return nil, fmt.Errorf("skill not found: %s", slug)
 	}
-	c, ok := s.skillContent[name]
+	skill, ok := s.skills[slug]
 	if !ok {
-		return "", &skillNotFoundError{name: name}
+		return nil, fmt.Errorf("skill not found: %s", slug)
 	}
-	return c, nil
-}
-func (s *stubSkillService) CreateSkill(_ context.Context, _ string, _ skill.CreateSkillRequest) (*skill.ProjectSkill, error) {
-	panic("stubSkillService.CreateSkill not expected")
-}
-func (s *stubSkillService) ListSkills(_ context.Context, _, _ string) ([]*skill.ProjectSkill, error) {
-	panic("stubSkillService.ListSkills not expected")
-}
-func (s *stubSkillService) GetSkill(_ context.Context, _, _, _ string) (*skill.ProjectSkill, error) {
-	panic("stubSkillService.GetSkill not expected")
-}
-func (s *stubSkillService) GetSkillByName(_ context.Context, _, _, _ string) (*skill.ProjectSkill, error) {
-	panic("stubSkillService.GetSkillByName not expected")
-}
-func (s *stubSkillService) UpdateSkill(_ context.Context, _, _, _ string, _ skill.UpdateSkillRequest) (*skill.ProjectSkill, error) {
-	panic("stubSkillService.UpdateSkill not expected")
-}
-func (s *stubSkillService) ReorderSkills(_ context.Context, _, _ string, _ []string) error {
-	panic("stubSkillService.ReorderSkills not expected")
-}
-func (s *stubSkillService) DeleteSkill(_ context.Context, _, _, _ string) error {
-	panic("stubSkillService.DeleteSkill not expected")
+	return &skill, nil
 }
 
-var _ skill.ProjectSkillService = (*stubSkillService)(nil)
+func (s *stubSkillResolver) List(_ context.Context, _ uuid.UUID) ([]domainagents.RuntimeSkill, []domainagents.ValidationIssue, error) {
+	panic("stubSkillResolver.List not expected in system_prompt_resolver tests")
+}
 
-type skillNotFoundError struct{ name string }
-
-func (e *skillNotFoundError) Error() string { return "skill not found: " + e.name }
+var _ domainagents.SkillResolver = (*stubSkillResolver)(nil)
 
 // =============================================================================
 // Test helpers
@@ -149,13 +131,13 @@ func (e *skillNotFoundError) Error() string { return "skill not found: " + e.nam
 func newTestResolver(
 	threads *stubThreadStore,
 	projects *stubProjectStore,
-	skills *stubSkillService,
+	skills *stubSkillResolver,
 ) *systemPromptResolver {
 	return &systemPromptResolver{
-		projectRepo:  projects,
-		threadRepo:   threads,
-		skillService: skills,
-		logger:       slog.Default(),
+		projectRepo:   projects,
+		threadRepo:    threads,
+		skillResolver: skills,
+		logger:        slog.Default(),
 	}
 }
 
@@ -189,7 +171,7 @@ func ptr(s string) *string { return &s }
 func TestBuildWorkContextSection_NilInput(t *testing.T) {
 	// Guard against the nil-pointer panic that existed before the nil check was added.
 	// WorkContext nil → position 3 must produce empty string, not crash.
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillService{})
+	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
 	got := r.buildWorkContextSection(nil)
 	if got != "" {
 		t.Errorf("expected empty string for nil WorkContext, got %q", got)
@@ -197,7 +179,7 @@ func TestBuildWorkContextSection_NilInput(t *testing.T) {
 }
 
 func TestBuildWorkContextSection_AllFields(t *testing.T) {
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillService{})
+	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
 	wc := &domainllm.WorkContext{
 		WorkItem: "my-feature",
 		WorkDir:  ".meridian/work/my-feature/",
@@ -225,7 +207,7 @@ func TestBuildWorkContextSection_AllFields(t *testing.T) {
 
 func TestBuildWorkContextSection_EmptyStruct(t *testing.T) {
 	// Empty (non-nil) WorkContext: still produces header, no extra lines.
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillService{})
+	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
 	got := r.buildWorkContextSection(&domainllm.WorkContext{})
 	if !strings.Contains(got, "# Active Work Session") {
 		t.Error("expected at least the section header for an empty WorkContext")
@@ -244,7 +226,7 @@ func TestBuildWorkContextSection_EmptyStruct(t *testing.T) {
 // =============================================================================
 
 func TestBuildBasePrompt_EmptyToolSection(t *testing.T) {
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillService{})
+	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
 	got := r.buildBasePrompt("")
 	if got != baseIdentityPrompt {
 		t.Errorf("expected exact baseIdentityPrompt, got %q", got)
@@ -252,7 +234,7 @@ func TestBuildBasePrompt_EmptyToolSection(t *testing.T) {
 }
 
 func TestBuildBasePrompt_WithToolSection(t *testing.T) {
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillService{})
+	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
 	toolSection := "\n\nYou have access to these tools: view, edit"
 	got := r.buildBasePrompt(toolSection)
 	if !strings.HasPrefix(got, baseIdentityPrompt) {
@@ -274,7 +256,7 @@ func TestResolve_WorkContextNil_Position3Empty(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	pc := domainllm.PromptContext{
@@ -300,7 +282,7 @@ func TestResolve_WorkContextSet_Position3Present(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	pc := domainllm.PromptContext{
@@ -332,7 +314,7 @@ func TestResolve_PersonaBodyNil_Position7Empty(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	const uniquePersonaMarker = "UNIQUE_PERSONA_MARKER_THAT_WONT_APPEAR_OTHERWISE"
@@ -366,7 +348,7 @@ func TestResolve_PersonaBodyEmptyString_NotInjected(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	emptyBody := ""
@@ -394,7 +376,7 @@ func TestResolve_PersonaBodySet_Position7Present(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	personaContent := "You are a gruff sea captain with a fondness for marine biology."
@@ -422,6 +404,9 @@ func TestResolve_PersonaBodySet_Position7Present(t *testing.T) {
 func TestResolve_7PositionOrder(t *testing.T) {
 	// Verifies: base < work context < project prompt < user system < thread system < skills < persona
 	// Each position uses a unique sentinel string.
+	//
+	// NOTE: projectID must be a valid UUID because loadSkills calls uuid.Parse.
+	// The stubSkillResolver ignores the UUID value — it matches by slug only.
 
 	const (
 		toolSectionContent  = "SENTINEL_TOOL_SECTION"
@@ -433,7 +418,8 @@ func TestResolve_7PositionOrder(t *testing.T) {
 		personaSentinel     = "SENTINEL_PERSONA_BODY"
 	)
 
-	projectID := "proj-order"
+	// Use a valid UUID so loadSkills can parse the project ID.
+	projectID := "00000000-0000-4000-a000-000000000001"
 	projectSystemPrompt := projectSentinel
 	threadSystemPrompt := threadSentinel
 
@@ -456,9 +442,14 @@ func TestResolve_7PositionOrder(t *testing.T) {
 				SystemPrompt: &projectSystemPrompt,
 			},
 		},
-		&stubSkillService{
-			skillContent: map[string]string{
-				"writing-coach": skillSentinel,
+		&stubSkillResolver{
+			skills: map[string]domainagents.RuntimeSkill{
+				"writing-coach": {
+					Slug:       "writing-coach",
+					Name:       "Writing Coach",
+					Content:    skillSentinel,
+					SourcePath: ".agents/skills/writing-coach/SKILL.md",
+				},
 			},
 		},
 	)
@@ -532,10 +523,10 @@ func TestResolve_Regression_NilExtensions_MatchesPreR2Output(t *testing.T) {
 	// the parts that existed before R2: base+tool, project system, user system, thread
 	// system, and skills. No new sections should appear.
 	//
-	// This guards against accidentally injecting empty position 3 or 7 sections
-	// when the extension fields are not set.
+	// NOTE: projectID must be a valid UUID because loadSkills calls uuid.Parse.
+	// The stubSkillResolver ignores the UUID value — it matches by slug only.
 
-	projectID := "proj-regression"
+	projectID := "00000000-0000-4000-a000-000000000002"
 	projectSystemPrompt := "PROJECT_SYSTEM"
 	threadSystemPrompt := "THREAD_SYSTEM"
 	userSys := "USER_SYSTEM"
@@ -559,9 +550,14 @@ func TestResolve_Regression_NilExtensions_MatchesPreR2Output(t *testing.T) {
 				SystemPrompt: &projectSystemPrompt,
 			},
 		},
-		&stubSkillService{
-			skillContent: map[string]string{
-				"skill-a": "SKILL_A_CONTENT",
+		&stubSkillResolver{
+			skills: map[string]domainagents.RuntimeSkill{
+				"skill-a": {
+					Slug:       "skill-a",
+					Name:       "Skill A",
+					Content:    "SKILL_A_CONTENT",
+					SourcePath: ".agents/skills/skill-a/SKILL.md",
+				},
 			},
 		},
 	)
@@ -635,7 +631,7 @@ func TestResolve_AlwaysReturnsAtLeastBaseIdentity(t *testing.T) {
 	r := newTestResolver(
 		&stubThreadStore{thread: defaultThread(projectID)},
 		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillService{},
+		&stubSkillResolver{},
 	)
 
 	got, err := r.Resolve(context.Background(), domainllm.PromptContext{

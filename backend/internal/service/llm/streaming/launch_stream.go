@@ -157,7 +157,7 @@ func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *to
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
 		WithEnabledDocumentTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.documentSvc, svc.folderSvc).
-		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.skillService, false, p.availableSkills)
+		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills)
 
 	// Add web search tool if requested via provider-specific tool name
 	requestedTools := p.enabledTools

@@ -16,9 +16,9 @@ import (
 
 	"meridian/internal/domain"
 	billing "meridian/internal/domain/billing"
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 )
 
 // defaultFallbackModel is used when config.LLM.DefaultModel is not set.
@@ -46,7 +46,7 @@ type turnPipeline struct {
 	streamAcquired bool              // True if stream slot acquired; cleanup transfers ownership
 
 	// Stage 2: assemblePrompt outputs
-	availableSkills []*skill.ProjectSkill
+	availableSkills []domainagents.RuntimeSkill
 	enabledTools    []string // Extracted from requestParams; used by production tool registry
 
 	// Stage 3: persistTurns outputs

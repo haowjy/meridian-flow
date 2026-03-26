@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
+
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 )
 
 // baseIdentityPrompt is the foundational identity prompt for Meridian.
@@ -22,24 +24,24 @@ const baseIdentityPrompt = `You are Meridian, an AI assistant with access to the
 // system via skill_invoke's enriched ToolMetadata. This ensures skills metadata is
 // naturally absent when a model doesn't support tools (SRP compliance).
 type systemPromptResolver struct {
-	projectRepo  domaindocsys.ProjectStore
-	threadRepo   domainllm.ThreadStore
-	skillService skill.ProjectSkillService
-	logger       *slog.Logger
+	projectRepo   domaindocsys.ProjectStore
+	threadRepo    domainllm.ThreadStore
+	skillResolver domainagents.SkillResolver // File-backed; reads .agents/skills/<slug>/SKILL.md
+	logger        *slog.Logger
 }
 
 // NewSystemPromptResolver creates a new system prompt resolver.
 func NewSystemPromptResolver(
 	projectRepo domaindocsys.ProjectStore,
 	threadRepo domainllm.ThreadStore,
-	skillService skill.ProjectSkillService,
+	skillResolver domainagents.SkillResolver,
 	logger *slog.Logger,
 ) domainllm.SystemPromptResolver {
 	return &systemPromptResolver{
-		projectRepo:  projectRepo,
-		threadRepo:   threadRepo,
-		skillService: skillService,
-		logger:       logger,
+		projectRepo:   projectRepo,
+		threadRepo:    threadRepo,
+		skillResolver: skillResolver,
+		logger:        logger,
 	}
 }
 
@@ -108,9 +110,9 @@ func (r *systemPromptResolver) Resolve(ctx context.Context, pc domainllm.PromptC
 		parts = append(parts, *thread.SystemPrompt)
 	}
 
-	// Position 6: Skills content
+	// Position 6: Skills content — resolved file-first via SkillResolver.
 	if len(pc.SelectedSkills) > 0 {
-		if skillsContent := r.loadSkills(ctx, pc.UserID, thread.ProjectID, pc.SelectedSkills); skillsContent != "" {
+		if skillsContent := r.loadSkills(ctx, thread.ProjectID, pc.SelectedSkills); skillsContent != "" {
 			parts = append(parts, skillsContent)
 		}
 	}
@@ -129,12 +131,11 @@ func (r *systemPromptResolver) Resolve(ctx context.Context, pc domainllm.PromptC
 	return result, nil
 }
 
-// loadSkills loads the content for each selected skill from DB via skill service.
+// loadSkills loads the content for each selected skill from .agents/skills/ via SkillResolver.
 // Returns empty string if no skills loaded successfully (header is only prepended when
 // at least one skill loads, preventing the LLM from seeing a header with no content).
 func (r *systemPromptResolver) loadSkills(
 	ctx context.Context,
-	userID string,
 	projectID string,
 	selectedSkills []string,
 ) string {
@@ -144,11 +145,21 @@ func (r *systemPromptResolver) loadSkills(
 		"skills", selectedSkills,
 	)
 
+	// Parse project ID — must be a valid UUID for the file-backed resolver.
+	projectUUID, err := uuid.Parse(projectID)
+	if err != nil {
+		r.logger.Error("loadSkills: invalid project UUID; skill section will be empty",
+			"project_id", projectID,
+			"error", err,
+		)
+		return ""
+	}
+
 	var skillParts []string
 	loadedCount := 0
 
 	for _, skillName := range selectedSkills {
-		content, err := r.skillService.LoadSkillContent(ctx, userID, projectID, skillName)
+		skill, err := r.skillResolver.Resolve(ctx, projectUUID, skillName)
 		if err != nil {
 			r.logger.Warn("failed to load skill",
 				"skill", skillName,
@@ -160,13 +171,12 @@ func (r *systemPromptResolver) loadSkills(
 
 		r.logger.Debug("skill loaded successfully",
 			"skill", skillName,
-			"content_length", len(content),
+			"content_length", len(skill.Content),
 		)
 		loadedCount++
 
-		// Format skill with path and code block wrapper
-		skillPath := fmt.Sprintf(".meridian/skills/%s/SKILL.md", skillName)
-		skillParts = append(skillParts, fmt.Sprintf("%s:\n```\n%s\n```", skillPath, content))
+		// Format skill with its file path and code block wrapper.
+		skillParts = append(skillParts, fmt.Sprintf("%s:\n```\n%s\n```", skill.SourcePath, skill.Content))
 	}
 
 	r.logger.Debug("skills loading complete",
@@ -182,7 +192,7 @@ func (r *systemPromptResolver) loadSkills(
 	}
 
 	// Prepend header only when at least one skill loaded successfully.
-	header := "You have access to the following skills. View additional reference materials using tree(\".meridian/skills/{skill_name}\") and view(\".meridian/skills/{skill_name}/{file}\"):"
+	header := "You have access to the following skills. View additional reference materials using tree(\".agents/skills/{skill_name}\") and view(\".agents/skills/{skill_name}/{file}\"):"
 	parts := append([]string{header}, skillParts...)
 	return strings.Join(parts, "\n\n")
 }

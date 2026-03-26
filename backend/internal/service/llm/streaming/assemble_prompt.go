@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/tools"
 )
@@ -25,12 +27,20 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	// Load skills once for tool metadata enrichment (shared across both registries).
 	// Skills metadata is now owned by the tool system (not the system prompt resolver)
 	// so it's naturally excluded when the model doesn't support tools.
-	availableSkills, err := svc.skillService.ListSkills(ctx, req.UserID, p.threadCtx.projectID)
+	projectUUID, err := uuid.Parse(p.threadCtx.projectID)
 	if err != nil {
-		svc.logger.Warn("failed to load skills for tool metadata", "error", err)
-		availableSkills = nil // Continue without skills — non-fatal
+		svc.logger.Warn("failed to parse project UUID for skill loading; skills unavailable",
+			"project_id", p.threadCtx.projectID,
+			"error", err,
+		)
+	} else {
+		skills, _, listErr := svc.skillResolver.List(ctx, projectUUID)
+		if listErr != nil {
+			svc.logger.Warn("failed to load skills for tool metadata", "error", listErr)
+		} else {
+			p.availableSkills = skills
+		}
 	}
-	p.availableSkills = availableSkills
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
@@ -38,7 +48,7 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
 		WithEnabledDocumentTools(p.enabledTools, p.threadCtx.projectID, req.UserID, svc.documentSvc, svc.folderSvc).
-		WithEnabledSkillTools(p.enabledTools, p.threadCtx.projectID, req.UserID, svc.skillService, false, p.availableSkills).
+		WithEnabledSkillTools(p.enabledTools, p.threadCtx.projectID, svc.skillResolver, false, p.availableSkills).
 		Build()
 
 	// toolSection is local — it feeds resolveSystemPromptForParams but is not needed
