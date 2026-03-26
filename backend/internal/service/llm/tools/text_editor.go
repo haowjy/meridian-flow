@@ -593,6 +593,54 @@ func (t *TextEditorTool) namespaceErrToToolResult(err error) map[string]interfac
 }
 
 // =============================================================================
+// COLLAPSED CONTENT (human-readable summary for tool result blocks)
+// =============================================================================
+
+// ComputeTextEditorCollapsedContent returns a human-readable summary of a text editor
+// tool result for use as collapsed_content on the turn_block row.
+// Returns nil when the command or input is not recognized.
+//
+// Format:
+//
+//	view      → "[Read <path>: <chars> chars]"
+//	str_replace → "[Edited <path>: replaced <chars> chars]"
+//	insert    → "[Inserted at <path>: <chars> chars]"
+//	create    → "[Created <path>: <chars> chars]"
+func ComputeTextEditorCollapsedContent(input map[string]interface{}, result interface{}) *string {
+	command, _ := input["command"].(string)
+	path, _ := input["path"].(string)
+
+	var s string
+	switch command {
+	case "view":
+		resultMap, ok := result.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		content, _ := resultMap["content"].(string)
+		chars := len(content)
+		s = fmt.Sprintf("[Read %s: %d chars]", path, chars)
+
+	case "str_replace":
+		oldStr, _ := input["old_str"].(string)
+		s = fmt.Sprintf("[Edited %s: replaced %d chars]", path, len(oldStr))
+
+	case "insert":
+		newStr, _ := input["new_str"].(string)
+		s = fmt.Sprintf("[Inserted at %s: %d chars]", path, len(newStr))
+
+	case "create":
+		fileText, _ := input["file_text"].(string)
+		s = fmt.Sprintf("[Created %s: %d chars]", path, len(fileText))
+
+	default:
+		return nil
+	}
+
+	return &s
+}
+
+// =============================================================================
 // SHARED HELPERS (used by text editor operations)
 // =============================================================================
 

@@ -588,9 +588,9 @@ func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID 
 func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *domainllm.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, collapsed_content
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'complete', $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'complete', $9, $10)
 		RETURNING id, created_at
 	`, r.tables.TurnBlocks)
 
@@ -605,11 +605,12 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *dom
 		block.BlockType,
 		block.Sequence,
 		block.TextContent,
-		block.Content,       // pgx handles map -> JSONB (nil becomes NULL)
-		block.Provider,      // TEXT (nil becomes NULL)
-		block.ProviderData,  // pgx handles json.RawMessage -> JSONB (nil becomes NULL)
-		block.ExecutionSide, // TEXT (nil becomes NULL)
+		block.Content,          // pgx handles map -> JSONB (nil becomes NULL)
+		block.Provider,         // TEXT (nil becomes NULL)
+		block.ProviderData,     // pgx handles json.RawMessage -> JSONB (nil becomes NULL)
+		block.ExecutionSide,    // TEXT (nil becomes NULL)
 		block.CreatedAt,
+		block.CollapsedContent, // TEXT (nil becomes NULL)
 	).Scan(&block.ID, &block.CreatedAt)
 
 	if err != nil {
@@ -631,13 +632,13 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	// Build batch insert query
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, collapsed_content
 		)
 		VALUES
 	`, r.tables.TurnBlocks)
 
 	// Build VALUES clause using a running parameter counter.
-	// 9 actual params per block (status is hardcoded as 'complete').
+	// 10 actual params per block (status is hardcoded as 'complete').
 	var args []interface{}
 	paramIdx := 1
 	for i, block := range blocks {
@@ -650,21 +651,22 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 			query += ","
 		}
 		query += fmt.Sprintf(`
-			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, 'complete', $%d)
+			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, 'complete', $%d, $%d)
 		`, paramIdx, paramIdx+1, paramIdx+2, paramIdx+3, paramIdx+4,
-			paramIdx+5, paramIdx+6, paramIdx+7, paramIdx+8)
-		paramIdx += 9
+			paramIdx+5, paramIdx+6, paramIdx+7, paramIdx+8, paramIdx+9)
+		paramIdx += 10
 
 		args = append(args,
 			block.TurnID,
 			block.BlockType,
 			block.Sequence,
 			block.TextContent,
-			block.Content,       // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
-			block.Provider,      // TEXT (nil becomes NULL)
-			block.ProviderData,  // pgx automatically handles json.RawMessage -> JSONB conversion (nil becomes NULL)
-			block.ExecutionSide, // TEXT (nil becomes NULL)
+			block.Content,          // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
+			block.Provider,         // TEXT (nil becomes NULL)
+			block.ProviderData,     // pgx automatically handles json.RawMessage -> JSONB conversion (nil becomes NULL)
+			block.ExecutionSide,    // TEXT (nil becomes NULL)
 			block.CreatedAt,
+			block.CollapsedContent, // TEXT (nil becomes NULL)
 		)
 	}
 
@@ -720,7 +722,7 @@ func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *
 func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]domainllm.TurnBlock, error) {
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at, collapsed_content
 		FROM %s
 		WHERE turn_id = $1
 		ORDER BY sequence
@@ -742,13 +744,14 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content,       // pgx automatically handles JSONB -> map conversion
-			&block.Provider,      // TEXT
-			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
-			&block.ExecutionSide, // TEXT
-			&block.Status,        // TEXT (partial or complete)
+			&block.Content,          // pgx automatically handles JSONB -> map conversion
+			&block.Provider,         // TEXT
+			&block.ProviderData,     // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide,    // TEXT
+			&block.Status,           // TEXT (partial or complete)
 			&block.CreatedAt,
 			&block.UpdatedAt,
+			&block.CollapsedContent, // TEXT (nil if not set)
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn block: %w", err)
@@ -781,7 +784,7 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at, collapsed_content
 		FROM %s
 		WHERE turn_id = ANY($1)
 		ORDER BY turn_id, sequence
@@ -804,13 +807,14 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content,       // pgx automatically handles JSONB -> map conversion
-			&block.Provider,      // TEXT
-			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
-			&block.ExecutionSide, // TEXT
-			&block.Status,        // TEXT (partial or complete)
+			&block.Content,          // pgx automatically handles JSONB -> map conversion
+			&block.Provider,         // TEXT
+			&block.ProviderData,     // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide,    // TEXT
+			&block.Status,           // TEXT (partial or complete)
 			&block.CreatedAt,
 			&block.UpdatedAt,
+			&block.CollapsedContent, // TEXT (nil if not set)
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn block: %w", err)
