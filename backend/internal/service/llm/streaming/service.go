@@ -11,9 +11,9 @@ import (
 	"meridian/internal/domain"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
@@ -31,8 +31,8 @@ type Service struct {
 	projectRepo            domaindocsys.ProjectStore     // For validating project access on cold start
 	documentSvc            domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
 	folderSvc              domaindocsys.FolderService    // For tool operations (SOLID: DIP)
-	namespaceSvc           domaindocsys.NamespaceService // For namespace routing in tools
-	skillService           skill.ProjectSkillService     // For skill_invoke/skill_list tools
+	namespaceSvc           domaindocsys.NamespaceService  // For namespace routing in tools
+	skillResolver          domainagents.SkillResolver    // File-backed skill resolution (.agents/skills/)
 	validator              ThreadValidator
 	authorizer             authdomain.ResourceAuthorizer
 	providerGetter         LLMProviderGetter
@@ -74,7 +74,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		documentSvc:            deps.Services.DocumentSvc,
 		folderSvc:              deps.Services.FolderSvc,
 		namespaceSvc:           deps.Services.NamespaceSvc,
-		skillService:           deps.Services.SkillService,
+		skillResolver:          deps.Services.SkillResolver,
 		validator:              deps.Services.Validator,
 		authorizer:             deps.Services.Authorizer,
 		providerGetter:         deps.Pipeline.ProviderGetter,

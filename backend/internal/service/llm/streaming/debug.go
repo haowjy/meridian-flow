@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"meridian/internal/domain"
+	domainagents "meridian/internal/domain/agents"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/adapters"
 	threadhistory "meridian/internal/service/llm/thread_history"
@@ -118,11 +121,16 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	}
 	requestParams["tools"] = toolsParam
 
-	// Load skills for tool metadata enrichment (mirrors CreateTurn)
-	availableSkills, err := s.skillService.ListSkills(ctx, req.UserID, thread.ProjectID)
-	if err != nil {
-		s.logger.Warn("failed to load skills for tool metadata (debug)", "error", err)
-		availableSkills = nil
+	// Load skills for tool metadata enrichment (mirrors CreateTurn).
+	// Gracefully skip if project ID is not a valid UUID (should not happen in production).
+	var availableSkills []domainagents.RuntimeSkill
+	if projectUUID, parseErr := uuid.Parse(thread.ProjectID); parseErr == nil {
+		skills, _, listErr := s.skillResolver.List(ctx, projectUUID)
+		if listErr != nil {
+			s.logger.Warn("failed to load skills for tool metadata (debug)", "error", listErr)
+		} else {
+			availableSkills = skills
+		}
 	}
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
@@ -132,7 +140,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 		WithNamespaceService(s.namespaceSvc).
 		WithMutationStrategy(s.mutationStrategy).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills).
+		WithEnabledSkillTools(enabledTools, thread.ProjectID, s.skillResolver, false, availableSkills).
 		Build()
 
 	// Get tool section from registry (OCP compliance - tools describe themselves)

@@ -6,16 +6,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// SkillResolver is the file-first skill catalog. It is the single source of
+// SkillResolver is the file-only skill catalog. It is the single source of
 // truth for runtime skill data consumed by skill_list, skill_invoke, prompt
 // injection, and the /skill slash command.
 //
-// Resolution order:
-//  1. .agents/skills/<slug>/SKILL.md (file-backed)
-//  2. legacy project_skills table (DB fallback, only when no file exists)
+// Skills are read exclusively from .agents/skills/<slug>/SKILL.md.
 //
 // If a file exists but is invalid, the resolver returns a validation error
-// and does NOT fall back to the DB — callers must surface the error.
+// and callers must surface the error.
 type SkillResolver interface {
 	// Resolve returns the runtime view of a single skill by slug.
 	// Returns a validation error if a file copy exists but is malformed.

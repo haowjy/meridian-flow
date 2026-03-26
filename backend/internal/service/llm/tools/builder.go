@@ -1,8 +1,8 @@
 package tools
 
 import (
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
-	skill "meridian/internal/domain/skill"
 	"meridian/internal/service/llm/tools/external"
 )
 
@@ -18,6 +18,7 @@ type ToolRegistryBuilder struct {
 	config           *ToolConfig
 	namespaceSvc     domaindocsys.NamespaceService // Optional, for namespace-aware tools
 	mutationStrategy DocumentMutationStrategy      // Optional, for AI edit persistence strategy
+	workItemSlug     string                        // Optional, for .meridian/work/<slug>/ isolation
 }
 
 // NewToolRegistryBuilder creates a new builder with a fresh registry.
@@ -42,6 +43,15 @@ func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStra
 	return b
 }
 
+// WithWorkItemSlug sets the current work item slug for namespace isolation.
+// Agents may only write to .meridian/work/<slug>/ when slug matches this value.
+// .meridian/fs/ and .agents/ remain accessible regardless of the slug.
+// If not set, all .meridian/work/ paths are denied (no active work item context).
+func (b *ToolRegistryBuilder) WithWorkItemSlug(slug string) *ToolRegistryBuilder {
+	b.workItemSlug = slug
+	return b
+}
+
 // WithEnabledDocumentTools registers only the specified document tools.
 // enabledTools is the list of tool names to register (e.g., ["str_replace_based_edit_tool", "doc_search"]).
 // This allows frontend to control which tools the LLM can use.
@@ -60,7 +70,7 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	}
 
 	if toolSet["str_replace_based_edit_tool"] {
-		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
+		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy, b.workItemSlug)
 		b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
 	}
 
@@ -85,18 +95,18 @@ func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolR
 
 // WithEnabledSkillTools registers only the specified skill tools.
 // enabledTools is the list of tool names to register (e.g., ["skill_invoke"]).
+// skillResolver is the file-backed resolver for runtime skill data.
 // availableSkills is used to enrich skill_invoke metadata with the list of available skills.
 // This allows frontend to control which tools the LLM can use.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 	enabledTools []string,
 	projectID string,
-	userID string,
-	skillService skill.ProjectSkillService,
+	skillResolver domainagents.SkillResolver,
 	isUserInvocation bool,
-	availableSkills []*skill.ProjectSkill,
+	availableSkills []domainagents.RuntimeSkill,
 ) *ToolRegistryBuilder {
-	if skillService == nil {
+	if skillResolver == nil {
 		return b
 	}
 
@@ -108,14 +118,14 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 
 	// Register only enabled skill tools with metadata (OCP compliance)
 	if toolSet["skill_invoke"] {
-		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
+		invokeTool := NewSkillInvokeTool(projectID, skillResolver, isUserInvocation, b.config)
 		// Enrich skill_invoke metadata with available skills list (runtime context)
 		invokeMetadata := SkillInvokeToolMetadata()
 		invokeMetadata.Guideline = BuildSkillInvokeGuideline(availableSkills)
 		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, invokeMetadata)
 	}
 	if toolSet["skill_list"] {
-		listTool := NewSkillListTool(projectID, userID, skillService, b.config)
+		listTool := NewSkillListTool(projectID, skillResolver, b.config)
 		b.registry.RegisterWithMetadata("skill_list", listTool, SkillListToolMetadata())
 	}
 

@@ -25,6 +25,7 @@ func NewHTTPServer(cfg *config.Config, app *Application) *http.Server {
 	app.Billing.RegisterRoutes(mux)
 	app.WorkItem.RegisterRoutes(mux)
 	app.LLM.RegisterRoutes(mux, app.Billing.AdmissionChecker)
+	app.Agent.RegisterRoutes(mux)
 	mux.HandleFunc("GET /api/models/capabilities", app.LLM.ModelsHandler.GetCapabilities)
 
 	if cfg.Server.Environment == "dev" && app.LLM.DebugHandler != nil {

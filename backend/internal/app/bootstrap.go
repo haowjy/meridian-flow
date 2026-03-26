@@ -49,6 +49,7 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 	authModule.AttachCreditGranter(billingModule.CreditGranter)
 
 	skillModule, err := domains.NewSkillModule(infraDeps, cfg, domains.SkillDeps{
+		DocumentRepo:     docsystemModule.DocumentRepo,
 		FolderRepo:       docsystemModule.FolderRepo,
 		NamespaceService: docsystemModule.NamespaceService,
 		Authorizer:       authModule.Authorizer,
@@ -88,7 +89,7 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		MutationStrategy:   collabModule.MutationStrategy,
 		DocumentSvc:        docsystemModule.DocumentService,
 		FolderSvc:          docsystemModule.FolderService,
-		SkillService:       skillModule.Service,
+		SkillResolver:      skillModule.Resolver,
 		Authorizer:         authModule.Authorizer,
 		ProjectRepo:        docsystemModule.ProjectRepo,
 		FolderRepo:         docsystemModule.FolderRepo,
@@ -109,6 +110,16 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		return nil, fmt.Errorf("userprefs module: %w", err)
 	}
 
+	agentModule, err := domains.NewAgentModule(infraDeps, cfg, domains.AgentDeps{
+		DocumentRepo: docsystemModule.DocumentRepo,
+		FolderRepo:   docsystemModule.FolderRepo,
+		TxManager:    docsystemModule.TxManager,
+		Authorizer:   authModule.Authorizer,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("agent module: %w", err)
+	}
+
 	application := &Application{
 		Infra:     infra,
 		Docsystem: docsystemModule,
@@ -119,6 +130,7 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		LLM:       llmModule,
 		WorkItem:  workItemModule,
 		UserPrefs: userPrefsModule,
+		Agent:     agentModule,
 		JobQueue:  jobQueue,
 	}
 	application.Workers = NewWorkers(cfg, application, infra.Logger)

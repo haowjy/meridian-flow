@@ -24,7 +24,6 @@ import (
 	"meridian/internal/domain"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skill "meridian/internal/domain/skill"
 )
 
 // =============================================================================
@@ -236,36 +235,6 @@ func (m *mockTurnWriterForPipeline) AppendGenerationRecord(_ context.Context, _ 
 }
 
 var _ domainllm.TurnWriter = (*mockTurnWriterForPipeline)(nil)
-
-// mockSkillServiceForPipeline satisfies skill.ProjectSkillService with no-op implementations.
-type mockSkillServiceForPipeline struct{}
-
-func (m *mockSkillServiceForPipeline) CreateSkill(_ context.Context, _ string, _ skill.CreateSkillRequest) (*skill.ProjectSkill, error) {
-	return nil, nil
-}
-func (m *mockSkillServiceForPipeline) ListSkills(_ context.Context, _, _ string) ([]*skill.ProjectSkill, error) {
-	return nil, nil
-}
-func (m *mockSkillServiceForPipeline) GetSkill(_ context.Context, _, _, _ string) (*skill.ProjectSkill, error) {
-	return nil, nil
-}
-func (m *mockSkillServiceForPipeline) GetSkillByName(_ context.Context, _, _, _ string) (*skill.ProjectSkill, error) {
-	return nil, nil
-}
-func (m *mockSkillServiceForPipeline) UpdateSkill(_ context.Context, _, _, _ string, _ skill.UpdateSkillRequest) (*skill.ProjectSkill, error) {
-	return nil, nil
-}
-func (m *mockSkillServiceForPipeline) ReorderSkills(_ context.Context, _, _ string, _ []string) error {
-	return nil
-}
-func (m *mockSkillServiceForPipeline) DeleteSkill(_ context.Context, _, _, _ string) error {
-	return nil
-}
-func (m *mockSkillServiceForPipeline) LoadSkillContent(_ context.Context, _, _, _ string) (string, error) {
-	return "", nil
-}
-
-var _ skill.ProjectSkillService = (*mockSkillServiceForPipeline)(nil)
 
 // =============================================================================
 // Helpers

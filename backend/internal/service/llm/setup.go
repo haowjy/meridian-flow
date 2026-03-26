@@ -12,9 +12,9 @@ import (
 	"meridian/internal/config"
 	"meridian/internal/domain/auth"
 	"meridian/internal/domain/billing"
+	domainagents "meridian/internal/domain/agents"
 	"meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/domain/skill"
 	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/jobs"
 	docsystemsvc "meridian/internal/service/docsystem"
@@ -60,7 +60,7 @@ type LLMServicesDeps struct {
 	FolderRepo             docsystem.FolderStore
 	DocumentSvc            docsystem.DocumentService
 	FolderSvc              docsystem.FolderService
-	SkillService           skill.ProjectSkillService
+	SkillResolver          domainagents.SkillResolver
 	ProviderRegistry       *ProviderRegistry
 	Config                 *config.Config
 	TxManager              domain.TransactionManager
@@ -87,7 +87,7 @@ func (d LLMServicesDeps) Validate() error {
 		validation.Field(&d.FolderRepo, validation.Required),
 		validation.Field(&d.DocumentSvc, validation.Required),
 		validation.Field(&d.FolderSvc, validation.Required),
-		validation.Field(&d.SkillService, validation.Required),
+		validation.Field(&d.SkillResolver, validation.Required),
 		validation.Field(&d.ProviderRegistry, validation.Required),
 		validation.Field(&d.Config, validation.Required),
 		validation.Field(&d.TxManager, validation.Required),
@@ -124,7 +124,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		deps.Authorizer,
 	)
 
-	systemPromptResolver := streaming.NewSystemPromptResolver(deps.ProjectRepo, deps.ThreadRepo, deps.SkillService, deps.Logger)
+	systemPromptResolver := streaming.NewSystemPromptResolver(deps.ProjectRepo, deps.ThreadRepo, deps.SkillResolver, deps.Logger)
 
 	formatterRegistry := formatting.NewFormatterRegistry()
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
@@ -150,7 +150,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			DocumentSvc:      deps.DocumentSvc,
 			FolderSvc:        deps.FolderSvc,
 			NamespaceSvc:     namespaceSvc,
-			SkillService:     deps.SkillService,
+			SkillResolver:    deps.SkillResolver,
 			Validator:        validator,
 			Authorizer:       deps.Authorizer,
 			MutationStrategy: deps.MutationStrategy,

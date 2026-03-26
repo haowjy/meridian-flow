@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	skill "meridian/internal/domain/skill"
+	"github.com/google/uuid"
+
+	domainagents "meridian/internal/domain/agents"
 )
 
 // SkillInvokeToolMetadata returns metadata for the skill_invoke tool.
@@ -20,19 +22,18 @@ func SkillInvokeToolMetadata() *ToolMetadata {
 
 // BuildSkillInvokeGuideline enriches the skill_invoke guideline with available skills.
 // Called by the builder to compose runtime context into static metadata.
-// Filters out skills with DisableModelInvocation=true.
-func BuildSkillInvokeGuideline(skills []*skill.ProjectSkill) string {
+// Filters out skills where ModelInvocable is explicitly false (nil means true).
+func BuildSkillInvokeGuideline(skills []domainagents.RuntimeSkill) string {
 	base := "Use skill_invoke when a task matches an available skill"
 
 	if len(skills) == 0 {
 		return base
 	}
 
-	// Filter to model-invocable skills only
+	// Filter to model-invocable skills only (nil ModelInvocable → default true)
 	var lines []string
 	for _, skill := range skills {
-		meta := skill.GetMetadata()
-		if meta.DisableModelInvocation {
+		if !domainagents.BoolDefaultTrue(skill.ModelInvocable) {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("- **/%s**: %s", skill.Name, skill.Description))
@@ -57,10 +58,10 @@ func SkillListToolMetadata() *ToolMetadata {
 
 // SkillInvokeTool implements the 'skill_invoke' tool for loading skill instructions on-demand.
 // Claude sees skill metadata in system prompt, but full content is only loaded when invoked.
+// Resolution is file-backed via SkillResolver (.agents/skills/<slug>/SKILL.md).
 type SkillInvokeTool struct {
 	projectID        string
-	userID           string
-	skillService     skill.ProjectSkillService
+	skillResolver    domainagents.SkillResolver
 	isUserInvocation bool // True if user explicitly invoked via slash command
 	config           *ToolConfig
 }
@@ -68,8 +69,7 @@ type SkillInvokeTool struct {
 // NewSkillInvokeTool creates a new SkillInvokeTool instance.
 func NewSkillInvokeTool(
 	projectID string,
-	userID string,
-	skillService skill.ProjectSkillService,
+	skillResolver domainagents.SkillResolver,
 	isUserInvocation bool,
 	config *ToolConfig,
 ) *SkillInvokeTool {
@@ -78,8 +78,7 @@ func NewSkillInvokeTool(
 	}
 	return &SkillInvokeTool{
 		projectID:        projectID,
-		userID:           userID,
-		skillService:     skillService,
+		skillResolver:    skillResolver,
 		isUserInvocation: isUserInvocation,
 		config:           config,
 	}
@@ -108,36 +107,35 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 		}
 	}
 
-	// Get skill metadata first to check invocation permissions
-	skill, err := t.skillService.GetSkillByName(ctx, t.userID, t.projectID, skillName)
+	// Parse projectID for the resolver.
+	projectUUID, err := uuid.Parse(t.projectID)
+	if err != nil {
+		return nil, fmt.Errorf("skill_invoke: invalid project ID %q: %w", t.projectID, err)
+	}
+
+	// Resolve skill from .agents/skills/<slug>/SKILL.md.
+	skill, err := t.skillResolver.Resolve(ctx, projectUUID, skillName)
 	if err != nil {
 		return ErrorResult(ErrNotFound, fmt.Sprintf("skill '%s' not found", skillName), map[string]any{
 			"skill_name": skillName,
 		}), nil
 	}
 
-	// Check invocation permissions
-	meta := skill.GetMetadata()
-	if meta.DisableModelInvocation && !t.isUserInvocation {
+	// Check invocation permissions (nil ModelInvocable → default true).
+	if !domainagents.BoolDefaultTrue(skill.ModelInvocable) && !t.isUserInvocation {
 		return ErrorResult(ErrInvalidInput, "This skill can only be invoked manually by the user", map[string]any{
 			"skill_name": skillName,
-			"reason":     "disable_model_invocation is true",
+			"reason":     "model-invocable is false",
 			"suggestion": "User can invoke with /" + skillName,
 		}), nil
 	}
 
-	// Load content from SKILL.md
-	content, err := t.skillService.LoadSkillContent(ctx, t.userID, t.projectID, skillName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load skill content: %w", err)
-	}
-
-	// Replace $ARGUMENTS placeholder if arguments provided
+	// Content is the SKILL.md body (frontmatter already stripped by resolver).
+	content := skill.Content
 	if arguments != "" {
 		content = strings.ReplaceAll(content, "$ARGUMENTS", arguments)
 	}
 
-	// Return the skill content as a formatted response
 	return map[string]any{
 		"type":       "skill",
 		"skill_name": skill.Name,
@@ -146,45 +144,46 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 }
 
 // SkillListTool implements the 'skill_list' tool for listing available skills.
+// Resolution is file-backed via SkillResolver (.agents/skills/).
 type SkillListTool struct {
-	projectID    string
-	userID       string
-	skillService skill.ProjectSkillService
-	config       *ToolConfig
+	projectID     string
+	skillResolver domainagents.SkillResolver
+	config        *ToolConfig
 }
 
 // NewSkillListTool creates a new SkillListTool instance.
 func NewSkillListTool(
 	projectID string,
-	userID string,
-	skillService skill.ProjectSkillService,
+	skillResolver domainagents.SkillResolver,
 	config *ToolConfig,
 ) *SkillListTool {
 	if config == nil {
 		config = DefaultToolConfig()
 	}
 	return &SkillListTool{
-		projectID:    projectID,
-		userID:       userID,
-		skillService: skillService,
-		config:       config,
+		projectID:     projectID,
+		skillResolver: skillResolver,
+		config:        config,
 	}
 }
 
 // Execute implements ToolExecutor interface.
 // Returns a list of available skills for this project.
 func (t *SkillListTool) Execute(ctx context.Context, input map[string]any) (any, error) {
-	skills, err := t.skillService.ListSkills(ctx, t.userID, t.projectID)
+	projectUUID, err := uuid.Parse(t.projectID)
+	if err != nil {
+		return nil, fmt.Errorf("skill_list: invalid project ID %q: %w", t.projectID, err)
+	}
+
+	skills, _, err := t.skillResolver.List(ctx, projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
 
-	// Format skill list
+	// Format skill list — only include model-invocable skills (nil → default true).
 	skillList := make([]map[string]any, 0, len(skills))
 	for _, skill := range skills {
-		// Skip skills that can't be model-invoked
-		meta := skill.GetMetadata()
-		if meta.DisableModelInvocation {
+		if !domainagents.BoolDefaultTrue(skill.ModelInvocable) {
 			continue
 		}
 		skillList = append(skillList, map[string]any{

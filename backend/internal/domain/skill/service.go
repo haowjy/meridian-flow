@@ -36,9 +36,6 @@ type ProjectSkillService interface {
 	// GetSkill retrieves a skill by ID (content included in model)
 	GetSkill(ctx context.Context, userID, projectID, skillID string) (*ProjectSkill, error)
 
-	// GetSkillByName retrieves a skill by name (content included in model)
-	GetSkillByName(ctx context.Context, userID, projectID, name string) (*ProjectSkill, error)
-
 	// UpdateSkill updates a skill's metadata and/or content
 	UpdateSkill(ctx context.Context, userID, projectID, skillID string, req UpdateSkillRequest) (*ProjectSkill, error)
 
@@ -47,7 +44,4 @@ type ProjectSkillService interface {
 
 	// DeleteSkill soft-deletes a skill
 	DeleteSkill(ctx context.Context, userID, projectID, skillID string) error
-
-	// LoadSkillContent loads the content of a skill (from DB)
-	LoadSkillContent(ctx context.Context, userID, projectID, name string) (string, error)
 }

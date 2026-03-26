@@ -8,9 +8,9 @@ import (
 	"meridian/internal/domain"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
+	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	skilldomain "meridian/internal/domain/skill"
 	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
@@ -29,7 +29,7 @@ type LLMCrossDeps struct {
 	MutationStrategy   tools.DocumentMutationStrategy
 	DocumentSvc        domaindocsys.DocumentService
 	FolderSvc          domaindocsys.FolderService
-	SkillService       skilldomain.ProjectSkillService
+	SkillResolver      domainagents.SkillResolver
 	Authorizer         authdomain.ResourceAuthorizer
 	ProjectRepo        domaindocsys.ProjectStore
 	FolderRepo         domaindocsys.FolderStore
@@ -66,7 +66,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		FolderRepo:             crossDeps.FolderRepo,
 		DocumentSvc:            crossDeps.DocumentSvc,
 		FolderSvc:              crossDeps.FolderSvc,
-		SkillService:           crossDeps.SkillService,
+		SkillResolver:          crossDeps.SkillResolver,
 		ProviderRegistry:       providerRegistry,
 		Config:                 cfg,
 		TxManager:              crossDeps.TxManager,
