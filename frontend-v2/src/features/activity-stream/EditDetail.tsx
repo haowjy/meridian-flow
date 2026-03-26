@@ -1,70 +1,77 @@
-import { Button } from "@/components/ui/button"
+import { useMemo } from "react"
+
 import { cn } from "@/lib/utils"
 
 import { DetailCard } from "./DetailCard"
-import type { EditReviewStatus, EditToolDetail } from "./types"
+import { readString } from "./tool-utils"
+import type { DiffLine, ToolItem } from "./types"
 
 type EditDetailProps = {
-  detail: EditToolDetail
+  tool: ToolItem
 }
 
-function getReviewBorder(status: EditReviewStatus) {
-  if (status === "accepted") {
-    return "border-l-[3px] border-l-success"
+function computeDiff(oldStr?: string, newStr?: string) {
+  const lines: DiffLine[] = []
+  let added = 0
+  let removed = 0
+
+  if (oldStr) {
+    for (const line of oldStr.split("\n")) {
+      lines.push({ type: "remove", text: line })
+      removed++
+    }
   }
 
-  if (status === "rejected") {
-    return "border-l-[3px] border-l-destructive"
+  if (newStr) {
+    for (const line of newStr.split("\n")) {
+      lines.push({ type: "add", text: line })
+      added++
+    }
   }
 
-  return "border-l-[3px] border-l-muted-foreground"
+  return { lines, added, removed }
 }
 
-export function EditDetail({ detail }: EditDetailProps) {
-  const reviewStatus = detail.reviewStatus ?? "pending-review"
+export function EditDetail({ tool }: EditDetailProps) {
+  const oldString = tool.parsedArgs ? readString(tool.parsedArgs, ["old_string", "old_str"]) : undefined
+  const newString = tool.parsedArgs ? readString(tool.parsedArgs, ["new_string", "new_str"]) : undefined
+
+  const { lines: diffLines, added: addedLines, removed: removedLines } = useMemo(
+    () => computeDiff(oldString, newString),
+    [oldString, newString],
+  )
+
+  if (diffLines.length === 0) {
+    return (
+      <DetailCard>
+        <p className="text-xs text-muted-foreground">
+          {tool.status === "streaming-args" ? "Streaming edit..." : "No changes"}
+        </p>
+      </DetailCard>
+    )
+  }
 
   return (
-    <DetailCard className={cn("[&>div]:space-y-3 [&>div]:p-3", getReviewBorder(reviewStatus))}>
+    <DetailCard className="[&>div]:space-y-2 [&>div]:p-3">
       <p className="text-xs text-muted-foreground">
-        +{detail.addedLines ?? 0} lines, -{detail.removedLines ?? 0} lines, {detail.hunks ?? 0} hunks
+        +{addedLines} lines, -{removedLines} lines
       </p>
 
-      <div className="max-h-52 overflow-auto rounded-md border border-border/60 bg-background/80 p-2 font-mono text-xs">
-        {detail.diffLines.map((line, index) => (
-          <p
-            key={`${detail.filePath}-diff-${index}`}
+      <pre className="max-h-52 overflow-auto rounded-md bg-muted/40 font-mono text-xs leading-relaxed">
+        {diffLines.map((line, index) => (
+          <span
+            key={`${tool.id}-diff-${index}`}
             className={cn(
-              "whitespace-pre-wrap px-1 py-0.5",
-              line.type === "add" ? "bg-success/10 text-success" : undefined,
-              line.type === "remove" ? "bg-destructive/10 text-destructive" : undefined,
-              line.type === "context" ? "text-muted-foreground" : undefined
+              "block whitespace-pre-wrap px-2.5 py-px",
+              line.type === "add" && "bg-success/10 text-success",
+              line.type === "remove" && "bg-destructive/10 text-destructive",
+              line.type === "context" && "text-muted-foreground"
             )}
           >
             {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "} {line.text}
-          </p>
+          </span>
         ))}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          className="h-8 bg-success px-3 text-xs text-success-foreground hover:bg-success/90"
-          onClick={detail.onAccept}
-        >
-          Accept
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
-          onClick={detail.onReject}
-        >
-          Reject
-        </Button>
-        <Button size="sm" variant="ghost" className="h-8 px-3 text-xs" onClick={detail.onReviewInEditor}>
-          Review in Editor
-        </Button>
-      </div>
+      </pre>
     </DetailCard>
   )
 }

@@ -1,53 +1,29 @@
-import { ArrowSquareOut, Globe } from "@phosphor-icons/react"
-
-import { Separator } from "@/components/ui/separator"
+import { Globe } from "@phosphor-icons/react"
 
 import { DetailCard } from "./DetailCard"
-import type { WebSearchToolDetail } from "./types"
+import { readString } from "./tool-utils"
+import type { ToolItem } from "./types"
 
 type WebSearchDetailProps = {
-  detail: WebSearchToolDetail
+  tool: ToolItem
 }
 
-function getDomain(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "")
-  } catch {
-    return url
-  }
-}
+export function WebSearchDetail({ tool }: WebSearchDetailProps) {
+  const query = tool.parsedArgs ? readString(tool.parsedArgs, ["query", "search_query", "q"]) : undefined
 
-export function WebSearchDetail({ detail }: WebSearchDetailProps) {
   return (
     <DetailCard className="[&>div]:space-y-2 [&>div]:p-3">
-      {detail.results.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No results found.</p>
+      {tool.resultText ? (
+        <pre className="max-h-52 overflow-auto whitespace-pre-wrap font-mono text-xs text-muted-foreground">
+          {tool.resultText}
+        </pre>
       ) : (
-        <div className="space-y-2">
-          {detail.results.map((result, index) => (
-            <div key={result.id} className="space-y-1">
-              {index > 0 ? <Separator /> : null}
-              <div className="flex items-start justify-between gap-2">
-                <a
-                  href={result.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground hover:text-accent-text"
-                >
-                  {result.title}
-                  <ArrowSquareOut className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
-                </a>
-              </div>
-              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Globe className="size-3 shrink-0" aria-hidden="true" />
-                {getDomain(result.url)}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {result.snippet}
-              </p>
-            </div>
-          ))}
-        </div>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Globe className="size-3.5 shrink-0" aria-hidden="true" />
+          {tool.status === "executing"
+            ? `Searching for ${query ? `"${query}"` : "..."}...`
+            : "No results"}
+        </p>
       )}
     </DetailCard>
   )

@@ -11,78 +11,69 @@ import type { BadgeProps } from "@/components/ui/badge"
 
 import type { ActivityItem, ToolItem, ToolStatus } from "./types"
 
+// ═══════════════════════════════════════════════════════════════════
+// Tool categories — inferred from toolName string
+// ═══════════════════════════════════════════════════════════════════
+
 export type ToolCategory = "read" | "edit" | "doc-search" | "web-search" | "bash" | "agent" | "other"
 
-export const STREAMING_STATUS_MESSAGES = [
-  "Turning pages...",
-  "Consulting the muse...",
-  "Reading between the lines...",
-  "Sharpening the quill...",
-  "Pondering the plot...",
-  "Checking the manuscript...",
-  "Weighing the words...",
-  "Following the thread...",
-]
-
-function hasAny(fragment: string, candidates: string[]) {
-  return candidates.some((candidate) => fragment.includes(candidate))
+/**
+ * Split a tool name into word-boundary segments.
+ * Handles camelCase, snake_case, kebab-case, and spaces.
+ *   "ReadFile"      → ["read", "file"]
+ *   "str_replace"   → ["str", "replace"]
+ *   "web-search"    → ["web", "search"]
+ *   "SpawnAgent"    → ["spawn", "agent"]
+ *   "thread"        → ["thread"]
+ */
+function extractSegments(name: string): string[] {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
 }
 
-export function getToolCategory(tool: ToolItem | string): ToolCategory {
-  if (typeof tool !== "string" && tool.detail) {
-    if (tool.detail.kind === "read") {
-      return "read"
-    }
+/** True if any candidate appears as an exact segment. */
+function hasSegment(segments: string[], candidates: string[]): boolean {
+  return candidates.some((c) => segments.includes(c))
+}
 
-    if (tool.detail.kind === "edit") {
-      return "edit"
-    }
+/** Classify a tool by name. Works with any naming convention (Claude, MCP, custom). */
+export function getToolCategory(toolName: string): ToolCategory {
+  const segments = extractSegments(toolName.trim())
 
-    if (tool.detail.kind === "doc-search") {
-      return "doc-search"
-    }
-
-    if (tool.detail.kind === "web-search") {
-      return "web-search"
-    }
-
-    if (tool.detail.kind === "bash") {
-      return "bash"
-    }
-
-    if (tool.detail.kind === "agent") {
-      return "agent"
-    }
-  }
-
-  const normalized = (typeof tool === "string" ? tool : tool.toolName).trim().toLowerCase()
-
-  if (hasAny(normalized, ["read", "view", "open"])) {
+  if (hasSegment(segments, ["read", "view", "open"])) {
     return "read"
   }
 
-  if (hasAny(normalized, ["edit", "write", "replace", "patch", "str_replace"])) {
+  if (hasSegment(segments, ["edit", "write", "replace", "patch", "overwrite"])) {
     return "edit"
   }
 
-  if (hasAny(normalized, ["web_search", "web-search"])) {
+  // web-search before doc-search so "web_search" doesn't match generic "search" first
+  if (segments.includes("web") && segments.includes("search")) {
     return "web-search"
   }
 
-  if (hasAny(normalized, ["search", "grep", "glob", "find", "doc_search"])) {
+  if (hasSegment(segments, ["search", "grep", "glob", "find"])) {
     return "doc-search"
   }
 
-  if (hasAny(normalized, ["bash", "terminal", "command", "exec", "execute", "code"])) {
+  if (hasSegment(segments, ["bash", "terminal", "command", "exec", "execute"])) {
     return "bash"
   }
 
-  if (hasAny(normalized, ["agent", "spawn", "delegate", "thread"])) {
+  if (hasSegment(segments, ["agent", "spawn", "delegate", "thread"])) {
     return "agent"
   }
 
   return "other"
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Icons
+// ═══════════════════════════════════════════════════════════════════
 
 export function getToolIcon(category: ToolCategory) {
   if (category === "read") {
@@ -105,12 +96,166 @@ export function getToolIcon(category: ToolCategory) {
     return Robot
   }
 
-  if (category === "bash" || category === "other") {
-    return Terminal
-  }
-
   return Terminal
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Labels
+// ═══════════════════════════════════════════════════════════════════
+
+/** Human label for the tool category. "Tool" if unknown. */
+export function getToolLabel(toolName?: string): string {
+  if (!toolName) {
+    return "Tool"
+  }
+
+  const category = getToolCategory(toolName)
+
+  if (category === "read") return "Read"
+  if (category === "edit") return "Edit"
+  if (category === "doc-search") return "Search"
+  if (category === "web-search") return "Web"
+  if (category === "bash") return "Bash"
+  if (category === "agent") return "Agent"
+
+  return "Tool"
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Progressive summary extraction
+//
+// Works with partial data — called on every TOOL_CALL_ARGS delta.
+// Returns whatever summary text is available so far.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Read the first matching string value from an object. */
+export function readString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = obj[key]
+
+    if (typeof value === "string" && value.length > 0) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+/** Return the first string value found in a flat object. */
+function firstStringValue(obj: Record<string, unknown>): string | undefined {
+  for (const value of Object.values(obj)) {
+    if (typeof value === "string" && value.length > 0) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Extract a display summary from tool args. Streams progressively —
+ * returns partial results as parsedArgs builds up from partial-json.
+ *
+ * Read: file path         → Read("src/components/Button.tsx")
+ * Edit: file path         → Edit("src/lib/utils.ts")
+ * Bash: command           → Bash("ls -la src/")
+ * Search: pattern/query   → Search("getUser")
+ * Agent: name/prompt      → Agent("Continuity Scout")
+ * Unknown: first string   → Tool("some value")
+ */
+export function getToolSummary(
+  toolName: string | undefined,
+  parsedArgs?: Record<string, unknown>,
+  /** Pre-computed category to avoid redundant getToolCategory calls. */
+  precomputedCategory?: ToolCategory,
+): string | undefined {
+  if (!parsedArgs) {
+    return undefined
+  }
+
+  const category = precomputedCategory ?? getToolCategory(toolName ?? "")
+
+  if (category === "read" || category === "edit") {
+    const path = readString(parsedArgs, ["file_path", "path", "filePath", "target"])
+    return path ? `"${path}"` : undefined
+  }
+
+  if (category === "bash") {
+    return readString(parsedArgs, ["command", "cmd"])
+  }
+
+  if (category === "doc-search") {
+    const query = readString(parsedArgs, ["pattern", "query", "search", "regex"])
+    return query ? `"${query}"` : undefined
+  }
+
+  if (category === "web-search") {
+    const query = readString(parsedArgs, ["query", "search_query", "q"])
+    return query ? `"${query}"` : undefined
+  }
+
+  if (category === "agent") {
+    return readString(parsedArgs, ["name", "description", "prompt", "task"])
+  }
+
+  // Generic: first string value
+  return firstStringValue(parsedArgs)
+}
+
+/**
+ * Full header title for a tool line: Label(summary)
+ *
+ * Streams progressively:
+ *   "Tool"  →  "Read"  →  "Read(src/c)"  →  "Read(src/components/Button.tsx)"
+ */
+export function getToolLineTitle(tool: ToolItem, precomputedCategory?: ToolCategory): string {
+  const category = precomputedCategory ?? getToolCategory(tool.toolName ?? "")
+  const label = getToolLabel(tool.toolName)
+  const summary = getToolSummary(tool.toolName, tool.parsedArgs, category)
+
+  if (!summary) {
+    return label
+  }
+
+  return `${label}(${summary})`
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Status display
+// ═══════════════════════════════════════════════════════════════════
+
+export function getToolStatusLabel(status: ToolStatus): string {
+  if (status === "done") return "ok"
+  if (status === "error") return "error"
+  if (status === "executing") return "running"
+  if (status === "streaming-args") return "streaming"
+
+  return "pending"
+}
+
+export function getToolStatusVariant(status: ToolStatus): BadgeProps["variant"] {
+  if (status === "done") return "success"
+  if (status === "error") return "destructive"
+  if (status === "executing") return "secondary"
+  if (status === "streaming-args") return "outline"
+
+  return "outline"
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Activity-level summaries
+// ═══════════════════════════════════════════════════════════════════
+
+export const STREAMING_STATUS_MESSAGES = [
+  "Turning pages...",
+  "Consulting the muse...",
+  "Reading between the lines...",
+  "Sharpening the quill...",
+  "Pondering the plot...",
+  "Checking the manuscript...",
+  "Weighing the words...",
+  "Following the thread...",
+]
 
 function pluralize(count: number, singular: string, plural: string) {
   return count === 1 ? singular : plural
@@ -132,7 +277,7 @@ export function getActivitySummary(items: ActivityItem[]) {
       continue
     }
 
-    counts[getToolCategory(item)] += 1
+    counts[getToolCategory(item.toolName ?? "")] += 1
   }
 
   const parts: string[] = []
@@ -166,145 +311,4 @@ export function getActivitySummary(items: ActivityItem[]) {
   }
 
   return parts.join(", ")
-}
-
-export function trimPath(pathValue: string) {
-  const segments = pathValue.split("/")
-  return segments.at(-1) ?? pathValue
-}
-
-function readStringValue(input: Record<string, unknown> | undefined, keys: string[]) {
-  if (!input) {
-    return undefined
-  }
-
-  for (const key of keys) {
-    const value = input[key]
-
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value
-    }
-  }
-
-  return undefined
-}
-
-export function getToolArgumentSummary(tool: ToolItem) {
-  if (tool.detail?.kind === "read") {
-    return trimPath(tool.detail.filePath)
-  }
-
-  if (tool.detail?.kind === "edit") {
-    return trimPath(tool.detail.filePath)
-  }
-
-  if (tool.detail?.kind === "doc-search") {
-    return `"${tool.detail.query}"`
-  }
-
-  if (tool.detail?.kind === "web-search") {
-    return `"${tool.detail.query}"`
-  }
-
-  if (tool.detail?.kind === "bash") {
-    return tool.detail.command
-  }
-
-  if (tool.detail?.kind === "agent") {
-    return tool.detail.agent.name
-  }
-
-  const argValue = readStringValue(tool.args, [
-    "path",
-    "file",
-    "filePath",
-    "target",
-    "query",
-    "command",
-    "description",
-    "name",
-  ])
-
-  if (!argValue) {
-    return undefined
-  }
-
-  const category = getToolCategory(tool)
-  if (category === "read" || category === "edit") {
-    return trimPath(argValue)
-  }
-
-  return argValue
-}
-
-function getToolActionLabel(category: ToolCategory) {
-  if (category === "read") {
-    return "Read"
-  }
-
-  if (category === "edit") {
-    return "Edit"
-  }
-
-  if (category === "doc-search") {
-    return "Search"
-  }
-
-  if (category === "web-search") {
-    return "Web"
-  }
-
-  if (category === "bash") {
-    return "Bash"
-  }
-
-  if (category === "agent") {
-    return "Agent"
-  }
-
-  return "Tool"
-}
-
-export function getToolLineTitle(tool: ToolItem) {
-  const category = getToolCategory(tool)
-  const summary = getToolArgumentSummary(tool)
-  const label = getToolActionLabel(category)
-
-  if (!summary) {
-    return label
-  }
-
-  return `${label}(${summary})`
-}
-
-export function getToolStatusLabel(status: ToolStatus) {
-  if (status === "done") {
-    return "ok"
-  }
-
-  if (status === "error") {
-    return "error"
-  }
-
-  if (status === "running") {
-    return "running"
-  }
-
-  return "pending"
-}
-
-export function getToolStatusVariant(status: ToolStatus): BadgeProps["variant"] {
-  if (status === "done") {
-    return "success"
-  }
-
-  if (status === "error") {
-    return "destructive"
-  }
-
-  if (status === "running") {
-    return "secondary"
-  }
-
-  return "outline"
 }
