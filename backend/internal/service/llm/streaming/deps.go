@@ -16,6 +16,7 @@ import (
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
@@ -63,15 +64,19 @@ type LLMProviderGetter interface {
 
 // PersistenceDeps groups repository dependencies for data access.
 type PersistenceDeps struct {
-	TurnWriter    domainllm.TurnWriter
-	TurnReader    domainllm.TurnReader
-	TurnNavigator domainllm.TurnNavigator
-	ThreadRepo    domainllm.ThreadStore
-	ProjectRepo   domaindocsys.ProjectStore // For validating project access on cold start
-	TxManager     domain.TransactionManager
+	TurnWriter     domainllm.TurnWriter
+	TurnReader     domainllm.TurnReader
+	TurnNavigator  domainllm.TurnNavigator
+	ThreadRepo     domainllm.ThreadStore
+	ProjectRepo    domaindocsys.ProjectStore // For validating project access on cold start
+	TxManager      domain.TransactionManager
+	// WorkItemStore is used by contextResolver for work context variable resolution.
+	// Optional: nil disables context resolution (non-persona turns unaffected).
+	WorkItemStore  domainwi.Store
 }
 
 // Validate checks that all persistence dependencies are provided.
+// WorkItemStore is optional — nil disables work context resolution.
 func (d PersistenceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.TurnWriter, validation.Required),
@@ -80,6 +85,7 @@ func (d PersistenceDeps) Validate() error {
 		validation.Field(&d.ThreadRepo, validation.Required),
 		validation.Field(&d.ProjectRepo, validation.Required),
 		validation.Field(&d.TxManager, validation.Required),
+		// WorkItemStore intentionally NOT required — nil disables feature
 	)
 }
 
@@ -92,9 +98,16 @@ type ServiceDeps struct {
 	Validator        ThreadValidator
 	Authorizer       authdomain.ResourceAuthorizer
 	MutationStrategy tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+	// PersonaCatalog resolves persona profiles from .agents/agents/*.md.
+	// Optional: nil disables persona resolution (turns without persona_slug still work).
+	PersonaCatalog domainagents.PersonaCatalog
+	// WorkItemSvc enables work item lifecycle gates and EnsureThreadWorkItem.
+	// Optional: nil disables work item gates (non-persona turns unaffected).
+	WorkItemSvc domainwi.Service
 }
 
 // Validate checks that all service dependencies are provided.
+// PersonaCatalog and WorkItemSvc are optional — nil means persona features are disabled.
 func (d ServiceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.DocumentSvc, validation.Required),
@@ -104,6 +117,7 @@ func (d ServiceDeps) Validate() error {
 		validation.Field(&d.Validator, validation.Required),
 		validation.Field(&d.Authorizer, validation.Required),
 		validation.Field(&d.MutationStrategy, validation.Required),
+		// PersonaCatalog and WorkItemSvc intentionally NOT required — nil disables feature
 	)
 }
 

@@ -42,6 +42,12 @@ type LLMCrossDeps struct {
 	// WorkItemSvc enables automatic ephemeral work item provisioning on thread create.
 	// Optional: nil disables provisioning.
 	WorkItemSvc domainwi.Service
+	// PersonaCatalog resolves persona profiles from .agents/agents/*.md.
+	// Optional: nil disables persona resolution in the streaming pipeline.
+	PersonaCatalog domainagents.PersonaCatalog
+	// WorkItemStore is used by the streaming pipeline's contextResolver.
+	// Optional: nil disables work context variable resolution.
+	WorkItemStore domainwi.Store
 }
 
 // LLMModule wires thread/history/streaming handlers and debug routes.
@@ -80,6 +86,8 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		MutationStrategy:       crossDeps.MutationStrategy,
 		Logger:                 infra.Logger,
 		WorkItemSvc:            crossDeps.WorkItemSvc,
+		PersonaCatalog:         crossDeps.PersonaCatalog,
+		WorkItemStore:          crossDeps.WorkItemStore,
 	})
 	if err != nil {
 		return nil, err

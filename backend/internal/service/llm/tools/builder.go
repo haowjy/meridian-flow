@@ -132,6 +132,44 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 	return b
 }
 
+// WithPersonaToolFilter prunes the set of registered tools based on persona tool policy.
+// Must be called AFTER all tool registration is complete.
+//
+// allowedTools: if non-empty, only these tool names survive; an empty/nil slice means
+// "inherit all registered tools" — the allow-list pass is skipped.
+// disallowedTools: these names are removed from whatever set survives the allow-list pass.
+//
+// Calling with both slices empty/nil is a no-op.
+func (b *ToolRegistryBuilder) WithPersonaToolFilter(allowedTools, disallowedTools []string) *ToolRegistryBuilder {
+	if len(allowedTools) == 0 && len(disallowedTools) == 0 {
+		return b
+	}
+
+	// Allow-list pass: keep only the explicitly listed tools.
+	if len(allowedTools) > 0 {
+		allowed := make(map[string]bool, len(allowedTools))
+		for _, t := range allowedTools {
+			allowed[t] = true
+		}
+		b.registry.Prune(func(name string) bool {
+			return allowed[name]
+		})
+	}
+
+	// Deny-list pass: remove explicitly disallowed tools from the remaining set.
+	if len(disallowedTools) > 0 {
+		denied := make(map[string]bool, len(disallowedTools))
+		for _, t := range disallowedTools {
+			denied[t] = true
+		}
+		b.registry.Prune(func(name string) bool {
+			return !denied[name]
+		})
+	}
+
+	return b
+}
+
 // Build returns the constructed tool registry.
 func (b *ToolRegistryBuilder) Build() *ToolRegistry {
 	return b.registry

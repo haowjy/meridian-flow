@@ -7,6 +7,7 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/jobs"
+	serviceagents "meridian/internal/service/agents"
 	serviceLLM "meridian/internal/service/llm"
 )
 
@@ -82,6 +83,15 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		return nil, fmt.Errorf("work item module: %w", err)
 	}
 
+	// Construct PersonaCatalog for persona resolution in the streaming pipeline.
+	// Uses the same document and folder repos as the agent import service.
+	personaCatalog := serviceagents.NewFilePersonaCatalog(
+		docsystemModule.DocumentRepo,
+		docsystemModule.FolderRepo,
+		capabilityRegistry,
+		infra.Logger,
+	)
+
 	llmModule, err := domains.NewLLMModule(infraDeps, cfg, domains.LLMCrossDeps{
 		AdmissionChecker:   billingModule.AdmissionChecker,
 		CreditSettler:      billingModule.CreditSettler,
@@ -100,6 +110,8 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		CapabilityRegistry: capabilityRegistry,
 		JobQueue:           jobQueue,
 		WorkItemSvc:        workItemModule.Service,
+		PersonaCatalog:     personaCatalog,
+		WorkItemStore:      workItemModule.Store,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("llm module: %w", err)
@@ -111,10 +123,11 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 	}
 
 	agentModule, err := domains.NewAgentModule(infraDeps, cfg, domains.AgentDeps{
-		DocumentRepo: docsystemModule.DocumentRepo,
-		FolderRepo:   docsystemModule.FolderRepo,
-		TxManager:    docsystemModule.TxManager,
-		Authorizer:   authModule.Authorizer,
+		DocumentRepo:   docsystemModule.DocumentRepo,
+		FolderRepo:     docsystemModule.FolderRepo,
+		TxManager:      docsystemModule.TxManager,
+		Authorizer:     authModule.Authorizer,
+		PersonaCatalog: personaCatalog,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent module: %w", err)
