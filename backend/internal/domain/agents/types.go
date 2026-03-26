@@ -60,13 +60,14 @@ type Persona struct {
 // exclusively from .agents/skills/<slug>/SKILL.md — there is no DB fallback.
 //
 // Invocation policy note: earlier specs modelled invocation as a single
-// "Trigger" enum. That was decomposed into UserInvocable + ModelInvocable
+// "Trigger" enum. That was decomposed into UserInvocable +
+// DisableModelInvocation
 // boolean fields for cleaner permission modeling — each axis can be toggled
 // independently without adding new enum values.
 //
-// Nil-means-true convention: Enabled, UserInvocable, and ModelInvocable are
-// *bool so that YAML omission can be distinguished from an explicit false.
-// Callers must treat nil as "apply default true" for these three fields.
+// Nil-means-true convention: UserInvocable is *bool so that YAML omission can
+// be distinguished from an explicit false. Callers must treat nil as
+// "apply default true" for this field.
 type RuntimeSkill struct {
 	// Identity.
 	Slug        string `json:"slug"`
@@ -76,16 +77,13 @@ type RuntimeSkill struct {
 	// Content is the markdown body after the SKILL.md frontmatter block.
 	Content string `json:"content"`
 
-	// Enabled gates whether the skill participates in any resolution.
-	// Default: true. Nil means "apply default true" (see nil-means-true note above).
-	Enabled *bool `json:"enabled"`
-
-	// Invocation policy — both default to true for backwards compatibility.
+	// Invocation policy:
 	// UserInvocable: whether the skill appears in user-facing /skill commands.
-	// ModelInvocable: whether prompt injection and skill_list/skill_invoke use it.
-	// Nil means "apply default true" for each field (see nil-means-true note above).
-	UserInvocable  *bool `json:"user_invocable"`
-	ModelInvocable *bool `json:"model_invocable"`
+	// Nil means "apply default true" (see nil-means-true note above).
+	// DisableModelInvocation: whether prompt injection and skill_list/skill_invoke
+	// must exclude this skill. Default: false.
+	UserInvocable          *bool `json:"user_invocable"`
+	DisableModelInvocation bool  `json:"disable_model_invocation"`
 
 	// Optional ordering and version labels from frontmatter.
 	Position *int    `json:"position,omitempty"`
@@ -99,13 +97,14 @@ type RuntimeSkill struct {
 	SourcePath string `json:"source_path,omitempty"`
 }
 
-// BoolDefaultTrue resolves the nil-means-true convention used by *bool fields
-// in Persona and RuntimeSkill. It returns the pointed-to value when non-nil,
-// or true when the pointer is nil (i.e. the field was omitted from YAML).
+// BoolDefaultTrue resolves the nil-means-true convention used only by
+// UserInvocable fields in Persona and RuntimeSkill. It returns the pointed-to
+// value when non-nil, or true when the pointer is nil (i.e. the field was
+// omitted from YAML).
 //
 // Example usage (downstream loader):
 //
-//	if BoolDefaultTrue(skill.Enabled) { ... }
+//	if BoolDefaultTrue(skill.UserInvocable) { ... }
 func BoolDefaultTrue(b *bool) bool {
 	if b == nil {
 		return true

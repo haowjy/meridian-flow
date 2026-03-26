@@ -24,21 +24,19 @@ import (
 // Yaml tags use hyphen-separated names to match the SKILL.md spec consumed
 // by skillFrontmatter (the reader-side struct in skill_resolver.go).
 type skillMDFrontmatter struct {
-	Name           string `yaml:"name"`
-	Description    string `yaml:"description,omitempty"`
-	Enabled        *bool  `yaml:"enabled,omitempty"`
-	UserInvocable  *bool  `yaml:"user-invocable,omitempty"`
-	ModelInvocable *bool  `yaml:"model-invocable,omitempty"`
-	Position       *int   `yaml:"position,omitempty"`
+	Name                   string `yaml:"name"`
+	Description            string `yaml:"description,omitempty"`
+	UserInvocable          *bool  `yaml:"user-invocable,omitempty"`
+	DisableModelInvocation bool   `yaml:"disable-model-invocation,omitempty"`
+	Position               *int   `yaml:"position,omitempty"`
 }
 
 // buildSkillMDContent generates the full SKILL.md content from a legacy ProjectSkill.
 // Format: "---\n<YAML frontmatter>\n---\n<skill body>".
 //
 // Non-default field values are omitted so SKILL.md stays minimal. Defaults:
-//   - enabled: true → omitted when true
 //   - user-invocable: true → omitted when true
-//   - model-invocable: true → omitted when DisableModelInvocation is false
+//   - disable-model-invocation: false → omitted when false
 func buildSkillMDContent(skill *skilldomain.ProjectSkill) (string, error) {
 	meta := skill.GetMetadata()
 
@@ -47,22 +45,15 @@ func buildSkillMDContent(skill *skilldomain.ProjectSkill) (string, error) {
 		Description: skill.Description,
 	}
 
-	// enabled: only emit when false (default true)
-	if !skill.Enabled {
-		f := false
-		fm.Enabled = &f
-	}
-
 	// user-invocable: only emit when false (default true)
 	if !meta.UserInvocable {
 		f := false
 		fm.UserInvocable = &f
 	}
 
-	// model-invocable: only emit when false (default true)
+	// disable-model-invocation: only emit when true (default false)
 	if meta.DisableModelInvocation {
-		f := false
-		fm.ModelInvocable = &f
+		fm.DisableModelInvocation = true
 	}
 
 	// position: only emit non-zero

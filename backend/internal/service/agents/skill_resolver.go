@@ -22,13 +22,12 @@ import (
 // RuntimeSkill has no yaml tags — its JSON tags use underscores whereas the
 // SKILL.md spec mandates hyphen-separated field names.
 type skillFrontmatter struct {
-	Name           string  `yaml:"name"`
-	Description    string  `yaml:"description"`
-	Enabled        *bool   `yaml:"enabled"`
-	UserInvocable  *bool   `yaml:"user-invocable"`
-	ModelInvocable *bool   `yaml:"model-invocable"`
-	Position       *int    `yaml:"position"`
-	Version        *string `yaml:"version"`
+	Name                   string  `yaml:"name"`
+	Description            string  `yaml:"description"`
+	UserInvocable          *bool   `yaml:"user-invocable"`
+	DisableModelInvocation bool    `yaml:"disable-model-invocation"`
+	Position               *int    `yaml:"position"`
+	Version                *string `yaml:"version"`
 }
 
 // fileSkillResolver implements domain/agents.SkillResolver backed by the
@@ -175,16 +174,15 @@ func parseSkillDoc(doc *domaindocsys.Document, slug, path string) (*domainagents
 	}
 
 	return &domainagents.RuntimeSkill{
-		Slug:           slug,
-		Name:           fm.Name,
-		Description:    fm.Description,
-		Content:        body,
-		Enabled:        fm.Enabled,
-		UserInvocable:  fm.UserInvocable,
-		ModelInvocable: fm.ModelInvocable,
-		Position:       fm.Position,
-		Version:        fm.Version,
-		Source:         "file",
-		SourcePath:     path,
+		Slug:                   slug,
+		Name:                   fm.Name,
+		Description:            fm.Description,
+		Content:                body,
+		UserInvocable:          fm.UserInvocable,
+		DisableModelInvocation: fm.DisableModelInvocation,
+		Position:               fm.Position,
+		Version:                fm.Version,
+		Source:                 "file",
+		SourcePath:             path,
 	}, nil
 }
