@@ -1,6 +1,15 @@
-export type ToolStatus = "pending" | "running" | "done" | "error"
+// ═══════════════════════════════════════════════════════════════════
+// Data model — stored in state, updated by AG-UI SSE events
+//
+// Streaming-first: fields populate progressively as events arrive.
+//
+// TOOL_CALL_START  → ToolItem created, toolName set, status = "streaming-args"
+// TOOL_CALL_ARGS   → argsText accumulates, parsedArgs updated via partial-json
+// TOOL_CALL_END    → status = "executing"
+// TOOL_CALL_RESULT → resultText set, status = "done" | "error"
+// ═══════════════════════════════════════════════════════════════════
 
-export type EditReviewStatus = "pending-review" | "accepted" | "rejected"
+export type ToolStatus = "streaming-args" | "executing" | "done" | "error"
 
 export type ThinkingItem = {
   kind: "thinking"
@@ -8,106 +17,56 @@ export type ThinkingItem = {
   text: string
 }
 
-export type DiffLine = {
-  type: "context" | "add" | "remove"
+export type ContentItem = {
+  kind: "content"
+  id: string
   text: string
 }
 
-export type ReadToolDetail = {
-  kind: "read"
-  filePath: string
-  previewLines?: string[]
-}
-
-export type EditToolDetail = {
-  kind: "edit"
-  filePath: string
-  reviewStatus?: EditReviewStatus
-  addedLines?: number
-  removedLines?: number
-  hunks?: number
-  diffLines: DiffLine[]
-  onAccept?: () => void
-  onReject?: () => void
-  onReviewInEditor?: () => void
-}
-
-export type DocSearchMatch = {
-  id: string
-  filePath: string
-  lineStart: number
-  lineEnd?: number
-  snippet: string
-}
-
-export type DocSearchToolDetail = {
-  kind: "doc-search"
-  query: string
-  matchCount: number
-  matches: DocSearchMatch[]
-}
-
-export type WebSearchResult = {
-  id: string
-  title: string
-  url: string
-  snippet: string
-}
-
-export type WebSearchToolDetail = {
-  kind: "web-search"
-  query: string
-  resultCount: number
-  results: WebSearchResult[]
-}
-
-export type BashToolDetail = {
-  kind: "bash"
-  command: string
-  output: string
-  exitCode?: number
-}
-
-export type AgentActivity = {
-  id: string
-  name: string
-  activity: ActivityBlockData
-  response?: string
-}
-
-export type AgentToolDetail = {
-  kind: "agent"
-  agent: AgentActivity
-}
-
-export type ToolDetailData =
-  | ReadToolDetail
-  | EditToolDetail
-  | DocSearchToolDetail
-  | WebSearchToolDetail
-  | BashToolDetail
-  | AgentToolDetail
-
+/**
+ * A tool call in the activity stream.
+ *
+ * Every tool follows the same shape — Read, Bash, Agent, unknown MCP tools.
+ * The rendering layer decides how to display based on toolName + parsedArgs.
+ *
+ * Header renders progressively:
+ *   Tool()  →  Read("pat")  →  Read("path/to/file.tsx")
+ *
+ * Detail card shows input (argsText) streaming in, then output (resultText).
+ */
 export type ToolItem = {
   kind: "tool"
   id: string
-  toolName: string
-  args?: Record<string, unknown>
+  /** Tool name from TOOL_CALL_START. Undefined before START arrives → renders as "Tool". */
+  toolName?: string
   status: ToolStatus
-  detail?: ToolDetailData
+  /** Raw accumulated JSON from TOOL_CALL_ARGS deltas. */
+  argsText: string
+  /** Best-effort partial parse of argsText (via partial-json). Updates on each delta. */
+  parsedArgs?: Record<string, unknown>
+  /** Result string from TOOL_CALL_RESULT. */
+  resultText?: string
+  /** Whether the tool result is an error. */
+  isError?: boolean
+  /** Nested activity for agent/sub-agent tools (built up as nested events arrive). */
+  nestedActivity?: ActivityBlockData
 }
 
-export type TextItem = {
-  kind: "text"
-  id: string
-  text: string
-}
-
-export type ActivityItem = ThinkingItem | TextItem | ToolItem
+export type ActivityItem = ThinkingItem | ContentItem | ToolItem
 
 export type ActivityBlockData = {
   id: string
   items: ActivityItem[]
   pendingText?: string
   isStreaming?: boolean
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Rendering types — used by detail components for rich display.
+// Not stored in state; computed from ToolItem data during render.
+// ═══════════════════════════════════════════════════════════════════
+
+export type DiffLine = {
+  type: "context" | "add" | "remove"
+  text: string
 }
