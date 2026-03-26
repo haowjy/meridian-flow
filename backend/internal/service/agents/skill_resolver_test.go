@@ -172,9 +172,8 @@ func TestFileSkillResolver_Resolve_OptionalFieldsParsed(t *testing.T) {
 		Content: `---
 name: Full Skill
 description: all fields
-enabled: true
 user-invocable: false
-model-invocable: true
+disable-model-invocation: true
 position: 3
 version: "v1.2"
 ---
@@ -196,6 +195,9 @@ body text
 
 	if skill.UserInvocable == nil || *skill.UserInvocable != invocableFalse {
 		t.Errorf("user_invocable: got %v, want pointer to false", skill.UserInvocable)
+	}
+	if !skill.DisableModelInvocation {
+		t.Errorf("disable_model_invocation: got %v, want true", skill.DisableModelInvocation)
 	}
 	if skill.Position == nil || *skill.Position != 3 {
 		t.Errorf("position: got %v, want pointer to 3", skill.Position)
@@ -375,8 +377,8 @@ func TestFileSkillResolver_List_DeduplicatesBySlug(t *testing.T) {
 // testDocReader is a simple in-memory DocumentReader for unit tests.
 // Only GetByPath, GetByID, and ListByFolder are meaningful; other methods panic.
 type testDocReader struct {
-	byPath   map[string]*domaindocsys.Document // keyed by path
-	byID     map[string]*domaindocsys.Document // keyed by document ID
+	byPath   map[string]*domaindocsys.Document  // keyed by path
+	byID     map[string]*domaindocsys.Document  // keyed by document ID
 	byFolder map[string][]domaindocsys.Document // keyed by folder ID (metadata)
 }
 
@@ -430,8 +432,8 @@ var _ domaindocsys.DocumentReader = (*testDocReader)(nil)
 // testFolderStore is a simple in-memory FolderStore for unit tests.
 // Only GetByPath and ListChildren are meaningful; other methods panic.
 type testFolderStore struct {
-	byPath   map[string]*domaindocsys.Folder        // keyed by path
-	children map[string][]domaindocsys.Folder        // keyed by parent folder ID
+	byPath   map[string]*domaindocsys.Folder  // keyed by path
+	children map[string][]domaindocsys.Folder // keyed by parent folder ID
 }
 
 func (s *testFolderStore) GetByPath(_ context.Context, _ string, path string) (*domaindocsys.Folder, error) {

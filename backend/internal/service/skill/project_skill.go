@@ -20,7 +20,7 @@ import (
 // projectSkillService implements the ProjectSkillService interface
 type projectSkillService struct {
 	skillRepo    skilldomain.ProjectSkillStore
-	docStore     domaindocsys.DocumentStore    // For writing SKILL.md files to .agents/skills/<slug>/
+	docStore     domaindocsys.DocumentStore // For writing SKILL.md files to .agents/skills/<slug>/
 	folderRepo   domaindocsys.FolderStore
 	namespaceSvc domaindocsys.NamespaceService
 	authorizer   authdomain.ResourceAuthorizer
@@ -56,12 +56,11 @@ func NewProjectSkillService(
 // skillMDFrontmatter is the output struct for generating SKILL.md YAML frontmatter.
 // Hyphenated yaml tags match the SKILL.md spec (and the reader in skill_resolver.go).
 type skillMDFrontmatter struct {
-	Name           string `yaml:"name"`
-	Description    string `yaml:"description,omitempty"`
-	Enabled        *bool  `yaml:"enabled,omitempty"`
-	UserInvocable  *bool  `yaml:"user-invocable,omitempty"`
-	ModelInvocable *bool  `yaml:"model-invocable,omitempty"`
-	Position       *int   `yaml:"position,omitempty"`
+	Name                   string `yaml:"name"`
+	Description            string `yaml:"description,omitempty"`
+	UserInvocable          *bool  `yaml:"user-invocable,omitempty"`
+	DisableModelInvocation bool   `yaml:"disable-model-invocation,omitempty"`
+	Position               *int   `yaml:"position,omitempty"`
 }
 
 // buildSkillMDContent serialises a ProjectSkill to SKILL.md format.
@@ -74,17 +73,12 @@ func buildSkillMDContent(skill *skilldomain.ProjectSkill) (string, error) {
 		Name:        skill.Name,
 		Description: skill.Description,
 	}
-	if !skill.Enabled {
-		f := false
-		fm.Enabled = &f
-	}
 	if !meta.UserInvocable {
 		f := false
 		fm.UserInvocable = &f
 	}
 	if meta.DisableModelInvocation {
-		f := false
-		fm.ModelInvocable = &f
+		fm.DisableModelInvocation = true
 	}
 	if skill.Position > 0 {
 		p := skill.Position
@@ -584,4 +578,3 @@ func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID
 		return nil
 	})
 }
-

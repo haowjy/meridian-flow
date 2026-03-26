@@ -22,7 +22,7 @@ func SkillInvokeToolMetadata() *ToolMetadata {
 
 // BuildSkillInvokeGuideline enriches the skill_invoke guideline with available skills.
 // Called by the builder to compose runtime context into static metadata.
-// Filters out skills where ModelInvocable is explicitly false (nil means true).
+// Filters out skills where DisableModelInvocation is true.
 func BuildSkillInvokeGuideline(skills []domainagents.RuntimeSkill) string {
 	base := "Use skill_invoke when a task matches an available skill"
 
@@ -30,10 +30,10 @@ func BuildSkillInvokeGuideline(skills []domainagents.RuntimeSkill) string {
 		return base
 	}
 
-	// Filter to model-invocable skills only (nil ModelInvocable → default true)
+	// Filter to model-invocable skills only.
 	var lines []string
 	for _, skill := range skills {
-		if !domainagents.BoolDefaultTrue(skill.ModelInvocable) {
+		if skill.DisableModelInvocation {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("- **/%s**: %s", skill.Name, skill.Description))
@@ -121,11 +121,11 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 		}), nil
 	}
 
-	// Check invocation permissions (nil ModelInvocable → default true).
-	if !domainagents.BoolDefaultTrue(skill.ModelInvocable) && !t.isUserInvocation {
+	// Check invocation permissions.
+	if skill.DisableModelInvocation && !t.isUserInvocation {
 		return ErrorResult(ErrInvalidInput, "This skill can only be invoked manually by the user", map[string]any{
 			"skill_name": skillName,
-			"reason":     "model-invocable is false",
+			"reason":     "disable-model-invocation is true",
 			"suggestion": "User can invoke with /" + skillName,
 		}), nil
 	}
@@ -180,10 +180,10 @@ func (t *SkillListTool) Execute(ctx context.Context, input map[string]any) (any,
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
 
-	// Format skill list — only include model-invocable skills (nil → default true).
+	// Format skill list — only include model-invocable skills.
 	skillList := make([]map[string]any, 0, len(skills))
 	for _, skill := range skills {
-		if !domainagents.BoolDefaultTrue(skill.ModelInvocable) {
+		if skill.DisableModelInvocation {
 			continue
 		}
 		skillList = append(skillList, map[string]any{
