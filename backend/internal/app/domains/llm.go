@@ -11,6 +11,7 @@ import (
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	skilldomain "meridian/internal/domain/skill"
+	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
 	"meridian/internal/middleware"
@@ -38,6 +39,9 @@ type LLMCrossDeps struct {
 	ToolLimitResolver  domainllm.ToolLimitResolver
 	CapabilityRegistry *capabilities.Registry
 	JobQueue           jobs.JobQueue
+	// WorkItemSvc enables automatic ephemeral work item provisioning on thread create.
+	// Optional: nil disables provisioning.
+	WorkItemSvc domainwi.Service
 }
 
 // LLMModule wires thread/history/streaming handlers and debug routes.
@@ -75,6 +79,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		JobQueue:               crossDeps.JobQueue,
 		MutationStrategy:       crossDeps.MutationStrategy,
 		Logger:                 infra.Logger,
+		WorkItemSvc:            crossDeps.WorkItemSvc,
 	})
 	if err != nil {
 		return nil, err

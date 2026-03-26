@@ -36,9 +36,12 @@ type ThreadService interface {
 
 // CreateThreadRequest is the DTO for creating a new thread
 type CreateThreadRequest struct {
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
-	Title     string `json:"title"`
+	ProjectID string  `json:"project_id"`
+	UserID    string  `json:"user_id"`
+	Title     string  `json:"title"`
+	// WorkItemID optionally associates the new thread with an existing work item.
+	// When nil, the thread service will auto-provision an ephemeral work item.
+	WorkItemID *string `json:"work_item_id,omitempty"`
 }
 
 // UpdateThreadRequest is the DTO for updating a thread

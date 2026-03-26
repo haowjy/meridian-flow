@@ -15,6 +15,7 @@ import (
 	"meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/domain/skill"
+	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/jobs"
 	docsystemsvc "meridian/internal/service/docsystem"
 	"meridian/internal/service/llm/formatting"
@@ -72,6 +73,9 @@ type LLMServicesDeps struct {
 	JobQueue               jobs.JobQueue
 	MutationStrategy       tools.DocumentMutationStrategy
 	Logger                 *slog.Logger
+	// WorkItemSvc is optional. When set, threads created without an explicit
+	// work_item_id automatically get an ephemeral work item provisioned.
+	WorkItemSvc domainwi.Service
 }
 
 // Validate checks that all required dependencies are configured.
@@ -110,7 +114,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 
 	providerResolver := streaming.NewProviderResolver(deps.ProviderRegistry)
 
-	threadService := thread.NewService(deps.ThreadRepo, deps.ProjectRepo, deps.Logger)
+	threadService := thread.NewService(deps.ThreadRepo, deps.ProjectRepo, deps.WorkItemSvc, deps.Logger)
 
 	threadHistoryService := threadhistory.NewService(
 		deps.ThreadRepo,

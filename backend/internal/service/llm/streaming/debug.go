@@ -127,8 +127,10 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
+	// WithMutationStrategy is required — NewTextEditorTool panics if mutationStrategy is nil
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
+		WithMutationStrategy(s.mutationStrategy).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills).
 		Build()

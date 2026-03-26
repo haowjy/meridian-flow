@@ -52,6 +52,9 @@ type TableNames struct {
 	CreditTransactions    string
 	CreditBalances        string // view
 	ConsumeCreditLotsFIFO string // function name
+
+	// Work item tables
+	WorkItems string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -89,6 +92,9 @@ func NewTableNames(prefix string) *TableNames {
 		CreditTransactions:    fmt.Sprintf("%scredit_transactions", prefix),
 		CreditBalances:        fmt.Sprintf("%scredit_balances", prefix),
 		ConsumeCreditLotsFIFO: fmt.Sprintf("%sconsume_credit_lots_fifo", prefix),
+
+		// Work item tables
+		WorkItems: fmt.Sprintf("%swork_items", prefix),
 	}
 }
 

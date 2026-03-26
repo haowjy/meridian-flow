@@ -74,6 +74,13 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		infra.Logger,
 	)
 
+	workItemModule, err := domains.NewWorkItemModule(infraDeps, cfg, domains.WorkItemDeps{
+		ProjectRepo: docsystemModule.ProjectRepo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("work item module: %w", err)
+	}
+
 	llmModule, err := domains.NewLLMModule(infraDeps, cfg, domains.LLMCrossDeps{
 		AdmissionChecker:   billingModule.AdmissionChecker,
 		CreditSettler:      billingModule.CreditSettler,
@@ -91,6 +98,7 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		ToolLimitResolver:  toolLimitResolver,
 		CapabilityRegistry: capabilityRegistry,
 		JobQueue:           jobQueue,
+		WorkItemSvc:        workItemModule.Service,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("llm module: %w", err)
@@ -109,6 +117,7 @@ func NewApplication(cfg *config.Config, infra *Infrastructure) (*Application, er
 		Skill:     skillModule,
 		Collab:    collabModule,
 		LLM:       llmModule,
+		WorkItem:  workItemModule,
 		UserPrefs: userPrefsModule,
 		JobQueue:  jobQueue,
 	}

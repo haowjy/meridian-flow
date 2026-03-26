@@ -7,8 +7,9 @@ package errors
 // constructor functions, not here, so callers never need to remember the correct status.
 const (
 	// Work item lifecycle errors (409 Conflict)
-	CodeWorkItemDone    = "WORK_ITEM_DONE"    // Operation rejected: work item is already completed
-	CodeWorkItemDeleted = "WORK_ITEM_DELETED" // Operation rejected: work item has been deleted
+	CodeWorkItemDone              = "WORK_ITEM_DONE"               // Operation rejected: work item is already completed
+	CodeWorkItemDeleted           = "WORK_ITEM_DELETED"            // Operation rejected: work item has been deleted
+	CodeWorkItemHasActiveStreams  = "WORK_ITEM_HAS_ACTIVE_STREAMS" // Cannot complete: work item has in-flight streaming turns
 
 	// Persona errors (422 Unprocessable Entity)
 	CodePersonaNotFound = "PERSONA_NOT_FOUND" // Referenced persona does not exist
