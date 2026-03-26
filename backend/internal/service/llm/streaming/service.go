@@ -58,10 +58,27 @@ type Service struct {
 	contextResolver        *contextResolver               // Resolves work context variables for persona turns
 	userStreamTracker      *UserStreamTracker             // Per-user concurrent stream limiter
 	tokenMonitor           *TokenMonitor                  // Context budget monitor; nil when monitoring is disabled
+	// spawnInvoker enables the spawn_agent tool. Wired after construction via SetSpawnInvoker
+	// to break the SpawnService ↔ StreamingService circular dependency.
+	// nil = spawn_agent tool not registered (e.g. during startup before wiring completes).
+	spawnInvoker           domainllm.SpawnInvoker
 	logger                 *slog.Logger
 }
 
 var _ domainllm.StreamingService = (*Service)(nil)
+
+// SetSpawnInvoker wires the spawn invoker into the service after construction.
+// This breaks the SpawnService ↔ StreamingService circular dependency:
+//  1. Create StreamingService (no spawn invoker yet)
+//  2. Create SpawnService (uses StreamingService internally via ChildThreadBootstrapper)
+//  3. Call SetSpawnInvoker(spawnService) to wire back
+//
+// Must be called before any turn with a work item is processed, otherwise spawn_agent
+// will not appear in the tool registry for those turns.
+// Thread-safe: the field is set once at startup before concurrent requests begin.
+func (s *Service) SetSpawnInvoker(invoker domainllm.SpawnInvoker) {
+	s.spawnInvoker = invoker
+}
 
 // NewStreamingOrchestrator creates a new streaming service using grouped dependency structs.
 // Validates all dependencies at construction time; returns an error if any are missing.
@@ -88,6 +105,13 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		tokenMon = NewTokenMonitor(tokenEst, deps.Pipeline.CapabilityRegistry, deps.Infra.Logger)
 	}
 
+	// Use the provided executor registry if one was injected (shared with SpawnService
+	// for cross-component cancellation), otherwise create a new private one.
+	execRegistry := deps.Infra.ExecutorRegistry
+	if execRegistry == nil {
+		execRegistry = NewExecutorRegistry()
+	}
+
 	return &Service{
 		turnWriter:             deps.Persistence.TurnWriter,
 		turnReader:             deps.Persistence.TurnReader,
@@ -102,7 +126,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		authorizer:             deps.Services.Authorizer,
 		providerGetter:         deps.Pipeline.ProviderGetter,
 		registry:               deps.Pipeline.Registry,
-		executorRegistry:       NewExecutorRegistry(),
+		executorRegistry:       execRegistry,
 		interjectionRegistry:   mstream.NewInterjectionRegistry(),
 		config:                 deps.Infra.Config,
 		txManager:              deps.Persistence.TxManager,

@@ -98,8 +98,20 @@ func (h *ThreadHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, threads)
 }
 
+// threadDetailResponse wraps a Thread with computed fields for the detail view.
+// Spawn fields (parent_thread_id, spawn_status, spawn_result, spawn_depth) come from
+// the Thread domain object; children_count is computed here to avoid an extra DB round-trip
+// on list endpoints.
+type threadDetailResponse struct {
+	*domainllm.Thread
+	ChildrenCount int `json:"children_count"`
+}
+
 // GetThread retrieves a single thread by ID
 // GET /api/threads/{id}
+//
+// Response includes spawn fields: parent_thread_id, spawn_status, spawn_result,
+// spawn_depth (from Thread), and children_count (computed from child thread count).
 func (h *ThreadHandler) GetThread(w http.ResponseWriter, r *http.Request) {
 	threadID, ok := PathParam(w, r, "id", "Thread ID")
 	if !ok {
@@ -113,7 +125,17 @@ func (h *ThreadHandler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, thread)
+	// Count child threads for spawn tracking. Non-fatal: if listing fails,
+	// children_count is reported as 0 rather than failing the whole request.
+	childrenCount := 0
+	if children, listErr := h.threadService.ListChildThreads(r.Context(), threadID, userID); listErr == nil {
+		childrenCount = len(children)
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, threadDetailResponse{
+		Thread:        thread,
+		ChildrenCount: childrenCount,
+	})
 }
 
 // UpdateThread updates a thread's title

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 )
 
 // ThreadStore defines the interface for thread data access
@@ -39,4 +40,19 @@ type ThreadStore interface {
 	// Performance: <100ms even for 1000+ turns
 	// Used by frontend to detect gaps, new branches, and structural changes
 	GetThreadTree(ctx context.Context, threadID, userID string) (*ThreadTree, error)
+
+	// --- Spawn-related methods ---
+
+	// UpdateSpawnStatus atomically updates a thread's spawn_status and optionally spawn_result.
+	// Used by SpawnService to transition child threads through the spawn lifecycle.
+	// spawnResult may be nil (e.g., when setting status to "running").
+	UpdateSpawnStatus(ctx context.Context, threadID string, status SpawnStatus, spawnResult *json.RawMessage) error
+
+	// CountRunningSpawnsByWorkItem counts child threads with spawn_status='running'
+	// for a given work item. Used to enforce max concurrent spawns per work item.
+	CountRunningSpawnsByWorkItem(ctx context.Context, workItemID string) (int, error)
+
+	// ListChildThreads retrieves all child threads of a parent (non-deleted).
+	// Used for spawn status listing and cancellation cascade.
+	ListChildThreads(ctx context.Context, parentThreadID string) ([]Thread, error)
 }

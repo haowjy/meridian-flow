@@ -12,6 +12,7 @@ package streaming
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -59,6 +60,15 @@ func (s *stubThreadStore) DeleteThread(_ context.Context, _, _ string) (*domainl
 }
 func (s *stubThreadStore) GetThreadTree(_ context.Context, _, _ string) (*domainllm.ThreadTree, error) {
 	panic("stubThreadStore.GetThreadTree not expected")
+}
+func (s *stubThreadStore) UpdateSpawnStatus(_ context.Context, _ string, _ domainllm.SpawnStatus, _ *json.RawMessage) error {
+	panic("stubThreadStore.UpdateSpawnStatus not expected")
+}
+func (s *stubThreadStore) CountRunningSpawnsByWorkItem(_ context.Context, _ string) (int, error) {
+	panic("stubThreadStore.CountRunningSpawnsByWorkItem not expected")
+}
+func (s *stubThreadStore) ListChildThreads(_ context.Context, _ string) ([]domainllm.Thread, error) {
+	panic("stubThreadStore.ListChildThreads not expected")
 }
 
 var _ domainllm.ThreadStore = (*stubThreadStore)(nil)
