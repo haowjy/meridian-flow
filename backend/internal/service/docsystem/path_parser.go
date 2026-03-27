@@ -127,13 +127,3 @@ func ValidateSimpleName(name string, maxLength int) error {
 
 	return nil
 }
-
-// ResolveParentID resolves the parent ID based on path notation rules:
-//   - If path is absolute (starts with "/"), return nil (root) regardless of providedParentID
-//   - If path is relative, return providedParentID (which may be nil for root)
-func ResolveParentID(isAbsolute bool, providedParentID *string) *string {
-	if isAbsolute {
-		return nil // Absolute path always starts from root
-	}
-	return providedParentID // Relative path uses provided parent (or nil for root)
-}

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
-	"github.com/haowjy/meridian-llm-go/providers/lorem"
 
 	domainllm "meridian/internal/domain/llm"
 )
@@ -13,15 +12,6 @@ import (
 // It handles conversion between backend types (with DB fields) and library types (content-only).
 type LoremAdapter struct {
 	provider llmprovider.Provider
-}
-
-// NewLoremAdapter creates a new Lorem adapter using the library's provider.
-func NewLoremAdapter() *LoremAdapter {
-	provider := lorem.NewProvider()
-
-	return &LoremAdapter{
-		provider: provider,
-	}
 }
 
 // NewLoremAdapterWithProvider creates a new Lorem adapter from an existing provider.

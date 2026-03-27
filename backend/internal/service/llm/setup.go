@@ -10,9 +10,9 @@ import (
 
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
+	domainagents "meridian/internal/domain/agents"
 	"meridian/internal/domain/auth"
 	"meridian/internal/domain/billing"
-	domainagents "meridian/internal/domain/agents"
 	"meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	domainwi "meridian/internal/domain/workitem"
@@ -198,7 +198,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	// Wire SpawnService: bootstrapper depends on streamingService (CreateTurn path),
 	// and SpawnService depends on the shared executorRegistry for executor-level cancellation.
 	// The circular dependency is broken by SetSpawnInvoker (called after both are created).
-	bootstrapper := streaming.NewChildThreadBootstrapper(streamingService, deps.Logger)
+	bootstrapper := streaming.NewChildThreadBootstrapper(streamingService, deps.TurnRepo, deps.Logger)
 	spawnSvc := streaming.NewSpawnService(
 		deps.ThreadRepo,
 		deps.TxManager,
