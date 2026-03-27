@@ -1,6 +1,6 @@
 # Postgres Repository Layer
 
-Data access implementations using pgx/v5 with connection pooling.
+Data access implementations using pgx/v5 with connection pooling. Architecture: `.meridian/fs/backend/overview.md`.
 
 ## GetExecutor Pattern
 

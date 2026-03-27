@@ -1,6 +1,6 @@
 # Docsystem Domain
 
-Types and interfaces for the document management system (projects, folders, documents). Import: `meridian/internal/domain/docsystem`.
+Types and interfaces for the document management system (projects, folders, documents). Import: `meridian/internal/domain/docsystem`. Deep dive: `.meridian/fs/backend/tools/` (text editor, namespace isolation).
 
 ## Key Concepts
 
@@ -18,6 +18,7 @@ Types and interfaces for the document management system (projects, folders, docu
 | `DocumentWriter` | Create, Update, Delete, DeleteAllByProject | `document_writer.go` |
 | `DocumentSearcher` | SearchDocuments | `document_searcher.go` |
 | `DocumentPathResolver` | GetPath | `path_resolver.go` |
+| `PathNotationResolver` | Unix-style path notation resolution + folder creation | `path_resolver.go` |
 | `DocumentStore` | Composite (Reader+Writer+Searcher+PathResolver) | `document_store.go` |
 | `FolderStore` | Folder CRUD | `folder_store.go` |
 | `ProjectStore` | Project CRUD | `project_store.go` |

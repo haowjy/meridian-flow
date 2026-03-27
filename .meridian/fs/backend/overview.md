@@ -1,6 +1,22 @@
-# Backend Architecture Reference
+# Backend Architecture
 
-Post-refactor architecture. Domain-oriented modules, 36-line `main.go`, lifecycle management via `signal.NotifyContext` + `errgroup`.
+Domain-oriented modules, 36-line `main.go`, lifecycle management via `signal.NotifyContext` + `errgroup`.
+
+## Reference Docs
+
+| Area | Path | Covers |
+|------|------|--------|
+| Errors | `errors/` | DomainError, sentinel errors, response envelope |
+| Auth | `auth/` | JWT verification, owner-based authorization |
+| Billing | `billing/` | Credit system, Stripe webhooks, settlement |
+| Streaming | `streaming/` | 4-stage pipeline, prompt composition, executor, cancellation |
+| Tools | `tools/` | Registry, builder, text editor, namespace isolation |
+| Collaboration | `collab/` | WebSocket protocol, proposals, Yjs checkpoints |
+| Agents | `agents/` | Persona/skill resolution, git import, backfill |
+| Work Items | `work-items/` | Lifecycle, spawning, namespace isolation |
+| Docsystem | `docsystem/` | Projects, folders, documents, tree, import, path resolution |
+| Context | `context/` | Token monitor, compaction, collapsed content |
+| Threads | `threads/` | Thread/turn model, branching, message building, provider abstraction |
 
 ## Package Dependency Graph
 
