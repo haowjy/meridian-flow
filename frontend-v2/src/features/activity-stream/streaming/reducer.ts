@@ -57,6 +57,34 @@ function tryParseArgs(text: string): Record<string, unknown> | undefined {
   }
 }
 
+/**
+ * Parse TOOL_CALL_RESULT content.
+ *
+ * Backend sends `content` as stringified JSON:
+ *   { "is_error": false, "result": "..." }
+ *   { "is_error": true, "error": "..." }
+ *
+ * Falls back to treating content as plain text if it's not valid JSON
+ * or doesn't have the expected shape (e.g., mock/Storybook scenarios).
+ */
+function parseToolResult(content: string, eventIsError?: boolean): { resultText: string; isError: boolean } {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+
+    if (typeof parsed === "object" && parsed !== null && "is_error" in parsed) {
+      const isError = Boolean(parsed.is_error)
+      const resultText = isError
+        ? String(parsed.error ?? parsed.result ?? content)
+        : String(parsed.result ?? content)
+      return { resultText, isError }
+    }
+  } catch {
+    // Not JSON — treat as plain text
+  }
+
+  return { resultText: content, isError: eventIsError ?? false }
+}
+
 /** Replace an item in the items array by id. Returns new array. */
 function updateItemById<T extends ActivityItem>(
   items: ActivityItem[],
@@ -262,11 +290,12 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
     }
 
     case "TOOL_CALL_RESULT": {
+      const { resultText, isError } = parseToolResult(event.content, event.isError)
       const items = updateItemById<ToolItem>(state.activity.items, event.toolCallId, (item) => ({
         ...item,
-        status: event.isError ? "error" : "done",
-        resultText: event.content,
-        isError: event.isError ?? false,
+        status: isError ? "error" : "done",
+        resultText,
+        isError,
       }))
       return {
         ...state,
