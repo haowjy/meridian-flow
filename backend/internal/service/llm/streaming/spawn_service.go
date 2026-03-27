@@ -88,11 +88,6 @@ func (s *SpawnService) CreateSpawn(ctx context.Context, req *domainllm.SpawnRequ
 		return nil, fmt.Errorf("failed to load parent thread: %w", err)
 	}
 
-	// Validate spawn limits.
-	if err := s.validateSpawnLimits(ctx, parentThread, req); err != nil {
-		return nil, err
-	}
-
 	// Create child thread with spawn fields set.
 	childDepth := parentThread.SpawnDepth + 1
 	spawnStatus := domainllm.SpawnStatusRunning
@@ -115,7 +110,12 @@ func (s *SpawnService) CreateSpawn(ctx context.Context, req *domainllm.SpawnRequ
 		childThread.WorkItemID = parentThread.WorkItemID
 	}
 
+	// Validate limits and create the child row in one transaction so the
+	// concurrent-spawn count check and insert are race-free.
 	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		if err := s.validateSpawnLimits(txCtx, parentThread, req); err != nil {
+			return err
+		}
 		return s.threadRepo.CreateThread(txCtx, childThread)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create child thread: %w", err)
@@ -342,16 +342,19 @@ func truncate(s string, maxLen int) string {
 // dependency between SpawnService and StreamingService.
 type ChildThreadBootstrapper struct {
 	streamingSvc domainllm.StreamingService
+	turnReader   domainllm.TurnReader
 	logger       *slog.Logger
 }
 
 // NewChildThreadBootstrapper creates a new bootstrapper.
 func NewChildThreadBootstrapper(
 	streamingSvc domainllm.StreamingService,
+	turnReader domainllm.TurnReader,
 	logger *slog.Logger,
 ) *ChildThreadBootstrapper {
 	return &ChildThreadBootstrapper{
 		streamingSvc: streamingSvc,
+		turnReader:   turnReader,
 		logger:       logger,
 	}
 }
@@ -428,25 +431,54 @@ func (b *ChildThreadBootstrapper) waitForCompletion(
 			return
 
 		case <-ticker.C:
-			// Check if the assistant turn has reached a terminal state.
-			// We use AuthorizeTurnStream as a lightweight "is this turn still streaming" check.
-			// If the turn is no longer in the executor registry, streaming is done.
-			//
-			// NOTE: This is a pragmatic v1 approach. A cleaner solution would wire
-			// the executor's cleanup callback to send on the completion channel directly.
-			// That requires changes to the executor lifecycle which we defer to SP2.
-			err := b.streamingSvc.AuthorizeTurnStream(ctx, "", assistantTurnID)
+			// Poll the persisted assistant turn status from the DB.
+			// Terminal status is the source of truth for spawn completion.
+			turn, err := b.turnReader.GetTurn(ctx, assistantTurnID)
 			if err != nil {
-				// Turn not found in streaming state → it's complete (or errored).
-				// Build result from the child thread state.
-				completionCh <- &domainllm.SpawnResult{
-					ChildThreadID: childThreadID,
-					Status:        string(domainllm.SpawnStatusSucceeded),
-					Summary:       fmt.Sprintf("child thread %s completed", childThreadID),
-				}
+				b.logger.Warn("waitForCompletion: failed to load assistant turn",
+					"assistant_turn_id", assistantTurnID,
+					"child_thread_id", childThreadID,
+					"error", err,
+				)
+				continue
+			}
+
+			if isTerminalTurnStatus(turn.Status) {
+				completionCh <- spawnResultForTerminalTurn(childThreadID, turn.Status)
 				return
 			}
-			// Still streaming — keep waiting.
+		}
+	}
+}
+
+func isTerminalTurnStatus(status domainllm.TurnStatus) bool {
+	switch status {
+	case domainllm.TurnStatusComplete, domainllm.TurnStatusCancelled, domainllm.TurnStatusError, domainllm.TurnStatusCreditLimited:
+		return true
+	default:
+		return false
+	}
+}
+
+func spawnResultForTerminalTurn(childThreadID string, status domainllm.TurnStatus) *domainllm.SpawnResult {
+	switch status {
+	case domainllm.TurnStatusComplete:
+		return &domainllm.SpawnResult{
+			ChildThreadID: childThreadID,
+			Status:        string(domainllm.SpawnStatusSucceeded),
+			Summary:       fmt.Sprintf("child thread %s completed", childThreadID),
+		}
+	case domainllm.TurnStatusCancelled:
+		return &domainllm.SpawnResult{
+			ChildThreadID: childThreadID,
+			Status:        string(domainllm.SpawnStatusCancelled),
+			Summary:       fmt.Sprintf("child thread %s cancelled", childThreadID),
+		}
+	default:
+		return &domainllm.SpawnResult{
+			ChildThreadID: childThreadID,
+			Status:        string(domainllm.SpawnStatusFailed),
+			Summary:       fmt.Sprintf("child thread %s ended with assistant turn status %s", childThreadID, status),
 		}
 	}
 }

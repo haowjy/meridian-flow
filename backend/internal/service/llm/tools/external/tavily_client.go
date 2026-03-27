@@ -35,17 +35,6 @@ func NewTavilyClient(apiKey string) *TavilyClient {
 	}
 }
 
-// NewTavilyClientWithConfig creates a Tavily client with custom configuration.
-func NewTavilyClientWithConfig(apiKey string, baseURL string, timeout time.Duration) *TavilyClient {
-	return &TavilyClient{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-	}
-}
-
 // Search implements SearchClient interface for Tavily.
 func (c *TavilyClient) Search(ctx context.Context, query string, opts SearchOptions) (*SearchResponse, error) {
 	// Apply defaults

@@ -11,7 +11,6 @@ import (
 // ID lifecycle:
 //   - RunID: "run_{turnID}" - stable for the entire turn (across tool continuations)
 //   - MessageID: "msg_{turnID}_{stepIdx}" - unique per LLM request (text message)
-//   - ThinkingMessageID: "thinking_{turnID}_{stepIdx}" - unique per LLM request (thinking)
 //   - StepName: "llm_request_{stepIdx}" - human-readable step identifier
 //
 // Thread safety: All methods are safe for concurrent use.
@@ -57,13 +56,6 @@ func (f *IDFactory) StepName() string {
 	return fmt.Sprintf("llm_request_%d", f.stepIdx)
 }
 
-// StepIdx returns the current step index.
-func (f *IDFactory) StepIdx() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.stepIdx
-}
-
 // IncrementStep advances to the next LLM request (for tool continuation loops).
 // Called after tool execution, before the next provider request.
 func (f *IDFactory) IncrementStep() {
@@ -79,15 +71,6 @@ func (f *IDFactory) MessageID() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return fmt.Sprintf("msg_%s_%d", f.turnID, f.stepIdx)
-}
-
-// ThinkingMessageID returns the message ID for thinking/reasoning content.
-// Format: "thinking_{turnID}_{stepIdx}"
-// Separate from MessageID to allow distinct tracking of thinking vs. response content.
-func (f *IDFactory) ThinkingMessageID() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return fmt.Sprintf("thinking_%s_%d", f.turnID, f.stepIdx)
 }
 
 // ToolCallID returns a tool call ID for tracking tool invocations.

@@ -88,23 +88,11 @@ func NewMeridianRunErrorEvent(threadID, runID, turnID, message string, isCancell
 // submit messages while an assistant turn is streaming.
 // ============================================================================
 
-// MeridianEventTypeInterjectionUpdated is emitted when an interjection buffer is updated.
-const MeridianEventTypeInterjectionUpdated = "INTERJECTION_UPDATED"
-
 // MeridianEventTypeStreamSwitch is emitted when an interjection triggers a stream switch.
 const MeridianEventTypeStreamSwitch = "STREAM_SWITCH"
 
 // MeridianEventTypeCreditsExhausted is emitted when step-level admission denies a provider call.
 const MeridianEventTypeCreditsExhausted = "CREDITS_EXHAUSTED"
-
-// MeridianInterjectionUpdatedEvent is sent when interjection content is updated.
-// Frontend uses this to display the pending interjection to the user.
-type MeridianInterjectionUpdatedEvent struct {
-	Type    string `json:"type"`
-	TurnID  string `json:"turnId"`  // The assistant turn this interjection targets
-	Content string `json:"content"` // Current interjection buffer content
-	Length  int    `json:"length"`  // Buffer length in bytes
-}
 
 // MeridianCreditsExhaustedEvent is sent when streaming ends due to insufficient credits.
 type MeridianCreditsExhaustedEvent struct {
@@ -133,16 +121,6 @@ func NewMeridianCreditsExhaustedEvent(
 		RequestIndex: requestIndex,
 		Phase:        phase,
 		Message:      "insufficient credits",
-	}
-}
-
-// NewMeridianInterjectionUpdatedEvent creates an INTERJECTION_UPDATED event.
-func NewMeridianInterjectionUpdatedEvent(turnID, content string, length int) *MeridianInterjectionUpdatedEvent {
-	return &MeridianInterjectionUpdatedEvent{
-		Type:    MeridianEventTypeInterjectionUpdated,
-		TurnID:  turnID,
-		Content: content,
-		Length:  length,
 	}
 }
 

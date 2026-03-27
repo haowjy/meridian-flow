@@ -25,12 +25,6 @@ func NewHTMLSanitizer() *HTMLSanitizer {
 	return &HTMLSanitizer{policy: policy}
 }
 
-// NewStrictHTMLSanitizer creates a sanitizer with strict policies that strip all HTML.
-// Use this for maximum security when HTML formatting is not needed.
-func NewStrictHTMLSanitizer() *HTMLSanitizer {
-	return &HTMLSanitizer{policy: bluemonday.StrictPolicy()}
-}
-
 // Sanitize removes dangerous HTML while preserving safe content.
 // Returns the sanitized HTML string.
 //

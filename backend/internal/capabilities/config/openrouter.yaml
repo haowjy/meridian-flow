@@ -81,7 +81,7 @@ models:
     tool_call_quality: good
     image_generation: none
     context_window: 262144
-    max_output: 262144
+    max_output: 16384
     pricing_tiers:
       - threshold: null
         input_price:
