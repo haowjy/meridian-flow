@@ -34,6 +34,28 @@ func NewDocumentHandler(docService domaindocsys.DocumentService, resolver identi
 	}
 }
 
+func (h *DocumentHandler) resolveDocumentID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	identifier, ok := PathParam(w, r, "id", "Document identifier")
+	if !ok {
+		return "", false
+	}
+
+	// Resolve identifier (UUID works, slug returns helpful error)
+	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
+		} else if errors.Is(err, domain.ErrBadRequest) {
+			httputil.RespondError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
+		}
+		return "", false
+	}
+
+	return documentID, true
+}
+
 // CreateDocument creates a new document
 // POST /api/documents
 // Returns 201 if created, 409 with existing document if duplicate
@@ -67,21 +89,8 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 // Note: Slug resolution requires project context. For standalone document endpoints,
 // only UUIDs work. Slugs return 400 with helpful error message.
 func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
-	identifier, ok := PathParam(w, r, "id", "Document identifier")
+	documentID, ok := h.resolveDocumentID(w, r)
 	if !ok {
-		return
-	}
-
-	// Resolve identifier (UUID works, slug returns helpful error)
-	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
-		} else if errors.Is(err, domain.ErrBadRequest) {
-			httputil.RespondError(w, http.StatusBadRequest, err.Error())
-		} else {
-			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
-		}
 		return
 	}
 
@@ -113,21 +122,8 @@ type updateDocumentDTO struct {
 // UpdateDocument updates a document
 // PATCH /api/documents/{id}
 func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	identifier, ok := PathParam(w, r, "id", "Document identifier")
+	documentID, ok := h.resolveDocumentID(w, r)
 	if !ok {
-		return
-	}
-
-	// Resolve identifier (UUID works, slug returns helpful error)
-	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
-		} else if errors.Is(err, domain.ErrBadRequest) {
-			httputil.RespondError(w, http.StatusBadRequest, err.Error())
-		} else {
-			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
-		}
 		return
 	}
 
@@ -168,21 +164,8 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 // DeleteDocument deletes a document
 // DELETE /api/documents/{id}
 func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	identifier, ok := PathParam(w, r, "id", "Document identifier")
+	documentID, ok := h.resolveDocumentID(w, r)
 	if !ok {
-		return
-	}
-
-	// Resolve identifier (UUID works, slug returns helpful error)
-	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
-		} else if errors.Is(err, domain.ErrBadRequest) {
-			httputil.RespondError(w, http.StatusBadRequest, err.Error())
-		} else {
-			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
-		}
 		return
 	}
 

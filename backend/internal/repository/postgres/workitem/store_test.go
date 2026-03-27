@@ -424,7 +424,7 @@ func TestWorkItemStore_ListByProject_Pagination(t *testing.T) {
 	}
 
 	// Page 1: limit 2, offset 0.
-	page1, total, err := h.store.ListByProject(ctx, projectID, 0, 2)
+	page1, total, err := h.store.ListByProject(ctx, projectID, "", 0, 2)
 	if err != nil {
 		t.Fatalf("ListByProject page1: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestWorkItemStore_ListByProject_Pagination(t *testing.T) {
 	}
 
 	// Page 2: limit 2, offset 2.
-	page2, total2, err := h.store.ListByProject(ctx, projectID, 2, 2)
+	page2, total2, err := h.store.ListByProject(ctx, projectID, "", 2, 2)
 	if err != nil {
 		t.Fatalf("ListByProject page2: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestWorkItemStore_ListByProject_Pagination(t *testing.T) {
 	}
 
 	// Page 3: last item.
-	page3, _, err := h.store.ListByProject(ctx, projectID, 4, 2)
+	page3, _, err := h.store.ListByProject(ctx, projectID, "", 4, 2)
 	if err != nil {
 		t.Fatalf("ListByProject page3: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestWorkItemStore_ListByProject_EmptyProject(t *testing.T) {
 	userID := h.createTestUser(t)
 	projectID := h.createTestProject(t, userID)
 
-	items, total, err := h.store.ListByProject(ctx, projectID, 0, 20)
+	items, total, err := h.store.ListByProject(ctx, projectID, "", 0, 20)
 	if err != nil {
 		t.Fatalf("ListByProject empty: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestWorkItemStore_CountActiveEphemerals(t *testing.T) {
 	}
 
 	// Soft-delete one ephemeral — should reduce count.
-	items, _, err := h.store.ListByProject(ctx, projectID, 0, 10)
+	items, _, err := h.store.ListByProject(ctx, projectID, "", 0, 10)
 	if err != nil {
 		t.Fatalf("ListByProject: %v", err)
 	}

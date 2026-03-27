@@ -144,18 +144,26 @@ func (r *PostgresWorkItemStore) GetBySlug(ctx context.Context, projectID, slug s
 // ListByProject returns a page of non-deleted work items, ordered by
 // created_at DESC then id DESC for stable pagination.
 // Returns (items, totalCount, error).
-func (r *PostgresWorkItemStore) ListByProject(ctx context.Context, projectID string, offset, limit int) ([]domainwi.WorkItem, int, error) {
+func (r *PostgresWorkItemStore) ListByProject(ctx context.Context, projectID, status string, offset, limit int) ([]domainwi.WorkItem, int, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
+
+	// Build optional status filter clause.
+	var statusClause string
+	args := []interface{}{projectID}
+	if status != "" {
+		statusClause = fmt.Sprintf(" AND status = $%d", len(args)+1)
+		args = append(args, status)
+	}
 
 	// Separate count query — avoids window function overhead on small pages
 	// and keeps scanning simpler.
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM %s
-		WHERE project_id = $1 AND deleted_at IS NULL
-	`, r.tables.WorkItems)
+		WHERE project_id = $1 AND deleted_at IS NULL%s
+	`, r.tables.WorkItems, statusClause)
 
 	var total int
-	if err := executor.QueryRow(ctx, countQuery, projectID).Scan(&total); err != nil {
+	if err := executor.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count work items: %w", err)
 	}
 
@@ -165,12 +173,12 @@ func (r *PostgresWorkItemStore) ListByProject(ctx context.Context, projectID str
 
 	listQuery := fmt.Sprintf(`
 		SELECT %s FROM %s
-		WHERE project_id = $1 AND deleted_at IS NULL
+		WHERE project_id = $1 AND deleted_at IS NULL%s
 		ORDER BY created_at DESC, id DESC
-		LIMIT $2 OFFSET $3
-	`, workItemColumns, r.tables.WorkItems)
+		LIMIT $%d OFFSET $%d
+	`, workItemColumns, r.tables.WorkItems, statusClause, len(args)+1, len(args)+2)
 
-	rows, err := executor.Query(ctx, listQuery, projectID, limit, offset)
+	rows, err := executor.Query(ctx, listQuery, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list work items: %w", err)
 	}

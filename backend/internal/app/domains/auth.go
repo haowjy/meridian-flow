@@ -24,7 +24,7 @@ type LLMRepos struct {
 type AuthDeps struct {
 	ProjectRepo  domaindocsys.ProjectStore
 	FolderRepo   domaindocsys.FolderStore
-	DocumentRepo domaindocsys.DocumentStore
+	DocumentRepo domaindocsys.DocumentReader
 }
 
 // AuthModule wires authorization and auth handler dependencies.

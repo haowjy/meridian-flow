@@ -9,7 +9,7 @@ import (
 )
 
 type autoapplyResolver struct {
-	docRepo     domaindocsys.DocumentStore
+	docRepo     domaindocsys.DocumentReader
 	folderRepo  domaindocsys.FolderStore
 	projectRepo domaindocsys.ProjectStore
 }
@@ -17,7 +17,7 @@ type autoapplyResolver struct {
 // NewAutoapplyResolver resolves effective document autoapply by walking document,
 // folder ancestry, then the project default.
 func NewAutoapplyResolver(
-	docRepo domaindocsys.DocumentStore,
+	docRepo domaindocsys.DocumentReader,
 	folderRepo domaindocsys.FolderStore,
 	projectRepo domaindocsys.ProjectStore,
 ) collab.AutoapplyResolver {

@@ -76,7 +76,7 @@ func NewContextBudgetHandler(
 //
 // Token counts are approximate (±5%) via tiktoken cl100k_base encoding.
 func (h *ContextBudgetHandler) GetContextBudget(w http.ResponseWriter, r *http.Request) {
-	threadID, ok := PathParam(w, r, "id", "Thread ID")
+	threadID, ok := ParseUUID(w, r, "id", "Thread ID")
 	if !ok {
 		return
 	}

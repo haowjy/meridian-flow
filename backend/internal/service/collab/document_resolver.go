@@ -12,13 +12,13 @@ import (
 
 // DocumentResolverAdapter bridges collab with existing document/authorization services.
 type DocumentResolverAdapter struct {
-	docRepo    domaindocsys.DocumentStore
+	docRepo    domaindocsys.DocumentReader
 	authorizer authdomain.ResourceAuthorizer
 }
 
 // NewDocumentResolver creates a DocumentResolver backed by current document domain services.
 func NewDocumentResolver(
-	docRepo domaindocsys.DocumentStore,
+	docRepo domaindocsys.DocumentReader,
 	authorizer authdomain.ResourceAuthorizer,
 ) collab.DocumentResolver {
 	return &DocumentResolverAdapter{

@@ -20,7 +20,7 @@ import (
 type OwnerBasedAuthorizer struct {
 	projectRepo domaindocsys.ProjectStore
 	folderRepo  domaindocsys.FolderStore
-	docRepo     domaindocsys.DocumentStore
+	docRepo     domaindocsys.DocumentReader
 	threadRepo  domainllm.ThreadStore
 	turnRepo    domainllm.TurnReader
 }
@@ -29,7 +29,7 @@ type OwnerBasedAuthorizer struct {
 func NewOwnerBasedAuthorizer(
 	projectRepo domaindocsys.ProjectStore,
 	folderRepo domaindocsys.FolderStore,
-	docRepo domaindocsys.DocumentStore,
+	docRepo domaindocsys.DocumentReader,
 	threadRepo domainllm.ThreadStore,
 	turnRepo domainllm.TurnReader,
 ) *OwnerBasedAuthorizer {

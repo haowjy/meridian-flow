@@ -9,22 +9,22 @@ import (
 	domaindocsys "meridian/internal/domain/docsystem"
 )
 
-// DocumentPathResolver handles resolution of folder paths to folder IDs.
+// ToolPathResolver handles resolution of folder paths to folder IDs.
 // Uses FolderService for all data access (SOLID: DIP - depends on service interface).
-type DocumentPathResolver struct {
+type ToolPathResolver struct {
 	projectID string
 	userID    string
 	folderSvc domaindocsys.FolderService
 }
 
-// NewPathResolver creates a new DocumentPathResolver instance.
+// NewToolPathResolver creates a new ToolPathResolver instance.
 // Uses service interface for all data access (SOLID: DIP - depends on interfaces, not concretions).
-func NewPathResolver(
+func NewToolPathResolver(
 	projectID string,
 	userID string,
 	folderSvc domaindocsys.FolderService,
-) *DocumentPathResolver {
-	return &DocumentPathResolver{
+) *ToolPathResolver {
+	return &ToolPathResolver{
 		projectID: projectID,
 		userID:    userID,
 		folderSvc: folderSvc,
@@ -38,7 +38,7 @@ func NewPathResolver(
 //   - "" or "/" -> returns (nil, "/", nil) for root folder
 //   - "novels/chapter1" -> returns (&folderId, "/novels/chapter1", nil)
 //   - "nonexistent" -> returns (nil, "", ErrNotFound)
-func (r *DocumentPathResolver) ResolveFolderPath(ctx context.Context, path string) (*string, string, error) {
+func (r *ToolPathResolver) ResolveFolderPath(ctx context.Context, path string) (*string, string, error) {
 	// Normalize path
 	path = strings.Trim(path, "/")
 	if path == "" {
@@ -77,7 +77,7 @@ func (r *DocumentPathResolver) ResolveFolderPath(ctx context.Context, path strin
 
 // findFolderByName finds a folder by name within a parent folder.
 // Uses FolderService.ListChildren which returns both folders and documents.
-func (r *DocumentPathResolver) findFolderByName(ctx context.Context, parentID *string, name string) (*domaindocsys.Folder, error) {
+func (r *ToolPathResolver) findFolderByName(ctx context.Context, parentID *string, name string) (*domaindocsys.Folder, error) {
 	// Get folder contents using service layer (returns both folders and documents)
 	contents, err := r.folderSvc.ListChildren(ctx, r.userID, parentID, r.projectID)
 	if err != nil {

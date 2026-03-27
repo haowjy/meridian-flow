@@ -25,6 +25,22 @@ func PathParam(w http.ResponseWriter, r *http.Request, name, resourceName string
 	return value, true
 }
 
+// ParseUUID extracts a required path parameter and validates it is a standard
+// UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Rejects non-standard encodings
+// like urn:uuid:, braces, and raw hex that uuid.Parse would accept.
+// Writes 400 error response if the parameter is missing or malformed.
+func ParseUUID(w http.ResponseWriter, r *http.Request, param, label string) (string, bool) {
+	value, ok := PathParam(w, r, param, label)
+	if !ok {
+		return "", false
+	}
+	if _, err := uuid.Parse(value); err != nil || len(value) != 36 {
+		httputil.RespondError(w, http.StatusBadRequest, label+" must be a valid UUID")
+		return "", false
+	}
+	return value, true
+}
+
 // QueryInt parses an optional integer query parameter with bounds checking.
 // Returns defaultVal if missing, invalid, or out of bounds.
 func QueryInt(r *http.Request, name string, defaultVal, min, max int) int {
