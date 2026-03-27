@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/domain"
-	domainerrors "meridian/internal/domain/errors"
 	domaindocsys "meridian/internal/domain/docsystem"
+	domainerrors "meridian/internal/domain/errors"
 	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/service/identifier"
 )
@@ -145,7 +145,7 @@ func (s *workItemService) GetBySlug(ctx context.Context, projectID, userID, slug
 }
 
 // List returns a page of non-deleted work items for a project.
-func (s *workItemService) List(ctx context.Context, projectID, userID string, offset, limit int) ([]domainwi.WorkItem, int, error) {
+func (s *workItemService) List(ctx context.Context, projectID, userID, status string, offset, limit int) ([]domainwi.WorkItem, int, error) {
 	if projectID == "" {
 		return nil, 0, domain.NewValidationErrorWithField("project ID is required", "project_id")
 	}
@@ -164,7 +164,7 @@ func (s *workItemService) List(ctx context.Context, projectID, userID string, of
 	if offset < 0 {
 		offset = 0
 	}
-	return s.store.ListByProject(ctx, projectID, offset, limit)
+	return s.store.ListByProject(ctx, projectID, status, offset, limit)
 }
 
 // Update applies a partial patch (name, description, metadata).
@@ -212,6 +212,16 @@ func (s *workItemService) Update(ctx context.Context, id, userID string, req *do
 	return wi, nil
 }
 
+// UpdateBySlug applies a partial patch (name, description, metadata) to a
+// work item resolved by project + slug.
+func (s *workItemService) UpdateBySlug(ctx context.Context, projectID, userID, slug string, req *domainwi.UpdateRequest) (*domainwi.WorkItem, error) {
+	wi, err := s.GetBySlug(ctx, projectID, userID, slug)
+	if err != nil {
+		return nil, err
+	}
+	return s.Update(ctx, wi.ID, userID, req)
+}
+
 // Complete transitions a work item from active to done.
 // Returns 409 if any associated thread has an in-flight streaming turn.
 func (s *workItemService) Complete(ctx context.Context, id, userID string) (*domainwi.WorkItem, error) {
@@ -256,6 +266,15 @@ func (s *workItemService) Complete(ctx context.Context, id, userID string) (*dom
 	return wi, nil
 }
 
+// CompleteBySlug transitions a work item from active to done by project + slug.
+func (s *workItemService) CompleteBySlug(ctx context.Context, projectID, userID, slug string) (*domainwi.WorkItem, error) {
+	wi, err := s.GetBySlug(ctx, projectID, userID, slug)
+	if err != nil {
+		return nil, err
+	}
+	return s.Complete(ctx, wi.ID, userID)
+}
+
 // Reopen transitions a work item from done back to active.
 func (s *workItemService) Reopen(ctx context.Context, id, userID string) (*domainwi.WorkItem, error) {
 	if id == "" {
@@ -290,6 +309,15 @@ func (s *workItemService) Reopen(ctx context.Context, id, userID string) (*domai
 	return wi, nil
 }
 
+// ReopenBySlug transitions a work item from done back to active by project + slug.
+func (s *workItemService) ReopenBySlug(ctx context.Context, projectID, userID, slug string) (*domainwi.WorkItem, error) {
+	wi, err := s.GetBySlug(ctx, projectID, userID, slug)
+	if err != nil {
+		return nil, err
+	}
+	return s.Reopen(ctx, wi.ID, userID)
+}
+
 // Delete soft-deletes the work item.
 func (s *workItemService) Delete(ctx context.Context, id, userID string) (*domainwi.WorkItem, error) {
 	if id == "" {
@@ -318,6 +346,17 @@ func (s *workItemService) Delete(ctx context.Context, id, userID string) (*domai
 	s.logger.Info("work item deleted", "id", wi.ID, "slug", wi.Slug)
 
 	return wi, nil
+}
+
+// DeleteBySlug soft-deletes the work item resolved by project + slug.
+func (s *workItemService) DeleteBySlug(ctx context.Context, projectID, userID, slug string) error {
+	wi, err := s.GetBySlug(ctx, projectID, userID, slug)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.Delete(ctx, wi.ID, userID)
+	return err
 }
 
 // AttachThread associates a thread with a work item.

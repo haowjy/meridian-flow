@@ -22,15 +22,15 @@ type SpawnListResponse struct {
 }
 
 type spawnEntry struct {
-	ID            string      `json:"id"`
-	Title         string      `json:"title"`
-	Persona       *string     `json:"persona,omitempty"`
-	SpawnStatus   interface{} `json:"spawn_status,omitempty"`
-	SpawnResult   interface{} `json:"spawn_result,omitempty"`
-	SpawnDepth    int         `json:"spawn_depth"`
-	ParentThreadID *string    `json:"parent_thread_id,omitempty"`
-	CreatedAt     interface{} `json:"created_at"`
-	UpdatedAt     interface{} `json:"updated_at"`
+	ID             string      `json:"id"`
+	Title          string      `json:"title"`
+	Persona        *string     `json:"persona,omitempty"`
+	SpawnStatus    interface{} `json:"spawn_status,omitempty"`
+	SpawnResult    interface{} `json:"spawn_result,omitempty"`
+	SpawnDepth     int         `json:"spawn_depth"`
+	ParentThreadID *string     `json:"parent_thread_id,omitempty"`
+	CreatedAt      interface{} `json:"created_at"`
+	UpdatedAt      interface{} `json:"updated_at"`
 }
 
 // ListSpawns returns all child threads spawned from a parent thread.
@@ -41,7 +41,7 @@ type spawnEntry struct {
 // Returns 404 if the parent thread does not exist or the caller lacks access.
 // Returns an empty spawns array (not 404) when the parent has no children.
 func (h *ThreadHandler) ListSpawns(w http.ResponseWriter, r *http.Request) {
-	threadID, ok := PathParam(w, r, "id", "Thread ID")
+	threadID, ok := ParseUUID(w, r, "id", "Thread ID")
 	if !ok {
 		return
 	}

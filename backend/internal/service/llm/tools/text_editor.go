@@ -37,7 +37,7 @@ type TextEditorTool struct {
 	documentSvc      domaindocsys.DocumentService  // For document operations
 	folderSvc        domaindocsys.FolderService    // For folder operations
 	namespaceSvc     domaindocsys.NamespaceService // For namespace routing (optional)
-	pathResolver     *DocumentPathResolver         // For folder path resolution
+	pathResolver     *ToolPathResolver             // For folder path resolution
 	config           *ToolConfig
 	normalizers      []TextNormalizer         // For str_replace text normalization (OCP)
 	mutationStrategy DocumentMutationStrategy // Strategy for persisting AI edits (collab proposal)
@@ -70,7 +70,7 @@ func NewTextEditorTool(
 		documentSvc:      documentSvc,
 		folderSvc:        folderSvc,
 		namespaceSvc:     namespaceSvc,
-		pathResolver:     NewPathResolver(projectID, userID, folderSvc),
+		pathResolver:     NewToolPathResolver(projectID, userID, folderSvc),
 		config:           config,
 		normalizers:      DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
 		mutationStrategy: mutationStrategy,

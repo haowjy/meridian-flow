@@ -42,7 +42,7 @@ func (s *stubWorkItemStore) Create(_ context.Context, _ *domainwi.WorkItem) erro
 func (s *stubWorkItemStore) GetBySlug(_ context.Context, _, _ string) (*domainwi.WorkItem, error) {
 	panic("stubWorkItemStore.GetBySlug not expected")
 }
-func (s *stubWorkItemStore) ListByProject(_ context.Context, _ string, _, _ int) ([]domainwi.WorkItem, int, error) {
+func (s *stubWorkItemStore) ListByProject(_ context.Context, _, _ string, _, _ int) ([]domainwi.WorkItem, int, error) {
 	panic("stubWorkItemStore.ListByProject not expected")
 }
 func (s *stubWorkItemStore) Update(_ context.Context, _ *domainwi.WorkItem) error {

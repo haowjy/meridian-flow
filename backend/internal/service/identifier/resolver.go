@@ -16,11 +16,11 @@ import (
 // allowing extensibility for future identifier types (short codes, aliases, etc.)
 type ChainedResolver struct {
 	projectRepo  domaindocsys.ProjectStore
-	documentRepo domaindocsys.DocumentStore
+	documentRepo domaindocsys.DocumentReader
 }
 
 // NewResolver creates a new ChainedResolver.
-func NewResolver(projectRepo domaindocsys.ProjectStore, documentRepo domaindocsys.DocumentStore) *ChainedResolver {
+func NewResolver(projectRepo domaindocsys.ProjectStore, documentRepo domaindocsys.DocumentReader) *ChainedResolver {
 	return &ChainedResolver{
 		projectRepo:  projectRepo,
 		documentRepo: documentRepo,

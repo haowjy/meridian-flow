@@ -10,12 +10,13 @@ General technical debt not tied to a specific work item. Work-item-scoped backlo
 
 | Issue | Location | Refactor | Status |
 |-------|----------|----------|--------|
+| **SSE connection starvation** — each agent turn opens a separate SSE stream. SSE shares the browser's HTTP/1.1 per-origin limit (~6). With 3+ agent streams, regular API calls queue behind them. | `handler/sse_handler.go`, `handler/llm/thread_handler.go` | Multiplex all agent streams onto a single SSE (or WS) connection per project. Client subscribes to turn IDs on the shared connection; server fans out events by channel. Same pattern applies to spawn sub-agent streams. | ⬜ |
 | `SetSpawnInvoker` runtime type assertion | `llm/setup.go:211` | Make spawn wiring an explicit constructor dependency instead of runtime mutation | ⬜ |
 | Streaming `Service` god object | `streaming/service.go`, `deps.go`, `setup.go` | Collapse into smaller streaming runtime bundle or inject feature collaborators | ⬜ |
 | Debug vs production prompt construction diverge | `assemble_prompt.go` vs `debug.go:124` | Extract shared helper for skills/tools/persona/work-item filtering, reuse in both paths | ⬜ |
 | Duplicate error handling | `document.go:54-98`, `folder.go:64-103` | Extract `handleCreateError()` | ⬜ |
-| Repeated identifier resolution | `document.go:77-87, 119-135, 209-220, 297-308` | Extract `resolveDocumentID()` | ⬜ |
-| Large interfaces (ISP) | `domain/repositories/docsystem/document.go` | Split into Reader/Writer/Metadata | ⬜ |
+| Repeated identifier resolution | `document.go:77-87, 119-135, 209-220, 297-308` | Extract `resolveDocumentID()` | ✅ |
+| Large interfaces (ISP) | `domain/repositories/docsystem/document.go` | Split into Reader/Writer/Metadata | ✅ |
 | `TurnReader` interface too fat | `domain/llm/turn_reader.go` | Split — `OwnerBasedAuthorizer` only needs `GetTurn`, `CompactionService` stubs unused methods | ⬜ |
 
 ### Medium Priority
@@ -23,13 +24,13 @@ General technical debt not tied to a specific work item. Work-item-scoped backlo
 | Issue | Location | Refactor | Status |
 |-------|----------|----------|--------|
 | Inline orchestration in service methods | Various `service/llm/` methods | Audit for shared logic that should be standalone functions | ⬜ |
-| Path resolver naming inconsistency | `domain/docsystem/path_resolver.go`, `service/docsystem/path_resolver.go`, `tools/path_resolver.go` | Promote one read-only folder lookup interface in docsystem, reuse from tools | ⬜ |
-| Work item slug→ID double lookup | `handler/work_item.go`, `service/workitem/service.go` | Expose slug-based mutation methods | ⬜ |
+| Path resolver naming inconsistency | `domain/docsystem/path_resolver.go`, `service/docsystem/path_resolver.go`, `tools/path_resolver.go` | Promote one read-only folder lookup interface in docsystem, reuse from tools | ✅ |
+| Work item slug→ID double lookup | `handler/work_item.go`, `service/workitem/service.go` | Expose slug-based mutation methods | ✅ |
 | Agent catalog parallel bespoke loaders | `service/agents/skill_resolver.go`, `persona_catalog.go` | Extract shared markdown-catalog loader | ⬜ |
 | Tool path not truly Open/Closed | `tools/builder.go`, `launch_stream.go` | Factory registry keyed by tool/provider name | ⬜ |
 | Dual error format (DomainError vs RFC 7807) | `handler/helpers.go`, various handlers | Migrate all to DomainError format | ⬜ |
-| `?status=` filter silently ignored on list work items | `handler/work_item.go` | Read status query param, pass to store query | ⬜ |
-| Non-UUID path params return 500 not 400 | Context budget, spawn, work item handlers | Add `parseUUID()` validation before DB calls | ⬜ |
+| `?status=` filter silently ignored on list work items | `handler/work_item.go` | Read status query param, pass to store query | ✅ |
+| Non-UUID path params return 500 not 400 | Context budget, spawn, work item handlers | Add `parseUUID()` validation before DB calls | ✅ |
 
 ### Post-v1 (additive)
 

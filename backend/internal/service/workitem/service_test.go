@@ -100,7 +100,7 @@ func (m *mockStore) GetBySlug(ctx context.Context, projectID, slug string) (*dom
 	return &cp, nil
 }
 
-func (m *mockStore) ListByProject(ctx context.Context, projectID string, offset, limit int) ([]domainwi.WorkItem, int, error) {
+func (m *mockStore) ListByProject(ctx context.Context, projectID, status string, offset, limit int) ([]domainwi.WorkItem, int, error) {
 	return m.listByProjectItems, m.listByProjectTotal, nil
 }
 
@@ -524,7 +524,7 @@ func TestList_ReturnsItems(t *testing.T) {
 
 	svc := newTestService(store)
 
-	items, total, err := svc.List(context.Background(), "proj-1", "user-1", 0, 20)
+	items, total, err := svc.List(context.Background(), "proj-1", "user-1", "", 0, 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

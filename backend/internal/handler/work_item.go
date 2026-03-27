@@ -41,10 +41,10 @@ type createWorkItemRequest struct {
 
 // updateWorkItemRequest is the JSON body for PUT /work-items/{slug}.
 type updateWorkItemRequest struct {
-	Name        *string                `json:"name,omitempty"`
-	Description *string                `json:"description,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 	// ClearDescription, when true, explicitly sets description to null.
-	ClearDescription bool               `json:"clear_description"`
+	ClearDescription bool                   `json:"clear_description"`
 	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -102,7 +102,7 @@ func toWorkItemResponse(wi *domainwi.WorkItem) workItemResponse {
 // CreateWorkItem creates a new work item for the project.
 // POST /api/projects/{id}/work-items
 func (h *WorkItemHandler) CreateWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -135,7 +135,7 @@ func (h *WorkItemHandler) CreateWorkItem(w http.ResponseWriter, r *http.Request)
 // ListWorkItems returns a paginated list of work items for the project.
 // GET /api/projects/{id}/work-items?offset=0&limit=20
 func (h *WorkItemHandler) ListWorkItems(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -143,8 +143,9 @@ func (h *WorkItemHandler) ListWorkItems(w http.ResponseWriter, r *http.Request) 
 
 	offset := QueryInt(r, "offset", 0, 0, 1<<31-1)
 	limit := QueryInt(r, "limit", 20, 1, 100)
+	status := r.URL.Query().Get("status")
 
-	items, total, err := h.svc.List(r.Context(), projectID, userID, offset, limit)
+	items, total, err := h.svc.List(r.Context(), projectID, userID, status, offset, limit)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -166,7 +167,7 @@ func (h *WorkItemHandler) ListWorkItems(w http.ResponseWriter, r *http.Request) 
 // GetWorkItem returns a single work item by slug.
 // GET /api/projects/{id}/work-items/{slug}
 func (h *WorkItemHandler) GetWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -188,7 +189,7 @@ func (h *WorkItemHandler) GetWorkItem(w http.ResponseWriter, r *http.Request) {
 // UpdateWorkItem applies a partial update to a work item.
 // PUT /api/projects/{id}/work-items/{slug}
 func (h *WorkItemHandler) UpdateWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -204,14 +205,7 @@ func (h *WorkItemHandler) UpdateWorkItem(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Resolve slug → ID (project membership verified inside GetBySlug).
-	existing, err := h.svc.GetBySlug(r.Context(), projectID, userID, slug)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	wi, err := h.svc.Update(r.Context(), existing.ID, userID, &domainwi.UpdateRequest{
+	wi, err := h.svc.UpdateBySlug(r.Context(), projectID, userID, slug, &domainwi.UpdateRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		ClearDesc:   req.ClearDescription,
@@ -228,7 +222,7 @@ func (h *WorkItemHandler) UpdateWorkItem(w http.ResponseWriter, r *http.Request)
 // CompleteWorkItem transitions a work item to done.
 // POST /api/projects/{id}/work-items/{slug}/complete
 func (h *WorkItemHandler) CompleteWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -238,13 +232,7 @@ func (h *WorkItemHandler) CompleteWorkItem(w http.ResponseWriter, r *http.Reques
 	}
 	userID := httputil.GetUserID(r)
 
-	existing, err := h.svc.GetBySlug(r.Context(), projectID, userID, slug)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	wi, err := h.svc.Complete(r.Context(), existing.ID, userID)
+	wi, err := h.svc.CompleteBySlug(r.Context(), projectID, userID, slug)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -256,7 +244,7 @@ func (h *WorkItemHandler) CompleteWorkItem(w http.ResponseWriter, r *http.Reques
 // ReopenWorkItem transitions a work item from done back to active.
 // POST /api/projects/{id}/work-items/{slug}/reopen
 func (h *WorkItemHandler) ReopenWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -266,13 +254,7 @@ func (h *WorkItemHandler) ReopenWorkItem(w http.ResponseWriter, r *http.Request)
 	}
 	userID := httputil.GetUserID(r)
 
-	existing, err := h.svc.GetBySlug(r.Context(), projectID, userID, slug)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	wi, err := h.svc.Reopen(r.Context(), existing.ID, userID)
+	wi, err := h.svc.ReopenBySlug(r.Context(), projectID, userID, slug)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -284,7 +266,7 @@ func (h *WorkItemHandler) ReopenWorkItem(w http.ResponseWriter, r *http.Request)
 // DeleteWorkItem soft-deletes a work item.
 // DELETE /api/projects/{id}/work-items/{slug}
 func (h *WorkItemHandler) DeleteWorkItem(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := PathParam(w, r, "id", "Project ID")
+	projectID, ok := ParseUUID(w, r, "id", "Project ID")
 	if !ok {
 		return
 	}
@@ -294,13 +276,7 @@ func (h *WorkItemHandler) DeleteWorkItem(w http.ResponseWriter, r *http.Request)
 	}
 	userID := httputil.GetUserID(r)
 
-	existing, err := h.svc.GetBySlug(r.Context(), projectID, userID, slug)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	if _, err := h.svc.Delete(r.Context(), existing.ID, userID); err != nil {
+	if err := h.svc.DeleteBySlug(r.Context(), projectID, userID, slug); err != nil {
 		handleError(w, err, h.config)
 		return
 	}

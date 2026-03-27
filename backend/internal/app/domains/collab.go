@@ -35,7 +35,7 @@ type CollabModule struct {
 
 // CollabDeps captures cross-domain deps needed by collab wiring.
 type CollabDeps struct {
-	DocumentRepo      domaindocsys.DocumentStore
+	DocumentRepo      domaindocsys.DocumentReader
 	Authorizer        authdomain.ResourceAuthorizer
 	TxManager         domain.TransactionManager
 	AutoapplyResolver collabdomain.AutoapplyResolver

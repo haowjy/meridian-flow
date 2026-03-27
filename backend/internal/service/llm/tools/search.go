@@ -28,7 +28,7 @@ type SearchTool struct {
 	userID       string                        // Required for service layer authorization
 	documentSvc  domaindocsys.DocumentService  // For search operations (replaces documentRepo)
 	namespaceSvc domaindocsys.NamespaceService // For namespace routing (optional)
-	pathResolver *DocumentPathResolver         // For folder path resolution
+	pathResolver *ToolPathResolver             // For folder path resolution
 	config       *ToolConfig
 }
 
@@ -38,7 +38,7 @@ func NewSearchTool(
 	projectID string,
 	userID string,
 	documentSvc domaindocsys.DocumentService,
-	folderSvc domaindocsys.FolderService, // For DocumentPathResolver
+	folderSvc domaindocsys.FolderService, // For ToolPathResolver
 	namespaceSvc domaindocsys.NamespaceService,
 	config *ToolConfig,
 ) *SearchTool {
@@ -50,7 +50,7 @@ func NewSearchTool(
 		userID:       userID,
 		documentSvc:  documentSvc,
 		namespaceSvc: namespaceSvc,
-		pathResolver: NewPathResolver(projectID, userID, folderSvc),
+		pathResolver: NewToolPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
 }

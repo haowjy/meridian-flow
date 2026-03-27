@@ -11,7 +11,7 @@ import (
 // treeService implements the TreeService interface
 type treeService struct {
 	folderRepo   domaindocsys.FolderStore
-	documentRepo domaindocsys.DocumentStore
+	documentRepo domaindocsys.DocumentReader
 	authorizer   authdomain.ResourceAuthorizer
 	logger       *slog.Logger
 }
@@ -19,7 +19,7 @@ type treeService struct {
 // NewTreeService creates a new tree service
 func NewTreeService(
 	folderRepo domaindocsys.FolderStore,
-	documentRepo domaindocsys.DocumentStore,
+	documentRepo domaindocsys.DocumentReader,
 	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
 ) domaindocsys.TreeService {

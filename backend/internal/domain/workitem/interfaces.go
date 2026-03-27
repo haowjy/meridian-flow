@@ -30,7 +30,8 @@ type Store interface {
 
 	// ListByProject returns a page of non-deleted work items for a project,
 	// ordered by created_at DESC. Returns the items, total row count, and error.
-	ListByProject(ctx context.Context, projectID string, offset, limit int) ([]WorkItem, int, error)
+	// If status is non-empty, only items with that status are returned.
+	ListByProject(ctx context.Context, projectID, status string, offset, limit int) ([]WorkItem, int, error)
 
 	// Update persists mutable fields (name, description, metadata).
 	// Slug and status must be mutated through dedicated methods.
@@ -86,26 +87,44 @@ type Service interface {
 
 	// List returns a page of non-deleted work items for a project.
 	// userID is used to verify the caller has project membership.
-	List(ctx context.Context, projectID, userID string, offset, limit int) ([]WorkItem, int, error)
+	// If status is non-empty, only items with that status are returned.
+	List(ctx context.Context, projectID, userID, status string, offset, limit int) ([]WorkItem, int, error)
 
 	// Update applies a partial patch (name, description, metadata).
 	// userID is used to verify the caller has membership in the item's project.
 	Update(ctx context.Context, id, userID string, req *UpdateRequest) (*WorkItem, error)
+
+	// UpdateBySlug applies a partial patch (name, description, metadata) to a
+	// work item resolved by project + slug.
+	// userID is used to verify the caller has project membership.
+	UpdateBySlug(ctx context.Context, projectID, userID, slug string, req *UpdateRequest) (*WorkItem, error)
 
 	// Complete transitions a work item from active to done.
 	// Rejects if any associated thread has an in-flight streaming turn.
 	// userID is used to verify the caller has membership in the item's project.
 	Complete(ctx context.Context, id, userID string) (*WorkItem, error)
 
+	// CompleteBySlug transitions a work item from active to done by project + slug.
+	// userID is used to verify the caller has project membership.
+	CompleteBySlug(ctx context.Context, projectID, userID, slug string) (*WorkItem, error)
+
 	// Reopen transitions a work item from done back to active.
 	// userID is used to verify the caller has membership in the item's project.
 	Reopen(ctx context.Context, id, userID string) (*WorkItem, error)
+
+	// ReopenBySlug transitions a work item from done back to active by project + slug.
+	// userID is used to verify the caller has project membership.
+	ReopenBySlug(ctx context.Context, projectID, userID, slug string) (*WorkItem, error)
 
 	// Delete soft-deletes the work item.
 	// Thread associations are preserved; artifact folder deletion is handled
 	// by callers that own the docsystem.
 	// userID is used to verify the caller has membership in the item's project.
 	Delete(ctx context.Context, id, userID string) (*WorkItem, error)
+
+	// DeleteBySlug soft-deletes the work item resolved by project + slug.
+	// userID is used to verify the caller has project membership.
+	DeleteBySlug(ctx context.Context, projectID, userID, slug string) error
 
 	// AttachThread associates a thread with a work item.
 	AttachThread(ctx context.Context, workItemID, threadID string) error
