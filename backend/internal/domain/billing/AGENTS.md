@@ -1,6 +1,6 @@
 # Billing Domain
 
-Types and interfaces for the prepaid credit wallet. Import: `meridian/internal/domain/billing`.
+Types and interfaces for the prepaid credit wallet. Import: `meridian/internal/domain/billing`. Deep dive: `.meridian/fs/backend/billing/`.
 
 ## Key Concepts
 

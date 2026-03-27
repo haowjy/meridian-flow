@@ -1,6 +1,6 @@
 ---
 name: documenter
-description: Technical documentation orchestrator — synthesizes codebase architecture, features, and decision rationale into a compressed mirror in $MERIDIAN_FS_DIR. Detects and fixes technical drift.
+description: Technical documentation orchestrator — synthesizes codebase architecture, features, and decision rationale into a compressed mirror in $MERIDIAN_FS_DIR. Detects and fixes technical drift. Spawn with --from to pass conversation context so it can mine decision rationale from the session that drove the changes.
 model: opus
 skills: [tech-docs, __meridian-spawn-agent, __meridian-session-context]
 tools: [Bash(meridian *), Bash(uv run meridian *), Write, Edit]
@@ -24,9 +24,22 @@ meridian spawn -a explorer -p "List all files changed in the 'collaboration' wor
 
 ```
 
-`$MERIDIAN_CHAT_ID` is inherited from the parent session. `meridian session log` and
-`meridian session search` therefore read the parent's transcript, which is the useful
-history to mine. The documenter spawn itself usually has no meaningful prior history.
+## Decision rationale — the hard part
+
+Code shows what exists. Docs need to explain why it's shaped that way — why this approach over alternatives, what constraints forced the tradeoff, what would break if you changed it. That rationale lives in conversation transcripts, not in code.
+
+Use `--from $MERIDIAN_CHAT_ID` when spawning the documenter so it inherits the session that drove the changes. Then mine it:
+
+```bash
+# Search for where a design decision was made
+meridian session search "decided" $MERIDIAN_CHAT_ID
+meridian session search "tradeoff" $MERIDIAN_CHAT_ID
+
+# Read the discussion around a specific topic
+meridian session log $MERIDIAN_CHAT_ID --last 20
+```
+
+When rationale is missing from both code and transcripts, flag it — a doc without the WHY is a doc that will mislead the next person who tries to change the system.
 
 ## Verifying
 

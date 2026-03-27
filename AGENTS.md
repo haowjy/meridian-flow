@@ -23,7 +23,6 @@ See `_docs/high-level/1-overview.md` for product details.
 | Feature docs | `_docs/features/` |
 | Plans | `_docs/plans/` |
 | Agent profiles | `.claude/agents/` |
-| Refactoring backlog | `_docs/future/refactoring-backlog.md` |
 
 ## Dev Environment
 

@@ -1,6 +1,6 @@
 # Collab Domain
 
-Types and interfaces for real-time collaborative editing. Import: `meridian/internal/domain/collab`.
+Types and interfaces for real-time collaborative editing. Import: `meridian/internal/domain/collab`. Deep dive: `.meridian/fs/backend/collab/`.
 
 ## Key Concepts
 
@@ -29,10 +29,10 @@ Types and interfaces for real-time collaborative editing. Import: `meridian/inte
 | `StatusMirror` | Proposal status -> client SSE | `presence.go` |
 | `DocumentResolver` | Resolve doc refs for collab | `resolver.go` |
 | `AutoapplyResolver` | Effective autoapply setting | `resolver.go` |
+| `ProposalService` | Proposal lifecycle operations (create, accept, reject) | `proposal.go` |
 | `RestoreService` | Document restore from bookmark | `restore.go` |
 
 ## Conventions
 
 - Collab depends on document system only through `DocumentResolver` -- never imports `docsystem` directly.
-- `DocumentStateManager` was renamed from `ProposalRuntime` during the structural refactor.
 - Proposal offsets track Yjs document version for conflict detection.

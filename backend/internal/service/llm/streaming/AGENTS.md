@@ -1,6 +1,6 @@
 # Streaming Service
 
-Orchestrates LLM turn creation, SSE streaming, tool execution, and billing settlement. This is the most complex service in the backend.
+Orchestrates LLM turn creation, SSE streaming, tool execution, and billing settlement. Deep dive: `.meridian/fs/backend/streaming/`.
 
 ## Cleanup Contract
 

@@ -1,6 +1,6 @@
 # LLM Domain
 
-Types and interfaces for LLM conversation management and streaming. Import: `meridian/internal/domain/llm`.
+Types and interfaces for LLM conversation management and streaming. Import: `meridian/internal/domain/llm`. Deep dive: `.meridian/fs/backend/streaming/`.
 
 ## Key Concepts
 
@@ -27,10 +27,11 @@ Types and interfaces for LLM conversation management and streaming. Import: `mer
 | `GenerationCanceller` | Provider-specific cancel | `provider.go` |
 | `SystemPromptResolver` | Build system prompts | `system_prompt.go` |
 | `MessageBuilder` | Build provider messages from turns | `message_builder.go` |
+| `SpawnInvoker` | Spawn lifecycle (create, status, cancel) — breaks streaming↔spawn circular dep | `spawn.go` |
 | `ToolLimitResolver` | Tool round limits (tier-ready) | `tool_limits.go` |
 
 ## Conventions
 
 - `AccumulateTokensAndUpdateMetadata` is atomic -- single DB call for token + metadata update.
 - `StreamEvent` is a union type: check `Delta`, `Block`, `Metadata`, `Error`, etc. fields.
-- `ProviderResolver` (was `ResponseGenerator`) routes to the correct `LLMProvider` by model name.
+- `ProviderResolver` routes to the correct `LLMProvider` by model name.

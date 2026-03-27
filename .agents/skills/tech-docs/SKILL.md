@@ -25,6 +25,8 @@ $MERIDIAN_FS_DIR/
 
 **One concern per doc.** A doc that covers two things drifts twice as fast and gets read by people who only need half of it. When a doc starts covering multiple concerns, split it. When a topic grows sub-topics, nest them in a directory.
 
+**Progressive disclosure.** Each directory gets an overview that covers the essentials at a glance. Sub-docs exist only when a topic is complex enough to warrant dedicated space. Don't pre-fragment — let complexity drive the split.
+
 ## Content: WHAT and WHY, not HOW
 
 The code shows the how. The mirror captures what the code can't easily tell you:
@@ -38,6 +40,8 @@ Decision rationale tends to live in session transcripts and commit messages, not
 ## Writing style
 
 **Diagrams over words.** Mermaid for flows, state machines, and dependency graphs. Tables for comparisons and reference data. Models default to prose — fight that instinct. Use the `/mermaid` meridian skill for syntax rules and validation.
+
+**Current-state voice.** FS docs are a mirror of the code as it is — a reader should be able to open a doc and understand the system without knowing its history. Evolutionary narration ("was renamed", "the fix moved X") couples the doc to a timeline that drifts immediately. Describe the current shape and explain why it's shaped that way. Git log has the history.
 
 **Compress, don't narrate.** Every sentence earns its place. One sentence per concept, not a paragraph. If a diagram says it, don't also say it in text.
 
