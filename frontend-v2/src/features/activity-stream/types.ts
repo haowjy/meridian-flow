@@ -59,6 +59,10 @@ export type ActivityBlockData = {
   items: ActivityItem[]
   pendingText?: string
   isStreaming?: boolean
+  /** Set by RUN_ERROR — the error message from the backend. */
+  error?: string
+  /** Set by RUN_ERROR — whether the error was a user-initiated cancellation. */
+  isCancelled?: boolean
 }
 
 // ═══════════════════════════════════════════════════════════════════

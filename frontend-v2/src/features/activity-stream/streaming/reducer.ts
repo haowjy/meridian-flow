@@ -91,6 +91,18 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
         activity: { ...state.activity, isStreaming: false, pendingText: undefined },
       }
 
+    case "RUN_ERROR":
+      return {
+        ...state,
+        activity: {
+          ...state.activity,
+          isStreaming: false,
+          pendingText: undefined,
+          error: event.message,
+          isCancelled: event.isCancelled ?? false,
+        },
+      }
+
     // ---------------------------------------------------------------
     // Text messages
     //
@@ -138,7 +150,15 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
     // ---------------------------------------------------------------
     // Thinking
     //
-    // Same pattern as text: insert on START, update on CONTENT, finalize on END.
+    // AG-UI thinking lifecycle:
+    //   THINKING_START → THINKING_TEXT_MESSAGE_START →
+    //   THINKING_TEXT_MESSAGE_CONTENT (deltas) →
+    //   THINKING_TEXT_MESSAGE_END
+    //
+    // THINKING_START creates the ThinkingItem.
+    // THINKING_TEXT_MESSAGE_START is a no-op (item already exists).
+    // THINKING_TEXT_MESSAGE_CONTENT updates text.
+    // THINKING_TEXT_MESSAGE_END finalizes.
     // ---------------------------------------------------------------
 
     case "THINKING_START": {
@@ -152,7 +172,11 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
       }
     }
 
-    case "THINKING_TEXT_CONTENT": {
+    case "THINKING_TEXT_MESSAGE_START":
+      // Item already created by THINKING_START. No-op.
+      return state
+
+    case "THINKING_TEXT_MESSAGE_CONTENT": {
       const items = updateItemById<ThinkingItem>(state.activity.items, event.thinkingId, (item) => ({
         ...item,
         text: item.text + event.delta,
@@ -163,7 +187,7 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
       }
     }
 
-    case "THINKING_END":
+    case "THINKING_TEXT_MESSAGE_END":
       // Thinking item is already in items[] with full text. Nothing to do.
       return state
 
@@ -241,7 +265,7 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
       const items = updateItemById<ToolItem>(state.activity.items, event.toolCallId, (item) => ({
         ...item,
         status: event.isError ? "error" : "done",
-        resultText: event.resultText,
+        resultText: event.content,
         isError: event.isError ?? false,
       }))
       return {
