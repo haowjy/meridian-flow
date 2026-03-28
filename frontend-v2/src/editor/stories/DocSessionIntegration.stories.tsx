@@ -77,17 +77,36 @@ function useSessionSnapshot(
     [session],
   )
 
+  // Cache the snapshot to return a referentially stable value when
+  // nothing has changed. useSyncExternalStore in React 19 strict mode
+  // calls getSnapshot twice and compares by reference — returning a
+  // new object every time causes an infinite re-render loop.
+  const cachedRef = useRef<SessionSnapshot>(INITIAL_SNAPSHOT)
+
   const getSnapshot = useCallback((): SessionSnapshot => {
-    if (!session) {
-      return { ...INITIAL_SNAPSHOT, lifecycleState }
+    const next: SessionSnapshot = !session
+      ? { ...INITIAL_SNAPSHOT, lifecycleState }
+      : {
+          lifecycleState,
+          idbHealth: session.getIdbHealth(),
+          ytextLength: session.ytext.length,
+          hasPendingLocalChanges: session.hasPendingLocalChanges,
+          frozenReason: session.frozenReason,
+        }
+
+    const prev = cachedRef.current
+    if (
+      prev.lifecycleState === next.lifecycleState &&
+      prev.idbHealth.status === next.idbHealth.status &&
+      prev.idbHealth.timedOut === next.idbHealth.timedOut &&
+      prev.ytextLength === next.ytextLength &&
+      prev.hasPendingLocalChanges === next.hasPendingLocalChanges &&
+      prev.frozenReason === next.frozenReason
+    ) {
+      return prev
     }
-    return {
-      lifecycleState,
-      idbHealth: session.getIdbHealth(),
-      ytextLength: session.ytext.length,
-      hasPendingLocalChanges: session.hasPendingLocalChanges,
-      frozenReason: session.frozenReason,
-    }
+    cachedRef.current = next
+    return next
   }, [session, lifecycleState])
 
   return useSyncExternalStore(subscribe, getSnapshot)

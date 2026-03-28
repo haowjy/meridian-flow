@@ -120,13 +120,39 @@ function usePoolSessions(pool: SessionPool | null): SessionInfo[] {
     [pool],
   )
 
+  // Cache snapshot to return a referentially stable value.
+  // useSyncExternalStore in React 19 strict mode calls getSnapshot
+  // twice and compares by reference — new arrays cause infinite loops.
+  const EMPTY: SessionInfo[] = useMemo(() => [], [])
+  const cachedRef = useRef<SessionInfo[]>(EMPTY)
+
   const getSnapshot = useCallback(() => {
-    if (!pool) return [] as SessionInfo[]
-    return pool.getSessionIds().map((id) => {
+    if (!pool) return EMPTY
+    const next = pool.getSessionIds().map((id) => {
       const session = pool.getSession(id)!
       return sessionToInfo(session)
     })
-  }, [pool])
+
+    const prev = cachedRef.current
+    // Shallow compare: same length, same fields for each entry
+    if (
+      prev.length === next.length &&
+      prev.every(
+        (p, i) =>
+          p.id === next[i].id &&
+          p.generation === next[i].generation &&
+          p.attachedViewCount === next[i].attachedViewCount &&
+          p.lastDetachedAt === next[i].lastDetachedAt &&
+          p.frozenReason === next[i].frozenReason &&
+          p.hasPendingLocalChanges === next[i].hasPendingLocalChanges &&
+          p.syncState === next[i].syncState,
+      )
+    ) {
+      return prev
+    }
+    cachedRef.current = next
+    return next
+  }, [pool, EMPTY])
 
   return useSyncExternalStore(subscribe, getSnapshot)
 }
