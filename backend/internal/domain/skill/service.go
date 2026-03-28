@@ -19,7 +19,6 @@ type UpdateSkillRequest struct {
 	Name                   *string
 	Description            *string
 	Content                *string // Skill content (stored in DB)
-	Enabled                *bool   // Enable/disable skill
 	DisableModelInvocation *bool
 	UserInvocable          *bool
 }

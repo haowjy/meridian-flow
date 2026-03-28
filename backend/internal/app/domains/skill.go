@@ -5,8 +5,8 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	authdomain "meridian/internal/domain/auth"
 	domainagents "meridian/internal/domain/agents"
+	authdomain "meridian/internal/domain/auth"
 	domaindocsys "meridian/internal/domain/docsystem"
 	skilldomain "meridian/internal/domain/skill"
 	"meridian/internal/handler"
@@ -17,10 +17,10 @@ import (
 
 // SkillModule wires project-skill services and handlers.
 type SkillModule struct {
-	Service        skilldomain.ProjectSkillService
-	Resolver       domainagents.SkillResolver   // File-backed; reads .agents/skills/<slug>/SKILL.md
-	Handler        *handler.ProjectSkillHandler
-	BackfillHandler *handler.AgentAdminHandler  // POST /api/projects/{id}/agents/backfill
+	Service         skilldomain.ProjectSkillService
+	Resolver        domainagents.SkillResolver // File-backed; reads .agents/skills/<slug>/SKILL.md
+	Handler         *handler.ProjectSkillHandler
+	BackfillHandler *handler.AgentAdminHandler // POST /api/projects/{id}/agents/backfill
 }
 
 // SkillDeps captures cross-domain deps needed by skill wiring.
@@ -35,18 +35,17 @@ type SkillDeps struct {
 // NewSkillModule creates project-skill service, file-backed resolver, and handlers.
 func NewSkillModule(infra InfrastructureDeps, cfg *config.Config, deps SkillDeps) (*SkillModule, error) {
 	skillRepo := postgresSkill.NewProjectSkillRepository(infra.RepoConfig)
-	skillService := serviceSkill.NewProjectSkillService(
-		skillRepo,
+	// File-backed resolver: reads .agents/skills/<slug>/SKILL.md; no DB fallback.
+	skillResolver := serviceAgents.NewFileSkillResolver(deps.DocumentRepo, deps.FolderRepo, infra.Logger)
+	skillService := serviceSkill.NewFileProjectSkillService(
 		deps.DocumentRepo,
 		deps.FolderRepo,
 		deps.NamespaceService,
 		deps.Authorizer,
+		skillResolver,
 		deps.TxManager,
 		infra.Logger,
 	)
-
-	// File-backed resolver: reads .agents/skills/<slug>/SKILL.md; no DB fallback.
-	skillResolver := serviceAgents.NewFileSkillResolver(deps.DocumentRepo, deps.FolderRepo, infra.Logger)
 
 	// Backfill service: migrates legacy DB skills to SKILL.md files.
 	backfillSvc := serviceAgents.NewBackfillService(skillRepo, deps.DocumentRepo, deps.FolderRepo, infra.Logger)

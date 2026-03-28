@@ -153,7 +153,6 @@ func (h *ProjectSkillHandler) UpdateSkill(w http.ResponseWriter, r *http.Request
 		Name:                   req.Name,
 		Description:            req.Description,
 		Content:                req.Content,
-		Enabled:                req.Enabled,
 		DisableModelInvocation: req.DisableModelInvocation,
 		UserInvocable:          req.UserInvocable,
 	}
