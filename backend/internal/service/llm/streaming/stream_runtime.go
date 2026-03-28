@@ -152,7 +152,9 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 	}
 
 	stream := executor.GetStream()
+	streamRegistered := true
 	if err := r.streamRegistry.Register(stream); err != nil {
+		streamRegistered = false
 		r.logger.Warn("failed to register stream", "turn_id", input.AssistantTurn.ID, "error", err)
 	}
 
@@ -160,6 +162,9 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 	executor.SetCleanupCallback(func() {
 		r.executorRegistry.Remove(turnID)
 		r.interjectionRegistry.Remove(turnID)
+		if streamRegistered {
+			r.streamRegistry.Remove(turnID)
+		}
 		if releaseStreamSlot != nil {
 			releaseStreamSlot()
 		}

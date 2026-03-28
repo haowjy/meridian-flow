@@ -230,12 +230,11 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 
 	streamingService, err := streaming.NewStreamingOrchestrator(streaming.StreamingDeps{
 		Persistence: streaming.PersistenceDeps{
-			TurnWriter:    deps.TurnRepo,
-			TurnReader:    deps.TurnRepo,
-			ThreadRepo:    deps.ThreadRepo,
-			ProjectRepo:   deps.ProjectRepo,
-			TxManager:     deps.TxManager,
-			WorkItemStore: deps.WorkItemStore, // Optional: nil disables context resolution
+			TurnWriter:  deps.TurnRepo,
+			TurnReader:  deps.TurnRepo,
+			ThreadRepo:  deps.ThreadRepo,
+			ProjectRepo: deps.ProjectRepo,
+			TxManager:   deps.TxManager,
 		},
 		Services: streaming.ServiceDeps{
 			TurnContextResolver:  turnContextResolver,
@@ -252,15 +251,10 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			CapabilityRegistry:   deps.CapabilityRegistry,
 		},
 		Billing: streaming.BillingDeps{
-			ToolLimitResolver:      deps.ToolLimitResolver,
-			TokenFinalizer:         tokenFinalizer,
-			CreditAdmissionChecker: deps.CreditAdmissionChecker,
-			CreditSettler:          deps.CreditSettler,
-			SettlementMode:         deps.SettlementMode,
+			SettlementMode: deps.SettlementMode,
 		},
 		Infra: streaming.InfraDeps{
 			Config:           deps.Config,
-			JobQueue:         deps.JobQueue,
 			Logger:           deps.Logger,
 			ExecutorRegistry: executorRegistry, // shared with SpawnService for cascade cancel
 		},

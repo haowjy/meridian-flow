@@ -15,9 +15,6 @@ import (
 	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	domainwi "meridian/internal/domain/workitem"
-	"meridian/internal/jobs"
-	"meridian/internal/service/llm/tokens"
 )
 
 type ExecutorRegistry struct {
@@ -85,13 +82,9 @@ type PersistenceDeps struct {
 	ThreadRepo  domainllm.ThreadStore
 	ProjectRepo domaindocsys.ProjectStore // For validating project access on cold start
 	TxManager   domain.TransactionManager
-	// WorkItemStore is used by contextResolver for work context variable resolution.
-	// Optional: nil disables context resolution (non-persona turns unaffected).
-	WorkItemStore domainwi.Store
 }
 
 // Validate checks that all persistence dependencies are provided.
-// WorkItemStore is optional — nil disables work context resolution.
 func (d PersistenceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.TurnWriter, validation.Required),
@@ -99,7 +92,6 @@ func (d PersistenceDeps) Validate() error {
 		validation.Field(&d.ThreadRepo, validation.Required),
 		validation.Field(&d.ProjectRepo, validation.Required),
 		validation.Field(&d.TxManager, validation.Required),
-		// WorkItemStore intentionally NOT required — nil disables feature
 	)
 }
 
@@ -145,20 +137,12 @@ func (d PipelineDeps) Validate() error {
 
 // BillingDeps groups billing and usage-tracking dependencies.
 type BillingDeps struct {
-	ToolLimitResolver      domainllm.ToolLimitResolver    // Resolves tool round limits (tier-ready)
-	TokenFinalizer         tokens.TokenFinalizer          // For finalizing tokens on completion/interruption
-	CreditAdmissionChecker billing.CreditAdmissionChecker // Pre-stream credit check
-	CreditSettler          billing.CreditSettler          // Post-stream credit settlement
-	SettlementMode         billing.CreditSettlementMode   // Settlement mode (sync/async)
+	SettlementMode billing.CreditSettlementMode // Settlement mode (sync/async)
 }
 
 // Validate checks that all billing dependencies are provided.
 func (d BillingDeps) Validate() error {
 	return validation.ValidateStruct(&d,
-		validation.Field(&d.ToolLimitResolver, validation.Required),
-		validation.Field(&d.TokenFinalizer, validation.Required),
-		validation.Field(&d.CreditAdmissionChecker, validation.Required),
-		validation.Field(&d.CreditSettler, validation.Required),
 		validation.Field(
 			&d.SettlementMode,
 			validation.Required,
@@ -170,11 +154,10 @@ func (d BillingDeps) Validate() error {
 	)
 }
 
-// InfraDeps groups infrastructure dependencies (config, jobs, logging).
+// InfraDeps groups infrastructure dependencies (config, logging, registry wiring).
 type InfraDeps struct {
-	Config   *config.Config
-	JobQueue jobs.JobQueue // Background job queue for async operations
-	Logger   *slog.Logger
+	Config *config.Config
+	Logger *slog.Logger
 	// ExecutorRegistry is optional. When non-nil, it is used as the shared executor
 	// registry so that external components (e.g. SpawnService) can cancel child
 	// executors. When nil, a new private registry is created inside the service.
@@ -185,7 +168,6 @@ type InfraDeps struct {
 func (d InfraDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.Config, validation.Required),
-		validation.Field(&d.JobQueue, validation.Required),
 		validation.Field(&d.Logger, validation.Required),
 	)
 }
