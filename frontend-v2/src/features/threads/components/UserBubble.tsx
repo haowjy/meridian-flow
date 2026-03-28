@@ -1,69 +1,73 @@
 import type { TurnBlock, UserTurn } from "../types"
 
+import { ImageBlock } from "./ImageBlock"
+import { ReferenceBlock } from "./ReferenceBlock"
+
 function getString(content: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = content?.[key]
   return typeof value === "string" ? value : undefined
 }
 
+function getNumber(content: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = content?.[key]
+  return typeof value === "number" ? value : undefined
+}
+
 function UserBlock({ block }: { block: TurnBlock }) {
   const content = block.content
 
-  if (block.blockType === "text" || block.blockType === "thinking") {
-    if (!block.textContent) {
-      return null
-    }
+  switch (block.blockType) {
+    case "text":
+    case "thinking":
+      if (!block.textContent) {
+        return null
+      }
 
-    return <p className="whitespace-pre-wrap leading-relaxed text-card-foreground">{block.textContent}</p>
-  }
+      return (
+        <p className="whitespace-pre-wrap leading-relaxed text-card-foreground">{block.textContent}</p>
+      )
 
-  if (block.blockType === "image") {
-    const imageUrl = getString(content, "url")
-    if (!imageUrl) {
-      return null
-    }
+    case "image": {
+      const imageUrl = getString(content, "url")
+      if (!imageUrl) {
+        return null
+      }
 
-    const altText = getString(content, "alt_text") ?? "User attached image"
-
-    return (
-      <figure className="space-y-2">
-        <img
-          src={imageUrl}
-          alt={altText}
-          className="max-h-72 w-full rounded-lg border border-border/70 object-cover"
-          loading="lazy"
+      return (
+        <ImageBlock
+          url={imageUrl}
+          mimeType={getString(content, "mime_type")}
+          altText={getString(content, "alt_text")}
+          caption={block.textContent}
         />
-        {block.textContent ? (
-          <figcaption className="text-xs text-muted-foreground">{block.textContent}</figcaption>
-        ) : null}
-      </figure>
-    )
+      )
+    }
+
+    case "reference":
+    case "partial_reference": {
+      const refId = getString(content, "ref_id")
+      const refType = getString(content, "ref_type")
+      if (!refId || !refType) {
+        return null
+      }
+      const displayText = getString(content, "display_text") ?? getString(content, "title")
+
+      return (
+        <ReferenceBlock
+          refId={refId}
+          refType={refType}
+          displayText={displayText}
+          selectionStart={getNumber(content, "selection_start")}
+          selectionEnd={getNumber(content, "selection_end")}
+        />
+      )
+    }
+
+    case "tool_result":
+      return null
+    default:
+      return null
   }
-
-  if (block.blockType === "reference" || block.blockType === "partial_reference") {
-    const title = getString(content, "title") ?? getString(content, "ref_id") ?? "Reference"
-    const refType = getString(content, "ref_type")
-
-    return (
-      <div className="rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-sm">
-        <p className="font-medium text-foreground">{title}</p>
-        {refType ? <p className="text-xs text-muted-foreground">{refType}</p> : null}
-      </div>
-    )
-  }
-
-  if (block.textContent) {
-    return <p className="whitespace-pre-wrap leading-relaxed text-card-foreground">{block.textContent}</p>
-  }
-
-  if (content) {
-    return (
-      <pre className="overflow-x-auto rounded-lg bg-background/70 p-2 text-xs text-muted-foreground">
-        {JSON.stringify(content, null, 2)}
-      </pre>
-    )
-  }
-
-  return null
 }
 
 export function UserBubble({ turn }: { turn: UserTurn }) {
