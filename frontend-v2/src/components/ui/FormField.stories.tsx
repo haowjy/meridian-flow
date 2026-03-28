@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import type React from "react"
 import { FormField } from "./form-field"
 import { Input } from "./input"
 import { Textarea } from "./textarea"
@@ -14,6 +15,10 @@ const meta = {
   title: "UI/FormField",
   component: FormField,
   tags: ["autodocs"],
+  // All stories use render(); children default satisfies TS since the prop is required.
+  args: {
+    children: null as unknown as React.ReactElement<{ id?: string; [key: string]: unknown }>,
+  },
 } satisfies Meta<typeof FormField>
 
 export default meta

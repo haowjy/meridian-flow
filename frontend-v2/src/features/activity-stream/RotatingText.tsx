@@ -22,10 +22,14 @@ export function RotatingText({
   const intervalRef = useRef<number | null>(null)
   const timeoutRef = useRef<number | null>(null)
 
-  useEffect(() => {
+  // Reset animation indices when the messages list identity changes.
+  // React's "computed state during render" pattern avoids a setState-in-effect.
+  const [prevMessages, setPrevMessages] = useState(messages)
+  if (prevMessages !== messages) {
+    setPrevMessages(messages)
     setIndex(0)
     setPreviousIndex(null)
-  }, [messages])
+  }
 
   useEffect(() => {
     if (!active || messages.length < 2) {

@@ -7,7 +7,8 @@ type FormFieldProps = {
   label?: string
   error?: string
   helperText?: string
-  children: React.ReactElement
+  // Props typed with id so cloneElement can forward ids; index signature covers aria-* attrs.
+  children: React.ReactElement<{ id?: string; [key: string]: unknown }>
   className?: string
 }
 
