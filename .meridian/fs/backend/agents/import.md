@@ -1,6 +1,6 @@
-# Agent Import and Backfill
+# Agent Import
 
-Git import installs `.agents/` bundles into the project document tree, and backfill creates file-backed SKILL.md copies for DB-stored skills.
+Git import installs `.agents/` bundles into the project document tree.
 
 ## Import Pipeline
 
@@ -105,35 +105,3 @@ flowchart TD
 
 Refs: `backend/internal/service/agents/git_fetcher.go:57`, `backend/internal/service/agents/git_fetcher.go:95`, `backend/internal/service/agents/git_fetcher.go:117`, `backend/internal/service/agents/import_service.go:165`, `backend/internal/service/agents/import_service.go:152`, `backend/internal/service/agents/import_service.go:178`, `backend/internal/service/agents/import_service.go:190`, `backend/internal/service/agents/import_service.go:300`, `backend/internal/service/agents/git_fetcher.go:129`, `backend/internal/service/agents/git_fetcher.go:106`.
 
-## Backfill Service
-
-`BackfillService.BackfillSkills` creates `.agents/skills/<slug>/SKILL.md` for DB-stored skills that do not already have a file copy.
-
-```mermaid
-flowchart LR
-    A["Load DB skills"] --> B["Ensure .agents + .agents/skills folders"]
-    B --> C["For each skill: skip if SKILL.md exists"]
-    C --> D["Ensure skill folder + build SKILL.md content"]
-    D --> E["Create SKILL.md"]
-    E --> F["Aggregate per-skill errors"]
-```
-
-Refs: `backend/internal/service/agents/backfill.go:105`, `backend/internal/service/agents/backfill.go:119`, `backend/internal/service/agents/backfill.go:125`, `backend/internal/service/agents/backfill.go:137`, `backend/internal/service/agents/backfill.go:154`, `backend/internal/service/agents/backfill.go:163`, `backend/internal/service/agents/backfill.go:201`.
-
-### Content generation
-
-`buildSkillMDContent` emits SKILL.md frontmatter and body with compact default handling:
-
-| Field | Emission rule |
-|---|---|
-| `user-invocable` | Emitted only when false |
-| `disable-model-invocation` | Emitted only when true |
-| `position` | Emitted only when > 0 |
-
-Refs: `backend/internal/service/agents/backfill.go:34`, `backend/internal/service/agents/backfill.go:49`, `backend/internal/service/agents/backfill.go:55`, `backend/internal/service/agents/backfill.go:60`, `backend/internal/service/agents/backfill.go:71`.
-
-### Idempotent design
-
-Backfill is create-only for missing SKILL.md files and safe to rerun. Existing files are skipped unchanged; partial per-skill failures are aggregated and returned after the full loop.
-
-Refs: `backend/internal/service/agents/backfill.go:102`, `backend/internal/service/agents/backfill.go:137`, `backend/internal/service/agents/backfill.go:201`.

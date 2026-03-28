@@ -68,7 +68,7 @@ flowchart LR
     CTB --> SS
 ```
 
-The cycle is broken by late wiring: build `StreamingService`, build `SpawnService` with `ChildThreadBootstrapper`, then inject with `SetSpawnInvoker` (`backend/internal/service/llm/setup.go:198-217`, `backend/internal/service/llm/streaming/service.go:70-81`).
+The cycle is broken by late wiring: `ToolRegistryFactory` captures a `SpawnInvokerRef` closure, build `StreamingService`, build `SpawnService`, then set the closure target so `spawn_agent` can call `CreateSpawn` (`backend/internal/service/llm/setup.go:154-279`, `backend/internal/service/llm/streaming/tool_registry_factory.go:27`).
 
 ## Completion Detection
 
