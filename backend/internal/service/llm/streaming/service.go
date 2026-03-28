@@ -13,7 +13,6 @@ import (
 	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/service/llm/formatting"
 )
 
 // Service implements the StreamingService interface
@@ -22,15 +21,12 @@ import (
 type Service struct {
 	turnWriter           domainllm.TurnWriter
 	turnReader           domainllm.TurnReader
-	turnNavigator        domainllm.TurnNavigator
 	threadRepo           domainllm.ThreadStore
-	projectRepo          domaindocsys.ProjectStore    // For validating project access on cold start
-	documentSvc          domaindocsys.DocumentService // For tool operations (SOLID: DIP)
-	folderSvc            domaindocsys.FolderService   // For tool operations (SOLID: DIP)
-	turnContextResolver  *TurnContextResolver         // Owns stage-1 context resolution
-	toolRegistryFactory  *ToolRegistryFactory         // Builds prompt/execution tool registries
-	streamRequestBuilder *StreamRequestBuilder        // Builds conversation messages for LLM
-	streamRuntime        *StreamRuntime               // Owns stream/executor launch lifecycle
+	projectRepo          domaindocsys.ProjectStore // For validating project access on cold start
+	turnContextResolver  *TurnContextResolver      // Owns stage-1 context resolution
+	toolRegistryFactory  *ToolRegistryFactory      // Builds prompt/execution tool registries
+	streamRequestBuilder *StreamRequestBuilder     // Builds conversation messages for LLM
+	streamRuntime        *StreamRuntime            // Owns stream/executor launch lifecycle
 	validator            ThreadValidator
 	authorizer           authdomain.ResourceAuthorizer
 	registry             *mstream.Registry
@@ -39,10 +35,8 @@ type Service struct {
 	config               *config.Config
 	txManager            domain.TransactionManager
 	systemPromptResolver domainllm.SystemPromptResolver
-	messageBuilder       domainllm.MessageBuilder
-	capabilityRegistry   *capabilities.Registry        // For checking model capabilities (e.g., supports_tools)
-	formatterRegistry    *formatting.FormatterRegistry // For formatting synthetic tool results (ref transformer)
-	settlementMode       billing.CreditSettlementMode  // Wired in Phase 4; used by executor in Phase 5
+	capabilityRegistry   *capabilities.Registry       // For checking model capabilities (e.g., supports_tools)
+	settlementMode       billing.CreditSettlementMode // Wired in Phase 4; used by executor in Phase 5
 	logger               *slog.Logger
 }
 
@@ -65,11 +59,8 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 	return &Service{
 		turnWriter:           deps.Persistence.TurnWriter,
 		turnReader:           deps.Persistence.TurnReader,
-		turnNavigator:        deps.Persistence.TurnNavigator,
 		threadRepo:           deps.Persistence.ThreadRepo,
 		projectRepo:          deps.Persistence.ProjectRepo,
-		documentSvc:          deps.Services.DocumentSvc,
-		folderSvc:            deps.Services.FolderSvc,
 		turnContextResolver:  deps.Services.TurnContextResolver,
 		toolRegistryFactory:  deps.Services.ToolRegistryFactory,
 		streamRequestBuilder: deps.Services.StreamRequestBuilder,
@@ -82,9 +73,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		config:               deps.Infra.Config,
 		txManager:            deps.Persistence.TxManager,
 		systemPromptResolver: deps.Pipeline.SystemPromptResolver,
-		messageBuilder:       deps.Pipeline.MessageBuilder,
 		capabilityRegistry:   deps.Pipeline.CapabilityRegistry,
-		formatterRegistry:    deps.Pipeline.FormatterRegistry,
 		settlementMode:       deps.Billing.SettlementMode,
 		logger:               deps.Infra.Logger,
 	}, nil

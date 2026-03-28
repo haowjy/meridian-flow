@@ -17,7 +17,6 @@ import (
 	domainllm "meridian/internal/domain/llm"
 	domainwi "meridian/internal/domain/workitem"
 	"meridian/internal/jobs"
-	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -81,12 +80,11 @@ type LLMProviderGetter interface {
 
 // PersistenceDeps groups repository dependencies for data access.
 type PersistenceDeps struct {
-	TurnWriter    domainllm.TurnWriter
-	TurnReader    domainllm.TurnReader
-	TurnNavigator domainllm.TurnNavigator
-	ThreadRepo    domainllm.ThreadStore
-	ProjectRepo   domaindocsys.ProjectStore // For validating project access on cold start
-	TxManager     domain.TransactionManager
+	TurnWriter  domainllm.TurnWriter
+	TurnReader  domainllm.TurnReader
+	ThreadRepo  domainllm.ThreadStore
+	ProjectRepo domaindocsys.ProjectStore // For validating project access on cold start
+	TxManager   domain.TransactionManager
 	// WorkItemStore is used by contextResolver for work context variable resolution.
 	// Optional: nil disables context resolution (non-persona turns unaffected).
 	WorkItemStore domainwi.Store
@@ -98,7 +96,6 @@ func (d PersistenceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.TurnWriter, validation.Required),
 		validation.Field(&d.TurnReader, validation.Required),
-		validation.Field(&d.TurnNavigator, validation.Required),
 		validation.Field(&d.ThreadRepo, validation.Required),
 		validation.Field(&d.ProjectRepo, validation.Required),
 		validation.Field(&d.TxManager, validation.Required),
@@ -108,8 +105,6 @@ func (d PersistenceDeps) Validate() error {
 
 // ServiceDeps groups domain service dependencies used during streaming.
 type ServiceDeps struct {
-	DocumentSvc          domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
-	FolderSvc            domaindocsys.FolderService    // For tool operations (SOLID: DIP)
 	TurnContextResolver  *TurnContextResolver          // Resolves stage-1 context (thread/persona/model/params)
 	ToolRegistryFactory  *ToolRegistryFactory          // Builds prompt/execution tool registries
 	StreamRequestBuilder *StreamRequestBuilder         // Builds conversation messages for LLM
@@ -122,8 +117,6 @@ type ServiceDeps struct {
 // Validate checks that all service dependencies are provided.
 func (d ServiceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
-		validation.Field(&d.DocumentSvc, validation.Required),
-		validation.Field(&d.FolderSvc, validation.Required),
 		validation.Field(&d.TurnContextResolver, validation.Required),
 		validation.Field(&d.ToolRegistryFactory, validation.Required),
 		validation.Field(&d.StreamRequestBuilder, validation.Required),
@@ -134,25 +127,19 @@ func (d ServiceDeps) Validate() error {
 	)
 }
 
-// PipelineDeps groups LLM pipeline dependencies (provider routing, prompt building, message formatting).
+// PipelineDeps groups LLM pipeline dependencies (prompt building, stream registry).
 type PipelineDeps struct {
-	ProviderGetter       LLMProviderGetter
 	Registry             *mstream.Registry
 	SystemPromptResolver domainllm.SystemPromptResolver
-	MessageBuilder       domainllm.MessageBuilder
-	CapabilityRegistry   *capabilities.Registry        // For checking model capabilities (e.g., supports_tools)
-	FormatterRegistry    *formatting.FormatterRegistry // For formatting synthetic tool results (ref transformer)
+	CapabilityRegistry   *capabilities.Registry // For checking model capabilities (e.g., supports_tools)
 }
 
 // Validate checks that all pipeline dependencies are provided.
 func (d PipelineDeps) Validate() error {
 	return validation.ValidateStruct(&d,
-		validation.Field(&d.ProviderGetter, validation.Required),
 		validation.Field(&d.Registry, validation.Required),
 		validation.Field(&d.SystemPromptResolver, validation.Required),
-		validation.Field(&d.MessageBuilder, validation.Required),
 		validation.Field(&d.CapabilityRegistry, validation.Required),
-		validation.Field(&d.FormatterRegistry, validation.Required),
 	)
 }
 

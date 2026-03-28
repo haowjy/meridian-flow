@@ -232,15 +232,12 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		Persistence: streaming.PersistenceDeps{
 			TurnWriter:    deps.TurnRepo,
 			TurnReader:    deps.TurnRepo,
-			TurnNavigator: deps.TurnRepo,
 			ThreadRepo:    deps.ThreadRepo,
 			ProjectRepo:   deps.ProjectRepo,
 			TxManager:     deps.TxManager,
 			WorkItemStore: deps.WorkItemStore, // Optional: nil disables context resolution
 		},
 		Services: streaming.ServiceDeps{
-			DocumentSvc:          deps.DocumentSvc,
-			FolderSvc:            deps.FolderSvc,
 			TurnContextResolver:  turnContextResolver,
 			ToolRegistryFactory:  toolRegistryFactory,
 			StreamRequestBuilder: streamRequestBuilder,
@@ -250,12 +247,9 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			Authorizer:           deps.Authorizer,
 		},
 		Pipeline: streaming.PipelineDeps{
-			ProviderGetter:       providerResolver,
 			Registry:             streamRegistry,
 			SystemPromptResolver: systemPromptResolver,
-			MessageBuilder:       messageBuilder,
 			CapabilityRegistry:   deps.CapabilityRegistry,
-			FormatterRegistry:    formatterRegistry,
 		},
 		Billing: streaming.BillingDeps{
 			ToolLimitResolver:      deps.ToolLimitResolver,
