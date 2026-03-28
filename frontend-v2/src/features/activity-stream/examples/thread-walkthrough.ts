@@ -1,8 +1,7 @@
-import type { TimelineEntry } from "../streaming/types"
 import type { ActivityBlockData } from "../types"
 
 import { readTool, searchTool } from "./factories"
-import { ThreadScenarioBuilder } from "./scenario-builder"
+import { PACING_FIX_SCENARIO } from "./streaming-scenario"
 
 import type { AssistantTurn, ThreadTurn, TurnBlock, UserTurn } from "@/features/threads"
 
@@ -133,27 +132,8 @@ const HISTORY_TURNS: ThreadTurn[] = [
   ),
 ]
 
-const ACTIVE_TIMELINE: TimelineEntry[] = new ThreadScenarioBuilder()
-  .assistant((turn) => {
-    turn
-      .thinking(
-        "Need one concise paragraph that carries momentum into stillness. Keep diction formal and align with the established bell cadence.",
-      )
-      .tool(
-        "Read",
-        { file_path: "chapters/chapter-18.md" },
-        "Three strikes at dawn: awareness, release, stillness.",
-      )
-      .tool(
-        "doc_search",
-        { pattern: "bell motif", path: "chapters/" },
-        "chapter-18.md:44: The bell struck three times before silence settled over the yard.",
-      )
-      .text(
-        "The steel's last echo thinned across the yard before Mara let her blade fall and counted one measured breath, then another, until the tremor in her hands matched the rain. Somewhere above the arcades, the first bell struck awareness into the stone, the second drew the heat from her chest, and the third left only stillness, clean and bright as riverlight at dawn.",
-      )
-  })
-  .build()
+// Same streaming data as the Streaming Editor story — one scenario, two views.
+const ACTIVE_TIMELINE = PACING_FIX_SCENARIO
 
 export const THREAD_WALKTHROUGH_ACTIVE_TURN_ID = "turn-06"
 
