@@ -18,7 +18,6 @@ Types and interfaces for the `.agents/` namespace — personas, skills, and the 
 | `SkillResolver`      | File-only skill catalog (resolve by slug, list all)      | `interfaces.go` |
 | `PersonaCatalog`     | Persona resolution + listing (user-invocable, spawnable) | `interfaces.go` |
 | `AgentImportService` | Git-based `.agents/` bundle installation (atomic)        | `interfaces.go` |
-| `BackfillService`    | DB-to-file SKILL.md migration (idempotent)               | `interfaces.go` |
 | `GitFetcher`         | URL validation + shallow clone with SSRF guards          | `interfaces.go` |
 
 
@@ -37,4 +36,3 @@ Types and interfaces for the `.agents/` namespace — personas, skills, and the 
 - `ResolvePersona` hard-fails on invalid personas (execution time). `ListUserPersonas` soft-fails (catalog display) and returns issues separately.
 - Compile-time assertions: `var _ Interface = (*impl)(nil)` in every implementation.
 - Missing `.agents/` folder = empty catalog, not error.
-

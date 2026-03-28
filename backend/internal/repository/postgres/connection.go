@@ -36,9 +36,6 @@ type TableNames struct {
 	// User project favorites (junction table)
 	UserProjectFavorites string
 
-	// Skills system tables
-	ProjectSkills string
-
 	// Collaboration tables
 	CollabDocumentSnapshots   string
 	CollabDocumentUpdates     string
@@ -75,9 +72,6 @@ func NewTableNames(prefix string) *TableNames {
 
 		// User project favorites (junction table)
 		UserProjectFavorites: fmt.Sprintf("%suser_project_favorites", prefix),
-
-		// Skills system tables
-		ProjectSkills: fmt.Sprintf("%sproject_skills", prefix),
 
 		// Collaboration tables
 		CollabDocumentSnapshots:   fmt.Sprintf("%scollab_document_snapshots", prefix),

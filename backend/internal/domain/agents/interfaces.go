@@ -50,15 +50,6 @@ type AgentImportService interface {
 	ImportFromGit(ctx context.Context, projectID uuid.UUID, url string) error
 }
 
-// BackfillService migrates legacy project_skills rows into the .agents/skills/
-// document tree. Each project is backfilled independently. A structured error
-// is returned on failure so callers can surface per-file problems.
-type BackfillService interface {
-	// BackfillSkills creates .agents/skills/<slug>/SKILL.md for every legacy
-	// skill in the project that does not already have a file copy.
-	BackfillSkills(ctx context.Context, projectID uuid.UUID) error
-}
-
 // GitFetcher is a low-level git utility used by AgentImportService.
 // It is separated so callers can swap in test doubles without touching
 // the broader import logic.

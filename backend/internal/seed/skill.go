@@ -43,7 +43,7 @@ func (s *SkillSeeder) SeedSkills(ctx context.Context, projectID, userID string) 
 		}
 	}
 
-	// Create skill via service layer (creates folder + DB record)
+	// Create skill via service layer (writes .agents/skills/<slug>/SKILL.md)
 	_, err = s.skillService.CreateSkill(ctx, userID, skill.CreateSkillRequest{
 		ProjectID:     projectID,
 		Name:          "test-skill",

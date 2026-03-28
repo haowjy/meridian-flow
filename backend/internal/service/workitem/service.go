@@ -116,7 +116,7 @@ func (s *workItemService) Create(ctx context.Context, projectID, userID string, 
 		return wi, nil
 	}
 
-	return nil, fmt.Errorf("create work item: failed to generate unique slug after %d attempts", maxSlugRetries)
+	return nil, domainerrors.WorkItemSlugGenerationFailed(maxSlugRetries)
 }
 
 // Get returns the work item by UUID.
@@ -295,8 +295,7 @@ func (s *workItemService) Reopen(ctx context.Context, id, userID string) (*domai
 		// CAS mismatch — work item wasn't in 'done' state.
 		var conflictErr *domain.ConflictError
 		if errors.As(err, &conflictErr) {
-			return nil, domain.NewConflictError("work_item", id,
-				fmt.Sprintf("work item %q is not in 'done' state; cannot reopen", wi.Slug))
+			return nil, domainerrors.WorkItemNotDone(wi.Slug)
 		}
 		return nil, err
 	}

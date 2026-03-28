@@ -11,6 +11,7 @@ import (
 	"meridian/internal/domain"
 	authdomain "meridian/internal/domain/auth"
 	domaindocsys "meridian/internal/domain/docsystem"
+	domainerrors "meridian/internal/domain/errors"
 )
 
 // documentService implements the DocumentService interface
@@ -67,8 +68,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *domaindocsys.
 	// Normalize and validate extension
 	extension := domaindocsys.NormalizeExtension(req.Extension)
 	if !domaindocsys.IsValidExtension(extension) {
-		return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
-			domain.ErrValidation, extension, domaindocsys.ValidExtensions())
+		return nil, domainerrors.UnsupportedFileExtension(extension, domaindocsys.ValidExtensions())
 	}
 
 	// Validate parent resources are not deleted
@@ -227,8 +227,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	if req.Extension != nil {
 		extension := domaindocsys.NormalizeExtension(*req.Extension)
 		if !domaindocsys.IsValidExtension(extension) {
-			return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
-				domain.ErrValidation, extension, domaindocsys.ValidExtensions())
+			return nil, domainerrors.UnsupportedFileExtension(extension, domaindocsys.ValidExtensions())
 		}
 		doc.Extension = extension
 	}

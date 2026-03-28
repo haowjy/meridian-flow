@@ -2,18 +2,15 @@ package agents
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
 
 	"meridian/internal/capabilities"
-	"meridian/internal/domain"
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainerrors "meridian/internal/domain/errors"
-	"meridian/internal/pkg/frontmatter"
 )
 
 // filePersonaCatalog implements domain/agents.PersonaCatalog backed by the
@@ -57,14 +54,20 @@ func NewFilePersonaCatalog(
 // a missing required field.
 func (c *filePersonaCatalog) ResolvePersona(ctx context.Context, projectID uuid.UUID, slug string) (*domainagents.Persona, error) {
 	path := fmt.Sprintf(".agents/agents/%s.md", slug)
+	projectIDStr := projectID.String()
 
-	doc, err := c.docRepo.GetByPath(ctx, path, projectID.String())
+	doc, found, err := loadCatalogDocByPath(
+		ctx,
+		c.docRepo,
+		projectIDStr,
+		path,
+		fmt.Sprintf("persona catalog: read %s", path),
+	)
 	if err != nil {
-		var notFound *domain.NotFoundError
-		if errors.As(err, &notFound) {
-			return nil, domainerrors.PersonaNotFound(slug)
-		}
-		return nil, fmt.Errorf("persona catalog: read %s: %w", path, err)
+		return nil, err
+	}
+	if !found {
+		return nil, domainerrors.PersonaNotFound(slug)
 	}
 
 	persona, parseErr := parsePersonaDoc(doc, slug, path)
@@ -133,19 +136,26 @@ func (c *filePersonaCatalog) ListSpawnablePersonas(ctx context.Context, projectI
 // listAll reads every .md document in .agents/agents/, parses each one, and
 // returns the valid personas alongside any validation issues encountered.
 func (c *filePersonaCatalog) listAll(ctx context.Context, projectID uuid.UUID) ([]domainagents.Persona, []domainagents.ValidationIssue, error) {
-	agentsFolder, err := c.folderRepo.GetByPath(ctx, projectID.String(), ".agents/agents")
+	projectIDStr := projectID.String()
+
+	agentsFolder, found, err := lookupOptionalCatalogFolder(
+		ctx,
+		c.folderRepo,
+		projectIDStr,
+		".agents/agents",
+		"persona catalog: locate agents folder",
+	)
 	if err != nil {
-		var notFound *domain.NotFoundError
-		if errors.As(err, &notFound) {
-			// No agents folder yet — not an error, just no personas.
-			return nil, nil, nil
-		}
-		return nil, nil, fmt.Errorf("persona catalog: locate agents folder: %w", err)
+		return nil, nil, err
+	}
+	if !found {
+		// No agents folder yet — not an error, just no personas.
+		return nil, nil, nil
 	}
 
 	// ListByFolder returns metadata only (no content), so a secondary GetByID
 	// is required to load the system-prompt body for each document.
-	metaDocs, err := c.docRepo.ListByFolder(ctx, &agentsFolder.ID, projectID.String())
+	metaDocs, err := c.docRepo.ListByFolder(ctx, &agentsFolder.ID, projectIDStr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("persona catalog: list agents folder: %w", err)
 	}
@@ -163,12 +173,9 @@ func (c *filePersonaCatalog) listAll(ctx context.Context, projectID uuid.UUID) (
 		path := fmt.Sprintf(".agents/agents/%s.md", slug)
 
 		// Load full document content (metadata-only from ListByFolder is insufficient).
-		fullDoc, err := c.docRepo.GetByID(ctx, meta.ID, projectID.String())
+		fullDoc, err := loadCatalogDocByID(ctx, c.docRepo, projectIDStr, meta.ID)
 		if err != nil {
-			issues = append(issues, domainagents.ValidationIssue{
-				Path:    path,
-				Message: fmt.Sprintf("failed to load: %v", err),
-			})
+			issues = appendCatalogIssue(issues, path, fmt.Sprintf("failed to load: %v", err))
 			c.logger.Warn("persona file load failed, skipping",
 				"slug", slug,
 				"path", path,
@@ -177,17 +184,17 @@ func (c *filePersonaCatalog) listAll(ctx context.Context, projectID uuid.UUID) (
 			continue
 		}
 
-		persona, parseErr := parsePersonaDoc(fullDoc, slug, path)
-		if parseErr != nil {
-			issues = append(issues, domainagents.ValidationIssue{
-				Path:    path,
-				Message: parseErr.Error(),
-			})
-			c.logger.Warn("persona file invalid, skipping",
-				"slug", slug,
-				"path", path,
-				"error", parseErr,
-			)
+		persona, nextIssues, ok := parseCatalogDocWithIssues(
+			fullDoc,
+			slug,
+			path,
+			parsePersonaDoc,
+			issues,
+			c.logger,
+			"persona file invalid, skipping",
+		)
+		issues = nextIssues
+		if !ok {
 			continue
 		}
 
@@ -196,11 +203,7 @@ func (c *filePersonaCatalog) listAll(ctx context.Context, projectID uuid.UUID) (
 		// apply a stricter check; list operations surface the issue without
 		// hiding the entry from the catalog view.
 		if modelErr := c.validatePersonaModel(persona); modelErr != nil {
-			issues = append(issues, domainagents.ValidationIssue{
-				Path:    path,
-				Field:   "model",
-				Message: modelErr.Error(),
-			})
+			issues = appendCatalogFieldIssue(issues, path, "model", modelErr.Error())
 			c.logger.Warn("persona model unavailable",
 				"slug", slug,
 				"path", path,
@@ -251,13 +254,13 @@ func (c *filePersonaCatalog) validatePersonaModel(persona *domainagents.Persona)
 // The Persona type has proper yaml tags so it can be parsed directly.
 // Slug, SourcePath, and SystemPrompt are set after parsing (derived, not in frontmatter).
 func parsePersonaDoc(doc *domaindocsys.Document, slug, path string) (*domainagents.Persona, error) {
-	persona, systemPrompt, err := frontmatter.ParseInto[domainagents.Persona](doc.Content)
+	persona, systemPrompt, err := parseCatalogFrontmatter[domainagents.Persona](doc.Content)
 	if err != nil {
-		return nil, fmt.Errorf("invalid frontmatter: %w", err)
+		return nil, err
 	}
 
-	if persona.Name == "" {
-		return nil, fmt.Errorf("missing required field: name")
+	if err := requireCatalogName(persona.Name); err != nil {
+		return nil, err
 	}
 
 	// Derived fields — always overwrite even if YAML happened to contain them.

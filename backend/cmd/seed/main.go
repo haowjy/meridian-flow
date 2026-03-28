@@ -15,8 +15,8 @@ import (
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
-	postgresSkill "meridian/internal/repository/postgres/skill"
 	"meridian/internal/seed"
+	serviceAgents "meridian/internal/service/agents"
 	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
@@ -194,11 +194,19 @@ func main() {
 	}
 	log.Println("✅ Thread data seeded")
 
-	// Seed skills via service layer (creates DB record + folder structure)
+	// Seed skills via file-backed service (.agents/skills/<slug>/SKILL.md).
 	log.Println("🧠 Seeding skills...")
-	skillRepo := postgresSkill.NewProjectSkillRepository(repoConfig)
 	namespaceSvc := serviceDocsys.NewNamespaceService(folderRepo, logger)
-	skillService := serviceSkill.NewProjectSkillService(skillRepo, docRepo, folderRepo, namespaceSvc, authorizer, txManager, logger)
+	skillResolver := serviceAgents.NewFileSkillResolver(docRepo, folderRepo, logger)
+	skillService := serviceSkill.NewFileProjectSkillService(
+		docRepo,
+		folderRepo,
+		namespaceSvc,
+		authorizer,
+		skillResolver,
+		txManager,
+		logger,
+	)
 	skillSeeder := seed.NewSkillSeeder(skillService, logger)
 	if err := skillSeeder.SeedSkills(ctx, projectID, userID); err != nil {
 		log.Fatalf("Failed to seed skills: %v", err)
