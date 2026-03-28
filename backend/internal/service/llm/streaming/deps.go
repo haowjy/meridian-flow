@@ -11,9 +11,9 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	domainagents "meridian/internal/domain/agents"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
-	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	domainwi "meridian/internal/domain/workitem"
@@ -83,15 +83,15 @@ type LLMProviderGetter interface {
 
 // PersistenceDeps groups repository dependencies for data access.
 type PersistenceDeps struct {
-	TurnWriter     domainllm.TurnWriter
-	TurnReader     domainllm.TurnReader
-	TurnNavigator  domainllm.TurnNavigator
-	ThreadRepo     domainllm.ThreadStore
-	ProjectRepo    domaindocsys.ProjectStore // For validating project access on cold start
-	TxManager      domain.TransactionManager
+	TurnWriter    domainllm.TurnWriter
+	TurnReader    domainllm.TurnReader
+	TurnNavigator domainllm.TurnNavigator
+	ThreadRepo    domainllm.ThreadStore
+	ProjectRepo   domaindocsys.ProjectStore // For validating project access on cold start
+	TxManager     domain.TransactionManager
 	// WorkItemStore is used by contextResolver for work context variable resolution.
 	// Optional: nil disables context resolution (non-persona turns unaffected).
-	WorkItemStore  domainwi.Store
+	WorkItemStore domainwi.Store
 }
 
 // Validate checks that all persistence dependencies are provided.
@@ -110,13 +110,16 @@ func (d PersistenceDeps) Validate() error {
 
 // ServiceDeps groups domain service dependencies used during streaming.
 type ServiceDeps struct {
-	DocumentSvc      domaindocsys.DocumentService    // For tool operations (SOLID: DIP)
-	FolderSvc        domaindocsys.FolderService      // For tool operations (SOLID: DIP)
-	NamespaceSvc     domaindocsys.NamespaceService   // For namespace routing in tools
-	SkillResolver    domainagents.SkillResolver      // File-backed skill resolution (.agents/skills/)
+	DocumentSvc      domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
+	FolderSvc        domaindocsys.FolderService    // For tool operations (SOLID: DIP)
+	NamespaceSvc     domaindocsys.NamespaceService // For namespace routing in tools
+	SkillResolver    domainagents.SkillResolver    // File-backed skill resolution (.agents/skills/)
 	Validator        ThreadValidator
 	Authorizer       authdomain.ResourceAuthorizer
 	MutationStrategy tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+	// SpawnInvokerRef resolves the current SpawnInvoker lazily during tool-registry build.
+	// Optional: nil disables spawn tool registration.
+	SpawnInvokerRef func() domainllm.SpawnInvoker
 	// PersonaCatalog resolves persona profiles from .agents/agents/*.md.
 	// Optional: nil disables persona resolution (turns without persona_slug still work).
 	PersonaCatalog domainagents.PersonaCatalog

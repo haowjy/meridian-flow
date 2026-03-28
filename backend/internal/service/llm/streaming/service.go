@@ -9,9 +9,9 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	domainagents "meridian/internal/domain/agents"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
-	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	domainwi "meridian/internal/domain/workitem"
@@ -32,7 +32,7 @@ type Service struct {
 	projectRepo            domaindocsys.ProjectStore     // For validating project access on cold start
 	documentSvc            domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
 	folderSvc              domaindocsys.FolderService    // For tool operations (SOLID: DIP)
-	namespaceSvc           domaindocsys.NamespaceService  // For namespace routing in tools
+	namespaceSvc           domaindocsys.NamespaceService // For namespace routing in tools
 	skillResolver          domainagents.SkillResolver    // File-backed skill resolution (.agents/skills/)
 	validator              ThreadValidator
 	authorizer             authdomain.ResourceAuthorizer
@@ -58,27 +58,13 @@ type Service struct {
 	contextResolver        *contextResolver               // Resolves work context variables for persona turns
 	userStreamTracker      *UserStreamTracker             // Per-user concurrent stream limiter
 	tokenMonitor           *TokenMonitor                  // Context budget monitor; nil when monitoring is disabled
-	// spawnInvoker enables the spawn_agent tool. Wired after construction via SetSpawnInvoker
-	// to break the SpawnService ↔ StreamingService circular dependency.
-	// nil = spawn_agent tool not registered (e.g. during startup before wiring completes).
-	spawnInvoker           domainllm.SpawnInvoker
-	logger                 *slog.Logger
+	// spawnInvokerRef enables lazy SpawnInvoker resolution during tool-registry build.
+	// nil callback or nil callback result means spawn_agent is not registered.
+	spawnInvokerRef func() domainllm.SpawnInvoker
+	logger          *slog.Logger
 }
 
 var _ domainllm.StreamingService = (*Service)(nil)
-
-// SetSpawnInvoker wires the spawn invoker into the service after construction.
-// This breaks the SpawnService ↔ StreamingService circular dependency:
-//  1. Create StreamingService (no spawn invoker yet)
-//  2. Create SpawnService (uses StreamingService internally via ChildThreadBootstrapper)
-//  3. Call SetSpawnInvoker(spawnService) to wire back
-//
-// Must be called before any turn with a work item is processed, otherwise spawn_agent
-// will not appear in the tool registry for those turns.
-// Thread-safe: the field is set once at startup before concurrent requests begin.
-func (s *Service) SetSpawnInvoker(invoker domainllm.SpawnInvoker) {
-	s.spawnInvoker = invoker
-}
 
 // NewStreamingOrchestrator creates a new streaming service using grouped dependency structs.
 // Validates all dependencies at construction time; returns an error if any are missing.
@@ -141,6 +127,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		settlementMode:         deps.Billing.SettlementMode,
 		jobQueue:               deps.Infra.JobQueue,
 		mutationStrategy:       deps.Services.MutationStrategy,
+		spawnInvokerRef:        deps.Services.SpawnInvokerRef,
 		personaCatalog:         deps.Services.PersonaCatalog,
 		workItemSvc:            deps.Services.WorkItemSvc,
 		contextResolver:        ctxResolver,
