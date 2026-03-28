@@ -14,7 +14,6 @@ erDiagram
     projects ||--o{ folders : "has many"
     projects ||--o{ documents : "has many"
     projects ||--o{ threads : "has many"
-    projects ||--o{ project_skills : "has many"
     users ||--o{ user_project_favorites : "favorites"
     projects ||--o{ user_project_favorites : "favorited by"
     folders ||--o{ folders : "has children"
@@ -38,7 +37,6 @@ erDiagram
 | `folders` | Hierarchical tree via adjacency list (`parent_id` self-ref). | DB column is `parent_id`; API exposes as `folder_id`. Recursive delete cascades to children. |
 | `documents` | Leaf nodes with markdown `content` + `ai_content` for collab. | `yjs_state` for real-time collab. `path` is computed (not stored) via recursive CTE. |
 | `user_project_favorites` | Junction table for project favorites. | Composite PK `(user_id, project_id)`. |
-| `project_skills` | Per-project AI skill metadata and content. | Links to `instance_folder_id` in `/.meridian/skills/`. Has `metadata` JSONB column. |
 
 ### Thread System
 
