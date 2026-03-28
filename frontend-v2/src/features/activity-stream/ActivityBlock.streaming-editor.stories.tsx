@@ -1,15 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 import type { Meta, StoryObj } from "@storybook/react-vite"
 
-import { Button } from "@/components/ui/button"
+import { TimelineScrubber } from "@/components/storybook/TimelineScrubber"
+import { useTimelinePlayback } from "@/lib/use-timeline-playback"
 
 import { ActivityBlock } from "./ActivityBlock"
+import { PACING_FIX_SCENARIO } from "./examples/streaming-scenario"
 import { STREAM_EVENT_TYPE_SET } from "./streaming/events"
 import type { StreamEvent } from "./streaming/events"
-import { PACING_FIX_SCENARIO } from "./streaming/scenario"
+import { createInitialState, reduceStreamEvent } from "./streaming/reducer"
 import type { TimelineEntry } from "./streaming/types"
-import { useStreamSimulator } from "./streaming/use-stream-simulator"
+import type { ActivityBlockData } from "./types"
 
 type TimelineParseResult =
   | { ok: true; timeline: TimelineEntry[] }
@@ -17,8 +19,7 @@ type TimelineParseResult =
 
 type EventLogEntry = {
   sequence: number
-  firedAtMs: number
-  plannedDelayMs: number
+  delayMs: number
   type: StreamEvent["type"]
 }
 
@@ -96,89 +97,20 @@ function formatElapsed(ms: number): string {
     .padStart(3, "0")}`
 }
 
-/**
- * Editor-oriented wrapper around useStreamSimulator.
- *
- * Adds mutable timeline, event logging, step-through debugging,
- * and replaceTimeline (for the JSON editor) on top of the base hook.
- */
-function useStreamingEditorSimulator(id: string, initialTimeline: TimelineEntry[]) {
-  const [timeline, setTimeline] = useState(initialTimeline)
-  const [speed, setSpeed] = useState(1)
-  const [eventLog, setEventLog] = useState<EventLogEntry[]>([])
-  const runStartRef = useRef<number>(performance.now())
-
-  const onEvent = useCallback((entry: TimelineEntry) => {
-    const firedAtMs = Math.max(0, performance.now() - runStartRef.current)
-    setEventLog((current) => [
-      ...current,
-      {
-        sequence: current.length + 1,
-        firedAtMs,
-        plannedDelayMs: entry.delayMs,
-        type: entry.event.type,
-      },
-    ])
-  }, [])
-
-  const {
-    activity,
-    restart,
-    paused,
-    setPaused,
-    step: baseStep,
-    progress,
-  } = useStreamSimulator(id, timeline, speed, { onEvent })
-
-  const isPlaying = !paused
-  const cursor = progress.current
-
-  const setIsPlaying = useCallback(
-    (updater: boolean | ((current: boolean) => boolean)) => {
-      if (typeof updater === "function") {
-        setPaused((p) => !updater(!p))
-      } else {
-        setPaused(!updater)
-      }
-    },
-    [setPaused],
-  )
-
-  const reset = useCallback(() => {
-    setEventLog([])
-    runStartRef.current = performance.now()
-    restart()
-  }, [restart])
-
-  const replaceTimeline = useCallback(
-    (nextTimeline: TimelineEntry[]) => {
-      setTimeline(nextTimeline)
-      setEventLog([])
-      runStartRef.current = performance.now()
-      // Preserve pause state — user may be editing JSON while paused for step-through.
-      restart({ preservePause: true })
-    },
-    [restart],
-  )
-
-  return {
-    activity,
-    timeline,
-    cursor,
-    isPlaying,
-    speed,
-    eventLog,
-    setIsPlaying,
-    setSpeed,
-    step: baseStep,
-    reset,
-    replaceTimeline,
+function buildActivityAtCursor(id: string, timeline: TimelineEntry[], cursor: number): ActivityBlockData {
+  const clampedCursor = Math.min(Math.max(cursor, 0), timeline.length)
+  const entries = timeline.slice(0, clampedCursor)
+  let state = createInitialState(id)
+  for (const entry of entries) {
+    state = reduceStreamEvent(state, entry.event)
   }
+  return state.activity
 }
 
 const meta = {
-  title: "Features/ActivityStream/ActivityBlock/Streaming Editor",
+  title: "Features/Threads/Activity Block/Streaming Editor",
   component: ActivityBlock,
+  args: { activity: { id: "default", items: [] } },
   parameters: {
     layout: "fullscreen",
   },
@@ -191,24 +123,58 @@ export const StreamingEditor: Story = {
   render: function StreamingEditorStory() {
     const initialTimelineText = useMemo(() => serializeTimeline(PACING_FIX_SCENARIO), [])
     const [editorValue, setEditorValue] = useState(initialTimelineText)
+    const [timeline, setTimeline] = useState(PACING_FIX_SCENARIO)
     const [parseError, setParseError] = useState<string | null>(null)
 
-    const {
-      activity,
-      timeline,
-      cursor,
-      isPlaying,
-      speed,
-      eventLog,
-      setIsPlaying,
-      setSpeed,
-      step,
-      reset,
-      replaceTimeline,
-    } = useStreamingEditorSimulator("streaming-editor", PACING_FIX_SCENARIO)
+    const getDelayMs = useCallback(
+      (currentStep: number, speed: number) => {
+        if (currentStep <= 0) return 0
+        const current = timeline[currentStep]?.delayMs ?? 0
+        const previous = currentStep > 0 ? (timeline[currentStep - 1]?.delayMs ?? 0) : 0
+        return Math.max(0, (current - previous) / speed)
+      },
+      [timeline],
+    )
 
-    const hasNextEvent = cursor < timeline.length
-    const isActivelyPlaying = isPlaying && hasNextEvent
+    const playback = useTimelinePlayback({
+      totalSteps: timeline.length,
+      getDelayMs,
+      autoplay: true,
+      initialSpeed: 1,
+    })
+
+    const cursor = Math.min(playback.cursor, timeline.length)
+
+    const replaceTimeline = useCallback(
+      (nextTimeline: TimelineEntry[]) => {
+        setTimeline(nextTimeline)
+        playback.rewind()
+      },
+      [playback],
+    )
+
+    const activity = useMemo(
+      () => buildActivityAtCursor("streaming-editor", timeline, cursor),
+      [cursor, timeline],
+    )
+
+    const eventLog = useMemo<EventLogEntry[]>(
+      () =>
+        timeline.slice(0, cursor).map((entry, index) => ({
+          sequence: index + 1,
+          delayMs: entry.delayMs,
+          type: entry.event.type,
+        })),
+      [timeline, cursor],
+    )
+
+    const phaseLabel = useMemo(() => {
+      if (parseError) return "Invalid"
+      if (activity.error) return "Error"
+      if (activity.isStreaming) return "Streaming"
+      if (cursor >= timeline.length) return "Complete"
+      return "Ready"
+    }, [activity.error, activity.isStreaming, cursor, parseError, timeline.length])
 
     const onEditorChange = useCallback(
       (nextValue: string) => {
@@ -230,45 +196,11 @@ export const StreamingEditor: Story = {
       <div className="h-full min-h-screen bg-background px-4 py-4 font-mono md:px-6">
         <div className="mx-auto max-w-[1440px] space-y-4">
           <div className="rounded-md border border-border bg-card p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant={isActivelyPlaying ? "default" : "outline"}
-                size="sm"
-                onClick={() => setIsPlaying((current) => !current)}
-                disabled={!hasNextEvent}
-              >
-                {isActivelyPlaying ? "Pause" : "Play"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={step}
-                disabled={isPlaying || !hasNextEvent || Boolean(parseError)}
-              >
-                Step
-              </Button>
-              <Button variant="outline" size="sm" onClick={reset}>
-                Reset
-              </Button>
-
-              <label className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
-                Speed
-                <input
-                  type="range"
-                  min={0.5}
-                  max={4}
-                  step={0.25}
-                  value={speed}
-                  onChange={(event) => setSpeed(Number(event.target.value))}
-                  className="w-40"
-                />
-                <span className="w-12 text-right text-foreground">{speed.toFixed(2)}x</span>
-              </label>
-
-              <span className="ml-auto text-xs text-muted-foreground">
-                Event {Math.min(cursor, timeline.length)}/{timeline.length}
-              </span>
-            </div>
+            <TimelineScrubber
+              playback={playback}
+              statusLabel={`Event ${cursor}/${timeline.length}`}
+              phaseLabel={phaseLabel}
+            />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -287,7 +219,7 @@ export const StreamingEditor: Story = {
                   <span className="text-destructive">{parseError}</span>
                 ) : (
                   <span className="text-muted-foreground">
-                    Valid timeline loaded. Changes replay immediately from event 1.
+                    Valid timeline loaded. Changes replay immediately from the start.
                   </span>
                 )}
               </div>
@@ -314,8 +246,8 @@ export const StreamingEditor: Story = {
                     key={entry.sequence}
                     className="grid grid-cols-[110px_160px_1fr] gap-3 border-b border-border/40 pb-1 last:border-b-0"
                   >
-                    <span className="text-muted-foreground">{formatElapsed(entry.firedAtMs)}</span>
-                    <span className="text-muted-foreground">delay {entry.plannedDelayMs}ms</span>
+                    <span className="text-muted-foreground">{formatElapsed(entry.delayMs)}</span>
+                    <span className="text-muted-foreground">delay {entry.delayMs}ms</span>
                     <span className="text-foreground">{entry.type}</span>
                   </li>
                 ))}

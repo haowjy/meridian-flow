@@ -460,7 +460,7 @@ function StreamingDemoView() {
 }
 
 const meta = {
-  title: "Features/Chat Scroll/Floating Scroll Layout",
+  title: "Features/Threads/Chat Scroll",
   component: FloatingScrollLayout,
   args: {
     children: null,
