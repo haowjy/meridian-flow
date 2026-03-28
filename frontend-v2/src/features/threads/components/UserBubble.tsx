@@ -73,7 +73,7 @@ function UserBlock({ block }: { block: TurnBlock }) {
 export function UserBubble({ turn }: { turn: UserTurn }) {
   return (
     <div className="flex justify-end">
-      <article className="max-w-[80%] space-y-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm shadow-sm">
+      <article className="max-w-[95%] space-y-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm shadow-sm">
         {turn.blocks.map((block) => (
           <UserBlock key={block.id} block={block} />
         ))}

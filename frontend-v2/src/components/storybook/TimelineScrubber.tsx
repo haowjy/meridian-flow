@@ -38,7 +38,7 @@ export function TimelineScrubber({
           disabled={playback.cursor === 0}
         >
           <Rewind className="size-3.5" aria-hidden="true" />
-          Rewind
+          <span className="hidden sm:inline">Rewind</span>
         </Button>
         <Button
           type="button"
@@ -48,7 +48,7 @@ export function TimelineScrubber({
           disabled={playback.cursor === 0}
         >
           <SkipBack className="size-3.5" aria-hidden="true" />
-          Step Back
+          <span className="hidden sm:inline">Step Back</span>
         </Button>
         <Button
           type="button"
@@ -62,7 +62,7 @@ export function TimelineScrubber({
           ) : (
             <Play className="size-3.5" aria-hidden="true" />
           )}
-          {playback.isPlaying ? "Pause" : "Play"}
+          <span className="hidden sm:inline">{playback.isPlaying ? "Pause" : "Play"}</span>
         </Button>
         <Button
           type="button"
@@ -72,12 +72,12 @@ export function TimelineScrubber({
           disabled={playback.cursor >= playback.maxCursor}
         >
           <SkipForward className="size-3.5" aria-hidden="true" />
-          Step
+          <span className="hidden sm:inline">Step</span>
         </Button>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <span className="text-xs text-muted-foreground">Speed</span>
           <Slider
-            className="w-28"
+            className="flex-1 sm:w-28"
             min={MIN_SPEED}
             max={MAX_SPEED}
             step={0.1}

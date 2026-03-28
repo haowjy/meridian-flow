@@ -289,11 +289,11 @@ export function FloatingScrollLayout({
   return (
     <div className={cn("relative flex h-full min-h-0 w-full overflow-hidden", className)}>
       <ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
-        <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full" style={viewportStyle}>
+        <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full [&>div]:!block [&>div]:!min-w-0" style={viewportStyle}>
           <div
             ref={contentRef}
             className={cn(
-              "mx-auto flex w-full max-w-4xl flex-col gap-4 px-4",
+              "mx-auto flex min-w-0 w-full max-w-4xl flex-col gap-4 px-4",
               !isContentReady && "pointer-events-none opacity-0"
             )}
             style={{

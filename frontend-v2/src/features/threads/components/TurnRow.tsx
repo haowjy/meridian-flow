@@ -21,7 +21,7 @@ function ErrorTurn({ turn }: { turn: AssistantTurn }) {
   const errorMessage = turn.error ?? "An unexpected error interrupted this response."
 
   return (
-    <div className="space-y-2 pr-10">
+    <div className="space-y-2">
       <TurnStatusBanner variant="error" message={errorMessage} />
       {hasRenderableActivity(turn) ? <ActivityBlock activity={turn.activity} /> : null}
     </div>
@@ -30,7 +30,7 @@ function ErrorTurn({ turn }: { turn: AssistantTurn }) {
 
 function CancelledTurn({ turn }: { turn: AssistantTurn }) {
   return (
-    <div className="space-y-2 pr-10 opacity-70">
+    <div className="space-y-2 opacity-70">
       <div className="flex items-center gap-2">
         <TurnStatusBanner variant="warning" message="This response was cancelled." className="flex-1" />
         <Badge
@@ -47,7 +47,7 @@ function CancelledTurn({ turn }: { turn: AssistantTurn }) {
 
 function CreditLimitedTurn({ turn }: { turn: AssistantTurn }) {
   return (
-    <div className="space-y-2 pr-10">
+    <div className="space-y-2">
       <TurnStatusBanner variant="warning" message={turn.error ?? "Credit limit reached."} />
       {hasRenderableActivity(turn) ? <ActivityBlock activity={turn.activity} /> : null}
     </div>
@@ -86,7 +86,7 @@ export function TurnRow({ turn, onSwitchSibling }: TurnRowProps) {
       ) : turn.status === "credit_limited" ? (
         <CreditLimitedTurn turn={turn} />
       ) : (
-        <div className="pr-10">
+        <div>
           <ActivityBlock
             // Remount when transitioning out of waiting_subagents so internal
             // expanded state resets to the default for the new status.
@@ -102,7 +102,7 @@ export function TurnRow({ turn, onSwitchSibling }: TurnRowProps) {
     )
 
   return (
-    <div>
+    <div className="min-w-0">
       {hasSiblings ? (
         <SiblingNav
           current={turn.siblingIndex}

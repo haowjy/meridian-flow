@@ -193,7 +193,7 @@ export const StreamingEditor: Story = {
     )
 
     return (
-      <div className="h-full min-h-screen bg-background px-4 py-4 font-mono md:px-6">
+      <div className="h-full min-h-screen overflow-x-hidden bg-background px-2 py-4 font-mono sm:px-4 md:px-6">
         <div className="mx-auto max-w-[1440px] space-y-4">
           <div className="rounded-md border border-border bg-card p-3">
             <TimelineScrubber
@@ -203,8 +203,8 @@ export const StreamingEditor: Story = {
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-md border border-border bg-card p-3">
+          <div className="grid gap-2 sm:gap-4 lg:grid-cols-2">
+            <section className="order-last min-w-0 rounded-md border border-border bg-card p-3 lg:order-none">
               <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
                 Timeline Editor (JSON from scenario.ts)
               </div>
@@ -225,8 +225,8 @@ export const StreamingEditor: Story = {
               </div>
             </section>
 
-            <section className="rounded-md border border-border bg-card p-3">
-              <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <section className="order-first min-w-0 lg:order-none lg:rounded-md lg:border lg:border-border lg:bg-card lg:p-3">
+              <div className="mb-2 hidden text-xs uppercase tracking-wide text-muted-foreground lg:block">
                 Live ActivityBlock Output
               </div>
               <ActivityBlock activity={activity} defaultExpanded />

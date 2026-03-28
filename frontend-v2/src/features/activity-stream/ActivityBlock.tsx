@@ -127,7 +127,7 @@ export function ActivityBlock({
 
   return (
     <ActivityNestingProvider depth={depth} renderNestedActivity={renderNestedActivity}>
-      <div className={cn("space-y-2", depth > 0 ? "ml-2 pl-1" : undefined, className)}>
+      <div className={cn("min-w-0 space-y-2", depth > 0 ? "ml-2 pl-1" : undefined, className)}>
         {hasActivity ? (
           <Collapsible open={isExpanded} onOpenChange={setExpanded}>
             <Card
@@ -194,7 +194,7 @@ export function ActivityBlock({
         ) : null}
 
         {(responseText || (isStreaming && activity.pendingText)) ? (
-          <p className="font-editor text-base leading-relaxed text-foreground">
+          <p className="font-editor break-words text-base leading-relaxed text-foreground">
             {responseText || activity.pendingText}
           </p>
         ) : null}
