@@ -241,6 +241,16 @@ func (se *StreamExecutor) SetCleanupCallback(fn func()) {
 	se.onCleanup = fn
 }
 
+// RunCleanup manually invokes the cleanup callback if set.
+// Used when executor was registered but never started (e.g. pre-start failure
+// in startStreamingExecution). In normal flow, cleanup fires via completion/cancel/billing
+// handlers — this is only for the error path where Start() was never called.
+func (se *StreamExecutor) RunCleanup() {
+	if se.onCleanup != nil {
+		se.onCleanup()
+	}
+}
+
 // Start begins streaming execution
 func (se *StreamExecutor) Start(req *domainllm.GenerateRequest) {
 	// Store request for WorkFunc to use

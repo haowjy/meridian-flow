@@ -3,7 +3,7 @@ package streaming
 // persist_turns.go — Pipeline stage 3: create user turn, content blocks, and
 // assistant turn atomically in a single transaction.
 //
-// Thread creation has already happened in gatherContext (cold-start fix),
+// Thread creation has already happened in TurnContextResolver.Resolve (cold-start fix),
 // so this stage only persists turns.
 
 import (
@@ -16,7 +16,7 @@ import (
 
 // persistTurns creates the user turn + blocks and assistant turn in a single transaction.
 //
-// Depends on gatherContext outputs: threadCtx, requestParams, model, createdThread.
+// Depends on turnContextResolver output: turnCtx.
 // Outputs populated on p: userTurn, assistantTurn.
 func (p *turnPipeline) persistTurns(ctx context.Context) error {
 	svc := p.svc
@@ -27,11 +27,11 @@ func (p *turnPipeline) persistTurns(ctx context.Context) error {
 		// Create user turn
 		// Store request_params on user turn so it's available when editing
 		userTurn := &domainllm.Turn{
-			ThreadID:      p.threadCtx.threadID,
+			ThreadID:      p.turnCtx.ThreadCtx.threadID,
 			PrevTurnID:    req.PrevTurnID,
 			Role:          req.Role,
 			Status:        domainllm.TurnStatusComplete, // User turn is immediately complete
-			RequestParams: p.requestParams,
+			RequestParams: p.turnCtx.RequestParams,
 			CreatedAt:     now,
 		}
 
@@ -63,12 +63,12 @@ func (p *turnPipeline) persistTurns(ctx context.Context) error {
 
 		// Create assistant turn with status="streaming"
 		assistantTurn := &domainllm.Turn{
-			ThreadID:      p.threadCtx.threadID,
+			ThreadID:      p.turnCtx.ThreadCtx.threadID,
 			PrevTurnID:    &userTurn.ID, // Assistant turn follows user turn
 			Role:          "assistant",
 			Status:        domainllm.TurnStatusStreaming,
-			Model:         &p.model,
-			RequestParams: p.requestParams,
+			Model:         &p.turnCtx.Model,
+			RequestParams: p.turnCtx.RequestParams,
 			CreatedAt:     time.Now().UTC(),
 		}
 
@@ -77,9 +77,9 @@ func (p *turnPipeline) persistTurns(ctx context.Context) error {
 		}
 
 		// Touch project activity (non-fatal - don't fail turn creation for metadata updates)
-		if err := svc.projectRepo.TouchLastActivityAt(txCtx, p.threadCtx.projectID); err != nil {
+		if err := svc.projectRepo.TouchLastActivityAt(txCtx, p.turnCtx.ThreadCtx.projectID); err != nil {
 			svc.logger.Warn("failed to touch project activity",
-				"project_id", p.threadCtx.projectID,
+				"project_id", p.turnCtx.ThreadCtx.projectID,
 				"error", err,
 			)
 		}
@@ -95,18 +95,18 @@ func (p *turnPipeline) persistTurns(ctx context.Context) error {
 
 	svc.logger.Info("user turn created",
 		"id", p.userTurn.ID,
-		"thread_id", p.threadCtx.threadID,
+		"thread_id", p.turnCtx.ThreadCtx.threadID,
 		"role", req.Role,
 		"prev_turn_id", req.PrevTurnID,
 		"turn_blocks", len(req.TurnBlocks),
-		"is_cold_start", p.threadCtx.isNewThread,
+		"is_cold_start", p.turnCtx.ThreadCtx.isNewThread,
 	)
 
 	svc.logger.Info("assistant turn created with streaming status",
 		"user_turn_id", p.userTurn.ID,
 		"assistant_turn_id", p.assistantTurn.ID,
-		"model", p.model,
-		"provider", p.provider,
+		"model", p.turnCtx.Model,
+		"provider", p.turnCtx.Provider,
 	)
 
 	return nil
