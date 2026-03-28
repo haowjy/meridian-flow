@@ -211,13 +211,11 @@ func (r *StreamRuntime) startStreamingExecution(ctx context.Context, assistantTu
 			"error", err,
 			"user_turn_id", userTurnID,
 		)
-		if updateErr := r.executorDeps.TurnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build conversation messages: %v", err)); updateErr != nil {
-			r.logger.Error("failed to update turn error", "error", updateErr)
-		}
-		// Cleanup: executor was registered but never started — manually run cleanup
-		// to release stream slot and remove from executor registry. Without this,
-		// a failed pre-start leaves a phantom stream that blocks the user's slot.
-		executor.RunCleanup()
+		// Pre-start failure: terminate directly instead of manual cleanup so all
+		// terminalization steps run (status, tokens/billing hooks, AG-UI, cleanup).
+		executor.Terminate(ReasonError, TerminateOpts{
+			ErrorMessage: fmt.Sprintf("failed to build conversation messages: %v", err),
+		})
 		return
 	}
 

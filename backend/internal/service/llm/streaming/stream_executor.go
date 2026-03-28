@@ -57,9 +57,10 @@ type StreamExecutor struct {
 	textAccumulator map[int]string // blockIndex -> accumulated text
 	blockTypes      map[int]string // blockIndex -> block type (for filtering on persistence)
 
-	// Actor pattern state management
-	// Only the streaming goroutine transitions state; others send commands via ctrlCh.
-	state   ExecutorState   // Current state (only streaming goroutine mutates)
+	// Actor pattern state management.
+	// The streaming goroutine handles in-flight transitions; Terminate can move
+	// directly to terminal states for pre-start and fail-fast paths.
+	state   ExecutorState   // Current state (protected by stateMu)
 	stateMu sync.RWMutex    // Protects state reads from other goroutines
 	ctrlCh  chan controlMsg // Command channel for cancel requests (buffered, size 1)
 
@@ -130,6 +131,118 @@ type StreamSwitchResult struct {
 	StreamURL     string // URL for the new SSE stream
 }
 
+// TerminateReason describes why a stream is ending.
+type TerminateReason int
+
+const (
+	// ReasonCompleted is normal completion (stop_reason != tool_use).
+	ReasonCompleted TerminateReason = iota
+
+	// ReasonSoftCancelDrained means provider metadata arrived after soft cancel.
+	ReasonSoftCancelDrained
+
+	// ReasonHardCancelled is an immediate hard cancellation.
+	ReasonHardCancelled
+
+	// ReasonSoftCancelTimeout means soft-cancel drain timed out.
+	ReasonSoftCancelTimeout
+
+	// ReasonError is a non-cancellation terminal failure.
+	ReasonError
+
+	// ReasonCreditsExhausted is terminal admission denial for insufficient credits.
+	ReasonCreditsExhausted
+
+	// ReasonStreamSwitch ends the current stream because a new stream takes over.
+	ReasonStreamSwitch
+)
+
+// String returns a human-readable reason name.
+func (r TerminateReason) String() string {
+	switch r {
+	case ReasonCompleted:
+		return "completed"
+	case ReasonSoftCancelDrained:
+		return "soft_cancel_drained"
+	case ReasonHardCancelled:
+		return "hard_cancelled"
+	case ReasonSoftCancelTimeout:
+		return "soft_cancel_timeout"
+	case ReasonError:
+		return "error"
+	case ReasonCreditsExhausted:
+		return "credits_exhausted"
+	case ReasonStreamSwitch:
+		return "stream_switch"
+	default:
+		return fmt.Sprintf("unknown(%d)", r)
+	}
+}
+
+// TerminalState returns the terminal executor state for the reason.
+func (r TerminateReason) TerminalState() ExecutorState {
+	switch r {
+	case ReasonHardCancelled:
+		return StateHardCancelled
+	case ReasonSoftCancelTimeout:
+		return StateTimedOut
+	case ReasonError:
+		return StateErrored
+	default:
+		return StateCompleted
+	}
+}
+
+// ShouldPersistPartials reports whether accumulated partial blocks should be persisted.
+func (r TerminateReason) ShouldPersistPartials() bool {
+	switch r {
+	case ReasonHardCancelled, ReasonError, ReasonCreditsExhausted:
+		return true
+	default:
+		return false
+	}
+}
+
+// ShouldFinalizeTokens reports whether token finalization should run.
+// Stream switch is conditional: finalization runs only if metadata is provided.
+func (r TerminateReason) ShouldFinalizeTokens() bool {
+	switch r {
+	case ReasonCompleted, ReasonSoftCancelDrained, ReasonHardCancelled, ReasonSoftCancelTimeout, ReasonError, ReasonStreamSwitch:
+		return true
+	default:
+		return false
+	}
+}
+
+// ShouldSettleBilling reports whether billing settlement should run.
+// Stream switch is conditional: settlement runs only if metadata/tokens are available.
+func (r TerminateReason) ShouldSettleBilling() bool {
+	switch r {
+	case ReasonCompleted, ReasonSoftCancelDrained, ReasonHardCancelled, ReasonSoftCancelTimeout, ReasonError, ReasonStreamSwitch:
+		return true
+	default:
+		return false
+	}
+}
+
+// TerminateOpts carries reason-specific inputs for Terminate.
+type TerminateOpts struct {
+	// Metadata from provider completion paths.
+	Metadata *domainllm.StreamMetadata
+
+	// ErrorMessage for error and cancellation terminal events.
+	ErrorMessage string
+
+	// StopReason for completion run-finished events.
+	StopReason string
+
+	// RequestIndex identifies which provider request was denied for credits.
+	RequestIndex int
+
+	// Phase identifies the denied phase (initial/tool_continue/graceful_completion).
+	Phase string
+}
+
 // NewStreamExecutor creates a new mstream-based executor for a turn.
 // Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for block reads and catchup
 func NewStreamExecutor(
@@ -178,7 +291,7 @@ func NewStreamExecutor(
 		settlementMode:         settlementMode,
 		maxToolRounds:          maxToolRounds,
 		maxBlockSequence:       -1, // No blocks persisted yet (so first block is sequence 0)
-		state:                  StateStreaming,
+		state:                  StateNotStarted,
 		ctrlCh:                 make(chan controlMsg, 1), // Buffered for non-blocking sends
 		tokenFinalizer:         tokenFinalizer,
 		jobQueue:               jobQueue,
@@ -241,13 +354,390 @@ func (se *StreamExecutor) SetCleanupCallback(fn func()) {
 	se.onCleanup = fn
 }
 
-// RunCleanup manually invokes the cleanup callback if set.
-// Used when executor was registered but never started (e.g. pre-start failure
-// in startStreamingExecution). In normal flow, cleanup fires via completion/cancel/billing
-// handlers — this is only for the error path where Start() was never called.
-func (se *StreamExecutor) RunCleanup() {
+// Terminate is the single terminalization entry point for executor shutdown.
+// It is idempotent and safe to call before workFunc starts.
+func (se *StreamExecutor) Terminate(reason TerminateReason, opts TerminateOpts) {
+	terminalState := reason.TerminalState()
+
+	// Idempotency guard with atomic check+transition under lock.
+	se.stateMu.Lock()
+	currentState := se.state
+	if currentState.IsTerminal() {
+		se.stateMu.Unlock()
+		se.logger.Debug("Terminate no-op (already terminal)",
+			"turn_id", se.turnID,
+			"state", currentState.String(),
+			"reason", reason.String(),
+		)
+		return
+	}
+	se.state = terminalState
+	se.stateMu.Unlock()
+
+	se.logger.Debug("executor state transition",
+		"turn_id", se.turnID,
+		"from", currentState.String(),
+		"to", terminalState.String(),
+	)
+
+	// DB writes in termination must outlive cancelled streaming contexts.
+	persistCtx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
+	defer cancel()
+
+	// Step 1: Persist partial blocks.
+	if reason.ShouldPersistPartials() {
+		se.persistPartialBlocks(persistCtx)
+	}
+
+	// Step 2: Finalize tokens.
+	var tokenResult *tokens.TokenResult
+	if reason.ShouldFinalizeTokens() {
+		tokenResult = se.finalizeTokensForTermination(persistCtx, reason, opts.Metadata)
+	}
+
+	// Step 3: Settle billing.
+	if reason.ShouldSettleBilling() {
+		se.settleBillingForTermination(persistCtx, reason, opts.Metadata, tokenResult)
+	}
+
+	// Step 4: Mark turn status.
+	se.markTurnStatusForTermination(persistCtx, reason, opts.ErrorMessage)
+
+	// Step 5: Emit terminal AG-UI event.
+	se.emitTerminalEventForTermination(reason, opts, tokenResult)
+
+	// Step 6: Registry cleanup + slot release.
 	if se.onCleanup != nil {
 		se.onCleanup()
+	}
+}
+
+func (se *StreamExecutor) finalizeTokensForTermination(
+	ctx context.Context,
+	reason TerminateReason,
+	metadata *domainllm.StreamMetadata,
+) *tokens.TokenResult {
+	if reason == ReasonStreamSwitch && metadata == nil {
+		// Tool-boundary stream switches have no new metadata to finalize.
+		return nil
+	}
+
+	if metadata != nil {
+		if metadata.Model == "" {
+			metadata.Model = se.model
+		}
+		if metadata.GenerationID != "" {
+			se.setGenerationID(metadata.GenerationID)
+		}
+	}
+
+	finalizeReason, ok := tokenFinalizeReasonForTerminate(reason)
+	if !ok || se.tokenFinalizer == nil {
+		if metadata != nil {
+			se.persistCompletionMetadataForTerminate(ctx, metadata)
+		}
+		return nil
+	}
+
+	cancelSnapshot := ""
+	switch reason {
+	case ReasonHardCancelled, ReasonError:
+		cancelSnapshot = se.getAccumulatedText()
+		if cancelSnapshot == "" {
+			cancelSnapshot = se.cancelTextSnapshot
+		}
+	case ReasonSoftCancelTimeout, ReasonSoftCancelDrained:
+		cancelSnapshot = se.cancelTextSnapshot
+	}
+
+	var providerTokens *tokens.ProviderTokens
+	if metadata != nil {
+		providerTokens = &tokens.ProviderTokens{
+			InputTokens:  metadata.InputTokens,
+			OutputTokens: metadata.OutputTokens,
+		}
+	}
+
+	model := se.model
+	if metadata != nil && metadata.Model != "" {
+		model = metadata.Model
+	}
+
+	result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
+		TurnID:         se.turnID,
+		Model:          model,
+		GenerationID:   se.getGenerationID(),
+		CancelSnapshot: cancelSnapshot,
+		Reason:         finalizeReason,
+		ProviderTokens: providerTokens,
+	})
+	if err != nil {
+		se.logger.Warn("failed to finalize tokens during termination",
+			"turn_id", se.turnID,
+			"reason", reason.String(),
+			"error", err,
+		)
+		if metadata != nil {
+			se.persistCompletionMetadataForTerminate(ctx, metadata)
+		}
+		return nil
+	}
+
+	if metadata != nil {
+		metadata.InputTokens = result.InputTokens
+		metadata.OutputTokens = result.OutputTokens
+		se.persistCompletionMetadataForTerminate(ctx, metadata)
+		return result
+	}
+
+	if err := se.persistTokenMetadata(ctx, result, tokenPersistReasonForTerminate(reason)); err != nil {
+		se.logger.Warn("failed to persist finalized tokens during termination",
+			"turn_id", se.turnID,
+			"reason", reason.String(),
+			"error", err,
+		)
+	}
+
+	return result
+}
+
+func (se *StreamExecutor) persistCompletionMetadataForTerminate(ctx context.Context, metadata *domainllm.StreamMetadata) {
+	if metadata == nil {
+		return
+	}
+
+	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
+		se.logger.Warn("failed to persist turn metadata during termination",
+			"turn_id", se.turnID,
+			"reason", metadata.StopReason,
+			"error", err,
+		)
+	}
+
+	if err := se.persistGenerationRecord(ctx, metadata); err != nil {
+		se.logger.Warn("failed to persist generation record during termination",
+			"turn_id", se.turnID,
+			"generation_id", se.getGenerationID(),
+			"error", err,
+		)
+	}
+}
+
+func (se *StreamExecutor) settleBillingForTermination(
+	ctx context.Context,
+	reason TerminateReason,
+	metadata *domainllm.StreamMetadata,
+	tokenResult *tokens.TokenResult,
+) {
+	if reason == ReasonStreamSwitch && metadata == nil {
+		// Tool-boundary stream switch path already settled in prior completion.
+		return
+	}
+
+	pendingReason := pendingSettlementReasonForTerminate(reason)
+	isCancelled := isCancelledTerminateReason(reason)
+
+	settlementMetadata := metadata
+	if settlementMetadata == nil && tokenResult != nil && (tokenResult.InputTokens > 0 || tokenResult.OutputTokens > 0) {
+		settlementMetadata = &domainllm.StreamMetadata{
+			Model:        se.model,
+			InputTokens:  tokenResult.InputTokens,
+			OutputTokens: tokenResult.OutputTokens,
+		}
+	}
+
+	if settlementMetadata != nil {
+		if settlementMetadata.Model == "" {
+			settlementMetadata.Model = se.model
+		}
+		se.handleFinalSettlement(ctx, settlementMetadata, pendingReason, isCancelled)
+		return
+	}
+
+	if se.settlementMode != billing.CreditSettlementDeferredToEnrichment {
+		return
+	}
+
+	if generationID := se.getGenerationID(); generationID != "" {
+		phase := "initial"
+		if se.requestIndex > 0 {
+			phase = "tool_continue"
+		}
+		se.enqueueEnrichmentSettlementJob(generationID, phase, se.model, isCancelled)
+	}
+	se.persistCurrentRequestPendingSettlement(ctx, se.model, pendingReason)
+}
+
+func (se *StreamExecutor) markTurnStatusForTermination(ctx context.Context, reason TerminateReason, errorMessage string) {
+	switch reason {
+	case ReasonCompleted, ReasonStreamSwitch:
+		if err := se.turnWriter.UpdateTurnStatus(ctx, se.turnID, domainllm.TurnStatusComplete, nil); err != nil {
+			se.logger.Warn("failed to mark turn complete during termination",
+				"turn_id", se.turnID,
+				"reason", reason.String(),
+				"error", err,
+			)
+		}
+	case ReasonError:
+		userErrorMsg := "Provider request failed"
+		if errorMessage != "" {
+			userErrorMsg = sanitizeProviderError(fmt.Errorf("%s", errorMessage))
+		}
+		if err := se.turnWriter.UpdateTurnError(ctx, se.turnID, userErrorMsg); err != nil {
+			se.logger.Warn("failed to mark turn error during termination",
+				"turn_id", se.turnID,
+				"error", err,
+			)
+		}
+	case ReasonCreditsExhausted:
+		se.markTurnCreditLimited(ctx)
+	case ReasonSoftCancelDrained, ReasonHardCancelled, ReasonSoftCancelTimeout:
+		// Exception: InterruptTurn writes cancelled status from a different goroutine
+		// (outside Terminate) before the streaming actor drains/stops.
+		// Keep this branch as a no-op so we don't race/override that status write.
+	}
+}
+
+func (se *StreamExecutor) markTurnCreditLimited(ctx context.Context) {
+	completedAt := time.Now().UTC()
+	turn, err := se.turnReader.GetTurn(ctx, se.turnID)
+	if err != nil {
+		se.logger.Warn("failed to load turn while marking credit_limited",
+			"turn_id", se.turnID,
+			"error", err,
+		)
+		fallback := &domainllm.Turn{CompletedAt: &completedAt}
+		if statusErr := se.turnWriter.UpdateTurnStatus(ctx, se.turnID, domainllm.TurnStatusCreditLimited, fallback); statusErr != nil {
+			se.logger.Warn("failed to mark turn credit_limited",
+				"turn_id", se.turnID,
+				"error", statusErr,
+			)
+		}
+		return
+	}
+
+	turn.Status = domainllm.TurnStatusCreditLimited
+	turn.CompletedAt = &completedAt
+	turn.Error = ptrString(creditLimitedErrorMessage)
+	if updateErr := se.turnWriter.UpdateTurn(ctx, turn); updateErr != nil {
+		se.logger.Warn("failed to persist credit_limited turn state",
+			"turn_id", se.turnID,
+			"error", updateErr,
+		)
+	}
+}
+
+func (se *StreamExecutor) emitTerminalEventForTermination(
+	reason TerminateReason,
+	opts TerminateOpts,
+	tokenResult *tokens.TokenResult,
+) {
+	if se.aguiEmitter == nil {
+		return
+	}
+
+	switch reason {
+	case ReasonCompleted:
+		stopReason := opts.StopReason
+		if stopReason == "" && opts.Metadata != nil {
+			stopReason = opts.Metadata.StopReason
+		}
+
+		inputTokens, outputTokens := 0, 0
+		if opts.Metadata != nil {
+			inputTokens = opts.Metadata.InputTokens
+			outputTokens = opts.Metadata.OutputTokens
+		} else if tokenResult != nil {
+			inputTokens = tokenResult.InputTokens
+			outputTokens = tokenResult.OutputTokens
+		}
+
+		se.aguiEmitter.EmitStepFinished()
+		se.aguiEmitter.EmitRunFinished(stopReason, inputTokens, outputTokens)
+	case ReasonSoftCancelDrained:
+		// Soft-cancel drained path already disconnected clients; no terminal event here.
+	case ReasonHardCancelled:
+		msg := opts.ErrorMessage
+		if msg == "" {
+			msg = "cancelled"
+		}
+		se.aguiEmitter.EmitRunError(msg, true)
+	case ReasonSoftCancelTimeout:
+		msg := opts.ErrorMessage
+		if msg == "" {
+			msg = "timeout waiting for provider metadata"
+		}
+		se.aguiEmitter.EmitRunError(msg, true)
+	case ReasonError:
+		msg := "Provider request failed"
+		if opts.ErrorMessage != "" {
+			msg = sanitizeProviderError(fmt.Errorf("%s", opts.ErrorMessage))
+		}
+		se.aguiEmitter.EmitRunError(msg, false)
+	case ReasonCreditsExhausted:
+		requestIndex := opts.RequestIndex
+		phase := opts.Phase
+		if phase == "" && requestIndex == 0 && se.requestIndex > 0 {
+			requestIndex = se.requestIndex
+		}
+		if phase == "" {
+			phase = "initial"
+			if requestIndex > 0 {
+				phase = "tool_continue"
+			}
+		}
+		se.aguiEmitter.EmitCreditsExhausted(requestIndex, phase)
+		se.aguiEmitter.EmitRunFinished(runStopReasonCreditsExhausted, 0, 0)
+	case ReasonStreamSwitch:
+		// STREAM_SWITCH needs turn payloads/URL from the caller; emitted before Terminate.
+	}
+}
+
+func tokenFinalizeReasonForTerminate(reason TerminateReason) (tokens.FinalizeReason, bool) {
+	switch reason {
+	case ReasonCompleted, ReasonStreamSwitch:
+		return tokens.ReasonCompletion, true
+	case ReasonSoftCancelDrained:
+		return tokens.ReasonSoftCancel, true
+	case ReasonHardCancelled:
+		return tokens.ReasonHardCancel, true
+	case ReasonSoftCancelTimeout:
+		return tokens.ReasonSoftCancelTimeout, true
+	case ReasonError:
+		return tokens.ReasonError, true
+	default:
+		return "", false
+	}
+}
+
+func tokenPersistReasonForTerminate(reason TerminateReason) string {
+	switch reason {
+	case ReasonSoftCancelTimeout:
+		return "soft_cancel_timeout"
+	case ReasonHardCancelled, ReasonError:
+		return "interrupted_stream"
+	default:
+		return reason.String()
+	}
+}
+
+func pendingSettlementReasonForTerminate(reason TerminateReason) string {
+	switch reason {
+	case ReasonSoftCancelTimeout:
+		return "soft_cancel_timeout"
+	case ReasonHardCancelled, ReasonError:
+		return "interrupted_stream"
+	default:
+		return "awaiting_enrichment"
+	}
+}
+
+func isCancelledTerminateReason(reason TerminateReason) bool {
+	switch reason {
+	case ReasonSoftCancelDrained, ReasonHardCancelled, ReasonSoftCancelTimeout:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -262,6 +752,44 @@ func (se *StreamExecutor) Start(req *domainllm.GenerateRequest) {
 
 // workFunc is the mstream WorkFunc that performs the actual streaming
 func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)) error {
+	// A pre-start Terminate can happen before Start() is invoked by the background runtime
+	// goroutine. Never resurrect terminal executors back into Streaming.
+	se.stateMu.Lock()
+	currentState := se.state
+	if currentState.IsTerminal() {
+		se.stateMu.Unlock()
+		se.logger.Debug("workFunc start skipped (already terminal)",
+			"turn_id", se.turnID,
+			"state", currentState.String(),
+		)
+		return nil
+	}
+
+	// Guarantee: if workFunc exits for ANY reason and state is not terminal,
+	// Terminate runs. This is the structural fix — no more whack-a-mole.
+	defer func() {
+		se.stateMu.RLock()
+		finalState := se.state
+		isTerminal := finalState.IsTerminal()
+		se.stateMu.RUnlock()
+		if !isTerminal {
+			se.logger.Warn("workFunc exited without termination, running cleanup",
+				"turn_id", se.turnID,
+				"state", finalState.String(),
+			)
+			se.Terminate(ReasonError, TerminateOpts{ErrorMessage: "workFunc exited without terminal state"})
+		}
+	}()
+
+	se.state = StateStreaming
+	se.stateMu.Unlock()
+
+	se.logger.Debug("executor state transition",
+		"turn_id", se.turnID,
+		"from", currentState.String(),
+		"to", StateStreaming.String(),
+	)
+
 	// Use the stored GenerateRequest
 	req := se.req
 	if req == nil {
@@ -307,7 +835,7 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	// Start provider streaming
 	streamChan, err := se.startProviderStreamWithRetry(ctx, req)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to start provider streaming: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("failed to start provider streaming: %w", err), false)
 		return err
 	}
 
@@ -423,8 +951,6 @@ func (se *StreamExecutor) processProviderStream(
 				}
 			case CmdHardCancel:
 				if se.state == StateStreaming || se.state == StateDrainMetadata {
-					se.transitionTo(StateHardCancelled)
-
 					// Phase 4: Try OpenRouter API cancel (best-effort, upstream-dependent)
 					// This attempts to stop the provider's upstream request to reduce billing costs.
 					// If the upstream supports cancel: billing stops immediately
@@ -435,7 +961,7 @@ func (se *StreamExecutor) processProviderStream(
 						generationID := se.getGenerationID()
 						if generationID != "" {
 							// Non-blocking: call in background, don't wait for response
-							// We want to stop the stream immediately (done above via state transition)
+							// We want to stop the stream immediately (via hard-cancel termination path below).
 							go func() {
 								cancelCtx, cancelCancel := context.WithTimeout(context.Background(), 5*time.Second)
 								defer cancelCancel()
@@ -461,31 +987,28 @@ func (se *StreamExecutor) processProviderStream(
 					}
 
 					err := fmt.Errorf("hard cancelled by user")
-					se.handleError(ctx, send, err)
+					se.handleError(ctx, send, err, true)
 					return err
 				}
 			}
 
 		case <-ctx.Done():
 			// Context cancelled - handle graceful shutdown
-			se.transitionTo(StateErrored)
 			err := fmt.Errorf("streaming interrupted: %w", ctx.Err())
-			se.handleError(ctx, send, err)
+			se.handleError(ctx, send, err, false)
 			return err
 
 		case streamEvent, ok := <-streamChan:
 			if !ok {
 				// Stream channel closed without metadata - unexpected
-				se.transitionTo(StateErrored)
 				err := fmt.Errorf("stream closed without metadata")
-				se.handleError(ctx, send, err)
+				se.handleError(ctx, send, err, false)
 				return err
 			}
 
 			// Check for errors
 			if streamEvent.Error != nil {
-				se.transitionTo(StateErrored)
-				se.handleError(ctx, send, streamEvent.Error)
+				se.handleError(ctx, send, streamEvent.Error, false)
 				return streamEvent.Error
 			}
 
@@ -493,8 +1016,7 @@ func (se *StreamExecutor) processProviderStream(
 			// AG-UI events are forwarded directly to SSE - they are self-contained and protocol-compliant
 			if streamEvent.HasAGUIEvent() {
 				if err := se.processAGUIEvent(ctx, send, streamEvent.AGUIEvent, &currentBlockIndex, streamStartSequence); err != nil {
-					se.transitionTo(StateErrored)
-					se.handleError(ctx, send, err)
+					se.handleError(ctx, send, err, false)
 					return err
 				}
 			}
@@ -504,8 +1026,7 @@ func (se *StreamExecutor) processProviderStream(
 			// Process complete block (for database persistence)
 			if streamEvent.Block != nil {
 				if err := se.processCompleteBlock(ctx, send, streamEvent.Block, streamStartSequence); err != nil {
-					se.transitionTo(StateErrored)
-					se.handleError(ctx, send, err)
+					se.handleError(ctx, send, err, false)
 					return err
 				}
 			}

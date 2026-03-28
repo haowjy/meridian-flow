@@ -3,12 +3,17 @@ package streaming
 import "fmt"
 
 // ExecutorState represents the state of the StreamExecutor state machine.
-// Only the streaming goroutine transitions between states.
+// Streaming transitions are handled by the streaming goroutine; Terminate can
+// transition directly to terminal states for pre-start/fail-fast paths.
 type ExecutorState int
 
 const (
-	// StateStreaming is the initial state where blocks are persisted and SSE events are sent.
-	StateStreaming ExecutorState = iota
+	// StateNotStarted is the initial state before workFunc begins execution.
+	// This closes the pre-start window where an executor is registered but not yet running.
+	StateNotStarted ExecutorState = iota
+
+	// StateStreaming is the active state where blocks are persisted and SSE events are sent.
+	StateStreaming
 
 	// StateDrainMetadata is entered after soft cancel. SSE is stopped, but provider stream
 	// continues in background to capture final token metadata.
@@ -35,6 +40,8 @@ const (
 // String returns a human-readable name for the state.
 func (s ExecutorState) String() string {
 	switch s {
+	case StateNotStarted:
+		return "NotStarted"
 	case StateStreaming:
 		return "Streaming"
 	case StateDrainMetadata:
@@ -49,6 +56,16 @@ func (s ExecutorState) String() string {
 		return "Errored"
 	default:
 		return fmt.Sprintf("Unknown(%d)", s)
+	}
+}
+
+// IsTerminal returns true when the executor has already reached a terminal state.
+func (s ExecutorState) IsTerminal() bool {
+	switch s {
+	case StateCompleted, StateErrored, StateTimedOut, StateHardCancelled:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -642,3 +642,56 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 	// Should not panic or block - test passes if it completes
 	// No need for arbitrary sleep - the loop completes synchronously
 }
+
+// TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming verifies the
+// pre-start cancel race fix: Start() may still be called by the runtime goroutine,
+// but workFunc must not transition back to Streaming or start provider IO.
+func TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming(t *testing.T) {
+	turnWriter := newMockTurnWriter()
+	provider := newMockProvider()
+	logger := slog.Default()
+
+	executor := NewStreamExecutor(
+		"test-turn-prestart-cancel",
+		"test-thread-prestart-cancel",
+		"test-user-prestart-cancel",
+		"test-model",
+		turnWriter,
+		&mockTurnReader{},
+		&mockTurnNavigator{},
+		provider,
+		nil,
+		&mockMessageBuilder{},
+		logger,
+		&mockCreditAdmissionChecker{},
+		&mockCreditSettler{},
+		billing.CreditSettlementInlineAuthoritative,
+		5,
+		false,
+		&mockTokenFinalizer{},
+		nil, // jobQueue (nil for tests)
+		300,
+		nil, // interjectionBuffer (nil for tests)
+		nil, // streamSwitchFn (nil for tests)
+	)
+
+	executor.Terminate(ReasonHardCancelled, TerminateOpts{})
+
+	if got := executor.getState(); got != StateHardCancelled {
+		t.Fatalf("executor state before Start = %v, want %v", got, StateHardCancelled)
+	}
+
+	// Simulate startStreamingExecution calling Start() after pre-start cancel.
+	executor.Start(&domainllm.GenerateRequest{Model: "test-model"})
+
+	select {
+	case <-provider.started:
+		t.Fatal("provider stream started after pre-start terminate")
+	case <-time.After(200 * time.Millisecond):
+		// expected: no provider start
+	}
+
+	if got := executor.getState(); got != StateHardCancelled {
+		t.Fatalf("executor state after Start = %v, want %v", got, StateHardCancelled)
+	}
+}
