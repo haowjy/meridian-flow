@@ -56,6 +56,13 @@ export interface CollabSessionOptions {
  * createEditorExtensions() — this function only creates document-scoped
  * Yjs resources.
  *
+ * NOTE: DocSession (in session/doc-session.ts) is the canonical lifecycle
+ * owner going forward. It provides health tracking, sync state, freeze/
+ * invalidation, and generation guards that this convenience function does
+ * not. New code should use DocSession via SessionPool. This function is
+ * retained for simple use cases (stories, tests) that don't need the full
+ * session lifecycle.
+ *
  * The caller should:
  * 1. `await session.idbPersistence.synced` before activating
  * 2. Pass session.ytext, session.awareness, session.undoManager to
