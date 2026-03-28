@@ -11,7 +11,6 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	domainagents "meridian/internal/domain/agents"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
@@ -20,7 +19,6 @@ import (
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tokens"
-	"meridian/internal/service/llm/tools"
 )
 
 type ExecutorRegistry struct {
@@ -110,36 +108,29 @@ func (d PersistenceDeps) Validate() error {
 
 // ServiceDeps groups domain service dependencies used during streaming.
 type ServiceDeps struct {
-	DocumentSvc      domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
-	FolderSvc        domaindocsys.FolderService    // For tool operations (SOLID: DIP)
-	NamespaceSvc     domaindocsys.NamespaceService // For namespace routing in tools
-	SkillResolver    domainagents.SkillResolver    // File-backed skill resolution (.agents/skills/)
-	Validator        ThreadValidator
-	Authorizer       authdomain.ResourceAuthorizer
-	MutationStrategy tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
-	// SpawnInvokerRef resolves the current SpawnInvoker lazily during tool-registry build.
-	// Optional: nil disables spawn tool registration.
-	SpawnInvokerRef func() domainllm.SpawnInvoker
-	// PersonaCatalog resolves persona profiles from .agents/agents/*.md.
-	// Optional: nil disables persona resolution (turns without persona_slug still work).
-	PersonaCatalog domainagents.PersonaCatalog
-	// WorkItemSvc enables work item lifecycle gates and EnsureThreadWorkItem.
-	// Optional: nil disables work item gates (non-persona turns unaffected).
-	WorkItemSvc domainwi.Service
+	DocumentSvc          domaindocsys.DocumentService  // For tool operations (SOLID: DIP)
+	FolderSvc            domaindocsys.FolderService    // For tool operations (SOLID: DIP)
+	TurnContextResolver  *TurnContextResolver          // Resolves stage-1 context (thread/persona/model/params)
+	ToolRegistryFactory  *ToolRegistryFactory          // Builds prompt/execution tool registries
+	StreamRequestBuilder *StreamRequestBuilder         // Builds conversation messages for LLM
+	StreamRuntime        *StreamRuntime                // Owns stream/executor launch lifecycle
+	InterjectionRegistry *mstream.InterjectionRegistry // Shared between Service and StreamRuntime
+	Validator            ThreadValidator
+	Authorizer           authdomain.ResourceAuthorizer
 }
 
 // Validate checks that all service dependencies are provided.
-// PersonaCatalog and WorkItemSvc are optional — nil means persona features are disabled.
 func (d ServiceDeps) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.DocumentSvc, validation.Required),
 		validation.Field(&d.FolderSvc, validation.Required),
-		validation.Field(&d.NamespaceSvc, validation.Required),
-		validation.Field(&d.SkillResolver, validation.Required),
+		validation.Field(&d.TurnContextResolver, validation.Required),
+		validation.Field(&d.ToolRegistryFactory, validation.Required),
+		validation.Field(&d.StreamRequestBuilder, validation.Required),
+		validation.Field(&d.StreamRuntime, validation.Required),
+		validation.Field(&d.InterjectionRegistry, validation.Required),
 		validation.Field(&d.Validator, validation.Required),
 		validation.Field(&d.Authorizer, validation.Required),
-		validation.Field(&d.MutationStrategy, validation.Required),
-		// PersonaCatalog and WorkItemSvc intentionally NOT required — nil disables feature
 	)
 }
 

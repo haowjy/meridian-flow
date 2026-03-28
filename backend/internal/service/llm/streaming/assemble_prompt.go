@@ -12,19 +12,16 @@ import (
 
 // assemblePrompt builds the tool registry and resolves the system prompt.
 //
-// Depends on gatherContext outputs: threadCtx, params, requestParams.
-// Outputs populated on p: availableSkills, enabledTools (params.System updated in-place).
+// Depends on turnContextResolver output: turnCtx.
+// Outputs populated on p: availableSkills (turnCtx.Params.System updated in-place).
 func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	svc := p.svc
 	req := p.req
 
-	// Extract enabled tools from requestParams for tool registration
-	p.enabledTools = extractToolNames(p.requestParams)
-
 	// Load skills once for tool metadata enrichment (shared across both registries).
 	// Skills metadata is now owned by the tool system (not the system prompt resolver)
 	// so it's naturally excluded when the model doesn't support tools.
-	p.availableSkills = svc.loadAvailableSkills(ctx, p.threadCtx.projectID)
+	p.availableSkills = svc.toolRegistryFactory.LoadAvailableSkills(ctx, p.turnCtx.ThreadCtx.projectID)
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance).
 	// Tools self-describe via metadata; registry generates the section dynamically.
@@ -33,16 +30,18 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	// WorkItemSlug must match the production registry so the tool section accurately
 	// reflects which .meridian/work/ paths are accessible.
 	workItemSlug := ""
-	if p.resolvedWorkItem != nil {
-		workItemSlug = p.resolvedWorkItem.Slug
+	if p.turnCtx.ResolvedWorkItem != nil {
+		workItemSlug = p.turnCtx.ResolvedWorkItem.Slug
 	}
-	tempToolRegistry := svc.buildTempToolRegistry(
-		p.enabledTools,
-		p.threadCtx.projectID,
-		req.UserID,
-		workItemSlug,
+	tempToolRegistry := svc.toolRegistryFactory.BuildTempRegistry(
+		ToolRegistryInputs{
+			EnabledTools: p.turnCtx.EnabledTools,
+			ProjectID:    p.turnCtx.ThreadCtx.projectID,
+			UserID:       req.UserID,
+			WorkItemSlug: workItemSlug,
+			Persona:      p.turnCtx.ResolvedPersona,
+		},
 		p.availableSkills,
-		p.resolvedPersona,
 	)
 
 	// toolSection is local — it feeds resolveSystemPromptForParams but is not needed
@@ -52,25 +51,25 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	// Extract persona body for system prompt injection (position 7).
 	// nil when no persona is resolved — existing non-persona turns unaffected.
 	var personaBody *string
-	if p.resolvedPersona != nil && p.resolvedPersona.SystemPrompt != "" {
-		personaBody = &p.resolvedPersona.SystemPrompt
+	if p.turnCtx.ResolvedPersona != nil && p.turnCtx.ResolvedPersona.SystemPrompt != "" {
+		personaBody = &p.turnCtx.ResolvedPersona.SystemPrompt
 	}
 
 	// Skill override: when the persona declares an explicit Skills list, use it instead
 	// of the client-provided selected_skills. Personas do not inherit skills from the
 	// caller context; the list in the frontmatter is the complete set.
 	selectedSkills := req.SelectedSkills
-	if p.resolvedPersona != nil && len(p.resolvedPersona.Skills) > 0 {
-		selectedSkills = p.resolvedPersona.Skills
+	if p.turnCtx.ResolvedPersona != nil && len(p.turnCtx.ResolvedPersona.Skills) > 0 {
+		selectedSkills = p.turnCtx.ResolvedPersona.Skills
 		svc.logger.Debug("persona skill override applied",
-			"slug", p.resolvedPersona.Slug,
-			"skills", p.resolvedPersona.Skills,
+			"slug", p.turnCtx.ResolvedPersona.Slug,
+			"skills", p.turnCtx.ResolvedPersona.Skills,
 		)
 	}
 
 	// Resolve system prompt from user, project, thread, selected skills, persona, and work context.
-	// threadCtx.threadID is now guaranteed valid (even on cold start) thanks to gatherContext.
-	if err := svc.resolveSystemPromptForParams(ctx, p.threadCtx.threadID, p.threadCtx.projectID, req.UserID, p.params, selectedSkills, toolSection, personaBody, p.workContext); err != nil {
+	// threadID is guaranteed valid (even on cold start) thanks to TurnContextResolver.Resolve.
+	if err := svc.resolveSystemPromptForParams(ctx, p.turnCtx.ThreadCtx.threadID, p.turnCtx.ThreadCtx.projectID, req.UserID, p.turnCtx.Params, selectedSkills, toolSection, personaBody, p.turnCtx.WorkContext); err != nil {
 		svc.logger.Error("failed to resolve system prompt", "error", err)
 		return err
 	}

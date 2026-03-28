@@ -122,6 +122,10 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	// Create a shared ExecutorRegistry so SpawnService can cancel child executors
 	// that are running inside the streaming service (cascade cancellation).
 	executorRegistry := streaming.NewExecutorRegistry()
+	userStreamTracker := streaming.NewUserStreamTracker(
+		deps.Config.LLM.MaxConcurrentStreamsFree,
+		deps.Config.LLM.MaxConcurrentStreamsPaid,
+	)
 
 	providerResolver := streaming.NewProviderResolver(deps.ProviderRegistry)
 
@@ -148,6 +152,81 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 
 	namespaceSvc := docsystemsvc.NewNamespaceService(deps.FolderRepo, deps.Logger)
 	var spawnInvoker domainllm.SpawnInvoker
+	turnContextResolver := streaming.NewTurnContextResolver(streaming.TurnContextResolverDeps{
+		TurnReader:             deps.TurnRepo,
+		ThreadRepo:             deps.ThreadRepo,
+		ProjectRepo:            deps.ProjectRepo,
+		Validator:              validator,
+		PersonaCatalog:         deps.PersonaCatalog,
+		WorkItemSvc:            deps.WorkItemSvc,
+		WorkItemStore:          deps.WorkItemStore,
+		CreditAdmissionChecker: deps.CreditAdmissionChecker,
+		UserStreamTracker:      userStreamTracker,
+		CapabilityRegistry:     deps.CapabilityRegistry,
+		Config:                 deps.Config,
+		TxManager:              deps.TxManager,
+		Logger:                 deps.Logger,
+	})
+
+	toolRegistryFactory := streaming.NewToolRegistryFactory(streaming.ToolRegistryFactoryDeps{
+		NamespaceSvc:     namespaceSvc,
+		MutationStrategy: deps.MutationStrategy,
+		DocumentSvc:      deps.DocumentSvc,
+		FolderSvc:        deps.FolderSvc,
+		SkillResolver:    deps.SkillResolver,
+		SpawnInvokerRef: func() domainllm.SpawnInvoker {
+			return spawnInvoker
+		},
+		Config: deps.Config,
+		Logger: deps.Logger,
+	})
+
+	streamRequestBuilder := streaming.NewStreamRequestBuilder(streaming.StreamRequestBuilderDeps{
+		TurnNavigator:     deps.TurnRepo,
+		TurnReader:        deps.TurnRepo,
+		MessageBuilder:    messageBuilder,
+		DocumentSvc:       deps.DocumentSvc,
+		FolderSvc:         deps.FolderSvc,
+		FormatterRegistry: formatterRegistry,
+		Logger:            deps.Logger,
+	})
+
+	interjectionRegistry := mstream.NewInterjectionRegistry()
+
+	// Build TokenMonitor for context budget tracking (autocollapse at 60%, warn at 90%).
+	// Non-fatal if estimator creation fails — monitoring is optional; turns proceed normally.
+	var tokenMonitor *streaming.TokenMonitor
+	tokenEst, estErr := tokens.NewTiktokenEstimator(deps.CapabilityRegistry)
+	if estErr != nil {
+		deps.Logger.Warn("failed to create token estimator; context budget monitoring disabled",
+			"error", estErr,
+		)
+	} else {
+		tokenMonitor = streaming.NewTokenMonitor(tokenEst, deps.CapabilityRegistry, deps.Logger)
+	}
+
+	streamRuntime := streaming.NewStreamRuntime(streaming.StreamRuntimeDeps{
+		ProviderGetter:       providerResolver,
+		StreamRegistry:       streamRegistry,
+		ExecutorRegistry:     executorRegistry,
+		InterjectionRegistry: interjectionRegistry,
+		ToolLimitResolver:    deps.ToolLimitResolver,
+		RequestBuilder:       streamRequestBuilder,
+		ThreadRepo:           deps.ThreadRepo,
+		ExecutorDeps: streaming.ExecutorDeps{
+			TurnWriter:             deps.TurnRepo,
+			TurnReader:             deps.TurnRepo,
+			TurnNavigator:          deps.TurnRepo,
+			MessageBuilder:         messageBuilder,
+			CreditAdmissionChecker: deps.CreditAdmissionChecker,
+			CreditSettler:          deps.CreditSettler,
+			TokenFinalizer:         tokenFinalizer,
+			JobQueue:               deps.JobQueue,
+			TokenMonitor:           tokenMonitor,
+		},
+		Config: deps.Config,
+		Logger: deps.Logger,
+	})
 
 	streamingService, err := streaming.NewStreamingOrchestrator(streaming.StreamingDeps{
 		Persistence: streaming.PersistenceDeps{
@@ -160,18 +239,15 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			WorkItemStore: deps.WorkItemStore, // Optional: nil disables context resolution
 		},
 		Services: streaming.ServiceDeps{
-			DocumentSvc:      deps.DocumentSvc,
-			FolderSvc:        deps.FolderSvc,
-			NamespaceSvc:     namespaceSvc,
-			SkillResolver:    deps.SkillResolver,
-			Validator:        validator,
-			Authorizer:       deps.Authorizer,
-			MutationStrategy: deps.MutationStrategy,
-			SpawnInvokerRef: func() domainllm.SpawnInvoker {
-				return spawnInvoker
-			},
-			PersonaCatalog: deps.PersonaCatalog, // Optional: nil disables persona resolution
-			WorkItemSvc:    deps.WorkItemSvc,    // Optional: nil disables work item gates
+			DocumentSvc:          deps.DocumentSvc,
+			FolderSvc:            deps.FolderSvc,
+			TurnContextResolver:  turnContextResolver,
+			ToolRegistryFactory:  toolRegistryFactory,
+			StreamRequestBuilder: streamRequestBuilder,
+			StreamRuntime:        streamRuntime,
+			InterjectionRegistry: interjectionRegistry,
+			Validator:            validator,
+			Authorizer:           deps.Authorizer,
 		},
 		Pipeline: streaming.PipelineDeps{
 			ProviderGetter:       providerResolver,

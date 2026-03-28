@@ -117,18 +117,20 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	requestParams["tools"] = toolsParam
 
 	// Load skills for tool metadata enrichment (mirrors CreateTurn).
-	availableSkills := s.loadAvailableSkills(ctx, thread.ProjectID)
+	availableSkills := s.toolRegistryFactory.LoadAvailableSkills(ctx, thread.ProjectID)
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
 	// WithMutationStrategy is required — NewTextEditorTool panics if mutationStrategy is nil
-	tempToolRegistry := s.buildTempToolRegistry(
-		enabledTools,
-		thread.ProjectID,
-		req.UserID,
-		"",
+	tempToolRegistry := s.toolRegistryFactory.BuildTempRegistry(
+		ToolRegistryInputs{
+			EnabledTools: enabledTools,
+			ProjectID:    thread.ProjectID,
+			UserID:       req.UserID,
+			WorkItemSlug: "",
+			Persona:      nil,
+		},
 		availableSkills,
-		nil,
 	)
 
 	// Get tool section from registry (OCP compliance - tools describe themselves)
@@ -152,7 +154,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 		turnIDForPath = *req.PrevTurnID
 	}
 
-	messages, err := s.loadConversationHistory(ctx, turnIDForPath)
+	messages, err := s.streamRequestBuilder.LoadConversationHistory(ctx, turnIDForPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load conversation history for debug: %w", err)
 	}
@@ -179,7 +181,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	// Transform @-references AFTER appending the hypothetical message so its
 	// references are expanded (mirrors production where the user turn is persisted
 	// before the path is loaded and transformed).
-	messages, err = s.transformMessageReferences(ctx, messages, req.UserID, thread.ProjectID)
+	messages, err = s.streamRequestBuilder.TransformMessageReferences(ctx, messages, req.UserID, thread.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to transform references for debug: %w", err)
 	}
@@ -192,7 +194,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	}
 
 	// Get provider (same registry used for real execution)
-	llmProvider, err := s.providerGetter.GetProvider(provider)
+	llmProvider, err := s.streamRuntime.GetProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider for debug: %w", err)
 	}

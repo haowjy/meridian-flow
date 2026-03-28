@@ -272,7 +272,7 @@ func newTestCapabilityRegistry(t *testing.T) *capabilities.Registry {
 	return reg
 }
 
-// buildServiceForGatherContext builds a minimal Service suitable for testing gatherContext.
+// buildServiceForGatherContext builds a minimal Service suitable for testing TurnContextResolver.
 // Does NOT include components needed by assemblePrompt/launchStream.
 func buildServiceForGatherContext(
 	t *testing.T,
@@ -283,17 +283,30 @@ func buildServiceForGatherContext(
 	txManager *mockTxManagerForPipeline,
 ) *Service {
 	t.Helper()
+	userStreamTracker := NewUserStreamTracker(100, 100)
+	turnContextResolver := NewTurnContextResolver(TurnContextResolverDeps{
+		TurnReader:             turnReader,
+		ThreadRepo:             threadStore,
+		ProjectRepo:            projectStore,
+		Validator:              validator,
+		CreditAdmissionChecker: &mockCreditAdmissionChecker{},
+		UserStreamTracker:      userStreamTracker,
+		CapabilityRegistry:     newTestCapabilityRegistry(t),
+		Config:                 newTestConfig(),
+		TxManager:              txManager,
+		Logger:                 slog.Default(),
+	})
+
 	return &Service{
-		threadRepo:             threadStore,
-		projectRepo:            projectStore,
-		validator:              validator,
-		turnReader:             turnReader,
-		txManager:              txManager,
-		config:                 newTestConfig(),
-		capabilityRegistry:     newTestCapabilityRegistry(t),
-		creditAdmissionChecker: &mockCreditAdmissionChecker{},
-		userStreamTracker:      NewUserStreamTracker(100, 100),
-		logger:                 slog.Default(),
+		threadRepo:          threadStore,
+		projectRepo:         projectStore,
+		validator:           validator,
+		turnReader:          turnReader,
+		txManager:           txManager,
+		config:              newTestConfig(),
+		capabilityRegistry:  newTestCapabilityRegistry(t),
+		turnContextResolver: turnContextResolver,
+		logger:              slog.Default(),
 	}
 }
 
@@ -330,7 +343,7 @@ func TestResolveThreadContext_PrevTurnID(t *testing.T) {
 		PrevTurnID: strPtr(prevTurnID),
 	}
 
-	tc, err := svc.resolveThreadContext(context.Background(), req)
+	tc, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err != nil {
 		t.Fatalf("resolveThreadContext() unexpected error: %v", err)
 	}
@@ -361,7 +374,7 @@ func TestResolveThreadContext_ThreadID(t *testing.T) {
 		ThreadID: strPtr(threadID),
 	}
 
-	tc, err := svc.resolveThreadContext(context.Background(), req)
+	tc, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err != nil {
 		t.Fatalf("resolveThreadContext() unexpected error: %v", err)
 	}
@@ -395,7 +408,7 @@ func TestResolveThreadContext_ProjectID_ColdStart(t *testing.T) {
 		ProjectID: strPtr(projectID),
 	}
 
-	tc, err := svc.resolveThreadContext(context.Background(), req)
+	tc, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err != nil {
 		t.Fatalf("resolveThreadContext() unexpected error: %v", err)
 	}
@@ -425,7 +438,7 @@ func TestResolveThreadContext_NoID_ValidationError(t *testing.T) {
 	req := &domainllm.CreateTurnRequest{UserID: "user-1"}
 	// All of ThreadID, ProjectID, PrevTurnID are nil
 
-	_, err := svc.resolveThreadContext(context.Background(), req)
+	_, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err == nil {
 		t.Fatal("resolveThreadContext() expected error, got nil")
 	}
@@ -454,7 +467,7 @@ func TestResolveThreadContext_PrevTurnID_NotFound(t *testing.T) {
 		PrevTurnID: strPtr("nonexistent-turn"),
 	}
 
-	_, err := svc.resolveThreadContext(context.Background(), req)
+	_, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err == nil {
 		t.Fatal("resolveThreadContext() expected error, got nil")
 	}
@@ -479,7 +492,7 @@ func TestResolveThreadContext_ThreadID_ValidateFails(t *testing.T) {
 		ThreadID: strPtr("thread-deleted"),
 	}
 
-	_, err := svc.resolveThreadContext(context.Background(), req)
+	_, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err == nil {
 		t.Fatal("resolveThreadContext() expected validation error, got nil")
 	}
@@ -508,7 +521,7 @@ func TestResolveThreadContext_ProjectID_ProjectNotAccessible(t *testing.T) {
 		ProjectID: strPtr("proj-inaccessible"),
 	}
 
-	_, err := svc.resolveThreadContext(context.Background(), req)
+	_, err := svc.turnContextResolver.ResolveThreadContext(context.Background(), req)
 	if err == nil {
 		t.Fatal("resolveThreadContext() expected error for inaccessible project, got nil")
 	}
@@ -557,9 +570,11 @@ func TestGatherContext_ColdStart_CreatesThreadBeforeAssemblePrompt(t *testing.T)
 		},
 	}
 
-	if err := p.gatherContext(context.Background()); err != nil {
-		t.Fatalf("gatherContext() unexpected error: %v", err)
+	turnCtx, err := svc.turnContextResolver.Resolve(context.Background(), p.req)
+	if err != nil {
+		t.Fatalf("Resolve() unexpected error: %v", err)
 	}
+	p.turnCtx = turnCtx
 
 	// Thread must be created (cold start)
 	if threadStore.createThreadCalls != 1 {
@@ -568,23 +583,23 @@ func TestGatherContext_ColdStart_CreatesThreadBeforeAssemblePrompt(t *testing.T)
 
 	// threadCtx.threadID must be non-empty after gatherContext
 	// (so assemblePrompt can call resolveSystemPromptForParams with a valid ID)
-	if p.threadCtx.threadID == "" {
+	if p.turnCtx.ThreadCtx.threadID == "" {
 		t.Error("threadCtx.threadID is empty after cold-start gatherContext — this is the bug we fixed")
 	}
-	if p.threadCtx.threadID != assignedThreadID {
-		t.Errorf("threadCtx.threadID = %q, want %q", p.threadCtx.threadID, assignedThreadID)
+	if p.turnCtx.ThreadCtx.threadID != assignedThreadID {
+		t.Errorf("threadCtx.threadID = %q, want %q", p.turnCtx.ThreadCtx.threadID, assignedThreadID)
 	}
 
 	// createdThread must be populated so launchStream can skip the extra GetThread call
-	if p.createdThread == nil {
+	if p.turnCtx.CreatedThread == nil {
 		t.Error("createdThread is nil after cold-start gatherContext")
 	}
-	if p.createdThread.ID != assignedThreadID {
-		t.Errorf("createdThread.ID = %q, want %q", p.createdThread.ID, assignedThreadID)
+	if p.turnCtx.CreatedThread.ID != assignedThreadID {
+		t.Errorf("createdThread.ID = %q, want %q", p.turnCtx.CreatedThread.ID, assignedThreadID)
 	}
 
 	// isNewThread must be set so the response can include the created thread
-	if !p.threadCtx.isNewThread {
+	if !p.turnCtx.ThreadCtx.isNewThread {
 		t.Error("threadCtx.isNewThread = false, want true (cold start)")
 	}
 }
@@ -618,9 +633,11 @@ func TestGatherContext_WarmStart_NoThreadCreation(t *testing.T) {
 		},
 	}
 
-	if err := p.gatherContext(context.Background()); err != nil {
-		t.Fatalf("gatherContext() unexpected error: %v", err)
+	turnCtx, err := svc.turnContextResolver.Resolve(context.Background(), p.req)
+	if err != nil {
+		t.Fatalf("Resolve() unexpected error: %v", err)
 	}
+	p.turnCtx = turnCtx
 
 	// No thread creation on warm start
 	if threadStore.createThreadCalls != 0 {
@@ -628,16 +645,16 @@ func TestGatherContext_WarmStart_NoThreadCreation(t *testing.T) {
 	}
 
 	// createdThread must be nil on warm start
-	if p.createdThread != nil {
+	if p.turnCtx.CreatedThread != nil {
 		t.Error("createdThread is non-nil on warm start — should only be set on cold start")
 	}
 
 	// threadCtx must use the existing thread ID
-	if p.threadCtx.threadID != threadID {
-		t.Errorf("threadCtx.threadID = %q, want %q", p.threadCtx.threadID, threadID)
+	if p.turnCtx.ThreadCtx.threadID != threadID {
+		t.Errorf("threadCtx.threadID = %q, want %q", p.turnCtx.ThreadCtx.threadID, threadID)
 	}
 
-	if p.threadCtx.isNewThread {
+	if p.turnCtx.ThreadCtx.isNewThread {
 		t.Error("threadCtx.isNewThread = true on warm start")
 	}
 }
@@ -669,9 +686,9 @@ func TestGatherContext_ColdStart_CreateThreadError(t *testing.T) {
 		},
 	}
 
-	err := p.gatherContext(context.Background())
+	turnCtx, err := svc.turnContextResolver.Resolve(context.Background(), p.req)
 	if err == nil {
-		t.Fatal("gatherContext() expected error on thread creation failure, got nil")
+		t.Fatal("Resolve() expected error on thread creation failure, got nil")
 	}
 
 	// The error must wrap the original
@@ -680,8 +697,8 @@ func TestGatherContext_ColdStart_CreateThreadError(t *testing.T) {
 	}
 
 	// threadCtx.threadID must remain empty — the thread was never created
-	if p.threadCtx != nil && p.threadCtx.threadID != "" {
-		t.Errorf("threadCtx.threadID = %q after create failure, want empty", p.threadCtx.threadID)
+	if turnCtx != nil && turnCtx.ThreadCtx != nil && turnCtx.ThreadCtx.threadID != "" {
+		t.Errorf("threadCtx.threadID = %q after create failure, want empty", turnCtx.ThreadCtx.threadID)
 	}
 }
 
@@ -721,18 +738,20 @@ func TestGatherContext_ColdStart_TitleFromFirstTextBlock(t *testing.T) {
 		},
 	}
 
-	if err := p.gatherContext(context.Background()); err != nil {
-		t.Fatalf("gatherContext() unexpected error: %v", err)
+	turnCtx, err := svc.turnContextResolver.Resolve(context.Background(), p.req)
+	if err != nil {
+		t.Fatalf("Resolve() unexpected error: %v", err)
 	}
+	p.turnCtx = turnCtx
 
-	if p.createdThread == nil {
+	if p.turnCtx.CreatedThread == nil {
 		t.Fatal("createdThread is nil")
 	}
 	// Title should be the first N words of the text block, not "New Thread"
-	if p.createdThread.Title == "New Thread" {
+	if p.turnCtx.CreatedThread.Title == "New Thread" {
 		t.Error("thread title is 'New Thread' — should be derived from turn block content")
 	}
-	if p.createdThread.Title == "" {
+	if p.turnCtx.CreatedThread.Title == "" {
 		t.Error("thread title is empty")
 	}
 }
@@ -767,14 +786,16 @@ func TestPersistTurns_NoThreadCreation(t *testing.T) {
 			UserID: "user-1",
 			Role:   "user",
 		},
-		threadCtx: &threadContext{
-			threadID:    "thread-already-created",
-			projectID:   "proj-123",
-			isNewThread: true, // simulates cold start — but thread was already created in gatherContext
+		turnCtx: &TurnContext{
+			ThreadCtx: &threadContext{
+				threadID:    "thread-already-created",
+				projectID:   "proj-123",
+				isNewThread: true, // simulates cold start — but thread was already created in gatherContext
+			},
+			RequestParams: map[string]interface{}{},
+			Model:         "test-model",
+			Provider:      "openrouter",
 		},
-		requestParams: map[string]interface{}{},
-		model:         "test-model",
-		provider:      "openrouter",
 	}
 
 	if err := p.persistTurns(context.Background()); err != nil {
@@ -809,13 +830,15 @@ func TestPersistTurns_CreatesUserAndAssistantTurns(t *testing.T) {
 			UserID: "user-1",
 			Role:   "user",
 		},
-		threadCtx: &threadContext{
-			threadID:  "thread-persist-test",
-			projectID: "proj-persist",
+		turnCtx: &TurnContext{
+			ThreadCtx: &threadContext{
+				threadID:  "thread-persist-test",
+				projectID: "proj-persist",
+			},
+			RequestParams: map[string]interface{}{},
+			Model:         "test-model",
+			Provider:      "openrouter",
 		},
-		requestParams: map[string]interface{}{},
-		model:         "test-model",
-		provider:      "openrouter",
 	}
 
 	if err := p.persistTurns(context.Background()); err != nil {
@@ -886,12 +909,14 @@ func TestPersistTurns_WithContentBlocks(t *testing.T) {
 				{BlockType: "text", TextContent: &text},
 			},
 		},
-		threadCtx: &threadContext{
-			threadID:  "thread-blocks-test",
-			projectID: "proj-blocks",
+		turnCtx: &TurnContext{
+			ThreadCtx: &threadContext{
+				threadID:  "thread-blocks-test",
+				projectID: "proj-blocks",
+			},
+			RequestParams: map[string]interface{}{},
+			Model:         "test-model",
 		},
-		requestParams: map[string]interface{}{},
-		model:         "test-model",
 	}
 
 	if err := p.persistTurns(context.Background()); err != nil {
@@ -927,12 +952,14 @@ func TestPersistTurns_TurnWriterError_Propagates(t *testing.T) {
 		svc: svc,
 
 		req: &domainllm.CreateTurnRequest{UserID: "user-1", Role: "user"},
-		threadCtx: &threadContext{
-			threadID:  "thread-error-test",
-			projectID: "proj-err",
+		turnCtx: &TurnContext{
+			ThreadCtx: &threadContext{
+				threadID:  "thread-error-test",
+				projectID: "proj-err",
+			},
+			RequestParams: map[string]interface{}{},
+			Model:         "test-model",
 		},
-		requestParams: map[string]interface{}{},
-		model:         "test-model",
 	}
 
 	err := p.persistTurns(context.Background())
@@ -964,12 +991,14 @@ func TestPersistTurns_UsesResolvedThreadID(t *testing.T) {
 		svc: svc,
 
 		req: &domainllm.CreateTurnRequest{UserID: "user-1", Role: "user"},
-		threadCtx: &threadContext{
-			threadID:  resolvedThreadID, // Pre-populated by gatherContext
-			projectID: "proj-resolved",
+		turnCtx: &TurnContext{
+			ThreadCtx: &threadContext{
+				threadID:  resolvedThreadID, // Pre-populated by gatherContext
+				projectID: "proj-resolved",
+			},
+			RequestParams: map[string]interface{}{},
+			Model:         "test-model",
 		},
-		requestParams: map[string]interface{}{},
-		model:         "test-model",
 	}
 
 	if err := p.persistTurns(context.Background()); err != nil {

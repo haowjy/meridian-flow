@@ -3,11 +3,10 @@ package streaming
 // turn_creation.go — Pipeline orchestrator for CreateTurn.
 //
 // Decomposed into a 4-stage pipeline:
-//   gatherContext  -> assemblePrompt -> persistTurns -> launchStream
+//   resolveContext -> assemblePrompt -> persistTurns -> launchStream
 //
-// Each stage is a method on turnPipeline (see gather_context.go, assemble_prompt.go,
-// persist_turns.go, launch_stream.go). Validation and utility helpers are in
-// turn_helpers.go.
+// Stage 1 delegates to TurnContextResolver; remaining stages are methods on turnPipeline.
+// Validation and utility helpers are in turn_helpers.go.
 
 import (
 	"context"
@@ -15,11 +14,9 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	billing "meridian/internal/domain/billing"
 	domainagents "meridian/internal/domain/agents"
-	domaindocsys "meridian/internal/domain/docsystem"
+	billing "meridian/internal/domain/billing"
 	domainllm "meridian/internal/domain/llm"
-	domainwi "meridian/internal/domain/workitem"
 )
 
 // defaultFallbackModel is used when config.LLM.DefaultModel is not set.
@@ -36,22 +33,11 @@ type turnPipeline struct {
 	svc *Service
 	req *domainllm.CreateTurnRequest
 
-	// Stage 1: gatherContext outputs
-	threadCtx        *threadContext
-	project          *domaindocsys.Project
-	requestParams    map[string]interface{}
-	params           *domainllm.RequestParams
-	model            string
-	provider         string
-	createdThread    *domainllm.Thread         // Only set on cold start
-	streamAcquired   bool                      // True if stream slot acquired; cleanup transfers ownership
-	resolvedPersona  *domainagents.Persona     // Resolved persona (nil if no persona slug)
-	resolvedWorkItem *domainwi.WorkItem        // Work item after EnsureThreadWorkItem (persona turns only)
-	workContext      *domainllm.WorkContext    // Resolved work context (persona turns only)
+	// Stage 1: TurnContextResolver output
+	turnCtx *TurnContext
 
 	// Stage 2: assemblePrompt outputs
 	availableSkills []domainagents.RuntimeSkill
-	enabledTools    []string // Extracted from requestParams; used by production tool registry
 
 	// Stage 3: persistTurns outputs
 	userTurn      *domainllm.Turn
@@ -102,8 +88,8 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 
 	// Release stream slot on error paths; ownership transfers to cleanup in launchStream.
 	defer func() {
-		if p.streamAcquired {
-			s.userStreamTracker.Release(req.UserID)
+		if p.turnCtx != nil && p.turnCtx.StreamAcquired {
+			s.turnContextResolver.ReleaseStreamSlot(req.UserID)
 		}
 	}()
 
@@ -111,10 +97,10 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 	// failed (so no user turn exists yet), delete the orphaned thread to keep the DB clean.
 	// Uses context.Background() because the request ctx may already be cancelled on error.
 	defer func() {
-		if p.createdThread != nil && p.userTurn == nil {
-			if _, err := s.threadRepo.DeleteThread(context.Background(), p.createdThread.ID, req.UserID); err != nil {
+		if p.turnCtx != nil && p.turnCtx.CreatedThread != nil && p.userTurn == nil {
+			if _, err := s.threadRepo.DeleteThread(context.Background(), p.turnCtx.CreatedThread.ID, req.UserID); err != nil {
 				s.logger.Warn("failed to delete orphaned cold-start thread",
-					"thread_id", p.createdThread.ID,
+					"thread_id", p.turnCtx.CreatedThread.ID,
 					"error", err,
 				)
 			}
@@ -122,9 +108,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *domainllm.CreateTurnReque
 	}()
 
 	// Stage 1: Resolve thread (create on cold start), project, model, provider, params.
-	if err := p.gatherContext(ctx); err != nil {
+	turnCtx, err := s.turnContextResolver.Resolve(ctx, req)
+	if err != nil {
 		return nil, err
 	}
+	p.turnCtx = turnCtx
 
 	// Stage 2: Build tool section and resolve system prompt.
 	if err := p.assemblePrompt(ctx); err != nil {

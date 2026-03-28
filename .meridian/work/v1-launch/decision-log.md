@@ -64,3 +64,39 @@ Decisions made during v1-launch refactoring, with rationale. Organized by phase.
 ### Stale comment references removed method (FIX)
 **Context:** `spawn_service.go` comment referenced `SetSpawnService` which was removed by Item 1.
 **Decision:** Fixed. Updated to reference `SpawnInvokerRef closure in StreamingDeps`.
+
+---
+
+## Phase 3: Streaming God Object Decomposition
+
+### Interjection stream switch missing bookmark update (FIX)
+**Context:** Reviewer found that `CreateStreamSwitchFn` doesn't update `last_viewed_turn_id` after creating a follow-up turn. Pre-existing bug (old code had same omission), but a bug is a bug.
+**Decision:** Fixed. Added `threadRepo.UpdateLastViewedTurn` call after follow-up turn creation. Non-fatal on failure (stream switch succeeded, bookmark is UX convenience). Added `threadRepo` to `StreamRuntimeDeps`.
+
+### Pre-start message building failure leaks executor (FIX)
+**Context:** If `BuildConversationMessages` fails inside the background goroutine, the executor and stream slot aren't cleaned up. The executor was registered in `Launch` but `Start()` never called, so normal cleanup handlers never fire. Pre-existing bug.
+**Decision:** Fixed. Added `executor.RunCleanup()` call on the early-return error path. Added `RunCleanup()` public method on `StreamExecutor` for this edge case.
+
+### Debug reaches through collaborator internals (FIX)
+**Context:** `debug.go` accessed `s.streamRuntime.providerGetter.GetProvider(...)` directly — coupling Service to StreamRuntime's internal fields.
+**Decision:** Fixed. Added `StreamRuntime.GetProvider(provider)` public method. Debug now calls `s.streamRuntime.GetProvider(provider)`.
+
+### Service still carries unused deps (ACCEPT — INTENTIONAL)
+**Context:** `turnNavigator`, `documentSvc`, `folderSvc`, `messageBuilder`, `formatterRegistry` remain on Service despite being moved to collaborators.
+**Decision:** Accepted. These are shared references — still used by interruption/debug/interjection code paths. Removing them requires moving those code paths to collaborators, which the design explicitly defers until "recursive CreateTurn coupling is resolved."
+
+### launch_stream.go not fully absorbed by StreamRuntime (ACCEPT)
+**Context:** Direction reviewer noted the design says launch_stream.go should be fully absorbed, but a thin wrapper remains doing thread hydration, work-item derivation, and registry construction.
+**Decision:** Accepted. This per-request logic belongs in the pipeline stage, not in StreamRuntime. StreamRuntime owns the launch ceremony (executor creation, registration, cleanup, goroutine start). The pipeline stage owns per-request context (which thread, which tools, which work item). This split is intentional and correct.
+
+### StreamRuntime not testable in isolation (DEFER)
+**Context:** StreamRuntime constructs real StreamExecutors. No factory injection for test substitution.
+**Decision:** Deferred. This was the same before extraction. Adding an executor factory is future work that can be done independently.
+
+### Debug path still diverges from production (DEFER — PRE-EXISTING)
+**Context:** Debug endpoint parses params before server tool policy is applied. Production resolves in TurnContextResolver with capability filtering.
+**Decision:** Deferred. Pre-existing drift, not introduced by Phase 3. The debug endpoint was always a partial mirror. Full alignment would require making debug use TurnContextResolver, which is a separate feature.
+
+### Stale comments and docs (FIX)
+**Context:** persist_turns.go referenced `gatherContext`, docs reference deleted files.
+**Decision:** Fixed persist_turns.go comment. Test comments left as-is (they describe the concept, which hasn't changed). Doc updates tracked for a separate docs pass.
