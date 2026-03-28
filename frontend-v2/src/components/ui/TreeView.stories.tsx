@@ -171,7 +171,8 @@ export const ActivityStyle: Story = {
     interface ActivityNode {
       id: string
       name: string
-      icon: "read" | "edit" | "search" | "web" | "bash"
+      // icon is optional on the synthetic root node which is never rendered
+      icon?: "read" | "edit" | "search" | "web" | "bash"
       children?: ActivityNode[]
     }
 
@@ -204,12 +205,12 @@ export const ActivityStyle: Story = {
         <TreeViewRoot collection={activityTree}>
           <TreeViewTree>
             {activityTree.rootNode.children?.map((node, index) => {
-              const Icon = iconMap[node.icon]
+              const Icon = node.icon ? iconMap[node.icon] : null
               return (
                 <TreeViewNodeProvider key={node.id} node={node} indexPath={[index]}>
                   <TreeViewItem>
                     <TreeViewItemText>
-                      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                      {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
                       {node.name}
                     </TreeViewItemText>
                   </TreeViewItem>

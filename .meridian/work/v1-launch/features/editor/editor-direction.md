@@ -121,7 +121,7 @@ Click-to-edit pattern:
 
 ### Layer 3: Proposal Hunks
 
-See [collab-v2-integration.md](collab-v2-integration.md) for details. This layer is independent of live preview -- it adds colored highlights on top of whatever Layer 1 and 2 produce.
+See [collab-v2-integration.md](../collab/collab-v2-integration.md) for details. This layer is independent of live preview -- it adds colored highlights on top of whatever Layer 1 and 2 produce.
 
 ### Layer 4: Remote Cursors
 
@@ -199,6 +199,6 @@ Mock connections simulate collab scenarios without requiring a real backend.
 
 ## Cross-References
 
-- [Collab v2 Editor Strategy](../../collab-data-model-v2/future/editor-strategy.md) -- why CM6, why not ProseMirror
-- [Collab v2 Integration](collab-v2-integration.md) -- proposal decorations in both modes
-- [Layout Architecture](layout-architecture.md) -- where the editor sits in each mode
+- [Editor Strategy](./editor-strategy.md) -- why CM6, why not ProseMirror
+- [Collab v2 Integration](../collab/collab-v2-integration.md) -- proposal decorations in both modes
+- [Layout Architecture](../layouts/layout-architecture.md) -- where the editor sits in each mode

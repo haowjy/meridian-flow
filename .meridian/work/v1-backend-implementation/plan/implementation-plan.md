@@ -717,3 +717,4 @@ Items explicitly deferred. All are additive — they don't require rewriting v1 
 | **Cursor-based pagination** | — | Expected scale: 10-50 items. Offset/limit is sufficient. | Schema change if needed later — no backward compat requirement. |
 | **`query_history` tool** | — | Searches compacted history. Requires compaction to be battle-tested first. | Additive: new tool implementation reading compaction segments. |
 | **`check_background` tool** | — | Only useful with background execution. | Ships with BG2. |
+| **Multiplex agent SSE streams** | — | Per-turn SSE shares browser HTTP/1.1 6-connection limit. 3+ agent streams starve regular API calls. Not blocking v1 with low concurrent usage, but critical before scaling. | Moderate: single project-level SSE/WS with channel-based subscribe/unsubscribe. Custom event fan-out replaces per-turn SSE handler. Same pattern can apply to spawn sub-agent streams. |

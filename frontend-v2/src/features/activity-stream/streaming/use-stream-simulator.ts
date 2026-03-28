@@ -5,7 +5,7 @@
  * This naturally supports pause/resume and live speed changes.
  */
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 
 import { createInitialState, reduceStreamEvent } from "./reducer"
 import type { TimelineEntry } from "./types"
@@ -29,9 +29,12 @@ export function useStreamSimulator(
   const [eventIndex, setEventIndex] = useState(0)
 
   // Stable ref so the timer effect and step() always read the latest callback
-  // without re-triggering the scheduling effect.
+  // without re-triggering the scheduling effect. Updated via useLayoutEffect
+  // (not during render) to satisfy the react-hooks/refs lint rule.
   const onEventRef = useRef(options?.onEvent)
-  onEventRef.current = options?.onEvent
+  useLayoutEffect(() => {
+    onEventRef.current = options?.onEvent
+  })
 
   const restart = useCallback((opts?: { preservePause?: boolean }) => {
     dispatch({ type: "RESET" })

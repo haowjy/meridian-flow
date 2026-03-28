@@ -6,11 +6,14 @@ import { cn } from "@/lib/utils"
 function Switch({
   className,
   size = "default",
+  label,
   ...props
 }: React.ComponentProps<typeof SwitchPrimitive.Root> & {
   size?: "sm" | "default"
+  /** Optional text label rendered beside the switch (settings pattern). */
+  label?: string
 }) {
-  return (
+  const switchEl = (
     <SwitchPrimitive.Root
       data-slot="switch"
       data-size={size}
@@ -28,6 +31,23 @@ function Switch({
       />
     </SwitchPrimitive.Root>
   )
+
+  if (label) {
+    return (
+      <label
+        data-slot="switch-label-wrapper"
+        className={cn(
+          "inline-flex items-center gap-2 select-none",
+          props.disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+        )}
+      >
+        {switchEl}
+        <span className="text-sm">{label}</span>
+      </label>
+    )
+  }
+
+  return switchEl
 }
 
 export { Switch }

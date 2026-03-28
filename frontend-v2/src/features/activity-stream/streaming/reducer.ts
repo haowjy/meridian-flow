@@ -275,6 +275,7 @@ export function reduceStreamEvent(state: StreamState, event: StreamEvent): Strea
         parsedArgs = tryParseArgs(buffer)
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [event.toolCallId]: _discarded, ...remainingBuffers } = state.toolArgsBuffers
       const items = updateItemById<ToolItem>(state.activity.items, event.toolCallId, (item) => ({
         ...item,

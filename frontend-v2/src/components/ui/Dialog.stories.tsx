@@ -34,7 +34,7 @@ export const Default: Story = {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <Input label="Title" placeholder="Enter chapter title..." />
+          <Input placeholder="Enter chapter title..." />
         </div>
         <DialogFooter>
           <Button variant="outline">Cancel</Button>

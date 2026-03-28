@@ -1,11 +1,12 @@
 import * as React from "react"
-import { TreeView as ArkTreeView, createTreeCollection } from "@ark-ui/react/tree-view"
+import { TreeView as ArkTreeView } from "@ark-ui/react/tree-view"
+import type { TreeNode, TreeViewRootComponentProps } from "@ark-ui/react/tree-view"
 
 import { cn } from "@/lib/utils"
 
-// Re-export collection utilities and hooks
+// Re-export collection utilities, hooks, and types
 export { createTreeCollection, useTreeViewNodeContext } from "@ark-ui/react/tree-view"
-export type { TreeView as TreeViewTypes } from "@ark-ui/react/tree-view"
+export type { TreeView as TreeViewTypes, TreeCollection, TreeNode } from "@ark-ui/react/tree-view"
 
 /* -------------------------------- Shared -------------------------------- */
 
@@ -15,15 +16,16 @@ const treeRowStyles =
 
 /* --------------------------------- Root --------------------------------- */
 
-function TreeViewRoot({
+// Generic so callers can pass typed collections (TreeCollection<T>) without casting.
+function TreeViewRoot<T extends TreeNode = TreeNode>({
   className,
   ...props
-}: React.ComponentProps<typeof ArkTreeView.Root>) {
+}: TreeViewRootComponentProps<T>) {
   return (
     <ArkTreeView.Root
       data-slot="tree-view"
       className={cn("text-sm", className)}
-      {...props}
+      {...(props as React.ComponentProps<typeof ArkTreeView.Root>)}
     />
   )
 }
