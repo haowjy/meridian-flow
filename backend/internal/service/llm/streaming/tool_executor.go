@@ -162,6 +162,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 			if updateErr := se.turnWriter.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
 				se.logger.Error("failed to update turn error status", "error", updateErr)
 			}
+			se.Terminate(ReasonError, TerminateOpts{ErrorMessage: err.Error()})
 			return err
 		}
 
@@ -224,7 +225,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 					"error", err,
 				)
 				// Emit error and return - don't continue with current stream
-				se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err))
+				se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err), false)
 				return fmt.Errorf("interjection stream switch failed: %w", err)
 			}
 
@@ -244,10 +245,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 				"prev_turn_id", se.turnID,
 				"stream_url", result.StreamURL,
 			)
-			se.transitionTo(StateCompleted)
-			if se.onCleanup != nil {
-				se.onCleanup()
-			}
+			se.Terminate(ReasonStreamSwitch, TerminateOpts{})
 			return nil
 		}
 	}
@@ -291,7 +289,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 5. Load conversation history with tool results (using TurnNavigator + TurnReader)
 	path, err := se.turnNavigator.GetTurnPath(ctx, se.turnID)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for continuation: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for continuation: %w", err), false)
 		return fmt.Errorf("failed to load turn path for continuation: %w", err)
 	}
 
@@ -299,7 +297,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	for i := range path {
 		blocks, err := se.turnReader.GetTurnBlocks(ctx, path[i].ID)
 		if err != nil {
-			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err))
+			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err), false)
 			return fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err)
 		}
 		path[i].Blocks = blocks
@@ -308,7 +306,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 6. Build messages using MessageBuilder (pure conversion)
 	messages, err := se.messageBuilder.BuildMessages(ctx, path)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to build continuation messages: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("failed to build continuation messages: %w", err), false)
 		return fmt.Errorf("failed to build continuation messages: %w", err)
 	}
 
@@ -361,7 +359,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// - Using mstream's ctx prevents goroutine leaks and respects cancellation
 	contStreamChan, err := se.provider.StreamResponse(ctx, contReq)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("continuation stream failed: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("continuation stream failed: %w", err), false)
 		return fmt.Errorf("continuation stream failed: %w", err)
 	}
 
@@ -462,7 +460,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	// 1. Load conversation history with tool results (using TurnNavigator + TurnReader)
 	path, err := se.turnNavigator.GetTurnPath(ctx, se.turnID)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for graceful completion: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for graceful completion: %w", err), false)
 		return fmt.Errorf("failed to load turn path for graceful completion: %w", err)
 	}
 
@@ -470,7 +468,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	for i := range path {
 		blocks, err := se.turnReader.GetTurnBlocks(ctx, path[i].ID)
 		if err != nil {
-			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err))
+			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err), false)
 			return fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err)
 		}
 		path[i].Blocks = blocks
@@ -479,7 +477,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	// 2. Build messages using MessageBuilder (pure conversion)
 	messages, err := se.messageBuilder.BuildMessages(ctx, path)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to build messages for graceful completion: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("failed to build messages for graceful completion: %w", err), false)
 		return fmt.Errorf("failed to build messages for graceful completion: %w", err)
 	}
 
@@ -524,7 +522,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	// 5. Call provider for final continuation stream
 	contStreamChan, err := se.provider.StreamResponse(ctx, contReq)
 	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("graceful completion stream failed: %w", err))
+		se.handleError(ctx, send, fmt.Errorf("graceful completion stream failed: %w", err), false)
 		return fmt.Errorf("graceful completion stream failed: %w", err)
 	}
 

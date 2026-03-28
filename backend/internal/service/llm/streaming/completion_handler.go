@@ -2,15 +2,12 @@ package streaming
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	billing "meridian/internal/domain/billing"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/streaming/agui"
-	"meridian/internal/service/llm/tokens"
 )
 
 // handleCompletion handles successful stream completion
@@ -30,90 +27,30 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 		se.setGenerationID(metadata.GenerationID)
 	}
 
-	// Use TokenFinalizer to get the best available tokens
-	// This handles: provider tokens, OpenRouter API fallback, token counter fallback
 	currentState := se.getState()
 	isDraining := currentState == StateDrainMetadata
 
-	if se.tokenFinalizer != nil {
-		var reason tokens.FinalizeReason
-		if isDraining {
-			reason = tokens.ReasonSoftCancel
-		} else {
-			reason = tokens.ReasonCompletion
-		}
-
-		result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
-			TurnID:         se.turnID,
-			Model:          metadata.Model,
-			GenerationID:   se.getGenerationID(),
-			CancelSnapshot: se.cancelTextSnapshot,
-			Reason:         reason,
-			ProviderTokens: &tokens.ProviderTokens{
-				InputTokens:  metadata.InputTokens,
-				OutputTokens: metadata.OutputTokens,
-			},
-		})
-		if err == nil {
-			metadata.InputTokens = result.InputTokens
-			metadata.OutputTokens = result.OutputTokens
-			if !result.IsFinal {
-				se.logger.Debug("using finalized tokens",
-					"turn_id", se.turnID,
-					"input_tokens", result.InputTokens,
-					"output_tokens", result.OutputTokens,
-					"source", result.Source,
-				)
-			}
-		}
-	}
-
-	// Always save token metadata (even for cancelled streams)
-	// This ensures accurate billing even when user cancels mid-stream
-	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to update turn metadata: %w", err))
-		return err
-	}
-
-	// Persist OpenRouter generation record (if applicable)
-	// This captures provider name, native tokens, and cost for each LLM request
-	if err := se.persistGenerationRecord(ctx, metadata); err != nil {
-		// Log error but don't fail the request - generation metadata is supplemental
-		se.logger.Warn("failed to persist OpenRouter generation record",
-			"error", err,
-			"turn_id", se.turnID,
-			"generation_id", se.getGenerationID(),
-		)
-	}
-
-	// Terminal settlement is best-effort and must never fail the user-visible turn.
-	// Deferred mode marks pending billing on the generation record and lets enrichment settle later.
-	se.handleFinalSettlement(ctx, metadata, "awaiting_enrichment", isDraining)
-
 	// If in DrainMetadata state (soft cancel), skip tool continuation - just cleanup
 	// Turn status is already "cancelled" (set by InterruptTurn)
-	// Token metadata was saved above by updateTurnMetadata()
 	// Client was already notified + disconnected by handleSoftCancel(); no completion SSE event needed
 	if isDraining {
-		// Transition to Completed state
-		se.transitionTo(StateCompleted)
-
 		se.logger.Info("stream completed after soft cancel, tokens saved",
 			"turn_id", se.turnID,
-			"input_tokens", metadata.InputTokens,
-			"output_tokens", metadata.OutputTokens,
+			"generation_id", metadata.GenerationID,
 		)
 
-		// Call cleanup callback if registered
-		if se.onCleanup != nil {
-			se.onCleanup()
-		}
-
+		se.Terminate(ReasonSoftCancelDrained, TerminateOpts{Metadata: metadata})
 		return nil
 	}
 
 	// Check if we have collected tools to execute
 	if len(se.collectedTools) > 0 && se.toolRegistry != nil {
+		// Tool continuation is a non-terminal boundary. Persist this request's metadata
+		// and settle billing before running tools/starting the next provider request.
+		if metadata.StopReason == "tool_use" {
+			se.persistAndSettleToolUseRequest(ctx, metadata)
+		}
+
 		// Check hard limit to prevent infinite loops (no doubling - error at maxToolRounds)
 		if se.toolIteration >= se.maxToolRounds {
 			se.logger.Warn("tool round limit reached, creating error tool_results and allowing final response",
@@ -126,7 +63,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 			// This ensures every tool_use has a corresponding tool_result (required by Claude API)
 			errMsg := fmt.Sprintf("Tool execution limit reached (%d rounds). Please provide your final answer based on the information gathered so far.", se.maxToolRounds)
 			if err := se.persistErrorToolResults(ctx, send, errMsg); err != nil {
-				se.handleError(ctx, send, fmt.Errorf("failed to persist error tool results at hard limit: %w", err))
+				se.handleError(ctx, send, fmt.Errorf("failed to persist error tool results at hard limit: %w", err), false)
 				return err
 			}
 
@@ -175,9 +112,13 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 					"turn_id", se.turnID,
 					"error", err,
 				)
-				// Emit error and return - don't complete current stream
-				se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err))
-				return fmt.Errorf("interjection stream switch failed: %w", err)
+				// Preserve current turn metadata even when follow-up stream switch fails.
+				terminationErr := fmt.Errorf("interjection stream switch failed: %w", err)
+				se.Terminate(ReasonError, TerminateOpts{
+					ErrorMessage: terminationErr.Error(),
+					Metadata:     metadata,
+				})
+				return terminationErr
 			}
 
 			// Emit STREAM_SWITCH event so frontend can reconnect to new stream
@@ -196,10 +137,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 				"prev_turn_id", se.turnID,
 				"stream_url", result.StreamURL,
 			)
-			se.transitionTo(StateCompleted)
-			if se.onCleanup != nil {
-				se.onCleanup()
-			}
+			se.Terminate(ReasonStreamSwitch, TerminateOpts{Metadata: metadata})
 			return nil
 		}
 	}
@@ -208,132 +146,40 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	return se.completeTurn(ctx, send, metadata.StopReason, metadata)
 }
 
-// handleError handles streaming errors
-func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event), err error) {
-	// Use deadline to prevent blocking if DB is slow/unresponsive during cleanup
-	// Background context because original context may already be cancelled
-	persistCtx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
-	defer cancel()
-
-	// Check if we were in a cancel state
-	currentState := se.getState()
-	wasCancelled := currentState == StateDrainMetadata || currentState == StateHardCancelled
-	var settlementMetadata *domainllm.StreamMetadata
-
-	// Use TokenFinalizer to count tokens for any interruption (cancel, error, timeout)
-	// Do this BEFORE persisting partial blocks to capture all accumulated text
-	if se.tokenFinalizer != nil {
-		accumulatedText := se.getAccumulatedText()
-		// Use cancel-time snapshot if accumulator was cleared by handleSoftCancel
-		if accumulatedText == "" && se.cancelTextSnapshot != "" {
-			accumulatedText = se.cancelTextSnapshot
-		}
-
-		var reason tokens.FinalizeReason
-		if wasCancelled {
-			reason = tokens.ReasonHardCancel
-		} else {
-			reason = tokens.ReasonError
-		}
-
-		result, finalizeErr := se.tokenFinalizer.Finalize(persistCtx, tokens.FinalizeRequest{
-			TurnID:         se.turnID,
-			Model:          se.model,
-			GenerationID:   se.getGenerationID(),
-			CancelSnapshot: accumulatedText,
-			Reason:         reason,
-			ProviderTokens: nil, // No provider tokens on error
-		})
-		if finalizeErr != nil {
-			se.logger.Warn("failed to finalize tokens for interrupted stream",
-				"error", finalizeErr,
-			)
-		} else if updateErr := se.persistTokenMetadata(persistCtx, result, ""); updateErr != nil {
-			se.logger.Warn("failed to save finalized tokens",
-				"error", updateErr,
-			)
-		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
-			settlementMetadata = &domainllm.StreamMetadata{
-				Model:        se.model,
-				InputTokens:  result.InputTokens,
-				OutputTokens: result.OutputTokens,
-			}
-		}
-		if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
-			se.logger.Debug("finalized tokens for interrupted stream",
-				"input_tokens", result.InputTokens,
-				"output_tokens", result.OutputTokens,
-				"source", result.Source,
-				"error", err.Error(),
-			)
-		}
+// persistAndSettleToolUseRequest handles per-request metadata persistence + billing
+// for non-terminal tool_use completions before the next tool round begins.
+func (se *StreamExecutor) persistAndSettleToolUseRequest(ctx context.Context, metadata *domainllm.StreamMetadata) {
+	if metadata == nil {
+		return
 	}
 
-	if settlementMetadata != nil {
-		se.handleFinalSettlement(persistCtx, settlementMetadata, "interrupted_stream", wasCancelled)
-	}
-
-	// Persist any accumulated partial text blocks BEFORE marking turn as error
-	se.persistPartialBlocks(persistCtx)
-
-	// Deferred providers must persist pending settlement state on all terminal paths,
-	// even when token finalization cannot provide authoritative usage yet.
-	isCancelState := currentState == StateHardCancelled || currentState == StateDrainMetadata
-	if se.settlementMode == billing.CreditSettlementDeferredToEnrichment && settlementMetadata == nil {
-		if generationID := se.getGenerationID(); generationID != "" {
-			phase := "initial"
-			if se.requestIndex > 0 {
-				phase = "tool_continue"
-			}
-			se.enqueueEnrichmentSettlementJob(generationID, phase, se.model, isCancelState)
-		}
-		se.persistCurrentRequestPendingSettlement(persistCtx, se.model, "interrupted_stream")
-	}
-
-	// Detect if this is a user cancellation (don't show error toast for these)
-	// Check both: state-based (wasCancelled) and error-based (context.Canceled)
-	// Bug fix: Previously only error-based check was used for SSE event, causing
-	// hard cancel ("hard cancelled by user" error) to be misclassified as non-cancel
-	// IMPORTANT: context.DeadlineExceeded is a TIMEOUT ERROR, not user cancellation
-	// Only context.Canceled indicates user-initiated cancellation
-	isContextCancelled := errors.Is(err, context.Canceled)
-	isCancelled := wasCancelled || isContextCancelled
-
-	// Prepare user-facing error message for DB/UI.
-	// Provider errors can include verbose HTML payloads (e.g., Cloudflare 502 pages).
-	userErrorMsg := sanitizeProviderError(err)
-
-	// Update turn status in database
-	// IMPORTANT: Skip UpdateTurnError if cancelled (soft/hard cancel case)
-	// InterruptTurn already set status to "cancelled" - don't override it with "error"
-	if isCancelled {
-		se.logger.Debug("skipping UpdateTurnError for cancelled stream (status already cancelled)",
-			"turn_id", se.turnID,
-			"was_cancelled_state", wasCancelled,
-			"context_cancelled", isContextCancelled,
-		)
-	} else {
-		// Only update turn status to "error" for actual errors (not user cancellations)
-		if updateErr := se.turnWriter.UpdateTurnError(persistCtx, se.turnID, userErrorMsg); updateErr != nil {
-			se.logger.Error("failed to update turn error", "error", updateErr)
-		}
-	}
-
-	// Emit AG-UI RUN_ERROR event with isCancelled flag
-	// This is the primary error event - frontend uses this for cleanup and error handling
-	// isCancelled distinguishes user cancellation (no error toast) from actual errors
-	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitRunError(userErrorMsg, isCancelled)
-	}
-
-	// Call cleanup callback if registered
-	if se.onCleanup != nil {
-		se.onCleanup()
-	}
+	tokenResult := se.finalizeTokensForTermination(ctx, ReasonCompleted, metadata)
+	se.settleBillingForTermination(ctx, ReasonCompleted, metadata, tokenResult)
 }
 
-// completeTurn marks the turn as complete and sends turn_complete event.
-// This is called ONLY when stop_reason != "tool_use" (or max iterations hit).
+// handleError handles streaming errors.
+func (se *StreamExecutor) handleError(_ context.Context, _ func(mstream.Event), err error, wasCancel bool) {
+	// Keep cancellation classification for logs; terminal cleanup is centralized in Terminate.
+	currentState := se.getState()
+	cancelRequested := se.persistenceGuard != nil && !se.persistenceGuard.IsArmed()
+	wasCancelled := wasCancel || cancelRequested || currentState == StateDrainMetadata || currentState == StateHardCancelled
+	userErrorMsg := sanitizeProviderError(err)
+
+	if wasCancelled {
+		se.logger.Debug("handling stream error from cancel state",
+			"turn_id", se.turnID,
+			"state", currentState.String(),
+			"error", err.Error(),
+		)
+		se.Terminate(ReasonHardCancelled, TerminateOpts{ErrorMessage: userErrorMsg})
+		return
+	}
+
+	se.Terminate(ReasonError, TerminateOpts{ErrorMessage: userErrorMsg})
+}
+
+// completeTurn finalizes a fully completed turn via Terminate.
+// This is called only when stop_reason != "tool_use" (or max iterations hit).
 // The turn remains "streaming" during all continuation rounds.
 // metadata can be nil (e.g., when max_tool_rounds is hit before next stream)
 func (se *StreamExecutor) completeTurn(
@@ -348,45 +194,17 @@ func (se *StreamExecutor) completeTurn(
 		"total_tool_iterations", se.toolIteration,
 	)
 
-	// Update turn status in database
-	// NOTE: This marks the FINAL completion after all continuation rounds
-	if err := se.turnWriter.UpdateTurnStatus(ctx, se.turnID, domainllm.TurnStatusComplete, nil); err != nil {
-		se.logger.Error("failed to update turn status", "error", err)
-		// Continue despite error - SSE event is more important
-	}
-
 	// Check context budget and emit context_warning SSE event if threshold crossed.
 	// Must run BEFORE RUN_FINISHED so the frontend receives the warning while the
 	// connection is still open. The call is synchronous but fast (~1 ms in-memory).
 	budget := se.checkBudgetAndAct(ctx, send)
-
-	// Emit AG-UI lifecycle events
-	// STEP_FINISHED signals the end of the current LLM request step
-	// RUN_FINISHED signals successful completion with LLM metadata
-	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitStepFinished()
-
-		// Extract token counts from metadata if available
-		var inputTokens, outputTokens int
-		if metadata != nil {
-			inputTokens = metadata.InputTokens
-			outputTokens = metadata.OutputTokens
-		}
-
-		// RUN_FINISHED includes stopReason and token counts for frontend display/tracking
-		se.aguiEmitter.EmitRunFinished(stopReason, inputTokens, outputTokens)
-	}
+	se.Terminate(ReasonCompleted, TerminateOpts{Metadata: metadata, StopReason: stopReason})
 
 	// If collapse threshold (60%) was crossed, create a collapse_marker system turn
 	// asynchronously so CM3's MessageBuilder can detect it in future conversation builds.
 	// Must run after emitting RUN_FINISHED to avoid blocking the stream response.
 	if budget.ShouldCollapse {
 		se.createCollapseMarkerAsync(budget.UsagePercent)
-	}
-
-	// Call cleanup callback if registered
-	if se.onCleanup != nil {
-		se.onCleanup()
 	}
 
 	return nil

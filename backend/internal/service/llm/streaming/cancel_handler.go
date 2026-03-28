@@ -5,10 +5,6 @@ import (
 	"fmt"
 
 	mstream "github.com/haowjy/meridian-stream-go"
-
-	billing "meridian/internal/domain/billing"
-	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/service/llm/tokens"
 )
 
 // RequestSoftCancel requests a "hard-like" cancel UX while allowing the provider stream
@@ -63,9 +59,6 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 		return nil
 	}
 
-	// Transition to TimedOut state
-	se.transitionTo(StateTimedOut)
-
 	// CRITICAL: Cancel the provider stream to stop the HTTP connection.
 	// Without this, the provider keeps streaming (goroutine leak + billing).
 	se.stream.Cancel()
@@ -77,68 +70,7 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 		"snapshot_length", len(se.cancelTextSnapshot),
 	)
 
-	// Use deadline to prevent blocking if DB is slow/unresponsive
-	ctx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
-	defer cancel()
-
-	// Use TokenFinalizer to get best-effort tokens
-	var settlementMetadata *domainllm.StreamMetadata
-	if se.tokenFinalizer != nil {
-		result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
-			TurnID:         se.turnID,
-			Model:          se.model,
-			GenerationID:   se.getGenerationID(),
-			CancelSnapshot: se.cancelTextSnapshot,
-			Reason:         tokens.ReasonSoftCancelTimeout,
-			ProviderTokens: nil, // No provider tokens on timeout
-		})
-		if err != nil {
-			se.logger.Warn("token finalization failed on timeout",
-				"turn_id", se.turnID,
-				"error", err,
-			)
-		} else if updateErr := se.persistTokenMetadata(ctx, result, "soft_cancel_timeout"); updateErr != nil {
-			se.logger.Warn("failed to save tokens on timeout",
-				"turn_id", se.turnID,
-				"error", updateErr,
-			)
-		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
-			settlementMetadata = &domainllm.StreamMetadata{
-				Model:        se.model,
-				InputTokens:  result.InputTokens,
-				OutputTokens: result.OutputTokens,
-			}
-		}
-	}
-
-	// Settlement is best-effort; billing failures must not affect user-visible completion path.
-	if settlementMetadata != nil {
-		se.handleFinalSettlement(ctx, settlementMetadata, "soft_cancel_timeout", true)
-	} else if se.settlementMode == billing.CreditSettlementDeferredToEnrichment {
-		generationID := se.getGenerationID()
-		if generationID != "" {
-			phase := "initial"
-			if se.requestIndex > 0 {
-				phase = "tool_continue"
-			}
-			se.enqueueEnrichmentSettlementJob(generationID, phase, se.model, true)
-		}
-		se.persistCurrentRequestPendingSettlement(ctx, se.model, "soft_cancel_timeout")
-	}
-
-	// Transition to Errored state (terminal)
-	se.transitionTo(StateErrored)
-
-	// Emit AG-UI RUN_ERROR event for any remaining clients
-	// isCancelled=true because timeout after cancel is still a cancel (not an error)
-	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitRunError("timeout waiting for provider metadata", true)
-	}
-
-	// Cleanup executor
-	if se.onCleanup != nil {
-		se.onCleanup()
-	}
+	se.Terminate(ReasonSoftCancelTimeout, TerminateOpts{})
 
 	// Return error to exit streaming loop
 	return fmt.Errorf("soft cancel timeout")

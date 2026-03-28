@@ -32,18 +32,34 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 		return nil
 	}
 
+	// Read executor state under lock: InterruptTurn runs on a different goroutine than workFunc.
+	executor.stateMu.RLock()
+	executorState := executor.state
+	executor.stateMu.RUnlock()
+	isNotStarted := executorState == StateNotStarted
+
 	// Get the turn to find the model
 	turn, err := s.turnReader.GetTurn(ctx, turnID)
 	if err != nil {
-		s.logger.Warn("failed to get turn for interrupt, using soft cancel (keep provider running for metadata)",
+		s.logger.Warn("failed to get turn for interrupt, falling back to cancellation without model capabilities",
 			"turn_id", turnID,
 			"error", err,
 		)
-		// Default to soft cancel if we can't determine model capabilities.
-		// This preserves accurate token metadata when the provider ignores cancellation.
-		executor.RequestSoftCancel()
+		if isNotStarted {
+			// workFunc has not started and is not consuming ctrlCh yet.
+			executor.Terminate(ReasonHardCancelled, TerminateOpts{})
+		} else {
+			// Default to soft cancel if we can't determine model capabilities.
+			// This preserves accurate token metadata when the provider ignores cancellation.
+			executor.RequestSoftCancel()
+		}
 
-		// Update turn status to cancelled (best-effort)
+		// Exception to "Terminate owns terminal writes":
+		// InterruptTurn runs on a different goroutine than the streaming actor, so it is the
+		// source of truth for cancelled status on interrupt paths.
+		// Terminate intentionally skips status updates for ReasonSoftCancelDrained,
+		// ReasonHardCancelled, and ReasonSoftCancelTimeout because status is already cancelled here.
+		// Update turn status to cancelled (best-effort).
 		if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, domainllm.TurnStatusCancelled, nil); err != nil {
 			s.logger.Warn("failed to update turn status to cancelled",
 				"turn_id", turnID,
@@ -64,7 +80,12 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 		}
 	}
 
-	// Update turn status to cancelled
+	// Exception to "Terminate owns terminal writes":
+	// InterruptTurn runs on a different goroutine than the streaming actor, so it writes
+	// cancelled status directly before requesting soft/hard cancel on the executor.
+	// Terminate skips status updates for ReasonSoftCancelDrained/ReasonHardCancelled/
+	// ReasonSoftCancelTimeout because this write has already happened.
+	// Update turn status to cancelled.
 	if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, domainllm.TurnStatusCancelled, nil); err != nil {
 		s.logger.Warn("failed to update turn status to cancelled",
 			"turn_id", turnID,
@@ -73,7 +94,10 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 	}
 
 	// Cancel based on capability
-	if supportsCancel {
+	if isNotStarted {
+		// workFunc has not started and is not consuming ctrlCh yet.
+		executor.Terminate(ReasonHardCancelled, TerminateOpts{})
+	} else if supportsCancel {
 		// Hard cancel - stops provider stream, triggers token counting in handleError
 		s.logger.Debug("hard cancel (provider supports cancellation)",
 			"turn_id", turnID,
