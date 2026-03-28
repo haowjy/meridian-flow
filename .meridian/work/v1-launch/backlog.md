@@ -30,7 +30,7 @@ Phase 1 (Yjs-first Editor) is complete — uncontrolled `Editor`, shared `create
 
 | Phase | Blueprint | What to Build | Status |
 |-------|-----------|--------------|--------|
-| 2 | `plan/editor/phase-2-doc-session-and-session-pool.md` | `DocSession` lifecycle (Y.Doc + IDB + awareness + undo), `SessionPool` with LRU eviction, Dexie schema, generation guards for idle timers, IDB health tracking + degraded mode | ⬜ |
+| 2 | `plan/editor/phase-2-doc-session-and-session-pool.md` | `DocSession` lifecycle (Y.Doc + IDB + awareness + undo), `SessionPool` with LRU eviction, Dexie schema, generation guards for idle timers, IDB health tracking + degraded mode | ✅ |
 | 3 | `plan/editor/phase-3-view-controller-and-use-document-sessions.md` | Per-surface `ViewController` with lease transfer, `useDocumentSessions()` hook replacing `useTabManager`, awareness clear on view detach (ghost cursor fix) | ⬜ |
 | 4 | `plan/editor/phase-4-websocket-provider.md` | Real WS provider matching backend protocol (`y-protocols/sync` handshake), reconnect, `AUTH_EXPIRED` token refresh, `document:restored` full-reset path | ⬜ |
 | 5 | `plan/editor/phase-5-proposal-persistence-and-offline-review.md` | Dexie-backed AI proposal runtime, diff derivation via Yjs projection clone+apply+diff, offline accept/reject, proposal GC | ⬜ |
@@ -45,6 +45,19 @@ Phase 1 (Yjs-first Editor) is complete — uncontrolled `Editor`, shared `create
 |----------|---------|--------|--------|
 | Converse/Studio tab independence | Design assumes independent `activeDocId` per surface with lease transfer. Product may want Converse to mirror Studio's active tab instead. | Blocks Phase 3 implementation — resolve before P3.1. | ⬜ |
 | Backend text projection for AI context | Backend projects Y.Doc → text on-demand from in-memory state. For FTS across documents, AI context in non-collab flows, and API responses, a persistent `content_text` column alongside Yjs binary state may be needed. | Additive. Not blocking editor refactor. | ⬜ |
+
+## Manual Verification (after Phase 3 wires up ViewController)
+
+Once ViewController connects SessionPool → Editor (Phase 3), a human should verify in a real browser:
+
+| Check | What to do | Why |
+|-------|-----------|-----|
+| IDB persistence round-trip | Open doc, type, close tab, reopen → content persists | `fake-indexeddb` in tests doesn't cover real browser IDB quirks |
+| IDB in private browsing | Open Storybook in private/incognito → degraded mode warning appears | y-indexeddb may fail silently in some browsers |
+| Session warm/cold cycle | Open doc, switch to another, switch back → content rehydrates instantly from warm session | Generation guard + idle eviction timing in real usage |
+| Multi-tab collab (Phase 4+) | Two browser tabs editing same doc → changes sync | WebSocket provider + Yjs merge |
+| Quota stress | Fill IDB near quota → degraded mode triggers | Post-open write failures are silent (y-indexeddb limitation, tracked) |
+| Safari IDB | Test all IDB paths on Safari — Safari has the most IDB bugs | Cross-browser compat |
 
 ## Doc Drift
 
