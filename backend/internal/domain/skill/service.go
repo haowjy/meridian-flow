@@ -9,7 +9,7 @@ type CreateSkillRequest struct {
 	ProjectID              string
 	Name                   string
 	Description            string
-	Content                string // Skill content (stored in DB)
+	Content                string // Skill content (stored in .agents/skills/<slug>/SKILL.md)
 	DisableModelInvocation bool
 	UserInvocable          bool
 }
@@ -18,15 +18,14 @@ type CreateSkillRequest struct {
 type UpdateSkillRequest struct {
 	Name                   *string
 	Description            *string
-	Content                *string // Skill content (stored in DB)
+	Content                *string // Skill content (stored in .agents/skills/<slug>/SKILL.md)
 	DisableModelInvocation *bool
 	UserInvocable          *bool
 }
 
 // ProjectSkillService defines business logic operations for project skills
 type ProjectSkillService interface {
-	// CreateSkill creates a new skill with its folder structure
-	// Content is stored in DB, folder exists for references/export
+	// CreateSkill creates a new skill with its folder structure and SKILL.md.
 	CreateSkill(ctx context.Context, userID string, req CreateSkillRequest) (*ProjectSkill, error)
 
 	// ListSkills lists all skills for a project

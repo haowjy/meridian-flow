@@ -4,17 +4,14 @@ package agents
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
 
-	"meridian/internal/domain"
 	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainerrors "meridian/internal/domain/errors"
-	"meridian/internal/pkg/frontmatter"
 )
 
 // skillFrontmatter is the typed struct for parsing SKILL.md frontmatter.
@@ -64,14 +61,20 @@ func NewFileSkillResolver(
 // No silent fallback.
 func (r *fileSkillResolver) Resolve(ctx context.Context, projectID uuid.UUID, slug string) (*domainagents.RuntimeSkill, error) {
 	path := fmt.Sprintf(".agents/skills/%s/SKILL.md", slug)
+	projectIDStr := projectID.String()
 
-	doc, err := r.docRepo.GetByPath(ctx, path, projectID.String())
+	doc, found, err := loadCatalogDocByPath(
+		ctx,
+		r.docRepo,
+		projectIDStr,
+		path,
+		fmt.Sprintf("skill resolver: read %s", path),
+	)
 	if err != nil {
-		var notFound *domain.NotFoundError
-		if errors.As(err, &notFound) {
-			return nil, domainerrors.SkillNotFound(slug)
-		}
-		return nil, fmt.Errorf("skill resolver: read %s: %w", path, err)
+		return nil, err
+	}
+	if !found {
+		return nil, domainerrors.SkillNotFound(slug)
 	}
 
 	skill, parseErr := parseSkillDoc(doc, slug, path)
@@ -95,20 +98,26 @@ func (r *fileSkillResolver) Resolve(ctx context.Context, projectID uuid.UUID, sl
 // second. Duplicates (same slug) are silently dropped after the first occurrence.
 // If the .agents/skills/ folder does not exist, (nil, nil, nil) is returned.
 func (r *fileSkillResolver) List(ctx context.Context, projectID uuid.UUID) ([]domainagents.RuntimeSkill, []domainagents.ValidationIssue, error) {
-	skillsFolder, err := r.folderRepo.GetByPath(ctx, projectID.String(), ".agents/skills")
+	projectIDStr := projectID.String()
+
+	skillsFolder, found, err := lookupOptionalCatalogFolder(
+		ctx,
+		r.folderRepo,
+		projectIDStr,
+		".agents/skills",
+		"skill resolver: locate skills folder",
+	)
 	if err != nil {
-		var notFound *domain.NotFoundError
-		if errors.As(err, &notFound) {
-			// No skills folder yet — not an error, just no skills.
-			return nil, nil, nil
-		}
-		return nil, nil, fmt.Errorf("skill resolver: locate skills folder: %w", err)
+		return nil, nil, err
+	}
+	if !found {
+		// No skills folder yet — not an error, just no skills.
+		return nil, nil, nil
 	}
 
 	// List immediate child folders; each represents one skill slug directory.
-	// IncludeHidden is true because skill folders may be created as hidden by
-	// the backfill service.
-	children, err := r.folderRepo.ListChildren(ctx, &skillsFolder.ID, projectID.String(),
+	// IncludeHidden is true because skill folders are system-managed.
+	children, err := r.folderRepo.ListChildren(ctx, &skillsFolder.ID, projectIDStr,
 		&domaindocsys.FolderFilterOptions{IncludeHidden: true})
 	if err != nil {
 		return nil, nil, fmt.Errorf("skill resolver: list skill folders: %w", err)
@@ -127,31 +136,33 @@ func (r *fileSkillResolver) List(ctx context.Context, projectID uuid.UUID) ([]do
 
 		path := fmt.Sprintf(".agents/skills/%s/SKILL.md", slug)
 
-		doc, err := r.docRepo.GetByPath(ctx, path, projectID.String())
+		doc, found, err := loadCatalogDocByPath(
+			ctx,
+			r.docRepo,
+			projectIDStr,
+			path,
+			fmt.Sprintf("skill resolver: read %s", path),
+		)
 		if err != nil {
-			var notFound *domain.NotFoundError
-			if errors.As(err, &notFound) {
-				// Folder exists but SKILL.md is absent — record as issue.
-				issues = append(issues, domainagents.ValidationIssue{
-					Path:    path,
-					Message: "SKILL.md not found in skill folder",
-				})
-				continue
-			}
-			return nil, nil, fmt.Errorf("skill resolver: read %s: %w", path, err)
+			return nil, nil, err
+		}
+		if !found {
+			// Folder exists but SKILL.md is absent — record as issue.
+			issues = appendCatalogIssue(issues, path, "SKILL.md not found in skill folder")
+			continue
 		}
 
-		skill, parseErr := parseSkillDoc(doc, slug, path)
-		if parseErr != nil {
-			issues = append(issues, domainagents.ValidationIssue{
-				Path:    path,
-				Message: parseErr.Error(),
-			})
-			r.logger.Warn("skill file invalid, skipping",
-				"slug", slug,
-				"path", path,
-				"error", parseErr,
-			)
+		skill, nextIssues, ok := parseCatalogDocWithIssues(
+			doc,
+			slug,
+			path,
+			parseSkillDoc,
+			issues,
+			r.logger,
+			"skill file invalid, skipping",
+		)
+		issues = nextIssues
+		if !ok {
 			continue
 		}
 		skills = append(skills, *skill)
@@ -164,13 +175,12 @@ func (r *fileSkillResolver) List(ctx context.Context, projectID uuid.UUID) ([]do
 // Returns an error (but never panics) when frontmatter is missing or invalid,
 // or when required fields (name) are absent.
 func parseSkillDoc(doc *domaindocsys.Document, slug, path string) (*domainagents.RuntimeSkill, error) {
-	fm, body, err := frontmatter.ParseInto[skillFrontmatter](doc.Content)
+	fm, body, err := parseCatalogFrontmatter[skillFrontmatter](doc.Content)
 	if err != nil {
-		return nil, fmt.Errorf("invalid frontmatter: %w", err)
+		return nil, err
 	}
-
-	if fm.Name == "" {
-		return nil, fmt.Errorf("missing required field: name")
+	if err := requireCatalogName(fm.Name); err != nil {
+		return nil, err
 	}
 
 	return &domainagents.RuntimeSkill{

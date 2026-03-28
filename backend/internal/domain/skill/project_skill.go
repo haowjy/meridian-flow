@@ -36,16 +36,16 @@ func DefaultSkillMetadata() SkillMetadata {
 	}
 }
 
-// ProjectSkill represents a skill installed in a project
-// Content is stored directly in the DB. The folder (/.meridian/skills/<name>/)
-// exists for reference documents and future export functionality.
+// ProjectSkill represents a skill installed in a project.
+// Content is sourced from .agents/skills/<slug>/SKILL.md. The folder
+// (/.meridian/skills/<name>/) remains for reference documents.
 type ProjectSkill struct {
 	ID               string  `json:"id" db:"id"`
 	ProjectID        string  `json:"project_id" db:"project_id"`
 	InstanceFolderID string  `json:"instance_folder_id" db:"instance_folder_id"`
 	Name             string  `json:"name" db:"name"`               // Skill identifier (e.g., "writing-coach")
 	Description      string  `json:"description" db:"description"` // Short description for context
-	Content          string  `json:"content" db:"content"`         // Skill instructions (stored in DB, not SKILL.md)
+	Content          string  `json:"content" db:"content"`         // Skill instructions from SKILL.md
 	Position         int     `json:"position" db:"position"`       // Order in skill list
 	Enabled          bool    `json:"enabled" db:"enabled"`         // Whether skill is active (default true)
 	Metadata         JSONMap `json:"metadata" db:"metadata"`       // JSONB for settings (disableModelInvocation, userInvocable, etc.)
@@ -97,4 +97,3 @@ func (s *ProjectSkill) SetMetadata(meta SkillMetadata) {
 
 	s.Metadata = m
 }
-

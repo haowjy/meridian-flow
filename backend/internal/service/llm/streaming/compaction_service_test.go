@@ -59,9 +59,9 @@ func (s *stubTurnReader) GetLastBlockSequence(_ context.Context, _ string) (int,
 
 // recordingTurnWriter records calls to CreateTurn and CreateTurnBlock for assertion.
 type recordingTurnWriter struct {
-	createdTurns  []*domainllm.Turn
-	createdBlocks []*domainllm.TurnBlock
-	createTurnErr error
+	createdTurns   []*domainllm.Turn
+	createdBlocks  []*domainllm.TurnBlock
+	createTurnErr  error
 	createBlockErr error
 }
 
@@ -127,7 +127,7 @@ func (s *stubLLMProvider) GenerateResponse(_ context.Context, _ *domainllm.Gener
 func (s *stubLLMProvider) StreamResponse(_ context.Context, _ *domainllm.GenerateRequest) (<-chan domainllm.StreamEvent, error) {
 	panic("stubLLMProvider.StreamResponse not expected")
 }
-func (s *stubLLMProvider) Name() string        { return "stub" }
+func (s *stubLLMProvider) Name() string                { return "stub" }
 func (s *stubLLMProvider) SupportsModel(_ string) bool { return true }
 
 // =============================================================================
@@ -169,10 +169,10 @@ func textBlock(turnID, text string) domainllm.TurnBlock {
 // prior compaction bookmark and persists a compaction turn with the LLM summary.
 func TestCompact_BasicFlow(t *testing.T) {
 	const (
-		threadID   = "thread-1"
-		turn1ID    = "turn-user-1"
-		turn2ID    = "turn-asst-1"
-		currentID  = turn2ID
+		threadID    = "thread-1"
+		turn1ID     = "turn-user-1"
+		turn2ID     = "turn-asst-1"
+		currentID   = turn2ID
 		wantSummary = "User asked about Go; assistant explained goroutines."
 	)
 
@@ -246,14 +246,14 @@ func TestCompact_BasicFlow(t *testing.T) {
 // the most recent compaction turn (delta compaction), not the entire history.
 func TestCompact_SincePriorCompaction(t *testing.T) {
 	const (
-		threadID        = "thread-1"
-		turn1ID         = "turn-user-1"
-		turn2ID         = "turn-asst-1"
-		compactionID    = "compaction-1"
-		turn3ID         = "turn-user-2"
-		turn4ID         = "turn-asst-2"
-		currentID       = turn4ID
-		wantSummary     = "Delta: user asked follow-up about channels."
+		threadID     = "thread-1"
+		turn1ID      = "turn-user-1"
+		turn2ID      = "turn-asst-1"
+		compactionID = "compaction-1"
+		turn3ID      = "turn-user-2"
+		turn4ID      = "turn-asst-2"
+		currentID    = turn4ID
+		wantSummary  = "Delta: user asked follow-up about channels."
 	)
 
 	// Path includes a prior compaction turn at index 2.

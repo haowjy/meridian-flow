@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"meridian/internal/domain"
-	domainerrors "meridian/internal/domain/errors"
 	domaindocsys "meridian/internal/domain/docsystem"
+	domainerrors "meridian/internal/domain/errors"
 	domainwi "meridian/internal/domain/workitem"
 	svcwi "meridian/internal/service/workitem"
 )
@@ -21,27 +21,27 @@ import (
 
 // mockStore is a fully configurable in-memory mock for domainwi.Store.
 type mockStore struct {
-	items  map[string]*domainwi.WorkItem // by ID
-	slugs  map[string]map[string]string  // projectID → slug → ID
+	items map[string]*domainwi.WorkItem // by ID
+	slugs map[string]map[string]string  // projectID → slug → ID
 
-	createErr                    error
-	getByIDErr                   error
-	getBySlugErr                 error
-	updateErr                    error
-	updateStatusErr              error
-	softDeleteErr                error
-	attachThreadErr              error
-	hasStreamingThreads          bool
-	hasStreamingThreadsErr       error
-	countAttachedThreads         int
-	countActiveEphemerals        int
-	countActiveEphemeralsErr     error
-	mostRecentEphemeral          *domainwi.WorkItem
-	getMostRecentEphemeralErr    error
-	listThreadsSummaries         []domainwi.ThreadSummary
-	listThreadsTotal             int
-	listByProjectItems           []domainwi.WorkItem
-	listByProjectTotal           int
+	createErr                 error
+	getByIDErr                error
+	getBySlugErr              error
+	updateErr                 error
+	updateStatusErr           error
+	softDeleteErr             error
+	attachThreadErr           error
+	hasStreamingThreads       bool
+	hasStreamingThreadsErr    error
+	countAttachedThreads      int
+	countActiveEphemerals     int
+	countActiveEphemeralsErr  error
+	mostRecentEphemeral       *domainwi.WorkItem
+	getMostRecentEphemeralErr error
+	listThreadsSummaries      []domainwi.ThreadSummary
+	listThreadsTotal          int
+	listByProjectItems        []domainwi.WorkItem
+	listByProjectTotal        int
 }
 
 func newMockStore() *mockStore {
@@ -402,7 +402,7 @@ func TestReopen_Success(t *testing.T) {
 	}
 }
 
-func TestReopen_ActiveItem_ReturnsConflict(t *testing.T) {
+func TestReopen_ActiveItem_Returns409DomainError(t *testing.T) {
 	store := newMockStore()
 	wi := newActiveWorkItem("wi-1", "proj-1", "my-feature")
 	store.items["wi-1"] = wi
@@ -413,8 +413,16 @@ func TestReopen_ActiveItem_ReturnsConflict(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for active work item")
 	}
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Errorf("expected conflict error, got %T: %v", err, err)
+
+	var de *domainerrors.DomainError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *DomainError, got %T: %v", err, err)
+	}
+	if de.Code != domainerrors.CodeWorkItemNotDone {
+		t.Errorf("expected code %q, got %q", domainerrors.CodeWorkItemNotDone, de.Code)
+	}
+	if de.Status != 409 {
+		t.Errorf("expected HTTP 409, got %d", de.Status)
 	}
 }
 

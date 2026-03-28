@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"meridian/internal/config"
-	"meridian/internal/domain"
 	domaindocsys "meridian/internal/domain/docsystem"
 	identifier "meridian/internal/domain/identifier"
 	"meridian/internal/httputil"
@@ -43,13 +41,7 @@ func (h *DocumentHandler) resolveDocumentID(w http.ResponseWriter, r *http.Reque
 	// Resolve identifier (UUID works, slug returns helpful error)
 	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "document "+identifier+" not found")
-		} else if errors.Is(err, domain.ErrBadRequest) {
-			httputil.RespondError(w, http.StatusBadRequest, err.Error())
-		} else {
-			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
-		}
+		handleError(w, err, h.config)
 		return "", false
 	}
 

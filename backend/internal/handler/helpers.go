@@ -155,6 +155,8 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 
 	// Fallback: Check sentinel errors for backwards compatibility
 	switch {
+	case errors.Is(err, domain.ErrBadRequest):
+		httputil.RespondError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrValidation):
 		httputil.RespondError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrNotFound):

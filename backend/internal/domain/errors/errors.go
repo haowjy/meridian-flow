@@ -10,7 +10,10 @@
 //	return domainerrors.WorkItemDone(slug)
 package errors
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // DomainError is a structured error for v1 API error conditions.
 // It implements the error interface and carries enough information for
@@ -39,6 +42,17 @@ func WorkItemDone(slug string) *DomainError {
 		Code:    CodeWorkItemDone,
 		Status:  http.StatusConflict,
 		Message: "work item is already done",
+		Detail:  map[string]interface{}{"slug": slug},
+	}
+}
+
+// WorkItemNotDone returns a DomainError indicating the target work item cannot be
+// reopened because it is not currently in the done state.
+func WorkItemNotDone(slug string) *DomainError {
+	return &DomainError{
+		Code:    CodeWorkItemNotDone,
+		Status:  http.StatusConflict,
+		Message: fmt.Sprintf("work item %q is not in 'done' state; cannot reopen", slug),
 		Detail:  map[string]interface{}{"slug": slug},
 	}
 }
@@ -167,5 +181,32 @@ func PathTraversalDenied(path string) *DomainError {
 		Status:  http.StatusForbidden,
 		Message: "path traversal denied",
 		Detail:  map[string]interface{}{"path": path},
+	}
+}
+
+// UnsupportedFileExtension returns a DomainError indicating the requested
+// extension is not among supported file extensions.
+func UnsupportedFileExtension(extension string, supported []string) *DomainError {
+	return &DomainError{
+		Code:   CodeUnsupportedFileExtension,
+		Status: http.StatusBadRequest,
+		// Keep legacy message wording for compatibility with existing clients/tests.
+		Message: fmt.Sprintf("validation failed: unsupported file extension %q (supported: %v)",
+			extension, supported),
+		Detail: map[string]interface{}{
+			"extension": extension,
+			"supported": supported,
+		},
+	}
+}
+
+// WorkItemSlugGenerationFailed returns a DomainError indicating the work-item
+// create flow exhausted slug retry attempts due to high contention.
+func WorkItemSlugGenerationFailed(attempts int) *DomainError {
+	return &DomainError{
+		Code:    CodeWorkItemSlugGenerationFailed,
+		Status:  http.StatusInternalServerError,
+		Message: "internal server error",
+		Detail:  map[string]interface{}{"attempts": attempts},
 	}
 }

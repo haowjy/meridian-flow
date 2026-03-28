@@ -7,9 +7,10 @@ package errors
 // constructor functions, not here, so callers never need to remember the correct status.
 const (
 	// Work item lifecycle errors (409 Conflict)
-	CodeWorkItemDone              = "WORK_ITEM_DONE"               // Operation rejected: work item is already completed
-	CodeWorkItemDeleted           = "WORK_ITEM_DELETED"            // Operation rejected: work item has been deleted
-	CodeWorkItemHasActiveStreams  = "WORK_ITEM_HAS_ACTIVE_STREAMS" // Cannot complete: work item has in-flight streaming turns
+	CodeWorkItemDone             = "WORK_ITEM_DONE"               // Operation rejected: work item is already completed
+	CodeWorkItemDeleted          = "WORK_ITEM_DELETED"            // Operation rejected: work item has been deleted
+	CodeWorkItemHasActiveStreams = "WORK_ITEM_HAS_ACTIVE_STREAMS" // Cannot complete: work item has in-flight streaming turns
+	CodeWorkItemNotDone          = "WORK_ITEM_NOT_DONE"           // Cannot reopen: work item is not in done state
 
 	// Persona errors (422 Unprocessable Entity)
 	CodePersonaNotFound = "PERSONA_NOT_FOUND" // Referenced persona does not exist
@@ -32,4 +33,10 @@ const (
 	// Access control errors (403 Forbidden)
 	CodeNamespaceAccessDenied = "NAMESPACE_ACCESS_DENIED" // Caller lacks access to the target namespace
 	CodePathTraversalDenied   = "PATH_TRAVERSAL_DENIED"   // Path resolves outside the allowed root
+
+	// Validation errors (400 Bad Request)
+	CodeUnsupportedFileExtension = "UNSUPPORTED_FILE_EXTENSION" // Document extension is not one of the allowed values
+
+	// Work item internal guard errors (500 Internal Server Error)
+	CodeWorkItemSlugGenerationFailed = "WORK_ITEM_SLUG_GENERATION_FAILED" // Slug retry guard exhausted without finding a free slug
 )

@@ -47,5 +47,4 @@ Each domain has a subdirectory:
 - `postgres/collab/` -- Proposal, state, update log, checkpoint, bookmark stores
 - `postgres/docsystem/` -- Document, folder, project, favorite stores
 - `postgres/llm/` -- Turn, thread stores
-- `postgres/skill/` -- ProjectSkill store
 - Top-level: `connection.go`, `dbtx.go`, `errors.go`, `transaction.go`, `user_preferences.go`
