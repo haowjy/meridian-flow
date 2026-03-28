@@ -7,10 +7,10 @@ File-backed persona and skill resolution for runtime agent behavior. Runtime res
 | Package | Role |
 |---|---|
 | `backend/internal/domain/agents/` | Domain types (`Persona`, `RuntimeSkill`, `ValidationIssue`) and interfaces (`SkillResolver`, `PersonaCatalog`, `AgentImportService`, `BackfillService`, `GitFetcher`) |
-| `backend/internal/service/agents/` | File-backed implementations (`filePersonaCatalog`, `fileSkillResolver`, import and backfill services, git fetcher) |
+| `backend/internal/service/agents/` | File-backed implementations (`filePersonaCatalog`, `fileSkillResolver`, import service, git fetcher, shared catalog helpers) |
 | `backend/internal/pkg/frontmatter/` | Domain-agnostic YAML frontmatter parsing utility |
 | `backend/internal/app/domains/agents.go` | HTTP module wiring for Git import and persona list routes |
-| `backend/internal/app/domains/skill.go` | HTTP module wiring for skill resolver and backfill routes |
+| `backend/internal/app/domains/skill.go` | HTTP module wiring for file-backed skill service and resolver |
 | `backend/internal/capabilities/` | Provider/model capability registry used by persona model validation |
 
 Refs: `backend/internal/domain/agents/interfaces.go:9`, `backend/internal/service/agents/persona_catalog.go:26`, `backend/internal/service/agents/skill_resolver.go:37`, `backend/internal/pkg/frontmatter/parser.go:1`, `backend/internal/app/domains/agents.go:25`, `backend/internal/app/domains/skill.go:18`.
@@ -109,7 +109,7 @@ Refs: `backend/internal/pkg/frontmatter/parser.go:30`, `backend/internal/pkg/fro
 
 ## Module Wiring
 
-`AgentModule` wires Git import and optional persona-list HTTP handlers. `SkillModule` wires skill CRUD plus file resolver and backfill endpoint. `bootstrap` creates one `PersonaCatalog` and injects it into both LLM and Agent modules.
+`AgentModule` wires Git import and persona-list HTTP handlers. `SkillModule` wires file-backed skill CRUD and resolver. `bootstrap` creates one `PersonaCatalog` and injects it into both LLM and Agent modules.
 
 ```mermaid
 flowchart TD
@@ -122,14 +122,14 @@ flowchart TD
     persona_cat --> llm_mod
 
     skill_mod --> resolver["NewFileSkillResolver"]
-    skill_mod --> backfill["NewBackfillService"]
+    skill_mod --> skill_svc["NewFileProjectSkillService"]
 
     agent_mod --> fetcher["NewGitFetcher"]
     agent_mod --> import_svc["NewAgentImportService"]
     fetcher --> import_svc
 ```
 
-Refs: `backend/internal/app/domains/agents.go:32`, `backend/internal/app/domains/agents.go:67`, `backend/internal/app/domains/skill.go:36`, `backend/internal/app/domains/skill.go:64`, `backend/internal/app/bootstrap.go:86`, `backend/internal/app/bootstrap.go:95`, `backend/internal/app/bootstrap.go:125`.
+Refs: `backend/internal/app/domains/agents.go:32`, `backend/internal/app/domains/skill.go:34`, `backend/internal/app/bootstrap.go:86`, `backend/internal/app/bootstrap.go:125`.
 
 ## Interface to Implementation Map
 
@@ -138,8 +138,7 @@ Refs: `backend/internal/app/domains/agents.go:32`, `backend/internal/app/domains
 | `SkillResolver` | `domain/agents/interfaces.go:17` | `fileSkillResolver` | `service/agents/skill_resolver.go:37` |
 | `PersonaCatalog` | `domain/agents/interfaces.go:30` | `filePersonaCatalog` | `service/agents/persona_catalog.go:26` |
 | `AgentImportService` | `domain/agents/interfaces.go:47` | `agentImportService` | `service/agents/import_service.go:31` |
-| `BackfillService` | `domain/agents/interfaces.go:56` | `backfillService` | `service/agents/backfill.go:77` |
-| `GitFetcher` | `domain/agents/interfaces.go:65` | `gitFetcher` | `service/agents/git_fetcher.go:41` |
+| `GitFetcher` | `domain/agents/interfaces.go:56` | `gitFetcher` | `service/agents/git_fetcher.go:41` |
 
 All implementations include compile-time interface assertions.
 

@@ -15,19 +15,30 @@ Every exit path (success, error, cancel, credit exhaustion) MUST execute all 6 s
 
 Missing any step causes resource leaks or phantom streams.
 
+## Collaborator Architecture
+
+Service delegates to 4 collaborators, each owning a concern of the turn pipeline:
+
+| Collaborator | File | Owns |
+|---|---|---|
+| `TurnContextResolver` | `turn_context_resolver.go` | Stage 1: thread/persona/model/provider/params, stream slot |
+| `ToolRegistryFactory` | `tool_registry_factory.go` | Tool registry construction (temp + production) |
+| `StreamRequestBuilder` | `stream_request_builder.go` | Conversation history loading + @-reference expansion |
+| `StreamRuntime` | `stream_runtime.go` | Stage 4: executor creation, stream registration, async launch |
+
 ## StreamingDeps (Constructor)
 
-Nested sub-structs grouping ~30 dependencies by concern. Each sub-struct has its own `Validate()`.
+Nested sub-structs grouping dependencies by concern. Each sub-struct has its own `Validate()`.
 
 | Sub-struct | Contents |
-|------------|----------|
-| `PersistenceDeps` | TurnWriter, TurnReader, TurnNavigator, ThreadRepo, ProjectRepo, TxManager |
-| `ServiceDeps` | DocumentSvc, FolderSvc, NamespaceSvc, SkillService, Validator, Authorizer, MutationStrategy |
-| `PipelineDeps` | ProviderGetter, Registry, SystemPromptResolver, MessageBuilder, CapabilityRegistry, FormatterRegistry |
-| `BillingDeps` | ToolLimitResolver, TokenFinalizer, CreditAdmissionChecker, CreditSettler, SettlementMode |
-| `InfraDeps` | Config, JobQueue, Logger |
+|---|---|
+| `PersistenceDeps` | TurnWriter, TurnReader, ThreadRepo, ProjectRepo, TxManager |
+| `ServiceDeps` | TurnContextResolver, ToolRegistryFactory, StreamRequestBuilder, StreamRuntime, InterjectionRegistry, Validator, Authorizer |
+| `PipelineDeps` | Registry, SystemPromptResolver, CapabilityRegistry |
+| `BillingDeps` | SettlementMode |
+| `InfraDeps` | Config, Logger, ExecutorRegistry (optional, shared for cross-component cancellation) |
 
-Defined in `service.go:70-202`. All validated via `ozzo-validation` at construction time.
+Defined in `deps.go`. All validated via `ozzo-validation` at construction time.
 
 ## TurnStatus
 
@@ -37,7 +48,7 @@ Always use `llm.TurnStatus*` typed enum constants. The streaming service is the 
 
 ## Key Types
 
-- `ExecutorRegistry` (`service.go`): Thread-safe `sync.Map` tracking `StreamExecutor` by turn ID for interrupt handling.
+- `ExecutorRegistry` (`deps.go`): Thread-safe `sync.Map` tracking `StreamExecutor` by turn ID for interrupt handling.
 - `UserStreamTracker` (`user_stream_tracker.go`): Per-user concurrent stream limiter (free: 3, paid: 10).
 - `StreamExecutor` (`stream_executor.go`): Core execution loop -- provider streaming, block processing, tool execution.
 

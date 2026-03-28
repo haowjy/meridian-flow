@@ -38,7 +38,7 @@ internal/repository/       -> Data layer (postgres)
 internal/config/           -> Config sub-structs (Server, Database, Auth, LLM, Billing, Logging)
 ```
 
-Domains: `billing`, `collab`, `docsystem`, `llm`, `skill`, `auth`, `identifier`. Each has its own `AGENTS.md`.
+Domains: `agents`, `auth`, `billing`, `collab`, `docsystem`, `llm`, `skill`, `workitem`, `identifier`. Each has its own `AGENTS.md`.
 
 Technical reference: `.meridian/fs/backend/` (overview + per-area deep dives)
 
