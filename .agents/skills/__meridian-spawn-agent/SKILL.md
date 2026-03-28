@@ -25,10 +25,9 @@ meridian spawn -a agent -p "task description"
 
 Your harness handles the notification — no need to poll or wait. Use `spawn show` if you need to re-inspect a past spawn's details.
 
-**Do NOT use `--background` + `spawn wait` if your harness supports background execution** — that pattern blocks you until all spawns finish and prevents per-spawn incremental processing. It exists only as a fallback:
+If your harness doesn't support background execution, use `--background` and `spawn wait`:
 
 ```bash
-# FALLBACK ONLY — for harnesses without background execution support
 meridian spawn --background -a agent -p "task description"
 # → returns immediately: {"spawn_id": "p107", "status": "running"}
 
@@ -87,12 +86,12 @@ meridian spawn -a agent -p "Step B" --desc "Step B"
 # Each returns when its spawn completes — no need for spawn wait.
 ```
 
-**Do NOT use `--background` + `spawn wait` if your harness supports parallel execution.** Fallback only:
+If your harness doesn't support parallel execution, use `--background` and `spawn wait`:
 
 ```bash
-# FALLBACK ONLY
 meridian spawn --background -a agent -p "Step A" --desc "Step A"
 meridian spawn --background -a agent -p "Step B" --desc "Step B"
+# Read spawn_ids from JSON results, then wait for both
 meridian spawn wait p108 p109
 ```
 
