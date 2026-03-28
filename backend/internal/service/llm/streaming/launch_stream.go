@@ -9,7 +9,6 @@ import (
 
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/pkg/sliceutil"
-	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tools"
 	"meridian/internal/service/llm/tools/external"
 )
@@ -176,13 +175,18 @@ func (p *turnPipeline) buildProductionToolRegistry(thread *domainllm.Thread) *to
 		workItemID = *thread.WorkItemID
 	}
 
+	var spawnInvoker domainllm.SpawnInvoker
+	if svc.spawnInvokerRef != nil {
+		spawnInvoker = svc.spawnInvokerRef()
+	}
+
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(svc.namespaceSvc).
 		WithMutationStrategy(svc.mutationStrategy).
 		WithWorkItemSlug(workItemSlug).
 		WithEnabledDocumentTools(p.enabledTools, thread.ProjectID, p.req.UserID, svc.documentSvc, svc.folderSvc).
 		WithEnabledSkillTools(p.enabledTools, thread.ProjectID, svc.skillResolver, false, p.availableSkills).
-		WithSpawnTool(thread.ID, workItemID, thread.ProjectID, p.req.UserID, svc.spawnInvoker)
+		WithSpawnTool(thread.ID, workItemID, thread.ProjectID, p.req.UserID, spawnInvoker)
 
 	// Add web search tool if requested via provider-specific tool name.
 	// Web-search registration must happen before WithPersonaToolFilter so it can be pruned too.
@@ -236,57 +240,13 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 		"assistant_turn_id", assistantTurnID,
 	)
 
-	// Get conversation history (turn path)
-	path, err := s.turnNavigator.GetTurnPath(ctx, userTurnID)
+	messages, err := s.buildConversationMessages(ctx, userTurnID, userID, projectID)
 	if err != nil {
-		s.logger.Error("failed to get turn path for streaming",
+		s.logger.Error("failed to build conversation messages for streaming",
 			"error", err,
 			"user_turn_id", userTurnID,
 		)
-		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get turn path: %v", err)); updateErr != nil {
-			s.logger.Error("failed to update turn error", "error", updateErr)
-		}
-		return
-	}
-
-	// Load content blocks for all turns in the path
-	for i := range path {
-		blocks, err := s.turnReader.GetTurnBlocks(ctx, path[i].ID)
-		if err != nil {
-			s.logger.Error("failed to get content blocks",
-				"error", err,
-				"turn_id", path[i].ID,
-			)
-			if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get content blocks: %v", err)); updateErr != nil {
-				s.logger.Error("failed to update turn error", "error", updateErr)
-			}
-			return
-		}
-		path[i].Blocks = blocks
-	}
-
-	// Build messages from turn history
-	messages, err := s.messageBuilder.BuildMessages(ctx, path)
-	if err != nil {
-		s.logger.Error("failed to build messages for streaming",
-			"error", err,
-		)
-		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build messages: %v", err)); updateErr != nil {
-			s.logger.Error("failed to update turn error", "error", updateErr)
-		}
-		return
-	}
-
-	// Post-process: compile @-references into synthetic tool_use/tool_result pairs.
-	refTransformer := threadhistory.NewReferenceMessageTransformer(
-		s.documentSvc, s.folderSvc, s.formatterRegistry, userID, projectID, s.logger,
-	)
-	messages, err = refTransformer.TransformMessages(ctx, messages)
-	if err != nil {
-		s.logger.Error("failed to transform references in messages",
-			"error", err,
-		)
-		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to transform references: %v", err)); updateErr != nil {
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build conversation messages: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return

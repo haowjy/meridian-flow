@@ -7,10 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/service/llm/tools"
 )
 
 // assemblePrompt builds the tool registry and resolves the system prompt.
@@ -27,20 +24,7 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	// Load skills once for tool metadata enrichment (shared across both registries).
 	// Skills metadata is now owned by the tool system (not the system prompt resolver)
 	// so it's naturally excluded when the model doesn't support tools.
-	projectUUID, err := uuid.Parse(p.threadCtx.projectID)
-	if err != nil {
-		svc.logger.Warn("failed to parse project UUID for skill loading; skills unavailable",
-			"project_id", p.threadCtx.projectID,
-			"error", err,
-		)
-	} else {
-		skills, _, listErr := svc.skillResolver.List(ctx, projectUUID)
-		if listErr != nil {
-			svc.logger.Warn("failed to load skills for tool metadata", "error", listErr)
-		} else {
-			p.availableSkills = skills
-		}
-	}
+	p.availableSkills = svc.loadAvailableSkills(ctx, p.threadCtx.projectID)
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance).
 	// Tools self-describe via metadata; registry generates the section dynamically.
@@ -52,19 +36,14 @@ func (p *turnPipeline) assemblePrompt(ctx context.Context) error {
 	if p.resolvedWorkItem != nil {
 		workItemSlug = p.resolvedWorkItem.Slug
 	}
-	tempRegistryBuilder := tools.NewToolRegistryBuilder().
-		WithNamespaceService(svc.namespaceSvc).
-		WithMutationStrategy(svc.mutationStrategy).
-		WithWorkItemSlug(workItemSlug).
-		WithEnabledDocumentTools(p.enabledTools, p.threadCtx.projectID, req.UserID, svc.documentSvc, svc.folderSvc).
-		WithEnabledSkillTools(p.enabledTools, p.threadCtx.projectID, svc.skillResolver, false, p.availableSkills)
-
-	// Persona tool filter: applied AFTER all tools are registered (OCP compliance).
-	if p.resolvedPersona != nil {
-		tempRegistryBuilder.WithPersonaToolFilter(p.resolvedPersona.Tools, p.resolvedPersona.DisallowedTools)
-	}
-
-	tempToolRegistry := tempRegistryBuilder.Build()
+	tempToolRegistry := svc.buildTempToolRegistry(
+		p.enabledTools,
+		p.threadCtx.projectID,
+		req.UserID,
+		workItemSlug,
+		p.availableSkills,
+		p.resolvedPersona,
+	)
 
 	// toolSection is local — it feeds resolveSystemPromptForParams but is not needed
 	// by later pipeline stages (launchStream uses the production registry, not this temp one).

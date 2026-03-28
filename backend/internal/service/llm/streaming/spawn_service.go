@@ -9,7 +9,7 @@ package streaming
 //   - SpawnService depends on SpawnInvoker (narrow interface implemented by StreamingService)
 //     for creating child turns and streaming. It does NOT depend on StreamingService directly.
 //   - StreamingService depends on SpawnInvoker for the spawn_agent tool to call CreateSpawn.
-//   - The actual wiring happens at construction time via SetSpawnService on StreamingService.
+//   - The actual wiring happens via SpawnInvokerRef closure in StreamingDeps (see setup.go).
 
 import (
 	"context"

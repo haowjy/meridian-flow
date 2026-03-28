@@ -147,6 +147,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	deps.Logger.Info("token finalizer initialized")
 
 	namespaceSvc := docsystemsvc.NewNamespaceService(deps.FolderRepo, deps.Logger)
+	var spawnInvoker domainllm.SpawnInvoker
 
 	streamingService, err := streaming.NewStreamingOrchestrator(streaming.StreamingDeps{
 		Persistence: streaming.PersistenceDeps{
@@ -166,8 +167,11 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			Validator:        validator,
 			Authorizer:       deps.Authorizer,
 			MutationStrategy: deps.MutationStrategy,
-			PersonaCatalog:   deps.PersonaCatalog, // Optional: nil disables persona resolution
-			WorkItemSvc:      deps.WorkItemSvc,    // Optional: nil disables work item gates
+			SpawnInvokerRef: func() domainllm.SpawnInvoker {
+				return spawnInvoker
+			},
+			PersonaCatalog: deps.PersonaCatalog, // Optional: nil disables persona resolution
+			WorkItemSvc:    deps.WorkItemSvc,    // Optional: nil disables work item gates
 		},
 		Pipeline: streaming.PipelineDeps{
 			ProviderGetter:       providerResolver,
@@ -197,7 +201,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 
 	// Wire SpawnService: bootstrapper depends on streamingService (CreateTurn path),
 	// and SpawnService depends on the shared executorRegistry for executor-level cancellation.
-	// The circular dependency is broken by SetSpawnInvoker (called after both are created).
+	// The circular dependency is broken by a SpawnInvokerRef closure captured above.
 	bootstrapper := streaming.NewChildThreadBootstrapper(streamingService, deps.TurnRepo, deps.Logger)
 	spawnSvc := streaming.NewSpawnService(
 		deps.ThreadRepo,
@@ -208,13 +212,8 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		deps.Logger,
 	)
 
-	// Wire SpawnInvoker back into the streaming service so the spawn_agent tool can call
-	// CreateSpawn without a direct import cycle.
-	if svc, ok := streamingService.(interface {
-		SetSpawnInvoker(domainllm.SpawnInvoker)
-	}); ok {
-		svc.SetSpawnInvoker(spawnSvc)
-	}
+	// Wire SpawnInvoker back into the closure so spawn_agent can call CreateSpawn.
+	spawnInvoker = spawnSvc
 
 	return &Services{
 		Thread:        threadService,

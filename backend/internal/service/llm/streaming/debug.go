@@ -9,14 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"meridian/internal/domain"
-	domainagents "meridian/internal/domain/agents"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/adapters"
-	threadhistory "meridian/internal/service/llm/thread_history"
-	"meridian/internal/service/llm/tools"
 )
 
 // BuildDebugProviderRequest builds the provider-facing request payload for a hypothetical
@@ -122,26 +117,19 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 	requestParams["tools"] = toolsParam
 
 	// Load skills for tool metadata enrichment (mirrors CreateTurn).
-	// Gracefully skip if project ID is not a valid UUID (should not happen in production).
-	var availableSkills []domainagents.RuntimeSkill
-	if projectUUID, parseErr := uuid.Parse(thread.ProjectID); parseErr == nil {
-		skills, _, listErr := s.skillResolver.List(ctx, projectUUID)
-		if listErr != nil {
-			s.logger.Warn("failed to load skills for tool metadata (debug)", "error", listErr)
-		} else {
-			availableSkills = skills
-		}
-	}
+	availableSkills := s.loadAvailableSkills(ctx, thread.ProjectID)
 
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
 	// WithMutationStrategy is required — NewTextEditorTool panics if mutationStrategy is nil
-	tempToolRegistry := tools.NewToolRegistryBuilder().
-		WithNamespaceService(s.namespaceSvc).
-		WithMutationStrategy(s.mutationStrategy).
-		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithEnabledSkillTools(enabledTools, thread.ProjectID, s.skillResolver, false, availableSkills).
-		Build()
+	tempToolRegistry := s.buildTempToolRegistry(
+		enabledTools,
+		thread.ProjectID,
+		req.UserID,
+		"",
+		availableSkills,
+		nil,
+	)
 
 	// Get tool section from registry (OCP compliance - tools describe themselves)
 	toolSection := tempToolRegistry.BuildSystemPromptSection()
@@ -155,28 +143,18 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 		return nil, err
 	}
 
-	// Build conversation path from prev_turn_id (if provided)
-	var path []domainllm.Turn
+	// Build conversation messages from prev_turn_id path (if provided).
+	// Uses split helpers so the hypothetical user message is appended BEFORE
+	// reference transformation — matching the production flow where the persisted
+	// user turn is part of the path and its @-references get transformed.
+	turnIDForPath := ""
 	if req.PrevTurnID != nil {
-		path, err = s.turnNavigator.GetTurnPath(ctx, *req.PrevTurnID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get turn path for debug: %w", err)
-		}
-
-		// Load content blocks for all turns in the path (matches startStreamingExecution)
-		for i := range path {
-			blocks, err := s.turnReader.GetTurnBlocks(ctx, path[i].ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get content blocks for debug: %w", err)
-			}
-			path[i].Blocks = blocks
-		}
+		turnIDForPath = *req.PrevTurnID
 	}
 
-	// Build messages from turn history using MessageBuilder
-	messages, err := s.messageBuilder.BuildMessages(ctx, path)
+	messages, err := s.loadConversationHistory(ctx, turnIDForPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build messages for debug: %w", err)
+		return nil, fmt.Errorf("failed to load conversation history for debug: %w", err)
 	}
 
 	// Append hypothetical new user message from request turn_blocks
@@ -198,12 +176,10 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *domainllm.
 		})
 	}
 
-	// Post-process: compile @-references into synthetic tool_use/tool_result pairs
-	// (matches startStreamingExecution behavior for debug inspection)
-	refTransformer := threadhistory.NewReferenceMessageTransformer(
-		s.documentSvc, s.folderSvc, s.formatterRegistry, req.UserID, thread.ProjectID, s.logger,
-	)
-	messages, err = refTransformer.TransformMessages(ctx, messages)
+	// Transform @-references AFTER appending the hypothetical message so its
+	// references are expanded (mirrors production where the user turn is persisted
+	// before the path is loaded and transformed).
+	messages, err = s.transformMessageReferences(ctx, messages, req.UserID, thread.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to transform references for debug: %w", err)
 	}
