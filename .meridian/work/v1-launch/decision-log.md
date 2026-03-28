@@ -97,6 +97,30 @@ Decisions made during v1-launch refactoring, with rationale. Organized by phase.
 **Context:** Debug endpoint parses params before server tool policy is applied. Production resolves in TurnContextResolver with capability filtering.
 **Decision:** Deferred. Pre-existing drift, not introduced by Phase 3. The debug endpoint was always a partial mirror. Full alignment would require making debug use TurnContextResolver, which is a separate feature.
 
+---
+
+## Phase 4: Catalog + Migration (reviewed post-commit)
+
+### Catalog helpers: some helpers not truly shared (ACCEPT)
+**Context:** `loadCatalogDocByID` and `appendCatalogFieldIssue` are only used by persona_catalog, not skill_resolver. Not a bug, just not fully "shared."
+**Decision:** Accepted. The file is coherent as "catalog utilities." Renaming/splitting adds churn without value.
+
+### DomainError: non-UUID identifiers now return 400 instead of 500 (ACCEPT — INTENTIONAL)
+**Context:** Document handler's `resolveDocumentID` now routes `ValidationError` from the identifier resolver through `handleError`, producing 400. Previously it was an unhandled error → 500.
+**Decision:** Accepted as intentional improvement. Returning 400 for invalid input is correct behavior. The old 500 was the bug.
+
+### DomainError: missing test coverage for 2 of 3 new codes (DEFER)
+**Context:** Only `WORK_ITEM_NOT_DONE` (reopen conflict) has test coverage. `UNSUPPORTED_FILE_EXTENSION` and `WORK_ITEM_SLUG_GENERATION_FAILED` are untested.
+**Decision:** Deferred. Added to backlog. The migration is behavior-preserving (same status codes), just more structured.
+
+### Skill B: frontend still reads/writes `enabled` field (TRACKED)
+**Context:** Backend removed `enabled` from skill DTOs. Frontend still renders toggle and sends `enabled` in updates — silently ignored. Skills appear "disabled" because `enabled === undefined`.
+**Decision:** Tracked. The frontend skill UI is already on the v1-launch backlog as a design task. The toggle was always going to be removed as part of that redesign. Not blocking backend refactoring.
+
+### Skill B: schema docs referenced removed table (FIX)
+**Context:** `schema.md` still listed `project_skills` as an active table.
+**Decision:** Fixed. Removed from ER diagram and table purposes.
+
 ### Stale comments and docs (FIX)
 **Context:** persist_turns.go referenced `gatherContext`, docs reference deleted files.
 **Decision:** Fixed persist_turns.go comment. Test comments left as-is (they describe the concept, which hasn't changed). Doc updates tracked for a separate docs pass.
