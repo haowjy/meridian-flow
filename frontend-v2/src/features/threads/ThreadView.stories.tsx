@@ -20,7 +20,7 @@ function ThreadScrubberStory() {
   const playback: TimelinePlayback = simulator
 
   return (
-    <div className="h-[44rem] w-full max-w-5xl rounded-xl border border-border bg-background">
+    <div className="h-[44rem] w-full max-w-5xl overflow-hidden rounded-xl border border-border bg-background">
       <FloatingScrollLayout
         autoScrollToBottom={simulator.state.isStreaming}
         isStreaming={simulator.state.isStreaming}
@@ -35,7 +35,7 @@ function ThreadScrubberStory() {
           </div>
         }
       >
-        <div className="mx-auto w-full max-w-4xl py-4">
+        <div className="py-4">
           {simulator.state.turns.length === 0 ? (
             <p className="text-sm text-muted-foreground">Waiting to load conversation history…</p>
           ) : (

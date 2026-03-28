@@ -9,7 +9,7 @@ type TurnListProps = {
 
 export function TurnList({ turns, onSwitchSibling }: TurnListProps) {
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {turns.map((turn) => (
         <TurnRow key={turn.id} turn={turn} onSwitchSibling={onSwitchSibling} />
       ))}
