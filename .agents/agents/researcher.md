@@ -1,9 +1,9 @@
 ---
 name: researcher
 description: External researcher — best practices, alternatives, library comparisons, and architecture patterns via web search
-model: codex
+model: opus
 skills: []
-tools: [Bash(meridian *), Bash(uv run meridian *), Write, Edit, WebSearch, WebFetch]
+tools: [Bash(meridian *), Write, Edit, WebSearch, WebFetch]
 sandbox: unrestricted
 thinking: high
 ---
