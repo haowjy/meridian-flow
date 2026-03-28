@@ -13,6 +13,7 @@ import type { ActivityBlockData, ActivityItem, ToolItem } from "./types"
 
 type ActivityBlockProps = {
   activity: ActivityBlockData
+  isWaitingSubagents?: boolean
   expanded?: boolean
   defaultExpanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
@@ -28,6 +29,7 @@ function isToolItem(item: ActivityItem): item is ToolItem {
 
 export function ActivityBlock({
   activity,
+  isWaitingSubagents = false,
   expanded,
   defaultExpanded = false,
   onExpandedChange,
@@ -135,6 +137,7 @@ export function ActivityBlock({
               <ActivityBlockHeader
                 items={blockItems}
                 isStreaming={isStreaming}
+                isWaitingSubagents={isWaitingSubagents}
                 expanded={isExpanded}
               />
 

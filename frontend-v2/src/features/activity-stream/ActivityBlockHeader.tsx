@@ -11,6 +11,7 @@ import type { ActivityItem } from "./types"
 type ActivityBlockHeaderProps = {
   items: ActivityItem[]
   isStreaming: boolean
+  isWaitingSubagents?: boolean
   expanded: boolean
   className?: string
 }
@@ -18,6 +19,7 @@ type ActivityBlockHeaderProps = {
 export function ActivityBlockHeader({
   items,
   isStreaming,
+  isWaitingSubagents = false,
   expanded,
   className,
 }: ActivityBlockHeaderProps) {
@@ -34,7 +36,9 @@ export function ActivityBlockHeader({
         <Brain className="size-4 text-muted-foreground" aria-hidden="true" />
         <span className="shrink-0 font-medium text-foreground">ActivityBlock:</span>
         <span className="min-w-0 truncate text-muted-foreground">
-          {isStreaming ? (
+          {isWaitingSubagents ? (
+            "Waiting for agents..."
+          ) : isStreaming ? (
             <RotatingText messages={STREAMING_STATUS_MESSAGES} className="italic" />
           ) : (
             summary
@@ -44,7 +48,12 @@ export function ActivityBlockHeader({
 
       <div className="flex shrink-0 items-center gap-2">
         <Badge variant="secondary" className="h-5 px-2 text-[11px]">
-          {isStreaming ? (
+          {isWaitingSubagents ? (
+            <>
+              <CircleNotch className="size-3 animate-spin" aria-hidden="true" />
+              waiting
+            </>
+          ) : isStreaming ? (
             <>
               <CircleNotch className="size-3 animate-spin" aria-hidden="true" />
               live
