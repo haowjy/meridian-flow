@@ -28,9 +28,13 @@ export type {
 export { mapBlocksToActivityItems, mapTurnToViewModel, mapTurnsToViewModels } from "./turn-mapper"
 
 // Components
+export { ImageBlock } from "./components/ImageBlock"
+export { ReferenceBlock } from "./components/ReferenceBlock"
 export { SiblingNav } from "./components/SiblingNav"
+export { PendingTurn } from "./components/PendingTurn"
 export { TurnList } from "./components/TurnList"
 export { TurnRow } from "./components/TurnRow"
+export { TurnStatusBanner } from "./components/TurnStatusBanner"
 export { UserBubble } from "./components/UserBubble"
 
 // Storybook simulator
