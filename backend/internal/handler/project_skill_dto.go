@@ -22,7 +22,6 @@ type UpdateSkillRequest struct {
 	Name                   *string `json:"name,omitempty"`
 	Description            *string `json:"description,omitempty"`
 	Content                *string `json:"content,omitempty"` // SKILL.md content
-	Enabled                *bool   `json:"enabled,omitempty"` // Enable/disable skill
 	DisableModelInvocation *bool   `json:"disable_model_invocation,omitempty"`
 	UserInvocable          *bool   `json:"user_invocable,omitempty"`
 }
@@ -42,7 +41,6 @@ type SkillResponse struct {
 	Name                   string    `json:"name"`
 	Description            string    `json:"description"`
 	Position               int       `json:"position"`
-	Enabled                bool      `json:"enabled"` // Whether skill is active
 	DisableModelInvocation bool      `json:"disable_model_invocation"`
 	UserInvocable          bool      `json:"user_invocable"`
 	SyncState              string    `json:"sync_state"`
@@ -75,7 +73,6 @@ func toSkillResponse(skill *skill.ProjectSkill) SkillResponse {
 		Name:                   skill.Name,
 		Description:            skill.Description,
 		Position:               skill.Position,
-		Enabled:                skill.Enabled,
 		DisableModelInvocation: meta.DisableModelInvocation,
 		UserInvocable:          meta.UserInvocable,
 		SyncState:              string(skill.SyncState),

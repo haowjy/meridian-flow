@@ -53,14 +53,16 @@ func NewProjectSkillService(
 
 // --- SKILL.md helpers --------------------------------------------------------
 
-// skillMDFrontmatter is the output struct for generating SKILL.md YAML frontmatter.
+// skillMDFrontmatter is the struct for reading and writing SKILL.md YAML frontmatter.
 // Hyphenated yaml tags match the SKILL.md spec (and the reader in skill_resolver.go).
+// All fields the resolver reads must be present here so round-trips preserve them.
 type skillMDFrontmatter struct {
-	Name                   string `yaml:"name"`
-	Description            string `yaml:"description,omitempty"`
-	UserInvocable          *bool  `yaml:"user-invocable,omitempty"`
-	DisableModelInvocation bool   `yaml:"disable-model-invocation,omitempty"`
-	Position               *int   `yaml:"position,omitempty"`
+	Name                   string  `yaml:"name"`
+	Description            string  `yaml:"description,omitempty"`
+	UserInvocable          *bool   `yaml:"user-invocable,omitempty"`
+	DisableModelInvocation bool    `yaml:"disable-model-invocation,omitempty"`
+	Position               *int    `yaml:"position,omitempty"`
+	Version                *string `yaml:"version,omitempty"`
 }
 
 // buildSkillMDContent serialises a ProjectSkill to SKILL.md format.
@@ -409,9 +411,6 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 		skill.Content = *req.Content
 		skill.IsDirty = true
 		skill.SyncState = skilldomain.SyncStateModified
-	}
-	if req.Enabled != nil {
-		skill.Enabled = *req.Enabled
 	}
 
 	// Update metadata fields using getter/setter pattern
