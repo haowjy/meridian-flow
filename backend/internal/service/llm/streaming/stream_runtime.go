@@ -68,7 +68,6 @@ type LaunchInput struct {
 	ProjectID      string
 	Model          string
 	Provider       string
-	RequestParams  map[string]any
 	Params         *domainllm.RequestParams
 	ToolRegistry   *tools.ToolRegistry
 	SettlementMode billing.CreditSettlementMode
@@ -160,6 +159,7 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 	turnID := input.AssistantTurn.ID
 	executor.SetCleanupCallback(func() {
 		r.executorRegistry.Remove(turnID)
+		r.interjectionRegistry.Remove(turnID)
 		if releaseStreamSlot != nil {
 			releaseStreamSlot()
 		}

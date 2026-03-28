@@ -75,7 +75,6 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 		ProjectID:      p.turnCtx.ThreadCtx.projectID,
 		Model:          p.turnCtx.Model,
 		Provider:       p.turnCtx.Provider,
-		RequestParams:  p.turnCtx.RequestParams,
 		Params:         p.turnCtx.Params,
 		ToolRegistry:   toolRegistry,
 		SettlementMode: svc.resolveSettlementMode(p.turnCtx.Provider),
