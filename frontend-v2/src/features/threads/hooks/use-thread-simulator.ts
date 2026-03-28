@@ -2,14 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { createInitialState, reduceStreamEvent } from "@/features/activity-stream/streaming/reducer"
 import type { TimelineEntry } from "@/features/activity-stream/streaming/types"
+import { type TimelinePlayback, useTimelinePlayback } from "@/lib/use-timeline-playback"
 
 import type { ThreadStoreInterface, ThreadStoreState } from "../transport-types"
 import type { AssistantTurn, ThreadTurn, TurnStatus } from "../types"
 
 const DEFAULT_LOAD_DELAY_MS = 250
-const MIN_SPEED = 0.1
-const MAX_SPEED = 4
-
 export type ThreadSimulatorConfig = {
   history: ThreadTurn[]
   activeTimeline: TimelineEntry[]
@@ -22,7 +20,7 @@ export type ThreadSimulatorConfig = {
 
 type SimulatorPhase = "loading" | "history" | "streaming" | "complete"
 
-export type ThreadSimulator = {
+export type ThreadSimulator = TimelinePlayback & {
   /**
    * Storybook-only store mock. Conforms to ThreadStoreInterface shape but
    * stubs multi-thread operations: loadThread ignores fromTurnId,
@@ -48,10 +46,6 @@ export type ThreadSimulator = {
   stepBackward: () => void
   rewind: () => void
   restart: () => void
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }
 
 function toTurnById(turns: ThreadTurn[]): Record<string, ThreadTurn> {
@@ -117,7 +111,7 @@ function buildStateAtCursor(
   threadId: string,
 ): ThreadStoreState {
   const maxCursor = config.activeTimeline.length + 1
-  const clampedCursor = clamp(cursor, 0, maxCursor)
+  const clampedCursor = Math.min(Math.max(cursor, 0), maxCursor)
   const historyLoaded = clampedCursor >= 1
   const streamedEventCount = Math.max(0, clampedCursor - 1)
   const streamedEntries = config.activeTimeline.slice(0, streamedEventCount)
@@ -215,48 +209,32 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
   const activeTurnId = useMemo(() => resolveActiveTurnId(config), [config])
   const threadId = useMemo(() => resolveThreadId(config), [config])
 
-  const [cursor, setCursorState] = useState(0)
-  const [isPlaying, setIsPlaying] = useState(Boolean(config.autoplay))
-  const [speed, setSpeedState] = useState(
-    clamp(config.initialSpeed ?? 1, MIN_SPEED, MAX_SPEED),
-  )
   const [activeThreadId, setActiveThreadId] = useState(threadId)
 
   useEffect(() => {
     setActiveThreadId(threadId)
   }, [threadId])
 
-  const setCursor = useCallback(
-    (nextCursor: number) => {
-      setCursorState(clamp(nextCursor, 0, maxCursor))
-    },
-    [maxCursor],
+  const getDelayMs = useCallback(
+    (currentStep: number, speed: number) =>
+      getRelativeDelayMs(currentStep + 1, config.activeTimeline, speed, loadDelayMs),
+    [config.activeTimeline, loadDelayMs],
   )
 
-  const setSpeed = useCallback((nextSpeed: number) => {
-    setSpeedState(clamp(nextSpeed, MIN_SPEED, MAX_SPEED))
-  }, [])
+  const playback = useTimelinePlayback({
+    totalSteps: maxCursor,
+    getDelayMs,
+    autoplay: config.autoplay,
+    initialSpeed: config.initialSpeed,
+  })
 
-  useEffect(() => {
-    if (!isPlaying) {
-      return
-    }
-
-    if (cursor >= maxCursor) {
-      setIsPlaying(false)
-      return
-    }
-
-    const nextCursor = cursor + 1
-    const delayMs = getRelativeDelayMs(nextCursor, config.activeTimeline, speed, loadDelayMs)
-    const timer = setTimeout(() => {
-      setCursorState(nextCursor)
-    }, delayMs)
-
-    return () => {
-      clearTimeout(timer)
-    }
-  }, [config.activeTimeline, cursor, isPlaying, loadDelayMs, maxCursor, speed])
+  const {
+    cursor,
+    isPlaying,
+    setCursor,
+    play,
+    pause,
+  } = playback
 
   const state = useMemo(
     () =>
@@ -275,38 +253,6 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const play = useCallback(() => {
-    setIsPlaying(true)
-  }, [])
-
-  const pause = useCallback(() => {
-    setIsPlaying(false)
-  }, [])
-
-  const togglePlayPause = useCallback(() => {
-    setIsPlaying((current) => !current)
-  }, [])
-
-  const stepForward = useCallback(() => {
-    setIsPlaying(false)
-    setCursorState((current) => clamp(current + 1, 0, maxCursor))
-  }, [maxCursor])
-
-  const stepBackward = useCallback(() => {
-    setIsPlaying(false)
-    setCursorState((current) => clamp(current - 1, 0, maxCursor))
-  }, [maxCursor])
-
-  const rewind = useCallback(() => {
-    setIsPlaying(false)
-    setCursorState(0)
-  }, [])
-
-  const restart = useCallback(() => {
-    setCursorState(0)
-    setIsPlaying(true)
-  }, [])
-
   /**
    * Storybook stub: single-thread simulator ignores fromTurnId since there's
    * only one thread with one linear history. Real store loads the active path
@@ -316,9 +262,11 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
     async (nextThreadId: string, fromTurnId?: string) => {
       void fromTurnId
       setActiveThreadId(nextThreadId)
-      setCursorState((current) => (current === 0 ? 1 : current))
+      if (cursor === 0) {
+        setCursor(1)
+      }
     },
-    [],
+    [cursor, setCursor],
   )
 
   /**
@@ -336,12 +284,14 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
   const connectStream = useCallback((nextThreadId: string, turnId: string) => {
     void turnId
     setActiveThreadId(nextThreadId)
-    setIsPlaying((current) => current || cursor < maxCursor)
-  }, [cursor, maxCursor])
+    if (!isPlaying && cursor < maxCursor) {
+      play()
+    }
+  }, [cursor, isPlaying, maxCursor, play])
 
   const disconnectStream = useCallback(() => {
-    setIsPlaying(false)
-  }, [])
+    pause()
+  }, [pause])
 
   const store = useMemo<ThreadStoreInterface>(
     () => ({
@@ -366,22 +316,10 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
   return {
     store,
     state,
-    cursor,
-    maxCursor,
-    speed,
-    isPlaying,
+    ...playback,
     phase,
     phaseLabel,
     eventLabel,
     turnMarkers,
-    setCursor,
-    setSpeed,
-    play,
-    pause,
-    togglePlayPause,
-    stepForward,
-    stepBackward,
-    rewind,
-    restart,
   }
 }
