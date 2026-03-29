@@ -27,13 +27,15 @@ const dbWriteDeadline = 30 * time.Second
 // It adapts the existing TurnExecutor logic to work with mstream's architecture.
 // Complete blocks come from the library (already normalized), so no accumulation needed.
 type StreamExecutor struct {
-	stream     *mstream.Stream
-	turnID     string
-	model      string
-	turnWriter domainllm.TurnWriter // Only needs write operations (ISP compliance)
-	provider   domainllm.LLMProvider
-	logger     *slog.Logger
-	req        *domainllm.GenerateRequest // Stored for WorkFunc to use
+	stream       *mstream.Stream
+	turnID       string
+	projectID    string
+	model        string
+	providerName string
+	turnWriter   domainllm.TurnWriter // Only needs write operations (ISP compliance)
+	provider     domainllm.LLMProvider
+	logger       *slog.Logger
+	req          *domainllm.GenerateRequest // Stored for WorkFunc to use
 
 	// Tool execution support
 	toolRegistry     *tools.ToolRegistry
@@ -92,6 +94,12 @@ type StreamExecutor struct {
 	// Cleanup callback - called when streaming completes/errors
 	// Used by service layer to clean up executor registry
 	onCleanup func()
+	cleanupMu sync.Mutex
+
+	// Stream slot release callback is separated from registry cleanup so stream
+	// switch can transfer slot ownership to a new executor.
+	releaseStreamSlot func()
+	slotReleaseMu     sync.Mutex
 
 	// Token budget monitor — checks context usage after turn completion and
 	// triggers autocollapse/autocompact. nil when monitoring is disabled.
@@ -115,20 +123,7 @@ type StreamExecutor struct {
 	// Interjection support: allows users to inject messages during streaming.
 	// Buffer is managed by the service layer, accessed here for injection points.
 	interjectionBuffer mstream.InterjectionBuffer
-	streamSwitchFn     StreamSwitchFn // Callback to create new turns when injecting interjection
-}
-
-// StreamSwitchFn is called when an interjection triggers a stream switch.
-// It creates a new user turn (with interjection content) and a new assistant turn,
-// then starts streaming for the new assistant turn.
-// Returns the created turns and the URL for the new stream.
-type StreamSwitchFn func(ctx context.Context, currentAssistantTurnID string, interjection string, reason string) (*StreamSwitchResult, error)
-
-// StreamSwitchResult contains the newly created turns from an interjection injection.
-type StreamSwitchResult struct {
-	UserTurn      any    // The persisted user turn containing the interjection
-	AssistantTurn any    // The new assistant turn (streaming)
-	StreamURL     string // URL for the new SSE stream
+	streamRuntime      *StreamRuntime // Runtime reference for first-class stream switching
 }
 
 // TerminateReason describes why a stream is ending.
@@ -249,7 +244,9 @@ func NewStreamExecutor(
 	turnID string,
 	threadID string, // Thread ID for AG-UI events
 	userID string, // User who initiated this turn (for tool provenance)
+	projectID string, // Project ID for request building in stream switches
 	model string,
+	providerName string, // Provider key used to relaunch switched streams
 	turnWriter domainllm.TurnWriter,
 	turnReader domainllm.TurnReader,
 	turnNavigator domainllm.TurnNavigator,
@@ -266,7 +263,7 @@ func NewStreamExecutor(
 	jobQueue jobs.JobQueue,
 	softCancelTimeoutSeconds int,
 	interjectionBuffer mstream.InterjectionBuffer, // For buffering user interjections during streaming
-	streamSwitchFn StreamSwitchFn, // Callback for creating new turns on interjection injection
+	streamRuntime *StreamRuntime, // Runtime for creating switched streams on interjection
 ) *StreamExecutor {
 	// Create AG-UI IDFactory for stable ID generation
 	idFactory := agui.NewIDFactory(turnID, threadID)
@@ -275,7 +272,9 @@ func NewStreamExecutor(
 		turnID:                 turnID,
 		threadID:               threadID,
 		userID:                 userID,
+		projectID:              projectID,
 		model:                  model,
+		providerName:           providerName,
 		turnWriter:             turnWriter,
 		provider:               provider,
 		logger:                 logger,
@@ -299,7 +298,7 @@ func NewStreamExecutor(
 		persistenceGuard:       NewPersistenceGuard(), // Armed initially, disarmed on cancel
 		idFactory:              idFactory,             // AG-UI ID generation
 		interjectionBuffer:     interjectionBuffer,    // For user interjections
-		streamSwitchFn:         streamSwitchFn,        // For stream switch on interjection
+		streamRuntime:          streamRuntime,         // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
 		toolCallParentMessageIDs: make(map[string]string),
@@ -351,7 +350,26 @@ func (se *StreamExecutor) transitionTo(newState ExecutorState) {
 // SetCleanupCallback sets a function to be called when streaming completes or errors.
 // Used by service layer to clean up executor registry.
 func (se *StreamExecutor) SetCleanupCallback(fn func()) {
+	se.cleanupMu.Lock()
+	defer se.cleanupMu.Unlock()
 	se.onCleanup = fn
+}
+
+// SetSlotRelease sets the stream-slot release callback used at terminal cleanup.
+func (se *StreamExecutor) SetSlotRelease(fn func()) {
+	se.slotReleaseMu.Lock()
+	defer se.slotReleaseMu.Unlock()
+	se.releaseStreamSlot = fn
+}
+
+// TransferSlotRelease detaches and returns the slot-release callback so another
+// executor can inherit slot ownership during stream switch.
+func (se *StreamExecutor) TransferSlotRelease() func() {
+	se.slotReleaseMu.Lock()
+	defer se.slotReleaseMu.Unlock()
+	release := se.releaseStreamSlot
+	se.releaseStreamSlot = nil
+	return release
 }
 
 // Terminate is the single terminalization entry point for executor shutdown.
@@ -407,8 +425,16 @@ func (se *StreamExecutor) Terminate(reason TerminateReason, opts TerminateOpts) 
 	se.emitTerminalEventForTermination(reason, opts, tokenResult)
 
 	// Step 6: Registry cleanup + slot release.
-	if se.onCleanup != nil {
-		se.onCleanup()
+	se.cleanupMu.Lock()
+	onCleanup := se.onCleanup
+	se.cleanupMu.Unlock()
+	if onCleanup != nil {
+		onCleanup()
+	}
+
+	slotRelease := se.TransferSlotRelease()
+	if slotRelease != nil {
+		slotRelease()
 	}
 }
 
