@@ -59,13 +59,6 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 		workItemID,
 	)
 
-	streamSwitchFn := svc.streamRuntime.CreateStreamSwitchFn(
-		p.turnCtx.ThreadCtx.threadID,
-		req.UserID,
-		p.turnCtx.RequestParams,
-		svc.CreateTurn,
-	)
-
 	resp, err := svc.streamRuntime.Launch(ctx, &LaunchInput{
 		AssistantTurn:  p.assistantTurn,
 		UserTurn:       p.userTurn,
@@ -78,7 +71,6 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 		Params:         p.turnCtx.Params,
 		ToolRegistry:   toolRegistry,
 		SettlementMode: svc.resolveSettlementMode(p.turnCtx.Provider),
-		StreamSwitchFn: streamSwitchFn,
 	}, func() {
 		svc.turnContextResolver.ReleaseStreamSlot(req.UserID)
 	})

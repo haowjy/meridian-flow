@@ -124,3 +124,31 @@ Decisions made during v1-launch refactoring, with rationale. Organized by phase.
 ### Stale comments and docs (FIX)
 **Context:** persist_turns.go referenced `gatherContext`, docs reference deleted files.
 **Decision:** Fixed persist_turns.go comment. Test comments left as-is (they describe the concept, which hasn't changed). Doc updates tracked for a separate docs pass.
+
+---
+
+## Phase 5a: Unified Terminate
+
+### Structural defer in workFunc (FIX)
+**Context:** Multiple review rounds found escape hatches where exit paths bypassed Terminate. Each fix exposed another path (processProviderStream, persistToolResult, req==nil early return).
+**Decision:** Added structural defer at top of workFunc that catches ANY non-terminal exit. If workFunc returns without calling Terminate, the defer calls Terminate(ReasonError). This closes the bug class by design — impossible to add a new exit path that skips cleanup.
+
+### handleSoftCancel stays unchanged (ACCEPT)
+**Context:** handleSoftCancel is NOT a terminal handler — it's a mid-stream state change (disconnect SSE, snapshot text). Termination happens later.
+**Decision:** Accepted. Forcing it into Terminate would mean Terminate returns control to the streaming loop, defeating the purpose.
+
+---
+
+## Phase 5b: First-Class SwitchStream
+
+### persistSwitchTurns needs transaction boundary (FIX)
+**Context:** Both concurrency and correctness reviewers flagged: the old CreateStreamSwitchFn path called CreateTurn which used ExecTx in persist_turns.go. The new persistSwitchTurns makes 3 separate DB calls (CreateTurn, CreateTurnBlocks, CreateTurn) without a transaction. Partial failure leaves orphaned turns.
+**Decision:** Fixed. Added txManager to StreamRuntimeDeps, wrapped persistSwitchTurns in ExecTx.
+
+### Overlap window during stream switch (ACCEPT — PRE-EXISTING)
+**Context:** Concurrency reviewer flagged that during stream switch, both old and new executors are registered simultaneously. InterruptTurn or CancelSpawn could hit the stale executor.
+**Decision:** Accepted. The old CreateStreamSwitchFn had the identical overlap — it called CreateTurn→Launch→Register for the new executor while the old was still registered. Same race window exists in both implementations. Not a regression.
+
+### Context inherited instead of re-resolved (ACCEPT — INTENTIONAL)
+**Context:** Correctness reviewer noted the old path re-ran prompt and tool-context resolution, but SwitchStream reuses inherited model/provider/tools.
+**Decision:** Accepted as intentional. The design explicitly states "does NOT need thread/persona/model resolution." Stream switch is a continuation of the same conversation context. Settings changes take effect on the next user-initiated turn, not mid-stream interjections. The whole point of SwitchStream is to skip the expensive full pipeline.

@@ -213,6 +213,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		ToolLimitResolver:    deps.ToolLimitResolver,
 		RequestBuilder:       streamRequestBuilder,
 		ThreadRepo:           deps.ThreadRepo,
+		TxManager:            deps.TxManager,
 		ExecutorDeps: streaming.ExecutorDeps{
 			TurnWriter:             deps.TurnRepo,
 			TurnReader:             deps.TurnRepo,

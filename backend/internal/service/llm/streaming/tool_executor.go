@@ -210,15 +210,37 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// INTERJECTION POINT A: Check for interjection after tool results are persisted.
 	// If user submitted an interjection during tool execution, inject it now by
 	// creating a new user turn and switching to a new assistant stream.
-	if se.interjectionBuffer != nil && se.streamSwitchFn != nil {
+	if se.interjectionBuffer != nil && se.streamRuntime != nil {
 		if interjection, ok := se.interjectionBuffer.DrainAndClear(); ok {
 			se.logger.Info("interjection detected at tool boundary, triggering stream switch",
 				"turn_id", se.turnID,
 				"interjection_length", len(interjection),
 			)
 
-			// Call stream switch to create new turns and start new stream
-			result, err := se.streamSwitchFn(ctx, se.turnID, interjection, "tool_boundary")
+			// Transfer slot ownership from current executor to the successor stream.
+			// SwitchStream releases it on failure; on success the new executor owns it.
+			releaseSlot := se.TransferSlotRelease()
+
+			var params *domainllm.RequestParams
+			if se.req != nil {
+				params = se.req.Params
+			}
+
+			// Call stream switch to create new turns and start new stream.
+			result, err := se.streamRuntime.SwitchStream(ctx, &SwitchStreamInput{
+				CurrentTurnID:    se.turnID,
+				ThreadID:         se.threadID,
+				UserID:           se.userID,
+				ProjectID:        se.projectID,
+				Model:            se.model,
+				Provider:         se.providerName,
+				Params:           params,
+				ToolRegistry:     se.toolRegistry,
+				SettlementMode:   se.settlementMode,
+				InterjectionText: interjection,
+				Reason:           "tool_boundary",
+				ReleaseSlot:      releaseSlot,
+			})
 			if err != nil {
 				se.logger.Error("stream switch failed at tool boundary",
 					"turn_id", se.turnID,

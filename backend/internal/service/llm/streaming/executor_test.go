@@ -487,7 +487,9 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		"test-turn-456",
 		"test-thread-456", // Thread ID for AG-UI events
 		"test-user-456",   // User ID for tool provenance
+		"test-project-456",
 		"test-model",
+		"mock",
 		turnWriter,
 		&mockTurnReader{},
 		&mockTurnNavigator{},
@@ -504,7 +506,7 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		nil,                 // jobQueue (nil for tests)
 		shortTimeoutSeconds, // Very short soft cancel timeout
 		nil,                 // interjectionBuffer (nil for tests)
-		nil,                 // streamSwitchFn (nil for tests)
+		nil,                 // streamRuntime (nil for tests)
 	)
 
 	// Start streaming
@@ -548,7 +550,9 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		"test-turn-789",
 		"test-thread-789", // Thread ID for AG-UI events
 		"test-user-789",   // User ID for tool provenance
+		"test-project-789",
 		"test-model",
+		"mock",
 		turnWriter,
 		&mockTurnReader{},
 		&mockTurnNavigator{},
@@ -565,7 +569,7 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
 		nil, // interjectionBuffer (nil for tests)
-		nil, // streamSwitchFn (nil for tests)
+		nil, // streamRuntime (nil for tests)
 	)
 
 	// Start streaming
@@ -601,7 +605,9 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		"test-turn-abc",
 		"test-thread-abc", // Thread ID for AG-UI events
 		"test-user-abc",   // User ID for tool provenance
+		"test-project-abc",
 		"test-model",
+		"mock",
 		turnWriter,
 		&mockTurnReader{},
 		&mockTurnNavigator{},
@@ -618,7 +624,7 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
 		nil, // interjectionBuffer (nil for tests)
-		nil, // streamSwitchFn (nil for tests)
+		nil, // streamRuntime (nil for tests)
 	)
 
 	// Start streaming
@@ -655,7 +661,9 @@ func TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming(t *testing.T)
 		"test-turn-prestart-cancel",
 		"test-thread-prestart-cancel",
 		"test-user-prestart-cancel",
+		"test-project-prestart-cancel",
 		"test-model",
+		"mock",
 		turnWriter,
 		&mockTurnReader{},
 		&mockTurnNavigator{},
@@ -672,7 +680,7 @@ func TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming(t *testing.T)
 		nil, // jobQueue (nil for tests)
 		300,
 		nil, // interjectionBuffer (nil for tests)
-		nil, // streamSwitchFn (nil for tests)
+		nil, // streamRuntime (nil for tests)
 	)
 
 	executor.Terminate(ReasonHardCancelled, TerminateOpts{})
