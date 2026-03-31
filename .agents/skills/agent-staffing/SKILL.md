@@ -1,15 +1,34 @@
 ---
 name: agent-staffing
-description: Team composition for implementation phases — which agents to spawn, how many, what can run in parallel, and how to scale effort to complexity. Use when planning the agent team for a phase before spawning anyone.
+description: Team composition for design and implementation phases — which agents to spawn, how many, what can run in parallel, and how to scale effort to complexity.
 ---
 
 # Agent Staffing
 
 Compose the right team for each phase. Two questions drive most staffing decisions: how much surface area does the change touch, and how reversible are mistakes if something goes wrong?
 
+## Design Phase
+
+Design staffing depends on uncertainty more than implementation volume.
+
+- **Architects** own structural design, boundaries, interfaces, and tradeoff evaluation for candidate approaches.
+- **Researchers** gather external context: ecosystem best practices, constraints from dependencies, and prior art that can reduce design risk.
+- **Explorers** investigate the current codebase so design decisions reflect real code paths and integration points instead of assumptions.
+
+One architect is usually enough when the problem is constrained and the tradeoffs are obvious. Staff multiple architects when there are materially different viable approaches, high-cost mistakes, or conflicting non-functional goals (for example, latency vs maintainability).
+
 ## Coders
 
 One coder per phase — multiple coders on the same files create merge conflicts and duplicated work. If a phase feels too big for one coder, the plan needs splitting. Pick the coder variant that matches the work: `coder` for backend/infrastructure, `frontend-coder` for UI.
+
+## Refactorer
+
+Use `refactorer` as structural support for the delivery pipeline:
+- Run after implementation phases to pay down structural debt while context is fresh.
+- Spawn when reviewers flag SOLID violations, tangled dependencies, or abstraction drift.
+- Use proactively before major new work in messy areas to reduce entropy first.
+
+Treat refactoring as infrastructure work that makes every other agent more effective — cleaner boundaries, lower coordination overhead, and more consistent patterns for coders/reviewers/testers.
 
 ## Reviewers
 
