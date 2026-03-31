@@ -4,12 +4,12 @@
 
 | Phase | Name | Status | Round | Assignee | Notes |
 |-------|------|--------|-------|----------|-------|
-| 1 | InterjectionRouter Interface | in_progress | 1 | coder | R4+R10 |
-| 2 | Service Layer Hardening | not_started | 2 | — | R6+R9+R7+Forwarder |
-| 3 | Auth Consolidation | in_progress | 1 | coder | R1+R3 |
-| 4 | mstream Library Fixes | in_progress | 1 | coder | C1,H1-H7 |
-| 5 | wsutil Framework | in_progress | 1 | coder | 3 files |
-| 6 | Doc WS Handler | not_started | 2 | — | handler+DocNotifier |
+| 1 | InterjectionRouter Interface | done | 1 | p715 | R4+R10 |
+| 2 | Service Layer Hardening | in_progress | 2 | coder | R6+R9+R7+Forwarder |
+| 3 | Auth Consolidation | done | 1 | p716 | R1+R3 |
+| 4 | mstream Library Fixes | done | 1 | p717 | C1,H1-H7 |
+| 5 | wsutil Framework | done | 1 | p718 | 3 files |
+| 6 | Doc WS Handler | in_progress | 2 | coder | handler+DocNotifier |
 | 7 | Thread WS Handler | not_started | 3 | — | largest phase |
 | 8 | Frontend WS Base + DocWsProvider | not_started | 3 | — | shared base |
 | 9 | Frontend ThreadWsProvider | not_started | 4 | — | streaming client |
@@ -19,8 +19,8 @@
 
 | Round | Phases | Status | Blocked By |
 |-------|--------|--------|-----------|
-| 1 | 1, 3, 4, 5 | in_progress | — |
-| 2 | 2, 6 | not_started | Round 1 |
+| 1 | 1, 3, 4, 5 | done | — |
+| 2 | 2, 6 | in_progress | — |
 | 3 | 7, 8 | not_started | Round 2 |
 | 4 | 9 | not_started | Round 3 |
 | 5 | 10 | not_started | Round 4 |
