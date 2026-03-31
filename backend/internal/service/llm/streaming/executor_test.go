@@ -483,31 +483,31 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 	shortTimeoutSeconds := 1 // 1 second timeout
 
 	// Create executor with short timeout
-	executor := NewStreamExecutor(
-		"test-turn-456",
-		"test-thread-456", // Thread ID for AG-UI events
-		"test-user-456",   // User ID for tool provenance
-		"test-project-456",
-		"test-model",
-		"mock",
-		turnWriter,
-		&mockTurnReader{},
-		&mockTurnNavigator{},
-		provider,
-		nil, // no tool registry
-		&mockMessageBuilder{},
-		logger,
-		&mockCreditAdmissionChecker{},
-		&mockCreditSettler{},
-		billing.CreditSettlementInlineAuthoritative,
-		5,     // maxToolRounds
-		false, // debugMode
-		&mockTokenFinalizer{},
-		nil,                 // jobQueue (nil for tests)
-		shortTimeoutSeconds, // Very short soft cancel timeout
-		nil,                 // interjectionBuffer (nil for tests)
-		nil,                 // streamRuntime (nil for tests)
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   "test-turn-456",
+		ThreadID:                 "test-thread-456",
+		UserID:                   "test-user-456",
+		ProjectID:                "test-project-456",
+		Model:                    "test-model",
+		ProviderName:             "mock",
+		TurnWriter:               turnWriter,
+		TurnReader:               &mockTurnReader{},
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 provider,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   logger,
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            &mockCreditSettler{},
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           &mockTokenFinalizer{},
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: shortTimeoutSeconds,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	})
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -546,31 +546,31 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 	provider := newMockProvider()
 	logger := slog.Default()
 
-	executor := NewStreamExecutor(
-		"test-turn-789",
-		"test-thread-789", // Thread ID for AG-UI events
-		"test-user-789",   // User ID for tool provenance
-		"test-project-789",
-		"test-model",
-		"mock",
-		turnWriter,
-		&mockTurnReader{},
-		&mockTurnNavigator{},
-		provider,
-		nil,
-		&mockMessageBuilder{},
-		logger,
-		&mockCreditAdmissionChecker{},
-		&mockCreditSettler{},
-		billing.CreditSettlementInlineAuthoritative,
-		5,
-		false,
-		&mockTokenFinalizer{},
-		nil, // jobQueue (nil for tests)
-		300, // softCancelTimeoutSeconds
-		nil, // interjectionBuffer (nil for tests)
-		nil, // streamRuntime (nil for tests)
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   "test-turn-789",
+		ThreadID:                 "test-thread-789",
+		UserID:                   "test-user-789",
+		ProjectID:                "test-project-789",
+		Model:                    "test-model",
+		ProviderName:             "mock",
+		TurnWriter:               turnWriter,
+		TurnReader:               &mockTurnReader{},
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 provider,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   logger,
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            &mockCreditSettler{},
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           &mockTokenFinalizer{},
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: 300,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	})
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -601,31 +601,31 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 	provider := newMockProvider()
 	logger := slog.Default()
 
-	executor := NewStreamExecutor(
-		"test-turn-abc",
-		"test-thread-abc", // Thread ID for AG-UI events
-		"test-user-abc",   // User ID for tool provenance
-		"test-project-abc",
-		"test-model",
-		"mock",
-		turnWriter,
-		&mockTurnReader{},
-		&mockTurnNavigator{},
-		provider,
-		nil,
-		&mockMessageBuilder{},
-		logger,
-		&mockCreditAdmissionChecker{},
-		&mockCreditSettler{},
-		billing.CreditSettlementInlineAuthoritative,
-		5,
-		false,
-		&mockTokenFinalizer{},
-		nil, // jobQueue (nil for tests)
-		300, // softCancelTimeoutSeconds
-		nil, // interjectionBuffer (nil for tests)
-		nil, // streamRuntime (nil for tests)
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   "test-turn-abc",
+		ThreadID:                 "test-thread-abc",
+		UserID:                   "test-user-abc",
+		ProjectID:                "test-project-abc",
+		Model:                    "test-model",
+		ProviderName:             "mock",
+		TurnWriter:               turnWriter,
+		TurnReader:               &mockTurnReader{},
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 provider,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   logger,
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            &mockCreditSettler{},
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           &mockTokenFinalizer{},
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: 300,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	})
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -657,31 +657,31 @@ func TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming(t *testing.T)
 	provider := newMockProvider()
 	logger := slog.Default()
 
-	executor := NewStreamExecutor(
-		"test-turn-prestart-cancel",
-		"test-thread-prestart-cancel",
-		"test-user-prestart-cancel",
-		"test-project-prestart-cancel",
-		"test-model",
-		"mock",
-		turnWriter,
-		&mockTurnReader{},
-		&mockTurnNavigator{},
-		provider,
-		nil,
-		&mockMessageBuilder{},
-		logger,
-		&mockCreditAdmissionChecker{},
-		&mockCreditSettler{},
-		billing.CreditSettlementInlineAuthoritative,
-		5,
-		false,
-		&mockTokenFinalizer{},
-		nil, // jobQueue (nil for tests)
-		300,
-		nil, // interjectionBuffer (nil for tests)
-		nil, // streamRuntime (nil for tests)
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   "test-turn-prestart-cancel",
+		ThreadID:                 "test-thread-prestart-cancel",
+		UserID:                   "test-user-prestart-cancel",
+		ProjectID:                "test-project-prestart-cancel",
+		Model:                    "test-model",
+		ProviderName:             "mock",
+		TurnWriter:               turnWriter,
+		TurnReader:               &mockTurnReader{},
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 provider,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   logger,
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            &mockCreditSettler{},
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           &mockTokenFinalizer{},
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: 300,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	})
 
 	executor.Terminate(ReasonHardCancelled, TerminateOpts{})
 

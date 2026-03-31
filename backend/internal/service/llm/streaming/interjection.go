@@ -24,8 +24,8 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 			return nil, err
 		}
 
-		// v1 adapter stores content in the returned buffer. Forwarder-backed phases
-		// continue to expose this API so GET/CLEAR can inspect active turn state.
+		// Route() already wrote to the resolved destination buffer. Register() gives
+		// read access so GET/CLEAR can inspect and manage current interjection state.
 		buffer := s.interjectionRouter.Register(targetTurnID)
 
 		finalContent, _ := buffer.Peek()
@@ -97,7 +97,6 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 		Mode:             "created",
 		UserTurn:         resp.UserTurn,
 		NewAssistantTurn: resp.AssistantTurn,
-		StreamURL:        resp.StreamURL,
 	}, nil
 }
 

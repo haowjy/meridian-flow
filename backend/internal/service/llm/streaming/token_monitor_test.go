@@ -46,7 +46,7 @@ func newStubMonitor(usageFraction float64, contextWindow, maxOutput int) *TokenM
 			UsagePercent:  usageFraction,
 		},
 	}
-	return NewTokenMonitor(est, nil, slog.Default())
+	return NewTokenMonitor(est, slog.Default())
 }
 
 // =============================================================================
@@ -220,7 +220,7 @@ func TestCheckBudget_UnknownModel_ReturnsEmpty(t *testing.T) {
 			UsagePercent:  0,
 		},
 	}
-	monitor := NewTokenMonitor(est, nil, slog.Default())
+	monitor := NewTokenMonitor(est, slog.Default())
 
 	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "unknown-model"})
 	if err != nil {
@@ -241,7 +241,7 @@ func TestCheckBudget_EstimatorError_Propagated(t *testing.T) {
 	est := &stubTokenEstimator{
 		err: fmt.Errorf("encoding failure"),
 	}
-	monitor := NewTokenMonitor(est, nil, slog.Default())
+	monitor := NewTokenMonitor(est, slog.Default())
 
 	_, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "any-model"})
 	if err == nil {

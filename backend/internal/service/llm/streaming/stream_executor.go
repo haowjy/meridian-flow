@@ -238,69 +238,81 @@ type TerminateOpts struct {
 	Phase string
 }
 
+// StreamExecutorConfig groups constructor inputs to avoid brittle positional args.
+type StreamExecutorConfig struct {
+	// Identity and request context.
+	TurnID       string
+	ThreadID     string
+	UserID       string
+	ProjectID    string
+	Model        string
+	ProviderName string
+
+	// Core collaborators.
+	TurnWriter     domainllm.TurnWriter
+	TurnReader     domainllm.TurnReader
+	TurnNavigator  domainllm.TurnNavigator
+	Provider       domainllm.LLMProvider
+	ToolRegistry   *tools.ToolRegistry
+	MessageBuilder domainllm.MessageBuilder
+	Logger         *slog.Logger
+
+	// Billing/token lifecycle.
+	CreditAdmissionChecker billing.CreditAdmissionChecker
+	CreditSettler          billing.CreditSettler
+	SettlementMode         billing.CreditSettlementMode
+	TokenFinalizer         tokens.TokenFinalizer
+
+	// Runtime behavior.
+	MaxToolRounds            int
+	DebugMode                bool
+	JobQueue                 jobs.JobQueue
+	SoftCancelTimeoutSeconds int
+
+	// Interjection routing.
+	InterjectionRouter InterjectionRouter
+	StreamRuntime      *StreamRuntime
+}
+
 // NewStreamExecutor creates a new mstream-based executor for a turn.
-// Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for block reads and catchup
-func NewStreamExecutor(
-	turnID string,
-	threadID string, // Thread ID for AG-UI events
-	userID string, // User who initiated this turn (for tool provenance)
-	projectID string, // Project ID for request building in stream switches
-	model string,
-	providerName string, // Provider key used to relaunch switched streams
-	turnWriter domainllm.TurnWriter,
-	turnReader domainllm.TurnReader,
-	turnNavigator domainllm.TurnNavigator,
-	provider domainllm.LLMProvider,
-	toolRegistry *tools.ToolRegistry,
-	messageBuilder domainllm.MessageBuilder,
-	logger *slog.Logger,
-	creditAdmissionChecker billing.CreditAdmissionChecker,
-	creditSettler billing.CreditSettler,
-	settlementMode billing.CreditSettlementMode,
-	maxToolRounds int,
-	debugMode bool,
-	tokenFinalizer tokens.TokenFinalizer,
-	jobQueue jobs.JobQueue,
-	softCancelTimeoutSeconds int,
-	interjectionRouter InterjectionRouter, // For buffering/draining interjections during streaming
-	streamRuntime *StreamRuntime, // Runtime for creating switched streams on interjection
-) *StreamExecutor {
-	_ = debugMode // Event IDs are always enabled in mstream.
+// Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for block reads and catchup.
+func NewStreamExecutor(cfg StreamExecutorConfig) *StreamExecutor {
+	_ = cfg.DebugMode // Event IDs are always enabled in mstream.
 
 	// Create AG-UI IDFactory for stable ID generation
-	idFactory := agui.NewIDFactory(turnID, threadID)
+	idFactory := agui.NewIDFactory(cfg.TurnID, cfg.ThreadID)
 
 	se := &StreamExecutor{
-		turnID:                 turnID,
-		threadID:               threadID,
-		userID:                 userID,
-		projectID:              projectID,
-		model:                  model,
-		providerName:           providerName,
-		turnWriter:             turnWriter,
-		provider:               provider,
-		logger:                 logger,
-		toolRegistry:           toolRegistry,
-		turnNavigator:          turnNavigator,
-		turnReader:             turnReader,
-		messageBuilder:         messageBuilder,
+		turnID:                 cfg.TurnID,
+		threadID:               cfg.ThreadID,
+		userID:                 cfg.UserID,
+		projectID:              cfg.ProjectID,
+		model:                  cfg.Model,
+		providerName:           cfg.ProviderName,
+		turnWriter:             cfg.TurnWriter,
+		provider:               cfg.Provider,
+		logger:                 cfg.Logger,
+		toolRegistry:           cfg.ToolRegistry,
+		turnNavigator:          cfg.TurnNavigator,
+		turnReader:             cfg.TurnReader,
+		messageBuilder:         cfg.MessageBuilder,
 		toolResultIDs:          make(map[string]bool),
 		toolIteration:          0,
 		requestIndex:           0, // Initial request (increments with each tool continuation)
-		creditAdmissionChecker: creditAdmissionChecker,
-		creditSettler:          creditSettler,
-		settlementMode:         settlementMode,
-		maxToolRounds:          maxToolRounds,
+		creditAdmissionChecker: cfg.CreditAdmissionChecker,
+		creditSettler:          cfg.CreditSettler,
+		settlementMode:         cfg.SettlementMode,
+		maxToolRounds:          cfg.MaxToolRounds,
 		maxBlockSequence:       -1, // No blocks persisted yet (so first block is sequence 0)
 		state:                  StateNotStarted,
 		ctrlCh:                 make(chan controlMsg, 1), // Buffered for non-blocking sends
-		tokenFinalizer:         tokenFinalizer,
-		jobQueue:               jobQueue,
-		softCancelTimeout:      time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:       NewPersistenceGuard(), // Armed initially, disarmed on cancel
-		idFactory:              idFactory,             // AG-UI ID generation
-		interjectionRouter:     interjectionRouter,    // For user interjections
-		streamRuntime:          streamRuntime,         // For stream switch on interjection
+		tokenFinalizer:         cfg.TokenFinalizer,
+		jobQueue:               cfg.JobQueue,
+		softCancelTimeout:      time.Duration(cfg.SoftCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:       NewPersistenceGuard(),  // Armed initially, disarmed on cancel
+		idFactory:              idFactory,              // AG-UI ID generation
+		interjectionRouter:     cfg.InterjectionRouter, // For user interjections
+		streamRuntime:          cfg.StreamRuntime,      // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
 		toolCallParentMessageIDs: make(map[string]string),
@@ -308,11 +320,11 @@ func NewStreamExecutor(
 	}
 
 	// Create catchup function for database-backed event replay (needs TurnReader)
-	catchupFunc := buildCatchupFunc(turnReader, logger)
+	catchupFunc := buildCatchupFunc(cfg.TurnReader, cfg.Logger)
 
 	// Create mstream.Stream with WorkFunc and catchup support.
 	stream := mstream.NewStream(
-		turnID,
+		cfg.TurnID,
 		se.workFunc,
 		mstream.WithCatchup(catchupFunc),
 	)

@@ -275,14 +275,12 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 						agui.StreamSwitchReasonToolBoundary,
 						result.UserTurn,
 						result.AssistantTurn,
-						result.StreamURL,
 					)
 				}
 
 				// End current stream cleanly - frontend will connect to new stream
 				se.logger.Info("stream switch completed, ending current stream",
 					"prev_turn_id", se.turnID,
-					"stream_url", result.StreamURL,
 				)
 				se.Terminate(ReasonStreamSwitch, TerminateOpts{})
 				return nil

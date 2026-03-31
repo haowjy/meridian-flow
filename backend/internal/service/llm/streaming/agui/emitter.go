@@ -236,9 +236,8 @@ func (e *Emitter) EmitStreamSwitch(
 	reason StreamSwitchReason,
 	userTurn any,
 	assistantTurn any,
-	streamURL string,
 ) {
-	evt := NewMeridianStreamSwitchEvent(prevAssistantTurnID, reason, userTurn, assistantTurn, streamURL)
+	evt := NewMeridianStreamSwitchEvent(prevAssistantTurnID, reason, userTurn, assistantTurn)
 	if err := e.emitMeridianEvent(MeridianEventTypeStreamSwitch, evt); err != nil {
 		e.logger.Warn("failed to emit STREAM_SWITCH",
 			"prev_turn_id", prevAssistantTurnID,

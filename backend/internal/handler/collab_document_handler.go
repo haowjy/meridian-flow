@@ -220,13 +220,11 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 	isDocConnActive = true
 
 	if err := h.sendJSON(ctx, conn, struct {
-		Type      string `json:"type"`
-		StateSize int    `json:"stateSize"`
-		Protocol  int    `json:"protocol"`
+		Type     string `json:"type"`
+		Protocol int    `json:"protocol"`
 	}{
-		Type:      "connected",
-		StateSize: 0, // TODO(ws-stage-3): populate with encoded state size for bootstrap lane heuristics.
-		Protocol:  1,
+		Type:     "connected",
+		Protocol: 1,
 	}); err != nil {
 		return
 	}

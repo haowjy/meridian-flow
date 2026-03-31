@@ -587,31 +587,31 @@ func newTerminateTestExecutor(
 	settler := &recordingCreditSettler{}
 	cleanupCalls := &cleanupCounter{}
 
-	executor := NewStreamExecutor(
-		"test-turn",
-		"test-thread",
-		"test-user",
-		"test-project",
-		"test-model",
-		"test-provider",
-		store,
-		store,
-		&mockTurnNavigator{},
-		nil,
-		nil,
-		&mockMessageBuilder{},
-		slog.Default(),
-		&mockCreditAdmissionChecker{},
-		settler,
-		billing.CreditSettlementInlineAuthoritative,
-		5,
-		false,
-		finalizer,
-		nil,
-		5,
-		nil,
-		nil,
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   "test-turn",
+		ThreadID:                 "test-thread",
+		UserID:                   "test-user",
+		ProjectID:                "test-project",
+		Model:                    "test-model",
+		ProviderName:             "test-provider",
+		TurnWriter:               store,
+		TurnReader:               store,
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 nil,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   slog.Default(),
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            settler,
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           finalizer,
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: 5,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	})
 	executor.SetCleanupCallback(func() {
 		cleanupCalls.count++
 	})

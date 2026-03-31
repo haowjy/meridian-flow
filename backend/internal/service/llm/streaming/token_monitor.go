@@ -21,7 +21,6 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	"meridian/internal/capabilities"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/service/llm/tokens"
 )
@@ -58,22 +57,18 @@ type BudgetCheck struct {
 // TokenMonitor evaluates context window usage after turn completion and signals
 // threshold crossings. Safe for concurrent use (TokenEstimator is concurrency-safe).
 type TokenMonitor struct {
-	estimator   tokens.TokenEstimator
-	capRegistry *capabilities.Registry // retained for forward-compat; currently unused directly
-	logger      *slog.Logger
+	estimator tokens.TokenEstimator
+	logger    *slog.Logger
 }
 
 // NewTokenMonitor creates a TokenMonitor backed by the given estimator.
-// capRegistry is stored for forward-compatibility with future direct capability queries.
 func NewTokenMonitor(
 	estimator tokens.TokenEstimator,
-	capRegistry *capabilities.Registry,
 	logger *slog.Logger,
 ) *TokenMonitor {
 	return &TokenMonitor{
-		estimator:   estimator,
-		capRegistry: capRegistry,
-		logger:      logger,
+		estimator: estimator,
+		logger:    logger,
 	}
 }
 
