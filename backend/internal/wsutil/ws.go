@@ -763,7 +763,16 @@ func (c *conn) runWriterLoop() {
 			return
 		}
 
-		writeCtx, cancel := context.WithTimeout(c.ctx, c.server.heartbeatCfg.Timeout)
+		// Use the connection context for normal writes. If the context is
+		// already cancelled (final drain after read-loop exit), use a
+		// short standalone timeout so the last envelope still gets sent.
+		var writeCtx context.Context
+		var cancel context.CancelFunc
+		if c.ctx.Err() == nil {
+			writeCtx, cancel = context.WithTimeout(c.ctx, c.server.heartbeatCfg.Timeout)
+		} else {
+			writeCtx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		}
 		err := writeTextEnvelope(writeCtx, c.wsConn, msg)
 		cancel()
 		if err != nil {
@@ -788,6 +797,13 @@ func (c *conn) nextOutbound() (Envelope, bool) {
 
 		select {
 		case <-c.ctx.Done():
+			// Final drain: the read loop may have enqueued a control message
+			// (e.g. binary-frame error) just before cancelling the context.
+			// Without this, the select randomly picks ctx.Done over readyCh
+			// and the final error envelope is never sent.
+			if msg, ok := c.tryDrainControl(); ok {
+				return msg, true
+			}
 			return Envelope{}, false
 		case <-c.readyCh:
 		}
