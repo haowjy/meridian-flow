@@ -30,8 +30,8 @@ type Service struct {
 	validator            ThreadValidator
 	authorizer           authdomain.ResourceAuthorizer
 	registry             *mstream.Registry
-	executorRegistry     *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
-	interjectionRegistry *mstream.InterjectionRegistry // Tracks interjection buffers by turn ID
+	executorRegistry     *ExecutorRegistry // Tracks StreamExecutors by turn ID for interruption
+	interjectionRouter   InterjectionRouter
 	config               *config.Config
 	txManager            domain.TransactionManager
 	systemPromptResolver domainllm.SystemPromptResolver
@@ -69,7 +69,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		authorizer:           deps.Services.Authorizer,
 		registry:             deps.Pipeline.Registry,
 		executorRegistry:     execRegistry,
-		interjectionRegistry: deps.Services.InterjectionRegistry,
+		interjectionRouter:   deps.Services.InterjectionRouter,
 		config:               deps.Infra.Config,
 		txManager:            deps.Persistence.TxManager,
 		systemPromptResolver: deps.Pipeline.SystemPromptResolver,

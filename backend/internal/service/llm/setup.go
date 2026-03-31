@@ -192,6 +192,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	})
 
 	interjectionRegistry := mstream.NewInterjectionRegistry()
+	interjectionRouter := streaming.NewV1InterjectionRouter(interjectionRegistry)
 
 	// Build TokenMonitor for context budget tracking (autocollapse at 60%, warn at 90%).
 	// Non-fatal if estimator creation fails — monitoring is optional; turns proceed normally.
@@ -206,14 +207,14 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	}
 
 	streamRuntime := streaming.NewStreamRuntime(streaming.StreamRuntimeDeps{
-		ProviderGetter:       providerResolver,
-		StreamRegistry:       streamRegistry,
-		ExecutorRegistry:     executorRegistry,
-		InterjectionRegistry: interjectionRegistry,
-		ToolLimitResolver:    deps.ToolLimitResolver,
-		RequestBuilder:       streamRequestBuilder,
-		ThreadRepo:           deps.ThreadRepo,
-		TxManager:            deps.TxManager,
+		ProviderGetter:     providerResolver,
+		StreamRegistry:     streamRegistry,
+		ExecutorRegistry:   executorRegistry,
+		InterjectionRouter: interjectionRouter,
+		ToolLimitResolver:  deps.ToolLimitResolver,
+		RequestBuilder:     streamRequestBuilder,
+		ThreadRepo:         deps.ThreadRepo,
+		TxManager:          deps.TxManager,
 		ExecutorDeps: streaming.ExecutorDeps{
 			TurnWriter:             deps.TurnRepo,
 			TurnReader:             deps.TurnRepo,
@@ -242,7 +243,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			ToolRegistryFactory:  toolRegistryFactory,
 			StreamRequestBuilder: streamRequestBuilder,
 			StreamRuntime:        streamRuntime,
-			InterjectionRegistry: interjectionRegistry,
+			InterjectionRouter:   interjectionRouter,
 			Validator:            validator,
 			Authorizer:           deps.Authorizer,
 		},

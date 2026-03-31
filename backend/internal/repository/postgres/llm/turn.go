@@ -376,17 +376,27 @@ func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID stri
 func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID string, status domainllm.TurnStatus, turn *domainllm.Turn) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET status = $1, completed_at = $2
-		WHERE id = $3
+		SET status = $1,
+		    completed_at = $2,
+		    response_metadata = COALESCE(response_metadata, '{}'::jsonb) || COALESCE($3::jsonb, '{}'::jsonb)
+		WHERE id = $4
 	`, r.tables.Turns)
 
 	var completedAt *time.Time
+	var responseMetadataJSON []byte
 	if turn != nil {
 		completedAt = turn.CompletedAt
+		if turn.ResponseMetadata != nil {
+			var err error
+			responseMetadataJSON, err = json.Marshal(turn.ResponseMetadata)
+			if err != nil {
+				return fmt.Errorf("marshal turn response metadata: %w", err)
+			}
+		}
 	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, string(status), completedAt, turnID)
+	result, err := executor.Exec(ctx, query, string(status), completedAt, responseMetadataJSON, turnID)
 	if err != nil {
 		return fmt.Errorf("update turn status: %w", err)
 	}
@@ -605,10 +615,10 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *dom
 		block.BlockType,
 		block.Sequence,
 		block.TextContent,
-		block.Content,          // pgx handles map -> JSONB (nil becomes NULL)
-		block.Provider,         // TEXT (nil becomes NULL)
-		block.ProviderData,     // pgx handles json.RawMessage -> JSONB (nil becomes NULL)
-		block.ExecutionSide,    // TEXT (nil becomes NULL)
+		block.Content,       // pgx handles map -> JSONB (nil becomes NULL)
+		block.Provider,      // TEXT (nil becomes NULL)
+		block.ProviderData,  // pgx handles json.RawMessage -> JSONB (nil becomes NULL)
+		block.ExecutionSide, // TEXT (nil becomes NULL)
 		block.CreatedAt,
 		block.CollapsedContent, // TEXT (nil becomes NULL)
 	).Scan(&block.ID, &block.CreatedAt)
@@ -661,10 +671,10 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 			block.BlockType,
 			block.Sequence,
 			block.TextContent,
-			block.Content,          // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
-			block.Provider,         // TEXT (nil becomes NULL)
-			block.ProviderData,     // pgx automatically handles json.RawMessage -> JSONB conversion (nil becomes NULL)
-			block.ExecutionSide,    // TEXT (nil becomes NULL)
+			block.Content,       // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
+			block.Provider,      // TEXT (nil becomes NULL)
+			block.ProviderData,  // pgx automatically handles json.RawMessage -> JSONB conversion (nil becomes NULL)
+			block.ExecutionSide, // TEXT (nil becomes NULL)
 			block.CreatedAt,
 			block.CollapsedContent, // TEXT (nil becomes NULL)
 		)
@@ -744,11 +754,11 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content,          // pgx automatically handles JSONB -> map conversion
-			&block.Provider,         // TEXT
-			&block.ProviderData,     // pgx automatically handles JSONB -> json.RawMessage conversion
-			&block.ExecutionSide,    // TEXT
-			&block.Status,           // TEXT (partial or complete)
+			&block.Content,       // pgx automatically handles JSONB -> map conversion
+			&block.Provider,      // TEXT
+			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide, // TEXT
+			&block.Status,        // TEXT (partial or complete)
 			&block.CreatedAt,
 			&block.UpdatedAt,
 			&block.CollapsedContent, // TEXT (nil if not set)
@@ -807,11 +817,11 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content,          // pgx automatically handles JSONB -> map conversion
-			&block.Provider,         // TEXT
-			&block.ProviderData,     // pgx automatically handles JSONB -> json.RawMessage conversion
-			&block.ExecutionSide,    // TEXT
-			&block.Status,           // TEXT (partial or complete)
+			&block.Content,       // pgx automatically handles JSONB -> map conversion
+			&block.Provider,      // TEXT
+			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide, // TEXT
+			&block.Status,        // TEXT (partial or complete)
 			&block.CreatedAt,
 			&block.UpdatedAt,
 			&block.CollapsedContent, // TEXT (nil if not set)

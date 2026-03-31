@@ -22,17 +22,17 @@ import (
 // Executor dependencies are grouped under ExecutorDeps to avoid threading many service fields
 // through turnPipeline stage 4.
 type StreamRuntime struct {
-	providerGetter       LLMProviderGetter
-	streamRegistry       *mstream.Registry
-	executorRegistry     *ExecutorRegistry
-	interjectionRegistry *mstream.InterjectionRegistry
-	toolLimitResolver    domainllm.ToolLimitResolver
-	requestBuilder       *StreamRequestBuilder
-	threadRepo           domainllm.ThreadStore // For bookmark update on stream switch
-	txManager            domain.TransactionManager
-	executorDeps         ExecutorDeps
-	config               *config.Config
-	logger               *slog.Logger
+	providerGetter     LLMProviderGetter
+	streamRegistry     *mstream.Registry
+	executorRegistry   *ExecutorRegistry
+	interjectionRouter InterjectionRouter
+	toolLimitResolver  domainllm.ToolLimitResolver
+	requestBuilder     *StreamRequestBuilder
+	threadRepo         domainllm.ThreadStore // For bookmark update on stream switch
+	txManager          domain.TransactionManager
+	executorDeps       ExecutorDeps
+	config             *config.Config
+	logger             *slog.Logger
 }
 
 // ExecutorDeps groups dependencies that are passed through directly to NewStreamExecutor.
@@ -50,17 +50,17 @@ type ExecutorDeps struct {
 
 // StreamRuntimeDeps groups dependencies for StreamRuntime construction.
 type StreamRuntimeDeps struct {
-	ProviderGetter       LLMProviderGetter
-	StreamRegistry       *mstream.Registry
-	ExecutorRegistry     *ExecutorRegistry
-	InterjectionRegistry *mstream.InterjectionRegistry
-	ToolLimitResolver    domainllm.ToolLimitResolver
-	RequestBuilder       *StreamRequestBuilder
-	ThreadRepo           domainllm.ThreadStore // For bookmark update on stream switch
-	TxManager            domain.TransactionManager
-	ExecutorDeps         ExecutorDeps
-	Config               *config.Config
-	Logger               *slog.Logger
+	ProviderGetter     LLMProviderGetter
+	StreamRegistry     *mstream.Registry
+	ExecutorRegistry   *ExecutorRegistry
+	InterjectionRouter InterjectionRouter
+	ToolLimitResolver  domainllm.ToolLimitResolver
+	RequestBuilder     *StreamRequestBuilder
+	ThreadRepo         domainllm.ThreadStore // For bookmark update on stream switch
+	TxManager          domain.TransactionManager
+	ExecutorDeps       ExecutorDeps
+	Config             *config.Config
+	Logger             *slog.Logger
 }
 
 // LaunchInput captures all request-scoped data needed to launch assistant streaming.
@@ -96,24 +96,24 @@ type SwitchStreamInput struct {
 
 // StreamSwitchResult contains the newly created turns from a stream switch.
 type StreamSwitchResult struct {
-	UserTurn      any
-	AssistantTurn any
+	UserTurn      *domainllm.Turn
+	AssistantTurn *domainllm.Turn
 	StreamURL     string
 }
 
 func NewStreamRuntime(deps StreamRuntimeDeps) *StreamRuntime {
 	return &StreamRuntime{
-		providerGetter:       deps.ProviderGetter,
-		streamRegistry:       deps.StreamRegistry,
-		executorRegistry:     deps.ExecutorRegistry,
-		interjectionRegistry: deps.InterjectionRegistry,
-		toolLimitResolver:    deps.ToolLimitResolver,
-		requestBuilder:       deps.RequestBuilder,
-		threadRepo:           deps.ThreadRepo,
-		txManager:            deps.TxManager,
-		executorDeps:         deps.ExecutorDeps,
-		config:               deps.Config,
-		logger:               deps.Logger,
+		providerGetter:     deps.ProviderGetter,
+		streamRegistry:     deps.StreamRegistry,
+		executorRegistry:   deps.ExecutorRegistry,
+		interjectionRouter: deps.InterjectionRouter,
+		toolLimitResolver:  deps.ToolLimitResolver,
+		requestBuilder:     deps.RequestBuilder,
+		threadRepo:         deps.ThreadRepo,
+		txManager:          deps.TxManager,
+		executorDeps:       deps.ExecutorDeps,
+		config:             deps.Config,
+		logger:             deps.Logger,
 	}
 }
 
@@ -149,7 +149,7 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 		toolRoundLimit = r.config.LLM.MaxToolRounds
 	}
 
-	interjectionBuffer := r.interjectionRegistry.GetOrCreate(input.AssistantTurn.ID)
+	r.interjectionRouter.Register(input.AssistantTurn.ID)
 
 	executor := NewStreamExecutor(
 		input.AssistantTurn.ID,
@@ -173,7 +173,7 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 		r.executorDeps.TokenFinalizer,
 		r.executorDeps.JobQueue,
 		r.config.LLM.SoftCancelTimeoutSeconds,
-		interjectionBuffer,
+		r.interjectionRouter,
 		r,
 	)
 
@@ -191,7 +191,7 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 	turnID := input.AssistantTurn.ID
 	executor.SetCleanupCallback(func() {
 		r.executorRegistry.Remove(turnID)
-		r.interjectionRegistry.Remove(turnID)
+		r.interjectionRouter.Remove(turnID)
 		if streamRegistered {
 			r.streamRegistry.Remove(turnID)
 		}
@@ -285,17 +285,33 @@ func (r *StreamRuntime) SwitchStream(ctx context.Context, input *SwitchStreamInp
 		"interjection_length", len(input.InterjectionText),
 	)
 
-	if err := r.executorDeps.TurnWriter.UpdateTurnStatus(ctx, input.CurrentTurnID, domainllm.TurnStatusComplete, nil); err != nil {
-		r.logger.Error("failed to complete current turn during stream switch",
+	if r.txManager == nil {
+		return nil, fmt.Errorf("transaction manager is required for stream switching")
+	}
+
+	var (
+		userTurn      *domainllm.Turn
+		assistantTurn *domainllm.Turn
+	)
+	err := r.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		var persistErr error
+		userTurn, assistantTurn, persistErr = r.persistSwitchTurns(txCtx, input)
+		if persistErr != nil {
+			return persistErr
+		}
+
+		return r.executorDeps.TurnWriter.UpdateTurnStatus(txCtx, input.CurrentTurnID, domainllm.TurnStatusComplete, &domainllm.Turn{
+			ResponseMetadata: map[string]interface{}{
+				"successor_turn_id": assistantTurn.ID,
+			},
+		})
+	})
+	if err != nil {
+		r.logger.Error("failed to persist stream switch transaction",
 			"turn_id", input.CurrentTurnID,
 			"error", err,
 		)
-		return nil, fmt.Errorf("failed to complete current turn: %w", err)
-	}
-
-	userTurn, assistantTurn, err := r.persistSwitchTurns(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to persist switch turns: %w", err)
+		return nil, fmt.Errorf("failed to persist stream switch transaction: %w", err)
 	}
 
 	resp, err := r.Launch(ctx, &LaunchInput{
@@ -343,10 +359,6 @@ func (r *StreamRuntime) SwitchStream(ctx context.Context, input *SwitchStreamInp
 }
 
 func (r *StreamRuntime) persistSwitchTurns(ctx context.Context, input *SwitchStreamInput) (*domainllm.Turn, *domainllm.Turn, error) {
-	if r.txManager == nil {
-		return nil, nil, fmt.Errorf("transaction manager is required for switch turn persistence")
-	}
-
 	requestParams, err := requestParamsToMap(input.Params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to convert request params: %w", err)
@@ -356,51 +368,45 @@ func (r *StreamRuntime) persistSwitchTurns(ctx context.Context, input *SwitchStr
 		userTurn      *domainllm.Turn
 		assistantTurn *domainllm.Turn
 	)
-	if err := r.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		now := time.Now().UTC()
-		userTurn = &domainllm.Turn{
-			ThreadID:      input.ThreadID,
-			PrevTurnID:    ptrString(input.CurrentTurnID),
-			Role:          domainllm.TurnRoleUser,
-			Status:        domainllm.TurnStatusComplete,
-			RequestParams: cloneAnyMap(requestParams),
-			CreatedAt:     now,
-		}
-		if err := r.executorDeps.TurnWriter.CreateTurn(txCtx, userTurn); err != nil {
-			return fmt.Errorf("failed to create switch user turn: %w", err)
-		}
+	now := time.Now().UTC()
+	userTurn = &domainllm.Turn{
+		ThreadID:      input.ThreadID,
+		PrevTurnID:    ptrString(input.CurrentTurnID),
+		Role:          domainllm.TurnRoleUser,
+		Status:        domainllm.TurnStatusComplete,
+		RequestParams: cloneAnyMap(requestParams),
+		CreatedAt:     now,
+	}
+	if err := r.executorDeps.TurnWriter.CreateTurn(ctx, userTurn); err != nil {
+		return nil, nil, fmt.Errorf("failed to create switch user turn: %w", err)
+	}
 
-		textContent := input.InterjectionText
-		userBlocks := []domainllm.TurnBlock{
-			{
-				TurnID:      userTurn.ID,
-				BlockType:   domainllm.BlockTypeText,
-				Sequence:    0,
-				TextContent: &textContent,
-				CreatedAt:   now,
-			},
-		}
-		if err := r.executorDeps.TurnWriter.CreateTurnBlocks(txCtx, userBlocks); err != nil {
-			return fmt.Errorf("failed to create switch user blocks: %w", err)
-		}
-		userTurn.Blocks = userBlocks
+	textContent := input.InterjectionText
+	userBlocks := []domainllm.TurnBlock{
+		{
+			TurnID:      userTurn.ID,
+			BlockType:   domainllm.BlockTypeText,
+			Sequence:    0,
+			TextContent: &textContent,
+			CreatedAt:   now,
+		},
+	}
+	if err := r.executorDeps.TurnWriter.CreateTurnBlocks(ctx, userBlocks); err != nil {
+		return nil, nil, fmt.Errorf("failed to create switch user blocks: %w", err)
+	}
+	userTurn.Blocks = userBlocks
 
-		assistantTurn = &domainllm.Turn{
-			ThreadID:      input.ThreadID,
-			PrevTurnID:    &userTurn.ID,
-			Role:          domainllm.TurnRoleAssistant,
-			Status:        domainllm.TurnStatusStreaming,
-			Model:         ptrString(input.Model),
-			RequestParams: cloneAnyMap(requestParams),
-			CreatedAt:     now,
-		}
-		if err := r.executorDeps.TurnWriter.CreateTurn(txCtx, assistantTurn); err != nil {
-			return fmt.Errorf("failed to create switch assistant turn: %w", err)
-		}
-
-		return nil
-	}); err != nil {
-		return nil, nil, err
+	assistantTurn = &domainllm.Turn{
+		ThreadID:      input.ThreadID,
+		PrevTurnID:    &userTurn.ID,
+		Role:          domainllm.TurnRoleAssistant,
+		Status:        domainllm.TurnStatusStreaming,
+		Model:         ptrString(input.Model),
+		RequestParams: cloneAnyMap(requestParams),
+		CreatedAt:     now,
+	}
+	if err := r.executorDeps.TurnWriter.CreateTurn(ctx, assistantTurn); err != nil {
+		return nil, nil, fmt.Errorf("failed to create switch assistant turn: %w", err)
 	}
 
 	return userTurn, assistantTurn, nil

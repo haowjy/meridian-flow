@@ -210,65 +210,83 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// INTERJECTION POINT A: Check for interjection after tool results are persisted.
 	// If user submitted an interjection during tool execution, inject it now by
 	// creating a new user turn and switching to a new assistant stream.
-	if se.interjectionBuffer != nil && se.streamRuntime != nil {
-		if interjection, ok := se.interjectionBuffer.DrainAndClear(); ok {
-			se.logger.Info("interjection detected at tool boundary, triggering stream switch",
-				"turn_id", se.turnID,
-				"interjection_length", len(interjection),
-			)
-
-			// Transfer slot ownership from current executor to the successor stream.
-			// SwitchStream releases it on failure; on success the new executor owns it.
-			releaseSlot := se.TransferSlotRelease()
-
-			var params *domainllm.RequestParams
-			if se.req != nil {
-				params = se.req.Params
-			}
-
-			// Call stream switch to create new turns and start new stream.
-			result, err := se.streamRuntime.SwitchStream(ctx, &SwitchStreamInput{
-				CurrentTurnID:    se.turnID,
-				ThreadID:         se.threadID,
-				UserID:           se.userID,
-				ProjectID:        se.projectID,
-				Model:            se.model,
-				Provider:         se.providerName,
-				Params:           params,
-				ToolRegistry:     se.toolRegistry,
-				SettlementMode:   se.settlementMode,
-				InterjectionText: interjection,
-				Reason:           "tool_boundary",
-				ReleaseSlot:      releaseSlot,
-			})
-			if err != nil {
-				se.logger.Error("stream switch failed at tool boundary",
+	if se.interjectionRouter != nil && se.streamRuntime != nil {
+		epoch, interjection, ok := se.interjectionRouter.BeginDrain(se.turnID)
+		if ok {
+			if interjection == "" {
+				se.interjectionRouter.Rollback(se.turnID, epoch)
+			} else {
+				se.logger.Info("interjection detected at tool boundary, triggering stream switch",
 					"turn_id", se.turnID,
-					"error", err,
+					"interjection_length", len(interjection),
 				)
-				// Emit error and return - don't continue with current stream
-				se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err), false)
-				return fmt.Errorf("interjection stream switch failed: %w", err)
-			}
 
-			// Emit STREAM_SWITCH event so frontend can reconnect to new stream
-			if se.aguiEmitter != nil {
-				se.aguiEmitter.EmitStreamSwitch(
-					se.turnID,
-					agui.StreamSwitchReasonToolBoundary,
-					result.UserTurn,
-					result.AssistantTurn,
-					result.StreamURL,
+				// Transfer slot ownership from current executor to the successor stream.
+				// SwitchStream releases it on failure; on success the new executor owns it.
+				releaseSlot := se.TransferSlotRelease()
+
+				var params *domainllm.RequestParams
+				if se.req != nil {
+					params = se.req.Params
+				}
+
+				// Call stream switch to create new turns and start new stream.
+				result, err := se.streamRuntime.SwitchStream(ctx, &SwitchStreamInput{
+					CurrentTurnID:    se.turnID,
+					ThreadID:         se.threadID,
+					UserID:           se.userID,
+					ProjectID:        se.projectID,
+					Model:            se.model,
+					Provider:         se.providerName,
+					Params:           params,
+					ToolRegistry:     se.toolRegistry,
+					SettlementMode:   se.settlementMode,
+					InterjectionText: interjection,
+					Reason:           "tool_boundary",
+					ReleaseSlot:      releaseSlot,
+				})
+				if err != nil {
+					se.interjectionRouter.Rollback(se.turnID, epoch)
+					se.logger.Error("stream switch failed at tool boundary",
+						"turn_id", se.turnID,
+						"error", err,
+					)
+					// Emit error and return - don't continue with current stream
+					se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err), false)
+					return fmt.Errorf("interjection stream switch failed: %w", err)
+				}
+
+				late, completeOK := se.interjectionRouter.CompleteDrain(se.turnID, epoch, result.AssistantTurn.ID)
+				if completeOK && late != "" {
+					if _, _, routeErr := se.interjectionRouter.Route(result.AssistantTurn.ID, late, "append"); routeErr != nil {
+						se.logger.Warn("failed to forward late interjection to successor",
+							"old_turn_id", se.turnID,
+							"new_turn_id", result.AssistantTurn.ID,
+							"late_content_len", len(late),
+							"error", routeErr,
+						)
+					}
+				}
+
+				// Emit STREAM_SWITCH event so frontend can reconnect to new stream
+				if se.aguiEmitter != nil {
+					se.aguiEmitter.EmitStreamSwitch(
+						se.turnID,
+						agui.StreamSwitchReasonToolBoundary,
+						result.UserTurn,
+						result.AssistantTurn,
+						result.StreamURL,
+					)
+				}
+
+				// End current stream cleanly - frontend will connect to new stream
+				se.logger.Info("stream switch completed, ending current stream",
+					"prev_turn_id", se.turnID,
+					"stream_url", result.StreamURL,
 				)
+				se.Terminate(ReasonStreamSwitch, TerminateOpts{})
+				return nil
 			}
-
-			// End current stream cleanly - frontend will connect to new stream
-			se.logger.Info("stream switch completed, ending current stream",
-				"prev_turn_id", se.turnID,
-				"stream_url", result.StreamURL,
-			)
-			se.Terminate(ReasonStreamSwitch, TerminateOpts{})
-			return nil
 		}
 	}
 

@@ -121,8 +121,8 @@ type StreamExecutor struct {
 	lastAssistantMessageID   string            // fallback for missing parentMessageId
 
 	// Interjection support: allows users to inject messages during streaming.
-	// Buffer is managed by the service layer, accessed here for injection points.
-	interjectionBuffer mstream.InterjectionBuffer
+	// Router is managed by the service layer and coordinates drain points.
+	interjectionRouter InterjectionRouter
 	streamRuntime      *StreamRuntime // Runtime reference for first-class stream switching
 }
 
@@ -262,9 +262,11 @@ func NewStreamExecutor(
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
 	softCancelTimeoutSeconds int,
-	interjectionBuffer mstream.InterjectionBuffer, // For buffering user interjections during streaming
+	interjectionRouter InterjectionRouter, // For buffering/draining interjections during streaming
 	streamRuntime *StreamRuntime, // Runtime for creating switched streams on interjection
 ) *StreamExecutor {
+	_ = debugMode // Event IDs are always enabled in mstream.
+
 	// Create AG-UI IDFactory for stable ID generation
 	idFactory := agui.NewIDFactory(turnID, threadID)
 
@@ -297,7 +299,7 @@ func NewStreamExecutor(
 		softCancelTimeout:      time.Duration(softCancelTimeoutSeconds) * time.Second,
 		persistenceGuard:       NewPersistenceGuard(), // Armed initially, disarmed on cancel
 		idFactory:              idFactory,             // AG-UI ID generation
-		interjectionBuffer:     interjectionBuffer,    // For user interjections
+		interjectionRouter:     interjectionRouter,    // For user interjections
 		streamRuntime:          streamRuntime,         // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
@@ -308,12 +310,11 @@ func NewStreamExecutor(
 	// Create catchup function for database-backed event replay (needs TurnReader)
 	catchupFunc := buildCatchupFunc(turnReader, logger)
 
-	// Create mstream.Stream with WorkFunc, catchup support, and optional event IDs (DEBUG mode)
+	// Create mstream.Stream with WorkFunc and catchup support.
 	stream := mstream.NewStream(
 		turnID,
 		se.workFunc,
 		mstream.WithCatchup(catchupFunc),
-		mstream.WithEventIDs(debugMode), // Enable event IDs only in DEBUG mode
 	)
 	se.stream = stream
 

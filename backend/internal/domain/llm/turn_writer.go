@@ -48,8 +48,10 @@ type TurnWriter interface {
 	// Handles JSONB metadata for assistant blocks (thinking, tool_use)
 	CreateTurnBlocks(ctx context.Context, blocks []TurnBlock) error
 
-	// UpdateTurnStatus updates a turn's status and completion time
-	// Used for streaming state management
+	// UpdateTurnStatus updates a turn's status and completion time.
+	// When completedAt is non-nil and completedAt.ResponseMetadata is set, the
+	// metadata is merged into response_metadata.
+	// Used for streaming state management.
 	UpdateTurnStatus(ctx context.Context, turnID string, status TurnStatus, completedAt *Turn) error
 
 	// UpdateTurn updates a turn's fields (status, tokens, model, error, etc.)

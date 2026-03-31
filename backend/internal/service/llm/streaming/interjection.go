@@ -19,20 +19,14 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 	executor := s.executorRegistry.Get(assistantTurnID)
 
 	if executor != nil {
-		// Turn is streaming - buffer the interjection
-		buffer := s.interjectionRegistry.GetOrCreate(assistantTurnID)
-
-		var err error
-		if mode == "replace" {
-			err = buffer.Replace(content)
-		} else {
-			// Default to append
-			err = buffer.Append(content)
-		}
-
+		targetTurnID, held, err := s.interjectionRouter.Route(assistantTurnID, content, mode)
 		if err != nil {
 			return nil, err
 		}
+
+		// v1 adapter stores content in the returned buffer. Forwarder-backed phases
+		// continue to expose this API so GET/CLEAR can inspect active turn state.
+		buffer := s.interjectionRouter.Register(targetTurnID)
 
 		finalContent, _ := buffer.Peek()
 		length := buffer.Length()
@@ -44,14 +38,16 @@ func (s *Service) UpsertInterjection(ctx context.Context, userID string, assista
 		// on SSE connect.
 
 		s.logger.Debug("interjection buffered",
-			"turn_id", assistantTurnID,
+			"requested_turn_id", assistantTurnID,
+			"target_turn_id", targetTurnID,
 			"mode", mode,
+			"held", held,
 			"length", length,
 		)
 
 		return &domainllm.UpsertInterjectionResponse{
 			Mode:            "queued",
-			AssistantTurnID: assistantTurnID,
+			AssistantTurnID: targetTurnID,
 			Content:         finalContent,
 			Length:          length,
 		}, nil
@@ -117,10 +113,8 @@ func (s *Service) GetInterjection(ctx context.Context, userID string, assistantT
 
 	var content string
 	if isStreaming {
-		buffer, exists := s.interjectionRegistry.Get(assistantTurnID)
-		if exists {
-			content, _ = buffer.Peek()
-		}
+		buffer := s.interjectionRouter.Register(assistantTurnID)
+		content, _ = buffer.Peek()
 	}
 
 	return &domainllm.GetInterjectionResponse{
@@ -136,8 +130,8 @@ func (s *Service) ClearInterjection(ctx context.Context, userID string, assistan
 		return err
 	}
 
-	buffer, exists := s.interjectionRegistry.Get(assistantTurnID)
-	if exists {
+	if s.executorRegistry.Get(assistantTurnID) != nil {
+		buffer := s.interjectionRouter.Register(assistantTurnID)
 		buffer.Clear()
 		s.logger.Debug("interjection cleared", "turn_id", assistantTurnID)
 	}
