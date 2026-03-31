@@ -2,6 +2,7 @@ package domains
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"meridian/internal/config"
@@ -13,6 +14,7 @@ import (
 	postgresCollab "meridian/internal/repository/postgres/collab"
 	serviceCollab "meridian/internal/service/collab"
 	"meridian/internal/service/llm/tools"
+	"meridian/internal/wsutil"
 )
 
 // CollabModule wires collaboration services, handlers, and workers.
@@ -29,6 +31,7 @@ type CollabModule struct {
 	ProposalStore  collabdomain.ProposalStore
 
 	DocumentHandler *handler.CollabDocumentHandler
+	DocWSServer     *wsutil.Server
 	Handler         *handler.CollabHandler
 	RestoreHandler  *handler.CollabRestoreHandler
 }
@@ -65,6 +68,34 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 	)
 
 	collabDocResolver := serviceCollab.NewDocumentResolver(deps.DocumentRepo, deps.Authorizer)
+
+	var isIdentityBlocked func(string, string) bool
+	if cfg != nil {
+		isIdentityBlocked = cfg.IsProdIdentityBlocked
+	}
+	docWSAuthenticator := handler.NewDocWSAuthenticator(infra.JWTVerifier, deps.Authorizer, isIdentityBlocked)
+	docNotifyHandler := handler.NewDocNotifyHandler(infra.Logger)
+	allowedOrigins := make([]string, 0)
+	if cfg != nil && cfg.Server.CORSOrigins != "" {
+		for _, origin := range strings.Split(cfg.Server.CORSOrigins, ",") {
+			trimmed := strings.TrimSpace(origin)
+			if trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+	}
+
+	docWSServer := wsutil.NewServer(
+		wsutil.WithAuth(docWSAuthenticator),
+		wsutil.WithHeartbeat(20*time.Second, 20*time.Second),
+		wsutil.WithRateLimit(30),
+		wsutil.WithReadLimit(64*1024),
+		wsutil.WithOriginPatterns(allowedOrigins...),
+	)
+	docWSServer.RegisterHandler("document", docNotifyHandler)
+
+	docNotifier := handler.NewDocNotifier(docWSServer)
+
 	projectConnectionRegistry := handler.NewInMemoryProjectConnectionRegistry(infra.Logger)
 	collabDocumentHandler := handler.NewCollabDocumentHandler(
 		collabSessionManager,
@@ -96,7 +127,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		infra.Logger,
 	)
 
-	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(projectConnectionRegistry, collabDocumentHandler, collabDocResolver)
+	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(docNotifier, collabDocumentHandler, collabDocResolver)
 	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, projectedStateBuilder, infra.Logger)
 
 	collabHandler := handler.NewCollabHandler(
@@ -131,6 +162,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		BookmarkStore:    bookmarkStore,
 		ProposalStore:    proposalStore,
 		DocumentHandler:  collabDocumentHandler,
+		DocWSServer:      docWSServer,
 		Handler:          collabHandler,
 		RestoreHandler:   collabRestoreHandler,
 	}, nil
@@ -139,6 +171,9 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 // RegisterRoutes registers collab routes.
 func (m *CollabModule) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ws/projects/{projectId}", m.Handler.ConnectProject)
+	if m.DocWSServer != nil {
+		mux.HandleFunc("GET /ws/projects/{projectId}/docs", m.DocWSServer.Serve)
+	}
 	mux.HandleFunc("GET /ws/documents/{documentId}", m.DocumentHandler.ConnectDocument)
 	mux.HandleFunc("PATCH /api/proposals/{id}/offset", m.Handler.SetAcceptedAtOffset)
 	mux.HandleFunc("POST /api/turns/{id}/restore", m.RestoreHandler.RestoreTurn)
