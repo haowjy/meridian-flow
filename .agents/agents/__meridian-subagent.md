@@ -1,7 +1,7 @@
 ---
 name: __meridian-subagent
 description: Minimal default subagent profile for repo-local Meridian work
-model: codex
+model: gpt-5.3-codex
 skills: []
 # mcp-tools: [spawn_list, spawn_show, skills_list]
 tools: [Bash, Write, Edit]
