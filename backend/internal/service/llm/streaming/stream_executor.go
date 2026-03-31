@@ -91,9 +91,9 @@ type StreamExecutor struct {
 	// Disarmed IMMEDIATELY on cancel request, before queueing command.
 	persistenceGuard *PersistenceGuard
 
-	// Cleanup callback - called when streaming completes/errors
+	// Cleanup callback - called when terminalization completes.
 	// Used by service layer to clean up executor registry
-	onCleanup func()
+	onCleanup func(reason TerminateReason)
 	cleanupMu sync.Mutex
 
 	// Stream slot release callback is separated from registry cleanup so stream
@@ -362,7 +362,7 @@ func (se *StreamExecutor) transitionTo(newState ExecutorState) {
 
 // SetCleanupCallback sets a function to be called when streaming completes or errors.
 // Used by service layer to clean up executor registry.
-func (se *StreamExecutor) SetCleanupCallback(fn func()) {
+func (se *StreamExecutor) SetCleanupCallback(fn func(reason TerminateReason)) {
 	se.cleanupMu.Lock()
 	defer se.cleanupMu.Unlock()
 	se.onCleanup = fn
@@ -442,7 +442,7 @@ func (se *StreamExecutor) Terminate(reason TerminateReason, opts TerminateOpts) 
 	onCleanup := se.onCleanup
 	se.cleanupMu.Unlock()
 	if onCleanup != nil {
-		onCleanup()
+		onCleanup(reason)
 	}
 
 	slotRelease := se.TransferSlotRelease()

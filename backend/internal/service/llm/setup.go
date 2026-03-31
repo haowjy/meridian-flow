@@ -24,6 +24,7 @@ import (
 	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
+	"meridian/internal/wsutil"
 )
 
 // SetupProviders initializes the provider factory and registry for routing.
@@ -51,6 +52,9 @@ type Services struct {
 	ThreadHistory domainllm.ThreadHistoryService
 	Streaming     domainllm.StreamingService
 	Spawn         *streaming.SpawnService // Manages child thread lifecycle; nil if not wired
+	Interjection  streaming.InterjectionRouter
+	Runtime       *streaming.StreamRuntime
+	ActiveTurns   streaming.ActiveTurnRegistry
 }
 
 // LLMServicesDeps groups dependencies for SetupLLMServices.
@@ -73,6 +77,7 @@ type LLMServicesDeps struct {
 	SettlementMode         billing.CreditSettlementMode
 	JobQueue               jobs.JobQueue
 	MutationStrategy       tools.DocumentMutationStrategy
+	ProjectBroadcaster     wsutil.Broadcaster
 	Logger                 *slog.Logger
 	// WorkItemSvc is optional. When set, threads created without an explicit
 	// work_item_id automatically get an ephemeral work item provisioned.
@@ -225,8 +230,9 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			JobQueue:               deps.JobQueue,
 			TokenMonitor:           tokenMonitor,
 		},
-		Config: deps.Config,
-		Logger: deps.Logger,
+		Broadcaster: deps.ProjectBroadcaster,
+		Config:      deps.Config,
+		Logger:      deps.Logger,
 	})
 
 	streamingService, err := streaming.NewStreamingOrchestrator(streaming.StreamingDeps{
@@ -258,6 +264,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			Config:           deps.Config,
 			Logger:           deps.Logger,
 			ExecutorRegistry: executorRegistry, // shared with SpawnService for cascade cancel
+			Broadcaster:      deps.ProjectBroadcaster,
 		},
 	})
 	if err != nil {
@@ -274,6 +281,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		deps.Config,
 		bootstrapper,
 		executorRegistry,
+		deps.ProjectBroadcaster,
 		deps.Logger,
 	)
 
@@ -285,5 +293,8 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		ThreadHistory: threadHistoryService,
 		Streaming:     streamingService,
 		Spawn:         spawnSvc,
+		Interjection:  interjectionRouter,
+		Runtime:       streamRuntime,
+		ActiveTurns:   executorRegistry,
 	}, streamRegistry, nil
 }

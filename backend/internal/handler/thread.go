@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
@@ -531,20 +530,8 @@ func (h *ThreadHandler) UpsertInterjection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate content is not empty
-	if strings.TrimSpace(req.Content) == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Interjection content cannot be empty")
-		return
-	}
-
-	// Default mode to "append"
-	if req.Mode == "" {
-		req.Mode = "append"
-	}
-
-	// Validate mode
-	if req.Mode != "append" && req.Mode != "replace" {
-		httputil.RespondError(w, http.StatusBadRequest, "Mode must be 'append' or 'replace'")
+	if err := normalizeUpsertInterjectionRequest(&req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

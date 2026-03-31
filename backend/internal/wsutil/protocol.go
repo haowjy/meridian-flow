@@ -15,20 +15,21 @@ const (
 )
 
 const (
-	OpAuth         = "auth"
-	OpConnected    = "connected"
-	OpPing         = "ping"
-	OpPong         = "pong"
-	OpSubscribe    = "subscribe"
-	OpSubscribed   = "subscribed"
-	OpUnsubscribe  = "unsubscribe"
-	OpUnsubscribed = "unsubscribed"
-	OpEvent        = "event"
-	OpEnded        = "ended"
-	OpGap          = "gap"
-	OpMessage      = "message"
-	OpInvalidate   = "invalidate"
-	OpError        = "error"
+	OpAuth               = "auth"
+	OpConnected          = "connected"
+	OpPing               = "ping"
+	OpPong               = "pong"
+	OpSubscribe          = "subscribe"
+	OpSubscribed         = "subscribed"
+	OpUnsubscribe        = "unsubscribe"
+	OpUnsubscribed       = "unsubscribed"
+	OpEvent              = "event"
+	OpEnded              = "ended"
+	OpGap                = "gap"
+	OpMessage            = "message"
+	OpInterjectionResult = "interjection_result"
+	OpInvalidate         = "invalidate"
+	OpError              = "error"
 )
 
 const (

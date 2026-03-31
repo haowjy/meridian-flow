@@ -15,11 +15,14 @@ import (
 	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	"meridian/internal/wsutil"
 )
 
 type ExecutorRegistry struct {
 	executors sync.Map // map[turnID]*StreamExecutor
 }
+
+var _ ActiveTurnRegistry = (*ExecutorRegistry)(nil)
 
 // NewExecutorRegistry creates a new executor registry.
 func NewExecutorRegistry() *ExecutorRegistry {
@@ -39,6 +42,15 @@ func (r *ExecutorRegistry) Get(turnID string) *StreamExecutor {
 	return nil
 }
 
+// GetByTurn retrieves an active turn handle by turn ID.
+func (r *ExecutorRegistry) GetByTurn(turnID string) (ActiveTurnHandle, bool) {
+	executor := r.Get(turnID)
+	if executor == nil {
+		return nil, false
+	}
+	return executor, true
+}
+
 // Remove removes an executor from the registry.
 func (r *ExecutorRegistry) Remove(turnID string) {
 	r.executors.Delete(turnID)
@@ -50,8 +62,8 @@ func (r *ExecutorRegistry) Remove(turnID string) {
 // Used by the cancellation cascade to find child executors when a parent is interrupted.
 // Linear scan is acceptable because the total number of active executors is small
 // (bounded by MaxConcurrentStreams config) and this path is infrequent.
-func (r *ExecutorRegistry) GetByThread(threadID string) *StreamExecutor {
-	var result *StreamExecutor
+func (r *ExecutorRegistry) GetByThread(threadID string) (ActiveTurnHandle, bool) {
+	var result ActiveTurnHandle
 	r.executors.Range(func(_, v interface{}) bool {
 		exec := v.(*StreamExecutor)
 		if exec.threadID == threadID {
@@ -60,7 +72,7 @@ func (r *ExecutorRegistry) GetByThread(threadID string) *StreamExecutor {
 		}
 		return true
 	})
-	return result
+	return result, result != nil
 }
 
 // ThreadValidator is shared validation logic for thread operations
@@ -162,6 +174,8 @@ type InfraDeps struct {
 	// registry so that external components (e.g. SpawnService) can cancel child
 	// executors. When nil, a new private registry is created inside the service.
 	ExecutorRegistry *ExecutorRegistry
+	// Broadcaster emits project-scoped notify events. Optional; nil disables notify emission.
+	Broadcaster wsutil.Broadcaster
 }
 
 // Validate checks that all infrastructure dependencies are provided.
