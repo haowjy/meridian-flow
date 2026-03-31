@@ -168,6 +168,47 @@
 **Decision**: The Handler/StreamHandler ISP split from review decision D31 is NOT implemented in this plan. Doc WS handler implements stub methods returning `ErrNotSupported`.
 **Why**: D31 created [#44](https://github.com/haowjy/meridian/issues/44) as a deferred item. The current plan has only 2 handlers. ISP split adds interface complexity without reducing code — each stub is one line. Build it when a third handler type appears.
 
+## Yjs CRDT Sync Multiplexing Decisions
+
+### D34. Yjs CRDT sync multiplexed on doc WS stream lane (reverses D7)
+**Decision**: Consolidate per-document Yjs WS connections into the doc WS stream lane. Client subscribes to a document resource → gets Yjs sync/awareness via base64-encoded JSON stream events.
+**Why**: The user's original intent was "1 WS for all the docs in the project." D7 deferred this to keep the initial migration scope manageable. Now that the doc WS framework is built and the notify lane is working, the stream lane can be activated for Yjs sync. Consolidation reduces connections per user from (2 + N open documents) to just 2.
+**Considered**: Keeping per-document Yjs WS (D7). Rejected — user explicitly wants consolidation. The protocol and framework already support stream subscriptions; only the handler and frontend provider need updating.
+
+### D35. Base64 encoding for binary Yjs payloads in JSON protocol
+**Decision**: Yjs binary data is base64-encoded inside JSON stream event `payload.data` fields. No binary frame support added.
+**Why**: The protocol rejects binary frames at the framework level (D13). All message routing depends on JSON envelope parsing. Supporting binary frames would require a parallel framing protocol (byte-prefix routing without JSON), separate code paths, mixed frame types. Base64 adds ~33% size overhead, but: (a) Yjs payloads are small — sync step 1 is hundreds of bytes, typical updates are a few KB; (b) the connection consolidation benefit (N connections → 1) far outweighs encoding cost; (c) no protocol or framework changes required.
+**Considered**: (a) Binary frame support — protocol change, framework change, mixed frame handling. Too invasive. (b) Hybrid JSON control + binary stream — complex routing, two frame formats on one connection. (c) MessagePack — same overhead concerns as base64 plus a new dependency.
+
+### D36. Cross-connection document subscriber registry in handler
+**Decision**: The `DocHandler` maintains a shared `documentID → []subscriber` registry across all connections. When a Yjs update arrives from one subscriber, it's broadcast to all other subscribers of the same document.
+**Why**: Yjs update fanout must reach subscribers on different WS connections (e.g., user A edits document D1, user B also has D1 open on a different connection). The framework's `BroadcastNotify` handles project-wide notify, but stream event fanout is resource-specific and requires the handler to know which subscriptions belong to which document.
+**Pattern**: Snapshot-then-send — same pattern as `wsutil.BroadcastNotify()`. Read-lock registry, copy targets, release lock, then send outside the lock. Prevents deadlock when a send failure triggers connection removal.
+
+### D37. ReadLimit raised to 512KB for doc WS
+**Decision**: Increase the doc WS `ReadLimit` from 64KB to 512KB.
+**Why**: The per-document WS used 256KB application-level max for raw binary Yjs frames. Base64 encoding adds ~33% overhead (256KB → ~341KB base64 + JSON envelope overhead). 512KB provides comfortable headroom for large chapters in a web serial (5,000+ words per chapter).
+
+### D39. Deferred release guard in OnSubscribe (review finding p726-2)
+**Decision**: OnSubscribe uses a `registered` flag with deferred `releaseFn()`. If any step after `GetOrCreateSession` fails, the session reference is automatically released.
+**Why**: The framework does NOT call `OnUnsubscribe` when `OnSubscribe` returns an error — it only removes the subscription slot. Without the guard, a failed subscribe leaks the session reference count, preventing session cleanup.
+
+### D40. stream:ended sent via Send(), not SendToSub() (review finding p726-1)
+**Decision**: Terminal `stream:ended` events (e.g., document_restored) are sent via `session.Send()`, not `session.SendToSub()`.
+**Why**: `Send()` routes `stream:ended` through the control queue (since `op != "event"`). If sent via `SendToSub()`, calling `EndSub()` afterward removes the subscription from `subOrder` before the writer loop drains the per-subscription queue, orphaning the event.
+
+### D41. Document restored: no auto-reconnect (review finding p727-2)
+**Decision**: When a client receives `stream:ended{reason: "document_restored"}`, it emits a `document-restored` control event to the editor and does NOT auto-reconnect.
+**Why**: The current restore flow broadcasts `document:restored` before calling `rebuildFrozenDocuments()`. `GetOrCreateSession` rejects frozen docs until rebuild completes. Immediate re-subscribe would hit a `SUBSCRIBE_FAILED` error. The editor handles the control event (e.g., shows a reload prompt or retries after a delay).
+
+### D42. Duplicate document subscribe replaces old subscription (review finding p727-4)
+**Decision**: If a connection subscribes to the same document twice, the handler ends the old subscription first (`session.EndSub(oldSubId)`) before processing the new subscribe.
+**Why**: Same pattern as the thread handler for duplicate turn subscriptions. Without dedup, the per-connection state (`map[documentID]*docSubscriber`) would overwrite the old entry, leaking the old `releaseFn` and leaving stale entries in the cross-connection fanout registry.
+
+### D38. Gap recovery for documents = re-subscribe, no REST fallback
+**Decision**: When a document subscription receives a gap (backpressure overflow), recovery is a fresh re-subscribe with no `lastSeq`/`epoch`. No REST fallback, no gap counting.
+**Why**: CRDTs naturally converge on re-sync. A fresh subscribe triggers sync step 1/2 exchange which brings the client to the current document state regardless of what was missed. This is simpler than thread streaming gap recovery (which needs REST fallback, gap counting, livelock prevention) because the Yjs protocol is designed for exactly this — reconnect and re-sync.
+
 ## Execution-Time Decisions
 
 ### D-E1. wsutil binary frame rejection — final-drain in writer loop
