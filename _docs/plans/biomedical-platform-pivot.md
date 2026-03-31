@@ -196,22 +196,47 @@ Enhanced editor for scientific papers.
 
 Instead of rigid tool wrappers, Claude writes analysis code directly via `execute_python`, adapting per specimen. This is more flexible — Claude adjusts thresholds, seed locations, and post-processing based on what it observes in each dataset.
 
-**Segmentation approach**: Threshold + watershed (matching the paper's Amira method)
-- Threshold at >2500 HU to define bone mask
-- 3D median filter for denoising
-- Region-growing seed markers (Magic Wand equivalent) within 3000-5000 HU
-- Marker-based watershed inside bone mask
-- Label separation: femur, tibia, patella, menisci as individual materials
+**Two-stage segmentation: watershed (WHERE) + MedSAM3 (WHAT)**
+
+```
+uCT DICOM
+  │
+  ▼
+Stage 1: Threshold + Watershed (Claude-written Python, runs in Pyodide)
+  - Threshold at >2500 HU to define bone mask
+  - 3D median filter for denoising
+  - Region-growing seed markers (Magic Wand equivalent) within 3000-5000 HU
+  - Marker-based watershed inside bone mask
+  - Output: N unlabeled 3D regions (geometric blobs)
+  │
+  ▼
+Stage 2: MedSAM3 Semantic Check (GPU via Modal, called via run_model tool)
+  - For each region, prompt MedSAM3: "what structure is this?"
+  - Labels: femur, tibia, patella, meniscus, osteophyte, sesamoid bone, growth plate
+  - Resolves two key paper pain points:
+    • "ossa sesamoidea commonly identified as separated osteophytes" → correctly labeled
+    • "challenging to define the boundary between osteophyte and normal bone" → distinct labels
+  - Output: semantically labeled 3D regions
+  │
+  ▼
+Downstream: measurements, statistics, visualization on correctly labeled structures
+```
+
+**Why two stages instead of MedSAM3 alone**:
+- Watershed is fast, free, runs in-browser — good enough for most cases
+- MedSAM3 is a verification layer, not the primary segmentation
+- If MedSAM3 disagrees with watershed labels, Claude can re-examine and adjust
+- Researchers can run without GPU access (watershed only) and add MedSAM3 later
+- Matches the paper's own semi-automated workflow (threshold → segment → interpret)
 
 **Why code-writing over fixed tools**:
-- Claude can inspect intermediate results and adjust (e.g., "threshold too aggressive, dropping to 2200 HU for this specimen")
+- Claude adjusts thresholds per specimen (e.g., "threshold too aggressive, dropping to 2200 HU")
 - Different specimens may need different seed locations
-- Paper's own method was semi-automated (manual seed voxel selection + automated region growing)
-- Keeps the platform general — same `execute_python` tool works for any analysis domain
+- Keeps the platform general — same `execute_python` works for any analysis domain
 
-**Statistical analysis** (ANOVA, ROC, Bland-Altman, ICC) is also done via code-writing — Claude writes scipy/sklearn/statsmodels code, not through special-purpose tools.
+**Statistical analysis** (ANOVA, ROC, Bland-Altman, ICC) is also done via code-writing.
 
-**Only `render_3d_model` needs a dedicated frontend tool** — it takes mesh data from Python and renders it in the R3F/VTK.js canvas.
+**Dedicated frontend tools**: `render_3d_model` (push mesh to WebGL canvas) and `run_model` (call MedSAM3 via Modal).
 
 ### New API Endpoints
 
