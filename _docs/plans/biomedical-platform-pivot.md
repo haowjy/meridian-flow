@@ -197,7 +197,7 @@ Enhanced editor for scientific papers.
 | Tool Name | Description | Implementation |
 |---|---|---|
 | `segment_bone` | Watershed/threshold-based bone segmentation from DICOM | Python (SimpleITK) |
-| `auto_align_orientation` | AI-assisted 3-axis orientation correction using anatomical landmarks | Python (scikit-image + landmark detection) |
+| `auto_align_orientation` | PCA-based 3-axis orientation correction using bone voxel principal axes | Python (numpy PCA, no GPU) |
 | `measure_geometric_index` | Calculate femoral W/L ratio, tibial IIOC H/W ratio from segmented model | Python (numpy) |
 | `compute_roc` | ROC analysis with AUC, sensitivity/specificity, cutoff values | Python (sklearn) |
 | `bland_altman_plot` | Inter-rater reproducibility analysis with ICC | Python (statsmodels) |
@@ -320,31 +320,36 @@ ALTER TABLE documents ADD COLUMN dataset_id UUID REFERENCES datasets(id);
 
 **Validation**: Can reproduce the paper's statistical analysis (Tables 1-2, ROC curves in Figs 2G, 3E, 4A-B) from uploaded supplemental data.
 
-### Phase 2: 3D Visualization + DICOM
-**Goal**: Researcher can upload uCT DICOM, view 3D bone models, and take measurements.
+### Phase 2: 3D Visualization + DICOM + Auto-Alignment
+**Goal**: Researcher can upload uCT DICOM, view 3D bone models, auto-correct orientation, and take measurements.
 
 1. DICOM file upload + metadata extraction (Scanco VivaCT format)
 2. React Three Fiber 3D canvas with rotation, zoom, pan
 3. Volume rendering of uCT data (threshold-based, matching Scanco threshold 220/270/320)
 4. Interactive ruler/measurement tool on 3D models
-5. Bone segmentation via Python (SimpleITK watershed, threshold-based)
-6. Ortho slice viewer (coronal/sagittal/axial planes)
-7. Dataset browser with column statistics and distribution plots
+5. Bone segmentation via Python (SimpleITK watershed, threshold-based) — runs in Pyodide
+6. PCA-based 3-axis orientation correction (numpy linear algebra, no GPU) — the paper's stated future direction, solved with standard PCA on bone voxel coordinates
+7. Anatomical landmark detection (intercondylar notch, growth plate, condyle edges) — heuristic search on segmented arrays
+8. Automated geometric index extraction (femoral W/L, tibial IIOC H/W)
+9. Ortho slice viewer (coronal/sagittal/axial planes)
+10. Dataset browser with column statistics and distribution plots
 
-**Validation**: Can load a uCT DICOM dataset, segment femur/tibia/patella, measure femoral W/L ratio and tibial IIOC H/W ratio, matching Amira-derived values.
+**Validation**: Can load a uCT DICOM dataset, auto-orient, segment femur/tibia/patella, and extract geometric indices matching Amira-derived values within ICC > 0.85.
 
-### Phase 3: AI-Assisted Analysis + GPU Compute
-**Goal**: AI automates tedious steps (orientation correction, landmark detection, segmentation refinement).
+### Phase 3: GPU Compute + Large Data
+**Goal**: Handle datasets too large for browser and run neural network models.
 
-1. AI-powered 3-axis image orientation correction (the paper's stated future direction)
-2. Anatomical landmark detection (intercondylar notch, growth plate, condyle edges)
-3. Automated geometric index extraction from segmented models
-4. Server-side Jupyter kernel service (for large DICOM stacks that exceed Pyodide memory)
-5. Modal.com integration for GPU models (MedSAM3 segmentation)
-6. Segmentation overlay on 3D canvas (bone vs cartilage vs osteophyte)
-7. NIfTI file support + VTK.js medical volume viewer
+Only things that genuinely need server-side compute:
 
-**Validation**: Can auto-orient a tilted uCT scan and extract geometric indices without manual intervention, matching blinded operator results within ICC > 0.85.
+1. Server-side Jupyter kernel service (for DICOM stacks > 500MB that exceed Pyodide memory)
+2. Modal.com integration for GPU models (MedSAM3 segmentation — the only step requiring GPU)
+3. Segmentation overlay on 3D canvas (bone vs cartilage vs osteophyte from MedSAM3 output)
+4. NIfTI file support + VTK.js medical volume viewer
+5. Batch processing (run pipeline across 20+ specimens server-side)
+
+Note: Orientation correction, landmark detection, geometric measurements, and all statistical analysis run in Pyodide (numpy/scipy). No GPU needed.
+
+**Validation**: Can run MedSAM3 on a uCT stack via Modal, overlay segmentation on 3D canvas, and batch-process a full cohort.
 
 ### Phase 4: Marketplace + Paper Writing
 **Goal**: Researcher can share their analysis workflow and draft papers with integrated figures.
