@@ -12,8 +12,8 @@
 | 6 | Doc WS Handler | done | 2 | p720 | handler+DocNotifier |
 | 7 | Thread WS Handler | done | 3 | p721 | largest phase |
 | 8 | Frontend WS Base + DocWsProvider | done | 3 | p722 | shared base |
-| 9 | Frontend ThreadWsProvider | in_progress | 4 | frontend-coder | streaming client |
-| 10 | SSE + Legacy Cleanup | not_started | 5 | — | deletion phase |
+| 9 | Frontend ThreadWsProvider | done | 4 | p723 | streaming client |
+| 10 | SSE + Legacy Cleanup | in_progress | 5 | coder | deletion phase |
 
 ## Round Status
 
@@ -22,8 +22,8 @@
 | 1 | 1, 3, 4, 5 | done | — |
 | 2 | 2, 6 | done | — |
 | 3 | 7, 8 | done | — |
-| 4 | 9 | in_progress | — |
-| 5 | 10 | not_started | Round 4 |
+| 4 | 9 | done | — |
+| 5 | 10 | in_progress | — |
 
 ## Critical Path
 
