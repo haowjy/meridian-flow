@@ -23,6 +23,14 @@ type collabAuthResult struct {
 	JWTExpiry time.Time
 }
 
+// JWTVerifier is the minimal verifier dependency needed by websocket auth.
+type JWTVerifier interface {
+	VerifyToken(tokenString string) (*authdomain.AuthClaims, error)
+}
+
+// IdentityBlockChecker returns true when a subject/email should be denied auth.
+type IdentityBlockChecker func(userID string, email string) bool
+
 // collabAuthenticator encapsulates all authentication and authorization checks
 // for the collaboration websocket: connection bootstrap, document access, and
 // active subscription invalidation.
@@ -50,10 +58,59 @@ func newCollabAuthenticator(
 	}
 }
 
-// bootstrapAuth performs the initial websocket authentication handshake:
-// reads the first JWT message, verifies the token, and parses the user UUID.
-// Returns nil result and a typed domain error on failure.
-func (a *collabAuthenticator) bootstrapAuth(
+// authenticateToken verifies a JWT and returns auth context.
+// Transport-agnostic: it accepts a raw token string and does not depend on websocket types.
+func authenticateToken(
+	token string,
+	verifier JWTVerifier,
+	identityChecker IdentityBlockChecker,
+) (*collabAuthResult, error) {
+	claims, err := verifier.VerifyToken(token)
+	if err != nil {
+		return nil, domain.ErrAuthExpired
+	}
+
+	userID := claims.GetUserID()
+	if identityChecker != nil && identityChecker(userID, claims.Email) {
+		return nil, domain.ErrAuthFailed
+	}
+
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return nil, domain.ErrAuthFailed
+	}
+
+	jwtExpiry := time.Time{}
+	if claims.ExpiresAt != nil {
+		jwtExpiry = *claims.ExpiresAt
+	}
+
+	return &collabAuthResult{UserID: userID, UserUUID: userUUID, JWTExpiry: jwtExpiry}, nil
+}
+
+// authErrorToCodeAndMessage maps domain auth errors to wire-protocol error envelopes.
+func authErrorToCodeAndMessage(err error) (code string, message string) {
+	if err == nil {
+		return "", ""
+	}
+
+	switch {
+	case errors.Is(err, domain.ErrAuthExpired):
+		return "AUTH_EXPIRED", domain.ErrAuthExpired.Error()
+	case errors.Is(err, domain.ErrForbidden):
+		return "FORBIDDEN", "access denied"
+	case errors.Is(err, domain.ErrAuthFailed):
+		return "AUTH_FAILED", domain.ErrAuthFailed.Error()
+	default:
+		return "INTERNAL_ERROR", "failed to verify project access"
+	}
+}
+
+// bootstrapProjectAuth performs the websocket auth bootstrap and verifies that
+// the authenticated user can access the requested project before the socket is
+// considered connected.
+func (a *collabAuthenticator) bootstrapProjectAuth(
+	ctx context.Context,
 	conn *websocket.Conn,
 	projectID string,
 ) (*collabAuthResult, error) {
@@ -73,33 +130,13 @@ func (a *collabAuthenticator) bootstrapAuth(
 		return nil, domain.ErrAuthFailed
 	}
 
-	claims, err := a.jwtVerifier.VerifyToken(token)
+	result, err := authenticateToken(token, a.jwtVerifier, a.isIdentityBlocked)
 	if err != nil {
-		a.logger.Debug("project websocket token verification failed",
+		a.logger.Debug("project websocket token auth failed",
 			"project_id", projectID,
 			"error", err,
 		)
-		return nil, domain.ErrAuthExpired
-	}
-
-	userID := claims.GetUserID()
-	if a.isIdentityBlocked != nil && a.isIdentityBlocked(userID, claims.Email) {
-		a.logger.Info("project websocket blocked user denied",
-			"project_id", projectID,
-			"user_id", userID,
-			"email", claims.Email,
-		)
-		return nil, domain.ErrAuthFailed
-	}
-
-	userUUID, err := parseUUID(userID)
-	if err != nil {
-		a.logger.Error("project websocket user id is not a uuid",
-			"project_id", projectID,
-			"user_id", userID,
-			"error", err,
-		)
-		return nil, domain.ErrAuthFailed
+		return nil, err
 	}
 
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
@@ -107,26 +144,6 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"project_id", projectID,
 			"error", err,
 		)
-	}
-	jwtExpiry := time.Time{}
-	if claims.ExpiresAt != nil {
-		jwtExpiry = *claims.ExpiresAt
-	}
-
-	return &collabAuthResult{UserID: userID, UserUUID: userUUID, JWTExpiry: jwtExpiry}, nil
-}
-
-// bootstrapProjectAuth performs the websocket auth bootstrap and verifies that
-// the authenticated user can access the requested project before the socket is
-// considered connected.
-func (a *collabAuthenticator) bootstrapProjectAuth(
-	ctx context.Context,
-	conn *websocket.Conn,
-	projectID string,
-) (*collabAuthResult, error) {
-	result, err := a.bootstrapAuth(conn, projectID)
-	if err != nil {
-		return nil, err
 	}
 
 	if a.authorizer == nil {
