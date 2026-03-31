@@ -4,13 +4,41 @@
 
 Transform Meridian from a fiction writing platform into an **agentic biomedical data platform** — a cloud-based environment where researchers can analyze biomedical data through AI-assisted Python execution, interactive N-D visualization, and collaborative paper writing, with a marketplace for sharing workflows and tools.
 
+## Grounding Use Case: uCT-based OA Assessment
+
+Reference: Yao et al., "uCT-derived geometric indices for assessing OA severity in murine knee joints" (Biology, 2025, PMC12896453)
+
+### Current Pain Points (from the paper)
+
+| Pain Point | Current Approach | Platform Solution |
+|---|---|---|
+| 3D segmentation is manual and slow | Amira software (expensive, semi-manual watershed) | AI-assisted segmentation via Python (SimpleITK/scikit-image) |
+| Image orientation correction is "time-consuming and unfeasible" | Manual 3-axis rotation in Amira | **AI-powered auto-alignment** (the paper explicitly calls for this) |
+| Geometric measurements require trained operators | Amira ruler tool on 3D models | Interactive 3D measurement tools + automated extraction |
+| Statistical analysis in separate tools | GraphPad Prism + R (copy-paste between tools) | Integrated Python (scipy, statsmodels) with inline results |
+| Visualization fragmented | Amira (3D) + Prism (charts) separately | Unified 2D/3D viz in one workspace |
+| No reproducible pipeline | Manual steps, hard to replicate | Notebook-based workflows, shareable via marketplace |
+| OARSI scoring subjective | Blinded manual histology scoring | AI-assisted scoring with consistency checks |
+
+### Target Workflow in Platform
+
+```
+Upload uCT DICOM → Auto-segment (watershed/AI) → 3D model
+    → AI auto-align orientation (3-axis correction)
+    → Measure geometric indices (femoral W/L ratio, tibial IIOC H/W ratio)
+    → Statistical analysis (ANOVA, ROC, Bland-Altman, ICC)
+    → Generate figures (3D renders, charts, tables)
+    → Write paper with inline citations and embedded figures
+    → Share segmentation workflow via marketplace
+```
+
 ## Core Capabilities
 
 | Capability | Description |
 |---|---|
 | **Python Execution** | Run arbitrary Python (pandas, numpy, scipy, scikit-learn) in-browser via Pyodide (MVP), with server-side Jupyter kernels for heavy compute (Phase 2) |
 | **N-D Data Visualization** | 2D charts (Plotly), 3D surfaces/volumes, 4D/5D time-series and multi-channel medical imaging |
-| **Interactive 3D Canvas** | WebGL-based viewer for 3D biomedical data with segmentation overlays, rotation, slicing |
+| **Interactive 3D Canvas** | WebGL-based viewer for 3D biomedical data with segmentation overlays, rotation, slicing, measurement tools |
 | **ML Model Execution** | Run models like MedSAM3 for segmentation via serverless GPU (Modal/Replicate) |
 | **Skill Marketplace** | Browse, share, and import biomedical workflows, analysis scripts, and tool configurations |
 | **Paper Writing** | AI-assisted scientific paper drafting with citation management, figure integration, and collaborative editing |
@@ -151,6 +179,8 @@ Enhanced editor for scientific papers.
 
 ### New Tools (LLM Tool Registry)
 
+#### General Tools
+
 | Tool Name | Description | Backend/Frontend |
 |---|---|---|
 | `execute_python` | Run Python code, return stdout/plots/dataframes | Frontend (Pyodide) |
@@ -161,6 +191,17 @@ Enhanced editor for scientific papers.
 | `run_model` | Execute a biomedical model (MedSAM3, etc.) | Backend (Modal) |
 | `insert_citation` | Add a citation to the current document | Backend (doc edit) |
 | `insert_figure` | Embed a visualization output as a figure | Backend (doc edit) |
+
+#### uCT/Imaging-Specific Tools (via skills + Python)
+
+| Tool Name | Description | Implementation |
+|---|---|---|
+| `segment_bone` | Watershed/threshold-based bone segmentation from DICOM | Python (SimpleITK) |
+| `auto_align_orientation` | AI-assisted 3-axis orientation correction using anatomical landmarks | Python (scikit-image + landmark detection) |
+| `measure_geometric_index` | Calculate femoral W/L ratio, tibial IIOC H/W ratio from segmented model | Python (numpy) |
+| `compute_roc` | ROC analysis with AUC, sensitivity/specificity, cutoff values | Python (sklearn) |
+| `bland_altman_plot` | Inter-rater reproducibility analysis with ICC | Python (statsmodels) |
+| `render_3d_model` | Generate interactive 3D visualization of segmented bones | Frontend (R3F/VTK.js) |
 
 ### New API Endpoints
 
@@ -265,42 +306,65 @@ ALTER TABLE documents ADD COLUMN dataset_id UUID REFERENCES datasets(id);
 
 ## Implementation Phases
 
-### Phase 1: Foundation (MVP) — ~2 weeks
-1. Replace fiction personas/skills with biomedical ones
+### Phase 1: Foundation (MVP)
+**Goal**: Researcher can upload CSV data, run Python analysis, and see results — all in one workspace.
+
+1. Replace fiction personas/skills with biomedical ones (data-analyst, stats-reviewer, methods-writer)
 2. Pyodide integration (Web Worker + `execute_python` tool)
-3. Plotly output rendering in thread view
-4. Dataset upload + CSV/JSON preview
+3. Plotly output rendering in thread view (2D charts, bar plots, ROC curves)
+4. Dataset upload + CSV/JSON/Excel preview (supports supplemental tables like S1-S3)
 5. Basic notebook view (code cells + output)
-6. PubMed/CrossRef citation search tool
-7. Update landing page / branding
+6. Statistical analysis tools (ANOVA, t-test, ROC, Bland-Altman via scipy/sklearn)
+7. PubMed/CrossRef citation search tool
+8. Update landing page / branding
 
-### Phase 2: Interactive Visualization — ~2 weeks
-1. React Three Fiber 3D canvas component
-2. 3D scatter, surface, and point cloud rendering
-3. Plotly 3D integration (from Pyodide outputs)
-4. Dataset browser with column statistics
-5. Variable inspector in notebook view
+**Validation**: Can reproduce the paper's statistical analysis (Tables 1-2, ROC curves in Figs 2G, 3E, 4A-B) from uploaded supplemental data.
 
-### Phase 3: Heavy Compute + Medical Imaging — ~3 weeks
-1. Server-side Jupyter kernel service
-2. Modal.com integration for GPU models
-3. MedSAM3 deployment and tool integration
-4. NIfTI/DICOM file support + VTK.js viewer
-5. Segmentation overlay on 3D canvas
+### Phase 2: 3D Visualization + DICOM
+**Goal**: Researcher can upload uCT DICOM, view 3D bone models, and take measurements.
 
-### Phase 4: Marketplace + Paper Writing — ~2 weeks
+1. DICOM file upload + metadata extraction (Scanco VivaCT format)
+2. React Three Fiber 3D canvas with rotation, zoom, pan
+3. Volume rendering of uCT data (threshold-based, matching Scanco threshold 220/270/320)
+4. Interactive ruler/measurement tool on 3D models
+5. Bone segmentation via Python (SimpleITK watershed, threshold-based)
+6. Ortho slice viewer (coronal/sagittal/axial planes)
+7. Dataset browser with column statistics and distribution plots
+
+**Validation**: Can load a uCT DICOM dataset, segment femur/tibia/patella, measure femoral W/L ratio and tibial IIOC H/W ratio, matching Amira-derived values.
+
+### Phase 3: AI-Assisted Analysis + GPU Compute
+**Goal**: AI automates tedious steps (orientation correction, landmark detection, segmentation refinement).
+
+1. AI-powered 3-axis image orientation correction (the paper's stated future direction)
+2. Anatomical landmark detection (intercondylar notch, growth plate, condyle edges)
+3. Automated geometric index extraction from segmented models
+4. Server-side Jupyter kernel service (for large DICOM stacks that exceed Pyodide memory)
+5. Modal.com integration for GPU models (MedSAM3 segmentation)
+6. Segmentation overlay on 3D canvas (bone vs cartilage vs osteophyte)
+7. NIfTI file support + VTK.js medical volume viewer
+
+**Validation**: Can auto-orient a tilted uCT scan and extract geometric indices without manual intervention, matching blinded operator results within ICC > 0.85.
+
+### Phase 4: Marketplace + Paper Writing
+**Goal**: Researcher can share their analysis workflow and draft papers with integrated figures.
+
 1. Skill publishing and discovery API
-2. Marketplace browse/install UI
-3. Citation management and bibliography generation
-4. Figure embedding from analysis outputs
-5. Paper export (LaTeX PDF, DOCX)
+2. Marketplace browse/install UI (categories: musculoskeletal, imaging, statistics, etc.)
+3. Pre-built skill: "OA Geometric Index Analysis" (the paper's full pipeline as a shareable workflow)
+4. Citation management and bibliography generation (PubMed/CrossRef integration)
+5. Figure embedding from analysis outputs (link Plotly charts + 3D renders to paper sections)
+6. Paper export (LaTeX PDF, DOCX via Pandoc)
 
-### Phase 5: Polish + Scale — ~2 weeks
+**Validation**: Full paper workflow — from data upload to submitted manuscript with inline figures and formatted references.
+
+### Phase 5: Polish + Scale
 1. Collaborative notebook editing (Yjs on code cells)
-2. Dataset versioning
-3. Workflow templates (e.g., "RNA-seq pipeline", "GWAS analysis")
-4. Execution history and reproducibility
-5. Community ratings and reviews
+2. Dataset versioning and provenance tracking
+3. Workflow templates (OA analysis, bone microarchitecture, histomorphometry)
+4. Execution history and reproducibility (re-run any notebook state)
+5. Community ratings, reviews, and forking of marketplace skills
+6. Batch processing (run same analysis across multiple specimens)
 
 ## Technical Decisions
 
