@@ -97,11 +97,11 @@ func (d PersistenceDeps) Validate() error {
 
 // ServiceDeps groups domain service dependencies used during streaming.
 type ServiceDeps struct {
-	TurnContextResolver  *TurnContextResolver          // Resolves stage-1 context (thread/persona/model/params)
-	ToolRegistryFactory  *ToolRegistryFactory          // Builds prompt/execution tool registries
-	StreamRequestBuilder *StreamRequestBuilder         // Builds conversation messages for LLM
-	StreamRuntime        *StreamRuntime                // Owns stream/executor launch lifecycle
-	InterjectionRegistry *mstream.InterjectionRegistry // Shared between Service and StreamRuntime
+	TurnContextResolver  *TurnContextResolver  // Resolves stage-1 context (thread/persona/model/params)
+	ToolRegistryFactory  *ToolRegistryFactory  // Builds prompt/execution tool registries
+	StreamRequestBuilder *StreamRequestBuilder // Builds conversation messages for LLM
+	StreamRuntime        *StreamRuntime        // Owns stream/executor launch lifecycle
+	InterjectionRouter   InterjectionRouter    // Shared between Service and StreamRuntime
 	Validator            ThreadValidator
 	Authorizer           authdomain.ResourceAuthorizer
 }
@@ -113,7 +113,7 @@ func (d ServiceDeps) Validate() error {
 		validation.Field(&d.ToolRegistryFactory, validation.Required),
 		validation.Field(&d.StreamRequestBuilder, validation.Required),
 		validation.Field(&d.StreamRuntime, validation.Required),
-		validation.Field(&d.InterjectionRegistry, validation.Required),
+		validation.Field(&d.InterjectionRouter, validation.Required),
 		validation.Field(&d.Validator, validation.Required),
 		validation.Field(&d.Authorizer, validation.Required),
 	)
