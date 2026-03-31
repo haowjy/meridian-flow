@@ -13,7 +13,7 @@
 | 7 | Thread WS Handler | done | 3 | p721 | largest phase |
 | 8 | Frontend WS Base + DocWsProvider | done | 3 | p722 | shared base |
 | 9 | Frontend ThreadWsProvider | done | 4 | p723 | streaming client |
-| 10 | SSE + Legacy Cleanup | in_progress | 5 | coder | deletion phase |
+| 10 | SSE + Legacy Cleanup | done | 5 | p724 | deletion phase + wsutil race fix |
 
 ## Round Status
 
@@ -23,7 +23,7 @@
 | 2 | 2, 6 | done | — |
 | 3 | 7, 8 | done | — |
 | 4 | 9 | done | — |
-| 5 | 10 | in_progress | — |
+| 5 | 10 | done | — |
 
 ## Critical Path
 
