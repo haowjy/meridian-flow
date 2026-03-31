@@ -13,6 +13,7 @@ import (
 	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
+	"meridian/internal/wsutil"
 )
 
 // Service implements the StreamingService interface
@@ -37,6 +38,7 @@ type Service struct {
 	systemPromptResolver domainllm.SystemPromptResolver
 	capabilityRegistry   *capabilities.Registry       // For checking model capabilities (e.g., supports_tools)
 	settlementMode       billing.CreditSettlementMode // Wired in Phase 4; used by executor in Phase 5
+	projectBroadcaster   wsutil.Broadcaster
 	logger               *slog.Logger
 }
 
@@ -75,6 +77,7 @@ func NewStreamingOrchestrator(deps StreamingDeps) (domainllm.StreamingService, e
 		systemPromptResolver: deps.Pipeline.SystemPromptResolver,
 		capabilityRegistry:   deps.Pipeline.CapabilityRegistry,
 		settlementMode:       deps.Billing.SettlementMode,
+		projectBroadcaster:   deps.Infra.Broadcaster,
 		logger:               deps.Infra.Logger,
 	}, nil
 }

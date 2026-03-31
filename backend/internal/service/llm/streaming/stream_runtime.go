@@ -16,6 +16,7 @@ import (
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
+	"meridian/internal/wsutil"
 )
 
 // StreamRuntime creates StreamExecutors, registers them, and starts background streaming.
@@ -31,6 +32,7 @@ type StreamRuntime struct {
 	threadRepo         domainllm.ThreadStore // For bookmark update on stream switch
 	txManager          domain.TransactionManager
 	executorDeps       ExecutorDeps
+	broadcaster        wsutil.Broadcaster
 	config             *config.Config
 	logger             *slog.Logger
 }
@@ -59,6 +61,7 @@ type StreamRuntimeDeps struct {
 	ThreadRepo         domainllm.ThreadStore // For bookmark update on stream switch
 	TxManager          domain.TransactionManager
 	ExecutorDeps       ExecutorDeps
+	Broadcaster        wsutil.Broadcaster
 	Config             *config.Config
 	Logger             *slog.Logger
 }
@@ -111,6 +114,7 @@ func NewStreamRuntime(deps StreamRuntimeDeps) *StreamRuntime {
 		threadRepo:         deps.ThreadRepo,
 		txManager:          deps.TxManager,
 		executorDeps:       deps.ExecutorDeps,
+		broadcaster:        deps.Broadcaster,
 		config:             deps.Config,
 		logger:             deps.Logger,
 	}
@@ -188,11 +192,19 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 	}
 
 	turnID := input.AssistantTurn.ID
-	executor.SetCleanupCallback(func() {
+	executor.SetCleanupCallback(func(reason TerminateReason) {
 		r.executorRegistry.Remove(turnID)
 		r.interjectionRouter.Remove(turnID)
 		if streamRegistered {
 			r.streamRegistry.Remove(turnID)
+		}
+		switch reason {
+		case ReasonError:
+			broadcastTurnNotify(r.broadcaster, input.ProjectID, turnID, "error", nil)
+		case ReasonHardCancelled, ReasonSoftCancelTimeout, ReasonSoftCancelDrained:
+			broadcastTurnNotify(r.broadcaster, input.ProjectID, turnID, "cancelled", nil)
+		default:
+			broadcastTurnNotify(r.broadcaster, input.ProjectID, turnID, "completed", nil)
 		}
 		r.logger.Debug("executor cleaned up from registry", "turn_id", turnID)
 	})

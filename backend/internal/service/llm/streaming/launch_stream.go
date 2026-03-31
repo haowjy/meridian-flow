@@ -78,6 +78,8 @@ func (p *turnPipeline) launchStream(ctx context.Context) (*domainllm.CreateTurnR
 		return nil, err
 	}
 
+	broadcastTurnNotify(svc.projectBroadcaster, p.turnCtx.ThreadCtx.projectID, p.assistantTurn.ID, "stream_started", nil)
+
 	// Launch transferred stream-slot ownership to executor cleanup callback.
 	p.turnCtx.StreamAcquired = false
 	return resp, nil

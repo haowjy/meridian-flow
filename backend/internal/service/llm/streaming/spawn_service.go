@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"meridian/internal/domain"
 	domainerrors "meridian/internal/domain/errors"
 	domainllm "meridian/internal/domain/llm"
+	"meridian/internal/wsutil"
 )
 
 // SpawnService manages the lifecycle of spawned child agent threads.
@@ -34,7 +36,8 @@ type SpawnService struct {
 	config           *config.Config
 	bootstrapper     *ChildThreadBootstrapper
 	executorRegistry *ExecutorRegistry // for executor-level cancellation; may be nil
-	activeChildren   sync.Map          // childThreadID -> struct{}: tracks currently-running spawns
+	broadcaster      wsutil.Broadcaster
+	activeChildren   sync.Map // childThreadID -> struct{}: tracks currently-running spawns
 	logger           *slog.Logger
 }
 
@@ -47,6 +50,7 @@ func NewSpawnService(
 	cfg *config.Config,
 	bootstrapper *ChildThreadBootstrapper,
 	executorRegistry *ExecutorRegistry,
+	broadcaster wsutil.Broadcaster,
 	logger *slog.Logger,
 ) *SpawnService {
 	return &SpawnService{
@@ -55,6 +59,7 @@ func NewSpawnService(
 		config:           cfg,
 		bootstrapper:     bootstrapper,
 		executorRegistry: executorRegistry,
+		broadcaster:      broadcaster,
 		logger:           logger,
 	}
 }
@@ -141,12 +146,14 @@ func (s *SpawnService) CreateSpawn(ctx context.Context, req *domainllm.SpawnRequ
 
 	// Delegate to bootstrapper: create initial turn and start streaming.
 	// The bootstrapper returns a completion channel that fires when the child finishes.
-	completionCh, err := s.bootstrapper.BootstrapAndStream(spawnCtx, childThread, req)
+	completionCh, assistantTurnID, err := s.bootstrapper.BootstrapAndStream(spawnCtx, childThread, req)
 	if err != nil {
 		// Mark child as failed since streaming never started.
 		s.markSpawnFailed(childThread.ID, fmt.Sprintf("bootstrap failed: %v", err))
 		return nil, fmt.Errorf("failed to bootstrap child thread: %w", err)
 	}
+
+	s.broadcastSpawnStarted(req, childThread.ID, assistantTurnID)
 
 	// Block on completion or timeout.
 	select {
@@ -174,6 +181,26 @@ func (s *SpawnService) CreateSpawn(ctx context.Context, req *domainllm.SpawnRequ
 			Summary:       fmt.Sprintf("spawn %s after %v", timedOutStatus, timeoutDuration),
 		}, nil
 	}
+}
+
+func (s *SpawnService) broadcastSpawnStarted(req *domainllm.SpawnRequest, childThreadID, childTurnID string) {
+	if s.broadcaster == nil || req == nil {
+		return
+	}
+	parentTurnID := ""
+	if s.executorRegistry != nil {
+		if parentHandle, ok := s.executorRegistry.GetByThread(req.ParentThreadID); ok {
+			parentTurnID = parentHandle.TurnID()
+		}
+	}
+	if parentTurnID == "" {
+		return
+	}
+
+	broadcastTurnNotify(s.broadcaster, req.ProjectID, parentTurnID, "spawn_started", map[string]any{
+		"spawnThreadId": childThreadID,
+		"spawnTurnId":   childTurnID,
+	})
 }
 
 // GetSpawnStatus retrieves the current status of a child thread spawn.
@@ -222,7 +249,7 @@ func (s *SpawnService) CancelSpawn(ctx context.Context, parentThreadID, childThr
 				// Cancel the streaming executor if one is active.
 				// executorRegistry.GetByThread scans by threadID, which matches child thread.
 				if s.executorRegistry != nil {
-					if executor := s.executorRegistry.GetByThread(childThreadID); executor != nil {
+					if executor, ok := s.executorRegistry.GetByThread(childThreadID); ok {
 						s.logger.Debug("CancelSpawn: cancelling active executor",
 							"child_thread_id", childThreadID,
 							"parent_thread_id", parentThreadID,
@@ -368,7 +395,7 @@ func (b *ChildThreadBootstrapper) BootstrapAndStream(
 	ctx context.Context,
 	childThread *domainllm.Thread,
 	req *domainllm.SpawnRequest,
-) (<-chan *domainllm.SpawnResult, error) {
+) (<-chan *domainllm.SpawnResult, string, error) {
 	// Create the initial user turn on the child thread via CreateTurn.
 	// This reuses the full turn creation pipeline (persona resolution, tool registry, etc.).
 	threadID := childThread.ID
@@ -388,12 +415,17 @@ func (b *ChildThreadBootstrapper) BootstrapAndStream(
 
 	resp, err := b.streamingSvc.CreateTurn(ctx, createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create initial turn on child thread: %w", err)
+		return nil, "", fmt.Errorf("failed to create initial turn on child thread: %w", err)
 	}
+	if resp.AssistantTurn == nil || strings.TrimSpace(resp.AssistantTurn.ID) == "" {
+		return nil, "", fmt.Errorf("child bootstrap missing assistant turn")
+	}
+
+	assistantTurnID := resp.AssistantTurn.ID
 
 	b.logger.Info("child thread bootstrap started",
 		"child_thread_id", childThread.ID,
-		"assistant_turn_id", resp.AssistantTurn.ID,
+		"assistant_turn_id", assistantTurnID,
 		"persona", req.AgentSlug,
 	)
 
@@ -404,7 +436,7 @@ func (b *ChildThreadBootstrapper) BootstrapAndStream(
 
 	go b.waitForCompletion(ctx, childThread.ID, resp.AssistantTurn.ID, completionCh)
 
-	return completionCh, nil
+	return completionCh, assistantTurnID, nil
 }
 
 // waitForCompletion polls the assistant turn's status until it reaches a terminal state.

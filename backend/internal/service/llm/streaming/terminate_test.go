@@ -612,7 +612,7 @@ func newTerminateTestExecutor(
 		InterjectionRouter:       nil,
 		StreamRuntime:            nil,
 	})
-	executor.SetCleanupCallback(func() {
+	executor.SetCleanupCallback(func(_ TerminateReason) {
 		cleanupCalls.count++
 	})
 

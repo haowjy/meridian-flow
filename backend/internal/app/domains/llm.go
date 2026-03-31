@@ -2,13 +2,15 @@ package domains
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	domainagents "meridian/internal/domain/agents"
 	authdomain "meridian/internal/domain/auth"
 	billing "meridian/internal/domain/billing"
-	domainagents "meridian/internal/domain/agents"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 	domainwi "meridian/internal/domain/workitem"
@@ -18,6 +20,7 @@ import (
 	"meridian/internal/service/llm"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
+	"meridian/internal/wsutil"
 
 	mstream "github.com/haowjy/meridian-stream-go"
 )
@@ -56,12 +59,37 @@ type LLMModule struct {
 	Services             *llm.Services
 	StreamRegistry       *mstream.Registry
 	Handler              *handler.ThreadHandler
+	ThreadWSServer       *wsutil.Server
 	DebugHandler         *handler.ThreadDebugHandler
 	ModelsHandler        *handler.ModelsHandler
 	ContextBudgetHandler *handler.ContextBudgetHandler
 }
 
 func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCrossDeps) (*LLMModule, error) {
+	var isIdentityBlocked func(string, string) bool
+	if cfg != nil {
+		isIdentityBlocked = cfg.IsProdIdentityBlocked
+	}
+	threadWSAuthenticator := handler.NewDocWSAuthenticator(infra.JWTVerifier, crossDeps.Authorizer, isIdentityBlocked)
+
+	allowedOrigins := make([]string, 0)
+	if cfg != nil && cfg.Server.CORSOrigins != "" {
+		for _, origin := range strings.Split(cfg.Server.CORSOrigins, ",") {
+			trimmed := strings.TrimSpace(origin)
+			if trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+	}
+
+	threadWSServer := wsutil.NewServer(
+		wsutil.WithAuth(threadWSAuthenticator),
+		wsutil.WithHeartbeat(20*time.Second, 20*time.Second),
+		wsutil.WithRateLimit(30),
+		wsutil.WithReadLimit(64*1024),
+		wsutil.WithOriginPatterns(allowedOrigins...),
+	)
+
 	providerRegistry, err := llm.SetupProviders(cfg, infra.Logger)
 	if err != nil {
 		return nil, err
@@ -86,6 +114,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		SettlementMode:         crossDeps.SettlementMode,
 		JobQueue:               crossDeps.JobQueue,
 		MutationStrategy:       crossDeps.MutationStrategy,
+		ProjectBroadcaster:     threadWSServer,
 		Logger:                 infra.Logger,
 		WorkItemSvc:            crossDeps.WorkItemSvc,
 		PersonaCatalog:         crossDeps.PersonaCatalog,
@@ -103,6 +132,18 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		infra.Logger,
 		cfg,
 	)
+
+	threadStreamHandler := handler.NewTurnStreamHandler(handler.TurnStreamHandlerDeps{
+		StreamRegistry:     streamRegistry,
+		InterjectionRouter: llmServices.Interjection,
+		ActiveTurnRegistry: llmServices.ActiveTurns,
+		TurnStreamStarter:  llmServices.Runtime,
+		TurnReader:         crossDeps.TurnRepo,
+		Authorizer:         crossDeps.Authorizer,
+		ProjectBroadcaster: threadWSServer,
+		Logger:             infra.Logger,
+	})
+	threadWSServer.RegisterHandler("turn", threadStreamHandler)
 
 	var threadDebugHandler *handler.ThreadDebugHandler
 	if cfg.Server.Environment == "dev" {
@@ -130,6 +171,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		Services:             llmServices,
 		StreamRegistry:       streamRegistry,
 		Handler:              threadHandler,
+		ThreadWSServer:       threadWSServer,
 		DebugHandler:         threadDebugHandler,
 		ModelsHandler:        modelsHandler,
 		ContextBudgetHandler: contextBudgetHandler,
@@ -159,6 +201,10 @@ func (m *LLMModule) RegisterRoutes(mux *http.ServeMux, admissionChecker billing.
 	mux.HandleFunc("POST /api/turns/{id}/interjection", m.Handler.UpsertInterjection)
 	mux.HandleFunc("GET /api/turns/{id}/interjection", m.Handler.GetInterjection)
 	mux.HandleFunc("DELETE /api/turns/{id}/interjection", m.Handler.ClearInterjection)
+
+	if m.ThreadWSServer != nil {
+		mux.HandleFunc("GET /ws/projects/{projectId}/threads", m.ThreadWSServer.Serve)
+	}
 }
 
 // RegisterDebugRoutes registers development-only debug endpoints.
