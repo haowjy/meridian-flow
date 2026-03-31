@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -11,64 +10,66 @@ import (
 	collab "meridian/internal/domain/collab"
 )
 
-// ProposalBroadcasterImpl implements tools.ProposalBroadcaster by routing JSON
-// proposal events to project websocket connections and Yjs frames to document
-// websocket connections.
+// ProposalBroadcasterImpl implements tools.ProposalBroadcaster by routing
+// proposal invalidation notifications to project doc websocket connections and
+// Yjs frames to document websocket connections.
 type ProposalBroadcasterImpl struct {
-	projectBroadcaster ProjectBroadcaster
-	docBroadcaster     DocumentBroadcaster
-	documentResolver   collab.DocumentResolver
+	docNotifier      DocNotifier
+	docBroadcaster   DocumentBroadcaster
+	documentResolver collab.DocumentResolver
 }
 
-// NewProposalBroadcasterImpl creates a broadcaster backed by the project/document WS handlers.
+// NewProposalBroadcasterImpl creates a broadcaster backed by doc/project WS handlers.
 func NewProposalBroadcasterImpl(
-	projectBroadcaster ProjectBroadcaster,
+	docNotifier DocNotifier,
 	docBroadcaster DocumentBroadcaster,
 	documentResolver collab.DocumentResolver,
 ) *ProposalBroadcasterImpl {
 	return &ProposalBroadcasterImpl{
-		projectBroadcaster: projectBroadcaster,
-		docBroadcaster:     docBroadcaster,
-		documentResolver:   documentResolver,
+		docNotifier:      docNotifier,
+		docBroadcaster:   docBroadcaster,
+		documentResolver: documentResolver,
 	}
 }
 
-// BroadcastProposalCreated sends a proposal:new event to all project connections
-// for the proposal's document.
+// BroadcastProposalCreated sends a proposal invalidate event to all project doc WS connections.
 func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, proposal *collab.Proposal) error {
+	if proposal == nil {
+		return fmt.Errorf("proposal is required for proposal broadcast")
+	}
+
 	documentUUID, err := parseUUID(documentID)
 	if err != nil {
 		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
 	}
 	canonicalDocumentID := documentUUID.String()
-
-	event := buildProposalNewEvent(*proposal)
-	eventBytes, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
 
 	projectID, err := b.resolveProjectID(context.Background(), canonicalDocumentID)
 	if err != nil {
 		return err
 	}
 
-	if b.projectBroadcaster != nil {
-		b.projectBroadcaster.BroadcastToProject(projectID, eventBytes)
+	if b.docNotifier != nil {
+		b.docNotifier.NotifyProposal(projectID, proposal.ID.String(), "created", canonicalDocumentID)
 	}
 	return nil
 }
 
-// BroadcastProposalAccepted sends a Yjs update frame to document websocket
-// connections. Phase 3 removes project-level statusChanged events.
+// BroadcastProposalAccepted sends an accepted proposal invalidate event and a Yjs update frame.
 func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, proposalID uuid.UUID, yjsUpdate []byte) error {
-	_ = proposalID
-
 	documentUUID, err := parseUUID(documentID)
 	if err != nil {
 		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
 	}
 	canonicalDocumentID := documentUUID.String()
+
+	projectID, err := b.resolveProjectID(context.Background(), canonicalDocumentID)
+	if err != nil {
+		return err
+	}
+	if b.docNotifier != nil {
+		b.docNotifier.NotifyProposal(projectID, proposalID.String(), "accepted", canonicalDocumentID)
+	}
 
 	if len(yjsUpdate) > 0 && b.docBroadcaster != nil {
 		encodedUpdate, err := encodeSyncUpdatePayload(yjsUpdate)
