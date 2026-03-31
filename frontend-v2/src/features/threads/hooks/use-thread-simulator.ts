@@ -23,8 +23,8 @@ type SimulatorPhase = "loading" | "history" | "streaming" | "complete"
 export type ThreadSimulator = TimelinePlayback & {
   /**
    * Storybook-only store mock. Conforms to ThreadStoreInterface shape but
-   * stubs multi-thread operations: loadThread ignores fromTurnId,
-   * switchSibling is a no-op, connectStream ignores turnId.
+   * stubs multi-thread operations: loadThread ignores fromTurnId and
+   * switchSibling is a no-op.
    * Do not use as a reference for real store behavior.
    */
   store: ThreadStoreInterface
@@ -201,7 +201,7 @@ function buildTurnMarkers(activeTimeline: TimelineEntry[]): number[] {
  * Storybook-only hook that simulates a single-thread conversation with
  * cursor-based playback. The returned store conforms to ThreadStoreInterface
  * shape but stubs multi-thread operations (loadThread, switchSibling,
- * connectStream). See ThreadSimulator.store JSDoc for details.
+ * pagination methods). See ThreadSimulator.store JSDoc for details.
  */
 export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulator {
   const maxCursor = config.activeTimeline.length + 1
@@ -230,10 +230,7 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
 
   const {
     cursor,
-    isPlaying,
     setCursor,
-    play,
-    pause,
   } = playback
 
   const state = useMemo(
@@ -277,35 +274,17 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
     void targetTurnId
   }, [])
 
-  /**
-   * Storybook stub: ignores turnId since the simulator has a single active
-   * turn. Real store subscribes to SSE for the specified turn.
-   */
-  const connectStream = useCallback((nextThreadId: string, turnId: string) => {
-    void turnId
-    setActiveThreadId(nextThreadId)
-    if (!isPlaying && cursor < maxCursor) {
-      play()
-    }
-  }, [cursor, isPlaying, maxCursor, play])
-
-  const disconnectStream = useCallback(() => {
-    pause()
-  }, [pause])
-
   const store = useMemo<ThreadStoreInterface>(
     () => ({
       loadThread,
       paginateBefore: async () => {},
       paginateAfter: async () => {},
       switchSibling,
-      connectStream,
-      disconnectStream,
       get state() {
         return stateRef.current
       },
     }),
-    [connectStream, disconnectStream, loadThread, switchSibling],
+    [loadThread, switchSibling],
   )
 
   const phase = resolvePhase(cursor, maxCursor, state.isStreaming)

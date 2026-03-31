@@ -107,7 +107,7 @@ func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID strin
 		stream.Cancel()
 	} else {
 		// Soft cancel - provider continues for accurate token metadata
-		// Executor will persist partial text blocks and disconnect SSE clients.
+		// Executor will persist partial text blocks and disconnect stream subscribers.
 		s.logger.Debug("soft cancel (provider continues for metadata)",
 			"turn_id", turnID,
 			"model", turn.Model,
@@ -151,8 +151,8 @@ func (s *Service) cascadeCancelChildren(parentThreadID string) {
 		}
 
 		// Find the child's active executor via its thread ID.
-		childExecutor := s.executorRegistry.GetByThread(child.ID)
-		if childExecutor == nil {
+		childHandle, ok := s.executorRegistry.GetByThread(child.ID)
+		if !ok {
 			// No active executor — child may have just finished or not yet started.
 			continue
 		}
@@ -161,7 +161,7 @@ func (s *Service) cascadeCancelChildren(parentThreadID string) {
 			"parent_thread_id", parentThreadID,
 			"child_thread_id", child.ID,
 		)
-		childExecutor.RequestHardCancel()
+		childHandle.RequestHardCancel()
 
 		// Update child spawn_status to cancelled in the DB (best-effort).
 		if updateErr := s.threadRepo.UpdateSpawnStatus(ctx, child.ID, domainllm.SpawnStatusCancelled, nil); updateErr != nil {
@@ -171,11 +171,6 @@ func (s *Service) cascadeCancelChildren(parentThreadID string) {
 			)
 		}
 	}
-}
-
-// AuthorizeTurnStream verifies the caller can connect to a turn stream.
-func (s *Service) AuthorizeTurnStream(ctx context.Context, userID string, turnID string) error {
-	return s.authorizer.CanAccessTurn(ctx, userID, turnID)
 }
 
 // getProviderFromModel determines the provider from a model name.

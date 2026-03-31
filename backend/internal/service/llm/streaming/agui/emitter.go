@@ -10,10 +10,10 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 )
 
-// Emitter serializes AG-UI events to SSE format and sends them via mstream.
-// It provides a bridge between the library's AG-UI events and the backend's SSE layer.
+// Emitter serializes AG-UI events and sends them via mstream.
+// It provides a bridge between the library's AG-UI events and backend stream transport.
 //
-// AG-UI Event Format (SSE):
+// AG-UI Event Format:
 //
 //	event: TEXT_MESSAGE_CONTENT
 //	data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"msg_xxx","delta":"Hello"}
@@ -37,15 +37,13 @@ func NewEmitter(send func(mstream.Event), idFactory *IDFactory, logger *slog.Log
 	}
 }
 
-// EmitAGUIEvent serializes an AG-UI event and sends it via SSE.
-// The event type becomes the SSE "event:" field (e.g., "TEXT_MESSAGE_CONTENT").
-// The full event JSON becomes the SSE "data:" field.
+// EmitAGUIEvent serializes an AG-UI event and sends it via mstream.
 func (e *Emitter) EmitAGUIEvent(evt events.Event) error {
 	if evt == nil {
 		return fmt.Errorf("cannot emit nil AG-UI event")
 	}
 
-	// Get event type for SSE event field
+	// Get event type for event field
 	eventType := string(evt.Type())
 
 	// Serialize full event to JSON
@@ -65,7 +63,7 @@ func (e *Emitter) EmitAGUIEvent(evt events.Event) error {
 	return nil
 }
 
-// emitMeridianEvent serializes a Meridian-extended event and sends it via SSE.
+// emitMeridianEvent serializes a Meridian-extended event and sends it via mstream.
 // This is similar to EmitAGUIEvent but works with our custom event structs
 // that don't implement the events.Event interface.
 func (e *Emitter) emitMeridianEvent(eventType string, evt any) error {
@@ -227,22 +225,4 @@ func (e *Emitter) EmitToolCallResult(messageID, toolCallID, contentJSON string) 
 // IDFactory returns the underlying IDFactory for ID generation.
 func (e *Emitter) IDFactory() *IDFactory {
 	return e.idFactory
-}
-
-// EmitStreamSwitch sends a STREAM_SWITCH event when an interjection triggers a new stream.
-// Frontend should merge the turns, update streaming state, and reconnect to the new stream.
-func (e *Emitter) EmitStreamSwitch(
-	prevAssistantTurnID string,
-	reason StreamSwitchReason,
-	userTurn any,
-	assistantTurn any,
-) {
-	evt := NewMeridianStreamSwitchEvent(prevAssistantTurnID, reason, userTurn, assistantTurn)
-	if err := e.emitMeridianEvent(MeridianEventTypeStreamSwitch, evt); err != nil {
-		e.logger.Warn("failed to emit STREAM_SWITCH",
-			"prev_turn_id", prevAssistantTurnID,
-			"reason", reason,
-			"error", err,
-		)
-	}
 }

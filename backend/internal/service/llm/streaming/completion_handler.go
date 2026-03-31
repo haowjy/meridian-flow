@@ -7,7 +7,6 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/service/llm/streaming/agui"
 )
 
 // handleCompletion handles successful stream completion
@@ -160,16 +159,6 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 					}
 				}
 
-				// Emit STREAM_SWITCH event so frontend can reconnect to new stream
-				if se.aguiEmitter != nil {
-					se.aguiEmitter.EmitStreamSwitch(
-						se.turnID,
-						agui.StreamSwitchReasonNoToolsCompletion,
-						result.UserTurn,
-						result.AssistantTurn,
-					)
-				}
-
 				// End current stream cleanly - frontend will connect to new stream
 				se.logger.Info("stream switch completed, ending current stream",
 					"prev_turn_id", se.turnID,
@@ -232,7 +221,7 @@ func (se *StreamExecutor) completeTurn(
 		"total_tool_iterations", se.toolIteration,
 	)
 
-	// Check context budget and emit context_warning SSE event if threshold crossed.
+	// Check context budget and emit context_warning event if threshold crossed.
 	// Must run BEFORE RUN_FINISHED so the frontend receives the warning while the
 	// connection is still open. The call is synchronous but fast (~1 ms in-memory).
 	budget := se.checkBudgetAndAct(ctx, send)

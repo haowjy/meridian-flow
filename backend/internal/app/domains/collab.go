@@ -96,7 +96,6 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 
 	docNotifier := handler.NewDocNotifier(docWSServer)
 
-	projectConnectionRegistry := handler.NewInMemoryProjectConnectionRegistry(infra.Logger)
 	collabDocumentHandler := handler.NewCollabDocumentHandler(
 		collabSessionManager,
 		infra.JWTVerifier,
@@ -138,7 +137,6 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		deps.Authorizer,
 		infra.Logger,
 		cfg,
-		projectConnectionRegistry,
 		collabDocumentHandler,
 	)
 	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
@@ -170,7 +168,6 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 
 // RegisterRoutes registers collab routes.
 func (m *CollabModule) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /ws/projects/{projectId}", m.Handler.ConnectProject)
 	if m.DocWSServer != nil {
 		mux.HandleFunc("GET /ws/projects/{projectId}/docs", m.DocWSServer.Serve)
 	}

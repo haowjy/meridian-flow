@@ -9,7 +9,7 @@ import (
 	authdomain "meridian/internal/domain/auth"
 )
 
-func TestServiceMovedTurnAuthorizationIntoServiceMethods(t *testing.T) {
+func TestServiceMovedTurnAuthorizationIntoStreamingMethods(t *testing.T) {
 	svc := &Service{
 		authorizer: &testStreamingAuthorizer{
 			err: domain.NewForbiddenError("access denied"),
@@ -18,10 +18,6 @@ func TestServiceMovedTurnAuthorizationIntoServiceMethods(t *testing.T) {
 
 	if err := svc.InterruptTurn(context.Background(), "user-123", "turn-123"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("InterruptTurn expected forbidden error, got %v", err)
-	}
-
-	if err := svc.AuthorizeTurnStream(context.Background(), "user-123", "turn-123"); !errors.Is(err, domain.ErrForbidden) {
-		t.Fatalf("AuthorizeTurnStream expected forbidden error, got %v", err)
 	}
 
 	if _, err := svc.UpsertInterjection(context.Background(), "user-123", "turn-123", "hi", "append"); !errors.Is(err, domain.ErrForbidden) {

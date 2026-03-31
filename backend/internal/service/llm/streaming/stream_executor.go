@@ -728,7 +728,7 @@ func (se *StreamExecutor) emitTerminalEventForTermination(
 		se.aguiEmitter.EmitCreditsExhausted(requestIndex, phase)
 		se.aguiEmitter.EmitRunFinished(runStopReasonCreditsExhausted, 0, 0)
 	case ReasonStreamSwitch:
-		// STREAM_SWITCH needs turn payloads/URL from the caller; emitted before Terminate.
+		// Stream switch handoff metadata is emitted before Terminate.
 	}
 }
 

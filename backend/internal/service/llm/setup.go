@@ -77,7 +77,7 @@ type LLMServicesDeps struct {
 	SettlementMode         billing.CreditSettlementMode
 	JobQueue               jobs.JobQueue
 	MutationStrategy       tools.DocumentMutationStrategy
-	ProjectBroadcaster     wsutil.Broadcaster
+	NotifyBroadcaster      wsutil.Broadcaster
 	Logger                 *slog.Logger
 	// WorkItemSvc is optional. When set, threads created without an explicit
 	// work_item_id automatically get an ephemeral work item provisioned.
@@ -230,7 +230,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			JobQueue:               deps.JobQueue,
 			TokenMonitor:           tokenMonitor,
 		},
-		Broadcaster: deps.ProjectBroadcaster,
+		Broadcaster: deps.NotifyBroadcaster,
 		Config:      deps.Config,
 		Logger:      deps.Logger,
 	})
@@ -264,7 +264,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			Config:           deps.Config,
 			Logger:           deps.Logger,
 			ExecutorRegistry: executorRegistry, // shared with SpawnService for cascade cancel
-			Broadcaster:      deps.ProjectBroadcaster,
+			Broadcaster:      deps.NotifyBroadcaster,
 		},
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		deps.Config,
 		bootstrapper,
 		executorRegistry,
-		deps.ProjectBroadcaster,
+		deps.NotifyBroadcaster,
 		deps.Logger,
 	)
 

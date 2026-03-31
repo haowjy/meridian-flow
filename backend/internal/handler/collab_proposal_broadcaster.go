@@ -19,7 +19,7 @@ type ProposalBroadcasterImpl struct {
 	documentResolver collab.DocumentResolver
 }
 
-// NewProposalBroadcasterImpl creates a broadcaster backed by doc/project WS handlers.
+// NewProposalBroadcasterImpl creates a broadcaster backed by doc WS notifications and document WS fanout.
 func NewProposalBroadcasterImpl(
 	docNotifier DocNotifier,
 	docBroadcaster DocumentBroadcaster,

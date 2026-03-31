@@ -12,10 +12,10 @@ const (
 	// This closes the pre-start window where an executor is registered but not yet running.
 	StateNotStarted ExecutorState = iota
 
-	// StateStreaming is the active state where blocks are persisted and SSE events are sent.
+	// StateStreaming is the active state where blocks are persisted and stream events are sent.
 	StateStreaming
 
-	// StateDrainMetadata is entered after soft cancel. SSE is stopped, but provider stream
+	// StateDrainMetadata is entered after soft cancel. Event emission is stopped, but provider stream
 	// continues in background to capture final token metadata.
 	StateDrainMetadata
 
@@ -74,8 +74,8 @@ func (s ExecutorState) AllowsPersistence() bool {
 	return s == StateStreaming
 }
 
-// AllowsSSE returns true if SSE events should be sent in this state.
-func (s ExecutorState) AllowsSSE() bool {
+// AllowsStreamEvents returns true if stream events should be sent in this state.
+func (s ExecutorState) AllowsStreamEvents() bool {
 	return s == StateStreaming
 }
 
