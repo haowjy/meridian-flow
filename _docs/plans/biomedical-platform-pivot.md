@@ -192,16 +192,26 @@ Enhanced editor for scientific papers.
 | `insert_citation` | Add a citation to the current document | Backend (doc edit) |
 | `insert_figure` | Embed a visualization output as a figure | Backend (doc edit) |
 
-#### uCT/Imaging-Specific Tools (via skills + Python)
+#### uCT/Imaging Analysis (via Claude-written Python, not fixed tools)
 
-| Tool Name | Description | Implementation |
-|---|---|---|
-| `segment_bone` | Watershed/threshold-based bone segmentation from DICOM | Python (SimpleITK) |
-| `auto_align_orientation` | PCA-based 3-axis orientation correction using bone voxel principal axes | Python (numpy PCA, no GPU) |
-| `measure_geometric_index` | Calculate femoral W/L ratio, tibial IIOC H/W ratio from segmented model | Python (numpy) |
-| `compute_roc` | ROC analysis with AUC, sensitivity/specificity, cutoff values | Python (sklearn) |
-| `bland_altman_plot` | Inter-rater reproducibility analysis with ICC | Python (statsmodels) |
-| `render_3d_model` | Generate interactive 3D visualization of segmented bones | Frontend (R3F/VTK.js) |
+Instead of rigid tool wrappers, Claude writes analysis code directly via `execute_python`, adapting per specimen. This is more flexible — Claude adjusts thresholds, seed locations, and post-processing based on what it observes in each dataset.
+
+**Segmentation approach**: Threshold + watershed (matching the paper's Amira method)
+- Threshold at >2500 HU to define bone mask
+- 3D median filter for denoising
+- Region-growing seed markers (Magic Wand equivalent) within 3000-5000 HU
+- Marker-based watershed inside bone mask
+- Label separation: femur, tibia, patella, menisci as individual materials
+
+**Why code-writing over fixed tools**:
+- Claude can inspect intermediate results and adjust (e.g., "threshold too aggressive, dropping to 2200 HU for this specimen")
+- Different specimens may need different seed locations
+- Paper's own method was semi-automated (manual seed voxel selection + automated region growing)
+- Keeps the platform general — same `execute_python` tool works for any analysis domain
+
+**Statistical analysis** (ANOVA, ROC, Bland-Altman, ICC) is also done via code-writing — Claude writes scipy/sklearn/statsmodels code, not through special-purpose tools.
+
+**Only `render_3d_model` needs a dedicated frontend tool** — it takes mesh data from Python and renders it in the R3F/VTK.js canvas.
 
 ### New API Endpoints
 
