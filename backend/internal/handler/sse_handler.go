@@ -162,7 +162,15 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get catchup events (for first connection or reconnection)
-	catchupEvents := stream.GetCatchupEvents(lastEventID)
+	catchupEvents, err := stream.GetCatchupEventsWithError(lastEventID)
+	if err != nil {
+		h.logger.Error("failed to get catchup events",
+			"turn_id", turnID,
+			"client_id", clientID,
+			"error", err,
+		)
+		return
+	}
 	if len(catchupEvents) > 0 {
 		// Send catchup events
 		for _, event := range catchupEvents {
