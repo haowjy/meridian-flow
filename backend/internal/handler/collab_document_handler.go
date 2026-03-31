@@ -170,25 +170,13 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 		return
 	}
 
-	claims, err := h.authenticator.jwtVerifier.VerifyToken(token)
+	authResult, err := authenticateToken(token, h.authenticator.jwtVerifier, h.authenticator.isIdentityBlocked)
 	if err != nil {
-		h.sendErrorAndCloseDetached(conn, "AUTH_EXPIRED", domain.ErrAuthExpired.Error())
+		code, message := authErrorToCodeAndMessage(err)
+		h.sendErrorAndCloseDetached(conn, code, message)
 		return
 	}
-
-	userID = strings.TrimSpace(claims.GetUserID())
-	if userID == "" {
-		h.sendErrorAndCloseDetached(conn, "AUTH_FAILED", domain.ErrAuthFailed.Error())
-		return
-	}
-	if h.authenticator.isIdentityBlocked != nil && h.authenticator.isIdentityBlocked(userID, claims.Email) {
-		h.sendErrorAndCloseDetached(conn, "AUTH_FAILED", domain.ErrAuthFailed.Error())
-		return
-	}
-	if _, err := parseUUID(userID); err != nil {
-		h.sendErrorAndCloseDetached(conn, "AUTH_FAILED", "authenticated user id must be a UUID")
-		return
-	}
+	userID = authResult.UserID
 
 	allowed, err := h.authenticator.documentResolver.VerifyOwnership(ctx, documentID, userID)
 	if err != nil {
@@ -205,10 +193,7 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 		return
 	}
 
-	jwtExpiry := time.Time{}
-	if claims.ExpiresAt != nil {
-		jwtExpiry = *claims.ExpiresAt
-	}
+	jwtExpiry := authResult.JWTExpiry
 
 	if !h.tryIncrementConnectionCount(userID) {
 		h.sendErrorAndCloseDetached(

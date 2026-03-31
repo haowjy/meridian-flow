@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"golang.org/x/net/websocket"
-	"meridian/internal/domain"
 	"meridian/internal/httputil"
 )
 
@@ -70,18 +69,7 @@ func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Co
 	// Auth bootstrap via authenticator.
 	authResult, authErr := h.authenticator.bootstrapProjectAuth(context.Background(), conn, projectID)
 	if authErr != nil {
-		code := "AUTH_FAILED"
-		message := authErr.Error()
-		switch {
-		case errors.Is(authErr, domain.ErrAuthExpired):
-			code = "AUTH_EXPIRED"
-		case errors.Is(authErr, domain.ErrForbidden):
-			code = "FORBIDDEN"
-			message = "access denied"
-		case !errors.Is(authErr, domain.ErrAuthFailed):
-			code = "INTERNAL_ERROR"
-			message = "failed to verify project access"
-		}
+		code, message := authErrorToCodeAndMessage(authErr)
 		h.sendError(wsConn, code, message)
 		return
 	}
