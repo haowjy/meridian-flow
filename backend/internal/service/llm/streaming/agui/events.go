@@ -82,14 +82,8 @@ func NewMeridianRunErrorEvent(threadID, runID, turnID, message string, isCancell
 }
 
 // ============================================================================
-// Meridian Interjection Events
-//
-// These custom events support the interjection feature where users can
-// submit messages while an assistant turn is streaming.
+// Meridian Streaming Extensions
 // ============================================================================
-
-// MeridianEventTypeStreamSwitch is emitted when an interjection triggers a stream switch.
-const MeridianEventTypeStreamSwitch = "STREAM_SWITCH"
 
 // MeridianEventTypeCreditsExhausted is emitted when step-level admission denies a provider call.
 const MeridianEventTypeCreditsExhausted = "CREDITS_EXHAUSTED"
@@ -121,44 +115,5 @@ func NewMeridianCreditsExhaustedEvent(
 		RequestIndex: requestIndex,
 		Phase:        phase,
 		Message:      "insufficient credits",
-	}
-}
-
-// StreamSwitchReason describes why a stream switch occurred.
-type StreamSwitchReason string
-
-const (
-	// StreamSwitchReasonToolBoundary indicates switch after tool execution.
-	StreamSwitchReasonToolBoundary StreamSwitchReason = "tool_boundary"
-	// StreamSwitchReasonNoToolsCompletion indicates switch at stream end without tools.
-	StreamSwitchReasonNoToolsCompletion StreamSwitchReason = "no_tools_completion"
-)
-
-// MeridianStreamSwitchEvent is sent when an interjection is injected and streaming
-// switches to a new assistant turn. Frontend should:
-// 1. Merge userTurn and assistantTurn into store
-// 2. Update streamingTurnId
-// 3. Abort current SSE connection to trigger reconnect
-type MeridianStreamSwitchEvent struct {
-	Type                string             `json:"type"`
-	PrevAssistantTurnID string             `json:"prevAssistantTurnId"` // Turn that was streaming
-	Reason              StreamSwitchReason `json:"reason"`              // Why switch happened
-	UserTurn            any                `json:"userTurn"`            // Persisted user turn (interjection)
-	AssistantTurn       any                `json:"assistantTurn"`       // New streaming assistant turn
-}
-
-// NewMeridianStreamSwitchEvent creates a STREAM_SWITCH event.
-func NewMeridianStreamSwitchEvent(
-	prevAssistantTurnID string,
-	reason StreamSwitchReason,
-	userTurn any,
-	assistantTurn any,
-) *MeridianStreamSwitchEvent {
-	return &MeridianStreamSwitchEvent{
-		Type:                MeridianEventTypeStreamSwitch,
-		PrevAssistantTurnID: prevAssistantTurnID,
-		Reason:              reason,
-		UserTurn:            userTurn,
-		AssistantTurn:       assistantTurn,
 	}
 }

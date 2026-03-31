@@ -35,7 +35,6 @@ type TurnStreamHandlerDeps struct {
 	TurnStreamStarter  TurnStreamStarter
 	TurnReader         domainllm.TurnReader
 	Authorizer         authdomain.ResourceAuthorizer
-	ProjectBroadcaster wsutil.Broadcaster
 	Logger             *slog.Logger
 }
 
@@ -47,7 +46,6 @@ type TurnStreamHandler struct {
 	turnStreamStarter  TurnStreamStarter
 	turnReader         domainllm.TurnReader
 	authorizer         authdomain.ResourceAuthorizer
-	projectBroadcaster wsutil.Broadcaster
 	logger             *slog.Logger
 }
 
@@ -80,7 +78,6 @@ func NewTurnStreamHandler(deps TurnStreamHandlerDeps) *TurnStreamHandler {
 		turnStreamStarter:  deps.TurnStreamStarter,
 		turnReader:         deps.TurnReader,
 		authorizer:         deps.Authorizer,
-		projectBroadcaster: deps.ProjectBroadcaster,
 		logger:             logger,
 	}
 }

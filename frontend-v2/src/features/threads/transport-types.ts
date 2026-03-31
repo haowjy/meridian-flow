@@ -2,7 +2,7 @@
 // Transport types — store interface + raw backend response shapes
 //
 // Defines the contract between the thread store and consumers.
-// Two data paths: REST for paginated history, SSE for active streaming.
+// Two data paths: REST for paginated history, plus streaming state.
 //
 // BackendTurn / BackendTurnBlock are the raw API JSON shapes before
 // mapping through turn-mapper.ts into the ThreadTurn view model.
@@ -72,13 +72,13 @@ export type ThreadStoreState = {
   turns: ThreadTurn[]
   /** Lookup by turn ID for O(1) access */
   turnById: Record<string, ThreadTurn>
-  /** Currently streaming turn (SSE connected) */
+  /** Currently streaming turn */
   activeTurnId: string | null
   /** Can paginate backwards (older turns exist) */
   hasMoreBefore: boolean
   /** Can paginate forwards (newer turns exist) */
   hasMoreAfter: boolean
-  /** SSE stream is connected */
+  /** Streaming is active */
   isStreaming: boolean
 }
 
@@ -87,11 +87,11 @@ export type ThreadStoreState = {
 /**
  * Store contract for thread data.
  *
- * Two data paths matching the real backend:
- * - REST: paginated history (loadThread, paginateBefore/After, switchSibling)
- * - SSE: active streaming turn (connectStream, disconnectStream)
+ * Core data operations:
+ * - paginated history (loadThread, paginateBefore/After, switchSibling)
+ * - streaming state exposure via ThreadStoreState
  *
- * Implementations: production (real fetch + EventSource), Storybook (in-memory mock).
+ * Implementations: production (real data), Storybook (in-memory mock).
  */
 export type ThreadStoreInterface = {
   // REST — paginated turn history
@@ -100,10 +100,6 @@ export type ThreadStoreInterface = {
   paginateAfter(): Promise<void>
   /** Navigate to a different sibling turn. The thread reloads the path from this turn forward. */
   switchSibling(targetTurnId: string): Promise<void>
-
-  // SSE — active streaming turn
-  connectStream(threadId: string, turnId: string): void
-  disconnectStream(): void
 
   // State
   readonly state: ThreadStoreState

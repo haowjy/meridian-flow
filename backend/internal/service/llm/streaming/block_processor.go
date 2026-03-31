@@ -20,7 +20,7 @@ func canPersistPartialBlock(blockType string) bool {
 }
 
 // processAGUIEvent handles AG-UI protocol events from the library.
-// These events are forwarded directly to SSE using the AG-UI emitter.
+// These events are forwarded directly to subscribers using the AG-UI emitter.
 // The function also maintains internal state (text accumulator) for partial block persistence.
 //
 // AG-UI events include:
@@ -32,8 +32,8 @@ func canPersistPartialBlock(blockType string) bool {
 // streamStartSequence is used for block index tracking (though AG-UI events are self-contained)
 func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.Event), aguiEvent any, currentBlockIndex *int, streamStartSequence int) error {
 	// After soft cancel (DrainMetadata state), we keep draining the provider stream for metadata,
-	// but we stop emitting SSE events
-	if !se.state.AllowsSSE() {
+	// but we stop emitting events
+	if !se.state.AllowsStreamEvents() {
 		return nil
 	}
 
@@ -47,7 +47,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 		return nil
 	}
 
-	// Forward the AG-UI event via the emitter (serializes to SSE format)
+	// Forward the AG-UI event via the emitter.
 	if err := se.aguiEmitter.EmitAGUIEvent(evt); err != nil {
 		se.logger.Error("failed to emit AG-UI event",
 			"turn_id", se.turnID,
@@ -233,7 +233,7 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		return fmt.Errorf("failed to persist block %d: %w", block.Sequence, err)
 	}
 
-	// If we didn't persist (due to interruption), clean up and return early without SSE events.
+	// If we didn't persist (due to interruption), clean up and return early without stream events.
 	if !persisted {
 		if se.jsonAccumulator != nil {
 			delete(se.jsonAccumulator, providerBlockIndex)
@@ -261,7 +261,7 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	}
 
 	// Clean up accumulators for this completed block
-	// NOTE: Legacy SSE block events have been removed - AG-UI handles streaming display
+	// NOTE: Legacy block events have been removed - AG-UI handles streaming display
 	if se.jsonAccumulator != nil {
 		delete(se.jsonAccumulator, providerBlockIndex)
 	}

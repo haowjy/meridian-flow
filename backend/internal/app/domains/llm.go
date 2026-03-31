@@ -114,7 +114,7 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		SettlementMode:         crossDeps.SettlementMode,
 		JobQueue:               crossDeps.JobQueue,
 		MutationStrategy:       crossDeps.MutationStrategy,
-		ProjectBroadcaster:     threadWSServer,
+		NotifyBroadcaster:      threadWSServer,
 		Logger:                 infra.Logger,
 		WorkItemSvc:            crossDeps.WorkItemSvc,
 		PersonaCatalog:         crossDeps.PersonaCatalog,
@@ -140,7 +140,6 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 		TurnStreamStarter:  llmServices.Runtime,
 		TurnReader:         crossDeps.TurnRepo,
 		Authorizer:         crossDeps.Authorizer,
-		ProjectBroadcaster: threadWSServer,
 		Logger:             infra.Logger,
 	})
 	threadWSServer.RegisterHandler("turn", threadStreamHandler)
@@ -193,7 +192,6 @@ func (m *LLMModule) RegisterRoutes(mux *http.ServeMux, admissionChecker billing.
 	mux.HandleFunc("GET /api/turns/{id}/path", m.Handler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", m.Handler.GetTurnSiblings)
 
-	mux.HandleFunc("GET /api/turns/{id}/stream", m.Handler.StreamTurn)
 	mux.HandleFunc("GET /api/turns/{id}/blocks", m.Handler.GetTurnBlocks)
 	mux.HandleFunc("GET /api/turns/{id}/token-usage", m.Handler.GetTurnTokenUsage)
 	mux.HandleFunc("POST /api/turns/{id}/interrupt", m.Handler.InterruptTurn)

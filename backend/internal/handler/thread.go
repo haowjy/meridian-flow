@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	domainllm "meridian/internal/domain/llm"
-	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
 	"meridian/internal/optional"
 )
@@ -111,7 +109,6 @@ type createTurnHTTPResponse struct {
 	Thread        *domainllm.Thread `json:"thread,omitempty"`
 	UserTurn      *domainllm.Turn   `json:"user_turn"`
 	AssistantTurn *domainllm.Turn   `json:"assistant_turn"`
-	StreamURL     string            `json:"stream_url"`
 }
 
 type upsertInterjectionHTTPResponse struct {
@@ -123,7 +120,6 @@ type upsertInterjectionHTTPResponse struct {
 
 	UserTurn         *domainllm.Turn `json:"userTurn,omitempty"`
 	NewAssistantTurn *domainllm.Turn `json:"assistantTurn,omitempty"`
-	StreamURL        string          `json:"streamUrl,omitempty"`
 }
 
 // GetThread retrieves a single thread by ID
@@ -476,27 +472,6 @@ func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StreamTurn streams turn deltas via Server-Sent Events (SSE)
-// GET /api/turns/{id}/stream
-func (h *ThreadHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
-	turnID, ok := PathParam(w, r, "id", "Turn ID")
-	if !ok {
-		return
-	}
-
-	userID := httputil.GetUserID(r)
-
-	if err := h.streamingService.AuthorizeTurnStream(r.Context(), userID, turnID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	// Note: SSE config is created here with defaults
-	// TODO: Consider injecting SSE config at ThreadHandler creation time for better testability
-	sseConfig := sse.DefaultConfig()
-	NewSSEHandler(h.registry, h.logger, sseConfig).StreamTurn(w, r)
-}
-
 // UpsertInterjectionRequest is the request body for POST /api/turns/{id}/interjection
 type UpsertInterjectionRequest struct {
 	Mode    string `json:"mode"`    // "append" or "replace"
@@ -607,27 +582,16 @@ func buildCreateTurnHTTPResponse(response *domainllm.CreateTurnResponse) *create
 		return nil
 	}
 
-	streamURL := ""
-	if response.AssistantTurn != nil {
-		streamURL = fmt.Sprintf("/api/turns/%s/stream", response.AssistantTurn.ID)
-	}
-
 	return &createTurnHTTPResponse{
 		Thread:        response.Thread,
 		UserTurn:      response.UserTurn,
 		AssistantTurn: response.AssistantTurn,
-		StreamURL:     streamURL,
 	}
 }
 
 func buildUpsertInterjectionHTTPResponse(response *domainllm.UpsertInterjectionResponse) *upsertInterjectionHTTPResponse {
 	if response == nil {
 		return nil
-	}
-
-	streamURL := ""
-	if response.Mode == "created" && response.NewAssistantTurn != nil {
-		streamURL = fmt.Sprintf("/api/turns/%s/stream", response.NewAssistantTurn.ID)
 	}
 
 	return &upsertInterjectionHTTPResponse{
@@ -637,6 +601,5 @@ func buildUpsertInterjectionHTTPResponse(response *domainllm.UpsertInterjectionR
 		Length:           response.Length,
 		UserTurn:         response.UserTurn,
 		NewAssistantTurn: response.NewAssistantTurn,
-		StreamURL:        streamURL,
 	}
 }

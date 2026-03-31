@@ -36,9 +36,6 @@ type StreamingService interface {
 	// Returns nil if turn is not currently streaming.
 	InterruptTurn(ctx context.Context, userID string, turnID string) error
 
-	// AuthorizeTurnStream verifies the caller can attach to a turn's SSE stream.
-	AuthorizeTurnStream(ctx context.Context, userID string, turnID string) error
-
 	// UpsertInterjection adds or updates an interjection for a streaming assistant turn.
 	// If the turn is actively streaming, the interjection is buffered and will be
 	// injected at the next safe boundary (after tool execution or at completion).

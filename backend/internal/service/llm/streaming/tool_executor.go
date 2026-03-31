@@ -10,7 +10,6 @@ import (
 
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/pkg/sliceutil"
-	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tools"
 )
 
@@ -168,7 +167,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 		// Emit TOOL_CALL_RESULT immediately so the frontend can mark tools as finished
 		// without waiting for TURN_COMPLETE refresh. Best-effort: failure shouldn't stop streaming.
-		if se.aguiEmitter != nil && se.getState().AllowsSSE() {
+		if se.aguiEmitter != nil && se.getState().AllowsStreamEvents() {
 			messageID := se.toolCallParentMessageIDs[toolResult.ID]
 			if messageID == "" {
 				messageID = se.toolCallParentMessageIDs[strings.TrimSpace(toolResult.ID)]
@@ -266,16 +265,6 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 							"error", routeErr,
 						)
 					}
-				}
-
-				// Emit STREAM_SWITCH event so frontend can reconnect to new stream
-				if se.aguiEmitter != nil {
-					se.aguiEmitter.EmitStreamSwitch(
-						se.turnID,
-						agui.StreamSwitchReasonToolBoundary,
-						result.UserTurn,
-						result.AssistantTurn,
-					)
 				}
 
 				// End current stream cleanly - frontend will connect to new stream

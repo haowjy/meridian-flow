@@ -16,6 +16,12 @@ import (
 
 // --- shared test doubles used by collab_project_test.go and collab_proposal_test.go ---
 
+const (
+	testProjectID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	testUserID    = "11111111-1111-1111-1111-111111111111"
+	testDocID1    = "00000000-0000-0000-0000-000000000001"
+)
+
 type testJWTVerifier struct {
 	tokens map[string]*authdomain.AuthClaims
 }
