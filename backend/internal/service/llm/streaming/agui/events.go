@@ -137,7 +137,7 @@ const (
 // MeridianStreamSwitchEvent is sent when an interjection is injected and streaming
 // switches to a new assistant turn. Frontend should:
 // 1. Merge userTurn and assistantTurn into store
-// 2. Update streamingTurnId/streamingUrl
+// 2. Update streamingTurnId
 // 3. Abort current SSE connection to trigger reconnect
 type MeridianStreamSwitchEvent struct {
 	Type                string             `json:"type"`
@@ -145,7 +145,6 @@ type MeridianStreamSwitchEvent struct {
 	Reason              StreamSwitchReason `json:"reason"`              // Why switch happened
 	UserTurn            any                `json:"userTurn"`            // Persisted user turn (interjection)
 	AssistantTurn       any                `json:"assistantTurn"`       // New streaming assistant turn
-	StreamURL           string             `json:"streamUrl"`           // URL for new SSE stream
 }
 
 // NewMeridianStreamSwitchEvent creates a STREAM_SWITCH event.
@@ -154,7 +153,6 @@ func NewMeridianStreamSwitchEvent(
 	reason StreamSwitchReason,
 	userTurn any,
 	assistantTurn any,
-	streamURL string,
 ) *MeridianStreamSwitchEvent {
 	return &MeridianStreamSwitchEvent{
 		Type:                MeridianEventTypeStreamSwitch,
@@ -162,6 +160,5 @@ func NewMeridianStreamSwitchEvent(
 		Reason:              reason,
 		UserTurn:            userTurn,
 		AssistantTurn:       assistantTurn,
-		StreamURL:           streamURL,
 	}
 }

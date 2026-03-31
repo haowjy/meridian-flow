@@ -88,7 +88,6 @@ type CreateTurnResponse struct {
 	Thread        *Thread `json:"thread,omitempty"` // Populated when new thread was created (cold start)
 	UserTurn      *Turn   `json:"user_turn"`
 	AssistantTurn *Turn   `json:"assistant_turn"`
-	StreamURL     string  `json:"stream_url"` // Convenience URL for SSE streaming
 }
 
 // UpsertInterjectionResponse is the response for UpsertInterjection.
@@ -102,9 +101,8 @@ type UpsertInterjectionResponse struct {
 	Length          int    `json:"length,omitempty"`
 
 	// Fields for mode="created" (fallback: turn not streaming, created new turns)
-	UserTurn         *Turn  `json:"userTurn,omitempty"`
-	NewAssistantTurn *Turn  `json:"assistantTurn,omitempty"`
-	StreamURL        string `json:"streamUrl,omitempty"`
+	UserTurn         *Turn `json:"userTurn,omitempty"`
+	NewAssistantTurn *Turn `json:"assistantTurn,omitempty"`
 }
 
 // GetInterjectionResponse is the response for GetInterjection.

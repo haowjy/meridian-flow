@@ -191,8 +191,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		Logger:            deps.Logger,
 	})
 
-	interjectionRegistry := mstream.NewInterjectionRegistry()
-	interjectionRouter := streaming.NewV1InterjectionRouter(interjectionRegistry)
+	interjectionRouter := streaming.NewInterjectionForwarder()
 
 	// Build TokenMonitor for context budget tracking (autocollapse at 60%, warn at 90%).
 	// Non-fatal if estimator creation fails — monitoring is optional; turns proceed normally.
@@ -203,7 +202,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 			"error", estErr,
 		)
 	} else {
-		tokenMonitor = streaming.NewTokenMonitor(tokenEst, deps.CapabilityRegistry, deps.Logger)
+		tokenMonitor = streaming.NewTokenMonitor(tokenEst, deps.Logger)
 	}
 
 	streamRuntime := streaming.NewStreamRuntime(streaming.StreamRuntimeDeps{

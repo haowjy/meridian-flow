@@ -98,7 +98,6 @@ type SwitchStreamInput struct {
 type StreamSwitchResult struct {
 	UserTurn      *domainllm.Turn
 	AssistantTurn *domainllm.Turn
-	StreamURL     string
 }
 
 func NewStreamRuntime(deps StreamRuntimeDeps) *StreamRuntime {
@@ -151,31 +150,31 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 
 	r.interjectionRouter.Register(input.AssistantTurn.ID)
 
-	executor := NewStreamExecutor(
-		input.AssistantTurn.ID,
-		input.ThreadID,
-		input.UserID,
-		input.ProjectID,
-		input.Model,
-		input.Provider,
-		r.executorDeps.TurnWriter,
-		r.executorDeps.TurnReader,
-		r.executorDeps.TurnNavigator,
-		llmProvider,
-		input.ToolRegistry,
-		r.executorDeps.MessageBuilder,
-		r.logger,
-		r.executorDeps.CreditAdmissionChecker,
-		r.executorDeps.CreditSettler,
-		input.SettlementMode,
-		toolRoundLimit,
-		r.config.Server.Debug,
-		r.executorDeps.TokenFinalizer,
-		r.executorDeps.JobQueue,
-		r.config.LLM.SoftCancelTimeoutSeconds,
-		r.interjectionRouter,
-		r,
-	)
+	executor := NewStreamExecutor(StreamExecutorConfig{
+		TurnID:                   input.AssistantTurn.ID,
+		ThreadID:                 input.ThreadID,
+		UserID:                   input.UserID,
+		ProjectID:                input.ProjectID,
+		Model:                    input.Model,
+		ProviderName:             input.Provider,
+		TurnWriter:               r.executorDeps.TurnWriter,
+		TurnReader:               r.executorDeps.TurnReader,
+		TurnNavigator:            r.executorDeps.TurnNavigator,
+		Provider:                 llmProvider,
+		ToolRegistry:             input.ToolRegistry,
+		MessageBuilder:           r.executorDeps.MessageBuilder,
+		Logger:                   r.logger,
+		CreditAdmissionChecker:   r.executorDeps.CreditAdmissionChecker,
+		CreditSettler:            r.executorDeps.CreditSettler,
+		SettlementMode:           input.SettlementMode,
+		MaxToolRounds:            toolRoundLimit,
+		DebugMode:                r.config.Server.Debug,
+		TokenFinalizer:           r.executorDeps.TokenFinalizer,
+		JobQueue:                 r.executorDeps.JobQueue,
+		SoftCancelTimeoutSeconds: r.config.LLM.SoftCancelTimeoutSeconds,
+		InterjectionRouter:       r.interjectionRouter,
+		StreamRuntime:            r,
+	})
 
 	if r.executorDeps.TokenMonitor != nil {
 		executor.SetTokenMonitor(r.executorDeps.TokenMonitor)
@@ -217,12 +216,10 @@ func (r *StreamRuntime) Launch(ctx context.Context, input *LaunchInput, releaseS
 		input.Params,
 	)
 
-	streamURL := fmt.Sprintf("/api/turns/%s/stream", input.AssistantTurn.ID)
 	return &domainllm.CreateTurnResponse{
 		Thread:        input.Thread,
 		UserTurn:      input.UserTurn,
 		AssistantTurn: input.AssistantTurn,
-		StreamURL:     streamURL,
 	}, nil
 }
 
@@ -354,7 +351,6 @@ func (r *StreamRuntime) SwitchStream(ctx context.Context, input *SwitchStreamInp
 	return &StreamSwitchResult{
 		UserTurn:      resp.UserTurn,
 		AssistantTurn: resp.AssistantTurn,
-		StreamURL:     resp.StreamURL,
 	}, nil
 }
 

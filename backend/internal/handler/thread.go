@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -14,8 +15,8 @@ import (
 	"meridian/internal/domain"
 	domainllm "meridian/internal/domain/llm"
 	"meridian/internal/handler/sse"
-	"meridian/internal/optional"
 	"meridian/internal/httputil"
+	"meridian/internal/optional"
 )
 
 // ThreadHandler handles thread HTTP requests
@@ -105,6 +106,25 @@ func (h *ThreadHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 type threadDetailResponse struct {
 	*domainllm.Thread
 	ChildrenCount int `json:"children_count"`
+}
+
+type createTurnHTTPResponse struct {
+	Thread        *domainllm.Thread `json:"thread,omitempty"`
+	UserTurn      *domainllm.Turn   `json:"user_turn"`
+	AssistantTurn *domainllm.Turn   `json:"assistant_turn"`
+	StreamURL     string            `json:"stream_url"`
+}
+
+type upsertInterjectionHTTPResponse struct {
+	Mode string `json:"mode"`
+
+	AssistantTurnID string `json:"assistantTurnId,omitempty"`
+	Content         string `json:"content,omitempty"`
+	Length          int    `json:"length,omitempty"`
+
+	UserTurn         *domainllm.Turn `json:"userTurn,omitempty"`
+	NewAssistantTurn *domainllm.Turn `json:"assistantTurn,omitempty"`
+	StreamURL        string          `json:"streamUrl,omitempty"`
 }
 
 // GetThread retrieves a single thread by ID
@@ -236,7 +256,7 @@ func (h *ThreadHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusCreated, response)
+	httputil.RespondJSON(w, http.StatusCreated, buildCreateTurnHTTPResponse(response))
 }
 
 // CreateTurn creates a new turn (user message) - DEPRECATED
@@ -264,7 +284,7 @@ func (h *ThreadHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusCreated, response)
+	httputil.RespondJSON(w, http.StatusCreated, buildCreateTurnHTTPResponse(response))
 }
 
 // GetTurnPath retrieves the conversation path from a turn to root
@@ -537,10 +557,10 @@ func (h *ThreadHandler) UpsertInterjection(w http.ResponseWriter, r *http.Reques
 
 	// Return appropriate status based on mode
 	if response.Mode == "queued" {
-		httputil.RespondJSON(w, http.StatusAccepted, response)
+		httputil.RespondJSON(w, http.StatusAccepted, buildUpsertInterjectionHTTPResponse(response))
 	} else {
 		// mode == "created" (fallback path)
-		httputil.RespondJSON(w, http.StatusCreated, response)
+		httputil.RespondJSON(w, http.StatusCreated, buildUpsertInterjectionHTTPResponse(response))
 	}
 }
 
@@ -593,4 +613,43 @@ func (h *ThreadHandler) ClearInterjection(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func buildCreateTurnHTTPResponse(response *domainllm.CreateTurnResponse) *createTurnHTTPResponse {
+	if response == nil {
+		return nil
+	}
+
+	streamURL := ""
+	if response.AssistantTurn != nil {
+		streamURL = fmt.Sprintf("/api/turns/%s/stream", response.AssistantTurn.ID)
+	}
+
+	return &createTurnHTTPResponse{
+		Thread:        response.Thread,
+		UserTurn:      response.UserTurn,
+		AssistantTurn: response.AssistantTurn,
+		StreamURL:     streamURL,
+	}
+}
+
+func buildUpsertInterjectionHTTPResponse(response *domainllm.UpsertInterjectionResponse) *upsertInterjectionHTTPResponse {
+	if response == nil {
+		return nil
+	}
+
+	streamURL := ""
+	if response.Mode == "created" && response.NewAssistantTurn != nil {
+		streamURL = fmt.Sprintf("/api/turns/%s/stream", response.NewAssistantTurn.ID)
+	}
+
+	return &upsertInterjectionHTTPResponse{
+		Mode:             response.Mode,
+		AssistantTurnID:  response.AssistantTurnID,
+		Content:          response.Content,
+		Length:           response.Length,
+		UserTurn:         response.UserTurn,
+		NewAssistantTurn: response.NewAssistantTurn,
+		StreamURL:        streamURL,
+	}
 }
