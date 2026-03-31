@@ -5,13 +5,13 @@
 | Phase | Name | Status | Round | Assignee | Notes |
 |-------|------|--------|-------|----------|-------|
 | 1 | InterjectionRouter Interface | done | 1 | p715 | R4+R10 |
-| 2 | Service Layer Hardening | in_progress | 2 | coder | R6+R9+R7+Forwarder |
+| 2 | Service Layer Hardening | done | 2 | p719 | R6+R9+R7+Forwarder |
 | 3 | Auth Consolidation | done | 1 | p716 | R1+R3 |
 | 4 | mstream Library Fixes | done | 1 | p717 | C1,H1-H7 |
 | 5 | wsutil Framework | done | 1 | p718 | 3 files |
-| 6 | Doc WS Handler | in_progress | 2 | coder | handler+DocNotifier |
-| 7 | Thread WS Handler | not_started | 3 | — | largest phase |
-| 8 | Frontend WS Base + DocWsProvider | not_started | 3 | — | shared base |
+| 6 | Doc WS Handler | done | 2 | p720 | handler+DocNotifier |
+| 7 | Thread WS Handler | in_progress | 3 | coder | largest phase |
+| 8 | Frontend WS Base + DocWsProvider | in_progress | 3 | frontend-coder | shared base |
 | 9 | Frontend ThreadWsProvider | not_started | 4 | — | streaming client |
 | 10 | SSE + Legacy Cleanup | not_started | 5 | — | deletion phase |
 
@@ -20,8 +20,8 @@
 | Round | Phases | Status | Blocked By |
 |-------|--------|--------|-----------|
 | 1 | 1, 3, 4, 5 | done | — |
-| 2 | 2, 6 | in_progress | — |
-| 3 | 7, 8 | not_started | Round 2 |
+| 2 | 2, 6 | done | — |
+| 3 | 7, 8 | in_progress | — |
 | 4 | 9 | not_started | Round 3 |
 | 5 | 10 | not_started | Round 4 |
 
