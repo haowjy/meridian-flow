@@ -25,7 +25,7 @@ Types and interfaces for real-time collaborative editing. Import: `meridian/inte
 | `ProposalStore` | Proposal CRUD | `proposal.go` |
 | `UpdateLogStore` | Yjs update log entries | `update_log.go` |
 | `BookmarkStore` | AI turn bookmarks | `bookmark.go` |
-| `OwnerTabPresenceTracker` | Check if owner has open tabs | `presence.go` |
+| `DocumentPresenceTracker` | Check if document has active subscribers | `presence.go` |
 | `StatusMirror` | Proposal status -> client SSE | `presence.go` |
 | `DocumentResolver` | Resolve doc refs for collab | `resolver.go` |
 | `AutoapplyResolver` | Effective autoapply setting | `resolver.go` |

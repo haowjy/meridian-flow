@@ -17,6 +17,8 @@ import (
 const docWSRestoredReason = "document_restored"
 
 var _ wsutil.BinaryHandler = (*DocHandler)(nil)
+var _ DocumentSyncBroadcaster = (*DocHandler)(nil)
+var _ collab.DocumentPresenceTracker = (*DocHandler)(nil)
 
 // DocHandler handles project-scoped doc websocket connections.
 type DocHandler struct {
@@ -152,7 +154,7 @@ func (h *DocHandler) OnSubscribe(rawState wsutil.State, sub wsutil.SubscribeRequ
 func (h *DocHandler) OnUnsubscribe(rawState wsutil.State, subID string) error {
 	state, err := h.requireState(rawState)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	subscriber := state.removeBySubID(subID)
@@ -210,7 +212,12 @@ func (h *DocHandler) OnBinaryMessage(rawState wsutil.State, subId string, data [
 			if err != nil {
 				return fmt.Errorf("failed to encode sync update")
 			}
-			h.broadcastToDocSubscribers(subscriber.documentID, subscriber.subId, addDocPrefix(docWSPrefixSync, encodedUpdate))
+			h.broadcastToDocSubscribers(
+				subscriber.documentID,
+				subscriber.subId,
+				subscriber.session.ConnectionID(),
+				addDocPrefix(docWSPrefixSync, encodedUpdate),
+			)
 		}
 		return nil
 	case docWSPrefixAwareness:
@@ -248,7 +255,7 @@ func (h *DocHandler) BroadcastYjsUpdate(documentID string, update []byte) {
 		return
 	}
 
-	h.broadcastToDocSubscribers(documentUUID.String(), "", addDocPrefix(docWSPrefixSync, encodedUpdate))
+	h.broadcastToDocSubscribers(documentUUID.String(), "", "", addDocPrefix(docWSPrefixSync, encodedUpdate))
 }
 
 func (h *DocHandler) BroadcastDocumentRestored(documentID string) {
@@ -302,13 +309,16 @@ func (h *DocHandler) HasActiveSubscribers(documentID string) bool {
 	return len(h.docSubs[documentUUID.String()]) > 0
 }
 
-func (h *DocHandler) broadcastToDocSubscribers(documentID string, excludeSubId string, data []byte) {
+func (h *DocHandler) broadcastToDocSubscribers(documentID string, excludeSubId string, excludeConnID string, data []byte) {
 	targets := h.snapshotDocSubscribers(documentID)
 	for _, target := range targets {
 		if target == nil {
 			continue
 		}
-		if excludeSubId != "" && target.subId == excludeSubId {
+		// Skip the sender — matched by both subId and connectionId to handle
+		// the case where the same document has multiple subscribers on different
+		// connections.
+		if excludeSubId != "" && target.subId == excludeSubId && target.session.ConnectionID() == excludeConnID {
 			continue
 		}
 		if err := target.session.SendBinaryToSub(target.subId, data); err != nil {

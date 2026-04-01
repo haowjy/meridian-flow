@@ -743,6 +743,13 @@ func (c *conn) handleSubscribe(msg Envelope) {
 		_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "subscribe requires subId"))
 		return
 	}
+	// Reject NUL bytes in subId — binary frame routing uses NUL as the
+	// delimiter between subId and payload. A subId containing NUL would
+	// be ambiguous in the binary frame protocol.
+	if strings.ContainsRune(subID, 0x00) {
+		_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "subId must not contain null bytes"))
+		return
+	}
 
 	resource, err := parseResource(msg.Resource)
 	if err != nil {
