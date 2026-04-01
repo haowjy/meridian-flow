@@ -34,7 +34,7 @@ flowchart LR
 
 **Thread WS** multiplexes all turn streaming for a project. Server pushes spawn notifications via the notify lane. Client subscribes to individual turns for AG-UI event delivery via the stream lane. Interjections flow client→server as control messages.
 
-**Doc WS** replaces both the current project WS (`collab_project.go`) and the per-document Yjs WS (`collab_document_handler.go`). Notify lane carries document/proposal invalidation hints. Stream lane multiplexes Yjs CRDT sync for all open documents — clients subscribe to individual documents and receive base64-encoded Yjs data as JSON stream events.
+**Doc WS** replaces both the current project WS (`collab_project.go`) and the per-document Yjs WS (`collab_document_handler.go`). Notify lane carries document/proposal invalidation hints. Stream lane multiplexes Yjs CRDT sync for all open documents — clients subscribe to individual documents and exchange Yjs data as binary WebSocket frames.
 
 ## Component Map
 
@@ -59,7 +59,7 @@ Decisions from the prior design rounds that remain valid:
 | D4 | Interjection drain race fix is transport-independent | Race is between `DrainAndClear()` and executor cleanup — service internals, not transport. |
 | D5 | Hybrid replay: epoch + seq, crash = non-resumable | Epoch is ephemeral (in-memory). Server restart → gap → REST fallback. No false-positive replay. |
 | D6 | Build on `coder/websocket`, not `x/net/websocket` | Origin enforcement, read limits, binary/text frame control needed. Current project WS (`x/net/websocket`) lacks these. |
-| D7 | ~~Document Yjs WS stays separate~~ **Reversed** — see D34 | Originally kept separate for binary CRDT frames. Reversed: Yjs sync multiplexed on doc WS stream lane via base64 encoding. |
+| D7 | ~~Document Yjs WS stays separate~~ **Reversed** — see D34 | Originally kept separate for binary CRDT frames. Reversed: Yjs sync multiplexed on doc WS stream lane via binary frames with subId routing prefix. |
 | D8 | SwitchStream atomicity | Old-turn completion + successor-turn creation in one DB transaction. |
 
 New decisions for the generic protocol architecture:
@@ -78,9 +78,9 @@ Decisions for Yjs CRDT sync multiplexing on the doc WS:
 | ID | Decision | Rationale |
 |---|---|---|
 | D34 | Yjs CRDT sync multiplexed on doc WS stream lane | Consolidates N per-document WS connections into the single project-scoped doc WS. Client subscribes to a document → gets Yjs sync via stream events. Reverses D7. |
-| D35 | Base64 encoding for binary Yjs payloads | Protocol is text-only JSON. Binary frames would require parallel framing protocol. Base64 adds ~33% overhead but Yjs payloads are small (sync step 1: hundreds of bytes, updates: a few KB). Connection consolidation benefit outweighs encoding cost. |
+| D35 | ~~Base64 encoding~~ **Reversed** — see D43 | Binary frames with subId routing prefix for Yjs data. Base64 reversed: high-volume small messages (keystroke, cursor, awareness) make 33% overhead significant. |
 | D36 | Cross-connection document subscriber registry in handler | Yjs update fanout must reach subscribers on different WS connections. Handler maintains `documentID → []subscriber` map. Same snapshot-then-send pattern as `BroadcastNotify`. |
-| D37 | ReadLimit raised to 512KB for doc WS | Per-doc WS used 256KB app-level max for raw binary. Base64 + JSON envelope pushes that to ~341KB. 512KB provides headroom. |
+| D37 | ~~ReadLimit raised to 512KB~~ **Revised** — see D43 | ReadLimit 256KB. Binary frames carry raw Yjs data — no base64 overhead to accommodate. |
 | D38 | Gap recovery = re-subscribe, no REST fallback | CRDTs naturally converge on re-sync. Client sends fresh subscribe (no lastSeq/epoch) → full sync-step-1 exchange. Simpler than thread streaming gap recovery. |
 
 ## Connections Per User

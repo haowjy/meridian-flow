@@ -11,7 +11,7 @@ This is the frontend-heavy phase — new client class, provider rewrite, session
 - [frontend.md](../design/frontend.md) §DocStreamClient — interface spec
 - [frontend.md](../design/frontend.md) §DocumentWsProvider Rewrite — adapter pattern
 - [frontend.md](../design/frontend.md) §DocStreamClient Injection Path — SessionPool wiring
-- [doc-ws.md](../design/doc-ws.md) §Binary Payload Encoding — base64 encoding convention
+- [doc-ws.md](../design/doc-ws.md) §Binary Frame Transport — binary frame format with subId routing prefix
 
 ## What's In Scope
 
@@ -22,7 +22,7 @@ This is the frontend-heavy phase — new client class, provider rewrite, session
 5. **SessionPool injection** — `setDocStreamClient()` setter, update factory calls
 6. **DocSession update** — update provider construction to use new factory signature
 7. **Session types update** — `DocumentWsProviderFactory` new signature
-8. **Base64 utilities** — `base64ToUint8Array()` / `uint8ArrayToBase64()` for Yjs payloads
+8. **Binary frame utilities** — `WsClient.sendBinary(subId, data)` for Yjs binary frame construction (subId + 0x00 + payload)
 9. **`useDocStream()` hook** — expose `DocStreamClient` from context
 
 ## What's Out of Scope
@@ -66,8 +66,11 @@ class DocStreamClient {
   sendAwarenessMessage(documentId: string, data: Uint8Array): void
   get activeDocSubscriptions(): Map<string, DocSubscriptionState>
 
-  // Called by WsClient when stream events arrive — dispatch by subId
+  // Called by WsClient when JSON stream events arrive (ended, gap) — dispatch by subId
   handleStreamEvent(msg: Envelope): void
+
+  // Called by WsClient when binary frames arrive — dispatch by subId to subscriber callbacks
+  handleBinaryMessage(subId: string, data: Uint8Array): void
 
   // Called by WsClient on reconnect — re-subscribe all active docs (fresh, no lastSeq/epoch)
   handleReconnect(): void
@@ -76,19 +79,16 @@ class DocStreamClient {
 
 Key behaviors:
 - **subscribe**: Generate subId → send `control:subscribe` with `resource: { type: "document", id: documentId }` → wait for `subscribed` → mark syncing → process incoming sync events → mark synced after initial exchange
-- **handleStreamEvent**: Route by subId → base64 decode `payload.data` → dispatch by `payload.type` (sync/awareness) → call subscriber callbacks
-- **sendSyncMessage**: Base64 encode → send `stream:message` with `resource: { type: "document", id: documentId }` and `payload: { type: "sync", data: base64 }`
+- **handleBinaryMessage**: Framework extracts subId from binary frame prefix → route to subscriber → read Yjs prefix byte (0x00 sync, 0x01 awareness) → call subscriber callbacks with raw payload
+- **sendSyncMessage**: Send binary frame via `WsClient.sendBinary(subId, prefixedData)` — no JSON wrapping, no encoding overhead
 - **handleReconnect**: Re-subscribe all active documents with no lastSeq/epoch (CRDT convergence, D38)
 - **handleEnded**: Route by subId → call subscriber's onEnded callback → clean up subscription state
 
-### `frontend-v2/src/lib/ws/base64.ts`
+### Binary frame support in `WsClient`
 
-```typescript
-export function uint8ArrayToBase64(data: Uint8Array): string
-export function base64ToUint8Array(base64: string): Uint8Array
-```
+Add `sendBinary(subId: string, data: Uint8Array): void` to `WsClient`. Constructs the binary frame: encode subId as UTF-8, append 0x00 delimiter, append raw payload. Sends via `WebSocket.send(binaryFrame)`.
 
-Use `btoa`/`atob` with binary string conversion, or `TextEncoder`/`TextDecoder` if available. Keep it simple — no external dependencies.
+Add `onBinaryMessage` callback registration. On incoming binary frames, `WsClient` reads bytes until first 0x00, extracts the UTF-8 subId, and dispatches the remaining bytes to the registered handler (the `DocStreamClient`).
 
 ## Files to Modify
 
@@ -96,7 +96,8 @@ Use `btoa`/`atob` with binary string conversion, or `TextEncoder`/`TextDecoder` 
 
 - Import `DocStreamClient`
 - Create `DocStreamClient` instance in `useMemo` alongside `WsClient`
-- Wire `WsClient.onStream` callback to `docStreamClient.handleStreamEvent()`
+- Wire `WsClient.onStream` callback to `docStreamClient.handleStreamEvent()` (JSON: ended, gap)
+- Wire `WsClient.onBinaryMessage` callback to `docStreamClient.handleBinaryMessage()` (binary: Yjs sync/awareness)
 - Wire reconnect to `docStreamClient.handleReconnect()`
 - Expose `DocStreamClient` via context:
 
@@ -289,6 +290,6 @@ export function createDocumentWsProvider(args: {
 - **Implementer**: `frontend-coder` — new client class + provider rewrite + session injection wiring
 - **Reviewers**: 2x
   - 1x design alignment (focus: conformance with [frontend.md](../design/frontend.md) §DocStreamClient and §DocumentWsProvider Rewrite)
-  - 1x code quality (focus: React context patterns, cleanup on unmount, base64 correctness, y-protocols usage)
+  - 1x code quality (focus: React context patterns, cleanup on unmount, binary frame correctness, y-protocols usage)
 - **Testing**: `browser-tester` (verify Yjs sync works between two browser tabs via doc WS)
 - **Verification**: `verifier` (lint + type checks)
