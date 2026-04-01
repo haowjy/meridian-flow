@@ -30,7 +30,7 @@ func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t 
 		&fakeProposalServiceAuthorizer{},
 		runtime,
 		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
+		&fakeDocumentPresenceTracker{hasActiveSubscribers: true},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
@@ -73,7 +73,7 @@ func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t
 		&fakeProposalServiceAuthorizer{},
 		runtime,
 		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
+		&fakeDocumentPresenceTracker{hasActiveSubscribers: true},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
@@ -107,7 +107,7 @@ func TestProposalServiceCreateProposal_EnforcesDocumentAuthorization(t *testing.
 		&fakeProposalServiceAuthorizer{err: domain.NewForbiddenError("access denied")},
 		&fakeProposalServiceRuntime{},
 		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeOwnerTabPresenceTracker{hasOwnerTabs: false},
+		&fakeDocumentPresenceTracker{hasActiveSubscribers: false},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
@@ -141,7 +141,7 @@ func TestProposalServiceCreateProposal_AutoapplyDisabledKeepsProposalPending(t *
 		&fakeProposalServiceAuthorizer{},
 		runtime,
 		&fakeProposalAutoapplyResolver{effectiveAutoapply: false},
-		&fakeOwnerTabPresenceTracker{hasOwnerTabs: false},
+		&fakeDocumentPresenceTracker{hasActiveSubscribers: false},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
@@ -275,12 +275,12 @@ func (r *fakeProposalServiceRuntime) CreateAITurnBookmark(_ context.Context, doc
 	return nil
 }
 
-type fakeOwnerTabPresenceTracker struct {
-	hasOwnerTabs bool
+type fakeDocumentPresenceTracker struct {
+	hasActiveSubscribers bool
 }
 
-func (t *fakeOwnerTabPresenceTracker) HasOwnerTabs(uuid.UUID) bool {
-	return t.hasOwnerTabs
+func (t *fakeDocumentPresenceTracker) HasActiveSubscribers(string) bool {
+	return t.hasActiveSubscribers
 }
 
 type fakeProposalServiceDocumentResolver struct {

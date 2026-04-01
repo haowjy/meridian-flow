@@ -14,21 +14,21 @@ import (
 // proposal invalidation notifications to project doc websocket connections and
 // Yjs frames to document websocket connections.
 type ProposalBroadcasterImpl struct {
-	docNotifier      DocNotifier
-	docBroadcaster   DocumentBroadcaster
-	documentResolver collab.DocumentResolver
+	docNotifier        DocNotifier
+	docSyncBroadcaster DocumentSyncBroadcaster
+	documentResolver   collab.DocumentResolver
 }
 
 // NewProposalBroadcasterImpl creates a broadcaster backed by doc WS notifications and document WS fanout.
 func NewProposalBroadcasterImpl(
 	docNotifier DocNotifier,
-	docBroadcaster DocumentBroadcaster,
+	docSyncBroadcaster DocumentSyncBroadcaster,
 	documentResolver collab.DocumentResolver,
 ) *ProposalBroadcasterImpl {
 	return &ProposalBroadcasterImpl{
-		docNotifier:      docNotifier,
-		docBroadcaster:   docBroadcaster,
-		documentResolver: documentResolver,
+		docNotifier:        docNotifier,
+		docSyncBroadcaster: docSyncBroadcaster,
+		documentResolver:   documentResolver,
 	}
 }
 
@@ -71,12 +71,8 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, p
 		b.docNotifier.NotifyProposal(projectID, proposalID.String(), "accepted", canonicalDocumentID)
 	}
 
-	if len(yjsUpdate) > 0 && b.docBroadcaster != nil {
-		encodedUpdate, err := encodeSyncUpdatePayload(yjsUpdate)
-		if err != nil {
-			return err
-		}
-		b.docBroadcaster.BroadcastToDocument(canonicalDocumentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
+	if len(yjsUpdate) > 0 && b.docSyncBroadcaster != nil {
+		b.docSyncBroadcaster.BroadcastYjsUpdate(canonicalDocumentID, yjsUpdate)
 	}
 	return nil
 }

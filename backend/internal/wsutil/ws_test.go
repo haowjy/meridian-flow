@@ -3,6 +3,7 @@ package wsutil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -71,6 +72,18 @@ func (h *wsTestHandler) OnDisconnect(state State) {
 	if h.onDisconnect != nil {
 		h.onDisconnect(state)
 	}
+}
+
+type wsBinaryTestHandler struct {
+	wsTestHandler
+	onBinary func(state State, subID string, data []byte) error
+}
+
+func (h *wsBinaryTestHandler) OnBinaryMessage(state State, subID string, data []byte) error {
+	if h.onBinary != nil {
+		return h.onBinary(state, subID, data)
+	}
+	return nil
 }
 
 type wsFrame struct {
@@ -195,6 +208,20 @@ func (c *fakeWSConn) tryReadServerEnvelope(timeout time.Duration) (Envelope, boo
 		return *env, true
 	case <-time.After(timeout):
 		return Envelope{}, false
+	}
+}
+
+func (c *fakeWSConn) readServerBinary(t *testing.T, timeout time.Duration) []byte {
+	t.Helper()
+	select {
+	case frame := <-c.outbound:
+		if frame.typeID != websocket.MessageBinary {
+			t.Fatalf("expected binary frame, got %v", frame.typeID)
+		}
+		return append([]byte(nil), frame.data...)
+	case <-time.After(timeout):
+		t.Fatal("timed out waiting for outbound binary frame")
+		return nil
 	}
 }
 
@@ -370,10 +397,11 @@ func TestBackpressureOverflowSendsGapAndEndsSubscription(t *testing.T) {
 		subID:     "sub-1",
 		resource:  Resource{Type: "turn", Id: "turn-1"},
 		handlerTy: "turn",
-		queue:     make(chan Envelope, subscriptionQueueCapacity),
+		queue:     make(chan outboundMsg, subscriptionQueueCapacity),
 	}
 	for i := 0; i < subscriptionQueueCapacity; i++ {
-		sub.queue <- Envelope{Kind: KindStream, Op: OpEvent, SubId: "sub-1"}
+		msg := Envelope{Kind: KindStream, Op: OpEvent, SubId: "sub-1"}
+		sub.queue <- outboundMsg{text: &msg}
 	}
 	c.subs["sub-1"] = sub
 	c.subOrder = []string{"sub-1"}
@@ -521,7 +549,7 @@ func TestBroadcastNotifyTargetsProjectConnectionsOnly(t *testing.T) {
 	}
 }
 
-func TestBinaryFrameRejected(t *testing.T) {
+func TestBinaryFrameWithoutPrefixReturnsError(t *testing.T) {
 	auth := &wsTestAuthenticator{}
 	s := NewServer(
 		WithAuth(auth),
@@ -538,11 +566,112 @@ func TestBinaryFrameRejected(t *testing.T) {
 	fake.pushBinary([]byte{0x01, 0x02})
 	errMsg := fake.readServerEnvelope(t, time.Second)
 	assertErrorCode(t, errMsg, CodeInvalidMessage)
+	if _, ok := fake.tryReadServerEnvelope(100 * time.Millisecond); ok {
+		t.Fatal("expected no extra frames after malformed binary frame")
+	}
+}
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("expected serveConn to exit after binary frame")
+func TestBinaryFrameToNonBinaryHandlerReturnsNotSupported(t *testing.T) {
+	auth := &wsTestAuthenticator{}
+	handler := &wsTestHandler{}
+	s := NewServer(
+		WithAuth(auth),
+		WithHeartbeat(10*time.Second, 10*time.Second),
+		withLogger(testLogger()),
+	)
+	s.RegisterHandler("turn", handler)
+
+	fake, done := startServeConn(t, s, "project-1")
+	defer stopServeConn(t, fake, done)
+
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	_ = fake.readServerEnvelope(t, time.Second) // connected
+
+	fake.pushTextEnvelope(t, Envelope{
+		Kind:     KindControl,
+		Op:       OpSubscribe,
+		SubId:    "sub-1",
+		Resource: &Resource{Type: "turn", Id: "turn-1"},
+	})
+
+	fake.pushBinary(append([]byte("sub-1\x00"), []byte{0xAA}...))
+	errMsg := fake.readServerEnvelope(t, time.Second)
+	assertErrorCode(t, errMsg, CodeNotSupported)
+}
+
+func TestBinaryFrameDeliveredToBinaryHandlerAndBinaryEgress(t *testing.T) {
+	auth := &wsTestAuthenticator{}
+	binaryCalls := make(chan struct {
+		subID string
+		data  []byte
+	}, 1)
+
+	type binaryState struct {
+		session Session
+	}
+
+	handler := &wsBinaryTestHandler{
+		wsTestHandler: wsTestHandler{
+			onConnect: func(session Session) (State, error) {
+				return &binaryState{session: session}, nil
+			},
+			onSubscribe: func(state State, sub SubscribeRequest) error {
+				st, ok := state.(*binaryState)
+				if !ok || st == nil {
+					return errors.New("invalid state")
+				}
+				return st.session.SendBinaryToSub(sub.SubId, []byte{0xBC})
+			},
+		},
+		onBinary: func(_ State, subID string, data []byte) error {
+			binaryCalls <- struct {
+				subID string
+				data  []byte
+			}{subID: subID, data: append([]byte(nil), data...)}
+			return nil
+		},
+	}
+
+	s := NewServer(
+		WithAuth(auth),
+		WithHeartbeat(10*time.Second, 10*time.Second),
+		withLogger(testLogger()),
+	)
+	s.RegisterHandler("turn", handler)
+
+	fake, done := startServeConn(t, s, "project-1")
+	defer stopServeConn(t, fake, done)
+
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	_ = fake.readServerEnvelope(t, time.Second) // connected
+
+	fake.pushTextEnvelope(t, Envelope{
+		Kind:     KindControl,
+		Op:       OpSubscribe,
+		SubId:    "sub-1",
+		Resource: &Resource{Type: "turn", Id: "turn-1"},
+	})
+
+	outboundBinary := fake.readServerBinary(t, time.Second)
+	wantBinary := append([]byte("sub-1\x00"), byte(0xBC))
+	if string(outboundBinary) != string(wantBinary) {
+		t.Fatalf("unexpected binary egress frame: got=%v want=%v", outboundBinary, wantBinary)
+	}
+
+	fake.pushBinary(append([]byte("sub-1\x00"), []byte{0xDE, 0xAD}...))
+	if !waitFor(time.Second, func() bool { return len(binaryCalls) == 1 }) {
+		t.Fatal("expected binary handler to receive inbound frame")
+	}
+	call := <-binaryCalls
+	if call.subID != "sub-1" {
+		t.Fatalf("unexpected binary handler subID: %q", call.subID)
+	}
+	if len(call.data) != 2 || call.data[0] != 0xDE || call.data[1] != 0xAD {
+		t.Fatalf("unexpected binary payload delivered to handler: %v", call.data)
+	}
+
+	if _, ok := fake.tryReadServerEnvelope(100 * time.Millisecond); ok {
+		t.Fatal("expected no error envelopes for valid binary frame path")
 	}
 }
 

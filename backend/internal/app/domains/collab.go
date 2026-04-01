@@ -74,7 +74,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		isIdentityBlocked = cfg.IsProdIdentityBlocked
 	}
 	docWSAuthenticator := handler.NewDocWSAuthenticator(infra.JWTVerifier, deps.Authorizer, isIdentityBlocked)
-	docNotifyHandler := handler.NewDocNotifyHandler(infra.Logger)
+	docHandler := handler.NewDocHandler(collabSessionManager, collabDocResolver, infra.Logger)
 	allowedOrigins := make([]string, 0)
 	if cfg != nil && cfg.Server.CORSOrigins != "" {
 		for _, origin := range strings.Split(cfg.Server.CORSOrigins, ",") {
@@ -89,10 +89,10 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		wsutil.WithAuth(docWSAuthenticator),
 		wsutil.WithHeartbeat(20*time.Second, 20*time.Second),
 		wsutil.WithRateLimit(30),
-		wsutil.WithReadLimit(64*1024),
+		wsutil.WithReadLimit(256*1024),
 		wsutil.WithOriginPatterns(allowedOrigins...),
 	)
-	docWSServer.RegisterHandler("document", docNotifyHandler)
+	docWSServer.RegisterHandler("document", docHandler)
 
 	docNotifier := handler.NewDocNotifier(docWSServer)
 
@@ -110,7 +110,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		deps.Authorizer,
 		collabSessionManager,
 		deps.AutoapplyResolver,
-		collabDocumentHandler,
+		docHandler,
 		collabDocResolver,
 	)
 	restoreService := serviceCollab.NewRestoreService(
@@ -120,13 +120,13 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		updateLogStore,
 		statusMirror,
 		collabSessionManager,
-		collabDocumentHandler,
+		docHandler,
 		deps.TxManager,
 		deps.Authorizer,
 		infra.Logger,
 	)
 
-	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(docNotifier, collabDocumentHandler, collabDocResolver)
+	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(docNotifier, docHandler, collabDocResolver)
 	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, projectedStateBuilder, infra.Logger)
 
 	collabHandler := handler.NewCollabHandler(
@@ -137,7 +137,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		deps.Authorizer,
 		infra.Logger,
 		cfg,
-		collabDocumentHandler,
+		docHandler,
 	)
 	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
 	compactionWorker := serviceCollab.NewCompactionWorker(

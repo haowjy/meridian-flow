@@ -748,8 +748,8 @@ func TestThreadWSInterjection(t *testing.T) {
 	}
 }
 
-// TestThreadWSBinaryFrameRejected verifies that a binary frame results in an
-// INVALID_MESSAGE error and the connection is closed (thread WS has no binary handler).
+// TestThreadWSBinaryFrameRejected verifies that a binary frame on thread WS
+// returns an error envelope while keeping the connection alive.
 func TestThreadWSBinaryFrameRejected(t *testing.T) {
 	deps := TurnStreamHandlerDeps{
 		Authorizer: &threadWSAuthorizer{},
@@ -772,12 +772,16 @@ func TestThreadWSBinaryFrameRejected(t *testing.T) {
 		t.Fatalf("expected INVALID_MESSAGE for binary frame, got %q", ep.Code)
 	}
 
-	// Connection must close after the binary rejection.
-	closeCtx, closeCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer closeCancel()
-	_, _, err := c.Read(closeCtx)
-	if err == nil {
-		t.Fatal("expected connection closed after binary frame rejection")
+	// Connection should remain open after binary rejection.
+	twsWrite(t, c, wsutil.Envelope{
+		Kind:     wsutil.KindControl,
+		Op:       wsutil.OpSubscribe,
+		SubId:    "sub-after-binary",
+		Resource: &wsutil.Resource{Type: "turn", Id: "turn-1"},
+	})
+	next := twsRead(t, c, time.Second)
+	if next.Kind != wsutil.KindError {
+		t.Fatalf("expected follow-up error frame on open connection, got %+v", next)
 	}
 }
 
@@ -1082,7 +1086,9 @@ func twsConnectTo(t *testing.T, ts *httptest.Server, projectID, token string) (*
 	if env.Kind != wsutil.KindControl || env.Op != wsutil.OpConnected {
 		t.Fatalf("expected connected for projectID=%s, got %+v", projectID, env)
 	}
-	var p struct{ ConnectionID string `json:"connectionId"` }
+	var p struct {
+		ConnectionID string `json:"connectionId"`
+	}
 	_ = json.Unmarshal(env.Payload, &p)
 	return c, p.ConnectionID
 }

@@ -1,6 +1,7 @@
 package wsutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -53,10 +54,17 @@ type Handler interface {
 	OnDisconnect(state State)
 }
 
+// BinaryHandler is optionally implemented by handlers that accept binary WebSocket frames.
+type BinaryHandler interface {
+	Handler
+	OnBinaryMessage(state State, subId string, data []byte) error
+}
+
 // Session is the framework-owned egress API for one connection.
 type Session interface {
 	Send(msg Envelope) error
 	SendToSub(subId string, msg Envelope) error
+	SendBinaryToSub(subId string, data []byte) error
 	EndSub(subId string)
 	Notify(msg Envelope) error
 	Close(reason string)
@@ -416,8 +424,13 @@ type subscriptionState struct {
 	subID     string
 	resource  Resource
 	handlerTy string
-	queue     chan Envelope
+	queue     chan outboundMsg
 	overflown atomic.Bool
+}
+
+type outboundMsg struct {
+	text   *Envelope
+	binary []byte
 }
 
 func newConn(
@@ -497,6 +510,31 @@ func (c *conn) SendToSub(subID string, msg Envelope) error {
 	}
 
 	msg.SubId = subID
+	outbound := outboundMsg{text: &msg}
+	return c.enqueueSubOutbound(sub, outbound)
+}
+
+func (c *conn) SendBinaryToSub(subID string, data []byte) error {
+	subID = strings.TrimSpace(subID)
+	if subID == "" {
+		return errors.New("sub id is required")
+	}
+
+	c.subMu.RLock()
+	sub, ok := c.subs[subID]
+	c.subMu.RUnlock()
+	if !ok {
+		return ErrNotSupported
+	}
+
+	outbound := outboundMsg{binary: frameBinarySubPayload(subID, data)}
+	return c.enqueueSubOutbound(sub, outbound)
+}
+
+func (c *conn) enqueueSubOutbound(sub *subscriptionState, msg outboundMsg) error {
+	if sub == nil {
+		return ErrNotSupported
+	}
 	select {
 	case <-c.ctx.Done():
 		return errors.New("connection closed")
@@ -528,7 +566,9 @@ func (c *conn) endSub(subID string, emitAck bool) {
 	for {
 		select {
 		case msg := <-sub.queue:
-			_ = c.enqueueControl(msg)
+			if msg.text != nil {
+				_ = c.enqueueControl(*msg.text)
+			}
 		default:
 			goto drained
 		}
@@ -608,20 +648,60 @@ func (c *conn) runReadLoop() {
 			continue
 		}
 
-		if messageType != websocket.MessageText {
-			_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "text frames only"))
-			c.setClose(websocket.StatusUnsupportedData, "text frames only")
-			return
+		switch messageType {
+		case websocket.MessageText:
+			env, err := ParseEnvelope(data)
+			if err != nil {
+				_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "invalid envelope"))
+				continue
+			}
+			c.routeEnvelope(*env)
+		case websocket.MessageBinary:
+			c.routeBinaryFrame(data)
+		default:
+			_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "unsupported frame type"))
 		}
-
-		env, err := ParseEnvelope(data)
-		if err != nil {
-			_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "invalid envelope"))
-			continue
-		}
-
-		c.routeEnvelope(*env)
 	}
+}
+
+func (c *conn) routeBinaryFrame(frame []byte) {
+	nullIdx := bytes.IndexByte(frame, 0x00)
+	if nullIdx <= 0 {
+		_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "binary frame missing subId prefix"))
+		return
+	}
+
+	subID := strings.TrimSpace(string(frame[:nullIdx]))
+	if subID == "" {
+		_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "binary frame missing subId"))
+		return
+	}
+	data := append([]byte(nil), frame[nullIdx+1:]...)
+
+	c.subMu.RLock()
+	sub, ok := c.subs[subID]
+	c.subMu.RUnlock()
+	if !ok {
+		_ = c.enqueueControl(NewErrorEnvelope(CodeInvalidMessage, "unknown subId for binary frame"))
+		return
+	}
+
+	err := c.callHandler(sub.handlerTy, func(h Handler, st State) error {
+		binaryHandler, ok := h.(BinaryHandler)
+		if !ok {
+			return ErrNotSupported
+		}
+		return binaryHandler.OnBinaryMessage(st, subID, data)
+	})
+	if err == nil {
+		return
+	}
+
+	code := CodeSubscribeFailed
+	if errors.Is(err, ErrNotSupported) {
+		code = CodeNotSupported
+	}
+	_ = c.enqueueControl(NewSubErrorEnvelope(subID, &sub.resource, code, err.Error()))
 }
 
 func (c *conn) routeEnvelope(msg Envelope) {
@@ -789,7 +869,7 @@ func (c *conn) runWriterLoop() {
 		} else {
 			writeCtx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
 		}
-		err := writeTextEnvelope(writeCtx, c.wsConn, msg)
+		err := c.writeOutbound(writeCtx, msg)
 		cancel()
 		if err != nil {
 			c.setClose(websocket.StatusGoingAway, "write failure")
@@ -799,7 +879,17 @@ func (c *conn) runWriterLoop() {
 	}
 }
 
-func (c *conn) nextOutbound() (Envelope, bool) {
+func (c *conn) writeOutbound(ctx context.Context, msg outboundMsg) error {
+	if msg.text != nil {
+		return writeTextEnvelope(ctx, c.wsConn, *msg.text)
+	}
+	if len(msg.binary) > 0 {
+		return c.wsConn.Write(ctx, websocket.MessageBinary, msg.binary)
+	}
+	return nil
+}
+
+func (c *conn) nextOutbound() (outboundMsg, bool) {
 	for {
 		if msg, ok := c.tryDrainControl(); ok {
 			return msg, true
@@ -820,38 +910,38 @@ func (c *conn) nextOutbound() (Envelope, bool) {
 			if msg, ok := c.tryDrainControl(); ok {
 				return msg, true
 			}
-			return Envelope{}, false
+			return outboundMsg{}, false
 		case <-c.readyCh:
 		}
 	}
 }
 
-func (c *conn) tryDrainControl() (Envelope, bool) {
+func (c *conn) tryDrainControl() (outboundMsg, bool) {
 	select {
 	case msg := <-c.sendQueue:
-		return msg, true
+		return outboundMsg{text: &msg}, true
 	default:
-		return Envelope{}, false
+		return outboundMsg{}, false
 	}
 }
 
-func (c *conn) tryDrainNotify() (Envelope, bool) {
+func (c *conn) tryDrainNotify() (outboundMsg, bool) {
 	select {
 	case msg := <-c.notifyQueue:
-		return msg, true
+		return outboundMsg{text: &msg}, true
 	default:
-		return Envelope{}, false
+		return outboundMsg{}, false
 	}
 }
 
-func (c *conn) tryDrainSubRoundRobin() (Envelope, bool) {
+func (c *conn) tryDrainSubRoundRobin() (outboundMsg, bool) {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
 	count := len(c.subOrder)
 	if count == 0 {
 		c.roundRobin = 0
-		return Envelope{}, false
+		return outboundMsg{}, false
 	}
 	if c.roundRobin >= count {
 		c.roundRobin = 0
@@ -873,7 +963,7 @@ func (c *conn) tryDrainSubRoundRobin() (Envelope, bool) {
 		}
 	}
 
-	return Envelope{}, false
+	return outboundMsg{}, false
 }
 
 func (c *conn) handleSubOverflow(sub *subscriptionState) {
@@ -918,7 +1008,7 @@ func (c *conn) reserveSub(subID string, resource Resource) (*subscriptionState, 
 	sub := &subscriptionState{
 		subID:    subID,
 		resource: resource,
-		queue:    make(chan Envelope, subscriptionQueueCapacity),
+		queue:    make(chan outboundMsg, subscriptionQueueCapacity),
 	}
 	c.subs[subID] = sub
 	c.subOrder = append(c.subOrder, subID)
@@ -1112,6 +1202,13 @@ func (l *secondRateLimiter) Allow(now time.Time) (bool, bool) {
 		return false, true
 	}
 	return false, false
+}
+
+func frameBinarySubPayload(subID string, data []byte) []byte {
+	framed := make([]byte, len(subID)+1+len(data))
+	copy(framed, subID)
+	copy(framed[len(subID)+1:], data)
+	return framed
 }
 
 func parseResource(resource *Resource) (Resource, error) {
