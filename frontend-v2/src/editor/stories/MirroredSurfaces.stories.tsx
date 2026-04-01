@@ -5,6 +5,7 @@ import { TabbedEditorShell } from "../TabbedEditorShell"
 import {
   SessionPoolProvider,
   useDocumentSessions,
+  useFollowActiveDoc,
   type DocHandle,
   type SessionPoolConfig,
   type UseDocumentSessionsResult,
@@ -15,15 +16,11 @@ const DOCUMENTS: DocHandle[] = [
   { id: "ch-2", name: "Chapter 2: Winter Harbor" },
   { id: "ch-3", name: "Chapter 3: The Ferryman" },
   { id: "ch-4", name: "Chapter 4: A Lantern in the Fog" },
-  { id: "ch-5", name: "Chapter 5: Tidewater" },
-  { id: "ch-6", name: "Chapter 6: The Broken Compass" },
-  { id: "ch-7", name: "Chapter 7: Harbor Glass" },
-  { id: "ch-8", name: "Chapter 8: Third Bell" },
 ]
 
 const STORY_POOL_CONFIG: SessionPoolConfig = {
   idleMs: 120_000,
-  warmBudget: 24,
+  warmBudget: 16,
   user: {
     userId: "storybook-user",
     userName: "Storybook Writer",
@@ -32,34 +29,6 @@ const STORY_POOL_CONFIG: SessionPoolConfig = {
 
 function findDoc(docId: string): DocHandle | undefined {
   return DOCUMENTS.find((doc) => doc.id === docId)
-}
-
-function SessionStatePanel({
-  label,
-  sessions,
-}: {
-  label: string
-  sessions: UseDocumentSessionsResult
-}) {
-  const activeSession = sessions.activeSessionSnapshot
-
-  return (
-    <div className="rounded-lg border border-border/80 bg-muted/30 p-3 text-xs">
-      <div className="font-semibold">{label}</div>
-      <div className="mt-2 space-y-1 text-muted-foreground">
-        <div>Active doc: {sessions.activeDocId ?? "none"}</div>
-        <div>
-          Open docs: {sessions.openDocs.length > 0
-            ? sessions.openDocs.map((doc) => doc.id).join(", ")
-            : "none"}
-        </div>
-        <div>Sync: {activeSession?.syncState ?? "n/a"}</div>
-        <div>Connection: {activeSession?.connectionState ?? "n/a"}</div>
-        <div>Frozen: {activeSession?.frozenReason ?? "none"}</div>
-        <div>IDB: {activeSession?.idbHealth.status ?? "n/a"}</div>
-      </div>
-    </div>
-  )
 }
 
 function SurfacePane({
@@ -79,15 +48,23 @@ function SurfacePane({
       const openDoc = sessions.openDocs.find((doc) => doc.id === docId)
       const knownDoc = findDoc(docId)
       const name = openDoc?.name ?? knownDoc?.name
-      if (name === undefined) return
+      if (!name) return
       sessions.activate({ id: docId, name })
     },
     [sessions],
   )
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 rounded-xl border border-border/80 bg-background/70 p-3">
-      <SessionStatePanel label={label} sessions={sessions} />
+    <div className="flex min-h-0 flex-col gap-2 rounded-xl border border-border/80 bg-background/70 p-3">
+      <div className="rounded-md border border-border/80 bg-muted/20 p-2 text-xs text-muted-foreground">
+        <div className="font-semibold text-foreground">{label}</div>
+        <div>Active: {sessions.activeDocId ?? "none"}</div>
+        <div>
+          Open: {sessions.openDocs.length > 0
+            ? sessions.openDocs.map((doc) => doc.id).join(", ")
+            : "none"}
+        </div>
+      </div>
       <div className="min-h-0 flex-1">
         <TabbedEditorShell
           openDocs={sessions.openDocs}
@@ -105,10 +82,17 @@ function SurfacePane({
   )
 }
 
-function CollabTabsPlayground() {
+function MirroredSurfacesPlayground() {
   const studio = useDocumentSessions()
   const converse = useDocumentSessions()
+  const [mirrored, setMirrored] = useState(true)
   const [selectedDocId, setSelectedDocId] = useState(DOCUMENTS[0].id)
+
+  useFollowActiveDoc(
+    mirrored ? studio.activeDocId : null,
+    mirrored ? studio.openDocs : [],
+    converse.activate,
+  )
 
   const selectedDoc = useMemo(
     () => findDoc(selectedDocId) ?? DOCUMENTS[0],
@@ -117,32 +101,24 @@ function CollabTabsPlayground() {
 
   const openOnStudio = useCallback(() => {
     studio.activate(selectedDoc)
-  }, [studio, selectedDoc])
+  }, [selectedDoc, studio])
 
   const openOnConverse = useCallback(() => {
     converse.activate(selectedDoc)
   }, [converse, selectedDoc])
 
-  const openOnBoth = useCallback(() => {
-    studio.activate(selectedDoc)
-    window.setTimeout(() => {
-      converse.activate(selectedDoc)
-    }, 80)
-  }, [converse, selectedDoc, studio])
-
-  const openEightOnStudio = useCallback(() => {
-    DOCUMENTS.forEach((doc, index) => {
-      window.setTimeout(() => {
-        studio.activate(doc)
-      }, index * 120)
-    })
-  }, [studio])
-
   return (
     <div className="flex h-[860px] flex-col gap-4 p-4">
       <div className="rounded-xl border border-border/80 bg-muted/30 p-3">
-        <div className="mb-2 text-sm font-semibold">Session Controls</div>
+        <div className="mb-2 text-sm font-semibold">Mirroring Controls</div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            className="rounded border border-border/80 px-2 py-1"
+            onClick={() => setMirrored((value) => !value)}
+          >
+            {mirrored ? "Switch To Independent" : "Switch To Mirrored"}
+          </button>
           <select
             className="rounded border border-border/80 bg-background px-2 py-1"
             value={selectedDocId}
@@ -165,44 +141,35 @@ function CollabTabsPlayground() {
             type="button"
             className="rounded border border-border/80 px-2 py-1"
             onClick={openOnConverse}
+            disabled={mirrored}
           >
-            Open On Converse
-          </button>
-          <button
-            type="button"
-            className="rounded border border-border/80 px-2 py-1"
-            onClick={openOnBoth}
-          >
-            Open Same Doc On Both
-          </button>
-          <button
-            type="button"
-            className="rounded border border-border/80 px-2 py-1"
-            onClick={openEightOnStudio}
-          >
-            Open 8 Docs On Studio (LRU)
+            Open On Converse (Independent)
           </button>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Mode: {mirrored ? "Mirrored" : "Independent"}. In mirrored mode,
+          Converse automatically follows Studio via useFollowActiveDoc.
+        </p>
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-2">
-        <SurfacePane label="Studio" sessions={studio} />
-        <SurfacePane label="Converse" sessions={converse} />
+        <SurfacePane label="Studio (Driver)" sessions={studio} />
+        <SurfacePane label="Converse (Follower)" sessions={converse} />
       </div>
     </div>
   )
 }
 
-function CollabTabsDemo() {
+function MirroredSurfacesDemo() {
   return (
     <SessionPoolProvider config={STORY_POOL_CONFIG}>
-      <CollabTabsPlayground />
+      <MirroredSurfacesPlayground />
     </SessionPoolProvider>
   )
 }
 
 const meta = {
-  title: "Editor/CollabTabs",
+  title: "Editor/MirroredSurfaces",
   tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
@@ -212,6 +179,6 @@ const meta = {
 export default meta
 type Story = StoryObj
 
-export const CollabWithTabs: Story = {
-  render: () => <CollabTabsDemo />,
+export const MirroredVsIndependent: Story = {
+  render: () => <MirroredSurfacesDemo />,
 }

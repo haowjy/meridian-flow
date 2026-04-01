@@ -32,6 +32,8 @@ export interface SessionPoolConfig {
   user: { userId: string; userName: string }
   /** Optional WS provider factory — null until Phase 4. */
   wsFactory?: DocumentWsProviderFactory
+  /** Access token resolver used by document WS providers. */
+  getAccessToken?: () => Promise<string>
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +43,12 @@ export interface SessionPoolConfig {
 interface PoolEntry {
   session: DocSession
   idleTimer: ReturnType<typeof setTimeout> | null
+  activeLeases: Map<number, ReturnType<typeof setTimeout>>
+}
+
+interface ViewOwner {
+  surfaceId: string
+  detachCallback: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +57,7 @@ interface PoolEntry {
 
 const DEFAULT_IDLE_MS = 5 * 60 * 1000 // 5 minutes
 const DEFAULT_WARM_BUDGET = 10
+const LEASE_SAFETY_TIMEOUT_MS = 5_000
 
 // ---------------------------------------------------------------------------
 // SessionPool
@@ -58,12 +67,15 @@ export class SessionPool {
   private readonly sessions = new Map<string, PoolEntry>()
   private readonly inflightCreations = new Map<string, Promise<DocSession>>()
   private readonly inflightDestroys = new Map<string, Promise<void>>()
+  private readonly viewOwners = new Map<string, ViewOwner>()
   private readonly listeners = new Set<() => void>()
   private readonly idleMs: number
   private readonly warmBudget: number
   private readonly userId: string
   private readonly userName: string
   private readonly wsFactory?: DocumentWsProviderFactory
+  private readonly getAccessToken?: () => Promise<string>
+  private nextLeaseId = 1
   private destroyed = false
 
   constructor(config: SessionPoolConfig) {
@@ -72,6 +84,7 @@ export class SessionPool {
     this.userId = config.user.userId
     this.userName = config.user.userName
     this.wsFactory = config.wsFactory
+    this.getAccessToken = config.getAccessToken
   }
 
   // -------------------------------------------------------------------------
@@ -185,6 +198,92 @@ export class SessionPool {
     return Array.from(this.sessions.keys())
   }
 
+  /** Get the current view owner surface ID for a doc, if any. */
+  getViewOwnerSurfaceId(id: string): string | null {
+    return this.viewOwners.get(id)?.surfaceId ?? null
+  }
+
+  /** Register the surface that currently owns the live view for this doc. */
+  registerViewOwner(
+    id: string,
+    surfaceId: string,
+    detachCb: () => void,
+  ): void {
+    this.assertNotDestroyed()
+    this.viewOwners.set(id, { surfaceId, detachCallback: detachCb })
+  }
+
+  /**
+   * Unregister the current view owner if the caller still owns the record.
+   * Mismatched surface IDs are ignored to prevent accidental cross-surface clears.
+   */
+  unregisterViewOwner(id: string, surfaceId: string): void {
+    this.assertNotDestroyed()
+    const owner = this.viewOwners.get(id)
+    if (!owner) return
+    if (owner.surfaceId !== surfaceId) return
+    this.viewOwners.delete(id)
+  }
+
+  /**
+   * Request ownership transfer for a doc to a new surface.
+   * If another surface currently owns the view, its detach callback is invoked
+   * synchronously so it can hide/destroy and unregister before takeover.
+   */
+  requestTransfer(id: string, newSurfaceId: string): void {
+    this.assertNotDestroyed()
+    const owner = this.viewOwners.get(id)
+    if (!owner) return
+    if (owner.surfaceId === newSurfaceId) return
+    owner.detachCallback()
+  }
+
+  /**
+   * Acquire a temporary non-evictable lease for a session.
+   *
+   * While at least one lease is active, the session is excluded from:
+   *   - Idle timeout eviction
+   *   - Warm-budget detached eviction
+   *
+   * Returns an idempotent release function. A 5s safety timeout auto-releases
+   * if the caller forgets to release.
+   */
+  acquireLease(id: string): () => void {
+    this.assertNotDestroyed()
+
+    const entry = this.sessions.get(id)
+    if (!entry) {
+      throw new Error(`Cannot lease missing session: ${id}`)
+    }
+    if (entry.session.isFrozen) {
+      throw new Error(`Cannot lease frozen session: ${id}`)
+    }
+
+    // New lease epoch cancels stale idle timers.
+    entry.session.generation++
+
+    // If an idle timer exists, cancel it now; release() will reschedule if needed.
+    if (entry.idleTimer !== null) {
+      clearTimeout(entry.idleTimer)
+      entry.idleTimer = null
+    }
+
+    const leaseId = this.nextLeaseId++
+    const timeout = setTimeout(() => {
+      this.releaseLease(id, leaseId)
+    }, LEASE_SAFETY_TIMEOUT_MS)
+
+    entry.activeLeases.set(leaseId, timeout)
+    this.notify()
+
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.releaseLease(id, leaseId)
+    }
+  }
+
   /**
    * Subscribe to pool state changes (sessions added/removed/invalidated).
    * Compatible with useSyncExternalStore.
@@ -201,7 +300,19 @@ export class SessionPool {
     if (this.destroyed) return
     this.destroyed = true
 
-    // Cancel all idle timers first to prevent races during teardown
+    // Invalidate all active leases first so no lease state survives teardown.
+    // This also cancels lease safety timeouts to avoid post-destroy callbacks.
+    for (const entry of this.sessions.values()) {
+      if (entry.activeLeases.size > 0) {
+        entry.session.generation++
+      }
+      for (const timeout of entry.activeLeases.values()) {
+        clearTimeout(timeout)
+      }
+      entry.activeLeases.clear()
+    }
+
+    // Cancel all idle timers to prevent races during teardown
     for (const entry of this.sessions.values()) {
       if (entry.idleTimer !== null) {
         clearTimeout(entry.idleTimer)
@@ -230,8 +341,14 @@ export class SessionPool {
       this.sessions.clear()
       this.inflightCreations.clear()
       this.inflightDestroys.clear()
+      this.viewOwners.clear()
       this.listeners.clear()
     }
+  }
+
+  /** Expose destroyed state for callers that guard async races. */
+  get isDestroyed(): boolean {
+    return this.destroyed
   }
 
   // -------------------------------------------------------------------------
@@ -245,6 +362,7 @@ export class SessionPool {
       userId: this.userId,
       userName: this.userName,
       wsProviderFactory: this.wsFactory,
+      getAccessToken: this.getAccessToken,
     }
 
     const session = new DocSession(config)
@@ -266,7 +384,7 @@ export class SessionPool {
       throw new Error("SessionPool has been destroyed")
     }
 
-    const entry: PoolEntry = { session, idleTimer: null }
+    const entry: PoolEntry = { session, idleTimer: null, activeLeases: new Map() }
     this.sessions.set(id, entry)
 
     // Enforce warm budget — evict oldest detached session if over budget.
@@ -284,6 +402,11 @@ export class SessionPool {
    * (meaning nobody re-borrowed, preloaded, or invalidated it).
    */
   private startIdleTimer(id: string, entry: PoolEntry): void {
+    // Leased sessions are explicitly non-evictable while lease is active.
+    if (entry.activeLeases.size > 0) {
+      return
+    }
+
     // Cancel any existing timer for this session
     if (entry.idleTimer !== null) {
       clearTimeout(entry.idleTimer)
@@ -336,7 +459,11 @@ export class SessionPool {
   private getDetachedEntries(): { session: DocSession; entry: PoolEntry }[] {
     const result: { session: DocSession; entry: PoolEntry }[] = []
     for (const [, entry] of this.sessions) {
-      if (entry.session.attachedViewCount === 0 && !entry.session.isFrozen) {
+      if (
+        entry.session.attachedViewCount === 0
+        && !entry.session.isFrozen
+        && entry.activeLeases.size === 0
+      ) {
         result.push({ session: entry.session, entry })
       }
     }
@@ -347,6 +474,12 @@ export class SessionPool {
   private async destroySession(id: string): Promise<void> {
     const entry = this.sessions.get(id)
     if (!entry) return
+
+    // Cancel lease safety timers for this entry before removal.
+    for (const timeout of entry.activeLeases.values()) {
+      clearTimeout(timeout)
+    }
+    entry.activeLeases.clear()
 
     // Cancel idle timer
     if (entry.idleTimer !== null) {
@@ -365,6 +498,30 @@ export class SessionPool {
       await destroyPromise
     } finally {
       this.inflightDestroys.delete(id)
+    }
+
+    this.notify()
+  }
+
+  /** Internal lease release helper shared by explicit and timeout releases. */
+  private releaseLease(id: string, leaseId: number): void {
+    const entry = this.sessions.get(id)
+    if (!entry) return
+
+    const timeout = entry.activeLeases.get(leaseId)
+    if (!timeout) return
+
+    clearTimeout(timeout)
+    entry.activeLeases.delete(leaseId)
+
+    // If detached and no remaining lease, restore idle eviction behavior.
+    if (
+      !this.destroyed
+      && entry.session.attachedViewCount === 0
+      && !entry.session.isFrozen
+      && entry.activeLeases.size === 0
+    ) {
+      this.startIdleTimer(id, entry)
     }
 
     this.notify()

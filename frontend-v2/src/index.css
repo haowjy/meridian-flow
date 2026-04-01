@@ -219,4 +219,20 @@
     html {
         @apply font-sans antialiased;
     }
+
+    /* Clickable/selectable elements get pointer cursor.
+       Disabled elements revert to default. */
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]),
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    [role="tab"],
+    [role="switch"]:not([aria-disabled="true"]),
+    [role="checkbox"]:not([aria-disabled="true"]),
+    [role="radio"]:not([aria-disabled="true"]),
+    summary {
+        cursor: pointer;
+    }
 }

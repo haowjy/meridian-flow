@@ -3,10 +3,10 @@ import { useCallback, useRef } from "react"
 
 import { cn } from "@/lib/utils"
 
-import type { TabInfo } from "./tab-manager"
+import type { OpenDoc } from "../session/view-controller"
 
 export interface TabBarProps {
-  tabs: TabInfo[]
+  tabs: OpenDoc[]
   activeTabId: string | null
   onSwitch: (documentId: string) => void
   onClose: (documentId: string) => void
@@ -32,17 +32,17 @@ export function TabBar({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const currentIndex = tabs.findIndex((t) => t.documentId === activeTabId)
+      const currentIndex = tabs.findIndex((t) => t.id === activeTabId)
       if (currentIndex === -1) return
 
       if (e.key === "ArrowLeft") {
         e.preventDefault()
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1
-        onSwitch(tabs[prevIndex].documentId)
+        onSwitch(tabs[prevIndex].id)
       } else if (e.key === "ArrowRight") {
         e.preventDefault()
         const nextIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0
-        onSwitch(tabs[nextIndex].documentId)
+        onSwitch(tabs[nextIndex].id)
       } else if (e.key === "w" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
         if (activeTabId) {
@@ -68,18 +68,18 @@ export function TabBar({
       onKeyDown={handleKeyDown}
     >
       {tabs.map((tab) => {
-        const isActive = tab.documentId === activeTabId
+        const isActive = tab.id === activeTabId
         return (
           <div
-            key={tab.documentId}
+            key={tab.id}
             role="tab"
             aria-selected={isActive}
             tabIndex={isActive ? 0 : -1}
-            onClick={() => onSwitch(tab.documentId)}
+            onClick={() => onSwitch(tab.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault()
-                onSwitch(tab.documentId)
+                onSwitch(tab.id)
               }
             }}
             className={cn(
@@ -104,13 +104,13 @@ export function TabBar({
                   {"\u25CF"}
                 </span>
               )}
-              {tab.documentName}
+              {tab.name}
             </span>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                onClose(tab.documentId)
+                onClose(tab.id)
               }}
               className={cn(
                 "shrink-0 ml-1 rounded-sm p-0.5 transition-opacity",
@@ -119,7 +119,7 @@ export function TabBar({
                   ? "opacity-70 hover:opacity-100"
                   : "opacity-0 group-hover:opacity-70 group-hover:hover:opacity-100",
               )}
-              aria-label={`Close ${tab.documentName}`}
+              aria-label={`Close ${tab.name}`}
             >
               <X size={12} />
             </button>

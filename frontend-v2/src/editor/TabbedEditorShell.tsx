@@ -4,20 +4,20 @@ import { cn } from "@/lib/utils"
 
 import type { EditorContentAPI } from "./content/content-api"
 import { EditorModeTabs, type EditorMode } from "./EditorModeTabs"
+import type { OpenDoc } from "./session/view-controller"
 import { TabBar } from "./tabs/TabBar"
-import type { TabInfo } from "./tabs/tab-manager"
 import { TitleHeader } from "./title-header/TitleHeader"
 import type { CollabConnectionState } from "./title-header/ConnectionStatus"
 
 export interface TabbedEditorShellProps {
-  /** Tab data for the tab bar */
-  tabs: TabInfo[]
-  /** Currently active tab ID */
-  activeTabId: string | null
-  /** Called when user clicks a tab */
-  onSwitchTab: (documentId: string) => void
-  /** Called when user closes a tab */
-  onCloseTab: (documentId: string) => void
+  /** Open documents from useDocumentSessions() */
+  openDocs?: OpenDoc[]
+  /** Active document ID from useDocumentSessions() */
+  activeDocId?: string | null
+  /** Called when user activates a doc */
+  onActivateDoc?: (documentId: string) => void
+  /** Called when user closes a doc */
+  onCloseDoc?: (documentId: string) => void
   /** Active document name for the title header */
   documentName: string
   /** Called when the user renames the document */
@@ -38,7 +38,7 @@ export interface TabbedEditorShellProps {
   mode?: EditorMode
   onModeChange?: (mode: EditorMode) => void
   className?: string
-  /** Children: the TabManager host container */
+  /** Children: ViewController host container */
   children?: React.ReactNode
 }
 
@@ -46,13 +46,13 @@ export interface TabbedEditorShellProps {
  * Multi-tab editor shell composing tab bar, title header, and editor container.
  *
  * The editor area is provided as `children` -- typically the host div
- * managed by `useTabManager`. This shell just handles the chrome.
+ * managed by `useDocumentSessions`. This shell just handles the chrome.
  */
 export function TabbedEditorShell({
-  tabs,
-  activeTabId,
-  onSwitchTab,
-  onCloseTab,
+  openDocs,
+  activeDocId,
+  onActivateDoc,
+  onCloseDoc,
   documentName,
   onRename,
   connectionState = "disconnected",
@@ -66,6 +66,11 @@ export function TabbedEditorShell({
   className,
   children,
 }: TabbedEditorShellProps) {
+  const resolvedOpenDocs = openDocs ?? []
+  const resolvedActiveDocId = activeDocId ?? null
+  const handleActivateDoc = onActivateDoc ?? (() => {})
+  const handleCloseDoc = onCloseDoc ?? (() => {})
+
   const [internalMode, setInternalMode] = useState<EditorMode>("preview")
   const resolvedMode = mode ?? internalMode
   const contentApiRefLocal = useRef<EditorContentAPI | null>(null)
@@ -97,10 +102,10 @@ export function TabbedEditorShell({
     >
       {/* Tab bar */}
       <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onSwitch={onSwitchTab}
-        onClose={onCloseTab}
+        tabs={resolvedOpenDocs}
+        activeTabId={resolvedActiveDocId}
+        onSwitch={handleActivateDoc}
+        onClose={handleCloseDoc}
       />
 
       {/* Title header */}
@@ -119,7 +124,7 @@ export function TabbedEditorShell({
         <EditorModeTabs mode={resolvedMode} onModeChange={handleModeChange} />
       </div>
 
-      {/* Editor container managed by TabManager */}
+      {/* Editor container managed by useDocumentSessions */}
       <div className="min-h-0 flex-1">{children}</div>
     </section>
   )

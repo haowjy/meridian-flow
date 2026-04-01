@@ -1,19 +1,49 @@
-import type { Preview } from '@storybook/react-vite'
-import type { ReactRenderer } from '@storybook/react-vite'
-import type { DecoratorFunction } from 'storybook/internal/types'
-import React from 'react'
-import '../src/index.css'
+import type { Preview } from "@storybook/react-vite"
+import type { Theme } from "@/components/theme-provider"
+import { ThemeProvider } from "@/components/theme-provider"
+import "@/index.css"
 
-const withTheme: DecoratorFunction<ReactRenderer> = (Story, context) => {
-  const theme = context.globals.theme || 'light'
-  return (
-    <div className={`${theme === 'dark' ? 'dark' : ''} bg-background text-foreground min-h-screen p-4`}>
-      <Story />
-    </div>
-  )
-}
+type ToolbarTheme = Extract<Theme, "light" | "dark">
 
 const preview: Preview = {
+  decorators: [
+    (Story, context) => {
+      const selectedTheme = (context.globals.theme ?? "light") as ToolbarTheme
+
+      if (typeof document !== "undefined") {
+        const root = document.documentElement
+        root.classList.toggle("dark", selectedTheme === "dark")
+        root.classList.toggle("light", selectedTheme === "light")
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("meridian-theme", selectedTheme)
+      }
+
+      return (
+        <ThemeProvider defaultTheme={selectedTheme}>
+          <div className="min-h-screen bg-background p-4 text-foreground">
+            <Story />
+          </div>
+        </ThemeProvider>
+      )
+    },
+  ],
+  globalTypes: {
+    theme: {
+      name: "Theme",
+      description: "Toggle Meridian light/dark theme",
+      defaultValue: "light",
+      toolbar: {
+        icon: "contrast",
+        dynamicTitle: true,
+        items: [
+          { value: "light", title: "Light" },
+          { value: "dark", title: "Dark" },
+        ],
+      },
+    },
+  },
   parameters: {
     controls: {
       matchers: {
@@ -21,24 +51,43 @@ const preview: Preview = {
         date: /Date$/i,
       },
     },
-    a11y: {
-      test: 'todo',
+    backgrounds: {
+      default: "transparent",
+      values: [{ name: "transparent", value: "transparent" }],
     },
-  },
-
-  globalTypes: {
-    theme: {
-      description: 'Theme',
-      toolbar: {
-        title: 'Theme',
-        icon: 'circlehollow',
-        items: ['light', 'dark'],
-        dynamicTitle: true,
+    viewport: {
+      options: {
+        desktopExpanded: {
+          name: "Desktop Expanded (1440)",
+          styles: {
+            width: "1440px",
+            height: "900px",
+          },
+        },
+        medium: {
+          name: "Medium (1024)",
+          styles: {
+            width: "1024px",
+            height: "768px",
+          },
+        },
+        compact: {
+          name: "Compact (768)",
+          styles: {
+            width: "768px",
+            height: "1024px",
+          },
+        },
+        mobile: {
+          name: "Mobile (390)",
+          styles: {
+            width: "390px",
+            height: "844px",
+          },
+        },
       },
     },
   },
-
-  decorators: [withTheme],
 }
 
 export default preview

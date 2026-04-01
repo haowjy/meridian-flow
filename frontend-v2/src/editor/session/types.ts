@@ -6,6 +6,7 @@
  */
 
 import type * as Y from "yjs"
+import type { Awareness } from "y-protocols/awareness"
 
 // ---------------------------------------------------------------------------
 // Document state types
@@ -43,15 +44,20 @@ export type ConnectionState =
 // WebSocket provider contracts (Phase 4 implementation)
 // ---------------------------------------------------------------------------
 
-/**
- * Placeholder interface for the WebSocket provider.
- *
- * The real implementation (Phase 4) handles binary Yjs sync,
- * awareness relay, heartbeat, auth refresh, and control-plane events.
- */
+export type ProviderControlEvent =
+  | { type: "connected" }
+  | { type: "auth-expired" }
+  | { type: "access-revoked"; status: 403 | 404 }
+  | { type: "document-restored" }
+  | { type: "rate-limited"; retryAfterMs?: number }
+  | { type: "fatal"; code: string; message: string }
+
 export interface DocumentWsProvider {
   connect(): void
-  disconnect(): void
+  disconnect(reason?: string): void
+  sendAwarenessUpdate(update: Uint8Array): void
+  onConnectionState(listener: (state: ConnectionState) => void): () => void
+  onControlEvent(listener: (event: ProviderControlEvent) => void): () => void
   destroy(): void
 }
 
@@ -61,7 +67,9 @@ export interface DocumentWsProvider {
  * Decouples DocSession from transport construction so the pool
  * can control auth, reconnection policy, and provider lifecycle.
  */
-export type DocumentWsProviderFactory = (
-  documentId: string,
-  ydoc: Y.Doc,
-) => DocumentWsProvider
+export type DocumentWsProviderFactory = (args: {
+  documentId: string
+  ydoc: Y.Doc
+  awareness: Awareness
+  getAccessToken: () => Promise<string>
+}) => DocumentWsProvider
