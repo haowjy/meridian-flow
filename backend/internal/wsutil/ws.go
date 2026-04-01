@@ -519,6 +519,22 @@ func (c *conn) endSub(subID string, emitAck bool) {
 		return
 	}
 
+	// Drain any messages that were already enqueued on the subscription's
+	// per-sub queue before EndSub was called. removeSub removes the subID
+	// from subOrder so the writer loop's round-robin can no longer find these
+	// messages — they would be silently dropped. Reroute them through the
+	// control queue so they are still delivered to the client (e.g. catchup
+	// events, stream:ended, or gap frames enqueued just before EndSub).
+	for {
+		select {
+		case msg := <-sub.queue:
+			_ = c.enqueueControl(msg)
+		default:
+			goto drained
+		}
+	}
+drained:
+
 	if emitAck {
 		_ = c.enqueueControl(Envelope{Kind: KindControl, Op: OpUnsubscribed, SubId: subID})
 	}
