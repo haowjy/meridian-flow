@@ -53,143 +53,41 @@ func newStubMonitor(usageFraction float64, contextWindow, maxOutput int) *TokenM
 // CheckBudget threshold tests
 // =============================================================================
 
-func TestCheckBudget_BelowCollapse(t *testing.T) {
-	// 59% usage — all flags must be false
-	monitor := newStubMonitor(0.59, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
+func TestCheckBudget_Thresholds(t *testing.T) {
+	tests := []struct {
+		name          string
+		usageFraction float64
+		wantCollapse  bool
+		wantCompact   bool
+		wantWarn      bool
+	}{
+		{name: "below collapse threshold keeps all flags false", usageFraction: 0.59},
+		{name: "collapse threshold sets collapse only", usageFraction: 0.60, wantCollapse: true},
+		{name: "between collapse and compact keeps compact false", usageFraction: 0.75, wantCollapse: true},
+		{name: "compact threshold sets collapse and compact", usageFraction: 0.80, wantCollapse: true, wantCompact: true},
+		{name: "between compact and warn keeps warn false", usageFraction: 0.85, wantCollapse: true, wantCompact: true},
+		{name: "warn threshold sets all flags", usageFraction: 0.90, wantCollapse: true, wantCompact: true, wantWarn: true},
+		{name: "usage above context window still sets all flags", usageFraction: 1.10, wantCollapse: true, wantCompact: true, wantWarn: true},
 	}
 
-	if check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = true at 59%%, want false")
-	}
-	if check.ShouldCompact {
-		t.Errorf("ShouldCompact = true at 59%%, want false")
-	}
-	if check.ShouldWarn {
-		t.Errorf("ShouldWarn = true at 59%%, want false")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			monitor := newStubMonitor(tt.usageFraction, 200_000, 0)
 
-func TestCheckBudget_AtCollapse(t *testing.T) {
-	// Exactly 60% — only ShouldCollapse must be true
-	monitor := newStubMonitor(0.60, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 60%%, want true")
-	}
-	if check.ShouldCompact {
-		t.Errorf("ShouldCompact = true at 60%%, want false")
-	}
-	if check.ShouldWarn {
-		t.Errorf("ShouldWarn = true at 60%%, want false")
-	}
-}
-
-func TestCheckBudget_BetweenCollapseAndCompact(t *testing.T) {
-	// 75% — ShouldCollapse true, ShouldCompact false
-	monitor := newStubMonitor(0.75, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 75%%, want true")
-	}
-	if check.ShouldCompact {
-		t.Errorf("ShouldCompact = true at 75%%, want false")
-	}
-	if check.ShouldWarn {
-		t.Errorf("ShouldWarn = true at 75%%, want false")
-	}
-}
-
-func TestCheckBudget_AtCompact(t *testing.T) {
-	// Exactly 80% — ShouldCollapse and ShouldCompact true, ShouldWarn false
-	monitor := newStubMonitor(0.80, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 80%%, want true")
-	}
-	if !check.ShouldCompact {
-		t.Errorf("ShouldCompact = false at 80%%, want true")
-	}
-	if check.ShouldWarn {
-		t.Errorf("ShouldWarn = true at 80%%, want false")
-	}
-}
-
-func TestCheckBudget_BetweenCompactAndWarn(t *testing.T) {
-	// 85% — ShouldCollapse and ShouldCompact true, ShouldWarn false
-	monitor := newStubMonitor(0.85, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 85%%, want true")
-	}
-	if !check.ShouldCompact {
-		t.Errorf("ShouldCompact = false at 85%%, want true")
-	}
-	if check.ShouldWarn {
-		t.Errorf("ShouldWarn = true at 85%%, want false")
-	}
-}
-
-func TestCheckBudget_AtWarn(t *testing.T) {
-	// Exactly 90% — all flags must be true
-	monitor := newStubMonitor(0.90, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 90%%, want true")
-	}
-	if !check.ShouldCompact {
-		t.Errorf("ShouldCompact = false at 90%%, want true")
-	}
-	if !check.ShouldWarn {
-		t.Errorf("ShouldWarn = false at 90%%, want true")
-	}
-}
-
-func TestCheckBudget_Above100Percent(t *testing.T) {
-	// 110% — all flags must be true (context window exceeded)
-	monitor := newStubMonitor(1.10, 200_000, 0)
-
-	check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
-	if err != nil {
-		t.Fatalf("CheckBudget returned unexpected error: %v", err)
-	}
-
-	if !check.ShouldCollapse {
-		t.Errorf("ShouldCollapse = false at 110%%, want true")
-	}
-	if !check.ShouldCompact {
-		t.Errorf("ShouldCompact = false at 110%%, want true")
-	}
-	if !check.ShouldWarn {
-		t.Errorf("ShouldWarn = false at 110%%, want true")
+			check, err := monitor.CheckBudget(context.Background(), tokens.EstimateRequest{Model: "test-model"})
+			if err != nil {
+				t.Fatalf("CheckBudget returned unexpected error: %v", err)
+			}
+			if check.ShouldCollapse != tt.wantCollapse {
+				t.Fatalf("ShouldCollapse = %v, want %v at %.0f%%", check.ShouldCollapse, tt.wantCollapse, tt.usageFraction*100)
+			}
+			if check.ShouldCompact != tt.wantCompact {
+				t.Fatalf("ShouldCompact = %v, want %v at %.0f%%", check.ShouldCompact, tt.wantCompact, tt.usageFraction*100)
+			}
+			if check.ShouldWarn != tt.wantWarn {
+				t.Fatalf("ShouldWarn = %v, want %v at %.0f%%", check.ShouldWarn, tt.wantWarn, tt.usageFraction*100)
+			}
+		})
 	}
 }
 

@@ -14,14 +14,7 @@ import (
 
 // TestBuildMessages_NormalThread tests naive message building with a normal thread
 func TestBuildMessages_NormalThread(t *testing.T) {
-	// Create service
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	// Create conversation path: user turn, assistant turn
 	path := []domainllm.Turn{
@@ -87,14 +80,7 @@ func TestBuildMessages_NormalThread(t *testing.T) {
 
 // TestBuildMessages_ToolContinuation tests naive message building with tool continuation
 func TestBuildMessages_ToolContinuation(t *testing.T) {
-	// Create service
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	// Create assistant turn with tool_use + tool_result blocks from multiple rounds
 	// This simulates what happens after tool continuation:
@@ -214,14 +200,7 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 }
 
 func TestBuildMessages_FormatsStructuredToolErrors(t *testing.T) {
-	// Create service
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	path := []domainllm.Turn{
 		{
@@ -269,14 +248,7 @@ func TestBuildMessages_FormatsStructuredToolErrors(t *testing.T) {
 
 // TestBuildMessages_EmptyTurn tests that empty turns are skipped
 func TestBuildMessages_EmptyTurn(t *testing.T) {
-	// Create service
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	// Create path with empty turn
 	path := []domainllm.Turn{
@@ -318,14 +290,7 @@ func TestBuildMessages_EmptyTurn(t *testing.T) {
 
 // TestBuildMessages_UnsupportedRole tests error handling for unsupported roles
 func TestBuildMessages_UnsupportedRole(t *testing.T) {
-	// Create service
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	// Create path with unsupported role
 	path := []domainllm.Turn{
@@ -344,7 +309,7 @@ func TestBuildMessages_UnsupportedRole(t *testing.T) {
 	}
 
 	// Build messages
-	_, err = service.BuildMessages(context.Background(), path)
+	_, err := service.BuildMessages(context.Background(), path)
 	if err == nil {
 		t.Fatal("expected error for unsupported role, got nil")
 	}
@@ -352,14 +317,7 @@ func TestBuildMessages_UnsupportedRole(t *testing.T) {
 
 // TestBuildMessages_ToolResultFormatting tests that tool_result blocks are formatted
 func TestBuildMessages_ToolResultFormatting(t *testing.T) {
-	// Create service with a formatter
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	formatterRegistry := formatting.NewFormatterRegistry()
-	capabilityRegistry, err := capabilities.NewRegistry()
-	if err != nil {
-		t.Fatalf("Failed to create capability registry: %v", err)
-	}
-	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+	service := newTestService(t)
 
 	// Create path with tool_result block
 	path := []domainllm.Turn{

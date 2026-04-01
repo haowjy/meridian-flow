@@ -42,94 +42,59 @@ func TestDocumentSessionCurrentStateLocked_DerivesContentFromAppliedUpdate(t *te
 	}
 }
 
-func TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty(t *testing.T) {
-	store := &fakeSessionStore{
-		state:            []byte{},
-		bootstrapContent: "seed text",
-	}
-	session := &DocumentSession{
-		docID:          "doc-bootstrap",
-		doc:            ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:     store,
-		updateLogStore: &fakeSessionUpdateLogStore{},
-		contentLoader:  store,
-	}
-
-	if err := session.loadState(context.Background()); err != nil {
-		t.Fatalf("loadState returned error: %v", err)
-	}
-
-	if got := readSessionContent(session.doc); got != "seed text" {
-		t.Fatalf("expected bootstrapped content %q, got %q", "seed text", got)
-	}
-	if store.loadContentCalls != 1 {
-		t.Fatalf("expected one LoadContentForBootstrap call, got %d", store.loadContentCalls)
-	}
-	if store.saveCalls != 1 {
-		t.Fatalf("expected one SaveState call for bootstrap persist, got %d", store.saveCalls)
-	}
-	if store.savedContent != "seed text" {
-		t.Fatalf("expected persisted content %q, got %q", "seed text", store.savedContent)
-	}
-	if got := decodeStateContent(t, store.savedState); got != "seed text" {
-		t.Fatalf("expected persisted yjs_state content %q, got %q", "seed text", got)
-	}
-}
-
-func TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop(t *testing.T) {
-	store := &fakeSessionStore{
-		state:            []byte{},
-		bootstrapContent: "",
-	}
-	session := &DocumentSession{
-		docID:          "doc-empty",
-		doc:            ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:     store,
-		updateLogStore: &fakeSessionUpdateLogStore{},
-		contentLoader:  store,
-	}
-
-	if err := session.loadState(context.Background()); err != nil {
-		t.Fatalf("loadState returned error: %v", err)
-	}
-
-	if got := readSessionContent(session.doc); got != "" {
-		t.Fatalf("expected empty content, got %q", got)
-	}
-	if store.loadContentCalls != 1 {
-		t.Fatalf("expected one LoadContentForBootstrap call, got %d", store.loadContentCalls)
-	}
-	if store.saveCalls != 1 {
-		t.Fatalf("expected one SaveState call to persist _proposal_status bootstrap, got %d", store.saveCalls)
-	}
-}
-
-func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) {
+func TestDocumentSessionLoadState(t *testing.T) {
 	existingState := mustBuildSessionState(t, "persisted")
-	store := &fakeSessionStore{
-		state:            existingState,
-		bootstrapContent: "should-not-load",
-	}
-	session := &DocumentSession{
-		docID:          "doc-existing",
-		doc:            ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:     store,
-		updateLogStore: &fakeSessionUpdateLogStore{},
-		contentLoader:  store,
+	tests := []struct {
+		name                 string
+		docID                string
+		state                []byte
+		bootstrapContent     string
+		wantContent          string
+		wantLoadContentCalls int
+		wantSaveCalls        int
+		verify               func(t *testing.T, store *fakeSessionStore)
+	}{
+		{
+			name:                 "bootstraps from content when state is empty",
+			docID:                "doc-bootstrap",
+			state:                []byte{},
+			bootstrapContent:     "seed text",
+			wantContent:          "seed text",
+			wantLoadContentCalls: 1,
+			wantSaveCalls:        1,
+			verify: func(t *testing.T, store *fakeSessionStore) {
+				if store.savedContent != "seed text" {
+					t.Fatalf("expected persisted content %q, got %q", "seed text", store.savedContent)
+				}
+				if got := decodeStateContent(t, store.savedState); got != "seed text" {
+					t.Fatalf("expected persisted yjs_state content %q, got %q", "seed text", got)
+				}
+			},
+		},
+		{name: "empty state and empty content is a no-op bootstrap", docID: "doc-empty", state: []byte{}, bootstrapContent: "", wantContent: "", wantLoadContentCalls: 1, wantSaveCalls: 1},
+		{name: "existing state skips bootstrap content load", docID: "doc-existing", state: existingState, bootstrapContent: "should-not-load", wantContent: "persisted", wantLoadContentCalls: 0, wantSaveCalls: 1},
 	}
 
-	if err := session.loadState(context.Background()); err != nil {
-		t.Fatalf("loadState returned error: %v", err)
-	}
-
-	if got := readSessionContent(session.doc); got != "persisted" {
-		t.Fatalf("expected persisted content %q, got %q", "persisted", got)
-	}
-	if store.loadContentCalls != 0 {
-		t.Fatalf("expected bootstrap content not to be loaded, got %d calls", store.loadContentCalls)
-	}
-	if store.saveCalls != 1 {
-		t.Fatalf("expected one SaveState call to persist _proposal_status bootstrap, got %d", store.saveCalls)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeSessionStore{state: tt.state, bootstrapContent: tt.bootstrapContent}
+			session := &DocumentSession{docID: tt.docID, doc: ycrdt.NewDoc(tt.docID, true, ycrdt.DefaultGCFilter, nil, false), stateStore: store, updateLogStore: &fakeSessionUpdateLogStore{}, contentLoader: store}
+			if err := session.loadState(context.Background()); err != nil {
+				t.Fatalf("loadState returned error: %v", err)
+			}
+			if got := readSessionContent(session.doc); got != tt.wantContent {
+				t.Fatalf("content = %q, want %q", got, tt.wantContent)
+			}
+			if store.loadContentCalls != tt.wantLoadContentCalls {
+				t.Fatalf("LoadContentForBootstrap calls = %d, want %d", store.loadContentCalls, tt.wantLoadContentCalls)
+			}
+			if store.saveCalls != tt.wantSaveCalls {
+				t.Fatalf("SaveState calls = %d, want %d", store.saveCalls, tt.wantSaveCalls)
+			}
+			if tt.verify != nil {
+				tt.verify(t, store)
+			}
+		})
 	}
 }
 

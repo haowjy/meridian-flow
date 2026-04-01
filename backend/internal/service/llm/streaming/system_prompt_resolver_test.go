@@ -178,56 +178,34 @@ func ptr(s string) *string { return &s }
 // Tests: buildWorkContextSection (pure helper; no DB)
 // =============================================================================
 
-func TestBuildWorkContextSection_NilInput(t *testing.T) {
-	// Guard against the nil-pointer panic that existed before the nil check was added.
-	// WorkContext nil → position 3 must produce empty string, not crash.
+func TestBuildWorkContextSection(t *testing.T) {
 	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
-	got := r.buildWorkContextSection(nil)
-	if got != "" {
-		t.Errorf("expected empty string for nil WorkContext, got %q", got)
+	tests := []struct {
+		name string
+		wc   *domainllm.WorkContext
+		want string
+	}{
+		{name: "nil input returns empty section", want: ""},
+		{
+			name: "all fields render in order",
+			wc: &domainllm.WorkContext{
+				WorkItem: "my-feature",
+				WorkDir:  ".meridian/work/my-feature/",
+				FSDir:    ".meridian/fs/",
+				ThreadID: "thread-abc",
+			},
+			want: "# Active Work Session\nWork item: my-feature\nWork directory: .meridian/work/my-feature/\nFilesystem directory: .meridian/fs/\nThread ID: thread-abc",
+		},
+		{name: "empty struct still renders the header", wc: &domainllm.WorkContext{}, want: "# Active Work Session"},
 	}
-}
 
-func TestBuildWorkContextSection_AllFields(t *testing.T) {
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
-	wc := &domainllm.WorkContext{
-		WorkItem: "my-feature",
-		WorkDir:  ".meridian/work/my-feature/",
-		FSDir:    ".meridian/fs/",
-		ThreadID: "thread-abc",
-	}
-	got := r.buildWorkContextSection(wc)
-
-	if !strings.Contains(got, "# Active Work Session") {
-		t.Error("expected section header '# Active Work Session'")
-	}
-	if !strings.Contains(got, "my-feature") {
-		t.Error("expected work item slug in output")
-	}
-	if !strings.Contains(got, ".meridian/work/my-feature/") {
-		t.Error("expected work directory in output")
-	}
-	if !strings.Contains(got, ".meridian/fs/") {
-		t.Error("expected filesystem directory in output")
-	}
-	if !strings.Contains(got, "thread-abc") {
-		t.Error("expected thread ID in output")
-	}
-}
-
-func TestBuildWorkContextSection_EmptyStruct(t *testing.T) {
-	// Empty (non-nil) WorkContext: still produces header, no extra lines.
-	r := newTestResolver(&stubThreadStore{}, &stubProjectStore{}, &stubSkillResolver{})
-	got := r.buildWorkContextSection(&domainllm.WorkContext{})
-	if !strings.Contains(got, "# Active Work Session") {
-		t.Error("expected at least the section header for an empty WorkContext")
-	}
-	// No field lines should appear when all are empty strings.
-	if strings.Contains(got, "Work item:") {
-		t.Error("unexpected 'Work item:' line for empty WorkContext")
-	}
-	if strings.Contains(got, "Work directory:") {
-		t.Error("unexpected 'Work directory:' line for empty WorkContext")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.buildWorkContextSection(tt.wc)
+			if got != tt.want {
+				t.Fatalf("buildWorkContextSection() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -318,92 +296,45 @@ func TestResolve_WorkContextSet_Position3Present(t *testing.T) {
 	}
 }
 
-func TestResolve_PersonaBodyNil_Position7Empty(t *testing.T) {
-	// When PersonaBody is nil, no persona content should appear at position 7.
+func TestResolve_PersonaBodySection(t *testing.T) {
 	projectID := "proj-1"
-	r := newTestResolver(
-		&stubThreadStore{thread: defaultThread(projectID)},
-		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillResolver{},
-	)
-
-	const uniquePersonaMarker = "UNIQUE_PERSONA_MARKER_THAT_WONT_APPEAR_OTHERWISE"
-	_ = uniquePersonaMarker // referenced below if PersonaBody were set
-
-	pc := domainllm.PromptContext{
-		ThreadID:    "thread-1",
-		ProjectID:   projectID,
-		UserID:      "user-1",
-		PersonaBody: nil, // explicit nil — no persona
-	}
-
-	got, err := r.Resolve(context.Background(), pc)
-	if err != nil {
-		t.Fatalf("Resolve returned unexpected error: %v", err)
-	}
-
-	// With nil PersonaBody the output should contain only the base prompt.
-	// We count the "\n\n" separators — with nil extensions and no project/thread
-	// prompts, there should be just the base section (1 part).
-	parts := strings.Split(got, "\n\n")
-	if len(parts) != 1 {
-		t.Errorf("expected 1 part (base only), got %d parts: %v", len(parts), parts)
-	}
-}
-
-func TestResolve_PersonaBodyEmptyString_NotInjected(t *testing.T) {
-	// An empty PersonaBody string must also be excluded from position 7.
-	// The guard is `pc.PersonaBody != nil && *pc.PersonaBody != ""`.
-	projectID := "proj-1"
-	r := newTestResolver(
-		&stubThreadStore{thread: defaultThread(projectID)},
-		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillResolver{},
-	)
-
 	emptyBody := ""
-	pc := domainllm.PromptContext{
-		ThreadID:    "thread-1",
-		ProjectID:   projectID,
-		UserID:      "user-1",
-		PersonaBody: &emptyBody, // non-nil but empty — should still be excluded
-	}
-
-	got, err := r.Resolve(context.Background(), pc)
-	if err != nil {
-		t.Fatalf("Resolve returned unexpected error: %v", err)
-	}
-
-	parts := strings.Split(got, "\n\n")
-	if len(parts) != 1 {
-		t.Errorf("empty PersonaBody should not add a position 7 section; got %d parts: %v", len(parts), parts)
-	}
-}
-
-func TestResolve_PersonaBodySet_Position7Present(t *testing.T) {
-	// When PersonaBody is non-nil and non-empty, its content must appear at position 7.
-	projectID := "proj-1"
-	r := newTestResolver(
-		&stubThreadStore{thread: defaultThread(projectID)},
-		&stubProjectStore{project: defaultProject(projectID)},
-		&stubSkillResolver{},
-	)
-
 	personaContent := "You are a gruff sea captain with a fondness for marine biology."
-	pc := domainllm.PromptContext{
-		ThreadID:    "thread-1",
-		ProjectID:   projectID,
-		UserID:      "user-1",
-		PersonaBody: &personaContent,
+	tests := []struct {
+		name         string
+		personaBody  *string
+		wantParts    int
+		wantContains string
+	}{
+		{name: "nil persona body is omitted", wantParts: 1},
+		{name: "empty persona body is omitted", personaBody: &emptyBody, wantParts: 1},
+		{name: "non-empty persona body is appended", personaBody: &personaContent, wantParts: 2, wantContains: personaContent},
 	}
 
-	got, err := r.Resolve(context.Background(), pc)
-	if err != nil {
-		t.Fatalf("Resolve returned unexpected error: %v", err)
-	}
-
-	if !strings.Contains(got, personaContent) {
-		t.Errorf("expected persona body %q to appear in output; got: %q", personaContent, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestResolver(
+				&stubThreadStore{thread: defaultThread(projectID)},
+				&stubProjectStore{project: defaultProject(projectID)},
+				&stubSkillResolver{},
+			)
+			got, err := r.Resolve(context.Background(), domainllm.PromptContext{
+				ThreadID:    "thread-1",
+				ProjectID:   projectID,
+				UserID:      "user-1",
+				PersonaBody: tt.personaBody,
+			})
+			if err != nil {
+				t.Fatalf("Resolve returned unexpected error: %v", err)
+			}
+			parts := strings.Split(got, "\n\n")
+			if len(parts) != tt.wantParts {
+				t.Fatalf("Resolve parts = %d, want %d: %v", len(parts), tt.wantParts, parts)
+			}
+			if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
+				t.Fatalf("expected persona body %q to appear in output; got: %q", tt.wantContains, got)
+			}
+		})
 	}
 }
 

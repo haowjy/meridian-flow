@@ -48,13 +48,6 @@ func (m *mockTool) getExecCount() int {
 	return m.execCount
 }
 
-func TestNewToolRegistry(t *testing.T) {
-	registry := NewToolRegistry()
-	if registry == nil || registry.tools == nil {
-		t.Fatal("NewToolRegistry returned nil or registry.tools is nil")
-	}
-}
-
 func TestToolRegistry_RegisterAndGet(t *testing.T) {
 	registry := NewToolRegistry()
 	tool := &mockTool{name: "test_tool"}

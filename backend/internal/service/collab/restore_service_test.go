@@ -57,118 +57,89 @@ func TestRestoreServiceRestoreTurn_NotFound(t *testing.T) {
 }
 
 func TestRestoreServiceRestoreTurn_CreatesSafetyBookmarksRestoresStateAndReconciles(t *testing.T) {
-	turnID := uuid.New()
-	turnIDStr := turnID.String()
-	docID := uuid.New()
-	docIDStr := docID.String()
-	proposalID := uuid.New().String()
+	t.Run("returns affected document IDs", func(t *testing.T) {
+		fixture := newRestoreTurnFixture(t)
 
-	bookmarkID := "bookmark-ai-turn-1"
-	restoreState := mustBuildSessionStateWithStatusMap(t, "before turn", map[string]string{
-		proposalID: "pending",
-	})
-	currentState := mustBuildSessionStateWithStatusMap(t, "after turn", map[string]string{
-		proposalID: "accepted",
+		result := fixture.restore(t)
+		if len(result.AffectedDocumentIDs) != 1 || result.AffectedDocumentIDs[0] != fixture.docID {
+			t.Fatalf("unexpected affected ids: %+v", result.AffectedDocumentIDs)
+		}
 	})
 
-	bookmarkStore := &fakeRestoreBookmarkStore{
-		listByTurn: []collab.Bookmark{
-			{
-				ID:           bookmarkID,
-				DocumentID:   docIDStr,
-				BookmarkType: restoreBookmarkTypeAITurn,
-				TurnID:       &turnIDStr,
-			},
-		},
-		statesByBookmarkID: map[string][]byte{
-			bookmarkID: restoreState,
-		},
-	}
-	stateStore := &fakeRestoreStateStore{
-		loadedStates: map[string][]byte{
-			docIDStr: currentState,
-		},
-	}
-	checkpointStore := &fakeRestoreCheckpointStore{}
-	updateLogStore := &fakeRestoreUpdateLogStore{}
-	statusMirror := &fakeRestoreStatusMirror{}
-	sessionManager := &fakeRestoreSessionManager{}
-	broadcaster := &fakeRestoreBroadcaster{}
+	t.Run("creates a safety bookmark for the restored document", func(t *testing.T) {
+		fixture := newRestoreTurnFixture(t)
 
-	svc := NewRestoreService(
-		bookmarkStore,
-		stateStore,
-		checkpointStore,
-		updateLogStore,
-		statusMirror,
-		sessionManager,
-		broadcaster,
-		&fakeRestoreTxManager{},
-		&fakeRestoreAuthorizer{},
-		nil,
-	)
+		fixture.restore(t)
+		if len(fixture.bookmarkStore.createCalls) != 1 {
+			t.Fatalf("expected one safety bookmark create call, got %d", len(fixture.bookmarkStore.createCalls))
+		}
 
-	result, err := svc.RestoreTurn(context.Background(), testRestoreUserID, turnID)
-	if err != nil {
-		t.Fatalf("RestoreTurn returned error: %v", err)
-	}
-	if len(result.AffectedDocumentIDs) != 1 || result.AffectedDocumentIDs[0] != docID {
-		t.Fatalf("unexpected affected ids: %+v", result.AffectedDocumentIDs)
-	}
+		createCall := fixture.bookmarkStore.createCalls[0]
+		if createCall.DocumentID != fixture.docIDStr || createCall.BookmarkType != restoreBookmarkTypeSafetyRestore {
+			t.Fatalf("unexpected safety bookmark create call: %+v", createCall)
+		}
+		if createCall.TurnID == nil || *createCall.TurnID != fixture.turnIDStr {
+			t.Fatalf("expected safety bookmark turn id %q, got %+v", fixture.turnIDStr, createCall.TurnID)
+		}
+	})
 
-	if len(bookmarkStore.createCalls) != 1 {
-		t.Fatalf("expected one safety bookmark create call, got %d", len(bookmarkStore.createCalls))
-	}
-	createCall := bookmarkStore.createCalls[0]
-	if createCall.DocumentID != docIDStr || createCall.BookmarkType != restoreBookmarkTypeSafetyRestore {
-		t.Fatalf("unexpected safety bookmark create call: %+v", createCall)
-	}
-	if createCall.TurnID == nil || *createCall.TurnID != turnIDStr {
-		t.Fatalf("expected safety bookmark turn id %q, got %+v", turnIDStr, createCall.TurnID)
-	}
+	t.Run("rewinds update log and creates a replacement checkpoint", func(t *testing.T) {
+		fixture := newRestoreTurnFixture(t)
 
-	if len(updateLogStore.lockOrder) != 1 || updateLogStore.lockOrder[0] != docIDStr {
-		t.Fatalf("unexpected lock order: %+v", updateLogStore.lockOrder)
-	}
-	if len(updateLogStore.deleteCalls) != 1 {
-		t.Fatalf("expected one delete call, got %d", len(updateLogStore.deleteCalls))
-	}
-	if updateLogStore.deleteCalls[0].docID != docIDStr || updateLogStore.deleteCalls[0].cutoff != restoreDeleteAllUpdatesCutoff {
-		t.Fatalf("unexpected delete call: %+v", updateLogStore.deleteCalls[0])
-	}
+		fixture.restore(t)
+		if len(fixture.updateLogStore.lockOrder) != 1 || fixture.updateLogStore.lockOrder[0] != fixture.docIDStr {
+			t.Fatalf("unexpected lock order: %+v", fixture.updateLogStore.lockOrder)
+		}
+		if len(fixture.updateLogStore.deleteCalls) != 1 {
+			t.Fatalf("expected one delete call, got %d", len(fixture.updateLogStore.deleteCalls))
+		}
+		if fixture.updateLogStore.deleteCalls[0].docID != fixture.docIDStr || fixture.updateLogStore.deleteCalls[0].cutoff != restoreDeleteAllUpdatesCutoff {
+			t.Fatalf("unexpected delete call: %+v", fixture.updateLogStore.deleteCalls[0])
+		}
 
-	if len(checkpointStore.createCalls) != 1 {
-		t.Fatalf("expected one checkpoint create call, got %d", len(checkpointStore.createCalls))
-	}
-	if checkpointStore.createCalls[0].docID != docIDStr || checkpointStore.createCalls[0].upToID != 0 {
-		t.Fatalf("unexpected checkpoint create call: %+v", checkpointStore.createCalls[0])
-	}
+		if len(fixture.checkpointStore.createCalls) != 1 {
+			t.Fatalf("expected one checkpoint create call, got %d", len(fixture.checkpointStore.createCalls))
+		}
+		if fixture.checkpointStore.createCalls[0].docID != fixture.docIDStr || fixture.checkpointStore.createCalls[0].upToID != 0 {
+			t.Fatalf("unexpected checkpoint create call: %+v", fixture.checkpointStore.createCalls[0])
+		}
+	})
 
-	if len(broadcaster.docs) != 1 || broadcaster.docs[0] != docIDStr {
-		t.Fatalf("unexpected restored broadcasts: %+v", broadcaster.docs)
-	}
-	if !reflect.DeepEqual(sessionManager.freezeCalls, []string{docIDStr}) {
-		t.Fatalf("unexpected freeze calls: %+v", sessionManager.freezeCalls)
-	}
-	if !reflect.DeepEqual(sessionManager.rebuildCalls, []string{docIDStr}) {
-		t.Fatalf("unexpected rebuild calls: %+v", sessionManager.rebuildCalls)
-	}
-	if len(statusMirror.reconcileCalls) != 1 {
-		t.Fatalf("expected one reconcile call, got %d", len(statusMirror.reconcileCalls))
-	}
-	if statusMirror.reconcileCalls[0].documentID != docIDStr {
-		t.Fatalf("unexpected reconcile document id: %+v", statusMirror.reconcileCalls[0].documentID)
-	}
-	if statusMirror.reconcileCalls[0].statusMap[proposalID] != "pending" {
-		t.Fatalf("expected reconciled proposal status pending, got %+v", statusMirror.reconcileCalls[0].statusMap)
-	}
+	t.Run("persists restored state and rebuilds the live session", func(t *testing.T) {
+		fixture := newRestoreTurnFixture(t)
 
-	if len(stateStore.saveCalls) != 1 {
-		t.Fatalf("expected one SaveState call, got %d", len(stateStore.saveCalls))
-	}
-	if stateStore.saveCalls[0].docID != docIDStr || stateStore.saveCalls[0].content != "before turn" {
-		t.Fatalf("unexpected SaveState call: %+v", stateStore.saveCalls[0])
-	}
+		fixture.restore(t)
+		if len(fixture.stateStore.saveCalls) != 1 {
+			t.Fatalf("expected one SaveState call, got %d", len(fixture.stateStore.saveCalls))
+		}
+		if fixture.stateStore.saveCalls[0].docID != fixture.docIDStr || fixture.stateStore.saveCalls[0].content != "before turn" {
+			t.Fatalf("unexpected SaveState call: %+v", fixture.stateStore.saveCalls[0])
+		}
+		if !reflect.DeepEqual(fixture.sessionManager.freezeCalls, []string{fixture.docIDStr}) {
+			t.Fatalf("unexpected freeze calls: %+v", fixture.sessionManager.freezeCalls)
+		}
+		if !reflect.DeepEqual(fixture.sessionManager.rebuildCalls, []string{fixture.docIDStr}) {
+			t.Fatalf("unexpected rebuild calls: %+v", fixture.sessionManager.rebuildCalls)
+		}
+	})
+
+	t.Run("reconciles proposal status and broadcasts the restored document", func(t *testing.T) {
+		fixture := newRestoreTurnFixture(t)
+
+		fixture.restore(t)
+		if len(fixture.statusMirror.reconcileCalls) != 1 {
+			t.Fatalf("expected one reconcile call, got %d", len(fixture.statusMirror.reconcileCalls))
+		}
+		if fixture.statusMirror.reconcileCalls[0].documentID != fixture.docIDStr {
+			t.Fatalf("unexpected reconcile document id: %+v", fixture.statusMirror.reconcileCalls[0].documentID)
+		}
+		if fixture.statusMirror.reconcileCalls[0].statusMap[fixture.proposalID] != "pending" {
+			t.Fatalf("expected reconciled proposal status pending, got %+v", fixture.statusMirror.reconcileCalls[0].statusMap)
+		}
+		if len(fixture.broadcaster.docs) != 1 || fixture.broadcaster.docs[0] != fixture.docIDStr {
+			t.Fatalf("unexpected restored broadcasts: %+v", fixture.broadcaster.docs)
+		}
+	})
 }
 
 func TestRestoreServiceUndoRestore_SortsDocumentsAndSkipsSafetyBookmarkCreation(t *testing.T) {
@@ -240,6 +211,101 @@ func TestRestoreServiceUndoRestore_SortsDocumentsAndSkipsSafetyBookmarkCreation(
 	if len(bookmarkStore.createCalls) != 0 {
 		t.Fatalf("expected no safety bookmark create calls for undo restore, got %d", len(bookmarkStore.createCalls))
 	}
+}
+
+type restoreTurnFixture struct {
+	turnID          uuid.UUID
+	turnIDStr       string
+	docID           uuid.UUID
+	docIDStr        string
+	proposalID      string
+	bookmarkStore   *fakeRestoreBookmarkStore
+	stateStore      *fakeRestoreStateStore
+	checkpointStore *fakeRestoreCheckpointStore
+	updateLogStore  *fakeRestoreUpdateLogStore
+	statusMirror    *fakeRestoreStatusMirror
+	sessionManager  *fakeRestoreSessionManager
+	broadcaster     *fakeRestoreBroadcaster
+	svc             collab.RestoreService
+}
+
+func newRestoreTurnFixture(t *testing.T) *restoreTurnFixture {
+	t.Helper()
+
+	turnID := uuid.New()
+	turnIDStr := turnID.String()
+	docID := uuid.New()
+	docIDStr := docID.String()
+	proposalID := uuid.New().String()
+
+	bookmarkID := "bookmark-ai-turn-1"
+	restoreState := mustBuildSessionStateWithStatusMap(t, "before turn", map[string]string{
+		proposalID: "pending",
+	})
+	currentState := mustBuildSessionStateWithStatusMap(t, "after turn", map[string]string{
+		proposalID: "accepted",
+	})
+
+	bookmarkStore := &fakeRestoreBookmarkStore{
+		listByTurn: []collab.Bookmark{
+			{
+				ID:           bookmarkID,
+				DocumentID:   docIDStr,
+				BookmarkType: restoreBookmarkTypeAITurn,
+				TurnID:       &turnIDStr,
+			},
+		},
+		statesByBookmarkID: map[string][]byte{
+			bookmarkID: restoreState,
+		},
+	}
+	stateStore := &fakeRestoreStateStore{
+		loadedStates: map[string][]byte{
+			docIDStr: currentState,
+		},
+	}
+	checkpointStore := &fakeRestoreCheckpointStore{}
+	updateLogStore := &fakeRestoreUpdateLogStore{}
+	statusMirror := &fakeRestoreStatusMirror{}
+	sessionManager := &fakeRestoreSessionManager{}
+	broadcaster := &fakeRestoreBroadcaster{}
+
+	return &restoreTurnFixture{
+		turnID:          turnID,
+		turnIDStr:       turnIDStr,
+		docID:           docID,
+		docIDStr:        docIDStr,
+		proposalID:      proposalID,
+		bookmarkStore:   bookmarkStore,
+		stateStore:      stateStore,
+		checkpointStore: checkpointStore,
+		updateLogStore:  updateLogStore,
+		statusMirror:    statusMirror,
+		sessionManager:  sessionManager,
+		broadcaster:     broadcaster,
+		svc: NewRestoreService(
+			bookmarkStore,
+			stateStore,
+			checkpointStore,
+			updateLogStore,
+			statusMirror,
+			sessionManager,
+			broadcaster,
+			&fakeRestoreTxManager{},
+			&fakeRestoreAuthorizer{},
+			nil,
+		),
+	}
+}
+
+func (f *restoreTurnFixture) restore(t *testing.T) *collab.RestoreResult {
+	t.Helper()
+
+	result, err := f.svc.RestoreTurn(context.Background(), testRestoreUserID, f.turnID)
+	if err != nil {
+		t.Fatalf("RestoreTurn returned error: %v", err)
+	}
+	return result
 }
 
 type fakeRestoreAuthorizer struct {

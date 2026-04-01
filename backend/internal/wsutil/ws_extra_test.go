@@ -52,94 +52,45 @@ func TestUnknownControlOpIgnored(t *testing.T) {
 	}
 }
 
-// TestMalformedJSONSendsErrorFrame verifies that an inbound frame with invalid JSON
-// triggers an INVALID_MESSAGE error frame; the connection stays alive afterward.
-func TestMalformedJSONSendsErrorFrame(t *testing.T) {
-	auth := &wsTestAuthenticator{}
-	var messageCalls atomic.Int32
-
-	h := &wsTestHandler{
-		onMessage: func(_ State, _ Envelope) error {
-			messageCalls.Add(1)
-			return nil
-		},
+func TestErrorFramesForInvalidClientMessages(t *testing.T) {
+	tests := []struct {
+		name        string
+		send        func(t *testing.T, fake *fakeWSConn)
+		verifyAlive bool
+	}{
+		{name: "malformed json sends invalid message and keeps connection alive", send: func(t *testing.T, fake *fakeWSConn) {
+			fake.inbound <- wsFrame{typeID: 1, data: []byte(`{"kind":BROKEN`)}
+		}, verifyAlive: true},
+		{name: "missing kind sends invalid message", send: func(t *testing.T, fake *fakeWSConn) {
+			fake.inbound <- wsFrame{typeID: 1, data: []byte(`{"op":"ping"}`)}
+		}},
+		{name: "client sent notify kind sends invalid message", send: func(t *testing.T, fake *fakeWSConn) {
+			fake.pushTextEnvelope(t, Envelope{Kind: KindNotify, Op: OpInvalidate})
+		}},
 	}
 
-	s := NewServer(
-		WithAuth(auth),
-		WithHeartbeat(10*time.Second, 10*time.Second),
-		withLogger(testLogger()),
-	)
-	s.RegisterHandler("turn", h)
-
-	fake, done := startServeConn(t, s, "project-1")
-	defer stopServeConn(t, fake, done)
-
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
-	_ = fake.readServerEnvelope(t, time.Second) // connected
-
-	// Push a raw malformed JSON text frame (MessageText = 1).
-	fake.inbound <- wsFrame{typeID: 1, data: []byte(`{"kind":BROKEN`)}
-
-	errEnv := fake.readServerEnvelope(t, time.Second)
-	assertErrorCode(t, errEnv, CodeInvalidMessage)
-
-	// Connection must still be alive: send a valid stream message.
-	fake.pushTextEnvelope(t, Envelope{
-		Kind:     KindStream,
-		Op:       OpMessage,
-		Resource: &Resource{Type: "turn", Id: "turn-1"},
-		Payload:  mustMarshal(map[string]int{"n": 1}),
-	})
-	if !waitFor(500*time.Millisecond, func() bool { return messageCalls.Load() == 1 }) {
-		t.Fatal("expected connection to remain alive after malformed JSON")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			auth := &wsTestAuthenticator{}
+			var messageCalls atomic.Int32
+			h := &wsTestHandler{onMessage: func(_ State, _ Envelope) error { messageCalls.Add(1); return nil }}
+			s := NewServer(WithAuth(auth), WithHeartbeat(10*time.Second, 10*time.Second), withLogger(testLogger()))
+			s.RegisterHandler("turn", h)
+			fake, done := startServeConn(t, s, "project-1")
+			defer stopServeConn(t, fake, done)
+			fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+			_ = fake.readServerEnvelope(t, time.Second)
+			tt.send(t, fake)
+			errEnv := fake.readServerEnvelope(t, time.Second)
+			assertErrorCode(t, errEnv, CodeInvalidMessage)
+			if tt.verifyAlive {
+				fake.pushTextEnvelope(t, Envelope{Kind: KindStream, Op: OpMessage, Resource: &Resource{Type: "turn", Id: "turn-1"}, Payload: mustMarshal(map[string]int{"n": 1})})
+				if !waitFor(500*time.Millisecond, func() bool { return messageCalls.Load() == 1 }) {
+					t.Fatal("expected connection to remain alive after invalid client message")
+				}
+			}
+		})
 	}
-}
-
-// TestMissingKindSendsErrorFrame verifies that a JSON envelope missing the `kind`
-// field triggers an INVALID_MESSAGE error frame. Connection stays alive.
-func TestMissingKindSendsErrorFrame(t *testing.T) {
-	auth := &wsTestAuthenticator{}
-
-	s := NewServer(
-		WithAuth(auth),
-		WithHeartbeat(10*time.Second, 10*time.Second),
-		withLogger(testLogger()),
-	)
-
-	fake, done := startServeConn(t, s, "project-1")
-	defer stopServeConn(t, fake, done)
-
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
-	_ = fake.readServerEnvelope(t, time.Second) // connected
-
-	// Frame without `kind` (only has `op`).
-	fake.inbound <- wsFrame{typeID: 1, data: []byte(`{"op":"ping"}`)}
-
-	errEnv := fake.readServerEnvelope(t, time.Second)
-	assertErrorCode(t, errEnv, CodeInvalidMessage)
-}
-
-// TestClientSentNotifyKindSendsError verifies that a client sending a notify-kind
-// frame (server→client only lane) receives an INVALID_MESSAGE error.
-func TestClientSentNotifyKindSendsError(t *testing.T) {
-	auth := &wsTestAuthenticator{}
-
-	s := NewServer(
-		WithAuth(auth),
-		WithHeartbeat(10*time.Second, 10*time.Second),
-		withLogger(testLogger()),
-	)
-
-	fake, done := startServeConn(t, s, "project-1")
-	defer stopServeConn(t, fake, done)
-
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
-	_ = fake.readServerEnvelope(t, time.Second) // connected
-
-	fake.pushTextEnvelope(t, Envelope{Kind: KindNotify, Op: OpInvalidate})
-	errEnv := fake.readServerEnvelope(t, time.Second)
-	assertErrorCode(t, errEnv, CodeInvalidMessage)
 }
 
 // TestEndSubFreesSubscriptionSlot verifies that ending active subscriptions frees

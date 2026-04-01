@@ -13,86 +13,61 @@ import (
 	collab "meridian/internal/domain/collab"
 )
 
-func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t *testing.T) {
-	docID := uuid.New()
-	turnID := uuid.New()
-	baseState, update := buildProposalValidationFixture(t)
-
-	proposalStore := &fakeProposalServiceStore{
-		countByDocumentAndTurnIDResult: 0,
-	}
-	runtime := &fakeProposalServiceRuntime{
-		currentState: baseState,
-	}
-	service := NewProposalService(
-		proposalStore,
-		&fakeProposalServiceTxManager{},
-		&fakeProposalServiceAuthorizer{},
-		runtime,
-		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeDocumentPresenceTracker{hasActiveSubscribers: true},
-		&fakeProposalServiceDocumentResolver{allow: true},
-	)
-
-	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
-		DocumentID:        docID,
-		Source:            collab.ProposalSourceAI,
-		ProducerAgentType: "assistant",
-		ThreadID:          uuid.New(),
-		TurnID:            &turnID,
-		AgentRunID:        uuid.New(),
-		YjsUpdate:         update,
-		CreatedByUserID:   uuid.New(),
-	})
-	if err != nil {
-		t.Fatalf("CreateProposal returned error: %v", err)
+func TestProposalServiceCreateProposal_AITurnBookmarking(t *testing.T) {
+	tests := []struct {
+		name          string
+		existingTurns int
+		wantBookmarks int
+	}{
+		{
+			name:          "first turn proposal creates ai_turn bookmark",
+			existingTurns: 0,
+			wantBookmarks: 1,
+		},
+		{
+			name:          "non-first turn proposal skips ai_turn bookmark",
+			existingTurns: 3,
+			wantBookmarks: 0,
+		},
 	}
 
-	if len(runtime.aiTurnBookmarkCalls) != 1 {
-		t.Fatalf("expected one ai_turn bookmark call, got %d", len(runtime.aiTurnBookmarkCalls))
-	}
-	if runtime.aiTurnBookmarkCalls[0].documentID != docID || runtime.aiTurnBookmarkCalls[0].turnID != turnID {
-		t.Fatalf("unexpected ai_turn bookmark call: %+v", runtime.aiTurnBookmarkCalls[0])
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			docID := uuid.New()
+			turnID := uuid.New()
+			baseState, update := buildProposalValidationFixture(t)
 
-func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t *testing.T) {
-	docID := uuid.New()
-	turnID := uuid.New()
-	baseState, update := buildProposalValidationFixture(t)
+			proposalStore := &fakeProposalServiceStore{
+				countByDocumentAndTurnIDResult: tt.existingTurns,
+			}
+			runtime := &fakeProposalServiceRuntime{
+				currentState: baseState,
+			}
+			service := newTestProposalService(proposalStore, &fakeProposalServiceAuthorizer{}, runtime, true, true)
 
-	proposalStore := &fakeProposalServiceStore{
-		countByDocumentAndTurnIDResult: 3,
-	}
-	runtime := &fakeProposalServiceRuntime{
-		currentState: baseState,
-	}
-	service := NewProposalService(
-		proposalStore,
-		&fakeProposalServiceTxManager{},
-		&fakeProposalServiceAuthorizer{},
-		runtime,
-		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeDocumentPresenceTracker{hasActiveSubscribers: true},
-		&fakeProposalServiceDocumentResolver{allow: true},
-	)
+			_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
+				DocumentID:        docID,
+				Source:            collab.ProposalSourceAI,
+				ProducerAgentType: "assistant",
+				ThreadID:          uuid.New(),
+				TurnID:            &turnID,
+				AgentRunID:        uuid.New(),
+				YjsUpdate:         update,
+				CreatedByUserID:   uuid.New(),
+			})
+			if err != nil {
+				t.Fatalf("CreateProposal returned error: %v", err)
+			}
 
-	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
-		DocumentID:        docID,
-		Source:            collab.ProposalSourceAI,
-		ProducerAgentType: "assistant",
-		ThreadID:          uuid.New(),
-		TurnID:            &turnID,
-		AgentRunID:        uuid.New(),
-		YjsUpdate:         update,
-		CreatedByUserID:   uuid.New(),
-	})
-	if err != nil {
-		t.Fatalf("CreateProposal returned error: %v", err)
-	}
-
-	if len(runtime.aiTurnBookmarkCalls) != 0 {
-		t.Fatalf("expected no ai_turn bookmark call, got %d", len(runtime.aiTurnBookmarkCalls))
+			if len(runtime.aiTurnBookmarkCalls) != tt.wantBookmarks {
+				t.Fatalf("ai_turn bookmark calls = %d, want %d", len(runtime.aiTurnBookmarkCalls), tt.wantBookmarks)
+			}
+			if tt.wantBookmarks == 1 {
+				if runtime.aiTurnBookmarkCalls[0].documentID != docID || runtime.aiTurnBookmarkCalls[0].turnID != turnID {
+					t.Fatalf("unexpected ai_turn bookmark call: %+v", runtime.aiTurnBookmarkCalls[0])
+				}
+			}
+		})
 	}
 }
 
@@ -101,14 +76,12 @@ func TestProposalServiceCreateProposal_EnforcesDocumentAuthorization(t *testing.
 	_, update := buildProposalValidationFixture(t)
 
 	proposalStore := &fakeProposalServiceStore{}
-	service := NewProposalService(
+	service := newTestProposalService(
 		proposalStore,
-		&fakeProposalServiceTxManager{},
 		&fakeProposalServiceAuthorizer{err: domain.NewForbiddenError("access denied")},
 		&fakeProposalServiceRuntime{},
-		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
-		&fakeDocumentPresenceTracker{hasActiveSubscribers: false},
-		&fakeProposalServiceDocumentResolver{allow: true},
+		true,
+		false,
 	)
 
 	_, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
@@ -135,15 +108,7 @@ func TestProposalServiceCreateProposal_AutoapplyDisabledKeepsProposalPending(t *
 	runtime := &fakeProposalServiceRuntime{
 		currentState: baseState,
 	}
-	service := NewProposalService(
-		proposalStore,
-		&fakeProposalServiceTxManager{},
-		&fakeProposalServiceAuthorizer{},
-		runtime,
-		&fakeProposalAutoapplyResolver{effectiveAutoapply: false},
-		&fakeDocumentPresenceTracker{hasActiveSubscribers: false},
-		&fakeProposalServiceDocumentResolver{allow: true},
-	)
+	service := newTestProposalService(proposalStore, &fakeProposalServiceAuthorizer{}, runtime, false, false)
 
 	proposal, err := service.CreateProposal(context.Background(), collab.CreateProposalRequest{
 		DocumentID:      docID,
@@ -183,6 +148,24 @@ func buildProposalValidationFixture(t *testing.T) ([]byte, []byte) {
 	}, nil)
 	update := ycrdt.EncodeStateAsUpdate(doc, stateVector)
 	return baseState, update
+}
+
+func newTestProposalService(
+	proposalStore *fakeProposalServiceStore,
+	authorizer *fakeProposalServiceAuthorizer,
+	runtime *fakeProposalServiceRuntime,
+	effectiveAutoapply bool,
+	hasActiveSubscribers bool,
+) collab.ProposalService {
+	return NewProposalService(
+		proposalStore,
+		&fakeProposalServiceTxManager{},
+		authorizer,
+		runtime,
+		&fakeProposalAutoapplyResolver{effectiveAutoapply: effectiveAutoapply},
+		&fakeDocumentPresenceTracker{hasActiveSubscribers: hasActiveSubscribers},
+		&fakeProposalServiceDocumentResolver{allow: true},
+	)
 }
 
 type fakeProposalServiceTxManager struct{}

@@ -304,6 +304,34 @@ func (m *mockTokenFinalizer) Finalize(ctx context.Context, req tokens.FinalizeRe
 
 var _ tokens.TokenFinalizer = (*mockTokenFinalizer)(nil)
 
+func newTestExecutorConfig(label string, turnWriter *mockTurnWriter, provider *mockProvider) StreamExecutorConfig {
+	return StreamExecutorConfig{
+		TurnID:                   "test-turn-" + label,
+		ThreadID:                 "test-thread-" + label,
+		UserID:                   "test-user-" + label,
+		ProjectID:                "test-project-" + label,
+		Model:                    "test-model",
+		ProviderName:             "mock",
+		TurnWriter:               turnWriter,
+		TurnReader:               &mockTurnReader{},
+		TurnNavigator:            &mockTurnNavigator{},
+		Provider:                 provider,
+		ToolRegistry:             nil,
+		MessageBuilder:           &mockMessageBuilder{},
+		Logger:                   slog.Default(),
+		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
+		CreditSettler:            &mockCreditSettler{},
+		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
+		MaxToolRounds:            5,
+		DebugMode:                false,
+		TokenFinalizer:           &mockTokenFinalizer{},
+		JobQueue:                 nil,
+		SoftCancelTimeoutSeconds: 300,
+		InterjectionRouter:       nil,
+		StreamRuntime:            nil,
+	}
+}
+
 // =============================================================================
 // Bug Reproduction Tests (TDD - These should FAIL with current implementation)
 // =============================================================================
@@ -381,133 +409,19 @@ func TestRaceCondition_CancelDuringPersistence(t *testing.T) {
 	}
 }
 
-// TestRaceCondition_StateCheckVsGuard demonstrates why state check alone is insufficient
-// and why we need the atomic PersistenceGuard.
-func TestRaceCondition_StateCheckVsGuard(t *testing.T) {
-	// This simulates the current (buggy) implementation using state check
-	// vs the fix using PersistenceGuard
-
-	type stateCheck struct {
-		mu    sync.RWMutex
-		state string // "streaming", "draining", etc.
-	}
-
-	sc := &stateCheck{state: "streaming"}
-
-	// Track if persistence would proceed (use atomics to avoid test race)
-	var persistedWithStateCheck atomic.Bool
-	var persistedWithGuard atomic.Bool
-
-	// Channels
-	checkStarted := make(chan struct{})
-	commandQueued := make(chan struct{})
-	done := make(chan struct{})
-
-	// PersistenceGuard for comparison
-	guard := NewPersistenceGuard()
-
-	// Simulate streaming goroutine
-	go func() {
-		defer close(done)
-
-		// Check state (simulates getState())
-		sc.mu.RLock()
-		stateIsStreaming := sc.state == "streaming"
-		sc.mu.RUnlock()
-
-		if stateIsStreaming {
-			close(checkStarted)
-
-			// Wait for cancel command to be "queued"
-			// (In real code, this is the delay between checking and persisting)
-			<-commandQueued
-
-			// Check again - in real code, this would be inside PersistAndClear callback
-			// BUG: State hasn't changed because we're still in the callback,
-			// and the select loop hasn't processed the command yet
-			sc.mu.RLock()
-			stillStreaming := sc.state == "streaming"
-			sc.mu.RUnlock()
-
-			if stillStreaming {
-				persistedWithStateCheck.Store(true)
-			}
-
-			// With PersistenceGuard, this would work correctly
-			if guard.IsArmed() {
-				persistedWithGuard.Store(true)
-			}
-		}
-	}()
-
-	// Wait for goroutine to be in race window
-	<-checkStarted
-
-	// Simulate cancel handler:
-	// 1. With current code: Just queue command, don't change state
-	//    (state only changes when select loop processes command)
-	// 2. With fix: Call Disarm() first (immediate visibility)
-
-	// Fix: Disarm immediately
-	guard.Disarm()
-
-	// Bug: State isn't changed because command is just queued
-	// (In real code, transitionTo() only happens in select loop)
-
-	close(commandQueued)
-	<-done // Wait for goroutine to finish
-
-	// With state check only: Persistence proceeds (BUG)
-	if persistedWithStateCheck.Load() {
-		t.Log("BUG CONFIRMED: State check allowed persistence after cancel was requested")
-		t.Log("This happens because state only changes when select loop processes command")
-	}
-
-	// With PersistenceGuard: Persistence is blocked (CORRECT)
-	if !persistedWithGuard.Load() {
-		t.Log("FIX CONFIRMED: PersistenceGuard correctly blocked persistence")
-	} else {
-		t.Error("PersistenceGuard failed to block persistence")
-	}
-}
-
 // TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider verifies that if we soft-cancel
 // and the provider never finishes, the drain timeout cancels the provider stream.
 func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 	// Create mocks
 	turnWriter := newMockTurnWriter()
 	provider := newMockProvider()
-	logger := slog.Default()
 
 	// Use a very short timeout for testing
 	shortTimeoutSeconds := 1 // 1 second timeout
 
-	// Create executor with short timeout
-	executor := NewStreamExecutor(StreamExecutorConfig{
-		TurnID:                   "test-turn-456",
-		ThreadID:                 "test-thread-456",
-		UserID:                   "test-user-456",
-		ProjectID:                "test-project-456",
-		Model:                    "test-model",
-		ProviderName:             "mock",
-		TurnWriter:               turnWriter,
-		TurnReader:               &mockTurnReader{},
-		TurnNavigator:            &mockTurnNavigator{},
-		Provider:                 provider,
-		ToolRegistry:             nil,
-		MessageBuilder:           &mockMessageBuilder{},
-		Logger:                   logger,
-		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
-		CreditSettler:            &mockCreditSettler{},
-		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
-		MaxToolRounds:            5,
-		DebugMode:                false,
-		TokenFinalizer:           &mockTokenFinalizer{},
-		JobQueue:                 nil,
-		SoftCancelTimeoutSeconds: shortTimeoutSeconds,
-		InterjectionRouter:       nil,
-		StreamRuntime:            nil,
-	})
+	cfg := newTestExecutorConfig("456", turnWriter, provider)
+	cfg.SoftCancelTimeoutSeconds = shortTimeoutSeconds
+	executor := NewStreamExecutor(cfg)
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -544,33 +458,8 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 	turnWriter := newMockTurnWriter()
 	provider := newMockProvider()
-	logger := slog.Default()
 
-	executor := NewStreamExecutor(StreamExecutorConfig{
-		TurnID:                   "test-turn-789",
-		ThreadID:                 "test-thread-789",
-		UserID:                   "test-user-789",
-		ProjectID:                "test-project-789",
-		Model:                    "test-model",
-		ProviderName:             "mock",
-		TurnWriter:               turnWriter,
-		TurnReader:               &mockTurnReader{},
-		TurnNavigator:            &mockTurnNavigator{},
-		Provider:                 provider,
-		ToolRegistry:             nil,
-		MessageBuilder:           &mockMessageBuilder{},
-		Logger:                   logger,
-		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
-		CreditSettler:            &mockCreditSettler{},
-		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
-		MaxToolRounds:            5,
-		DebugMode:                false,
-		TokenFinalizer:           &mockTokenFinalizer{},
-		JobQueue:                 nil,
-		SoftCancelTimeoutSeconds: 300,
-		InterjectionRouter:       nil,
-		StreamRuntime:            nil,
-	})
+	executor := NewStreamExecutor(newTestExecutorConfig("789", turnWriter, provider))
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -599,33 +488,8 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 	turnWriter := newMockTurnWriter()
 	provider := newMockProvider()
-	logger := slog.Default()
 
-	executor := NewStreamExecutor(StreamExecutorConfig{
-		TurnID:                   "test-turn-abc",
-		ThreadID:                 "test-thread-abc",
-		UserID:                   "test-user-abc",
-		ProjectID:                "test-project-abc",
-		Model:                    "test-model",
-		ProviderName:             "mock",
-		TurnWriter:               turnWriter,
-		TurnReader:               &mockTurnReader{},
-		TurnNavigator:            &mockTurnNavigator{},
-		Provider:                 provider,
-		ToolRegistry:             nil,
-		MessageBuilder:           &mockMessageBuilder{},
-		Logger:                   logger,
-		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
-		CreditSettler:            &mockCreditSettler{},
-		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
-		MaxToolRounds:            5,
-		DebugMode:                false,
-		TokenFinalizer:           &mockTokenFinalizer{},
-		JobQueue:                 nil,
-		SoftCancelTimeoutSeconds: 300,
-		InterjectionRouter:       nil,
-		StreamRuntime:            nil,
-	})
+	executor := NewStreamExecutor(newTestExecutorConfig("abc", turnWriter, provider))
 
 	// Start streaming
 	executor.Start(&domainllm.GenerateRequest{
@@ -655,33 +519,8 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 func TestStreamExecutor_PreStartTerminateDoesNotResurrectStreaming(t *testing.T) {
 	turnWriter := newMockTurnWriter()
 	provider := newMockProvider()
-	logger := slog.Default()
 
-	executor := NewStreamExecutor(StreamExecutorConfig{
-		TurnID:                   "test-turn-prestart-cancel",
-		ThreadID:                 "test-thread-prestart-cancel",
-		UserID:                   "test-user-prestart-cancel",
-		ProjectID:                "test-project-prestart-cancel",
-		Model:                    "test-model",
-		ProviderName:             "mock",
-		TurnWriter:               turnWriter,
-		TurnReader:               &mockTurnReader{},
-		TurnNavigator:            &mockTurnNavigator{},
-		Provider:                 provider,
-		ToolRegistry:             nil,
-		MessageBuilder:           &mockMessageBuilder{},
-		Logger:                   logger,
-		CreditAdmissionChecker:   &mockCreditAdmissionChecker{},
-		CreditSettler:            &mockCreditSettler{},
-		SettlementMode:           billing.CreditSettlementInlineAuthoritative,
-		MaxToolRounds:            5,
-		DebugMode:                false,
-		TokenFinalizer:           &mockTokenFinalizer{},
-		JobQueue:                 nil,
-		SoftCancelTimeoutSeconds: 300,
-		InterjectionRouter:       nil,
-		StreamRuntime:            nil,
-	})
+	executor := NewStreamExecutor(newTestExecutorConfig("prestart-cancel", turnWriter, provider))
 
 	executor.Terminate(ReasonHardCancelled, TerminateOpts{})
 

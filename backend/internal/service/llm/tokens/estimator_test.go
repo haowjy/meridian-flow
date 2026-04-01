@@ -126,7 +126,7 @@ func TestEstimateRequest_MultipleMessages(t *testing.T) {
 	req := EstimateRequest{
 		Model: "unknown-model",
 		Messages: []Message{
-			{Role: "user", Content: "hello world"},      // 1+2+4 = 7
+			{Role: "user", Content: "hello world"},        // 1+2+4 = 7
 			{Role: "assistant", Content: "Hello, world!"}, // 1+4+4 = 9
 		},
 	}
@@ -332,13 +332,4 @@ func TestEstimateRequest_UsagePercent_ZeroForUnknownModel(t *testing.T) {
 	if result.UsagePercent != 0 {
 		t.Errorf("UsagePercent = %f, want 0 for unknown model (zero denominator)", result.UsagePercent)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Interface compliance
-// ---------------------------------------------------------------------------
-
-// TestTokenEstimatorInterface verifies *tiktokenEstimator satisfies TokenEstimator.
-func TestTokenEstimatorInterface(t *testing.T) {
-	var _ TokenEstimator = (*tiktokenEstimator)(nil)
 }

@@ -85,85 +85,36 @@ func TestNewSpawnAgentTool(t *testing.T) {
 	}
 }
 
-func TestSpawnAgentTool_Execute_MissingAgent(t *testing.T) {
+func TestSpawnAgentTool_Execute_ValidatesRequiredParams(t *testing.T) {
 	tool := newTestSpawnTool(&mockSpawnInvoker{})
 	ctx := context.Background()
+	tests := []struct {
+		name  string
+		input map[string]interface{}
+	}{
+		{name: "missing agent", input: map[string]interface{}{"prompt": "Do the thing"}},
+		{name: "empty agent", input: map[string]interface{}{"agent": "   ", "prompt": "Do the thing"}},
+		{name: "missing prompt", input: map[string]interface{}{"agent": "coder"}},
+		{name: "empty prompt", input: map[string]interface{}{"agent": "coder", "prompt": ""}},
+	}
 
-	// Missing agent key entirely
-	result, err := tool.Execute(ctx, map[string]interface{}{
-		"prompt": "Do the thing",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	errMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-	if errMap["success"] != false {
-		t.Errorf("expected success=false, got %v", errMap["success"])
-	}
-	if errMap["error_code"] != ErrMissingParam {
-		t.Errorf("error_code = %v, want %q", errMap["error_code"], ErrMissingParam)
-	}
-}
-
-func TestSpawnAgentTool_Execute_EmptyAgent(t *testing.T) {
-	tool := newTestSpawnTool(&mockSpawnInvoker{})
-	ctx := context.Background()
-
-	result, err := tool.Execute(ctx, map[string]interface{}{
-		"agent":  "   ", // whitespace-only
-		"prompt": "Do the thing",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	errMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-	if errMap["error_code"] != ErrMissingParam {
-		t.Errorf("error_code = %v, want %q", errMap["error_code"], ErrMissingParam)
-	}
-}
-
-func TestSpawnAgentTool_Execute_MissingPrompt(t *testing.T) {
-	tool := newTestSpawnTool(&mockSpawnInvoker{})
-	ctx := context.Background()
-
-	result, err := tool.Execute(ctx, map[string]interface{}{
-		"agent": "coder",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	errMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-	if errMap["error_code"] != ErrMissingParam {
-		t.Errorf("error_code = %v, want %q", errMap["error_code"], ErrMissingParam)
-	}
-}
-
-func TestSpawnAgentTool_Execute_EmptyPrompt(t *testing.T) {
-	tool := newTestSpawnTool(&mockSpawnInvoker{})
-	ctx := context.Background()
-
-	result, err := tool.Execute(ctx, map[string]interface{}{
-		"agent":  "coder",
-		"prompt": "",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	errMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-	if errMap["error_code"] != ErrMissingParam {
-		t.Errorf("error_code = %v, want %q", errMap["error_code"], ErrMissingParam)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tool.Execute(ctx, tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			errMap, ok := result.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected map result, got %T", result)
+			}
+			if errMap["success"] != false {
+				t.Fatalf("expected success=false, got %v", errMap["success"])
+			}
+			if errMap["error_code"] != ErrMissingParam {
+				t.Fatalf("error_code = %v, want %q", errMap["error_code"], ErrMissingParam)
+			}
+		})
 	}
 }
 

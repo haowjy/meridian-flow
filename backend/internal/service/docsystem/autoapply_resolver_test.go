@@ -7,249 +7,42 @@ import (
 	domaindocsys "meridian/internal/domain/docsystem"
 )
 
-func TestAutoapplyResolver_UsesDocumentOverrideOutsideSystemFolders(t *testing.T) {
-	documentAutoapply := true
-	projectAutoapply := false
-	folderID := "folder-1"
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-				FolderID:  &folderID,
-				Autoapply: &documentAutoapply,
-			},
-		},
-		&testAutoapplyFolderRepo{
-			folders: map[string]*domaindocsys.Folder{
-				folderID: {
-					ID:        folderID,
-					ProjectID: "project-1",
-				},
-			},
-		},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
+func TestAutoapplyResolver_ResolveEffectiveAutoapply(t *testing.T) {
+	tests := []struct {
+		name             string
+		document         *domaindocsys.Document
+		folders          map[string]*domaindocsys.Folder
+		projectAutoapply bool
+		want             bool
+	}{
+		{name: "document override wins outside system folders", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1", FolderID: ptrString("folder-1"), Autoapply: ptrBool(true)}, folders: map[string]*domaindocsys.Folder{"folder-1": {ID: "folder-1", ProjectID: "project-1"}}, projectAutoapply: false, want: true},
+		{name: "system folder overrides document setting", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1", FolderID: ptrString("child-folder"), Autoapply: ptrBool(true)}, folders: map[string]*domaindocsys.Folder{"child-folder": {ID: "child-folder", ProjectID: "project-1", ParentID: ptrString("system-folder")}, "system-folder": {ID: "system-folder", ProjectID: "project-1", IsSystem: true, Autoapply: ptrBool(false)}}, projectAutoapply: true, want: false},
+		{name: "project default is used when no overrides exist", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1"}, projectAutoapply: true, want: true},
+		{name: "system folder dominates non-system child override", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1", FolderID: ptrString("foo-folder")}, folders: map[string]*domaindocsys.Folder{"foo-folder": {ID: "foo-folder", ProjectID: "project-1", ParentID: ptrString("skills-folder")}, "skills-folder": {ID: "skills-folder", ProjectID: "project-1", ParentID: ptrString("agents-folder"), Autoapply: ptrBool(true)}, "agents-folder": {ID: "agents-folder", ProjectID: "project-1", IsSystem: true, Autoapply: ptrBool(false)}}, projectAutoapply: true, want: false},
+		{name: "innermost non-system folder wins", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1", FolderID: ptrString("part1-folder")}, folders: map[string]*domaindocsys.Folder{"part1-folder": {ID: "part1-folder", ProjectID: "project-1", ParentID: ptrString("chapters-folder"), Autoapply: ptrBool(false)}, "chapters-folder": {ID: "chapters-folder", ProjectID: "project-1", Autoapply: ptrBool(true)}}, projectAutoapply: true, want: false},
+		{name: "system folder with nil autoapply falls back to project", document: &domaindocsys.Document{ID: "doc-1", ProjectID: "project-1", FolderID: ptrString("meridian-folder")}, folders: map[string]*domaindocsys.Folder{"meridian-folder": {ID: "meridian-folder", ProjectID: "project-1", IsSystem: true}}, projectAutoapply: true, want: true},
 	}
-	if !got {
-		t.Fatalf("expected document-level autoapply override to win")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := NewAutoapplyResolver(
+				&testAutoapplyDocumentRepo{document: tt.document},
+				&testAutoapplyFolderRepo{folders: tt.folders},
+				&testAutoapplyProjectRepo{project: &domaindocsys.Project{ID: "project-1", Autoapply: tt.projectAutoapply}},
+			)
+			got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
+			if err != nil {
+				t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ResolveEffectiveAutoapply() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestAutoapplyResolver_SystemFolderOverridesDocumentSetting(t *testing.T) {
-	documentAutoapply := true
-	systemAutoapply := false
-	projectAutoapply := true
-	systemFolderID := "system-folder"
-	childFolderID := "child-folder"
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-				FolderID:  &childFolderID,
-				Autoapply: &documentAutoapply,
-			},
-		},
-		&testAutoapplyFolderRepo{
-			folders: map[string]*domaindocsys.Folder{
-				childFolderID: {
-					ID:        childFolderID,
-					ProjectID: "project-1",
-					ParentID:  &systemFolderID,
-				},
-				systemFolderID: {
-					ID:        systemFolderID,
-					ProjectID: "project-1",
-					IsSystem:  true,
-					Autoapply: &systemAutoapply,
-				},
-			},
-		},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
-	}
-	if got {
-		t.Fatalf("expected system-folder policy to override document autoapply")
-	}
-}
-
-func TestAutoapplyResolver_FallsBackToProjectDefault(t *testing.T) {
-	projectAutoapply := true
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-			},
-		},
-		&testAutoapplyFolderRepo{},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
-	}
-	if !got {
-		t.Fatalf("expected project autoapply fallback to win")
-	}
-}
-
-func TestAutoapplyResolver_SystemFolderDominatesNonSystemChildOverride(t *testing.T) {
-	// Document in .agents/skills/foo/ where .agents/ is system with autoapply=false
-	// and skills/ is non-system with autoapply=true.
-	// The system folder must win; the non-system child override must be ignored.
-	systemAutoapply := false
-	childOverride := true
-	systemFolderID := "agents-folder"
-	skillsFolderID := "skills-folder"
-	fooFolderID := "foo-folder"
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-				FolderID:  &fooFolderID,
-			},
-		},
-		&testAutoapplyFolderRepo{
-			folders: map[string]*domaindocsys.Folder{
-				fooFolderID: {
-					ID:        fooFolderID,
-					ProjectID: "project-1",
-					ParentID:  &skillsFolderID,
-				},
-				skillsFolderID: {
-					ID:        skillsFolderID,
-					ProjectID: "project-1",
-					ParentID:  &systemFolderID,
-					Autoapply: &childOverride,
-				},
-				systemFolderID: {
-					ID:        systemFolderID,
-					ProjectID: "project-1",
-					IsSystem:  true,
-					Autoapply: &systemAutoapply,
-				},
-			},
-		},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: true},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
-	}
-	if got {
-		t.Fatalf("expected system-folder autoapply=false to dominate non-system child override autoapply=true")
-	}
-}
-
-func TestAutoapplyResolver_NonSystemFolderChainInnermostWins(t *testing.T) {
-	// Document in chapters/part1/ where part1/ (innermost) has autoapply=false
-	// and chapters/ (outer) has autoapply=true.
-	// No system folders; first non-null encountered while walking inward→outward wins.
-	innerAutoapply := false
-	outerAutoapply := true
-	innerFolderID := "part1-folder"
-	outerFolderID := "chapters-folder"
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-				FolderID:  &innerFolderID,
-			},
-		},
-		&testAutoapplyFolderRepo{
-			folders: map[string]*domaindocsys.Folder{
-				innerFolderID: {
-					ID:        innerFolderID,
-					ProjectID: "project-1",
-					ParentID:  &outerFolderID,
-					Autoapply: &innerAutoapply,
-				},
-				outerFolderID: {
-					ID:        outerFolderID,
-					ProjectID: "project-1",
-					Autoapply: &outerAutoapply,
-				},
-			},
-		},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: true},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
-	}
-	if got {
-		t.Fatalf("expected innermost non-system folder autoapply=false to win over outer autoapply=true")
-	}
-}
-
-func TestAutoapplyResolver_SystemFolderWithNullAutoapplyFallsBackToProject(t *testing.T) {
-	// Document directly in .meridian/ where .meridian/ is a system folder with
-	// no autoapply value set (null). The resolver must fall through to the project
-	// default rather than treating null as false or walking further ancestors.
-	systemFolderID := "meridian-folder"
-	projectAutoapply := true
-
-	resolver := NewAutoapplyResolver(
-		&testAutoapplyDocumentRepo{
-			document: &domaindocsys.Document{
-				ID:        "doc-1",
-				ProjectID: "project-1",
-				FolderID:  &systemFolderID,
-			},
-		},
-		&testAutoapplyFolderRepo{
-			folders: map[string]*domaindocsys.Folder{
-				systemFolderID: {
-					ID:        systemFolderID,
-					ProjectID: "project-1",
-					IsSystem:  true,
-					// Autoapply intentionally nil — no explicit policy set
-				},
-			},
-		},
-		&testAutoapplyProjectRepo{
-			project: &domaindocsys.Project{ID: "project-1", Autoapply: projectAutoapply},
-		},
-	)
-
-	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
-	if err != nil {
-		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
-	}
-	if !got {
-		t.Fatalf("expected project autoapply=true to be used when system folder has null autoapply")
-	}
-}
+func ptrString(v string) *string { return &v }
+func ptrBool(v bool) *bool       { return &v }
 
 type testAutoapplyDocumentRepo struct {
 	document *domaindocsys.Document
