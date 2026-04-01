@@ -46,3 +46,6 @@ __pycache__/
 
 # Local editor settings
 .vscode/settings.json
+
+# Stray screenshots (agent/playwright artifacts dumped in root)
+/*.png
