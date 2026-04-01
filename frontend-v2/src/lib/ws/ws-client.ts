@@ -48,6 +48,12 @@ export interface WsClientConfig {
   onError?: (msg: Envelope) => void
   /** Called when connection state changes */
   onStateChange?: (state: ConnectionState) => void
+  /**
+   * Called when a binary frame arrives. The framework extracts the subId
+   * routing prefix (<subId UTF-8> 0x00 <payload>) and delivers the subId
+   * and remaining payload bytes.
+   */
+  onBinaryMessage?: (subId: string, data: Uint8Array) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -100,10 +106,30 @@ export class WsClient {
     this.setConnectionState("disconnected")
   }
 
-  /** Send an envelope over the WS. Silently drops if not connected. */
+  /** Send a JSON envelope over the WS. Silently drops if not connected. */
   send(msg: Envelope): void {
     if (!this.socket || this.socket.readyState !== WS_OPEN) return
     this.socket.send(JSON.stringify(msg))
+  }
+
+  /**
+   * Send a binary frame with subId routing prefix.
+   *
+   * Frame format: <subId UTF-8> 0x00 <payload>
+   * The server extracts the subId from the prefix and routes the
+   * payload to the corresponding subscription handler.
+   */
+  sendBinary(subId: string, data: Uint8Array): void {
+    if (!this.socket || this.socket.readyState !== WS_OPEN) return
+
+    const encoder = new TextEncoder()
+    const subIdBytes = encoder.encode(subId)
+    const frame = new Uint8Array(subIdBytes.length + 1 + data.length)
+    frame.set(subIdBytes, 0)
+    frame[subIdBytes.length] = 0x00 // null byte delimiter
+    frame.set(data, subIdBytes.length + 1)
+
+    this.socket.send(frame)
   }
 
   /** Current connection state. */
@@ -162,6 +188,7 @@ export class WsClient {
     this.setConnectionState("connecting")
 
     const socket = new WebSocket(this.config.url)
+    socket.binaryType = "arraybuffer"
     this.socket = socket
     this.attachSocketHandlers(socket)
   }
@@ -173,7 +200,14 @@ export class WsClient {
 
     socket.onmessage = (event) => {
       if (this.destroyed || socket !== this.socket) return
-      if (typeof event.data !== "string") return // text frames only
+
+      // Binary frame — extract subId routing prefix and dispatch
+      if (event.data instanceof ArrayBuffer) {
+        this.handleBinaryFrame(new Uint8Array(event.data))
+        return
+      }
+
+      if (typeof event.data !== "string") return
 
       this.handleMessage(event.data)
     }
@@ -253,6 +287,26 @@ export class WsClient {
 
     // Forward all control messages to the consumer callback
     this.config.onControl?.(msg)
+  }
+
+  // -----------------------------------------------------------------------
+  // Binary frame handling
+  // -----------------------------------------------------------------------
+
+  /**
+   * Parse a binary frame: read bytes until first 0x00 to extract the
+   * UTF-8 subId routing prefix, then dispatch the remaining payload.
+   */
+  private handleBinaryFrame(frame: Uint8Array): void {
+    // Find the null byte delimiter
+    const delimIndex = frame.indexOf(0x00)
+    if (delimIndex < 0) return // malformed — no delimiter
+
+    const decoder = new TextDecoder()
+    const subId = decoder.decode(frame.subarray(0, delimIndex))
+    const payload = frame.subarray(delimIndex + 1)
+
+    this.config.onBinaryMessage?.(subId, payload)
   }
 
   // -----------------------------------------------------------------------

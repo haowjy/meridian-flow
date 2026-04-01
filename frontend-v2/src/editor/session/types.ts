@@ -7,6 +7,7 @@
 
 import type * as Y from "yjs"
 import type { Awareness } from "y-protocols/awareness"
+import type { DocStreamClient } from "@/lib/ws/doc-stream-client"
 
 // ---------------------------------------------------------------------------
 // Document state types
@@ -66,10 +67,13 @@ export interface DocumentWsProvider {
  *
  * Decouples DocSession from transport construction so the pool
  * can control auth, reconnection policy, and provider lifecycle.
+ *
+ * Uses DocStreamClient instead of getAccessToken — auth is handled
+ * at the connection level by DocWsProvider, not per-document.
  */
 export type DocumentWsProviderFactory = (args: {
   documentId: string
   ydoc: Y.Doc
   awareness: Awareness
-  getAccessToken: () => Promise<string>
+  docStreamClient: DocStreamClient
 }) => DocumentWsProvider

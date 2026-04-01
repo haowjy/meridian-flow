@@ -29,6 +29,8 @@ import {
 import { getCursorColor, type AwarenessUserInfo } from "../collab/remote-cursors"
 import { createYUndoManager } from "../collab/undo-manager"
 
+import type { DocStreamClient } from "@/lib/ws/doc-stream-client"
+
 import type {
   ConnectionState,
   DocSyncState,
@@ -56,7 +58,8 @@ export interface DocSessionConfig {
   userId: string
   userName: string
   wsProviderFactory?: DocumentWsProviderFactory
-  getAccessToken?: () => Promise<string>
+  /** DocStreamClient from the doc WS connection — replaces getAccessToken. */
+  docStreamClient?: DocStreamClient
 }
 
 // ---------------------------------------------------------------------------
@@ -116,12 +119,12 @@ export class DocSession {
   private readonly listeners = new Set<() => void>()
   private idbHealthUnsubscribe: (() => void) | null = null
   private readonly wsProviderFactory?: DocumentWsProviderFactory
-  private readonly getAccessToken?: () => Promise<string>
+  private readonly docStreamClient?: DocStreamClient
 
   constructor(config: DocSessionConfig) {
     this.id = config.documentId
     this.wsProviderFactory = config.wsProviderFactory
-    this.getAccessToken = config.getAccessToken
+    this.docStreamClient = config.docStreamClient
 
     // Per-chapter Y.Doc — hard constraint: never share across chapters.
     this.ydoc = new Y.Doc()
@@ -175,14 +178,16 @@ export class DocSession {
     // Connect WS if a factory was provided and we haven't been destroyed
     // while waiting for IDB sync.
     if (this.wsProviderFactory && !this.destroyed) {
-      if (!this.getAccessToken) {
-        throw new Error("DocSession requires getAccessToken when wsProviderFactory is set")
+      if (!this.docStreamClient) {
+        throw new Error(
+          "DocSession requires docStreamClient when wsProviderFactory is set",
+        )
       }
       this.wsProvider = this.wsProviderFactory({
         documentId: this.id,
         ydoc: this.ydoc,
         awareness: this.awareness,
-        getAccessToken: this.getAccessToken,
+        docStreamClient: this.docStreamClient,
       })
       this.wsProvider.connect()
     }
