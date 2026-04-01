@@ -266,3 +266,15 @@
 2. **Error semantics dropped (IMPORTANT) — expected architectural change, not a regression.** In the multiplexed model, auth errors happen at the WS connection level (WsClient), not per-document. The old per-document provider had its own WS with per-document auth errors (auth-expired, access-revoked). In the new architecture, these are handled by DocWsProvider at the connection level. Per-document subscription errors route through `handleErrorMessage`. The control event types in `types.ts` reflect the old model — should be cleaned up in a follow-up, but no behavior regression for actual error handling.
 
 3. **Test coverage scope (MINOR) — expected.** Adapter tests mock the transport layer. Integration-level testing for binary framing, reconnect, and callback wiring is done via browser/e2e testing.
+
+### D-E5. Phase 13 — old frontend (`frontend/`) still references per-document WS
+
+**Decision**: Proceed with deletion. The old `frontend/` is being superseded by `frontend-v2/`. Per CLAUDE.md: "No real users or user data. No backwards compatibility needed."
+
+**Context**: Reviewer (p741/sonnet) flagged that `frontend/src/core/cm6-collab/sync/DocumentSessionManager.ts` still dials `GET /ws/documents/{documentId}`. This is in the old frontend codebase, not `frontend-v2/` where Phases 8-12 built the new WS infrastructure. The entire WS streaming migration (Phases 1-13) targets `frontend-v2/`.
+
+**If old frontend needs to remain operational**: Restore the per-document WS route from git (`collab_document_handler.go` at commit `54c846d8`). The old handler is self-contained and can be revived without affecting the new DocHandler stream lane.
+
+### D-E6. Phase 13 — shared Yjs helpers extracted to `collab_yjs_helpers.go`
+
+**Decision**: Extract `addDocPrefix`, `encodeSyncUpdatePayload`, Yjs prefix constants, and `docWSAppMaxFrame` from deleted `collab_document_handler.go` into new `collab_yjs_helpers.go`. These are actively used by `doc_ws_handler.go` (Phase 11) and its integration test. The blueprint correctly anticipated this: "Remove any per-document WS helpers ... but only if these are no longer used by DocHandler."

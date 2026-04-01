@@ -30,10 +30,9 @@ type CollabModule struct {
 	BookmarkStore  collabdomain.BookmarkStore
 	ProposalStore  collabdomain.ProposalStore
 
-	DocumentHandler *handler.CollabDocumentHandler
-	DocWSServer     *wsutil.Server
-	Handler         *handler.CollabHandler
-	RestoreHandler  *handler.CollabRestoreHandler
+	DocWSServer    *wsutil.Server
+	Handler        *handler.CollabHandler
+	RestoreHandler *handler.CollabRestoreHandler
 }
 
 // CollabDeps captures cross-domain deps needed by collab wiring.
@@ -96,14 +95,6 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 
 	docNotifier := handler.NewDocNotifier(docWSServer)
 
-	collabDocumentHandler := handler.NewCollabDocumentHandler(
-		collabSessionManager,
-		infra.JWTVerifier,
-		collabDocResolver,
-		infra.Logger,
-		cfg,
-	)
-
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
 		deps.TxManager,
@@ -159,10 +150,9 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 		UpdateLogStore:   updateLogStore,
 		BookmarkStore:    bookmarkStore,
 		ProposalStore:    proposalStore,
-		DocumentHandler:  collabDocumentHandler,
-		DocWSServer:      docWSServer,
-		Handler:          collabHandler,
-		RestoreHandler:   collabRestoreHandler,
+		DocWSServer:    docWSServer,
+		Handler:        collabHandler,
+		RestoreHandler: collabRestoreHandler,
 	}, nil
 }
 
@@ -171,7 +161,6 @@ func (m *CollabModule) RegisterRoutes(mux *http.ServeMux) {
 	if m.DocWSServer != nil {
 		mux.HandleFunc("GET /ws/projects/{projectId}/docs", m.DocWSServer.Serve)
 	}
-	mux.HandleFunc("GET /ws/documents/{documentId}", m.DocumentHandler.ConnectDocument)
 	mux.HandleFunc("PATCH /api/proposals/{id}/offset", m.Handler.SetAcceptedAtOffset)
 	mux.HandleFunc("POST /api/turns/{id}/restore", m.RestoreHandler.RestoreTurn)
 	mux.HandleFunc("POST /api/turns/{id}/undo-restore", m.RestoreHandler.UndoRestore)

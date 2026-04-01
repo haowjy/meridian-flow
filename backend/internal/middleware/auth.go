@@ -20,12 +20,11 @@ func AuthMiddleware(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip auth for health check and collab websocket entrypoints.
-			// Collab websocket uses JWT-in-first-message instead of Authorization header.
+			// Skip auth for health check and WS entrypoints.
+			// WS connections authenticate via the wsutil framework (JWT in first message).
 			if r.URL.Path == "/health" ||
 				(r.Method == http.MethodPost && r.URL.Path == "/api/billing/webhooks/stripe") ||
-				strings.HasPrefix(r.URL.Path, "/ws/projects/") ||
-				strings.HasPrefix(r.URL.Path, "/ws/documents/") {
+				strings.HasPrefix(r.URL.Path, "/ws/projects/") {
 				next.ServeHTTP(w, r)
 				return
 			}
