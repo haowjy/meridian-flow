@@ -15,8 +15,8 @@
 | 9 | Frontend ThreadWsProvider | done | 4 | p723 | streaming client |
 | 10 | SSE + Legacy Cleanup | done | 5 | p724 | deletion phase + wsutil race fix |
 | 11 | Doc Handler Yjs Stream Support | done | 6 | p732 | handler upgrade + interface migration |
-| 12 | Frontend DocStreamClient + Provider Rewrite | in-progress | 7 | — | new client + rewrite + session wiring |
-| 13 | Per-Document Yjs WS Removal | planned | 8 | — | deletion phase |
+| 12 | Frontend DocStreamClient + Provider Rewrite | done | 7 | p738 | new client + rewrite + session wiring + review fixes |
+| 13 | Per-Document Yjs WS Removal | in-progress | 8 | — | deletion phase |
 
 ## Round Status
 
@@ -28,8 +28,8 @@
 | 4 | 9 | done | — |
 | 5 | 10 | done | — |
 | 6 | 11 | done | — |
-| 7 | 12 | in-progress | Round 6 |
-| 8 | 13 | planned | Round 7 |
+| 7 | 12 | done | Round 6 |
+| 8 | 13 | in-progress | Round 7 |
 
 ## Critical Path
 
