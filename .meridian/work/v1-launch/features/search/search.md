@@ -12,7 +12,7 @@ Cross-document and within-project search.
 
 ## Implementation
 
-- Backend: existing search API (`POST /api/projects/:id/search`)
+- Backend: existing search API (`GET /api/documents/search`) — see `handler/document.go:SearchDocuments`
 - Frontend: search results panel or inline in command palette
 - Debounced query as user types
 - Highlight matches in results

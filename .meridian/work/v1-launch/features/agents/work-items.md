@@ -1,5 +1,7 @@
 # Work Items: Multi-Thread Work Context
 
+> **Note**: This is the A4 foundation design. It references `${TABLE_PREFIX}chats` — the table was renamed to `${TABLE_PREFIX}threads` in migration 00007. The write routing for `.meridian/work/` was updated in [work-sessions.md](work-sessions.md) — all writes go through the collab pipeline (not direct API writes).
+
 ## Summary
 
 Work items are the backend representation of `meridian work`: a named unit of work that owns multiple threads and a shared artifact folder at `.meridian/work/<slug>/`.
@@ -28,7 +30,7 @@ Writers create work items for focused tasks: "Revise Arc 3," "Worldbuilding pass
 |-----|------|-------|
 | `meridian work start "name"` | Create work item | Named context for grouped work |
 | `$MERIDIAN_WORK_DIR` | Work item's artifact space | Always resolves to `.meridian/work/<slug>/`, including auto-created ephemeral work items |
-| `meridian spawn -a agent` | Create thread with agent profile | Thread may belong to one work item |
+| `meridian spawn -a agent` | Create thread with persona | Thread may belong to one work item |
 | Multiple spawns in parallel | Multiple concurrent threads | Agents working simultaneously in shared context |
 | `meridian work done` | Complete work item | Marks item `done`; artifacts remain readable |
 | `meridian work reopen` | Reopen work item | Returns item to `active` |

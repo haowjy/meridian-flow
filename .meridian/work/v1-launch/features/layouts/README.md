@@ -13,7 +13,7 @@ Refactor the desktop rail around three distinct ways of working:
 
 | Rail item | Primary question | Primary surface |
 |---|---|---|
-| `Agents` | What is happening across this writing session? | Session orchestration |
+| `Agents` | What is happening across this work item? | Work item orchestration |
 | `Converse` | What am I discussing with the assistant right now? | Single active thread |
 | `Studio` | What am I changing in the workspace right now? | Filesystem-backed editor |
 
@@ -23,7 +23,7 @@ The goal is not to add more navigation. The goal is to stop one layout from tryi
 
 | Mode | Why it is separate | What breaks if merged back together |
 |---|---|---|
-| `Agents` | Multi-thread orchestration needs session awareness, parallel visibility, and handoff surfaces. | It turns ordinary chat into a control room and overloads the main conversation UI. |
+| `Agents` | Multi-thread orchestration needs work-item awareness, parallel visibility, and handoff surfaces. | It turns ordinary chat into a control room and overloads the main conversation UI. |
 | `Converse` | Deep collaboration with one thread works best when chat is center stage and tool use feels immediate. | The thread loses focus and becomes subordinate to navigation chrome. |
 | `Studio` | Editing needs a stable filesystem view, a large document canvas, and inline review in place. | The editor becomes cramped and document work feels secondary to chat. |
 
@@ -36,16 +36,16 @@ This split preserves one clear primary canvas per mode.
 - Top-level folder names remain the main visible taxonomy in document work.
 - `Converse` preserves the current chat-first rhythm and tool usage model.
 - `Studio` remains the canonical place for inline document review and proposal hunks.
-- `Agents` is session-first: a session contains multiple related threads, including branches and spawned agent threads.
+- `Agents` is work-item-first: a work item contains multiple related threads, including branches and spawned agent threads.
 
 ## Mode Summaries
 
 ### `Agents`
 
-**Purpose:** oversee a writing session that may contain multiple active threads and delegated agent work.
+**Purpose:** oversee a work item that may contain multiple active threads and delegated agent work.
 
 **Main feature set:**
-- Session-level overview
+- Work-item-level overview
 - Thread family visibility
 - Parallel activity monitoring
 - Handoff and status surfaces
@@ -83,7 +83,7 @@ This split preserves one clear primary canvas per mode.
 
 | Writer profile | `Agents` helps by | `Converse` helps by | `Studio` helps by |
 |---|---|---|---|
-| Serial fiction writer | Tracking chapter planning, continuity, and background threads in one session | Working through scene problems, voice, and chapter feedback in one thread | Revising chapters and reviewing inline changes directly in the manuscript |
+| Serial fiction writer | Tracking chapter planning, continuity, and background threads in one work item | Working through scene problems, voice, and chapter feedback in one thread | Revising chapters and reviewing inline changes directly in the manuscript |
 | Revision-heavy writer | Monitoring separate critique, rewrite, and polish threads | Negotiating one revision path at a time with the assistant | Accepting, rejecting, and editing changes where they land in the text |
 | Research-driven writer | Coordinating source-gathering, synthesis, and question threads | Testing arguments, summaries, and structure in focused dialogue | Organizing notes and drafts using the project’s actual folder structure |
 | Exploratory writer | Letting multiple ideas run in parallel without losing the main thread | Brainstorming freely without the workspace feeling technical | Converting promising threads into concrete documents and outlines |

@@ -116,22 +116,37 @@ Split into two headless layers so Studio and Converse can stay mounted simultane
 SessionPool
   ensureSession(id)         // create DocSession if needed, load from IDB, connect WS
   releaseSession(id)        // drop one borrower; maybe start idle timer
+  acquireLease(id)          // mark session non-evictable during transfer (returns release fn)
+  registerViewOwner(id, surfaceId, detachCb)  // register which surface owns the live view
+  unregisterViewOwner(id, surfaceId)          // unregister on detach/close
+  requestTransfer(id, newSurfaceId)           // signal current owner to detach, then grant
   preload(id)               // warm Y.Doc + IDB + WS without creating a view
   invalidateSession(id, reason) // freeze a session that can no longer sync (delete/access loss)
-  getSession(id)            // access DocSession for state inspection
+  getSession(id)            // access DocSession for state inspection (imperative escape hatch)
   subscribe(listener)       // for useSyncExternalStore
-  destroy()                 // cleanup everything (project close)
+  destroy()                 // invalidate active leases, then cleanup everything
 
 ViewController
-  open(id)                  // borrow session from pool and show/create a view
-  switchTo(id)              // hide current view, show/create target view
+  activate(doc)             // open-or-switch: borrow session, show/create view, serialize async ops
   close(id)                 // destroy this surface's view and release its session
+  rename(id, name)          // update display name for a doc (tab bar)
+  setModified(id, bool)     // mark doc as modified/clean (tab bar dot indicator)
   getActiveView()           // current visible EditorView for this surface
   getOpenDocuments()        // list for tab bar / UI on this surface
   subscribe(listener)       // for useSyncExternalStore
 ```
 
-If a second surface asks for a doc that already has a live collab-bound view, SessionPool transfers the live-view lease before attaching the new surface. There is never a moment where Studio and Converse both own live `yCollab` views for the same `DocSession`.
+**View-owner registry.** SessionPool maintains a registry of `(docId → { surfaceId, detachCallback })` tracking which ViewController currently owns the live view for each document. Controllers register on attach (`registerViewOwner`) and unregister on detach/close (`unregisterViewOwner`). This enables the pool to mediate lease transfers deterministically.
+
+**Lease transfer.** When a ViewController calls `activate(doc)` and the pool has a registered view owner for that doc on a different surface:
+1. `acquireLease(id)` — marks session non-evictable (excluded from idle AND budget eviction)
+2. `requestTransfer(id, newSurfaceId)` — pool calls the current owner's `detachCallback`, which synchronously hides/destroys the old view, clears cursor awareness, and unregisters
+3. New controller creates its EditorView, registers as view owner, releases the lease
+4. Lease has a safety timeout (5s) that auto-releases on stall
+
+If `pool.destroy()` is called during an active lease, the pool invalidates all leases first (setting a `destroyed` flag that `activate()` checks after each `await`), then proceeds with teardown. A controller that resumes after `pool.destroy()` sees the invalid lease / destroyed pool and aborts.
+
+**Async operation serialization.** `activate()` is async (it may cold-open a session). The ViewController maintains an internal operation epoch counter. Each `activate()` call increments the epoch, captures the value, and after each `await` checks if it's still current. Stale operations bail — this prevents rapid A→B→C switches from resolving out of order. Note: if B is a synchronous fast path (already warm), B will briefly mount before C starts. React batches same-cycle effects, so this is only visible across render boundaries (a single frame at worst).
 
 **Tier 1: view eviction** (per ViewController, LRU, max ~6 live views per surface):
 - **Live**: EditorView exists, mounted in DOM, CSS show/hide for tab switching
@@ -153,11 +168,12 @@ If a second surface asks for a doc that already has a live collab-bound view, Se
 
 Hard constraint: a `DocSession` can have at most one active `EditorView` at a time across all surfaces. Yjs awareness is local-state-per-`Y.Doc`, not per surface, so two simultaneous live `yCollab` views for the same doc would race on the same cursor/selection payload. If Studio has `ch-1` open and the user opens `ch-1` in Converse, SessionPool detaches the Studio view first, then attaches the Converse view. We explicitly do not build per-surface awareness multiplexing for this refactor because the UX value is low and the complexity is high.
 
-Within that constraint, awareness is view-scoped:
-- On **view hide** (CSS tab switch or mode switch), clear cursor/selection awareness for the active view. If we want "user has this doc open" presence, keep that as a separate field rather than reusing cursor presence.
-- On **view eviction** (destroyed `EditorView`), clear all awareness state for that doc from this client.
-- On **lease transfer** to another surface, clear awareness from the old surface before mounting the new live view.
-- On **view restore/show**, republish cursor/selection awareness from the new live view.
+Within that constraint, awareness is view-scoped. **Important:** never null the entire local state (`setLocalState(null)`) — that emits a removal event on the wire and remote peers see a "user left" flash. Instead, use `setLocalStateField` to clear only the `cursor` field while preserving the stable `user` identity:
+
+- On **view hide** (CSS tab switch or mode switch), clear the `cursor` field via `awareness.setLocalStateField('cursor', null)`. The `user` field stays intact — remote peers see the user is still present but without an active cursor.
+- On **view eviction** (destroyed `EditorView`), clear the `cursor` field. The `user` field stays intact as long as the session is alive.
+- On **lease transfer** to another surface, clear `cursor` from the old surface before mounting the new live view. The `user` field is session-scoped and persists across transfers.
+- On **view restore/show**, call `refreshCursorAwareness(awareness, view)` after the view is focused. `yCollab` only writes cursor state from the view's `update()` path when the view is focused — there is no constructor-time publish. So a CSS-shown or restored view needs an explicit focus + refresh to republish cursor presence.
 
 ### useDocumentSessions
 
@@ -166,17 +182,55 @@ React hook wrapping one `ViewController`. The shared `SessionPool` lives above i
 ```tsx
 const {
   activeDocId,
-  openDocs,           // DocInfo[] for tab bar
-  open,               // (id) => void
-  switchTo,           // (id) => void
+  openDocs,           // Array<{ id, name, isModified }> for tab bar
+  activeSessionSnapshot, // { syncState, connectionState, frozenReason, idbHealth } | null
+  activate,           // (doc: { id, name }) => void — open-or-switch, serialized
   close,              // (id) => void
-  getSession,         // (id) => DocSession
+  rename,             // (id, name) => void
+  setModified,        // (id, bool) => void
   getActiveView,      // () => EditorView | null
+  getSession,         // (id) => DocSession | null — imperative escape hatch (proposals, ytext)
   hostRef,            // ref for the editor mount container
 } = useDocumentSessions()
 ```
 
+`activate(doc)` replaces `open`/`switchTo` — it opens a new doc or switches to an existing one. The ViewController serializes async operations via an internal epoch counter, so rapid calls resolve in order.
+
+`activeSessionSnapshot` provides reactive access to the active session's connection/sync/frozen/health state without consumers needing to subscribe to the raw `DocSession`. For imperative access to `ytext` (e.g. proposal pipeline), `getSession(id)` is an escape hatch — documented as non-reactive.
+
+`rename` and `setModified` are ViewController-owned metadata mutations. DocSession stays metadata-free. These feed `openDocs` for tab bar rendering.
+
 Studio mode and Converse mode each create their own `ViewController`, so they can keep independent `activeDocId` values while borrowing shared `DocSession`s from the same pool. If both surfaces target the same doc, the pool transfers the single live-view lease to the newly active surface and detaches the old one. The hook does not own the Y.Doc lifecycle; it only drives view lifecycle for one surface.
+
+### Surface Coordination Modes
+
+The `ViewController` and `useDocumentSessions` hook are mode-agnostic — they take commands (`activate`, `close`) without knowing who drives them. The coordination strategy lives in the **layout layer**, not the hook or controller:
+
+- **Independent**: Each surface drives its own hook directly. Studio and Converse maintain separate `activeDocId` values. This is the default.
+- **Mirrored**: Converse subscribes to Studio's active doc and calls `activate()` whenever it changes. The ViewController and hook are unchanged — the layout just wires them together.
+
+```tsx
+// Optional coordination hook — layout uses this when Converse mirrors Studio.
+// Takes the memoized activate function directly to avoid re-firing on every render.
+function useFollowActiveDoc(
+  sourceActiveDocId: string | null,
+  sourceOpenDocs: OpenDoc[],
+  targetActivate: (doc: DocHandle) => void,  // must be useCallback-memoized
+) {
+  const sourceDoc = sourceOpenDocs.find(d => d.id === sourceActiveDocId)
+  useEffect(() => {
+    if (sourceDoc) {
+      targetActivate({ id: sourceDoc.id, name: sourceDoc.name })
+    }
+  }, [sourceDoc?.id, sourceDoc?.name, targetActivate])
+}
+```
+
+This passes the full doc object (id + name) so the target can open a doc it has never seen. Dependencies are primitives + a memoized function — no object-identity instability. The ViewController's internal epoch counter handles rapid source changes — stale activations bail after each await. Note: if an intermediate activation resolves synchronously (warm session), it will briefly mount before the next one starts. React batches same-cycle effects, so this is at most a single-frame flash.
+
+This is a layout-level decision, not a mode flag inside the controller or hook. Switching between independent and mirrored behavior requires no refactor — just whether the layout calls `useFollowActiveDoc` or not.
+
+**Why this approach:** Independent is the more general case (a writer editing Chapter 42 may chat about Chapter 15). Mirrored is a strict subset — constrain independent to follow. Building the general case first means both modes work from day one without architectural changes.
 
 ### Editor Component
 
@@ -398,9 +452,19 @@ Verify: open a doc, type, close, reopen — content persists via IDB. Preloaded 
 
 ### Phase 3: ViewController + useDocumentSessions
 
-Build per-surface ViewControllers and update `useDocumentSessions` to wrap one controller instance. Implement tier-1 LRU view eviction per surface (destroy view, keep session alive), CSS show/hide for non-evicted views, and restore by rebuilding `EditorState` from current `Y.Text` plus restoring scroll. Optionally preserve selection through `Y.RelativePosition`. Enforce the single-live-view-per-DocSession rule across Studio and Converse; if both surfaces target the same doc, transfer the lease and detach the old live view before mounting the new one. Add awareness lifecycle rules: clear cursor/selection on hide, clear all awareness on evict, clear on lease transfer, republish on show.
+Build per-surface ViewControllers with a single `activate(doc)` entry point (replaces `open`/`switchTo`) that serializes async operations via an internal epoch counter. ViewController creates EditorViews directly using `createEditorExtensions()` + `new EditorView()` (not through the React `<Editor>` component — the React component is for simple single-doc use cases). ViewController owns per-doc display metadata (`name`, `isModified`) and exposes `rename`/`setModified` mutators.
 
-Verify: TabbedEditor story uses `useDocumentSessions`. Studio and Converse can hold different active docs at the same time, but only one live collab-bound view exists for a given doc. Opening the same doc on the other surface detaches the first live view before the second mounts. Tab switching is instant. Evicted tabs restore from current Yjs state, not stale CM6 state. Ghost cursors do not remain after hide/evict/lease transfer.
+Implement tier-1 LRU view eviction per surface (destroy view, keep session alive), CSS show/hide for non-evicted views, and restore by rebuilding `EditorState` from current `Y.Text` plus restoring scroll. Optionally preserve selection through `Y.RelativePosition`.
+
+Add `SessionPool.acquireLease(id)` to support atomic lease transfer. When both surfaces target the same doc, the requesting ViewController acquires a lease (marks session non-evictable), detaches the old surface's view, attaches the new view, then releases the lease. The lease has a safety timeout.
+
+Add awareness lifecycle rules using `setLocalStateField('cursor', null)` — never null the entire local state. The `user` field persists across hide/evict/lease-transfer. `yCollab` automatically republishes cursor on view restore.
+
+Update `useDocumentSessions` to wrap one controller instance. Expose `activeSessionSnapshot` for reactive connection/sync/health state. Keep `getSession(id)` as a documented imperative escape hatch for proposal pipeline access to `ytext`.
+
+Support both independent and mirrored surface coordination via a layout-level `useFollowActiveDoc` hook that passes full doc objects and relies on the ViewController's epoch counter for stale-request safety.
+
+Verify: TabbedEditor story uses `useDocumentSessions`. Studio and Converse can hold different active docs at the same time, but only one live collab-bound view exists for a given doc. Opening the same doc on the other surface detaches the first live view before the second mounts. Tab switching is instant. Evicted tabs restore from current Yjs state, not stale CM6 state. Ghost cursors (cursor field) do not remain after hide/evict/lease transfer — but user presence persists. Rapid A→B→C switches resolve to C (epoch guard). Mirrored mode follows source surface correctly.
 
 ### Phase 4: WebSocket provider
 

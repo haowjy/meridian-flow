@@ -12,7 +12,7 @@ First-time user experience and free tier flow.
 ## Free Tier Flow
 
 1. Sign up (email or Google OAuth)
-2. Receive free credits: instant for Google OAuth; after email verification for email/password signup (see [billing-design.md](../billing/billing-design.md))
+2. Receive free credits: instant for Google OAuth; after email verification for email/password signup (see [credit-ledger.md](../billing/credit-ledger.md))
 3. Create first project or import existing work
 4. Guided introduction to: editor, AI thread, @mentions, skills
 5. First AI interaction within 2 minutes of signup

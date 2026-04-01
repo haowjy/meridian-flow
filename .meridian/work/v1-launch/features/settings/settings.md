@@ -11,12 +11,12 @@ Theme, editor preferences, and per-project configuration.
 - Keyboard shortcut customization
 
 ### Per-Project Settings
-- **Agents & Skills management** — dedicated panel that reads `.agents/` folder, see [file-first-agents-skills.md](../agents/file-first-agents-skills.md)
+- **Agents & Skills management** — dedicated panel that reads `.agents/` folder, see [file-first-storage.md](../agents/file-first-storage.md)
   - List installed agents and skills
   - Toggle enabled/disabled
   - Edit model selection, description, permissions (writes YAML frontmatter)
   - Import from git button
-- Default agent profile for new threads
+- Default persona for new threads
 - Project-level model preferences
 
 ### Account Settings

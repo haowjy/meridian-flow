@@ -1,5 +1,7 @@
 # Agent Tools: Document-Native + just-bash
 
+> **Note**: This is the A5 foundation design. The write routing table below is superseded by [work-sessions.md](work-sessions.md) — all writes (including `.meridian/work/` artifacts) go through the collab pipeline, not direct API writes. Autoapply flags determine whether proposals are auto-accepted.
+
 ## Overview
 
 Flow agents get two tiers of tool execution:
@@ -19,7 +21,7 @@ All mutation tools (`Write`, `Edit`) work on all writable surfaces. The backend 
 |-------------|----------------|-----|
 | Live docs (chapters, story content) | Routed through Yjs collab pipeline | User and agents may both be editing — needs CRDT ordering |
 | `.meridian/work/` artifacts | Direct API write | Agent-owned workspace, no CRDT needed, works for explicit and ephemeral work items |
-| `.agents/` | **Review-gated (autoapply=false)** | Agent profile namespace — changes require user review before taking effect |
+| `.agents/` | **Review-gated (autoapply=false)** | Persona namespace — changes require user review before taking effect |
 
 ### Context variables
 
@@ -29,7 +31,7 @@ Since we own the agent runtime, we inject the same environment variables as the 
 |----------|-------------|-------|
 | `$MERIDIAN_WORK_DIR` | `.meridian/work/<work-item>/` | Always scoped to the thread's work item; if the thread was created without one, runtime auto-provisions an ephemeral work item first |
 | `$MERIDIAN_FS_DIR` | `.meridian/fs/` | Long-lived project reference material |
-| `$MERIDIAN_CHAT_ID` | Current thread/session ID | For context passing between threads |
+| `$MERIDIAN_THREAD_ID` | Current thread ID | For context passing between threads |
 
 Same interface as CLI. One vocabulary, zero translation.
 
@@ -113,7 +115,7 @@ When skills need real package installs, network access, or complex multi-process
 
 The agent's tool set is determined by:
 
-1. **Agent profile** — which tools are enabled in the `.agents/agents/<name>.md` frontmatter
+1. **Persona** — which tools are enabled in the `.agents/agents/<name>.md` frontmatter
 2. **Skill context** — skills can declare required tools
 3. **Runtime availability** — if just-bash sidecar is running, bash tool is available; otherwise only document-native tools
 

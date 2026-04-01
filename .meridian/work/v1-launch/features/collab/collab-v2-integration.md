@@ -147,7 +147,7 @@ Each layer is a separate CM6 `ViewPlugin` with its own `DecorationSet`. Layers c
 
 ## Cross-References
 
-- [Layout Architecture](layout-architecture.md) -- panel sizing and mode switching
-- [Editor Direction](editor-direction.md) -- live preview and decoration architecture
+- [Layout Architecture](../layouts/layout-architecture.md) -- panel sizing and mode switching
+- [Editor Direction](../editor/editor-direction.md) -- live preview and decoration architecture
 - [Frontend Diff Model](frontend-diff-model.md) -- hunk data model
 - [Undo Design](undo.md) -- undo mechanics

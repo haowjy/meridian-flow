@@ -145,4 +145,4 @@ When a thread references a document (e.g., "Review" action on a proposal):
 ## Cross-References
 
 - [Layout Architecture](layout-architecture.md) -- panel sizing, explorer width
-- [Workspace Modes README](../README.md) -- why Studio exists as a separate mode
+- [Workspace Modes README](./README.md) -- why Studio exists as a separate mode

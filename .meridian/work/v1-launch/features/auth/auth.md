@@ -1,8 +1,10 @@
 # Auth Design: Supabase JWT Context + Signup Initialization
 
+> **Status: Implemented.** Auth handler, route wiring, and credit initialization are shipped. See `backend/internal/handler/auth_handler.go`, `backend/internal/app/domains/auth.go`, `backend/internal/service/billing/credit_granter.go`. This doc is retained as the design reference.
+
 ## Goal
 
-Make A2 implementation-ready for backend work. A2 owns:
+A2 owns:
 
 1. Supabase JWT verification and auth-context enrichment
 2. Request-context propagation for authenticated fields needed by downstream services
