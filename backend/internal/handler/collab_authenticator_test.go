@@ -1,100 +1,112 @@
 package handler
 
 import (
-	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"testing"
+	"time"
 
-	collab "meridian/internal/domain/collab"
+	"meridian/internal/domain"
+	authdomain "meridian/internal/domain/auth"
 )
 
-// --- test resolver for authenticator unit tests ---
+const (
+	testUserID = "11111111-1111-1111-1111-111111111111"
+)
 
-type testAuthResolver struct {
-	allowed    bool
-	ownerErr   error
-	projectID  string
-	resolveErr error
+type testJWTVerifier struct {
+	tokens map[string]*authdomain.AuthClaims
 }
 
-func (r *testAuthResolver) ResolveDocument(_ context.Context, docID string) (*collab.CollabDocRef, error) {
-	if r.resolveErr != nil {
-		return nil, r.resolveErr
+func (v *testJWTVerifier) VerifyToken(tokenString string) (*authdomain.AuthClaims, error) {
+	claims, ok := v.tokens[tokenString]
+	if !ok {
+		return nil, errors.New("invalid token")
 	}
-	return &collab.CollabDocRef{
-		DocumentID: docID,
-		ProjectID:  r.projectID,
-	}, nil
+	return claims, nil
 }
 
-func (r *testAuthResolver) VerifyOwnership(_ context.Context, _ string, _ string) (bool, error) {
-	if r.ownerErr != nil {
-		return false, r.ownerErr
+func TestAuthenticateTokenSuccess(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(10 * time.Minute)
+	verifier := &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{
+		"ok": {
+			UserID:    testUserID,
+			Email:     "user@example.com",
+			ExpiresAt: &expiresAt,
+		},
+	}}
+
+	result, err := authenticateToken("ok", verifier, nil)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
-	return r.allowed, nil
-}
-
-func newTestAuthenticator(resolver *testAuthResolver, verifier *testJWTVerifier) *collabAuthenticator {
-	return newCollabAuthenticator(
-		verifier,
-		nil,
-		resolver,
-		nil,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
-}
-
-// --- checkDocumentAccess tests ---
-
-func TestAuthenticator_CheckDocumentAccess_Success(t *testing.T) {
-	resolver := &testAuthResolver{allowed: true, projectID: testProjectID}
-	auth := newTestAuthenticator(resolver, &testJWTVerifier{})
-
-	code, msg := auth.checkDocumentAccess(context.Background(), testProjectID, testUserID, testDocID1)
-	if code != "" || msg != "" {
-		t.Fatalf("expected success, got code=%q msg=%q", code, msg)
+	if result == nil {
+		t.Fatalf("expected auth result")
+	}
+	if result.UserID != testUserID {
+		t.Fatalf("expected user id %q, got %q", testUserID, result.UserID)
+	}
+	if !result.JWTExpiry.Equal(expiresAt) {
+		t.Fatalf("expected jwt expiry %v, got %v", expiresAt, result.JWTExpiry)
 	}
 }
 
-func TestAuthenticator_CheckDocumentAccess_Forbidden(t *testing.T) {
-	resolver := &testAuthResolver{allowed: false, projectID: testProjectID}
-	auth := newTestAuthenticator(resolver, &testJWTVerifier{})
-
-	code, msg := auth.checkDocumentAccess(context.Background(), testProjectID, testUserID, testDocID1)
-	if code != "FORBIDDEN" {
-		t.Fatalf("expected FORBIDDEN, got code=%q msg=%q", code, msg)
+func TestAuthenticateTokenVerifierErrorMappedToAuthExpired(t *testing.T) {
+	_, err := authenticateToken("missing", &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{}}, nil)
+	if !errors.Is(err, domain.ErrAuthExpired) {
+		t.Fatalf("expected ErrAuthExpired, got %v", err)
 	}
 }
 
-func TestAuthenticator_CheckDocumentAccess_OwnershipError(t *testing.T) {
-	resolver := &testAuthResolver{ownerErr: errors.New("db down")}
-	auth := newTestAuthenticator(resolver, &testJWTVerifier{})
+func TestAuthenticateTokenBlockedIdentity(t *testing.T) {
+	verifier := &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{
+		"ok": {
+			UserID: testUserID,
+			Email:  "blocked@example.com",
+		},
+	}}
 
-	code, _ := auth.checkDocumentAccess(context.Background(), testProjectID, testUserID, testDocID1)
-	if code != "INTERNAL_ERROR" {
-		t.Fatalf("expected INTERNAL_ERROR, got code=%q", code)
+	_, err := authenticateToken("ok", verifier, func(userID, email string) bool {
+		return userID == testUserID && email == "blocked@example.com"
+	})
+	if !errors.Is(err, domain.ErrAuthFailed) {
+		t.Fatalf("expected ErrAuthFailed, got %v", err)
 	}
 }
 
-func TestAuthenticator_CheckDocumentAccess_ProjectMismatch(t *testing.T) {
-	otherProject := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	resolver := &testAuthResolver{allowed: true, projectID: otherProject}
-	auth := newTestAuthenticator(resolver, &testJWTVerifier{})
+func TestAuthenticateTokenInvalidUUID(t *testing.T) {
+	verifier := &testJWTVerifier{tokens: map[string]*authdomain.AuthClaims{
+		"ok": {
+			UserID: "not-a-uuid",
+			Email:  "user@example.com",
+		},
+	}}
 
-	code, _ := auth.checkDocumentAccess(context.Background(), testProjectID, testUserID, testDocID1)
-	if code != "PROJECT_MISMATCH" {
-		t.Fatalf("expected PROJECT_MISMATCH, got code=%q", code)
+	_, err := authenticateToken("ok", verifier, nil)
+	if !errors.Is(err, domain.ErrAuthFailed) {
+		t.Fatalf("expected ErrAuthFailed, got %v", err)
 	}
 }
 
-func TestAuthenticator_CheckDocumentAccess_ResolveError(t *testing.T) {
-	resolver := &testAuthResolver{allowed: true, resolveErr: errors.New("db down")}
-	auth := newTestAuthenticator(resolver, &testJWTVerifier{})
+func TestAuthErrorToCodeAndMessage(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		expectedCode string
+		expectedMsg  string
+	}{
+		{name: "nil", err: nil, expectedCode: "", expectedMsg: ""},
+		{name: "expired", err: domain.ErrAuthExpired, expectedCode: "AUTH_EXPIRED", expectedMsg: domain.ErrAuthExpired.Error()},
+		{name: "forbidden", err: domain.ErrForbidden, expectedCode: "FORBIDDEN", expectedMsg: "access denied"},
+		{name: "failed", err: domain.ErrAuthFailed, expectedCode: "AUTH_FAILED", expectedMsg: domain.ErrAuthFailed.Error()},
+		{name: "fallback", err: errors.New("boom"), expectedCode: "INTERNAL_ERROR", expectedMsg: "failed to verify project access"},
+	}
 
-	code, _ := auth.checkDocumentAccess(context.Background(), testProjectID, testUserID, testDocID1)
-	if code != "INTERNAL_ERROR" {
-		t.Fatalf("expected INTERNAL_ERROR, got code=%q", code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, message := authErrorToCodeAndMessage(tt.err)
+			if code != tt.expectedCode || message != tt.expectedMsg {
+				t.Fatalf("expected (%q, %q), got (%q, %q)", tt.expectedCode, tt.expectedMsg, code, message)
+			}
+		})
 	}
 }

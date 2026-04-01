@@ -132,8 +132,6 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 		deps.Config.LLM.MaxConcurrentStreamsPaid,
 	)
 
-	providerResolver := streaming.NewProviderResolver(deps.ProviderRegistry)
-
 	threadService := thread.NewService(deps.ThreadRepo, deps.ProjectRepo, deps.WorkItemSvc, deps.Logger)
 
 	threadHistoryService := threadhistory.NewService(
@@ -211,7 +209,7 @@ func SetupLLMServices(deps LLMServicesDeps) (*Services, *mstream.Registry, error
 	}
 
 	streamRuntime := streaming.NewStreamRuntime(streaming.StreamRuntimeDeps{
-		ProviderGetter:     providerResolver,
+		ProviderGetter:     deps.ProviderRegistry,
 		StreamRegistry:     streamRegistry,
 		ExecutorRegistry:   executorRegistry,
 		InterjectionRouter: interjectionRouter,

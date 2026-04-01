@@ -42,15 +42,6 @@ func (r *ExecutorRegistry) Get(turnID string) *StreamExecutor {
 	return nil
 }
 
-// GetByTurn retrieves an active turn handle by turn ID.
-func (r *ExecutorRegistry) GetByTurn(turnID string) (ActiveTurnHandle, bool) {
-	executor := r.Get(turnID)
-	if executor == nil {
-		return nil, false
-	}
-	return executor, true
-}
-
 // Remove removes an executor from the registry.
 func (r *ExecutorRegistry) Remove(turnID string) {
 	r.executors.Delete(turnID)

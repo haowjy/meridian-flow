@@ -26,13 +26,9 @@ const wsHandlerOpTimeout = 5 * time.Second
 
 var _ wsutil.Handler = (*TurnStreamHandler)(nil)
 
-type TurnStreamStarter interface{}
-
 type TurnStreamHandlerDeps struct {
 	StreamRegistry     *mstream.Registry
 	InterjectionRouter streaming.InterjectionRouter
-	ActiveTurnRegistry streaming.ActiveTurnRegistry
-	TurnStreamStarter  TurnStreamStarter
 	TurnReader         domainllm.TurnReader
 	Authorizer         authdomain.ResourceAuthorizer
 	Logger             *slog.Logger
@@ -42,8 +38,6 @@ type TurnStreamHandlerDeps struct {
 type TurnStreamHandler struct {
 	streamRegistry     *mstream.Registry
 	interjectionRouter streaming.InterjectionRouter
-	activeTurnRegistry streaming.ActiveTurnRegistry
-	turnStreamStarter  TurnStreamStarter
 	turnReader         domainllm.TurnReader
 	authorizer         authdomain.ResourceAuthorizer
 	logger             *slog.Logger
@@ -74,8 +68,6 @@ func NewTurnStreamHandler(deps TurnStreamHandlerDeps) *TurnStreamHandler {
 	return &TurnStreamHandler{
 		streamRegistry:     deps.StreamRegistry,
 		interjectionRouter: deps.InterjectionRouter,
-		activeTurnRegistry: deps.ActiveTurnRegistry,
-		turnStreamStarter:  deps.TurnStreamStarter,
 		turnReader:         deps.TurnReader,
 		authorizer:         deps.Authorizer,
 		logger:             logger,
@@ -177,7 +169,7 @@ func (h *TurnStreamHandler) OnMessage(rawState wsutil.State, msg wsutil.Envelope
 		Kind:     wsutil.KindControl,
 		Op:       wsutil.OpInterjectionResult,
 		Resource: &wsutil.Resource{Type: "turn", Id: turnID},
-		Payload:  mustMarshal(response),
+		Payload:  wsutil.MustMarshal(response),
 	})
 }
 
@@ -483,7 +475,7 @@ func (h *TurnStreamHandler) sendSubscribed(session wsutil.Session, sub wsutil.Su
 		SubId:    sub.SubId,
 		Resource: &wsutil.Resource{Type: sub.Resource.Type, Id: sub.Resource.Id},
 		Epoch:    epoch,
-		Payload: mustMarshal(map[string]any{
+		Payload: wsutil.MustMarshal(map[string]any{
 			"headSeq":      headSeq,
 			"recovered":    recovered,
 			"catchupCount": catchupCount,
@@ -534,7 +526,7 @@ func (h *TurnStreamHandler) sendEnded(
 		Resource: &wsutil.Resource{Type: "turn", Id: turnID},
 		Seq:      finalSeq,
 		Epoch:    epoch,
-		Payload:  mustMarshal(payload),
+		Payload:  wsutil.MustMarshal(payload),
 	})
 }
 
@@ -555,7 +547,7 @@ func (h *TurnStreamHandler) sendGap(
 		Op:       wsutil.OpGap,
 		SubId:    subID,
 		Resource: &wsutil.Resource{Type: "turn", Id: turnID},
-		Payload: mustMarshal(map[string]any{
+		Payload: wsutil.MustMarshal(map[string]any{
 			"fromSeq": start,
 			"toSeq":   toSeq,
 			"cause":   cause,
@@ -635,9 +627,4 @@ func (h *TurnStreamHandler) detachFeed(state *turnStreamState, subID string) *li
 		}
 	}
 	return feed
-}
-
-func mustMarshal(v any) json.RawMessage {
-	data, _ := json.Marshal(v)
-	return data
 }

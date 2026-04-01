@@ -271,7 +271,7 @@ func TestServerConnectionLifecycle(t *testing.T) {
 
 	fake, done := startServeConn(t, s, "project-1")
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	connectedMsg := fake.readServerEnvelope(t, time.Second)
 	if connectedMsg.Kind != KindControl || connectedMsg.Op != OpConnected {
 		t.Fatalf("expected connected, got %+v", connectedMsg)
@@ -329,7 +329,7 @@ func TestSubscribeLimitAndDuplicateSubID(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	for i := 1; i <= 10; i++ {
@@ -451,7 +451,7 @@ func TestRateLimitDropsExcessMessages(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	for i := 0; i < 6; i++ {
@@ -459,7 +459,7 @@ func TestRateLimitDropsExcessMessages(t *testing.T) {
 			Kind:     KindStream,
 			Op:       OpMessage,
 			Resource: &Resource{Type: "turn", Id: "turn-1"},
-			Payload:  mustMarshal(map[string]int{"n": i}),
+			Payload:  MustMarshal(map[string]int{"n": i}),
 		})
 	}
 
@@ -498,7 +498,7 @@ func TestHandlerPanicRecoveryKeepsConnectionAlive(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	fake.pushTextEnvelope(t, Envelope{Kind: KindStream, Op: OpMessage, Resource: &Resource{Type: "panic", Id: "r1"}})
@@ -520,23 +520,23 @@ func TestBroadcastNotifyTargetsProjectConnectionsOnly(t *testing.T) {
 
 	fakeA, doneA := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fakeA, doneA)
-	fakeA.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fakeA.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fakeA.readServerEnvelope(t, time.Second)
 
 	fakeB, doneB := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fakeB, doneB)
-	fakeB.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fakeB.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fakeB.readServerEnvelope(t, time.Second)
 
 	fakeC, doneC := startServeConn(t, s, "project-2")
 	defer stopServeConn(t, fakeC, doneC)
-	fakeC.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fakeC.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fakeC.readServerEnvelope(t, time.Second)
 
 	s.BroadcastNotify("project-1", Envelope{
 		Op:       OpInvalidate,
 		Resource: &Resource{Type: "turn", Id: "turn-1"},
-		Payload:  mustMarshal(map[string]string{"event": "updated"}),
+		Payload:  MustMarshal(map[string]string{"event": "updated"}),
 	})
 
 	msgA := fakeA.readServerEnvelope(t, time.Second)
@@ -560,7 +560,7 @@ func TestBinaryFrameWithoutPrefixReturnsError(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	fake.pushBinary([]byte{0x01, 0x02})
@@ -584,7 +584,7 @@ func TestBinaryFrameToNonBinaryHandlerReturnsNotSupported(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	fake.pushTextEnvelope(t, Envelope{
@@ -642,7 +642,7 @@ func TestBinaryFrameDeliveredToBinaryHandlerAndBinaryEgress(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	fake.pushTextEnvelope(t, Envelope{

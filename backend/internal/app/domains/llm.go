@@ -136,8 +136,6 @@ func NewLLMModule(infra InfrastructureDeps, cfg *config.Config, crossDeps LLMCro
 	threadStreamHandler := handler.NewTurnStreamHandler(handler.TurnStreamHandlerDeps{
 		StreamRegistry:     streamRegistry,
 		InterjectionRouter: llmServices.Interjection,
-		ActiveTurnRegistry: llmServices.ActiveTurns,
-		TurnStreamStarter:  llmServices.Runtime,
 		TurnReader:         crossDeps.TurnRepo,
 		Authorizer:         crossDeps.Authorizer,
 		Logger:             infra.Logger,

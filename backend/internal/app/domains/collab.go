@@ -30,9 +30,9 @@ type CollabModule struct {
 	BookmarkStore  collabdomain.BookmarkStore
 	ProposalStore  collabdomain.ProposalStore
 
-	DocWSServer    *wsutil.Server
-	Handler        *handler.CollabHandler
-	RestoreHandler *handler.CollabRestoreHandler
+	DocWSServer           *wsutil.Server
+	ProposalOffsetHandler *handler.CollabProposalOffsetHandler
+	RestoreHandler        *handler.CollabRestoreHandler
 }
 
 // CollabDeps captures cross-domain deps needed by collab wiring.
@@ -120,16 +120,7 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(docNotifier, docHandler, collabDocResolver)
 	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, projectedStateBuilder, infra.Logger)
 
-	collabHandler := handler.NewCollabHandler(
-		collabDocResolver,
-		proposalService,
-		proposalStore,
-		infra.JWTVerifier,
-		deps.Authorizer,
-		infra.Logger,
-		cfg,
-		docHandler,
-	)
+	proposalOffsetHandler := handler.NewCollabProposalOffsetHandler(proposalService, cfg)
 	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
 	compactionWorker := serviceCollab.NewCompactionWorker(
 		updateLogStore,
@@ -141,18 +132,18 @@ func NewCollabModule(infra InfrastructureDeps, cfg *config.Config, deps CollabDe
 	)
 
 	return &CollabModule{
-		SessionManager:   collabSessionManager,
-		ProposalService:  proposalService,
-		RestoreService:   restoreService,
-		MutationStrategy: mutationStrategy,
-		CompactionWorker: compactionWorker,
-		DocumentStore:    collabStore,
-		UpdateLogStore:   updateLogStore,
-		BookmarkStore:    bookmarkStore,
-		ProposalStore:    proposalStore,
-		DocWSServer:    docWSServer,
-		Handler:        collabHandler,
-		RestoreHandler: collabRestoreHandler,
+		SessionManager:        collabSessionManager,
+		ProposalService:       proposalService,
+		RestoreService:        restoreService,
+		MutationStrategy:      mutationStrategy,
+		CompactionWorker:      compactionWorker,
+		DocumentStore:         collabStore,
+		UpdateLogStore:        updateLogStore,
+		BookmarkStore:         bookmarkStore,
+		ProposalStore:         proposalStore,
+		DocWSServer:           docWSServer,
+		ProposalOffsetHandler: proposalOffsetHandler,
+		RestoreHandler:        collabRestoreHandler,
 	}, nil
 }
 
@@ -161,7 +152,7 @@ func (m *CollabModule) RegisterRoutes(mux *http.ServeMux) {
 	if m.DocWSServer != nil {
 		mux.HandleFunc("GET /ws/projects/{projectId}/docs", m.DocWSServer.Serve)
 	}
-	mux.HandleFunc("PATCH /api/proposals/{id}/offset", m.Handler.SetAcceptedAtOffset)
+	mux.HandleFunc("PATCH /api/proposals/{id}/offset", m.ProposalOffsetHandler.SetAcceptedAtOffset)
 	mux.HandleFunc("POST /api/turns/{id}/restore", m.RestoreHandler.RestoreTurn)
 	mux.HandleFunc("POST /api/turns/{id}/undo-restore", m.RestoreHandler.UndoRestore)
 }
