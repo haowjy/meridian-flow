@@ -8,24 +8,43 @@ Cloud-based agentic platform where biomedical researchers upload micro-CT data, 
 
 **Key insight**: Researchers currently bounce between Amira ($$$), GraphPad Prism, R, and Word. This platform unifies the workflow: data → analysis → visualization → paper.
 
-## Two-Layer Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  Web App (researcher-facing product)            │
-│  Chat + Notebook + 3D Canvas + Editor           │
-│  "I want to analyze these scans for OA"         │
-├─────────────────────────────────────────────────┤
-│  Claude Code Skills (automation layer)          │
-│  Validated pipeline: segment → measure → stats  │
-│  Cofounder validating independently             │
-├─────────────────────────────────────────────────┤
-│  Python Runtime (Pyodide browser / Jupyter server) │
-│  SimpleITK, scikit-image, scipy, numpy, plotly  │
-└─────────────────────────────────────────────────┘
+│  Browser                                        │
+│  Chat + Notebook + 3D Canvas (WebGPU) + Editor  │
+│  Single WebSocket connection for everything     │
+├────────────────────┬────────────────────────────┤
+│  Go Backend        │  External Services         │
+│  (Railway)         │                            │
+│  Auth, LLM,        │  Daytona (CPU sandbox)     │
+│  Projects,         │  ├── Python analysis       │
+│  Threads,          │  ├── SimpleITK, scipy      │
+│  Billing           │  └── Persistent state      │
+│  WebSocket hub     │                            │
+│                    │  HF Inference (optional)    │
+│                    │  └── MedSAM3 "medical eyes" │
+│                    │                            │
+│                    │  Supabase (DB + Storage)    │
+└────────────────────┴────────────────────────────┘
 ```
 
-The web app calls the same Python code that Claude Code skills validate. The skills prove the pipeline works; the web app makes it accessible to non-CLI users.
+### WebSocket Protocol
+
+Single connection per project session handles all communication:
+
+```
+WebSocket /ws/project/{id}
+  ├── LLM streaming (assistant tokens)
+  ├── User messages (turns, interjections, interrupts)
+  ├── Code execution progress (stdout/stderr from Daytona)
+  ├── Tool results (mesh binary frames, plot JSON, DataFrames)
+  ├── Collaboration (Yjs sync)
+  └── Presence (who's viewing what)
+```
+
+Binary WebSocket frames for mesh data (Float32Array vertices + Uint32Array faces) — no base64 encoding overhead. ~1MB for a full knee joint model.
 
 ## MVP Scope
 
@@ -286,10 +305,10 @@ The AI writes Python code for every analysis step. The code is visible in the no
 
 #### Backend (Go)
 
-1. **`execute_python` tool executor** — Sends code to frontend Pyodide worker, receives results via callback
+1. **`execute_python` tool executor** — Creates/resumes Daytona sandbox, runs code, returns results
    - New file: `internal/service/llm/tools/execute_python.go`
    - Follows existing ToolExecutor interface exactly
-   - Code sent via SSE event, result returned via POST from frontend
+   - Progress streamed via WebSocket, binary results (mesh) via binary frames
 
 2. **`search_pubmed` tool executor** — HTTP call to NCBI E-utilities API
    - New file: `internal/service/llm/tools/search_pubmed.go`
@@ -310,11 +329,10 @@ The AI writes Python code for every analysis step. The code is visible in the no
 
 #### Frontend (TypeScript/React)
 
-1. **Pyodide Web Worker** — Python runtime in browser
-   - New: `core/python/pyodide-worker.ts` — Web Worker that loads Pyodide
-   - New: `core/python/python-runtime.ts` — API: execute(code) → {stdout, stderr, plots, dataframes}
-   - Pre-installs: numpy, scipy, scikit-image, matplotlib, plotly, SimpleITK (if available in Pyodide, else pydicom)
-   - Manages persistent state (variables survive across cells)
+1. **Daytona integration** — Sandbox management from frontend
+   - New: `core/compute/daytona-client.ts` — Manages sandbox lifecycle (create/resume/stop)
+   - New: `core/compute/execution-stream.ts` — Receives progress + results via WebSocket
+   - Sandbox is persistent — packages installed once, DICOM data survives between sessions
 
 2. **Notebook view** — Code cells + output
    - New feature: `features/notebook/`
@@ -419,24 +437,24 @@ CREATE TABLE notebook_cells (
 CREATE INDEX idx_notebook_cells_doc ON notebook_cells(document_id);
 ```
 
-## Python Packages (Pyodide availability)
+## Python Packages (Daytona — full PyPI, no limitations)
 
-| Package | In Pyodide? | Purpose |
-|---|---|---|
-| numpy | Yes | Array operations |
-| scipy | Yes | Statistics (ANOVA, t-test) |
-| scikit-image | Yes | Watershed, morphology, marching cubes |
-| scikit-learn | Yes | ROC, metrics |
-| matplotlib | Yes | Static plots |
-| plotly | Yes (micropip) | Interactive plots |
-| statsmodels | Yes (micropip) | ICC, Bland-Altman |
-| pandas | Yes | DataFrames |
-| pydicom | Yes (micropip) | DICOM file reading |
-| SimpleITK | **No** | Need server-side or use pydicom + manual |
-| nibabel | **Partial** | NIfTI reading — may work via micropip |
-| trimesh | Yes (micropip) | 3D mesh operations |
+| Package | Purpose |
+|---|---|
+| SimpleITK | DICOM/NIfTI loading, image processing, registration |
+| numpy | Array operations |
+| scipy | Statistics (ANOVA, t-test) |
+| scikit-image | Watershed, morphology, marching cubes |
+| scikit-learn | ROC, metrics |
+| matplotlib | Static plots |
+| plotly | Interactive plots |
+| statsmodels | ICC, Bland-Altman |
+| pandas | DataFrames |
+| pydicom | DICOM metadata extraction |
+| nibabel | NIfTI file reading |
+| trimesh | 3D mesh operations, Draco export |
 
-**SimpleITK gap**: SimpleITK is not available in Pyodide (C++ extensions). For MVP, use `pydicom` for DICOM reading and `scikit-image` for segmentation. Equivalent functionality, just more manual code. Claude writes it either way.
+No package limitations — Daytona runs full Python with pip. SimpleITK, which doesn't work in Pyodide (C++ extensions), is available natively.
 
 ## Personas (AI Behavior Profiles)
 
@@ -550,14 +568,21 @@ Build in this order (each step is independently demoable):
 - [ ] DOCX export via Pandoc
 - [ ] Stats reviewer persona validation
 
+## Resolved Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Python runtime | Daytona CPU sandbox | Full PyPI (SimpleITK works), persistent state, $0.067/hr, $200 free credits |
+| 3D rendering | Three.js / R3F with WebGPU | Falls back to WebGL2 automatically. Mesh rendering on any integrated GPU. |
+| Streaming protocol | WebSocket (single connection) | Bidirectional, binary frames for mesh data, replaces SSE |
+| MedSAM3 | HF Inference, optional "medical eyes" | Per-request, pennies, semantic check not critical path |
+| GPU | Not needed for v1 | All uCT operations (threshold, watershed, marching cubes, stats) run fine on CPU in <45s per scan |
+| Game streaming | Not needed | Mesh sent once (~1MB), all interaction local on user's GPU |
+
 ## Open Questions
 
-1. **Pyodide vs server-side Python for MVP?** — Pyodide for most analysis. But full DICOM stacks (500MB+) may exceed browser memory. Fallback: server-side Jupyter for large datasets. MVP could start with smaller datasets + Pyodide.
+1. **Notebook persistence?** — Notebook cells in DB (notebook_cells table) or as .ipynb documents? DB cells simpler for real-time sync. Could export as .ipynb for sharing.
 
-2. **3D rendering library?** — React Three Fiber (flexible, React-native) vs VTK.js (medical-grade, DICOM-native). R3F for MVP, VTK.js if we need volume rendering and MPR views.
+2. **Daytona sandbox lifecycle** — One persistent sandbox per user (always available, auto-stops)? Or per-project? Or ephemeral per execution?
 
-3. **Where does MedSAM3 fit?** — Not in MVP. Classical threshold + watershed first. MedSAM3 as optional semantic check in Phase 3, after we validate the pipeline works without it. May need fine-tuning on uCT data.
-
-4. **How to handle large DICOM stacks in browser?** — Options: (a) downsample for preview, full-res server-side, (b) stream slices on demand, (c) convert to compressed format on upload. Decision deferred to implementation.
-
-5. **Notebook persistence?** — Notebook cells in DB (notebook_cells table) or as .ipynb documents? Using DB cells is simpler for real-time sync. Could export as .ipynb for sharing.
+3. **Large DICOM storage** — Daytona persistent volume vs Supabase Storage? Volume is faster (no re-upload), but tied to Daytona. Supabase Storage is provider-agnostic.
