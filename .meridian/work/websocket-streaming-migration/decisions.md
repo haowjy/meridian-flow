@@ -227,3 +227,20 @@
 **Why**: The read loop enqueues the error via `enqueueControl` (async channel write), then returns, which triggers `c.cancel()` on line 258. Go's select statement randomly picks between `ctx.Done()` and `readyCh` when both are ready — ~50% of the time the writer loop exits without sending the error. The fix ensures control messages are always drained before the writer exits.
 **Considered**: (a) Synchronous direct write in the binary frame handler — breaks the single-writer invariant (writer loop owns the WS write path). (b) Delay before `c.cancel()` — fragile timing dependency. (c) Separate close channel from context — too invasive for the fix needed.
 **Files**: `backend/internal/wsutil/ws.go` lines 766-777 (writer loop), 797-803 (nextOutbound)
+
+### D-E2. Phase 11 review findings — critical/important assessment
+
+**Decision**: The correctness reviewer (p735/gpt-5.4) flagged two issues: (1) CRITICAL — subId reuse ABA in snapshot-then-send, (2) IMPORTANT — handler callback race between OnBinaryMessage and OnUnsubscribe from different goroutines.
+
+**Assessment**:
+
+(1) **SubId reuse ABA — accepted risk, not fixed.** SubIds are client-generated UUIDs (e.g., `"s-" + uuid.NewString()`). The probability of a client reusing the exact same UUID within a single connection lifetime is effectively zero. The framework's `reserveSub` also rejects duplicate subIds. The theoretical race requires: unsubscribe completes → same subId reused → broadcast still iterating stale snapshot. Given UUID uniqueness, this is a non-issue. Added NUL-byte rejection in subId validation to prevent the related framing ambiguity (reviewer's MINOR).
+
+(2) **Handler callback race — known limitation, same as thread handler.** `BroadcastDocumentRestored()` calls `session.EndSub()` from a service goroutine, which triggers `OnUnsubscribe`. Meanwhile, the read loop may be in `OnBinaryMessage` using the same subscriber's `syncSession`. The per-connection state maps (`subsByDoc`, `subsBySubId`) are mutex-protected, but the `syncSession` pointer returned by `findBySubID` could be used after `OnUnsubscribe` releases it. This is the same pattern as the thread handler (live-feed goroutine calls `EndSub` while read loop processes `OnMessage`). The `syncSession` reference counting is thread-safe. `BroadcastDocumentRestored` is a rare server-initiated operation (document restore). Risk is acceptable for v1.
+
+**Fixes applied from review**:
+- Added compile-time interface checks for `DocumentSyncBroadcaster` and `DocumentPresenceTracker`
+- Fixed `OnUnsubscribe` returning `nil` instead of error on state failure
+- Simplified `broadcastToDocSubscribers` exclusion logic (removed dead code branch)
+- Added NUL-byte rejection in framework `handleSubscribe`
+- Updated `AGENTS.md` to reference `DocumentPresenceTracker`
