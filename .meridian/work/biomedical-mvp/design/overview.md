@@ -128,24 +128,40 @@ sequenceDiagram
     F-->>R: Interactive charts + tables in chat
 ```
 
+## Frontend Target Decision
+
+**Ship on `frontend/`** (production app). Rationale:
+- `frontend/` has working SSE streaming, WS connection, stores, panels, and auth
+- `frontend-v2/` is explicitly "data-last" and not yet integrated with real data streaming (Phase 7+)
+- Biomedical MVP needs working infrastructure now, not a UI rebuild
+- New components (3D viewer, block renderers, dataset upload) can be migrated to v2 later
+
+All frontend design docs reference `frontend/` paths and patterns.
+
 ## Directory Map
 
 ```
 backend/
   internal/
     domain/datasets/           # New domain: interfaces + types
+    domain/sandbox/            # Sandbox domain: interfaces + types
     service/datasets/          # Dataset service implementation
     service/sandbox/           # Daytona sandbox service
     service/llm/tools/
       execute_python.go        # New ToolExecutor
       execute_python_meta.go   # Metadata for system prompt
+      output_sink.go           # OutputSink interface for streaming
+    service/llm/streaming/
+      agui_output_sink.go      # OutputSink implementation wrapping emitter
     handler/dataset.go         # HTTP endpoints
     repository/postgres/
       dataset.go               # Dataset repository
+      sandbox.go               # Sandbox repository
   migrations/
     NNNNNN_create_datasets.up.sql
+    NNNNNN_create_project_sandboxes.up.sql
 
-frontend/ (or frontend-v2/)
+frontend/                      # Production app (NOT frontend-v2/)
   src/
     features/
       viewer-3d/              # React Three Fiber viewer

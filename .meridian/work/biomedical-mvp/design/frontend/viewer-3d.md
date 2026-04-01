@@ -78,25 +78,31 @@ The existing `WsClient.onBinaryMessage` callback receives mesh binary frames. A 
 // features/viewer-3d/hooks/useMeshData.ts
 
 function parseMeshBinary(data: Uint8Array): MeshData {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-  let offset = 0
-
-  // Find mesh_id (null-terminated UTF-8 string)
+  // Find mesh_id (null-terminated UTF-8 string prefix)
   const nullIdx = data.indexOf(0x00)
   const meshId = new TextDecoder().decode(data.slice(0, nullIdx))
-  offset = nullIdx + 1
+  let offset = nullIdx + 1
+
+  // Use DataView for all reads (handles alignment + enforces little-endian)
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
 
   const vertexCount = view.getUint32(offset, true); offset += 4
   const faceCount = view.getUint32(offset, true); offset += 4
 
-  const vertexBytes = vertexCount * 3 * 4  // float32 x,y,z
-  const vertices = new Float32Array(data.buffer, data.byteOffset + offset, vertexCount * 3)
+  // Copy into aligned buffers (typed array views require alignment)
+  const vertexBytes = vertexCount * 3 * 4
+  const vertexBuf = new ArrayBuffer(vertexBytes)
+  new Uint8Array(vertexBuf).set(data.slice(offset, offset + vertexBytes))
+  const vertices = new Float32Array(vertexBuf)
   offset += vertexBytes
 
-  const faceBytes = faceCount * 3 * 4  // uint32 v0,v1,v2
-  const faces = new Uint32Array(data.buffer, data.byteOffset + offset, faceCount * 3)
+  const faceBytes = faceCount * 3 * 4
+  const faceBuf = new ArrayBuffer(faceBytes)
+  new Uint8Array(faceBuf).set(data.slice(offset, offset + faceBytes))
+  const faces = new Uint32Array(faceBuf)
   offset += faceBytes
 
+  // Labels are uint8 — no alignment needed
   const labels = new Uint8Array(data.buffer, data.byteOffset + offset, vertexCount)
 
   return { meshId, vertices, faces, labels, vertexCount, faceCount, labelNames: {} }

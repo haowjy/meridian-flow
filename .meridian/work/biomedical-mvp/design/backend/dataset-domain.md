@@ -95,22 +95,23 @@ type Service interface {
     Create(ctx context.Context, projectID, userID uuid.UUID, req CreateDatasetRequest) (*Dataset, error)
 
     // FinalizeUpload marks upload complete, triggers metadata extraction.
-    FinalizeUpload(ctx context.Context, datasetID uuid.UUID) error
+    FinalizeUpload(ctx context.Context, userID, datasetID uuid.UUID) error
 
-    // Get retrieves a dataset by ID.
-    Get(ctx context.Context, datasetID uuid.UUID) (*Dataset, error)
+    // Get retrieves a dataset by ID. Checks project membership.
+    Get(ctx context.Context, userID, datasetID uuid.UUID) (*Dataset, error)
 
-    // List returns all datasets for a project.
-    List(ctx context.Context, projectID uuid.UUID) ([]Dataset, error)
+    // List returns all datasets for a project. Checks project membership.
+    List(ctx context.Context, userID, projectID uuid.UUID) ([]Dataset, error)
 
-    // GetBySlug returns a dataset by project + slug.
-    GetBySlug(ctx context.Context, projectID uuid.UUID, slug string) (*Dataset, error)
+    // GetBySlug returns a dataset by project + slug. Checks project membership.
+    GetBySlug(ctx context.Context, userID, projectID uuid.UUID, slug string) (*Dataset, error)
 
-    // Delete removes a dataset and its storage files.
-    Delete(ctx context.Context, datasetID uuid.UUID) error
+    // Delete removes a dataset and its storage files. Checks project membership.
+    Delete(ctx context.Context, userID, datasetID uuid.UUID) error
 
-    // GetStoragePath returns the Supabase Storage path for a dataset's files.
-    GetStoragePath(ctx context.Context, datasetID uuid.UUID) (string, error)
+    // GetUploadURL returns a pre-signed upload URL for a dataset's storage path.
+    // Avoids leaking storage implementation details through the domain interface.
+    GetUploadURL(ctx context.Context, userID, datasetID uuid.UUID, filename string) (string, error)
 }
 
 type Repository interface {
@@ -165,6 +166,15 @@ Options for Go DICOM parsing:
 2. **Shell out to Python in Daytona** — more complete but adds latency
 
 Recommendation: Use the Go library for metadata extraction (fast, no sandbox dependency). The heavy lifting (pixel data, segmentation) happens in Python later.
+
+### Partial Upload Handling
+
+DICOM stacks can have hundreds of files. Upload failures are expected. The finalize flow handles this:
+
+1. **Client tracks upload state**: `useDatasetUpload` hook tracks per-file success/failure. Failed files are retried up to 3 times.
+2. **Finalize validates completeness**: The client sends expected file count in the finalize request. The service compares against actual files in storage and rejects if mismatch exceeds threshold (>5% missing).
+3. **Resumable uploads**: If the browser closes mid-upload, the dataset stays in `uploading` status. Re-opening shows the incomplete dataset with a "Resume Upload" option that diffs expected vs actual files.
+4. **Orphan cleanup**: A background worker marks datasets stuck in `uploading` for >24 hours as `error`.
 
 ## HTTP Endpoints
 

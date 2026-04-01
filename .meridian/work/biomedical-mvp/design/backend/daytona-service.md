@@ -99,11 +99,11 @@ CREATE TABLE ${TABLE_PREFIX}project_sandboxes (
 // backend/internal/service/sandbox/daytona.go
 
 type DaytonaSandboxService struct {
-    client     *daytona.Client   // Daytona Go SDK
-    repo       SandboxRepository // DB binding
-    storageSvc storage.Service   // Supabase Storage for dataset file access
-    snapshotID string            // Pre-built snapshot with Python + packages
-    mu         sync.Mutex        // Per-project mutex for EnsureRunning
+    client     *daytona.Client        // Daytona Go SDK
+    repo       SandboxRepository      // DB binding
+    storageSvc storage.Service        // Supabase Storage for dataset file access
+    snapshotID string                 // Pre-built snapshot with Python + packages
+    sf         singleflight.Group     // Deduplicates concurrent EnsureRunning per project
     logger     *slog.Logger
 }
 ```
@@ -115,7 +115,9 @@ A pre-built Daytona snapshot contains:
 - Python 3.11
 - Pre-installed packages: `numpy scipy pandas SimpleITK pydicom scikit-image trimesh plotly matplotlib`
 - The `result_helper.py` module at `/workspace/.meridian/`
-- Supabase CLI tools for storage access
+- Network egress allowlist: only Supabase Storage URL
+- Env scrubbed: only `PYTHONUNBUFFERED=1`, `SUPABASE_STORAGE_URL` set
+- No Supabase CLI or admin tools (principle of least privilege)
 
 Sandbox creation from snapshot takes ~2-5 seconds. The snapshot ID is configured via environment variable:
 
