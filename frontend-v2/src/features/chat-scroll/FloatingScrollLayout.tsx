@@ -275,11 +275,14 @@ export function FloatingScrollLayout({
       return "none"
     }
 
-    const topFade = canScrollUp ? MASK_FADE_PX : 0
+    // Start the top fade below the top slot so content fading doesn't
+    // show through a transparent header gradient.
+    const topStart = canScrollUp ? topContentPadding : 0
+    const topEnd = canScrollUp ? topContentPadding + MASK_FADE_PX : 0
     const bottomFade = canScrollDown ? MASK_FADE_PX : 0
 
-    return `linear-gradient(to bottom, transparent 0px, black ${topFade}px, black calc(100% - ${bottomFade}px), transparent 100%)`
-  }, [canScrollUp, canScrollDown])
+    return `linear-gradient(to bottom, transparent ${topStart}px, black ${topEnd}px, black calc(100% - ${bottomFade}px), transparent 100%)`
+  }, [canScrollUp, canScrollDown, topContentPadding])
 
   const viewportStyle: CSSProperties = {
     maskImage,
@@ -309,7 +312,7 @@ export function FloatingScrollLayout({
 
       {topSlot ? (
         <div ref={topSlotRef} className="pointer-events-none absolute inset-x-0 top-0 z-20">
-          <div className="pointer-events-auto">{topSlot}</div>
+          {topSlot}
         </div>
       ) : null}
 
@@ -341,7 +344,7 @@ export function FloatingScrollLayout({
 
       {bottomSlot ? (
         <div ref={bottomSlotRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-          <div className="pointer-events-auto">{bottomSlot}</div>
+          {bottomSlot}
         </div>
       ) : null}
     </div>

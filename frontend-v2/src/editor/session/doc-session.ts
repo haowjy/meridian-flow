@@ -56,6 +56,7 @@ export interface DocSessionConfig {
   userId: string
   userName: string
   wsProviderFactory?: DocumentWsProviderFactory
+  getAccessToken?: () => Promise<string>
 }
 
 // ---------------------------------------------------------------------------
@@ -115,10 +116,12 @@ export class DocSession {
   private readonly listeners = new Set<() => void>()
   private idbHealthUnsubscribe: (() => void) | null = null
   private readonly wsProviderFactory?: DocumentWsProviderFactory
+  private readonly getAccessToken?: () => Promise<string>
 
   constructor(config: DocSessionConfig) {
     this.id = config.documentId
     this.wsProviderFactory = config.wsProviderFactory
+    this.getAccessToken = config.getAccessToken
 
     // Per-chapter Y.Doc — hard constraint: never share across chapters.
     this.ydoc = new Y.Doc()
@@ -172,7 +175,15 @@ export class DocSession {
     // Connect WS if a factory was provided and we haven't been destroyed
     // while waiting for IDB sync.
     if (this.wsProviderFactory && !this.destroyed) {
-      this.wsProvider = this.wsProviderFactory(this.id, this.ydoc)
+      if (!this.getAccessToken) {
+        throw new Error("DocSession requires getAccessToken when wsProviderFactory is set")
+      }
+      this.wsProvider = this.wsProviderFactory({
+        documentId: this.id,
+        ydoc: this.ydoc,
+        awareness: this.awareness,
+        getAccessToken: this.getAccessToken,
+      })
       this.wsProvider.connect()
     }
 

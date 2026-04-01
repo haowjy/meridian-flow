@@ -11,7 +11,7 @@ import {
   type EditorExtensionCompartments,
   type LocalEditorSession,
 } from "./extensions"
-import type { TabInfo } from "./tabs/tab-manager"
+import type { OpenDoc } from "./session/view-controller"
 
 const chapterContent: Record<string, string> = {
   "ch-1": `# Chapter 1: The Brass Door
@@ -60,12 +60,12 @@ The tide pulled the piers into shadow.
 By morning, every boat in the harbor had shifted its mooring. The harbormaster blamed the current; the fishermen blamed the moon.`,
 }
 
-const initialTabs: TabInfo[] = [
-  { documentId: "ch-1", documentName: "Chapter 1: The Brass Door", isModified: false },
-  { documentId: "ch-2", documentName: "Chapter 2: Winter Harbor", isModified: true },
-  { documentId: "ch-3", documentName: "Chapter 3: The Ferryman", isModified: false },
-  { documentId: "ch-4", documentName: "Chapter 4: A Lantern in the Fog", isModified: false },
-  { documentId: "ch-5", documentName: "Chapter 5: Tidewater", isModified: true },
+const initialTabs: OpenDoc[] = [
+  { id: "ch-1", name: "Chapter 1: The Brass Door", isModified: false },
+  { id: "ch-2", name: "Chapter 2: Winter Harbor", isModified: true },
+  { id: "ch-3", name: "Chapter 3: The Ferryman", isModified: false },
+  { id: "ch-4", name: "Chapter 4: A Lantern in the Fog", isModified: false },
+  { id: "ch-5", name: "Chapter 5: Tidewater", isModified: true },
 ]
 
 function TabbedEditorDemo() {
@@ -168,11 +168,11 @@ function TabbedEditorDemo() {
         containersRef.current.delete(docId)
       }
 
-      setTabs((prev) => prev.filter((t) => t.documentId !== docId))
+      setTabs((prev) => prev.filter((t) => t.id !== docId))
       if (activeId === docId) {
-        const remaining = tabs.filter((t) => t.documentId !== docId)
+        const remaining = tabs.filter((t) => t.id !== docId)
         if (remaining.length > 0) {
-          handleSwitch(remaining[0].documentId)
+          handleSwitch(remaining[0].id)
         } else {
           setActiveId("")
         }
@@ -195,20 +195,20 @@ function TabbedEditorDemo() {
     [activeId, ensureView],
   )
 
-  const activeTab = tabs.find((t) => t.documentId === activeId)
+  const activeTab = tabs.find((t) => t.id === activeId)
 
   return (
     <div className="mx-auto h-[700px] w-full max-w-5xl">
       <TabbedEditorShell
-        tabs={tabs}
-        activeTabId={activeId}
-        onSwitchTab={handleSwitch}
-        onCloseTab={handleClose}
-        documentName={activeTab?.documentName ?? "Untitled"}
+        openDocs={tabs}
+        activeDocId={activeId}
+        onActivateDoc={handleSwitch}
+        onCloseDoc={handleClose}
+        documentName={activeTab?.name ?? "Untitled"}
         onRename={(newName) => {
           setTabs((prev) =>
             prev.map((t) =>
-              t.documentId === activeId ? { ...t, documentName: newName } : t,
+              t.id === activeId ? { ...t, name: newName } : t,
             ),
           )
         }}
@@ -233,10 +233,10 @@ const meta = {
   component: TabbedEditorShell,
   tags: ["autodocs"],
   args: {
-    tabs: [],
-    activeTabId: null,
-    onSwitchTab: noop,
-    onCloseTab: noop,
+    openDocs: [],
+    activeDocId: null,
+    onActivateDoc: noop,
+    onCloseDoc: noop,
     documentName: "Untitled",
   },
   parameters: {

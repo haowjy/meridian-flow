@@ -4,9 +4,7 @@
  * Hard constraint: one Y.Doc per chapter/document. This limits tombstone
  * growth and isolates chapters from each other. See design doc section 5.
  *
- * WebSocket transport is a stub following the CollabSyncRuntime pattern
- * from v1. The real transport is wired via DocumentSessionManager in the
- * data integration phase.
+ * Document WebSocket transport is provided by document-ws-provider.ts.
  *
  * Origin guards distinguish local vs remote changes:
  * - Local human actions use ORIGIN_HUMAN (tracked by Y.UndoManager)
@@ -117,59 +115,5 @@ export function createCollabSession(
     undoManager,
     idbPersistence,
     destroy,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// WebSocket transport stub
-// ---------------------------------------------------------------------------
-
-/**
- * WebSocket transport interface following the CollabSyncRuntime pattern.
- *
- * In production, the real DocumentSessionManager provides this.
- * The transport is decoupled from the binding -- it's a send/receive layer.
- */
-export interface CollabTransport {
-  /** Apply a binary Yjs update received from the server. */
-  receiveUpdate: (update: Uint8Array) => void
-  /** Disconnect: remove the update listener from the Y.Doc. */
-  disconnect: () => void
-}
-
-/**
- * Connect a Y.Doc to a transport (WebSocket stub).
- *
- * Sets up the update listener with origin guard to prevent echo loops:
- * updates received from the transport are applied with a sentinel origin,
- * and the listener skips updates with that origin.
- *
- * @param ydoc - The Y.Doc to connect
- * @param sendBinary - Callback to send binary updates to the server
- * @returns Transport handle with receiveUpdate and disconnect
- */
-export function connectTransport(
-  ydoc: Y.Doc,
-  sendBinary: (data: Uint8Array) => void,
-): CollabTransport {
-  // Sentinel origin to distinguish transport-applied updates from local edits.
-  // Using a Symbol ensures no accidental collision with other origins.
-  const transportOrigin = Symbol("transport")
-
-  function onUpdate(update: Uint8Array, origin: unknown) {
-    // Don't re-broadcast updates we received from the server
-    if (origin === transportOrigin) return
-    sendBinary(update)
-  }
-
-  ydoc.on("update", onUpdate)
-
-  return {
-    receiveUpdate(update: Uint8Array) {
-      Y.applyUpdate(ydoc, update, transportOrigin)
-    },
-    disconnect() {
-      ydoc.off("update", onUpdate)
-    },
   }
 }

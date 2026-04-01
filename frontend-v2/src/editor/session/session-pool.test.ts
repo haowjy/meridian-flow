@@ -181,6 +181,109 @@ describe("SessionPool", () => {
   })
 
   // -----------------------------------------------------------------------
+  // View ownership transfer
+  // -----------------------------------------------------------------------
+
+  describe("view ownership", () => {
+    it("registers owner, requests transfer, and unregisters by matching surface", () => {
+      const pool = makePool()
+      const detach = vi.fn()
+
+      pool.registerViewOwner("doc-1", "studio", detach)
+      expect(pool.getViewOwnerSurfaceId("doc-1")).toBe("studio")
+
+      // Same-surface request is a no-op.
+      pool.requestTransfer("doc-1", "studio")
+      expect(detach).not.toHaveBeenCalled()
+
+      pool.requestTransfer("doc-1", "converse")
+      expect(detach).toHaveBeenCalledTimes(1)
+
+      // Wrong surface cannot unregister another owner.
+      pool.unregisterViewOwner("doc-1", "converse")
+      expect(pool.getViewOwnerSurfaceId("doc-1")).toBe("studio")
+
+      pool.unregisterViewOwner("doc-1", "studio")
+      expect(pool.getViewOwnerSurfaceId("doc-1")).toBeNull()
+
+      pool.requestTransfer("doc-1", "converse")
+      expect(detach).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // Leases
+  // -----------------------------------------------------------------------
+
+  describe("acquireLease", () => {
+    it("throws for missing sessions", () => {
+      const pool = makePool()
+      expect(() => pool.acquireLease("missing")).toThrow(
+        "Cannot lease missing session: missing",
+      )
+    })
+
+    it("throws for frozen sessions", async () => {
+      const pool = makePool()
+      await pool.ensureSession("doc-1")
+      await pool.invalidateSession("doc-1", "access-revoked")
+
+      expect(() => pool.acquireLease("doc-1")).toThrow(
+        "Cannot lease frozen session: doc-1",
+      )
+
+      await pool.destroy()
+    })
+
+    it("auto-releases after 5s safety timeout and allows idle eviction", async () => {
+      const pool = makePool({ idleMs: 1000 })
+      await pool.ensureSession("doc-1")
+      pool.releaseSession("doc-1")
+
+      pool.acquireLease("doc-1")
+
+      // Lease keeps session non-evictable during the timeout window.
+      await vi.advanceTimersByTimeAsync(5_999)
+      expect(pool.getSession("doc-1")).not.toBeNull()
+
+      // 5s lease timeout + 1s idle timeout.
+      await vi.advanceTimersByTimeAsync(2)
+      expect(pool.getSession("doc-1")).toBeNull()
+
+      await pool.destroy()
+    })
+
+    it("excludes leased detached sessions from budget eviction", async () => {
+      const pool = makePool({ warmBudget: 1, idleMs: 60_000 })
+
+      await pool.ensureSession("doc-1")
+      pool.releaseSession("doc-1")
+      const releaseLease = pool.acquireLease("doc-1")
+
+      await pool.ensureSession("doc-2")
+      pool.releaseSession("doc-2")
+
+      // While leased, doc-1 is not a budget-eviction candidate.
+      expect(pool.getSession("doc-1")).not.toBeNull()
+      expect(pool.getSession("doc-2")).not.toBeNull()
+
+      releaseLease()
+
+      await pool.ensureSession("doc-3")
+      pool.releaseSession("doc-3")
+
+      // Once lease is released and budget is checked again, oldest detached
+      // session (doc-1) is now evictable.
+      expect(pool.getSession("doc-1")).toBeNull()
+      // warmBudget=1 can also evict doc-2 when doc-3 is created.
+      expect(pool.getSession("doc-2")).toBeNull()
+      expect(pool.getSession("doc-3")).not.toBeNull()
+
+      await pool.destroy()
+    })
+  })
+
+  // -----------------------------------------------------------------------
   // Idle timeout
   // -----------------------------------------------------------------------
 
@@ -555,6 +658,18 @@ describe("SessionPool", () => {
       await expect(pool.ensureSession("doc-1")).rejects.toThrow(
         "SessionPool has been destroyed",
       )
+    })
+
+    it("invalidates active leases before teardown", async () => {
+      const pool = makePool({ idleMs: 1000 })
+      await pool.ensureSession("doc-1")
+      pool.releaseSession("doc-1")
+
+      const releaseLease = pool.acquireLease("doc-1")
+      await pool.destroy()
+
+      // Idempotent release should be safe after pool teardown.
+      expect(() => releaseLease()).not.toThrow()
     })
   })
 })
