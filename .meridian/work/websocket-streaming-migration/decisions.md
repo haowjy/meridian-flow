@@ -39,9 +39,9 @@
 **Decision**: `SubscribeWithCatchup` is a single atomic operation in mstream. Protocol spec depends on this.
 **Why**: Separate subscribe + catchup = duplicates (live events during catchup replay). The atomic primitive resolves catchup and registers the live channel in one step.
 
-### D13. Text frames only, binary rejected
-**Decision**: Framework rejects non-text WebSocket frames for channel-routed traffic.
-**Why**: All channels use JSON. Binary frames reaching JSON parsing is a security concern.
+### D13. ~~Text frames only, binary rejected~~ **Revised** — see D43
+**Decision**: ~~Framework rejects non-text WebSocket frames for channel-routed traffic.~~ Revised: text frames for JSON messages, binary frames for stream lane binary data via `BinaryHandler`.
+**Why**: ~~All channels use JSON. Binary frames reaching JSON parsing is a security concern.~~ Binary frames use a subId routing prefix (no JSON parsing) and are only delivered to handlers that implement `BinaryHandler`. Control, notify, and error lanes remain text-only JSON.
 
 ### D14. Byte-based backpressure budgets
 **Decision**: Gap/disconnect decisions based on byte budgets (256KB/subscription, 1MB/connection, 5MB/user), not only event counts.
@@ -171,23 +171,23 @@
 ## Yjs CRDT Sync Multiplexing Decisions
 
 ### D34. Yjs CRDT sync multiplexed on doc WS stream lane (reverses D7)
-**Decision**: Consolidate per-document Yjs WS connections into the doc WS stream lane. Client subscribes to a document resource → gets Yjs sync/awareness via base64-encoded JSON stream events.
+**Decision**: Consolidate per-document Yjs WS connections into the doc WS stream lane. Client subscribes to a document resource → exchanges Yjs sync/awareness data via binary WebSocket frames with subId routing prefix.
 **Why**: The user's original intent was "1 WS for all the docs in the project." D7 deferred this to keep the initial migration scope manageable. Now that the doc WS framework is built and the notify lane is working, the stream lane can be activated for Yjs sync. Consolidation reduces connections per user from (2 + N open documents) to just 2.
 **Considered**: Keeping per-document Yjs WS (D7). Rejected — user explicitly wants consolidation. The protocol and framework already support stream subscriptions; only the handler and frontend provider need updating.
 
-### D35. Base64 encoding for binary Yjs payloads in JSON protocol
-**Decision**: Yjs binary data is base64-encoded inside JSON stream event `payload.data` fields. No binary frame support added.
-**Why**: The protocol rejects binary frames at the framework level (D13). All message routing depends on JSON envelope parsing. Supporting binary frames would require a parallel framing protocol (byte-prefix routing without JSON), separate code paths, mixed frame types. Base64 adds ~33% size overhead, but: (a) Yjs payloads are small — sync step 1 is hundreds of bytes, typical updates are a few KB; (b) the connection consolidation benefit (N connections → 1) far outweighs encoding cost; (c) no protocol or framework changes required.
-**Considered**: (a) Binary frame support — protocol change, framework change, mixed frame handling. Too invasive. (b) Hybrid JSON control + binary stream — complex routing, two frame formats on one connection. (c) MessagePack — same overhead concerns as base64 plus a new dependency.
+### D35. ~~Base64 encoding for binary Yjs payloads~~ **Reversed** — see D43
+**Decision**: ~~Yjs binary data is base64-encoded inside JSON stream event `payload.data` fields.~~ Reversed in favor of binary WebSocket frames with subId routing prefix.
+**Why reversed**: Yjs generates high-volume small messages — every keystroke, cursor move, awareness update. 33% base64 overhead across thousands of messages/minute adds up. The original rationale assumed Yjs payloads are "typically small" and infrequent enough that overhead is negligible. In practice, the volume makes the overhead significant.
+**See D43** for the replacement approach.
 
 ### D36. Cross-connection document subscriber registry in handler
 **Decision**: The `DocHandler` maintains a shared `documentID → []subscriber` registry across all connections. When a Yjs update arrives from one subscriber, it's broadcast to all other subscribers of the same document.
 **Why**: Yjs update fanout must reach subscribers on different WS connections (e.g., user A edits document D1, user B also has D1 open on a different connection). The framework's `BroadcastNotify` handles project-wide notify, but stream event fanout is resource-specific and requires the handler to know which subscriptions belong to which document.
 **Pattern**: Snapshot-then-send — same pattern as `wsutil.BroadcastNotify()`. Read-lock registry, copy targets, release lock, then send outside the lock. Prevents deadlock when a send failure triggers connection removal.
 
-### D37. ReadLimit raised to 512KB for doc WS
-**Decision**: Increase the doc WS `ReadLimit` from 64KB to 512KB.
-**Why**: The per-document WS used 256KB application-level max for raw binary Yjs frames. Base64 encoding adds ~33% overhead (256KB → ~341KB base64 + JSON envelope overhead). 512KB provides comfortable headroom for large chapters in a web serial (5,000+ words per chapter).
+### D37. ~~ReadLimit raised to 512KB for doc WS~~ **Revised** — see D43
+**Decision**: ~~Increase the doc WS `ReadLimit` from 64KB to 512KB.~~ ReadLimit stays at 256KB.
+**Why**: ~~Base64 encoding would have added ~33% overhead, requiring 512KB.~~ Binary frames carry raw Yjs data — no encoding overhead. 256KB matches the current per-document WS application-level max directly.
 
 ### D39. Deferred release guard in OnSubscribe (review finding p726-2)
 **Decision**: OnSubscribe uses a `registered` flag with deferred `releaseFn()`. If any step after `GetOrCreateSession` fails, the session reference is automatically released.
@@ -209,10 +209,21 @@
 **Decision**: When a document subscription receives a gap (backpressure overflow), recovery is a fresh re-subscribe with no `lastSeq`/`epoch`. No REST fallback, no gap counting.
 **Why**: CRDTs naturally converge on re-sync. A fresh subscribe triggers sync step 1/2 exchange which brings the client to the current document state regardless of what was missed. This is simpler than thread streaming gap recovery (which needs REST fallback, gap counting, livelock prevention) because the Yjs protocol is designed for exactly this — reconnect and re-sync.
 
+### D43. Binary frames for Yjs data (reverses D35, revises D13)
+**Decision**: Yjs CRDT data (sync messages, awareness updates) is transported as binary WebSocket frames with a subId routing prefix (`<subId UTF-8> 0x00 <payload>`), not base64-encoded JSON. Control messages (subscribe, unsubscribe, subscribed, ended, gap) remain JSON text frames.
+**Why**: D35 (base64 encoding) was chosen to avoid protocol/framework changes. But Yjs generates high-volume small messages — every keystroke, cursor move, awareness update produces a message. 33% base64 overhead across thousands of messages/minute is significant. Binary frames eliminate the encoding overhead entirely. The subId routing prefix is cheap to parse (scan for null byte) and requires only targeted framework additions (`BinaryHandler` interface, `SendBinaryToSub` session method) rather than the "parallel framing protocol" D35 was trying to avoid.
+**What changed**:
+- Protocol: binary frames accepted for stream lane binary data (revises D13's "binary rejected" policy)
+- Framework: `BinaryHandler` optional interface, `SendBinaryToSub` on Session, binary frame routing in read loop
+- Doc handler: implements `BinaryHandler`, all Yjs data flows as binary frames
+- ReadLimit: back to 256KB (D37 revised — no base64 overhead to accommodate)
+- Thread WS: unaffected — AG-UI events remain JSON text frames
+**Considered**: Keeping base64 (D35). Rejected — overhead is acceptable for occasional large payloads but not for high-frequency small messages at keystroke granularity.
+
 ## Execution-Time Decisions
 
 ### D-E1. wsutil binary frame rejection — final-drain in writer loop
-**Decision**: Fix race condition where binary frame error envelope is lost due to context cancellation racing with send queue drain. Two changes to `ws.go`: (1) `nextOutbound()` does a final `tryDrainControl()` when `ctx.Done()` is selected, (2) `runWriterLoop()` uses a standalone 2s timeout for writes when the parent context is already cancelled.
+**Decision**: Fix race condition where binary frame error envelope is lost due to context cancellation racing with send queue drain. (Note: after D43, binary frames are accepted for stream lane data via `BinaryHandler`, but this fix remains relevant for binary frames sent to non-BinaryHandler handlers or with invalid subId prefixes.) Two changes to `ws.go`: (1) `nextOutbound()` does a final `tryDrainControl()` when `ctx.Done()` is selected, (2) `runWriterLoop()` uses a standalone 2s timeout for writes when the parent context is already cancelled.
 **Why**: The read loop enqueues the error via `enqueueControl` (async channel write), then returns, which triggers `c.cancel()` on line 258. Go's select statement randomly picks between `ctx.Done()` and `readyCh` when both are ready — ~50% of the time the writer loop exits without sending the error. The fix ensures control messages are always drained before the writer exits.
 **Considered**: (a) Synchronous direct write in the binary frame handler — breaks the single-writer invariant (writer loop owns the WS write path). (b) Delay before `c.cancel()` — fragile timing dependency. (c) Separate close channel from context — too invasive for the fix needed.
 **Files**: `backend/internal/wsutil/ws.go` lines 766-777 (writer loop), 797-803 (nextOutbound)

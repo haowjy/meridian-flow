@@ -14,16 +14,16 @@ This is the backend-heavy phase — handler, interface migration, and domain wir
 
 ## What's In Scope
 
-1. Upgrade `doc_ws_handler.go`: `DocNotifyHandler` → `DocHandler` with full `wsutil.Handler` implementation (OnSubscribe/OnUnsubscribe/OnMessage)
+1. Upgrade `doc_ws_handler.go`: `DocNotifyHandler` → `DocHandler` implementing `wsutil.BinaryHandler` (OnSubscribe/OnUnsubscribe/OnMessage/OnBinaryMessage)
 2. Cross-connection document subscriber registry (`docSubs map[string][]*docSubscriber`)
 3. Yjs sync subscribe lifecycle (authorize → acquire session → sync step 1 → register)
-4. Yjs message handling (base64 decode → prefix dispatch → HandleSyncPayload → fanout)
+4. Yjs message handling (binary frame → prefix byte dispatch → HandleSyncPayload → fanout via `OnBinaryMessage`)
 5. `BroadcastYjsUpdate()` — server-initiated Yjs broadcast for proposal acceptance
 6. `BroadcastDocumentRestored()` — stream:ended + EndSub for all document subscribers
 7. `HasActiveSubscribers()` — replaces `HasOwnerTabs()`
 8. Interface migration: `DocumentBroadcaster` → `DocumentSyncBroadcaster`
 9. Interface migration: `OwnerTabPresenceTracker` → update to use `HasActiveSubscribers`
-10. Update domain wiring in `collab.go` — new constructor args, ReadLimit 512KB, remove per-doc WS route
+10. Update domain wiring in `collab.go` — new constructor args, ReadLimit 256KB (D37/D43), remove per-doc WS route
 11. Update all callers: `collab_proposal_broadcaster.go`, `proposal_service.go`, `restore_service.go`
 
 ## What's Out of Scope
@@ -68,17 +68,18 @@ type docHandlerState struct {
 }
 ```
 
-Implement all `wsutil.Handler` methods per [doc-ws.md](../design/doc-ws.md) §Doc Handler:
-- **OnConnect**: Create `docHandlerState` with empty subs map
-- **OnSubscribe**: Dedup → authorize → acquire session (deferred release guard, D39) → build sync step 1 → generate epoch → send subscribed → send initial sync (seq:1) → register in both per-connection and cross-connection registries
+Implement `wsutil.BinaryHandler` (extends `Handler`) per [doc-ws.md](../design/doc-ws.md) §Doc Handler:
+- **OnConnect**: Create `docHandlerState` with empty subs map (subsByDoc + subsBySubId)
+- **OnSubscribe**: Dedup → authorize → acquire session (deferred release guard, D39) → build sync step 1 → generate epoch → send subscribed → send initial sync as binary frame via `SendBinaryToSub` → register in both per-connection and cross-connection registries
 - **OnUnsubscribe**: Remove from per-connection state, remove from cross-connection registry, release session
-- **OnMessage**: Lookup by resource.id → base64 decode → 256KB post-decode limit → strip prefix → dispatch by prefix byte (0x00 sync, 0x01 awareness)
+- **OnBinaryMessage**: Framework extracts subId from binary frame prefix → lookup subscriber by subId → 256KB payload limit → dispatch by prefix byte (0x00 sync, 0x01 awareness)
+- **OnMessage**: No-op or error — Yjs data arrives via binary frames, not JSON stream messages
 - **OnDisconnect**: No-op (framework calls EndSub for all subs → OnUnsubscribe handles cleanup)
 
 Cross-connection fanout: `broadcastToDocSubscribers()` with snapshot-then-send pattern (read-lock, copy targets, release, send outside lock).
 
 Server-initiated broadcasts:
-- `BroadcastYjsUpdate(documentID string, update []byte)`: base64-encode, broadcast to all subscribers (no exclusion)
+- `BroadcastYjsUpdate(documentID string, update []byte)`: prefix with sync byte (0x00), broadcast as binary frames via `SendBinaryToSub` to all subscribers (no exclusion)
 - `BroadcastDocumentRestored(documentID string)`: Send `stream:ended{reason: "document_restored"}` via `session.Send()` (NOT `SendToSub()`, per D40), then `EndSub` for each subscriber
 - `HasActiveSubscribers(documentID string) bool`: Check cross-connection registry
 
@@ -97,7 +98,7 @@ type DocumentSyncBroadcaster interface {
 ### Modify: `backend/internal/handler/collab_proposal_broadcaster.go`
 
 - Change `docBroadcaster DocumentBroadcaster` field → `docSyncBroadcaster DocumentSyncBroadcaster`
-- `BroadcastProposalAccepted()`: Replace `b.docBroadcaster.BroadcastToDocument(canonicalDocumentID, addDocPrefix(...))` with `b.docSyncBroadcaster.BroadcastYjsUpdate(canonicalDocumentID, yjsUpdate)`. The handler now handles base64 encoding and prefix construction — the broadcaster passes raw update bytes.
+- `BroadcastProposalAccepted()`: Replace `b.docBroadcaster.BroadcastToDocument(canonicalDocumentID, addDocPrefix(...))` with `b.docSyncBroadcaster.BroadcastYjsUpdate(canonicalDocumentID, yjsUpdate)`. The handler now handles binary frame construction and prefix byte — the broadcaster passes raw update bytes.
 - Update `NewProposalBroadcasterImpl` constructor signature
 
 ### Modify: `backend/internal/domain/collab/presence.go`
@@ -122,7 +123,7 @@ Use **Option B** — the design doc specifies `HasActiveSubscribers` and the old
 ### Modify: `backend/internal/app/domains/collab.go`
 
 - Replace `NewDocNotifyHandler(infra.Logger)` with `NewDocHandler(collabSessionManager, collabDocResolver, infra.Logger)`
-- Change ReadLimit: `wsutil.WithReadLimit(64*1024)` → `wsutil.WithReadLimit(512*1024)` (D37)
+- Change ReadLimit: `wsutil.WithReadLimit(64*1024)` → `wsutil.WithReadLimit(256*1024)` (D37/D43 — binary frames, no base64 overhead)
 - Update `ProposalBroadcasterImpl` constructor: pass `docHandler` (which implements `DocumentSyncBroadcaster`) instead of `collabDocumentHandler` (which implements `DocumentBroadcaster`)
 - Update `ProposalService` constructor: pass `docHandler` instead of `collabDocumentHandler` for presence tracking
 - Update `RestoreService` constructor: pass `docHandler` instead of `collabDocumentHandler` for broadcast
@@ -183,9 +184,9 @@ The `restoreBroadcaster` local interface in `restore_service.go` (`BroadcastDocu
 
 ## Agent Staffing
 
-- **Implementer**: `coder` on strong reasoning model — handler has concurrency (cross-connection registry), deferred release guard, and multiple interface migration points
+- **Implementer**: `coder` (default codex — blueprint is detailed, reviewers verify concurrency)
 - **Reviewers**: 2x
-  - 1x correctness + concurrency review (focus: registry locking, deferred release guard, Send vs SendToSub for ended, seq/epoch threading)
-  - 1x design alignment review (focus: conformance with [doc-ws.md](../design/doc-ws.md), interface rename completeness)
+  - 1x correctness + concurrency review (gpt-5.4 — focus: registry locking, deferred release guard, Send vs SendToSub for ended, seq/epoch threading)
+  - 1x design alignment review (opus — focus: conformance with [doc-ws.md](../design/doc-ws.md), interface rename completeness)
 - **Testing**: `verifier` (go build + go test + go vet)
 - **Investigation**: `unit-tester` — write targeted tests for OnSubscribe/OnUnsubscribe/OnMessage, cross-connection fanout, and BroadcastDocumentRestored flow

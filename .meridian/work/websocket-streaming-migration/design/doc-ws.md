@@ -11,7 +11,7 @@ Related: [overview.md](overview.md) for how this fits into the architecture, [fr
 The doc WS uses both protocol lanes:
 
 - **Notify lane**: Lightweight invalidation hints for proposals and documents. Broadcast to all project connections automatically. Unchanged from v1.
-- **Stream lane**: Yjs CRDT sync for individual documents. Client subscribes to a document resource → receives Yjs sync/update data as base64-encoded JSON stream events. Client sends Yjs data back via stream messages.
+- **Stream lane**: Yjs CRDT sync for individual documents. Client subscribes to a document resource → receives Yjs sync/update data as binary frames. Client sends Yjs data back via binary frames.
 
 ```mermaid
 flowchart TD
@@ -44,7 +44,7 @@ flowchart TD
 | Current (per-doc WS) | New (doc WS stream lane) |
 |---|---|
 | Per-document endpoint `GET /ws/documents/{documentId}` | Doc WS stream lane subscriptions |
-| Direct binary frames (0x00 sync, 0x01 awareness) | Base64-encoded JSON stream events |
+| Direct binary frames (0x00 sync, 0x01 awareness) | Binary frames with subId routing prefix |
 | Per-document auth/heartbeat/reconnect | Framework handles at connection level |
 | `CollabDocumentHandler.documentConns` fanout map | `DocHandler.docSubs` cross-connection registry |
 | `DocumentBroadcaster.BroadcastToDocument()` | `DocHandler.BroadcastYjsUpdate()` |
@@ -65,17 +65,17 @@ docServer := wsutil.NewServer(
     wsutil.WithHeartbeat(20*time.Second, 20*time.Second),
     wsutil.WithRateLimit(30),
     wsutil.WithOriginPatterns(allowedOrigins...),
-    wsutil.WithReadLimit(512 * 1024), // 512KB — accommodates base64-encoded Yjs payloads
+    wsutil.WithReadLimit(256 * 1024), // 256KB — matches current per-document WS app-level max
 )
 docServer.RegisterHandler("document", docHandler)
 mux.HandleFunc("GET /ws/projects/{projectId}/docs", docServer.Serve)
 ```
 
-**ReadLimit raised to 512KB**: The per-document WS used 256KB application-level max for raw binary Yjs frames. Base64 encoding adds ~33% overhead (256KB binary → ~341KB base64 + JSON envelope). 512KB provides headroom for large chapters.
+**ReadLimit 256KB**: Matches the current per-document WS application-level max for raw binary Yjs frames. Binary frames carry raw Yjs data directly — no base64 encoding overhead.
 
 ## Doc Handler
 
-Replaces the v1 `DocNotifyHandler` (which returned `ErrNotSupported` for all stream operations). Now implements the full `wsutil.Handler` interface with Yjs sync support.
+Replaces the v1 `DocNotifyHandler` (which returned `ErrNotSupported` for all stream operations). Now implements `wsutil.BinaryHandler` (which extends `Handler`) with Yjs sync support via binary frames.
 
 ```go
 type DocHandler struct {
@@ -98,7 +98,7 @@ type docSubscriber struct {
     releaseFn   func()             // session release (decrements ref count)
     documentID  string             // for reverse lookup on unsubscribe
     epoch       string             // random UUID, identifies this subscription instance
-    seq         atomic.Int64       // monotonic per subscription, incremented on each stream event
+    seq         atomic.Int64       // monotonic per subscription, used in JSON envelopes (ended, gap)
 }
 ```
 
@@ -108,8 +108,11 @@ type docSubscriber struct {
 type docHandlerState struct {
     session wsutil.Session
     // documentID → local subscription info.
-    // OnMessage uses this to find the subscriber for a given document.
-    subs map[string]*docSubscriber
+    // Used for duplicate subscribe detection (OnSubscribe) and unsubscribe cleanup.
+    subsByDoc map[string]*docSubscriber
+    // subId → local subscription info.
+    // Used by OnBinaryMessage to route binary frames to the right subscriber.
+    subsBySubId map[string]*docSubscriber
 }
 ```
 
@@ -145,43 +148,28 @@ type DocNotifier interface {
 
 ## Document Stream: Yjs CRDT Sync
 
-### Binary Payload Encoding
+### Binary Frame Transport
 
-Yjs uses binary data (`[]byte` / `Uint8Array`). The wire protocol is text-only JSON. Binary Yjs payloads are **base64-encoded** inside JSON stream event payloads:
+Yjs uses binary data (`[]byte` / `Uint8Array`). Yjs payloads are sent as **binary WebSocket frames** using the protocol's [binary frame format](protocol.md#binary-frames) — a subId routing prefix followed by the raw binary payload. No JSON wrapping, no base64 encoding.
 
-```json
-{
-  "kind": "stream",
-  "op": "event",
-  "subId": "s-doc-1",
-  "resource": { "type": "document", "id": "D1" },
-  "seq": 1,
-  "epoch": "abc-123",
-  "payload": {
-    "type": "sync",
-    "data": "AGFiY2RlZg..."
-  }
-}
-```
+**Server → Client**: The handler calls `session.SendBinaryToSub(subId, payload)`. The framework prepends the subId prefix and writes a binary WebSocket frame.
 
-**Why base64 over binary frames**: The protocol rejects binary frames at the framework level. All message routing depends on JSON envelope parsing (`kind`, `op`, `resource.type`). Supporting binary frames would require a parallel framing protocol — byte-prefix routing without JSON, separate code paths for binary vs text, mixed frame types on one connection. Base64 adds ~33% size overhead, but Yjs payloads are typically small (sync step 1: hundreds of bytes, updates: a few KB per edit). The connection consolidation benefit (N per-document connections → 1 doc WS) far outweighs the encoding cost.
+**Client → Server**: The client sends a binary frame with the subId prefix. The framework extracts the subId, looks up the subscription, and calls the handler's `OnBinaryMessage(state, subId, data)`.
 
-**Encoding**: Server uses `encoding/base64.StdEncoding`. Client uses a `base64ToUint8Array()` / `uint8ArrayToBase64()` utility pair.
+Control messages (subscribe, unsubscribe, subscribed, ended, gap) remain JSON text frames. Only Yjs sync and awareness data uses binary frames.
 
-### Stream Payload Types
+### Binary Payload Types
 
-All stream events and messages for document subscriptions use `payload.type` to discriminate:
+The raw binary payload in each binary frame includes a Yjs protocol prefix byte — same encoding as the current per-document WS:
 
-| Payload Type | Direction | Description |
+| Prefix Byte | Type | Description |
 |---|---|---|
-| `sync` | Both | Yjs sync protocol message (step 1, step 2, or update) |
-| `awareness` | Both | Yjs awareness update (cursor positions, user names) |
+| `0x00` | Sync | Yjs sync protocol message (step 1, step 2, or update) |
+| `0x01` | Awareness | Yjs awareness update (cursor positions, user names) |
 
-The `payload.data` field is always a base64-encoded `Uint8Array`. For sync messages, the binary data includes the Yjs sync protocol prefix byte (0x00) — same encoding as the current per-document WS. For awareness, it includes the awareness prefix (0x01).
+The **prefix byte** is authoritative for handler dispatch. The handler reads the first byte of the binary payload to determine the message type, then processes the remaining bytes as Yjs protocol data.
 
-**Type discrimination**: The **prefix byte** in the decoded binary data is authoritative for handler dispatch. `payload.type` is informational — it helps with logging and debugging but the handler dispatches on the binary prefix after base64 decoding, not on the JSON type field.
-
-**Application-level size check**: After base64 decoding, the handler applies a 256KB limit on the decoded binary payload (matching the current `docWSAppMaxFrame`). The 512KB ReadLimit provides headroom for the base64 encoding overhead + JSON envelope, but the actual Yjs payload is still capped at 256KB.
+**Application-level size check**: The handler applies a 256KB limit on the binary payload (matching the current `docWSAppMaxFrame`).
 
 ### Subscribe Lifecycle
 
@@ -199,17 +187,17 @@ sequenceDiagram
   S->>Y: BuildSyncStep1Payload()
 
   S->>C: subscribed { subId: "s-1", epoch: "..." }
-  S->>C: stream event { type: "sync", data: base64(syncStep1) }
+  S->>C: binary frame: syncStep1
   S->>S: Register in cross-connection docSubs
 
   rect rgba(128, 128, 128, 0.08)
     Note over C,S: Steady state: bidirectional Yjs sync
-    C->>S: stream message { type: "sync", data: base64(clientSyncStep2) }
-    S->>Y: HandleSyncPayload(decoded)
-    S->>C: stream event { type: "sync", data: base64(response) }
+    C->>S: binary frame: clientSyncStep2
+    S->>Y: HandleSyncPayload(data)
+    S->>C: binary frame: response
 
-    C->>S: stream message { type: "sync", data: base64(update) }
-    S->>Y: HandleSyncPayload(decoded)
+    C->>S: binary frame: update
+    S->>Y: HandleSyncPayload(data)
     Note over S: If update produced, broadcast to other D1 subscribers
   end
 
@@ -226,8 +214,8 @@ sequenceDiagram
 4. **Build sync step 1**: `session.BuildSyncStep1Payload()` → binary Yjs sync-step-1 data.
 5. **Generate epoch**: Random UUID identifying this subscription instance.
 6. **Send subscribed**: Control message confirming subscription with `epoch`.
-7. **Send initial sync**: First stream event with `{ "type": "sync", "data": base64(prefixed(syncStep1)) }`, `seq: 1`, `epoch`.
-8. **Register**: Add subscriber to both per-connection state (`docHandlerState.subs[documentID]`) and cross-connection registry (`DocHandler.docSubs[documentID]`). Set `registered = true` to prevent the deferred release.
+7. **Send initial sync**: Binary frame with Yjs sync step 1 payload via `session.SendBinaryToSub(subId, prefixed(syncStep1))`.
+8. **Register**: Add subscriber to per-connection state (`subsByDoc[documentID]` + `subsBySubId[subId]`) and cross-connection registry (`DocHandler.docSubs[documentID]`). Set `registered = true` to prevent the deferred release.
 
 ### OnUnsubscribe
 
@@ -235,27 +223,21 @@ sequenceDiagram
 2. Remove subscriber from cross-connection registry.
 3. Release Yjs session reference (`releaseFn()`).
 
-### OnMessage (Client → Server Yjs Data)
+### OnBinaryMessage (Client → Server Yjs Data)
 
-Client sends Yjs data as `stream:message` with document resource:
+Client sends Yjs data as a binary frame with the subId routing prefix:
 
-```json
-{
-  "kind": "stream",
-  "op": "message",
-  "resource": { "type": "document", "id": "D1" },
-  "payload": { "type": "sync", "data": "base64..." }
-}
-```
+`<subId> 0x00 <Yjs binary payload>`
+
+The framework extracts the subId and calls `OnBinaryMessage(state, subId, data)`.
 
 Handler processing:
 
-1. Look up subscriber in per-connection state by `resource.id` (document ID). Not found → error.
-2. Base64-decode `payload.data` → raw binary with prefix byte.
-3. Strip the prefix byte, dispatch by type:
-   - **Sync (0x00)**: Call `syncSession.HandleSyncPayload(ctx, payload, "human")`.
-     - If `responsePayload` non-empty: send stream event back to sender with `{ "type": "sync", "data": base64(prefixed(response)) }`.
-     - If `updatePayload` non-empty: `encodeSyncUpdatePayload(update)`, then broadcast to all OTHER subscribers of the same document via cross-connection registry.
+1. Look up subscriber in per-connection state by subId (`subsBySubId[subId]`). Not found → error.
+2. Read the prefix byte from `data`, dispatch by type:
+   - **Sync (0x00)**: Call `syncSession.HandleSyncPayload(ctx, data[1:], "human")`.
+     - If `responsePayload` non-empty: send binary frame back to sender via `session.SendBinaryToSub(subId, prefixed(response))`.
+     - If `updatePayload` non-empty: prefix the update, then broadcast to all OTHER subscribers of the same document via cross-connection registry using `broadcastToDocSubscribers`.
    - **Awareness (0x01)**: Log receipt. Fanout deferred (see [Awareness](#awareness) below).
 
 ### Cross-Connection Fanout
@@ -266,7 +248,7 @@ When a Yjs update needs to be broadcast (from a client edit or a server-initiate
 func (h *DocHandler) broadcastToDocSubscribers(
     documentID string,
     excludeSubId string, // empty string = send to all
-    payload json.RawMessage,
+    data []byte,         // raw Yjs binary payload (with prefix byte)
 ) {
     h.docSubsMu.RLock()
     subs := h.docSubs[documentID]
@@ -279,21 +261,12 @@ func (h *DocHandler) broadcastToDocSubscribers(
     h.docSubsMu.RUnlock()
 
     for _, target := range targets {
-        seq := target.seq.Add(1)
-        _ = target.session.SendToSub(target.subId, wsutil.Envelope{
-            Kind:     wsutil.KindStream,
-            Op:       wsutil.OpEvent,
-            SubId:    target.subId,
-            Resource: &wsutil.Resource{Type: "document", Id: documentID},
-            Seq:      seq,
-            Epoch:    target.epoch,
-            Payload:  payload,
-        })
+        _ = target.session.SendBinaryToSub(target.subId, data)
     }
 }
 ```
 
-**Snapshot-then-send**: Read-lock the registry, copy targets, release lock, then send outside the lock. Same pattern as `wsutil.BroadcastNotify` — prevents deadlock when a send failure triggers connection removal. `SendToSub` failures (dead connection, queue full) are handled by the framework — the handler doesn't need to clean up failed sends.
+**Snapshot-then-send**: Read-lock the registry, copy targets, release lock, then send outside the lock. Same pattern as `wsutil.BroadcastNotify` — prevents deadlock when a send failure triggers connection removal. `SendBinaryToSub` failures (dead connection, queue full) are handled by the framework — the handler doesn't need to clean up failed sends.
 
 ### Server-Initiated Broadcasts
 
@@ -311,7 +284,7 @@ type DocumentSyncBroadcaster interface {
 }
 ```
 
-The handler base64-encodes the update, wraps it in `{ "type": "sync", "data": "..." }`, and broadcasts to all document subscribers. No sender exclusion — server-initiated updates go to everyone.
+The handler prefixes the update with the sync byte (`0x00`) and broadcasts as binary frames to all document subscribers via `broadcastToDocSubscribers`. No sender exclusion — server-initiated updates go to everyone.
 
 #### Document Restored
 
@@ -349,14 +322,14 @@ func (h *DocHandler) HasActiveSubscribers(documentID string) bool {
 
 ### Awareness
 
-Awareness (cursor positions, user presence) is per-document. Clients send awareness updates as `stream:message` with `payload.type: "awareness"`. The server currently logs them — **awareness fanout is deferred** (same as the current `collab_document_handler.go` Phase 5 stub).
+Awareness (cursor positions, user presence) is per-document. Clients send awareness updates as binary frames with the awareness prefix byte (`0x01`). The server currently logs them — **awareness fanout is deferred** (same as the current `collab_document_handler.go` Phase 5 stub).
 
-When awareness fanout is implemented, the handler broadcasts awareness updates to all other subscribers of the same document, using the same cross-connection fanout mechanism as sync updates.
+When awareness fanout is implemented, the handler broadcasts awareness binary frames to all other subscribers of the same document, using the same `broadcastToDocSubscribers` mechanism as sync updates.
 
 ### Seq/Epoch Semantics for Documents
 
 - **epoch**: Identifies the Yjs session instance (random UUID). Server restart → sessions gone → client re-subscribes with old epoch → handler doesn't recognize it → gap → client re-subscribes fresh.
-- **seq**: Monotonic per subscription. Each stream event increments seq. Used by the framework for backpressure (queue overflow → gap → subscription terminated).
+- **seq**: The framework tracks per-subscription event counts internally (binary frames and JSON events both count toward backpressure). Binary frames don't carry seq. JSON envelopes (`ended`, `gap`) include the current seq value.
 - **Gap recovery**: Much simpler than for thread streaming. Client re-subscribes with no `lastSeq`/`epoch`, triggering a full sync-step-1 exchange. CRDTs naturally support this — no REST fallback needed, no gap counting. A fresh subscribe always converges to the correct state.
 
 ### Connection Limits

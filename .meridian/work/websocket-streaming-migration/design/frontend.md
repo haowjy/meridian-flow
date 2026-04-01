@@ -23,7 +23,7 @@ flowchart TD
   subgraph DocWS["Doc WS Connection"]
     DC["DocWsClient"]
     DC --> DNI["Notify → TanStack<br/>invalidateQueries"]
-    DC --> DSC["DocStreamClient<br/>document subscribe/unsubscribe<br/>Yjs sync via base64"]
+    DC --> DSC["DocStreamClient<br/>document subscribe/unsubscribe<br/>Yjs sync via binary frames"]
   end
 
   TWP --> TC
@@ -304,23 +304,21 @@ interface DocSubscriptionState {
 
 ### Stream Event Routing
 
-The `DocWsProvider` routes incoming stream events to `DocStreamClient` by `subId`. The client base64-decodes `payload.data`, inspects `payload.type`, and dispatches:
+The `DocWsProvider` routes incoming binary frames to `DocStreamClient` by subId (extracted from the binary frame's routing prefix). The client reads the Yjs prefix byte from the raw payload and dispatches:
 
-- `type: "sync"` → decode binary, apply via `y-protocols/sync` to the document's Yjs doc
-- `type: "awareness"` → decode binary, apply via `y-protocols/awareness`
+- `0x00` (sync) → apply via `y-protocols/sync` to the document's Yjs doc
+- `0x01` (awareness) → apply via `y-protocols/awareness`
 
 ### Client → Server Messages
 
-Yjs doc updates and sync responses are sent as stream messages:
+Yjs doc updates and sync responses are sent as binary frames with the subId routing prefix:
 
 ```typescript
 // Send Yjs sync data
 docStreamClient.sendSyncMessage(documentId, syncData)
-// → WsClient.send({
-//     kind: "stream", op: "message",
-//     resource: { type: "document", id: documentId },
-//     payload: { type: "sync", data: uint8ArrayToBase64(syncData) }
-//   })
+// → WsClient.sendBinary(subId, syncData)
+//   The WsClient prepends the subId + 0x00 delimiter and sends a binary WebSocket frame.
+//   The Yjs prefix byte (0x00 for sync, 0x01 for awareness) is part of the payload.
 ```
 
 ### Reconnect Behavior
@@ -339,7 +337,7 @@ The current `DocumentWsProviderImpl` (`frontend-v2/src/editor/collab/document-ws
 | Auth | Per-connection JWT auth | Handled by `DocWsProvider` at project level |
 | Heartbeat | Own heartbeat loop | Handled by `WsClient` |
 | Reconnect | Own exponential backoff | `WsClient` reconnects, `DocStreamClient` re-subscribes |
-| Binary sync frames | Direct `socket.send(binary)` | Base64-encode → JSON stream message |
+| Binary sync frames | Direct `socket.send(binary)` | Binary frame with subId routing prefix via `WsClient.sendBinary()` |
 | Connection state | Own state machine | Derived from doc WS connection + subscription state |
 
 ### New Implementation
@@ -556,7 +554,7 @@ Turn data (blocks, content) continues to live in TanStack Query caches, invalida
 - `STREAM_SWITCH` SSE event handling (replaced by `ended{reason: stream_switch}`)
 - `DocumentWsProviderImpl` per-document WS connection class (replaced by `DocStreamClient` adapter)
 - `buildDocumentWsUrl()` helper (no more per-document WS URLs)
-- Direct binary frame handling in document provider (replaced by base64 JSON)
+- Direct binary frame handling in document provider (replaced by `DocStreamClient` binary frame routing via subId prefix)
 
 ## Key Files
 
