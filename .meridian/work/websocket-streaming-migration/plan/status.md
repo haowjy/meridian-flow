@@ -14,7 +14,7 @@
 | 8 | Frontend WS Base + DocWsProvider | done | 3 | p722 | shared base |
 | 9 | Frontend ThreadWsProvider | done | 4 | p723 | streaming client |
 | 10 | SSE + Legacy Cleanup | done | 5 | p724 | deletion phase + wsutil race fix |
-| 11 | Doc Handler Yjs Stream Support | planned | 6 | — | handler upgrade + interface migration |
+| 11 | Doc Handler Yjs Stream Support | in-progress | 6 | — | handler upgrade + interface migration |
 | 12 | Frontend DocStreamClient + Provider Rewrite | planned | 7 | — | new client + rewrite + session wiring |
 | 13 | Per-Document Yjs WS Removal | planned | 8 | — | deletion phase |
 
