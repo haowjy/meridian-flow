@@ -12,7 +12,7 @@ Project and document import/export for portability.
 
 ### Import
 - **Zip archive** — restore full project from export
-- **Git import for agents/skills** — clone `.agents/` from a git repo into project. See [file-first-agents-skills.md](../agents/file-first-agents-skills.md)
+- **Git import for agents/skills** — clone `.agents/` from a git repo into project. See [agent-import.md](../agents/agent-import.md)
 - **Markdown files** — drag-and-drop or upload
 - **Bulk import** — folder of markdown files preserving structure
 

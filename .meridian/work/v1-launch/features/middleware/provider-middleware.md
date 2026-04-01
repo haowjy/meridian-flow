@@ -268,7 +268,7 @@ Verification criteria:
 
 ## Meridian Integration
 
-Meridian-specific credit behavior is described in [billing-design.md](../billing/billing-design.md). That doc owns:
+Meridian-specific credit behavior is described in [settlement.md](../billing/settlement.md). That doc owns:
 
 - synchronous `402` preflight before background streaming starts
 - `CreditUsageGate` and `CreditUsageReporter`

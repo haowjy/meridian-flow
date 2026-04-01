@@ -43,7 +43,7 @@ Phase 1 (Yjs-first Editor) is complete — uncontrolled `Editor`, shared `create
 
 | Decision | Context | Impact | Status |
 |----------|---------|--------|--------|
-| Converse/Studio tab independence | Design assumes independent `activeDocId` per surface with lease transfer. Product may want Converse to mirror Studio's active tab instead. | Blocks Phase 3 implementation — resolve before P3.1. | ⬜ |
+| Converse/Studio tab independence | Resolved: build independent controllers (general case). Mirrored mode is a layout-level `useFollowActiveDoc` hook — no controller/hook changes needed. Both modes work from the same architecture. See design doc "Surface Coordination Modes" section. | No longer blocks Phase 3. | ✅ |
 | Backend text projection for AI context | Backend projects Y.Doc → text on-demand from in-memory state. For FTS across documents, AI context in non-collab flows, and API responses, a persistent `content_text` column alongside Yjs binary state may be needed. | Additive. Not blocking editor refactor. | ⬜ |
 
 ## Manual Verification (after Phase 3 wires up ViewController)

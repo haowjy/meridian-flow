@@ -190,6 +190,6 @@ Only `AppShell`, `ConverseLayout`, `StudioLayout`, and `AgentsLayout` are mode-a
 
 ## Cross-References
 
-- [Workspace Modes README](../README.md) -- mode rationale and writer profiles
+- [Workspace Modes README](./README.md) -- mode rationale and writer profiles
 - [Studio Chrome](studio-chrome.md) -- tab bar, explorer details
-- [Collab v2 Integration](collab-v2-integration.md) -- how proposal review works in both modes
+- [Collab v2 Integration](../collab/collab-v2-integration.md) -- how proposal review works in both modes
