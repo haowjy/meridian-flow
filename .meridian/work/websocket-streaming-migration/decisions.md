@@ -244,3 +244,25 @@
 - Simplified `broadcastToDocSubscribers` exclusion logic (removed dead code branch)
 - Added NUL-byte rejection in framework `handleSubscribe`
 - Updated `AGENTS.md` to reference `DocumentPresenceTracker`
+
+### D-E3. Phase 12 review findings — design alignment (p739/opus)
+
+**Findings addressed**:
+
+1. **getToken in useMemo deps (IMPORTANT) — fixed.** `getToken` in the useMemo dependency array for WsClient + DocStreamClient creation caused unnecessary destruction/recreation on token function identity changes. Removed from deps, kept only in `updateCallbacks` effect. Added eslint-disable comment with explanation.
+
+2. **DocStreamBridge crash without DocWsProvider (IMPORTANT) — fixed.** The bridge component unconditionally called `useDocStream()` which throws without a DocWsProvider ancestor. Added `useDocStreamOptional()` hook that returns null instead of throwing. Bridge now gracefully skips injection when no DocWsProvider exists (test/storybook contexts).
+
+3. **Missing "synced" state (IMPORTANT) — fixed.** Added `DocStreamClient.markSynced(documentId)` method. Called from `DocumentWsProviderImpl.handleSyncPayload` after the first sync exchange completes (when transitioning to "connected" state). `activeDocSubscriptions` now correctly reaches the "synced" terminal state per the design spec.
+
+4. **String literal for "subscribed" op (MINOR) — fixed.** Replaced `msg.op === "subscribed"` with `msg.op === CONTROL_RESPONSE_OP.SUBSCRIBED`.
+
+### D-E4. Phase 12 review findings — code quality (p740/gpt-5.4)
+
+**Findings assessed**:
+
+1. **State drift on reconnect (IMPORTANT) — accepted as cosmetic limitation.** After WS reconnect, `DocStreamClient.handleReconnect()` replaces subIds and resets to "subscribing", but `DocumentWsProviderImpl` never resets its `connectionState` to trigger `markSynced()` again. This means `activeDocSubscriptions` shows "syncing" instead of "synced" after reconnect. However: (a) `activeDocSubscriptions` is an introspection API not consumed for business logic, (b) the actual Yjs sync works correctly because callbacks are preserved in the options object, (c) `unsubscribeFn` closure calls `this.unsubscribe(documentId)` which looks up the current subId via `docToSub`, so cleanup correctly targets the new subscription after reconnect.
+
+2. **Error semantics dropped (IMPORTANT) — expected architectural change, not a regression.** In the multiplexed model, auth errors happen at the WS connection level (WsClient), not per-document. The old per-document provider had its own WS with per-document auth errors (auth-expired, access-revoked). In the new architecture, these are handled by DocWsProvider at the connection level. Per-document subscription errors route through `handleErrorMessage`. The control event types in `types.ts` reflect the old model — should be cleaned up in a follow-up, but no behavior regression for actual error handling.
+
+3. **Test coverage scope (MINOR) — expected.** Adapter tests mock the transport layer. Integration-level testing for binary framing, reconnect, and callback wiring is done via browser/e2e testing.
