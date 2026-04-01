@@ -30,7 +30,7 @@ func TestUnknownControlOpIgnored(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	// Send an unknown control op — must be silently ignored; no error frame.
@@ -45,7 +45,7 @@ func TestUnknownControlOpIgnored(t *testing.T) {
 		Kind:     KindStream,
 		Op:       OpMessage,
 		Resource: &Resource{Type: "turn", Id: "turn-1"},
-		Payload:  mustMarshal(map[string]string{"x": "y"}),
+		Payload:  MustMarshal(map[string]string{"x": "y"}),
 	})
 	if !waitFor(500*time.Millisecond, func() bool { return messageCalls.Load() == 1 }) {
 		t.Fatal("expected OnMessage called after unknown op was ignored")
@@ -78,13 +78,13 @@ func TestErrorFramesForInvalidClientMessages(t *testing.T) {
 			s.RegisterHandler("turn", h)
 			fake, done := startServeConn(t, s, "project-1")
 			defer stopServeConn(t, fake, done)
-			fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+			fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 			_ = fake.readServerEnvelope(t, time.Second)
 			tt.send(t, fake)
 			errEnv := fake.readServerEnvelope(t, time.Second)
 			assertErrorCode(t, errEnv, CodeInvalidMessage)
 			if tt.verifyAlive {
-				fake.pushTextEnvelope(t, Envelope{Kind: KindStream, Op: OpMessage, Resource: &Resource{Type: "turn", Id: "turn-1"}, Payload: mustMarshal(map[string]int{"n": 1})})
+				fake.pushTextEnvelope(t, Envelope{Kind: KindStream, Op: OpMessage, Resource: &Resource{Type: "turn", Id: "turn-1"}, Payload: MustMarshal(map[string]int{"n": 1})})
 				if !waitFor(500*time.Millisecond, func() bool { return messageCalls.Load() == 1 }) {
 					t.Fatal("expected connection to remain alive after invalid client message")
 				}
@@ -121,7 +121,7 @@ func TestEndSubFreesSubscriptionSlot(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	// Fill all 10 subscription slots.
@@ -198,7 +198,7 @@ func TestHeartbeatTimeoutClosesConnection(t *testing.T) {
 
 	fake, done := startServeConn(t, s, "project-1")
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	// Read the ping but intentionally do NOT respond with pong.
@@ -231,14 +231,14 @@ func TestUnregisteredResourceTypeReturnsError(t *testing.T) {
 	fake, done := startServeConn(t, s, "project-1")
 	defer stopServeConn(t, fake, done)
 
-	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: mustMarshal(map[string]string{"token": "ok"})})
+	fake.pushTextEnvelope(t, Envelope{Kind: KindControl, Op: OpAuth, Payload: MustMarshal(map[string]string{"token": "ok"})})
 	_ = fake.readServerEnvelope(t, time.Second) // connected
 
 	fake.pushTextEnvelope(t, Envelope{
 		Kind:     KindStream,
 		Op:       OpMessage,
 		Resource: &Resource{Type: "ghost", Id: "r-1"},
-		Payload:  mustMarshal(map[string]string{"action": "test"}),
+		Payload:  MustMarshal(map[string]string{"action": "test"}),
 	})
 
 	errEnv := fake.readServerEnvelope(t, time.Second)

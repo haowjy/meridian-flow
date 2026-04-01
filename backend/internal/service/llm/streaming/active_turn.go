@@ -11,7 +11,6 @@ type ActiveTurnHandle interface {
 
 // ActiveTurnRegistry provides read access to active executor handles.
 type ActiveTurnRegistry interface {
-	GetByTurn(turnID string) (ActiveTurnHandle, bool)
 	GetByThread(threadID string) (ActiveTurnHandle, bool)
 }
 

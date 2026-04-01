@@ -136,7 +136,7 @@ func (h *DocHandler) OnSubscribe(rawState wsutil.State, sub wsutil.SubscribeRequ
 		SubId:    sub.SubId,
 		Resource: &wsutil.Resource{Type: "document", Id: documentID},
 		Epoch:    epoch,
-		Payload:  mustMarshal(map[string]any{"headSeq": 0, "recovered": false, "catchupCount": 0}),
+		Payload:  wsutil.MustMarshal(map[string]any{"headSeq": 0, "recovered": false, "catchupCount": 0}),
 	}); err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func (h *DocHandler) BroadcastDocumentRestored(documentID string) {
 			SubId:    target.subId,
 			Seq:      endedSeq,
 			Epoch:    target.epoch,
-			Payload:  mustMarshal(map[string]any{"reason": docWSRestoredReason, "finalSeq": endedSeq}),
+			Payload:  wsutil.MustMarshal(map[string]any{"reason": docWSRestoredReason, "finalSeq": endedSeq}),
 		})
 		if err != nil {
 			h.logger.Debug("doc ws restored broadcast failed to send ended",

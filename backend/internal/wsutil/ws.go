@@ -259,7 +259,7 @@ func (s *Server) serveConn(parentCtx context.Context, wsConn wsConn, projectID s
 	_ = c.Send(Envelope{
 		Kind:    KindControl,
 		Op:      OpConnected,
-		Payload: mustMarshal(map[string]string{"connectionId": c.connectionID}),
+		Payload: MustMarshal(map[string]string{"connectionId": c.connectionID}),
 	})
 
 	c.runReadLoop()
@@ -990,7 +990,7 @@ func (c *conn) handleSubOverflow(sub *subscriptionState) {
 	}
 
 drained:
-	gapPayload := mustMarshal(map[string]any{"cause": "buffer_full"})
+	gapPayload := MustMarshal(map[string]any{"cause": "buffer_full"})
 	_ = c.enqueueControl(Envelope{
 		Kind:     KindStream,
 		Op:       OpGap,
@@ -1259,7 +1259,7 @@ func writeTextEnvelope(ctx context.Context, wsConn wsConn, msg Envelope) error {
 	return wsConn.Write(ctx, websocket.MessageText, body)
 }
 
-func mustMarshal(v any) json.RawMessage {
+func MustMarshal(v any) json.RawMessage {
 	data, _ := json.Marshal(v)
 	return data
 }

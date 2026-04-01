@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"meridian/internal/config"
 	collab "meridian/internal/domain/collab"
 	"meridian/internal/httputil"
 )
@@ -15,9 +16,24 @@ type setProposalOffsetRequest struct {
 	OffsetVersion    *int `json:"offset_version"`
 }
 
+type CollabProposalOffsetHandler struct {
+	proposalService collab.ProposalService
+	config          *config.Config
+}
+
+func NewCollabProposalOffsetHandler(
+	proposalService collab.ProposalService,
+	cfg *config.Config,
+) *CollabProposalOffsetHandler {
+	return &CollabProposalOffsetHandler{
+		proposalService: proposalService,
+		config:          cfg,
+	}
+}
+
 // SetAcceptedAtOffset stores proposal accept-offset metadata with a monotonic version guard.
 // PATCH /api/proposals/{id}/offset
-func (h *CollabHandler) SetAcceptedAtOffset(w http.ResponseWriter, r *http.Request) {
+func (h *CollabProposalOffsetHandler) SetAcceptedAtOffset(w http.ResponseWriter, r *http.Request) {
 	if h.proposalService == nil {
 		httputil.RespondError(w, http.StatusInternalServerError, "proposal offset service unavailable")
 		return

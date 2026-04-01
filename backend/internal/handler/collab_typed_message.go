@@ -2,6 +2,10 @@ package handler
 
 import "encoding/json"
 
+type collabTypedMessage struct {
+	Type string `json:"type"`
+}
+
 // isJSONMessage returns true if the raw bytes look like a JSON object.
 func isJSONMessage(raw []byte) bool {
 	return len(raw) > 0 && raw[0] == '{'
