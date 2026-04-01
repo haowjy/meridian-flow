@@ -26,8 +26,8 @@ type CollabHandler struct {
 	logger           *slog.Logger
 	config           *config.Config
 
-	// docHandler provides document-level binary fanout for server-initiated Yjs updates.
-	docHandler DocumentBroadcaster
+	// docHandler provides document-level fanout for server-initiated Yjs updates.
+	docHandler DocumentSyncBroadcaster
 }
 
 const (
@@ -126,7 +126,7 @@ func NewCollabHandler(
 	authorizer authdomain.ResourceAuthorizer,
 	logger *slog.Logger,
 	cfg *config.Config,
-	docHandler DocumentBroadcaster,
+	docHandler DocumentSyncBroadcaster,
 ) *CollabHandler {
 	var isIdentityBlocked func(string, string) bool
 	if cfg != nil {

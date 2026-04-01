@@ -22,7 +22,7 @@ type ProposalService struct {
 	runtime           collab.DocumentStateManager
 	createGate        *proposalDocumentGate
 	autoapplyResolver collab.AutoapplyResolver
-	ownerTabTracker   collab.OwnerTabPresenceTracker
+	presenceTracker   collab.DocumentPresenceTracker
 	documentResolver  collab.DocumentResolver
 }
 
@@ -33,7 +33,7 @@ func NewProposalService(
 	authorizer authdomain.ResourceAuthorizer,
 	runtime collab.DocumentStateManager,
 	autoapplyResolver collab.AutoapplyResolver,
-	ownerTabTracker collab.OwnerTabPresenceTracker,
+	presenceTracker collab.DocumentPresenceTracker,
 	documentResolver collab.DocumentResolver,
 ) collab.ProposalService {
 	return &ProposalService{
@@ -43,7 +43,7 @@ func NewProposalService(
 		runtime:           runtime,
 		createGate:        newProposalDocumentGate(),
 		autoapplyResolver: autoapplyResolver,
-		ownerTabTracker:   ownerTabTracker,
+		presenceTracker:   presenceTracker,
 		documentResolver:  documentResolver,
 	}
 }
@@ -106,7 +106,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collab.CreateP
 		return nil, fmt.Errorf("resolve autoapply for document: %w", err)
 	}
 
-	hasOwnerTabs := s.ownerTabTracker != nil && s.ownerTabTracker.HasOwnerTabs(req.DocumentID)
+	hasActiveSubscribers := s.presenceTracker != nil && s.presenceTracker.HasActiveSubscribers(req.DocumentID.String())
 
 	persistFn := func(txCtx context.Context, allowBackendFallback bool) error {
 		if req.Source == collab.ProposalSourceAI && req.TurnID != nil {
@@ -124,7 +124,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collab.CreateP
 		if err := s.createProposal(txCtx, proposal); err != nil {
 			return err
 		}
-		if !allowBackendFallback || hasOwnerTabs {
+		if !allowBackendFallback || hasActiveSubscribers {
 			return nil
 		}
 		return s.applyBackendFallbackAccept(txCtx, proposal)
@@ -139,7 +139,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collab.CreateP
 		return proposal, nil
 	}
 
-	if req.Source == collab.ProposalSourceAI && hasOwnerTabs {
+	if req.Source == collab.ProposalSourceAI && hasActiveSubscribers {
 		if err := s.createGate.WithDocument(req.DocumentID, func() error {
 			return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 				count, err := s.proposalStore.CountByDocumentAndStatusAndSource(

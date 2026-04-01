@@ -1,14 +1,10 @@
 package collab
 
-import (
-	"context"
+import "context"
 
-	"github.com/google/uuid"
-)
-
-// OwnerTabPresenceTracker reports whether a document has at least one connected owner tab.
-type OwnerTabPresenceTracker interface {
-	HasOwnerTabs(documentID uuid.UUID) bool
+// DocumentPresenceTracker reports whether a document has at least one active subscriber.
+type DocumentPresenceTracker interface {
+	HasActiveSubscribers(documentID string) bool
 }
 
 // StatusMirror mirrors _proposal_status Y.Map values into proposal rows.

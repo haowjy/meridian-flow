@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,11 +12,51 @@ import (
 	"time"
 
 	cws "github.com/coder/websocket"
+	"github.com/google/uuid"
 
+	collab "meridian/internal/domain/collab"
 	"meridian/internal/wsutil"
 )
 
 // ──────────────────────────────── server / client helpers (doc WS) ─────────
+
+type docWSTestResolver struct {
+	allow bool
+}
+
+func (r *docWSTestResolver) ResolveDocument(context.Context, string) (*collab.CollabDocRef, error) {
+	return nil, nil
+}
+
+func (r *docWSTestResolver) VerifyOwnership(context.Context, string, string) (bool, error) {
+	return r.allow, nil
+}
+
+type docWSTestSessionProvider struct {
+	syncStep1Payload []byte
+}
+
+func (p *docWSTestSessionProvider) GetOrCreateSession(context.Context, string, string) (collab.SyncSession, func(), error) {
+	session := &docWSTestSyncSession{
+		syncStep1Payload: append([]byte(nil), p.syncStep1Payload...),
+	}
+	return session, func() {}, nil
+}
+
+type docWSTestSyncSession struct {
+	syncStep1Payload []byte
+}
+
+func (s *docWSTestSyncSession) BuildSyncStep1Payload() ([]byte, error) {
+	if len(s.syncStep1Payload) == 0 {
+		return nil, fmt.Errorf("sync step1 payload not configured")
+	}
+	return append([]byte(nil), s.syncStep1Payload...), nil
+}
+
+func (s *docWSTestSyncSession) HandleSyncPayload(context.Context, []byte, string) (int, []byte, []byte, error) {
+	return 0, nil, nil, nil
+}
 
 // docWSServer builds a real HTTP test server with a DocNotifyHandler wired up.
 // It also returns the underlying wsutil.Server so tests can call BroadcastNotify.
@@ -27,7 +69,11 @@ func docWSServer(t *testing.T) (*httptest.Server, *wsutil.Server) {
 		wsutil.WithHeartbeat(10*time.Second, 10*time.Second),
 		wsutil.WithRateLimit(30),
 	)
-	h := NewDocNotifyHandler(nullLogger())
+	h := NewDocHandler(
+		&docWSTestSessionProvider{syncStep1Payload: []byte{0x7f}},
+		&docWSTestResolver{allow: true},
+		nullLogger(),
+	)
 	srv.RegisterHandler("document", h)
 
 	mux := http.NewServeMux()
@@ -36,6 +82,42 @@ func docWSServer(t *testing.T) (*httptest.Server, *wsutil.Server) {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts, srv
+}
+
+func dwsReadBinary(t *testing.T, c *cws.Conn, timeout time.Duration) []byte {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("timeout (%s) waiting for doc WS binary frame", timeout)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), remaining)
+		msgType, data, err := c.Read(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("read doc ws binary: %v", err)
+		}
+		if msgType == cws.MessageBinary {
+			return data
+		}
+		if msgType != cws.MessageText {
+			t.Fatalf("unexpected frame type %v", msgType)
+		}
+
+		var env wsutil.Envelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if env.Kind == wsutil.KindControl && env.Op == wsutil.OpPing {
+			pongData, _ := json.Marshal(wsutil.Envelope{Kind: wsutil.KindControl, Op: wsutil.OpPong})
+			pongCtx, pongCancel := context.WithTimeout(context.Background(), time.Second)
+			_ = c.Write(pongCtx, cws.MessageText, pongData)
+			pongCancel()
+			continue
+		}
+		t.Fatalf("expected binary frame, got text envelope %+v", env)
+	}
 }
 
 // dwsURL converts the test server base URL to a doc WS URL.
@@ -261,20 +343,20 @@ func TestDocWSNotifyProposalAccepted(t *testing.T) {
 	}
 }
 
-// TestDocWSSubscribeAttemptReturnsNotSupported verifies that a subscribe request
-// to the doc notify handler returns a NOT_SUPPORTED error (notify-only for now).
-func TestDocWSSubscribeAttemptReturnsNotSupported(t *testing.T) {
+// TestDocWSSubscribeSendsSubscribedAndInitialSyncBinary verifies doc subscriptions
+// receive subscribed control and the initial sync step1 binary payload.
+func TestDocWSSubscribeSendsSubscribedAndInitialSyncBinary(t *testing.T) {
 	ts, _ := docWSServer(t)
 
 	c := dwsConnect(t, ts, "project-1")
 	defer c.CloseNow()
 
-	// Send a subscribe for a document resource.
+	documentID := uuid.NewString()
 	subscribeMsg, _ := json.Marshal(wsutil.Envelope{
 		Kind:     wsutil.KindControl,
 		Op:       wsutil.OpSubscribe,
 		SubId:    "sub-1",
-		Resource: &wsutil.Resource{Type: "document", Id: "doc-abc"},
+		Resource: &wsutil.Resource{Type: "document", Id: documentID},
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -282,16 +364,28 @@ func TestDocWSSubscribeAttemptReturnsNotSupported(t *testing.T) {
 		t.Fatalf("write subscribe: %v", err)
 	}
 
-	errEnv := dwsRead(t, c, time.Second)
-	if errEnv.Kind != wsutil.KindError {
-		t.Fatalf("expected error for subscribe on doc notify handler, got %+v", errEnv)
+	subscribed := dwsRead(t, c, time.Second)
+	if subscribed.Kind != wsutil.KindControl || subscribed.Op != wsutil.OpSubscribed {
+		t.Fatalf("expected subscribed control frame, got %+v", subscribed)
 	}
-	var ep wsutil.ErrorPayload
-	if err := json.Unmarshal(errEnv.Payload, &ep); err != nil {
-		t.Fatalf("unmarshal error payload: %v", err)
+	if subscribed.SubId != "sub-1" {
+		t.Fatalf("expected sub-1, got %q", subscribed.SubId)
 	}
-	if ep.Code != wsutil.CodeNotSupported {
-		t.Fatalf("expected NOT_SUPPORTED, got %q", ep.Code)
+	if subscribed.Resource == nil || subscribed.Resource.Type != "document" || subscribed.Resource.Id != documentID {
+		t.Fatalf("unexpected subscribed resource: %+v", subscribed.Resource)
+	}
+
+	binaryFrame := dwsReadBinary(t, c, time.Second)
+	nullIdx := bytes.IndexByte(binaryFrame, 0x00)
+	if nullIdx <= 0 {
+		t.Fatalf("expected subId-prefixed binary frame, got %v", binaryFrame)
+	}
+	if got := string(binaryFrame[:nullIdx]); got != "sub-1" {
+		t.Fatalf("expected binary frame routed to sub-1, got %q", got)
+	}
+	payload := binaryFrame[nullIdx+1:]
+	if len(payload) != 2 || payload[0] != docWSPrefixSync || payload[1] != 0x7f {
+		t.Fatalf("unexpected binary payload: %v", payload)
 	}
 }
 
@@ -338,7 +432,11 @@ func TestDocWSBadAuth(t *testing.T) {
 		wsutil.WithAuth(auth),
 		wsutil.WithHeartbeat(10*time.Second, 10*time.Second),
 	)
-	srv.RegisterHandler("document", NewDocNotifyHandler(nullLogger()))
+	srv.RegisterHandler("document", NewDocHandler(
+		&docWSTestSessionProvider{syncStep1Payload: []byte{0x7f}},
+		&docWSTestResolver{allow: true},
+		nullLogger(),
+	))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ws/projects/{projectId}/docs", srv.Serve)
