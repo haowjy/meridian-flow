@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react"
 
+import { useDocStreamOptional } from "@/features/docs/DocWsProvider"
+
 import { SessionPool, type SessionPoolConfig } from "./session-pool"
 
 const SessionPoolContext = createContext<SessionPool | null>(null)
@@ -21,7 +23,6 @@ export function SessionPoolProvider({
       config.user.userId,
       config.user.userName,
       config.wsFactory,
-      config.getAccessToken,
     ],
   )
 
@@ -33,9 +34,30 @@ export function SessionPoolProvider({
 
   return (
     <SessionPoolContext.Provider value={pool}>
+      <DocStreamBridge pool={pool} />
       {children}
     </SessionPoolContext.Provider>
   )
+}
+
+/**
+ * Bridge DocStreamClient from React context into the imperative SessionPool.
+ *
+ * Uses the non-throwing useDocStreamOptional() — returns null when no
+ * DocWsProvider is present (test/storybook contexts). In production,
+ * DocWsProvider is mounted above SessionPoolProvider so this always
+ * finds the client.
+ */
+function DocStreamBridge({ pool }: { pool: SessionPool }) {
+  const docStreamClient = useDocStreamOptional()
+
+  useEffect(() => {
+    if (docStreamClient) {
+      pool.setDocStreamClient(docStreamClient)
+    }
+  }, [pool, docStreamClient])
+
+  return null
 }
 
 export function useSessionPool(): SessionPool {

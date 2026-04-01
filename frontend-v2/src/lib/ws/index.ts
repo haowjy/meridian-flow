@@ -1,4 +1,9 @@
 export { WsClient, buildWsUrl, type WsClientCallbacks } from "./ws-client"
+export {
+  DocStreamClient,
+  type DocSubscribeOptions,
+  type DocSubscriptionState,
+} from "./doc-stream-client"
 export { handleNotify, getInvalidationKeys } from "./notify-handler"
 export {
   type Envelope,

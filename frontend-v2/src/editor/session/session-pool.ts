@@ -16,6 +16,8 @@
  *   - subscribe() is useSyncExternalStore-compatible
  */
 
+import type { DocStreamClient } from "@/lib/ws/doc-stream-client"
+
 import { DocSession, type DocSessionConfig } from "./doc-session"
 import type { DocumentWsProviderFactory, FrozenReason } from "./types"
 
@@ -32,8 +34,6 @@ export interface SessionPoolConfig {
   user: { userId: string; userName: string }
   /** Optional WS provider factory — null until Phase 4. */
   wsFactory?: DocumentWsProviderFactory
-  /** Access token resolver used by document WS providers. */
-  getAccessToken?: () => Promise<string>
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ export class SessionPool {
   private readonly userId: string
   private readonly userName: string
   private readonly wsFactory?: DocumentWsProviderFactory
-  private readonly getAccessToken?: () => Promise<string>
+  private docStreamClient: DocStreamClient | null = null
   private nextLeaseId = 1
   private destroyed = false
 
@@ -84,7 +84,17 @@ export class SessionPool {
     this.userId = config.user.userId
     this.userName = config.user.userName
     this.wsFactory = config.wsFactory
-    this.getAccessToken = config.getAccessToken
+  }
+
+  /**
+   * Inject the DocStreamClient from React context.
+   *
+   * Called via useEffect in SessionPoolContext when the DocStreamClient
+   * changes. The pool passes this to the DocumentWsProviderFactory when
+   * creating providers.
+   */
+  setDocStreamClient(client: DocStreamClient): void {
+    this.docStreamClient = client
   }
 
   // -------------------------------------------------------------------------
@@ -362,7 +372,7 @@ export class SessionPool {
       userId: this.userId,
       userName: this.userName,
       wsProviderFactory: this.wsFactory,
-      getAccessToken: this.getAccessToken,
+      docStreamClient: this.docStreamClient ?? undefined,
     }
 
     const session = new DocSession(config)
