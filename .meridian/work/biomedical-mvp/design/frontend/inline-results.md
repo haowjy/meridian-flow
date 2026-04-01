@@ -4,10 +4,10 @@ Renders Python execution results (charts, images, tables, code output) directly 
 
 ## New Block Renderers
 
-The existing `ActivityBlock` renders turn blocks by type (text, thinking, tool_use, tool_result, etc.). We add new renderers for Python output:
+Target: `frontend/` (production app). The existing `ActivityBlock` renders turn blocks by type (text, thinking, tool_use, tool_result, etc.). We add new renderers for Python output:
 
 ```
-features/threads/components/blocks/
+frontend/src/features/threads/components/blocks/
 ├── TextBlock.tsx             # Existing
 ├── ToolDetail.tsx            # Existing
 ├── PythonOutputBlock.tsx     # NEW: stdout/stderr display
@@ -143,7 +143,14 @@ Renders pandas DataFrame as a styled table:
 ```tsx
 // features/threads/components/blocks/DataFrameBlock.tsx
 
+import DOMPurify from 'dompurify'
+
 function DataFrameBlock({ html, title, rowCount, colCount }: Props) {
+  const sanitizedHtml = useMemo(() => DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['table', 'thead', 'tbody', 'tr', 'th', 'td', 'caption'],
+    ALLOWED_ATTR: ['class', 'colspan', 'rowspan'],
+  }), [html])
+
   return (
     <div className="rounded-lg border overflow-hidden my-2">
       {title && (
@@ -157,7 +164,7 @@ function DataFrameBlock({ html, title, rowCount, colCount }: Props) {
       <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
         <div
           className="meridian-table-wrapper"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       </div>
     </div>
