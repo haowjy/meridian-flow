@@ -171,131 +171,99 @@ func (h *integrationHarness) countRows(t *testing.T, query string, args ...inter
 	return count
 }
 
-func TestCreditStore_CreatePurchaseLot_Idempotent(t *testing.T) {
-	h := setupIntegrationHarness(t)
-	userID := h.createTestUser(t)
-
-	stripeSessionID := "cs_test_" + uuid.NewString()
-	req := billing.CreatePurchaseLotRequest{
-		UserID:             userID,
-		AmountMillicredits: 500_000,
-		StripeSessionID:    stripeSessionID,
-		Metadata:           map[string]interface{}{"source": "test"},
+func TestCreditStore_IdempotentOperations(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T, h *integrationHarness)
+	}{
+		{
+			name: "CreatePurchaseLot is idempotent",
+			run: func(t *testing.T, h *integrationHarness) {
+				userID := h.createTestUser(t)
+				stripeSessionID := "cs_test_" + uuid.NewString()
+				req := billing.CreatePurchaseLotRequest{UserID: userID, AmountMillicredits: 500_000, StripeSessionID: stripeSessionID, Metadata: map[string]interface{}{"source": "test"}}
+				if err := h.store.CreatePurchaseLot(context.Background(), req); err != nil {
+					t.Fatalf("first CreatePurchaseLot failed: %v", err)
+				}
+				if err := h.store.CreatePurchaseLot(context.Background(), req); err != nil {
+					t.Fatalf("second CreatePurchaseLot failed: %v", err)
+				}
+				lotCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE stripe_session_id = $1`, h.tables.CreditLots)
+				if got := h.countRows(t, lotCountQuery, stripeSessionID); got != 1 {
+					t.Fatalf("purchase lot count = %d, want 1", got)
+				}
+				txnCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1 AND transaction_type = 'purchase'`, h.tables.CreditTransactions)
+				if got := h.countRows(t, txnCountQuery, userID); got != 1 {
+					t.Fatalf("purchase transaction count = %d, want 1", got)
+				}
+			},
+		},
+		{
+			name: "CreateGrantLot is idempotent",
+			run: func(t *testing.T, h *integrationHarness) {
+				userID := h.createTestUser(t)
+				expiresAt := time.Now().UTC().Add(24 * time.Hour)
+				grantReason := "signup_bonus_test_" + uuid.NewString()
+				req := billing.CreateGrantLotRequest{UserID: userID, AmountMillicredits: 300_000, ExpiresAt: &expiresAt, GrantReason: grantReason, Metadata: map[string]interface{}{"source": "test"}}
+				if err := h.store.CreateGrantLot(context.Background(), req); err != nil {
+					t.Fatalf("first CreateGrantLot failed: %v", err)
+				}
+				if err := h.store.CreateGrantLot(context.Background(), req); !errors.Is(err, billing.ErrGrantLotAlreadyExists) {
+					t.Fatalf("second CreateGrantLot error = %v, want ErrGrantLotAlreadyExists", err)
+				}
+				lotCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1 AND grant_reason = $2`, h.tables.CreditLots)
+				if got := h.countRows(t, lotCountQuery, userID, grantReason); got != 1 {
+					t.Fatalf("grant lot count = %d, want 1", got)
+				}
+				txnCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1 AND transaction_type = 'grant'`, h.tables.CreditTransactions)
+				if got := h.countRows(t, txnCountQuery, userID); got != 1 {
+					t.Fatalf("grant transaction count = %d, want 1", got)
+				}
+			},
+		},
+		{
+			name: "RefundLot claws back spent credits and is idempotent",
+			run: func(t *testing.T, h *integrationHarness) {
+				ctx := context.Background()
+				userID := h.createTestUser(t)
+				stripeSessionID := "cs_refund_" + uuid.NewString()
+				if err := h.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{UserID: userID, AmountMillicredits: 1000, StripeSessionID: stripeSessionID}); err != nil {
+					t.Fatalf("CreatePurchaseLot failed: %v", err)
+				}
+				lotID := h.getLotIDByStripeSession(t, stripeSessionID)
+				if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{UserID: userID, AmountMillicredits: 600, ConsumptionGroupID: uuid.New(), UsageEventID: "turn_refund_anchor:0"}); err != nil {
+					t.Fatalf("ConsumeFIFO failed: %v", err)
+				}
+				refundReq := billing.RefundLotRequest{StripeSessionID: stripeSessionID, Metadata: map[string]interface{}{"source": "test"}}
+				if err := h.store.RefundLot(ctx, refundReq); err != nil {
+					t.Fatalf("first RefundLot failed: %v", err)
+				}
+				if err := h.store.RefundLot(ctx, refundReq); err != nil {
+					t.Fatalf("second RefundLot failed: %v", err)
+				}
+				balance, err := h.store.GetBalance(ctx, userID)
+				if err != nil {
+					t.Fatalf("GetBalance failed: %v", err)
+				}
+				if balance.TotalBalanceMillicredits != -600 {
+					t.Fatalf("total balance = %d, want -600", balance.TotalBalanceMillicredits)
+				}
+				if balance.DebtBalanceMillicredits != 600 {
+					t.Fatalf("debt balance = %d, want 600", balance.DebtBalanceMillicredits)
+				}
+				refundCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE lot_id = $1 AND transaction_type = 'refund'`, h.tables.CreditTransactions)
+				if got := h.countRows(t, refundCountQuery, lotID); got != 1 {
+					t.Fatalf("refund transaction count = %d, want 1", got)
+				}
+			},
+		},
 	}
 
-	if err := h.store.CreatePurchaseLot(context.Background(), req); err != nil {
-		t.Fatalf("first CreatePurchaseLot failed: %v", err)
-	}
-	if err := h.store.CreatePurchaseLot(context.Background(), req); err != nil {
-		t.Fatalf("second CreatePurchaseLot failed: %v", err)
-	}
-
-	lotCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE stripe_session_id = $1`, h.tables.CreditLots)
-	if got := h.countRows(t, lotCountQuery, stripeSessionID); got != 1 {
-		t.Fatalf("purchase lot count = %d, want 1", got)
-	}
-
-	txnCountQuery := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM %s
-		WHERE user_id = $1 AND transaction_type = 'purchase'
-	`, h.tables.CreditTransactions)
-	if got := h.countRows(t, txnCountQuery, userID); got != 1 {
-		t.Fatalf("purchase transaction count = %d, want 1", got)
-	}
-}
-
-func TestCreditStore_CreateGrantLot_Idempotent(t *testing.T) {
-	h := setupIntegrationHarness(t)
-	userID := h.createTestUser(t)
-
-	expiresAt := time.Now().UTC().Add(24 * time.Hour)
-	grantReason := "signup_bonus_test_" + uuid.NewString()
-	req := billing.CreateGrantLotRequest{
-		UserID:             userID,
-		AmountMillicredits: 300_000,
-		ExpiresAt:          &expiresAt,
-		GrantReason:        grantReason,
-		Metadata:           map[string]interface{}{"source": "test"},
-	}
-
-	if err := h.store.CreateGrantLot(context.Background(), req); err != nil {
-		t.Fatalf("first CreateGrantLot failed: %v", err)
-	}
-	if err := h.store.CreateGrantLot(context.Background(), req); !errors.Is(err, billing.ErrGrantLotAlreadyExists) {
-		t.Fatalf("second CreateGrantLot error = %v, want ErrGrantLotAlreadyExists", err)
-	}
-
-	lotCountQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1 AND grant_reason = $2`, h.tables.CreditLots)
-	if got := h.countRows(t, lotCountQuery, userID, grantReason); got != 1 {
-		t.Fatalf("grant lot count = %d, want 1", got)
-	}
-
-	txnCountQuery := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM %s
-		WHERE user_id = $1 AND transaction_type = 'grant'
-	`, h.tables.CreditTransactions)
-	if got := h.countRows(t, txnCountQuery, userID); got != 1 {
-		t.Fatalf("grant transaction count = %d, want 1", got)
-	}
-}
-
-func TestCreditStore_RefundLot_ClawsBackSpentCreditsAndIsIdempotent(t *testing.T) {
-	h := setupIntegrationHarness(t)
-	ctx := context.Background()
-	userID := h.createTestUser(t)
-
-	stripeSessionID := "cs_refund_" + uuid.NewString()
-	if err := h.store.CreatePurchaseLot(ctx, billing.CreatePurchaseLotRequest{
-		UserID:             userID,
-		AmountMillicredits: 1000,
-		StripeSessionID:    stripeSessionID,
-	}); err != nil {
-		t.Fatalf("CreatePurchaseLot failed: %v", err)
-	}
-	lotID := h.getLotIDByStripeSession(t, stripeSessionID)
-
-	if err := h.store.ConsumeFIFO(ctx, billing.ConsumeFIFORequest{
-		UserID:             userID,
-		AmountMillicredits: 600,
-		ConsumptionGroupID: uuid.New(),
-		UsageEventID:       "turn_refund_anchor:0",
-	}); err != nil {
-		t.Fatalf("ConsumeFIFO failed: %v", err)
-	}
-
-	if err := h.store.RefundLot(ctx, billing.RefundLotRequest{
-		StripeSessionID: stripeSessionID,
-		Metadata:        map[string]interface{}{"source": "test"},
-	}); err != nil {
-		t.Fatalf("first RefundLot failed: %v", err)
-	}
-	if err := h.store.RefundLot(ctx, billing.RefundLotRequest{
-		StripeSessionID: stripeSessionID,
-		Metadata:        map[string]interface{}{"source": "test"},
-	}); err != nil {
-		t.Fatalf("second RefundLot failed: %v", err)
-	}
-
-	balance, err := h.store.GetBalance(ctx, userID)
-	if err != nil {
-		t.Fatalf("GetBalance failed: %v", err)
-	}
-	if balance.TotalBalanceMillicredits != -600 {
-		t.Fatalf("total balance = %d, want -600", balance.TotalBalanceMillicredits)
-	}
-	if balance.DebtBalanceMillicredits != 600 {
-		t.Fatalf("debt balance = %d, want 600", balance.DebtBalanceMillicredits)
-	}
-
-	refundCountQuery := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM %s
-		WHERE lot_id = $1 AND transaction_type = 'refund'
-	`, h.tables.CreditTransactions)
-	if got := h.countRows(t, refundCountQuery, lotID); got != 1 {
-		t.Fatalf("refund transaction count = %d, want 1", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := setupIntegrationHarness(t)
+			tt.run(t, h)
+		})
 	}
 }
 

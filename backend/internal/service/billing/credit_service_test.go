@@ -53,66 +53,41 @@ func (m *mockStripeClient) RetrieveSessionByChargeOrPaymentIntent(
 	return m.retrieveByRef, m.retrieveByRefErr
 }
 
-func TestCreditService_HandleStripeWebhook_ChargeRefundedRefundsLot(t *testing.T) {
-	store := &mockCreditStore{}
-	stripeClient := &mockStripeClient{
-		event: &billing.StripeEvent{
-			ID:              "evt_refund",
-			Type:            billing.StripeEventTypeChargeRefunded,
-			ChargeID:        "ch_123",
-			PaymentIntentID: "pi_123",
-		},
-		retrieveByRef: &billing.StripeSession{
-			ID: "cs_refund",
-		},
-	}
-	svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
-		Payload:   []byte(`{}`),
-		Signature: "sig",
-	})
-	if err != nil {
-		t.Fatalf("HandleStripeWebhook returned error: %v", err)
+func TestCreditService_HandleStripeWebhook_RefundEvents(t *testing.T) {
+	tests := []struct {
+		name            string
+		eventID         string
+		eventType       string
+		chargeID        string
+		paymentIntentID string
+		sessionID       string
+	}{
+		{name: "charge refunded refunds the matching lot", eventID: "evt_refund", eventType: billing.StripeEventTypeChargeRefunded, chargeID: "ch_123", paymentIntentID: "pi_123", sessionID: "cs_refund"},
+		{name: "charge dispute created refunds the matching lot", eventID: "evt_dispute", eventType: billing.StripeEventTypeChargeDisputeCreated, chargeID: "ch_dispute", paymentIntentID: "pi_dispute", sessionID: "cs_dispute"},
 	}
 
-	if stripeClient.lastChargeID != "ch_123" || stripeClient.lastPaymentIntentID != "pi_123" {
-		t.Fatalf("RetrieveSessionByChargeOrPaymentIntent args = (%q, %q), want (%q, %q)",
-			stripeClient.lastChargeID, stripeClient.lastPaymentIntentID, "ch_123", "pi_123")
-	}
-	if store.lastRefundReq.StripeSessionID != "cs_refund" {
-		t.Fatalf("RefundLot session_id = %q, want %q", store.lastRefundReq.StripeSessionID, "cs_refund")
-	}
-	if got := store.lastRefundReq.Metadata["stripe_event_type"]; got != billing.StripeEventTypeChargeRefunded {
-		t.Fatalf("refund metadata stripe_event_type = %v, want %s", got, billing.StripeEventTypeChargeRefunded)
-	}
-}
-
-func TestCreditService_HandleStripeWebhook_ChargeDisputeCreatedRefundsLot(t *testing.T) {
-	store := &mockCreditStore{}
-	stripeClient := &mockStripeClient{
-		event: &billing.StripeEvent{
-			ID:              "evt_dispute",
-			Type:            billing.StripeEventTypeChargeDisputeCreated,
-			ChargeID:        "ch_dispute",
-			PaymentIntentID: "pi_dispute",
-		},
-		retrieveByRef: &billing.StripeSession{
-			ID: "cs_dispute",
-		},
-	}
-	svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{
-		Payload:   []byte(`{}`),
-		Signature: "sig",
-	})
-	if err != nil {
-		t.Fatalf("HandleStripeWebhook returned error: %v", err)
-	}
-
-	if store.lastRefundReq.StripeSessionID != "cs_dispute" {
-		t.Fatalf("RefundLot session_id = %q, want %q", store.lastRefundReq.StripeSessionID, "cs_dispute")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &mockCreditStore{}
+			stripeClient := &mockStripeClient{
+				event:         &billing.StripeEvent{ID: tt.eventID, Type: tt.eventType, ChargeID: tt.chargeID, PaymentIntentID: tt.paymentIntentID},
+				retrieveByRef: &billing.StripeSession{ID: tt.sessionID},
+			}
+			svc := NewCreditService(store, stripeClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			err := svc.HandleStripeWebhook(context.Background(), billing.StripeWebhookRequest{Payload: []byte(`{}`), Signature: "sig"})
+			if err != nil {
+				t.Fatalf("HandleStripeWebhook returned error: %v", err)
+			}
+			if stripeClient.lastChargeID != tt.chargeID || stripeClient.lastPaymentIntentID != tt.paymentIntentID {
+				t.Fatalf("RetrieveSessionByChargeOrPaymentIntent args = (%q, %q), want (%q, %q)", stripeClient.lastChargeID, stripeClient.lastPaymentIntentID, tt.chargeID, tt.paymentIntentID)
+			}
+			if store.lastRefundReq.StripeSessionID != tt.sessionID {
+				t.Fatalf("RefundLot session_id = %q, want %q", store.lastRefundReq.StripeSessionID, tt.sessionID)
+			}
+			if got := store.lastRefundReq.Metadata["stripe_event_type"]; got != tt.eventType {
+				t.Fatalf("refund metadata stripe_event_type = %v, want %s", got, tt.eventType)
+			}
+		})
 	}
 }
 

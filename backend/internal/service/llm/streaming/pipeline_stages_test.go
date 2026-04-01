@@ -23,6 +23,7 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	billing "meridian/internal/domain/billing"
 	domaindocsys "meridian/internal/domain/docsystem"
 	domainllm "meridian/internal/domain/llm"
 )
@@ -1017,77 +1018,67 @@ func TestPersistTurns_UsesResolvedThreadID(t *testing.T) {
 // Tests: deriveTitleFromTurnBlocks — utility for cold-start thread naming
 // =============================================================================
 
-func TestDeriveTitleFromTurnBlocks_EmptyBlocks(t *testing.T) {
-	title := deriveTitleFromTurnBlocks(nil)
-	if title != "New Thread" {
-		t.Errorf("title = %q, want 'New Thread'", title)
-	}
-}
-
-func TestDeriveTitleFromTurnBlocks_NoTextBlocks(t *testing.T) {
-	// Non-text blocks should not contribute to the title
-	blocks := []domainllm.TurnBlockInput{
-		{BlockType: "tool_use", Content: map[string]interface{}{"name": "something"}},
-	}
-	title := deriveTitleFromTurnBlocks(blocks)
-	if title != "New Thread" {
-		t.Errorf("title = %q, want 'New Thread' (no text blocks)", title)
-	}
-}
-
-func TestDeriveTitleFromTurnBlocks_FirstTextBlock(t *testing.T) {
-	text := "Hello world this is my story"
-	blocks := []domainllm.TurnBlockInput{
-		{BlockType: "text", TextContent: &text},
-	}
-	title := deriveTitleFromTurnBlocks(blocks)
-	if title == "" {
-		t.Error("title is empty, want derived from text block")
-	}
-	if title == "New Thread" {
-		t.Error("title is 'New Thread', want derived from text content")
-	}
-}
-
-func TestDeriveTitleFromTurnBlocks_LongTextTruncatedToWords(t *testing.T) {
-	// defaultTitleMaxWords = 6; this text has many more words
-	text := "In the beginning there was darkness and then light came from the void"
-	blocks := []domainllm.TurnBlockInput{
-		{BlockType: "text", TextContent: &text},
-	}
-	title := deriveTitleFromTurnBlocks(blocks)
-
-	words := len(splitWords(title))
-	if words > defaultTitleMaxWords {
-		t.Errorf("title has %d words, want at most %d: %q", words, defaultTitleMaxWords, title)
-	}
-}
-
-func TestDeriveTitleFromTurnBlocks_EmptyTextContent(t *testing.T) {
-	empty := ""
-	blocks := []domainllm.TurnBlockInput{
-		{BlockType: "text", TextContent: &empty},
-	}
-	title := deriveTitleFromTurnBlocks(blocks)
-	if title != "New Thread" {
-		t.Errorf("title = %q for empty text, want 'New Thread'", title)
-	}
-}
-
-func TestDeriveTitleFromTurnBlocks_UsesFirstTextBlockOnly(t *testing.T) {
+func TestDeriveTitleFromTurnBlocks(t *testing.T) {
+	longText := "In the beginning there was darkness and then light came from the void"
 	first := "First message content"
 	second := "Second message content"
-	blocks := []domainllm.TurnBlockInput{
-		{BlockType: "text", TextContent: &first},
-		{BlockType: "text", TextContent: &second},
+	empty := ""
+	plainText := "Hello world this is my story"
+
+	tests := []struct {
+		name   string
+		blocks []domainllm.TurnBlockInput
+		want   string
+	}{
+		{name: "empty blocks fall back to default title", want: "New Thread"},
+		{
+			name: "non-text blocks are ignored",
+			blocks: []domainllm.TurnBlockInput{
+				{BlockType: "tool_use", Content: map[string]interface{}{"name": "something"}},
+			},
+			want: "New Thread",
+		},
+		{
+			name: "first text block becomes the title",
+			blocks: []domainllm.TurnBlockInput{
+				{BlockType: "text", TextContent: &plainText},
+			},
+			want: plainText,
+		},
+		{
+			name: "long text is truncated to the configured word limit",
+			blocks: []domainllm.TurnBlockInput{
+				{BlockType: "text", TextContent: &longText},
+			},
+			want: "In the beginning there was darkness",
+		},
+		{
+			name: "empty text content falls back to default title",
+			blocks: []domainllm.TurnBlockInput{
+				{BlockType: "text", TextContent: &empty},
+			},
+			want: "New Thread",
+		},
+		{
+			name: "only the first text block contributes",
+			blocks: []domainllm.TurnBlockInput{
+				{BlockType: "text", TextContent: &first},
+				{BlockType: "text", TextContent: &second},
+			},
+			want: first,
+		},
 	}
-	title := deriveTitleFromTurnBlocks(blocks)
-	// Title must be derived from the first block, not the second
-	secondTitle := deriveTitleFromTurnBlocks([]domainllm.TurnBlockInput{
-		{BlockType: "text", TextContent: &second},
-	})
-	if title == secondTitle {
-		t.Errorf("title derived from second block — should use first text block only")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title := deriveTitleFromTurnBlocks(tt.blocks)
+			if title != tt.want {
+				t.Fatalf("deriveTitleFromTurnBlocks() = %q, want %q", title, tt.want)
+			}
+			if words := len(splitWords(title)); words > defaultTitleMaxWords {
+				t.Fatalf("title has %d words, want at most %d: %q", words, defaultTitleMaxWords, title)
+			}
+		})
 	}
 }
 
@@ -1095,60 +1086,28 @@ func TestDeriveTitleFromTurnBlocks_UsesFirstTextBlockOnly(t *testing.T) {
 // Tests: resolveSettlementMode — billing mode selection
 // =============================================================================
 
-func TestResolveSettlementMode_Openrouter_Deferred(t *testing.T) {
-	svc := &Service{}
-	mode := svc.resolveSettlementMode("openrouter")
-	const want = "deferred_to_enrichment"
-	if string(mode) != want {
-		t.Errorf("settlement mode for openrouter = %q, want %q", mode, want)
-	}
-}
-
-func TestResolveSettlementMode_Anthropic_Inline(t *testing.T) {
-	svc := &Service{}
-	mode := svc.resolveSettlementMode("anthropic")
-	const want = "inline_authoritative"
-	if string(mode) != want {
-		t.Errorf("settlement mode for anthropic = %q, want %q", mode, want)
-	}
-}
-
-func TestResolveSettlementMode_Unknown_UsesSvcDefault(t *testing.T) {
-	const customMode = "inline_authoritative"
-	svc := &Service{settlementMode: customMode}
-	mode := svc.resolveSettlementMode("some-unknown-provider")
-	if mode != customMode {
-		t.Errorf("settlement mode for unknown = %q, want svc.settlementMode %q", mode, customMode)
-	}
-}
-
-func TestResolveSettlementMode_Unknown_NoDefault_FallsBack(t *testing.T) {
-	svc := &Service{} // settlementMode is empty
-	mode := svc.resolveSettlementMode("some-unknown-provider")
-	const want = "inline_authoritative"
-	if string(mode) != want {
-		t.Errorf("settlement mode for unknown with no default = %q, want %q", mode, want)
-	}
-}
-
-func TestResolveSettlementMode_CaseInsensitive(t *testing.T) {
-	svc := &Service{}
-	// Provider names should be normalized (ToLower + TrimSpace)
+func TestResolveSettlementMode(t *testing.T) {
 	tests := []struct {
-		provider string
-		want     string
+		name           string
+		provider       string
+		settlementMode billing.CreditSettlementMode
+		want           string
 	}{
-		{"OpenRouter", "deferred_to_enrichment"},
-		{"OPENROUTER", "deferred_to_enrichment"},
-		{" openrouter ", "deferred_to_enrichment"},
-		{"Anthropic", "inline_authoritative"},
-		{"ANTHROPIC", "inline_authoritative"},
+		{name: "openrouter uses deferred settlement", provider: "openrouter", want: "deferred_to_enrichment"},
+		{name: "anthropic uses inline settlement", provider: "anthropic", want: "inline_authoritative"},
+		{name: "unknown provider uses configured service default", provider: "some-unknown-provider", settlementMode: "inline_authoritative", want: "inline_authoritative"},
+		{name: "unknown provider falls back when no service default exists", provider: "some-unknown-provider", want: "inline_authoritative"},
+		{name: "provider matching is case insensitive", provider: "OpenRouter", want: "deferred_to_enrichment"},
+		{name: "provider matching trims whitespace", provider: " openrouter ", want: "deferred_to_enrichment"},
+		{name: "anthropic matching is case insensitive", provider: "ANTHROPIC", want: "inline_authoritative"},
 	}
+
 	for _, tt := range tests {
-		t.Run(tt.provider, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &Service{settlementMode: tt.settlementMode}
 			mode := svc.resolveSettlementMode(tt.provider)
 			if string(mode) != tt.want {
-				t.Errorf("resolveSettlementMode(%q) = %q, want %q", tt.provider, mode, tt.want)
+				t.Fatalf("resolveSettlementMode(%q) = %q, want %q", tt.provider, mode, tt.want)
 			}
 		})
 	}
@@ -1158,46 +1117,36 @@ func TestResolveSettlementMode_CaseInsensitive(t *testing.T) {
 // Tests: validateCreateTurnRequest — validation helpers
 // =============================================================================
 
-func TestValidateCreateTurnRequest_UserRoleRequired(t *testing.T) {
+func TestValidateCreateTurnRequest(t *testing.T) {
 	svc := &Service{logger: slog.Default()}
 
-	// Missing role
-	err := svc.validateCreateTurnRequest(&domainllm.CreateTurnRequest{})
-	if err == nil {
-		t.Error("expected validation error for missing role, got nil")
-	}
-}
-
-func TestValidateCreateTurnRequest_OnlyUserRoleAllowed(t *testing.T) {
-	svc := &Service{logger: slog.Default()}
-
-	// "assistant" role must be rejected (backend creates assistant turns internally)
-	err := svc.validateCreateTurnRequest(&domainllm.CreateTurnRequest{Role: "assistant"})
-	if err == nil {
-		t.Error("expected validation error for assistant role, got nil")
-	}
-}
-
-func TestValidateCreateTurnRequest_UserRole_Valid(t *testing.T) {
-	svc := &Service{logger: slog.Default()}
-
-	err := svc.validateCreateTurnRequest(&domainllm.CreateTurnRequest{Role: "user"})
-	if err != nil {
-		t.Errorf("unexpected error for valid user role: %v", err)
-	}
-}
-
-func TestValidateCreateTurnRequest_InvalidBlockType_Rejected(t *testing.T) {
-	svc := &Service{logger: slog.Default()}
-
-	err := svc.validateCreateTurnRequest(&domainllm.CreateTurnRequest{
-		Role: "user",
-		TurnBlocks: []domainllm.TurnBlockInput{
-			{BlockType: "invalid_type"},
+	tests := []struct {
+		name    string
+		req     *domainllm.CreateTurnRequest
+		wantErr bool
+	}{
+		{name: "role is required", req: &domainllm.CreateTurnRequest{}, wantErr: true},
+		{name: "assistant role is rejected", req: &domainllm.CreateTurnRequest{Role: "assistant"}, wantErr: true},
+		{name: "user role is valid", req: &domainllm.CreateTurnRequest{Role: "user"}},
+		{
+			name: "invalid block type is rejected",
+			req: &domainllm.CreateTurnRequest{
+				Role: "user",
+				TurnBlocks: []domainllm.TurnBlockInput{
+					{BlockType: "invalid_type"},
+				},
+			},
+			wantErr: true,
 		},
-	})
-	if err == nil {
-		t.Error("expected validation error for invalid block_type, got nil")
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.validateCreateTurnRequest(tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateCreateTurnRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
