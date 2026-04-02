@@ -126,18 +126,64 @@ case "PYTHON_RESULT": {
 
 ## Event Ordering
 
-Events arrive in this guaranteed order per tool call:
+Events arrive in this guaranteed order per tool call (per [backend stream-extensions.md](../backend/stream-extensions.md)):
 
 ```
 TOOL_CALL_START (execute_python)
-  TOOL_CALL_ARGS (code parameter)
-  TOOL_CALL_END
-  PYTHON_OUTPUT (0..N, sequenced)
-  PYTHON_RESULT (0..N, after all output)
+  TOOL_CALL_ARGS (code parameter, may be multiple deltas)
+  PYTHON_OUTPUT (0..N, sequenced — streaming during execution)
+  PYTHON_RESULT (0..N, after all PYTHON_OUTPUT)
+  TOOL_CALL_END (after all Python events)
 TOOL_CALL_RESULT (final status)
 ```
 
-The `PYTHON_OUTPUT` and `PYTHON_RESULT` events arrive between `TOOL_CALL_END` and `TOOL_CALL_RESULT` — the tool is in "executing" status during this window. The reducer already handles this: the ToolItem exists with `status: "executing"` by the time Python events arrive.
+**Important**: `TOOL_CALL_END` arrives AFTER all Python events, not before. This means Python events arrive while the tool's reducer status is still `"streaming-args"` (because `TOOL_CALL_END` is what transitions to `"executing"`). The `PYTHON_OUTPUT` handler must therefore also transition the tool to `"executing"` on first arrival:
+
+```typescript
+case "PYTHON_OUTPUT": {
+  const line: PythonOutputLine = {
+    stream: event.stream,
+    text: event.text,
+    sequence: event.sequence,
+  }
+  const items = updateItemById<ToolItem>(
+    state.activity.items,
+    event.toolCallId,
+    (item) => ({
+      ...item,
+      // Transition to "executing" on first Python output if still streaming args
+      status: item.status === "streaming-args" ? "executing" : item.status,
+      pythonOutput: [...(item.pythonOutput ?? []), line],
+    })
+  )
+  return {
+    ...state,
+    activity: { ...state.activity, items },
+  }
+}
+```
+
+## Persisted Turn Blocks
+
+The backend persists `python_output` and `python_result` as new `BlockType` values in the turn_blocks table. When the user reloads, the turn-mapper must reconstruct activity from these persisted blocks. Add to `frontend-v2/src/features/threads/types.ts`:
+
+```typescript
+export type BlockType =
+  | "text"
+  | "thinking"
+  | "tool_use"
+  | "tool_result"
+  | "image"
+  | "reference"
+  | "partial_reference"
+  | "web_search_use"
+  | "web_search_result"
+  | "collapse_marker"
+  | "python_output"    // NEW — persisted stdout/stderr
+  | "python_result"    // NEW — persisted rich result (chart, table, image, mesh_ref)
+```
+
+The `turn-mapper.ts` must map these block types into the correct `ActivityItem` types when building `ActivityBlockData` from persisted data (not just from streaming events).
 
 ## Rendering Integration
 

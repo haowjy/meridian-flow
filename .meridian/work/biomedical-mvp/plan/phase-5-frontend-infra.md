@@ -28,11 +28,13 @@ Set up the foundational frontend infrastructure in `frontend-v2/` that all subse
 ## Files to Modify
 
 - `frontend-v2/src/features/activity-stream/streaming/events.ts` — Add PYTHON_OUTPUT, PYTHON_RESULT
-- `frontend-v2/src/features/activity-stream/streaming/reducer.ts` — Handle new events
+- `frontend-v2/src/features/activity-stream/streaming/reducer.ts` — Handle new events (note: PYTHON_OUTPUT transitions tool to "executing" — see activity-stream-extensions.md)
 - `frontend-v2/src/features/activity-stream/types.ts` — Add ResultItem, PythonOutputLine, PythonResultPayload
 - `frontend-v2/src/features/activity-stream/tool-utils.ts` — Add "python" tool category
 - `frontend-v2/src/features/activity-stream/ToolDetail.tsx` — Route to PythonDetail (stub)
 - `frontend-v2/src/features/activity-stream/ActivityBlock.tsx` — Promote ResultItems outside card
+- `frontend-v2/src/features/threads/types.ts` — Add `python_output` and `python_result` to BlockType
+- `frontend-v2/src/features/threads/turn-mapper.ts` — Map persisted python blocks into ActivityItem types on reload
 - `frontend-v2/package.json` — Add react-resizable-panels, zustand, @tanstack/react-router
 
 ## Dependencies

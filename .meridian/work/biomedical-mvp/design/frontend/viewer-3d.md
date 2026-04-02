@@ -77,46 +77,69 @@ The WS binary frame arrives at `WsClient.onBinaryMessage`. The `ThreadWsProvider
 ```typescript
 // features/viewer-3d/hooks/useMeshData.ts
 
+/** Upper bound: 500K vertices (~18MB binary). Reject frames larger than this. */
+const MAX_VERTEX_COUNT = 500_000
+const MAX_FACE_COUNT = 1_000_000
+
 export function parseMeshBinary(data: Uint8Array): MeshData | null {
   try {
     // Find mesh_id (null-terminated UTF-8 string prefix)
     const nullIdx = data.indexOf(0x00)
-    if (nullIdx < 0) return null
+    if (nullIdx < 0 || nullIdx > 255) return null  // mesh_id sanity check
     const meshId = new TextDecoder().decode(data.slice(0, nullIdx))
     let offset = nullIdx + 1
 
-    // Use DataView for all reads (handles alignment + enforces little-endian)
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    // Need at least 8 bytes for vertex/face counts
+    if (data.byteLength - offset < 8) return null
 
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
     const vertexCount = view.getUint32(offset, true); offset += 4
     const faceCount = view.getUint32(offset, true); offset += 4
 
-    // Copy into aligned buffers (typed array views require alignment)
-    // Decision D9: copying ensures alignment regardless of meshId length
-    const vertexBytes = vertexCount * 3 * 4
+    // Sanity checks: reject corrupt or oversized frames
+    if (vertexCount > MAX_VERTEX_COUNT || faceCount > MAX_FACE_COUNT) {
+      console.error(`[viewer-3d] Mesh too large: ${vertexCount} vertices, ${faceCount} faces`)
+      return null
+    }
+    if (vertexCount === 0 || faceCount === 0) return null
+
+    // Validate exact byte length before any allocation
+    const vertexBytes = vertexCount * 3 * 4   // float32 x,y,z per vertex
+    const faceBytes = faceCount * 3 * 4       // uint32 v0,v1,v2 per face
+    const labelBytes = vertexCount             // uint8 per vertex
+    const expectedRemaining = vertexBytes + faceBytes + labelBytes
+    const actualRemaining = data.byteLength - offset
+
+    if (actualRemaining < expectedRemaining) {
+      console.error(
+        `[viewer-3d] Truncated frame: expected ${expectedRemaining} bytes, got ${actualRemaining}`
+      )
+      return null
+    }
+
+    // Copy into aligned buffers (Decision D9: alignment safety)
     const vertexBuf = new ArrayBuffer(vertexBytes)
     new Uint8Array(vertexBuf).set(data.slice(offset, offset + vertexBytes))
     const vertices = new Float32Array(vertexBuf)
     offset += vertexBytes
 
-    const faceBytes = faceCount * 3 * 4
     const faceBuf = new ArrayBuffer(faceBytes)
     new Uint8Array(faceBuf).set(data.slice(offset, offset + faceBytes))
     const faces = new Uint32Array(faceBuf)
     offset += faceBytes
 
-    // Labels are uint8 — no alignment needed
-    const labels = new Uint8Array(data.buffer, data.byteOffset + offset, vertexCount)
+    // Labels are uint8 — no alignment needed, but copy for safety
+    const labels = new Uint8Array(data.slice(offset, offset + labelBytes))
 
     return { meshId, vertices, faces, labels, vertexCount, faceCount, labelNames: {} }
-  } catch {
-    console.error("[viewer-3d] Failed to parse mesh binary frame")
+  } catch (err) {
+    console.error("[viewer-3d] Failed to parse mesh binary frame:", err)
     return null
   }
 }
 ```
 
-**Important**: The `labelNames` field is NOT in the binary frame — it comes from the `PYTHON_RESULT` event's `mesh_ref` data. The viewer store merges them. See the wiring in [state.md](state.md).
+**Important**: The `labelNames` field is NOT in the binary frame — it comes from the `PYTHON_RESULT` event's `mesh_ref` data. The viewer store uses a two-step merge: `setPendingLabels()` stores names from PYTHON_RESULT, then `receiveBinaryMesh()` merges them when the binary frame arrives. This handles the race between SSE and WS delivery. See [state.md](state.md) for the merge logic.
 
 ## Scene Setup
 
@@ -379,7 +402,14 @@ function ViewerEmptyState() {
 }
 ```
 
-Mesh data is transient (WS binary frame, not persisted). If the user refreshes, they need to re-run the segmentation or the agent needs to re-send the mesh. The persisted `PYTHON_RESULT` turn block with `mesh_ref` metadata remains, so the chat still shows the MeshRefBlock — but clicking "View 3D" won't work without the binary data. The MeshRefBlock should show "Mesh data unavailable — re-run to regenerate" in this state.
+Mesh geometry is transient (WS binary frame, not persisted to DB). After page reload:
+
+- The persisted `python_result` turn block with `mesh_ref` metadata still exists, so MeshRefBlock renders in the chat.
+- The viewer store has no mesh data (binary was in-memory only).
+- Clicking "View 3D" on MeshRefBlock checks `viewerStore.meshData` — if null for that meshId, MeshRefBlock shows a disabled state: "3D data not loaded — ask the agent to regenerate the model."
+- The 3D Viewer tab in ContentToolbar is hidden when `viewerMeshId` is null.
+
+**Deferred**: Re-fetching mesh data from a running sandbox or persisting mesh binary to storage. For MVP, the researcher re-runs the segmentation (which is fast after initial processing) or continues in the same session.
 
 ## Related Docs
 
