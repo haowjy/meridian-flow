@@ -21,12 +21,13 @@
 **Rejected**: (a) Hex-in-stdout — too large. (b) Base64-in-JSON — still 33% inflation. (c) Separate HTTP endpoint for mesh fetch — adds latency and complexity.
 **Reviewers**: p752 (finding #2), p753 (finding #1), p754 (finding #5)
 
-## D4: Frontend target — ship on `frontend/` (production app)
-**When**: Design review round 1 (2026-04-01)
-**What**: All frontend components target `frontend/`, not `frontend-v2/`.
-**Why**: `frontend/` has working SSE, WS, stores, panels, and auth. `frontend-v2/` is explicitly "data-last" with no data integration (Phase 7+). Building on v2 would require pulling data integration forward — unnecessary risk for MVP.
-**Rejected**: `frontend-v2/` — not data-integrated, would delay MVP.
-**Reviewers**: p754 (finding #4)
+## D4: Frontend target — ship on `frontend-v2/` (ground-up rebuild)
+**When**: Design revision (2026-04-01)
+**What**: All frontend components target `frontend-v2/`, not `frontend/`.
+**Why**: `frontend-v2/` has the superior foundation: Storybook-first workflow, modern activity stream reducer (discriminated union events + immutable state), existing tool detail routing, shadcn/ui atoms, Tailwind v4, React 19. The data integration gap (Phase 7+) becomes an opportunity — build the data layer fresh with biomedical needs in mind rather than retrofitting v1 patterns. The biomedical MVP builds layouts (v2 Phase 6), stores (v2 Phase 7), and minimal routing (v2 Phase 8) scoped to what the research workflow needs.
+**Rejected**: `frontend/` (v1) — has working infrastructure but the SSE handler architecture, zustand store shape, and panel system don't match v2's cleaner event-driven model. Building on v1 means eventual migration cost.
+**Supersedes**: Original D4 which targeted `frontend/`. Reversed after user decision.
+**Reviewers**: p754 (finding #4 identified the ambiguity)
 
 ## D5: Registration pattern — `WithExecutePython()` builder method
 **When**: Design review round 1 (2026-04-01)
@@ -54,7 +55,27 @@
 **Reviewer**: p754 (finding C)
 
 ## D9: Mesh binary parsing — copy to aligned buffers
+
 **When**: Design review round 1 (2026-04-01)
 **What**: Frontend mesh parser copies vertex/face data into fresh aligned ArrayBuffers before constructing Float32Array/Uint32Array views.
 **Why**: If the mesh_id prefix leaves the payload at a non-4-byte-aligned offset, typed array constructors throw RangeError. Copying ensures alignment.
 **Reviewer**: p753 (finding #2)
+
+## D10: Activity stream integration — ResultItem for rich results, ToolItem for stdout
+**When**: Design revision for v2 (2026-04-01)
+**What**: `PYTHON_OUTPUT` events accumulate on the ToolItem's `pythonOutput` field (rendered in PythonDetail when expanded). `PYTHON_RESULT` events create new `ResultItem` entries in the activity items array that render as always-visible blocks outside the collapsible ActivityBlock card.
+**Why**: Stdout/stderr is verbose and tool-scoped — it belongs inside the collapsible tool detail. Rich results (charts, tables, images, mesh refs) are the primary output the researcher needs to see — they must be visible without expanding the tool. The v2 ActivityBlock already promotes the last ContentItem outside the card; ResultItems follow the same pattern.
+**Rejected**: (a) All in ToolItem — hides rich results behind expand. (b) All as separate ActivityItems — loses association between output and the tool that produced it. (c) Separate rendering path outside ActivityBlock — over-engineering for MVP.
+**Constraint**: v2's ActivityBlock renders items inside a collapsible Card. Only the last ContentItem and ResultItems render outside. This pattern generalizes cleanly for future tool result types.
+
+## D11: Workspace layout — react-resizable-panels, desktop-only
+**When**: Design revision for v2 (2026-04-01)
+**What**: Two-panel workspace using `react-resizable-panels`. Chat left (45% default), content right (55% default). Content panel switches between 3D viewer, dataset browser, and editor. Desktop-only (min 1024px).
+**Why**: The biomedical workflow is inherently desktop — researchers use large monitors for imaging data. Mobile layout adds complexity with zero user value. `react-resizable-panels` is already a Phase 6 dependency in v2's roadmap and integrates cleanly with the existing component tree.
+**Rejected**: (a) CSS Grid layout — no resize handles. (b) Custom splitter — react-resizable-panels is well-maintained and handles edge cases (min/max sizes, persistence). (c) Responsive mobile layout — not needed for single-user MVP.
+
+## D12: State management — zustand for client state, TanStack Query for server state
+**When**: Design revision for v2 (2026-04-01)
+**What**: Workspace panel state, viewer mesh data, and upload progress use zustand stores. Dataset lists and metadata use TanStack Query. Thread streaming uses the existing reducer + useSyncExternalStore pattern.
+**Why**: Clear separation: zustand for client-only ephemeral state (what panel is showing, mesh in memory, upload progress), TanStack Query for server-cached state (dataset list, metadata). The existing streaming infrastructure already works well — no need to replace it with zustand.
+**Rejected**: (a) All zustand — would need manual cache invalidation for server data. (b) All TanStack Query — awkward for transient client state like upload progress and mesh binary data. (c) Context API — causes unnecessary re-renders for frequently-changing state like upload progress.

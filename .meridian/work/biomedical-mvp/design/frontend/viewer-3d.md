@@ -1,42 +1,41 @@
 # 3D Viewer Component
 
-React Three Fiber canvas for visualizing segmented bone meshes. Lives in the right panel alongside the existing editor. See [overview](../overview.md) for system context.
+React Three Fiber canvas for visualizing segmented bone meshes. Renders in the right panel's content area. See [overview](overview.md) for frontend architecture context.
 
 ## Placement in Layout
 
-The existing `DocumentPanel` switches content based on state (editor, skill editor, project home). The 3D viewer becomes a new content type:
+The viewer is one of the content types in the right panel's `ContentPanel`. It activates when:
+1. A `PYTHON_RESULT` event with `resultType: "mesh_ref"` arrives → auto-switch via workspace store
+2. User clicks "View 3D" in a `MeshRefBlock` → explicit switch via workspace store
+
+See [layout.md](layout.md) for the content panel switching mechanism and [state.md](state.md) for the workspace store.
 
 ```
-Right Panel (DocumentPanel)
-├── activeDocumentId → EditorPanel (existing)
-├── activeSkillId → SkillEditorPanel (existing)
-├── activeMeshId → Viewer3DPanel (NEW)
-├── /skills/new → SkillCreatePanel (existing)
-└── default → ProjectHomeView (existing)
-```
-
-The viewer activates when a `PYTHON_RESULT` event with `resultType: "mesh_ref"` arrives. The UI store gains a new field:
-
-```typescript
-// In useUIStore
-activeMeshId: string | null    // Set when mesh data arrives
-meshData: MeshData | null      // Binary mesh data
+ContentPanel
+├── activeContent.type === "viewer"   → Viewer3DPanel
+├── activeContent.type === "datasets" → DatasetPanel
+├── activeContent.type === "editor"   → EditorPanel
+└── activeContent.type === "empty"    → EmptyState
 ```
 
 ## Component Architecture
 
 ```
 features/viewer-3d/
-├── Viewer3DPanel.tsx           # Panel wrapper (toolbar + canvas)
-├── MeshScene.tsx               # Three.js scene with camera, lights, meshes
-├── BoneMesh.tsx                # Individual mesh component per label
-├── ViewerControls.tsx          # Orbit controls + reset camera
-├── StructureToggle.tsx         # Toggle visibility per bone structure
-├── ViewerToolbar.tsx           # Export, screenshot, reset buttons
+├── Viewer3DPanel.tsx              # Panel wrapper (toolbar + canvas)
+├── Viewer3DPanel.stories.tsx      # Storybook story with mock mesh
+├── MeshScene.tsx                  # Three.js scene with camera, lights, meshes
+├── BoneMesh.tsx                   # Individual mesh component per label
+├── ViewerControls.tsx             # Orbit controls + reset camera
+├── StructureToggle.tsx            # Toggle visibility per bone structure
+├── ViewerToolbar.tsx              # Export, screenshot, reset buttons
 ├── hooks/
-│   ├── useMeshData.ts          # Parses binary mesh data into Three.js geometries
-│   └── useViewerState.ts       # Local viewer state (visibility, camera position)
-└── types.ts                    # MeshData, BoneStructure types
+│   ├── useMeshData.ts             # Parses binary mesh data into Three.js geometries
+│   └── useViewerCamera.ts         # Camera reset and auto-framing
+├── types.ts                       # MeshData, BoneStructure types
+├── constants.ts                   # BONE_COLORS map
+└── examples/
+    └── mock-mesh.ts               # Test mesh data for Storybook
 ```
 
 ## Data Types
@@ -44,78 +43,92 @@ features/viewer-3d/
 ```typescript
 // features/viewer-3d/types.ts
 
-interface MeshData {
+export interface MeshData {
   meshId: string
-  vertices: Float32Array      // [x,y,z, x,y,z, ...] flat
-  faces: Uint32Array          // [v0,v1,v2, v0,v1,v2, ...] flat
-  labels: Uint8Array          // Per-vertex label (0 = unlabeled)
+  vertices: Float32Array     // [x,y,z, x,y,z, ...] flat
+  faces: Uint32Array         // [v0,v1,v2, v0,v1,v2, ...] flat
+  labels: Uint8Array         // Per-vertex label (0 = unlabeled)
   vertexCount: number
   faceCount: number
-  labelNames: Record<number, string>  // e.g., {1: "femur", 2: "tibia"}
+  labelNames: Record<string, string>  // String keys from JSON
 }
 
-interface BoneStructure {
+export interface BoneStructure {
   label: number
   name: string
   color: string
-  visible: boolean
 }
 
-// Default color map per requirements
-const BONE_COLORS: Record<string, string> = {
-  femur: '#4488ff',      // Blue
-  tibia: '#44cc66',      // Green
-  patella: '#9966cc',    // Purple
-  osteophyte: '#ff4444', // Red
+// features/viewer-3d/constants.ts
+export const BONE_COLORS: Record<string, string> = {
+  femur: "#4488ff",      // Blue
+  tibia: "#44cc66",      // Green
+  patella: "#9966cc",    // Purple
+  osteophyte: "#ff4444", // Red
 }
 ```
 
-## Binary Data Reception
+**Note on `labelNames`**: JSON object keys are always strings. The backend sends `{ "1": "femur", "2": "tibia" }`. Use string keys throughout; convert to number only for array indexing into `labels`.
 
-The existing `WsClient.onBinaryMessage` callback receives mesh binary frames. A new handler parses the frame:
+## Binary Data Parsing
+
+The WS binary frame arrives at `WsClient.onBinaryMessage`. The `ThreadWsProvider` calls this parser and stores the result in the viewer store. See [state.md](state.md) for the wiring.
 
 ```typescript
 // features/viewer-3d/hooks/useMeshData.ts
 
-function parseMeshBinary(data: Uint8Array): MeshData {
-  // Find mesh_id (null-terminated UTF-8 string prefix)
-  const nullIdx = data.indexOf(0x00)
-  const meshId = new TextDecoder().decode(data.slice(0, nullIdx))
-  let offset = nullIdx + 1
+export function parseMeshBinary(data: Uint8Array): MeshData | null {
+  try {
+    // Find mesh_id (null-terminated UTF-8 string prefix)
+    const nullIdx = data.indexOf(0x00)
+    if (nullIdx < 0) return null
+    const meshId = new TextDecoder().decode(data.slice(0, nullIdx))
+    let offset = nullIdx + 1
 
-  // Use DataView for all reads (handles alignment + enforces little-endian)
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    // Use DataView for all reads (handles alignment + enforces little-endian)
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
 
-  const vertexCount = view.getUint32(offset, true); offset += 4
-  const faceCount = view.getUint32(offset, true); offset += 4
+    const vertexCount = view.getUint32(offset, true); offset += 4
+    const faceCount = view.getUint32(offset, true); offset += 4
 
-  // Copy into aligned buffers (typed array views require alignment)
-  const vertexBytes = vertexCount * 3 * 4
-  const vertexBuf = new ArrayBuffer(vertexBytes)
-  new Uint8Array(vertexBuf).set(data.slice(offset, offset + vertexBytes))
-  const vertices = new Float32Array(vertexBuf)
-  offset += vertexBytes
+    // Copy into aligned buffers (typed array views require alignment)
+    // Decision D9: copying ensures alignment regardless of meshId length
+    const vertexBytes = vertexCount * 3 * 4
+    const vertexBuf = new ArrayBuffer(vertexBytes)
+    new Uint8Array(vertexBuf).set(data.slice(offset, offset + vertexBytes))
+    const vertices = new Float32Array(vertexBuf)
+    offset += vertexBytes
 
-  const faceBytes = faceCount * 3 * 4
-  const faceBuf = new ArrayBuffer(faceBytes)
-  new Uint8Array(faceBuf).set(data.slice(offset, offset + faceBytes))
-  const faces = new Uint32Array(faceBuf)
-  offset += faceBytes
+    const faceBytes = faceCount * 3 * 4
+    const faceBuf = new ArrayBuffer(faceBytes)
+    new Uint8Array(faceBuf).set(data.slice(offset, offset + faceBytes))
+    const faces = new Uint32Array(faceBuf)
+    offset += faceBytes
 
-  // Labels are uint8 — no alignment needed
-  const labels = new Uint8Array(data.buffer, data.byteOffset + offset, vertexCount)
+    // Labels are uint8 — no alignment needed
+    const labels = new Uint8Array(data.buffer, data.byteOffset + offset, vertexCount)
 
-  return { meshId, vertices, faces, labels, vertexCount, faceCount, labelNames: {} }
+    return { meshId, vertices, faces, labels, vertexCount, faceCount, labelNames: {} }
+  } catch {
+    console.error("[viewer-3d] Failed to parse mesh binary frame")
+    return null
+  }
 }
 ```
+
+**Important**: The `labelNames` field is NOT in the binary frame — it comes from the `PYTHON_RESULT` event's `mesh_ref` data. The viewer store merges them. See the wiring in [state.md](state.md).
 
 ## Scene Setup
 
 ```tsx
 // features/viewer-3d/MeshScene.tsx
 
+import { Canvas } from "@react-three/fiber"
+import { OrbitControls } from "@react-three/drei"
+
 function MeshScene({ meshData }: { meshData: MeshData }) {
-  const structures = useMemo(() => splitByLabel(meshData), [meshData])
+  const { structures, structureVisibility } = useViewerStore()
+  const geometries = useMemo(() => splitByLabel(meshData), [meshData])
 
   return (
     <Canvas camera={{ position: [0, 0, 150], fov: 50 }}>
@@ -123,10 +136,12 @@ function MeshScene({ meshData }: { meshData: MeshData }) {
       <directionalLight position={[10, 10, 5]} intensity={0.8} />
       <directionalLight position={[-10, -10, -5]} intensity={0.3} />
 
-      {structures.map(structure => (
+      {geometries.map(({ label, geometry }) => (
         <BoneMesh
-          key={structure.label}
-          structure={structure}
+          key={label}
+          geometry={geometry}
+          color={structures.find(s => s.label === label)?.color ?? "#888"}
+          visible={structureVisibility[label] ?? true}
         />
       ))}
 
@@ -136,7 +151,6 @@ function MeshScene({ meshData }: { meshData: MeshData }) {
         rotateSpeed={0.8}
         zoomSpeed={1.2}
       />
-      <gridHelper args={[100, 10]} />
     </Canvas>
   )
 }
@@ -144,12 +158,19 @@ function MeshScene({ meshData }: { meshData: MeshData }) {
 
 ### Per-Label Mesh Splitting
 
-The full mesh arrives with per-vertex labels. We split it into separate `BufferGeometry` instances per label for independent rendering and toggling:
+Split the full mesh into separate `BufferGeometry` instances per label for independent rendering and toggling:
 
 ```typescript
-function splitByLabel(meshData: MeshData): BoneStructure[] {
+import * as THREE from "three"
+
+interface LabelGeometry {
+  label: number
+  geometry: THREE.BufferGeometry
+}
+
+function splitByLabel(meshData: MeshData): LabelGeometry[] {
   const labelSet = new Set(meshData.labels)
-  const structures: BoneStructure[] = []
+  const result: LabelGeometry[] = []
 
   for (const label of labelSet) {
     if (label === 0) continue // Skip unlabeled
@@ -160,54 +181,111 @@ function splitByLabel(meshData: MeshData): BoneStructure[] {
       const v0 = meshData.faces[i * 3]
       const v1 = meshData.faces[i * 3 + 1]
       const v2 = meshData.faces[i * 3 + 2]
-      if (meshData.labels[v0] === label &&
-          meshData.labels[v1] === label &&
-          meshData.labels[v2] === label) {
+      if (
+        meshData.labels[v0] === label &&
+        meshData.labels[v1] === label &&
+        meshData.labels[v2] === label
+      ) {
         facesForLabel.push(v0, v1, v2)
       }
     }
 
-    // Build BufferGeometry for this label
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position',
-      new THREE.Float32BufferAttribute(meshData.vertices, 3))
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(meshData.vertices, 3)
+    )
     geometry.setIndex(facesForLabel)
     geometry.computeVertexNormals()
 
-    structures.push({
-      label,
-      name: meshData.labelNames[label] || `Structure ${label}`,
-      color: BONE_COLORS[meshData.labelNames[label]] || '#888888',
-      visible: true,
-      geometry,
-    })
+    result.push({ label, geometry })
   }
 
-  return structures
+  return result
 }
 ```
 
-## Interactions
+## BoneMesh Component
 
-### Camera Controls
-- **Rotate**: Left mouse drag (OrbitControls)
-- **Zoom**: Scroll wheel
-- **Pan**: Right mouse drag or Shift + left drag
-- **Reset**: Button in toolbar resets to default view
+```tsx
+// features/viewer-3d/BoneMesh.tsx
 
-### Structure Toggle
-Sidebar panel with checkboxes per bone structure:
+function BoneMesh({
+  geometry,
+  color,
+  visible,
+}: {
+  geometry: THREE.BufferGeometry
+  color: string
+  visible: boolean
+}) {
+  if (!visible) return null
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial
+        color={color}
+        roughness={0.6}
+        metalness={0.1}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  )
+}
+```
+
+## Viewer3DPanel
+
+Panel wrapper with toolbar and structure toggle overlay:
+
+```tsx
+// features/viewer-3d/Viewer3DPanel.tsx
+
+function Viewer3DPanel({ meshId }: { meshId: string }) {
+  const meshData = useViewerStore((s) => s.meshData)
+
+  if (!meshData || meshData.meshId !== meshId) {
+    return <ViewerEmptyState />
+  }
+
+  return (
+    <div className="relative h-full">
+      <ViewerToolbar meshId={meshId} />
+      <MeshScene meshData={meshData} />
+      <StructureToggle />
+    </div>
+  )
+}
+```
+
+## StructureToggle
+
+Overlaid on the canvas, shows checkboxes for each bone structure:
 
 ```tsx
 // features/viewer-3d/StructureToggle.tsx
-function StructureToggle({ structures, onToggle }) {
+
+import { Checkbox } from "@/components/ui/checkbox"
+import { useViewerStore } from "@/stores/viewer-store"
+
+function StructureToggle() {
+  const { structures, structureVisibility, toggleStructure } = useViewerStore()
+
+  if (structures.length === 0) return null
+
   return (
-    <div className="absolute top-4 right-4 bg-background/90 backdrop-blur p-3 rounded-lg border">
-      <h4 className="text-sm font-medium mb-2">Structures</h4>
-      {structures.map(s => (
+    <div className="absolute right-4 top-4 rounded-lg border bg-background/90 p-3 backdrop-blur">
+      <h4 className="mb-2 text-sm font-medium">Structures</h4>
+      {structures.map((s) => (
         <label key={s.label} className="flex items-center gap-2 py-1">
-          <Checkbox checked={s.visible} onCheckedChange={() => onToggle(s.label)} />
-          <div className="w-3 h-3 rounded-full" style={{ background: s.color }} />
+          <Checkbox
+            checked={structureVisibility[s.label] ?? true}
+            onCheckedChange={() => toggleStructure(s.label)}
+          />
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: s.color }}
+          />
           <span className="text-sm">{s.name}</span>
         </label>
       ))}
@@ -216,11 +294,45 @@ function StructureToggle({ structures, onToggle }) {
 }
 ```
 
-### Toolbar Actions
-- **Export STL**: Downloads the mesh as STL file (via sandbox file export)
-- **Screenshot**: Captures canvas as PNG
+## ViewerToolbar
+
+Actions for the 3D viewer:
+
+```tsx
+// features/viewer-3d/ViewerToolbar.tsx
+
+function ViewerToolbar({ meshId }: { meshId: string }) {
+  return (
+    <div className="absolute left-4 top-4 z-10 flex gap-1">
+      <Button variant="ghost" size="sm" onClick={handleScreenshot}>
+        <Camera className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="sm" onClick={handleResetView}>
+        <ArrowsClockwise className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="sm" onClick={handleExportSTL}>
+        <DownloadSimple className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
+```
+
+- **Screenshot**: Captures canvas as PNG via `canvas.toDataURL()`
 - **Reset View**: Returns camera to default position
-- **Close**: Returns to document panel
+- **Export STL**: Downloads mesh as STL file (uses trimesh in the sandbox)
+
+## Interactions
+
+| Action | Behavior |
+|--------|----------|
+| Left drag | Rotate (OrbitControls) |
+| Scroll | Zoom |
+| Right drag / Shift+left | Pan |
+| Reset button | Camera returns to default |
+| Structure checkbox | Toggle bone visibility |
+| Export STL | Download mesh file |
+| Screenshot | Save canvas as PNG |
 
 ## Performance
 
@@ -228,34 +340,51 @@ Expected mesh sizes from the imaging pipeline:
 - Per-bone: ~10K-50K vertices, ~20K-100K faces
 - Total scene: ~50K-200K vertices
 
-React Three Fiber handles this easily. For larger meshes:
-- Use `THREE.BufferGeometry` (not indexed geometry conversion)
+React Three Fiber handles this easily. Optimizations:
+- `BufferGeometry` with pre-computed indices (not indexed geometry conversion)
 - Vertex normals computed once on load, not per frame
 - Labels are static — no per-frame label checks
+- `splitByLabel` memoized on meshData reference
 
 ## Dependencies
 
 ```
 @react-three/fiber        # React renderer for Three.js
-@react-three/drei         # Helpers (OrbitControls, Grid, etc.)
+@react-three/drei         # Helpers (OrbitControls, etc.)
 three                     # Three.js core
 ```
 
+## Storybook
+
+`Viewer3DPanel.stories.tsx` uses a mock mesh from `examples/mock-mesh.ts`:
+- Simple cube mesh (test geometry correctness)
+- Multi-label mesh (test color coding + structure toggle)
+- Large mesh (performance test with 100K vertices)
+
+Mock data uses pre-built `Float32Array`/`Uint32Array` without binary parsing.
+
 ## Sandbox Stopped State
 
-When the user reloads and the sandbox is stopped, the viewer shows:
+When the user reloads and mesh data is not in memory (binary data is transient):
 
 ```tsx
-<div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-  <CubeIcon className="w-12 h-12 mb-4" />
-  <p>3D viewer data is from a previous session</p>
-  <p className="text-sm">Resume the sandbox to interact with the model</p>
-  <Button variant="outline" onClick={resumeSandbox}>Resume</Button>
-</div>
+function ViewerEmptyState() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+      <Cube className="mb-4 h-12 w-12" />
+      <p className="text-sm">No active 3D model</p>
+      <p className="mt-1 text-xs">Run a segmentation to generate a 3D view</p>
+    </div>
+  )
+}
 ```
+
+Mesh data is transient (WS binary frame, not persisted). If the user refreshes, they need to re-run the segmentation or the agent needs to re-send the mesh. The persisted `PYTHON_RESULT` turn block with `mesh_ref` metadata remains, so the chat still shows the MeshRefBlock — but clicking "View 3D" won't work without the binary data. The MeshRefBlock should show "Mesh data unavailable — re-run to regenerate" in this state.
 
 ## Related Docs
 
-- [Stream Extensions](../backend/stream-extensions.md) — mesh_ref event + binary frame protocol
-- [Inline Results](inline-results.md) — other result types rendered in chat
-- [Overview](../overview.md) — how the viewer fits in the two-panel layout
+- [Layout](layout.md) — content panel hosting the viewer
+- [State Management](state.md) — viewer store, WS binary frame wiring
+- [Activity Stream Extensions](activity-stream-extensions.md) — PYTHON_RESULT creates MeshRefBlock
+- [Inline Results](inline-results.md) — MeshRefBlock triggers viewer
+- [Stream Extensions (backend)](../backend/stream-extensions.md) — binary mesh frame protocol
