@@ -1,18 +1,18 @@
 # Phase 1: Daytona Sandbox Service
 
-**Round 1** — Foundation. All subsequent phases depend on this.
+**Round 1** — Foundation. Bash tool (Phase 2) depends on this.
 
 ## Scope
 
-Implement the sandbox service that manages Daytona sandbox lifecycle for Python code execution. This is the infrastructure layer — no LLM tool integration yet.
+Implement the sandbox service that manages Daytona sandbox lifecycle and persistent Jupyter kernel. This is infrastructure — no LLM tool integration yet.
 
 ## Intent
 
-The execute_python tool needs a service to create, start, stop, and execute commands in Daytona sandboxes. This phase builds that service following the existing domain pattern (interfaces in `domain/`, implementation in `service/`, config in `config/`).
+The bash tool needs a service to create, start, stop, and execute commands/code in Daytona sandboxes with a persistent kernel. This phase builds that service following the existing domain pattern.
 
 ## Files to Create
 
-- `backend/internal/domain/sandbox/interfaces.go` — Service interface + types
+- `backend/internal/domain/sandbox/interfaces.go` — Service interface
 - `backend/internal/domain/sandbox/types.go` — SandboxInfo, SandboxState, ExecResult
 - `backend/internal/service/sandbox/daytona.go` — DaytonaSandboxService implementation
 - `backend/internal/service/sandbox/daytona_test.go` — Unit tests with mock Daytona client
@@ -30,12 +30,11 @@ The execute_python tool needs a service to create, start, stop, and execute comm
 ## Interface Contract
 
 ```go
-// domain/sandbox/interfaces.go
 type Service interface {
     EnsureRunning(ctx context.Context, projectID uuid.UUID) (*SandboxInfo, error)
     Stop(ctx context.Context, projectID uuid.UUID) error
-    ExecSync(ctx context.Context, projectID uuid.UUID, cmd string) (*ExecResult, error)
-    ExecStream(ctx context.Context, projectID uuid.UUID, cmd string, onOutput func(stream string, data string)) (*ExecResult, error)
+    ExecBash(ctx context.Context, projectID uuid.UUID, cmd string, onOutput func(stream string, text string)) (*ExecResult, error)
+    ExecInKernel(ctx context.Context, projectID uuid.UUID, code string, onOutput func(stream string, text string)) (*ExecResult, error)
     WriteFile(ctx context.Context, projectID uuid.UUID, path string, content []byte) error
     ReadFile(ctx context.Context, projectID uuid.UUID, path string) ([]byte, error)
     HydrateDatasets(ctx context.Context, projectID uuid.UUID, datasetIDs []uuid.UUID) error
@@ -43,29 +42,39 @@ type Service interface {
 }
 ```
 
+Key difference from previous: `ExecInKernel` replaces `ExecSync`/`ExecStream`. Two execution paths: bash commands (direct shell) and kernel execution (persistent Python).
+
 ## Dependencies
 
-- Requires: Daytona Go SDK import (check `github.com/daytonaio/sdk-go` or similar)
-- Independent of: All other MVP phases (this is the foundation)
+- Requires: Daytona Go SDK
+- Independent of: All other MVP phases
 
 ## Patterns to Follow
 
 - Domain interfaces: `backend/internal/domain/agents/interfaces.go`
 - Service implementation: `backend/internal/service/agents/persona_catalog.go`
-- Config struct: `backend/internal/config/` (existing pattern with `env` tags)
-- Migration: `backend/migrations/AGENTS.md` for rules (TABLE_PREFIX, naming)
-- Repository: `backend/internal/repository/postgres/` (use `db.Tables.*` for table names)
+- Config struct: `backend/internal/config/` (env tags)
+- Migration: `backend/migrations/AGENTS.md` for rules
+- Repository: `backend/internal/repository/postgres/`
+- Concurrency: `singleflight.Group` per Decision D6
+
+## Constraints
+
+- `ExecInKernel` must stream stdout/stderr via the `onOutput` callback, same as `ExecBash`
+- Kernel startup is part of `EnsureRunning` — when sandbox starts, kernel starts too
+- Kernel crash recovery: detect unresponsive kernel, restart, retry once
+- Do NOT implement auto-stop worker in this phase (defer to integration)
 
 ## Verification Criteria
 
-- [ ] `make build` passes with new files
-- [ ] `make test` passes (unit tests for sandbox service with mock Daytona client)
-- [ ] Migration applies cleanly: `make migrate-up`
+- [ ] `make build` passes
+- [ ] Unit tests pass with mock Daytona client
+- [ ] Migration applies cleanly
 - [ ] SandboxConfig loads from env vars
-- [ ] Service interface compiles and is usable from tests
+- [ ] `ExecBash` and `ExecInKernel` have distinct code paths in tests
 
 ## Agent Staffing
 
 - **Implementer**: `coder` (backend Go, well-defined interfaces)
-- **Reviewer**: 1x reviewer with SOLID focus (verify domain separation)
-- **Verifier**: `verifier` (build + tests)
+- **Reviewer**: 1x reviewer (SOLID focus)
+- **Verifier**: `verifier`
