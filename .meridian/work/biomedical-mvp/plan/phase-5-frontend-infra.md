@@ -56,7 +56,7 @@ pnpm add react-resizable-panels zustand @tanstack/react-router
 2. **Store pattern**: zustand with actions on the store (not external action creators)
 3. **Reducer extensions**: Add PYTHON_OUTPUT and PYTHON_RESULT to the StreamEvent union and reduceStreamEvent
 4. **ResultItem promotion**: Modify ActivityBlock to render ResultItems outside the collapsible Card
-5. **Tool category**: Add "python" category to tool-utils.ts with appropriate icon, label, and summary
+5. **Tool category**: Add "python" category to tool-utils.ts with appropriate icon, label, and summary. **Critical ordering**: the python check in `getToolCategory()` must be placed BEFORE the bash check — `"execute"` in bash candidates would otherwise match `execute_python` first.
 
 ## Patterns to Follow
 

@@ -250,26 +250,32 @@ function useDatasetUpload(projectId: string) {
   async function startUpload(files: File[]) {
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
 
-    // 1. Create dataset record
-    const name = inferDatasetName(files)
-    const slug = slugify(name)
-    const { id, upload_url } = await createDataset.mutateAsync({ name, slug })
+    try {
+      // 1. Create dataset record
+      const name = inferDatasetName(files)
+      const slug = slugify(name)
+      const { id, upload_url } = await createDataset.mutateAsync({ name, slug })
 
-    // 2. Start tracking in store
-    store.startUpload(id, files.length, totalBytes)
+      // 2. Start tracking in store
+      store.startUpload(id, files.length, totalBytes)
 
-    // 3. Upload files with bounded parallelism
-    await uploadFiles(files, upload_url, (uploaded, bytes) => {
-      store.updateProgress(uploaded, bytes)
-    })
+      // 3. Upload files with bounded parallelism
+      await uploadFiles(files, upload_url, (uploaded, bytes) => {
+        store.updateProgress(uploaded, bytes)
+      })
 
-    // 4. Finalize
-    store.setProcessing()
-    await finalizeDataset.mutateAsync(id)
-    store.setComplete()
+      // 4. Finalize
+      store.setProcessing()
+      await finalizeDataset.mutateAsync(id)
+      store.setComplete()
 
-    // 5. Reset after delay
-    setTimeout(() => store.resetUpload(), 3000)
+      // 5. Reset after delay
+      setTimeout(() => store.resetUpload(), 3000)
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Upload failed — please try again"
+      store.setError(message)
+    }
   }
 
   return { startUpload }

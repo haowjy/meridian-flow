@@ -264,12 +264,8 @@ export const useViewerStore = create<ViewerState>((set) => ({
     }),
 }))
 
-const BONE_COLORS: Record<string, string> = {
-  femur: "#4488ff",
-  tibia: "#44cc66",
-  patella: "#9966cc",
-  osteophyte: "#ff4444",
-}
+// Import from the canonical location — single source of truth
+import { BONE_COLORS } from "@/features/viewer-3d/constants"
 ```
 
 ## Mesh Metadata/Binary Join

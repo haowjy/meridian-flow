@@ -153,12 +153,21 @@ Tab bar for switching between content views. Shows available content types with 
 // features/workspace/ContentToolbar.tsx
 
 function ContentToolbar() {
-  const { activeContent, setActiveContent, hasViewer, hasDatasets } = useWorkspaceStore(
+  const {
+    activeContent,
+    activeProjectId,
+    viewerMeshId,
+    setActiveContent,
+    showViewer,
+    showDatasets,
+  } = useWorkspaceStore(
     s => ({
       activeContent: s.activeContent,
+      activeProjectId: s.activeProjectId,
+      viewerMeshId: s.viewerMeshId,
       setActiveContent: s.setActiveContent,
-      hasViewer: s.viewerMeshId !== null,
-      hasDatasets: true, // Always available as a tab
+      showViewer: s.showViewer,
+      showDatasets: s.showDatasets,
     })
   )
 
@@ -167,17 +176,18 @@ function ContentToolbar() {
       <Button
         variant={activeContent.type === "datasets" ? "secondary" : "ghost"}
         size="sm"
-        onClick={() => setActiveContent({ type: "datasets", projectId: activeProjectId })}
+        onClick={showDatasets}
+        disabled={!activeProjectId}
       >
         <Database className="mr-1.5 h-4 w-4" />
         Datasets
       </Button>
 
-      {hasViewer && (
+      {viewerMeshId && (
         <Button
           variant={activeContent.type === "viewer" ? "secondary" : "ghost"}
           size="sm"
-          onClick={() => setActiveContent({ type: "viewer", meshId: viewerMeshId })}
+          onClick={() => showViewer(viewerMeshId)}
         >
           <Cube className="mr-1.5 h-4 w-4" />
           3D Viewer
