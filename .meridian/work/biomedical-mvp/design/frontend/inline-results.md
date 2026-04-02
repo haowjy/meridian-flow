@@ -1,104 +1,53 @@
 # Inline Result Rendering
 
-Renders Python execution results (charts, images, tables, code output, mesh references) in the chat activity stream. Extends v2's existing `ActivityBlock` rendering pipeline. See [overview](overview.md) for frontend architecture context.
+Renders display results (charts, images, tables, code output, mesh references) in the chat activity stream. Display results render outside the collapsed ActivityBlock card, always visible. See [overview](overview.md) for frontend architecture context.
+
+**Revised from previous design**: Driven by generic `DISPLAY_RESULT` events instead of Python-specific `PYTHON_RESULT`. Components are the same; the data pipeline is generic.
 
 ## Architecture
 
-Two rendering paths for Python execution data:
+Two rendering paths:
 
-1. **PythonDetail** — tool detail component for `execute_python`, showing streaming output and the code that ran. Renders inside the collapsible ActivityBlock card when the tool is expanded.
-2. **ResultRow** — always-visible rich result blocks (charts, tables, images, mesh refs). Render outside the collapsible card in the activity stream.
+1. **ToolOutputBlock** — streaming stdout/stderr for tools that use OutputSink. Renders inside the collapsible ActivityBlock card when the tool is expanded (in BashDetail or any future tool detail).
+2. **DisplayResultRow** — always-visible rich result blocks (charts, tables, images, mesh refs). Render outside the collapsible card in the activity stream.
 
-See [activity-stream-extensions.md](activity-stream-extensions.md) for how events flow through the reducer into these components.
+See [activity-stream.md](activity-stream.md) for how events flow through the reducer into these components.
 
 ## Component Architecture
 
 ```
 features/activity-stream/
-├── PythonDetail.tsx            # ToolDetail for execute_python
 ├── items/
-│   └── ResultRow.tsx           # Rich result block renderer (routes to sub-renderers)
+│   └── DisplayResultRow.tsx       # Rich result block renderer (routes to sub-renderers)
 │
 features/inline-results/
-├── PlotlyBlock.tsx             # Interactive Plotly chart
+├── PlotlyBlock.tsx                # Interactive Plotly chart
 ├── PlotlyBlock.stories.tsx
-├── ImageBlock.tsx              # Matplotlib PNG display
+├── ImageBlock.tsx                 # Matplotlib PNG display
 ├── ImageBlock.stories.tsx
-├── DataFrameBlock.tsx          # Styled HTML table
+├── DataFrameBlock.tsx             # Styled HTML table
 ├── DataFrameBlock.stories.tsx
-├── MeshRefBlock.tsx            # "View in 3D" card
+├── MeshRefBlock.tsx               # "View in 3D" card
 ├── MeshRefBlock.stories.tsx
-├── PythonOutputBlock.tsx       # Streaming stdout/stderr
-├── PythonOutputBlock.stories.tsx
-└── types.ts                    # Shared result types
+├── ToolOutputBlock.tsx            # Streaming stdout/stderr
+├── ToolOutputBlock.stories.tsx
+└── types.ts                       # Shared result types
 ```
 
-## PythonDetail
+## DisplayResultRow
 
-Shown inside `ToolDetail` routing when tool category is `"python"`. Renders the Python code and streaming output:
-
-```tsx
-// features/activity-stream/PythonDetail.tsx
-
-import { DetailCard } from "./DetailCard"
-import { PythonOutputBlock } from "@/features/inline-results/PythonOutputBlock"
-import type { ToolItem } from "./types"
-
-function PythonDetail({ tool }: { tool: ToolItem }) {
-  // Extract code from tool args
-  const code = tool.parsedArgs?.code as string | undefined
-
-  return (
-    <DetailCard className="space-y-0 p-0">
-      {/* Code preview */}
-      {code && (
-        <div className="border-b">
-          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            Python
-          </div>
-          <pre className="max-h-48 overflow-auto px-3 pb-3 font-mono text-xs text-foreground/80">
-            {code}
-          </pre>
-        </div>
-      )}
-
-      {/* Streaming output */}
-      {tool.pythonOutput && tool.pythonOutput.length > 0 && (
-        <PythonOutputBlock
-          lines={tool.pythonOutput}
-          isStreaming={tool.status === "executing"}
-        />
-      )}
-
-      {/* Tool result summary */}
-      {tool.resultText && (
-        <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-          {tool.isError ? (
-            <span className="text-destructive">{tool.resultText}</span>
-          ) : (
-            tool.resultText
-          )}
-        </div>
-      )}
-    </DetailCard>
-  )
-}
-```
-
-## ResultRow
-
-Routes `ResultItem` to the appropriate renderer. Renders in the activity stream between the tool card and the response text:
+Routes `DisplayResultItem` to the appropriate renderer:
 
 ```tsx
-// features/activity-stream/items/ResultRow.tsx
+// features/activity-stream/items/DisplayResultRow.tsx
 
-import type { ResultItem } from "../types"
+import type { DisplayResultItem } from "../types"
 import { PlotlyBlock } from "@/features/inline-results/PlotlyBlock"
 import { ImageBlock } from "@/features/inline-results/ImageBlock"
 import { DataFrameBlock } from "@/features/inline-results/DataFrameBlock"
 import { MeshRefBlock } from "@/features/inline-results/MeshRefBlock"
 
-function ResultRow({ item }: { item: ResultItem }) {
+function DisplayResultRow({ item }: { item: DisplayResultItem }) {
   switch (item.data.resultType) {
     case "plotly":
       return <PlotlyBlock plotlyJson={item.data.plotly_json} />
@@ -126,17 +75,14 @@ function ResultRow({ item }: { item: ResultItem }) {
 }
 ```
 
-## PythonOutputBlock
+## ToolOutputBlock
 
-Displays streaming stdout/stderr during execution:
+Displays streaming stdout/stderr during execution. Used inside BashDetail (and any future tool detail that supports streaming output):
 
 ```tsx
-// features/inline-results/PythonOutputBlock.tsx
+// features/inline-results/ToolOutputBlock.tsx
 
-function PythonOutputBlock({ lines, isStreaming }: Props) {
-  // Auto-collapse once output grows beyond threshold. Uses ref to avoid
-  // re-collapsing after user manually expands — only collapses on the
-  // initial transition past the threshold.
+function ToolOutputBlock({ lines, isStreaming }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const autoCollapsedRef = useRef(false)
 
@@ -159,7 +105,7 @@ function PythonOutputBlock({ lines, isStreaming }: Props) {
       )}
 
       <div className="max-h-[300px] overflow-y-auto px-3 py-2">
-        {visibleLines.map((line, i) => (
+        {visibleLines.map((line) => (
           <div
             key={line.sequence}
             className={cn(
@@ -177,7 +123,7 @@ function PythonOutputBlock({ lines, isStreaming }: Props) {
 }
 ```
 
-**Collapsible**: Auto-collapses when output exceeds 20 lines. Shows last 20 with "Show N earlier lines" toggle. Long output is common during DICOM processing (200+ slice notifications).
+Auto-collapses at 20 lines. Uses ref to avoid re-collapsing after manual expand.
 
 ## PlotlyBlock
 
@@ -188,12 +134,10 @@ Renders interactive Plotly charts from JSON spec:
 
 import { lazy, Suspense, useMemo } from "react"
 
-// Lazy-load Plotly to avoid 1.2MB in initial bundle
 const Plot = lazy(() => import("react-plotly.js"))
 
 function PlotlyBlock({ plotlyJson }: { plotlyJson: object }) {
   const spec = useMemo(() => {
-    // plotlyJson is already parsed (came from reducer, originally from JSON event)
     return plotlyJson as { data: object[]; layout?: object }
   }, [plotlyJson])
 
@@ -231,9 +175,7 @@ function PlotlyBlock({ plotlyJson }: { plotlyJson: object }) {
 }
 ```
 
-**Lazy loading**: `react-plotly.js` + `plotly.js-dist-min` is ~1.2MB gzipped. Dynamic import keeps it out of the initial bundle. Shows "Loading chart..." placeholder during load.
-
-**Theme**: Transparent background inherits from the design system. Font uses CSS variable for consistency.
+Lazy loading keeps ~1.2MB plotly bundle out of initial load.
 
 ## ImageBlock
 
@@ -256,14 +198,14 @@ function ImageBlock({ base64, format }: { base64: string; format: string }) {
       >
         <img
           src={src}
-          alt="Python output figure"
+          alt="Generated figure"
           className="h-auto max-h-[400px] max-w-full"
         />
       </button>
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="max-h-[90vh] max-w-[90vw]">
-          <img src={src} alt="Python output figure (expanded)" className="h-auto w-full" />
+          <img src={src} alt="Generated figure (expanded)" className="h-auto w-full" />
         </DialogContent>
       </Dialog>
     </>
@@ -311,24 +253,14 @@ function DataFrameBlock({ html, title, rowCount, colCount }: Props) {
 }
 ```
 
-**Styling**: Table styles via a global CSS class. Add to `src/index.css`:
+Table styles via global CSS class in `src/index.css`:
 
 ```css
-.meridian-table-wrapper table {
-  @apply w-full text-sm;
-}
-.meridian-table-wrapper th {
-  @apply sticky top-0 border-b bg-muted/30 px-3 py-2 text-left font-medium;
-}
-.meridian-table-wrapper td {
-  @apply border-b px-3 py-2 tabular-nums;
-}
-.meridian-table-wrapper tr:hover td {
-  @apply bg-muted/20;
-}
+.meridian-table-wrapper table { @apply w-full text-sm; }
+.meridian-table-wrapper th { @apply sticky top-0 border-b bg-muted/30 px-3 py-2 text-left font-medium; }
+.meridian-table-wrapper td { @apply border-b px-3 py-2 tabular-nums; }
+.meridian-table-wrapper tr:hover td { @apply bg-muted/20; }
 ```
-
-**Security**: `DOMPurify` (already in `package.json`) sanitizes the HTML with a strict allowlist. Only table-related tags are permitted, even though `df.to_html(escape=True)` should be safe. Defense in depth.
 
 ## MeshRefBlock
 
@@ -362,8 +294,6 @@ function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
 }
 ```
 
-Clicking "View 3D" calls `useWorkspaceStore.showViewer(meshId)` which switches the right panel to the 3D viewer. See [state.md](state.md) for store details.
-
 ## Dependencies
 
 ```
@@ -377,19 +307,10 @@ Already in `package.json`:
 
 ## Storybook Stories
 
-Each block component has a co-located `.stories.tsx` file with:
-
-- **PlotlyBlock**: Bar chart, scatter plot, box plot examples using sample biomedical data
-- **ImageBlock**: Sample matplotlib figure (base64 PNG), click-to-expand interaction
-- **DataFrameBlock**: Small table (5 rows), large table (50 rows with scroll), no-title variant
-- **MeshRefBlock**: With label names, without label names, large vertex count formatting
-- **PythonOutputBlock**: Short output, long output (auto-collapse), stderr highlighting, streaming cursor
-- **ResultRow**: Each result type routed correctly
-
-Stories use shared mock data from `features/inline-results/examples/mock-data.ts`.
+Each block component has a co-located `.stories.tsx` file. Stories use shared mock data from `features/inline-results/examples/mock-data.ts`.
 
 ## Related Docs
 
-- [Activity Stream Extensions](activity-stream-extensions.md) — how events become ResultItems
+- [Activity Stream](activity-stream.md) — how events become DisplayResultItems
 - [3D Viewer](viewer-3d.md) — MeshRefBlock triggers viewer via workspace store
-- [Stream Extensions (backend)](../backend/stream-extensions.md) — event payloads
+- [Display Result Pipeline (backend)](../backend/display-results.md) — event payloads

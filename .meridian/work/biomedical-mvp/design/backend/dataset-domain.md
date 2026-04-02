@@ -205,4 +205,4 @@ func (s *datasetService) Create(ctx context.Context, projectID, userID uuid.UUID
 
 - [Dataset Upload UI](../frontend/dataset-upload.md) — frontend drag-and-drop interface
 - [Daytona Service](daytona-service.md) — dataset hydration into sandbox
-- [execute_python Tool](execute-python.md) — accesses datasets at `/workspace/datasets/{slug}/`
+- [bash Tool](bash-tool.md) — accesses datasets at `/workspace/datasets/{slug}/`
