@@ -267,19 +267,62 @@ const (
 - **tool_output**: One block per tool invocation, aggregating all stdout/stderr lines. Finalized when execution completes.
 - **display_result**: One block per rich result. Multiple blocks possible per tool execution.
 
-### Mesh Persistence
+### Persisted Block Content Schemas
 
-Binary mesh data is NOT stored in TurnBlocks. The mesh file remains in the sandbox. The `display_result` block stores a reference:
+**tool_output block** (`block_type: "tool_output"`):
+```json
+{
+  "tool_use_id": "call_abc123",
+  "lines": [
+    { "stream": "stdout", "text": "Loading DICOM stack...", "sequence": 0 },
+    { "stream": "stderr", "text": "Warning: slice gap", "sequence": 1 }
+  ]
+}
+```
+
+**display_result block** (`block_type: "display_result"`):
+```json
+{
+  "tool_use_id": "call_abc123",
+  "result_type": "plotly",
+  "data": { "plotly_json": { "data": [...], "layout": {...} } }
+}
+```
 
 ```json
 {
-  "result_type": "mesh_ref",
-  "mesh_id": "mesh_abc123",
-  "vertex_count": 50000,
-  "face_count": 100000,
-  "label_names": {"1": "femur", "2": "tibia"}
+  "tool_use_id": "call_abc123",
+  "result_type": "image",
+  "data": { "format": "png", "base64": "..." }
 }
 ```
+
+```json
+{
+  "tool_use_id": "call_abc123",
+  "result_type": "dataframe",
+  "data": { "html": "<table>...</table>", "title": "Stats", "row_count": 5, "col_count": 3 }
+}
+```
+
+```json
+{
+  "tool_use_id": "call_abc123",
+  "result_type": "mesh_ref",
+  "data": {
+    "mesh_id": "mesh_abc123",
+    "vertex_count": 50000,
+    "face_count": 100000,
+    "label_names": {"1": "femur", "2": "tibia"}
+  }
+}
+```
+
+The `turn-mapper.ts` reads `result_type` to construct the correct `DisplayResultPayload` variant, and `tool_use_id` to set the `toolCallId` on the `DisplayResultItem`. For `tool_output` blocks, the `lines` array maps directly to `ToolItem.toolOutput`.
+
+### Mesh Persistence
+
+Binary mesh data is NOT stored in TurnBlocks. The mesh file remains in the sandbox. The `display_result` block stores a `mesh_ref` reference (see schema above).
 
 On page reload, the frontend shows the mesh reference card. Mesh binary is transient (in-memory only). The researcher re-runs segmentation or continues in the same session.
 

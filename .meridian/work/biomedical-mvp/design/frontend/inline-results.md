@@ -275,6 +275,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store"
 
 function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
   const showViewer = useWorkspaceStore((s) => s.showViewer)
+  const hasMeshData = useViewerStore((s) => s.activeMeshId === meshId || s.meshData?.meshId === meshId)
 
   return (
     <div className="my-2 flex items-center gap-3 rounded-lg border p-3">
@@ -286,7 +287,13 @@ function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
           {labelNames && ` — ${Object.values(labelNames).join(", ")}`}
         </p>
       </div>
-      <Button variant="outline" size="sm" onClick={() => showViewer(meshId)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => showViewer(meshId)}
+        disabled={!hasMeshData}
+        title={hasMeshData ? "Open 3D viewer" : "3D data not loaded — re-run segmentation"}
+      >
         View 3D
       </Button>
     </div>

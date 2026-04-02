@@ -309,7 +309,6 @@ export const BASH_EXECUTION_SCENARIO: StreamEvent[] = [
   { type: "RUN_STARTED" },
   { type: "TOOL_CALL_START", toolCallId: "bash-001", toolCallName: "bash" },
   { type: "TOOL_CALL_ARGS", toolCallId: "bash-001", delta: '{"command":"python3 segment.py"}' },
-  { type: "TOOL_CALL_END", toolCallId: "bash-001" },
   { type: "TOOL_OUTPUT", toolCallId: "bash-001", stream: "stdout", text: "Loading DICOM stack...", sequence: 0 },
   { type: "TOOL_OUTPUT", toolCallId: "bash-001", stream: "stdout", text: "Processing 200 slices...", sequence: 1 },
   { type: "DISPLAY_RESULT", toolCallId: "bash-001", resultType: "dataframe", data: {
@@ -319,6 +318,7 @@ export const BASH_EXECUTION_SCENARIO: StreamEvent[] = [
     resultType: "mesh_ref", mesh_id: "mesh-001", vertex_count: 45000, face_count: 90000,
     label_names: { "1": "femur", "2": "tibia", "3": "patella" }
   }},
+  { type: "TOOL_CALL_END", toolCallId: "bash-001" },
   { type: "TOOL_CALL_RESULT", toolCallId: "bash-001", content: '{"is_error":false,"result":"Segmentation complete"}' },
   { type: "TEXT_MESSAGE_START", messageId: "msg-001" },
   { type: "TEXT_MESSAGE_CONTENT", messageId: "msg-001", delta: "The segmentation is complete..." },
