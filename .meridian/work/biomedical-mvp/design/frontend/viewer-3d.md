@@ -5,7 +5,7 @@ React Three Fiber canvas for visualizing segmented bone meshes. Renders in the r
 ## Placement in Layout
 
 The viewer is one of the content types in the right panel's `ContentPanel`. It activates when:
-1. A `PYTHON_RESULT` event with `resultType: "mesh_ref"` arrives → auto-switch via workspace store
+1. A `DISPLAY_RESULT` event with `resultType: "mesh_ref"` arrives → auto-switch via workspace store
 2. User clicks "View 3D" in a `MeshRefBlock` → explicit switch via workspace store
 
 See [layout.md](layout.md) for the content panel switching mechanism and [state.md](state.md) for the workspace store.
@@ -139,7 +139,7 @@ export function parseMeshBinary(data: Uint8Array): MeshData | null {
 }
 ```
 
-**Important**: The `labelNames` field is NOT in the binary frame — it comes from the `PYTHON_RESULT` event's `mesh_ref` data. The viewer store uses a two-step merge: `setPendingLabels()` stores names from PYTHON_RESULT, then `receiveBinaryMesh()` merges them when the binary frame arrives. This handles the race between SSE and WS delivery. See [state.md](state.md) for the merge logic.
+**Important**: The `labelNames` field is NOT in the binary frame — it comes from the `DISPLAY_RESULT` event's `mesh_ref` data. The viewer store uses a two-step merge: `setPendingLabels()` stores names from DISPLAY_RESULT, then `receiveBinaryMesh()` merges them when the binary frame arrives. This handles the race between SSE and WS delivery. See [state.md](state.md) for the merge logic.
 
 ## Scene Setup
 
@@ -404,7 +404,7 @@ function ViewerEmptyState() {
 
 Mesh geometry is transient (WS binary frame, not persisted to DB). After page reload:
 
-- The persisted `python_result` turn block with `mesh_ref` metadata still exists, so MeshRefBlock renders in the chat.
+- The persisted `display_result` turn block with `mesh_ref` metadata still exists, so MeshRefBlock renders in the chat.
 - The viewer store has no mesh data (binary was in-memory only).
 - Clicking "View 3D" on MeshRefBlock checks `viewerStore.meshData` — if null for that meshId, MeshRefBlock shows a disabled state: "3D data not loaded — ask the agent to regenerate the model."
 - The 3D Viewer tab in ContentToolbar is hidden when `viewerMeshId` is null.
@@ -415,6 +415,6 @@ Mesh geometry is transient (WS binary frame, not persisted to DB). After page re
 
 - [Layout](layout.md) — content panel hosting the viewer
 - [State Management](state.md) — viewer store, WS binary frame wiring
-- [Activity Stream Extensions](activity-stream-extensions.md) — PYTHON_RESULT creates MeshRefBlock
+- [Activity Stream](activity-stream.md) — DISPLAY_RESULT creates MeshRefBlock
 - [Inline Results](inline-results.md) — MeshRefBlock triggers viewer
-- [Stream Extensions (backend)](../backend/stream-extensions.md) — binary mesh frame protocol
+- [Display Result Pipeline (backend)](../backend/display-results.md) — binary mesh frame protocol

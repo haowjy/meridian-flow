@@ -2,6 +2,8 @@
 
 All frontend work targets `frontend-v2/`. This doc explains how the biomedical components integrate with v2's existing architecture and what new infrastructure is needed. See [design overview](../overview.md) for system context.
 
+**Revised from previous design**: Updated for generic display results (not Python-specific), revised ActivityBlock model, bash tool instead of execute_python.
+
 ## What v2 Has Today
 
 | Layer | Status | Key Files |
@@ -26,8 +28,8 @@ All frontend work targets `frontend-v2/`. This doc explains how the biomedical c
 flowchart TB
     subgraph NewInfra["New Infrastructure (biomedical builds)"]
         Layout["WorkspaceLayout<br/>(react-resizable-panels)"]
-        Stores["Zustand Stores<br/>(project, dataset, viewer, workspace)"]
-        StreamExt["Activity Stream Extensions<br/>(PYTHON_OUTPUT, PYTHON_RESULT)"]
+        Stores["Zustand Stores<br/>(workspace, dataset, viewer)"]
+        StreamExt["Activity Stream Extensions<br/>(TOOL_OUTPUT, DISPLAY_RESULT)"]
     end
 
     subgraph Existing["Existing v2 Components"]
@@ -41,9 +43,9 @@ flowchart TB
 
     subgraph BioComponents["Biomedical Components"]
         Viewer["Viewer3DPanel"]
-        Results["Result Renderers<br/>(Plotly, Image, DataFrame, MeshRef)"]
+        Results["Display Result Renderers<br/>(Plotly, Image, DataFrame, MeshRef)"]
         Dataset["DatasetPanel + Upload"]
-        Python["PythonDetail"]
+        Output["ToolOutputBlock<br/>(streaming stdout)"]
     end
 
     Layout --> Thread
@@ -52,7 +54,7 @@ flowchart TB
     Stores --> Layout
     StreamExt --> Reducer
     Reducer --> AB
-    AB --> Python
+    AB --> Output
     AB --> Results
     Thread --> Scroll
     WS --> StreamExt
@@ -61,32 +63,24 @@ flowchart TB
 ## Integration Points
 
 ### 1. Activity Stream Reducer
-The existing reducer in `src/features/activity-stream/streaming/reducer.ts` processes `StreamEvent` into `ActivityBlockData`. We extend it with two new event types:
+The existing reducer processes `StreamEvent` into `ActivityBlockData`. We extend it with two new event types:
 
-- `PYTHON_OUTPUT` → appends to ToolItem's `pythonOutput` field
-- `PYTHON_RESULT` → creates new `ResultItem` in the activity items array
+- `TOOL_OUTPUT` → appends to ToolItem's `toolOutput` field (inside collapsible card)
+- `DISPLAY_RESULT` → creates new `DisplayResultItem` in activity items array (outside card, always visible)
 
-See [activity-stream-extensions.md](activity-stream-extensions.md) for types and reducer logic.
+See [activity-stream.md](activity-stream.md) for the revised model.
 
 ### 2. ToolDetail Routing
-The existing `ToolDetail.tsx` routes to specialized detail renderers by tool category. We add `execute_python` as a new category with its own `PythonDetail` component that renders streaming stdout and rich results.
-
-See [inline-results.md](inline-results.md) for component details.
+The existing `ToolDetail.tsx` routes to specialized detail renderers by tool category. The `bash` tool name matches the existing bash category. The existing `BashDetail` component is extended with streaming `ToolOutputBlock` rendering.
 
 ### 3. WebSocket Binary Frames
-The existing `WsClient` supports `onBinaryMessage(subId, data)` callback. Mesh binary frames use this path. `ThreadWsProvider` needs to wire the callback to the viewer store.
-
-See [viewer-3d.md](viewer-3d.md) for binary parsing.
+The existing `WsClient` supports `onBinaryMessage(subId, data)`. Mesh binary frames use this path. `ThreadWsProvider` wires the callback to the viewer store.
 
 ### 4. Workspace Layout
-v2 has no layout shell yet (Phase 6 not started). The biomedical MVP builds a workspace layout using `react-resizable-panels` with chat on the left and a content panel on the right that switches between editor, 3D viewer, and dataset browser.
-
-See [layout.md](layout.md) for layout design.
+v2 has no layout shell yet. The biomedical MVP builds a workspace layout using `react-resizable-panels` with chat left, content right.
 
 ### 5. State Management
-v2 has no data stores yet (Phase 7 not started). The biomedical MVP introduces zustand stores for project context, dataset management, viewer state, and workspace panel state.
-
-See [state.md](state.md) for store designs.
+v2 has no data stores yet. The biomedical MVP introduces zustand stores for workspace panel state, dataset management, and viewer state.
 
 ## Component Hierarchy
 
@@ -95,42 +89,43 @@ App
 └── WorkspaceLayout (react-resizable-panels)
     ├── ChatPanel (left, resizable)
     │   └── FloatingScrollLayout (existing)
-    │       ├── topSlot: thread header
     │       ├── TurnList (existing)
     │       │   └── TurnRow (existing)
     │       │       ├── UserBubble (existing)
-    │       │       └── ActivityBlock (extended)
-    │       │           ├── ToolRow → PythonDetail (NEW)
-    │       │           ├── ResultRow (NEW)
+    │       │       └── ActivityBlock (revised)
+    │       │           ├── Card (collapsible)
+    │       │           │   ├── ToolRow → BashDetail + ToolOutputBlock
+    │       │           │   ├── ThinkingRow (existing)
+    │       │           │   └── ContentRow (existing narration)
+    │       │           ├── DisplayResultRow (always visible)
     │       │           │   ├── PlotlyBlock
     │       │           │   ├── ImageBlock
     │       │           │   ├── DataFrameBlock
     │       │           │   └── MeshRefBlock
-    │       │           └── ContentRow (existing)
+    │       │           └── Response text (always visible)
     │       └── bottomSlot: ChatComposer (existing)
     │
     └── ContentPanel (right, resizable)
-        ├── Viewer3DPanel (when activeMeshId set)
-        ├── DatasetPanel (when viewing datasets)
-        └── EditorPanel (when editing documents)
+        ├── Viewer3DPanel (when mesh data received)
+        ├── DatasetPanel (dataset browsing)
+        └── EditorPanel (document editing)
 ```
 
 ## Conventions
 
-All new components follow frontend-v2 conventions from `frontend-v2/CLAUDE.md` and `frontend-v2/src/features/CLAUDE.md`:
-
+All new components follow frontend-v2 conventions:
 - **Storybook-first**: Every component has co-located `.stories.tsx`
-- **shadcn/ui**: Use Radix primitives + CVA + tailwind-merge
+- **shadcn/ui**: Radix primitives + CVA + tailwind-merge
 - **Phosphor Icons**: `@phosphor-icons/react`
-- **Tailwind v4**: Design system tokens (`accent-fill`, `muted-foreground`, etc.)
-- **`cn()` utility**: Class merging via `clsx` + `tailwind-merge`
-- **Story testing**: Modify the component, not the story; shared mock factories
+- **Tailwind v4**: Design system tokens
+- **`cn()` utility**: Class merging
+- **Story testing**: Modify the component, not the story
 
 ## New Dependencies
 
 ```
-react-resizable-panels         # Layout (Phase 6 dependency)
-zustand                        # State management (Phase 7 dependency)
+react-resizable-panels         # Layout
+zustand                        # State management
 @react-three/fiber             # 3D rendering
 @react-three/drei              # Three.js helpers
 three                          # Three.js core
@@ -139,17 +134,11 @@ plotly.js-dist-min             # Plotly core (minified)
 @tanstack/react-router         # Routing (minimal)
 ```
 
-Already in `package.json`:
-- `@tanstack/react-query` — data fetching
-- `dompurify` — HTML sanitization
-- `@radix-ui/*` — UI primitives
-- All shadcn/ui dependencies
-
 ## Related Docs
 
+- [Activity Stream](activity-stream.md) — revised reducer and ActivityBlock model
 - [Layout](layout.md) — workspace shell and panel design
-- [Activity Stream Extensions](activity-stream-extensions.md) — reducer and type extensions
 - [State Management](state.md) — zustand store designs
 - [3D Viewer](viewer-3d.md) — mesh rendering component
-- [Inline Results](inline-results.md) — chart/table/image renderers
+- [Inline Results](inline-results.md) — display result renderers
 - [Dataset Upload](dataset-upload.md) — DICOM upload interface

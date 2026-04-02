@@ -85,3 +85,36 @@
 **What**: Three fixes from p757 SOLID review: (1) Python tool category check must appear before bash check in `getToolCategory()` — `execute_python` segments include "execute", which matches the bash candidates. (2) Upload orchestration wrapped in try/catch with `store.setError()` call. (3) `BONE_COLORS` defined once in `features/viewer-3d/constants.ts`, imported by viewer store instead of duplicated. Also fixed: ContentToolbar properly destructures `activeProjectId` and `viewerMeshId` from store selector (was referencing undefined variables), and PythonOutputBlock auto-collapse uses ref to avoid re-collapsing after user manually expands.
 **Why**: H1 was a silent misclassification that would route `execute_python` to the bash detail renderer. M1 left upload failures unhandled — the UI would freeze in uploading state. M2 would be a runtime error.
 **Reviewers**: p757 (opus, SOLID/design quality)
+**Superseded**: D13.1 — the tool category ordering fix is no longer needed. The bash tool is named "bash", which directly matches the existing bash category. No ordering ambiguity.
+
+---
+
+## D14: Replace execute_python with bash tool
+**When**: Architecture revision (2026-04-02)
+**What**: The AI uses a generic `bash` ToolExecutor instead of a dedicated `execute_python` tool. The bash tool runs any shell command in the Daytona sandbox. Python scripts are detected and routed through the persistent Jupyter kernel for variable persistence.
+**Why**: User requirement — the AI should use bash to write Python files to the filesystem, then run scripts that import them. This is more natural (models already know bash tool patterns), more general (can also install packages, manage files, run non-Python commands), and creates a cleaner extensibility path for code fence execution (option 2). The same `ExecInKernel` interface serves both the bash tool (option 1) and the future code fence interceptor (option 2).
+**Rejected**: (a) Keeping `execute_python` — too narrow, AI can't do file management or package installs without a second tool. (b) Two tools (bash + execute_python) — redundant, adds tool-choice complexity for the AI. (c) Pure bash without kernel — no variable persistence between Python executions.
+
+## D15: Generic display results instead of Python-specific events
+**When**: Architecture revision (2026-04-02)
+**What**: Replace `PYTHON_OUTPUT`/`PYTHON_RESULT` AG-UI events with generic `TOOL_OUTPUT`/`DISPLAY_RESULT`. Any tool can emit display results. The concept is decoupled from the bash tool and from Python.
+**Why**: User requirement — display results are a generic concept. The same chart/table/image rendering should work regardless of which tool produced the output. This also supports the extensibility requirement: when code fence execution (option 2) replaces the bash tool trigger, the downstream DISPLAY_RESULT events and frontend rendering are unchanged.
+**Rejected**: Keeping Python-specific events — ties the frontend to a specific tool implementation, requires changes when the trigger mechanism changes.
+
+## D16: ActivityBlock model — all work collapses, results punch out
+**When**: Architecture revision (2026-04-02)
+**What**: One ActivityBlock per assistant turn. ALL work (thinking, tool calls, text between tool calls) collapses inside a card. Display results render outside the card, always visible. Final response text is always visible. This is the general model — not Python-specific.
+**Why**: User requirement. The researcher's primary need is seeing results (charts, 3D models, tables) and the AI's conclusion. The execution details (which commands ran, what stdout said) are secondary — useful for debugging but shouldn't dominate the view. The existing ActivityBlock already promotes the last ContentItem outside the card; DisplayResultItems follow the same pattern.
+**Supersedes**: D10 (which described the same concept but with Python-specific terminology).
+
+## D17: Persistent Jupyter kernel for variable persistence
+**When**: Architecture revision (2026-04-02)
+**What**: The Daytona sandbox runs a Jupyter kernel gateway. The `ExecInKernel` method sends Python code to this kernel, where variables and imports persist between calls. Regular bash commands bypass the kernel.
+**Why**: User requirement — "persistent Jupyter kernel — variables and imports survive between executions." The AI writes utility modules to .py files (filesystem persistence) and executes scripts through the kernel (runtime persistence). When the sandbox stops and restarts, the filesystem survives but kernel state is lost — the AI re-imports modules on first call.
+**Rejected**: (a) Fresh Python process per execution — no variable persistence. (b) IPython with %store magic — fragile, requires manual state management. (c) Pickling session state — complex, not all objects are picklable.
+
+## D18: Extensibility design for code fence execution
+**When**: Architecture revision (2026-04-02)
+**What**: The execution path is designed with a clean interface boundary between trigger mechanism and downstream pipeline. The bash tool calls `sandboxSvc.ExecInKernel()` + `OutputSink.EmitDisplayResult()`. A future code fence interceptor would call the same interfaces. The Daytona service, result_helper.py protocol, DISPLAY_RESULT events, and frontend rendering are all decoupled from how code arrives.
+**Why**: User requirement — "the downstream flow must be identical regardless of trigger mechanism." By making the interfaces generic now, the future migration from bash tool (option 1) to code fence interceptor (option 2) only changes the trigger layer, not the execution or rendering layers.
+**Constraint**: The code fence interceptor needs access to the same `sandboxSvc` and `OutputSink`. The `StreamExecutor` must make these available to the interceptor layer when it's built.

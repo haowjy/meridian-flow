@@ -1,6 +1,8 @@
 # Daytona Sandbox Service
 
-Manages persistent per-project sandboxes for Python code execution. See [overview](../overview.md) for system context.
+Manages persistent per-project sandboxes for code execution, including a persistent Jupyter kernel for Python variable persistence. See [overview](../overview.md) for system context.
+
+**Revised from previous design**: Added `ExecInKernel` for persistent Python execution and `KernelManager` for kernel lifecycle. The `ExecSync`/`ExecStream` methods are renamed to `ExecBash` for clarity. The sandbox now starts a Jupyter kernel on boot.
 
 ## Interface
 
@@ -8,20 +10,22 @@ Manages persistent per-project sandboxes for Python code execution. See [overvie
 // backend/internal/domain/sandbox/interfaces.go
 
 type Service interface {
-    // EnsureRunning starts the sandbox for a project if not already running.
+    // EnsureRunning starts the sandbox + kernel for a project if not already running.
     // Returns sandbox connection info. Idempotent — safe to call repeatedly.
     EnsureRunning(ctx context.Context, projectID uuid.UUID) (*SandboxInfo, error)
 
     // Stop stops the sandbox for a project. Retains disk state.
     Stop(ctx context.Context, projectID uuid.UUID) error
 
-    // ExecSync runs a command in the sandbox and returns stdout/stderr.
-    // For short-lived commands (file writes, pip installs).
-    ExecSync(ctx context.Context, projectID uuid.UUID, cmd string) (*ExecResult, error)
+    // ExecBash runs a shell command in the sandbox.
+    // For file operations, package installs, non-Python commands.
+    // onOutput called for each stdout/stderr line. Pass nil to ignore.
+    ExecBash(ctx context.Context, projectID uuid.UUID, cmd string, onOutput func(stream string, text string)) (*ExecResult, error)
 
-    // ExecStream runs a command and streams stdout/stderr via callback.
-    // For long-running Python scripts. Returns final exit code.
-    ExecStream(ctx context.Context, projectID uuid.UUID, cmd string, onOutput func(stream string, data string)) (*ExecResult, error)
+    // ExecInKernel sends Python code to the persistent Jupyter kernel.
+    // Variables and imports survive between calls.
+    // onOutput called for each stdout/stderr line.
+    ExecInKernel(ctx context.Context, projectID uuid.UUID, code string, onOutput func(stream string, text string)) (*ExecResult, error)
 
     // WriteFile writes content to a path in the sandbox.
     WriteFile(ctx context.Context, projectID uuid.UUID, path string, content []byte) error
@@ -46,16 +50,17 @@ type SandboxInfo struct {
     SandboxID string
     State     SandboxState
     ProjectID uuid.UUID
+    KernelReady bool  // Whether the Jupyter kernel is responsive
 }
 
 type SandboxState string
 
 const (
-    SandboxStateCold     SandboxState = "cold"      // No sandbox exists
-    SandboxStateStarting SandboxState = "starting"   // Boot in progress
-    SandboxStateRunning  SandboxState = "running"    // Ready for commands
-    SandboxStateStopped  SandboxState = "stopped"    // Disk retained, compute off
-    SandboxStateError    SandboxState = "error"      // Failed state
+    SandboxStateCold     SandboxState = "cold"
+    SandboxStateStarting SandboxState = "starting"
+    SandboxStateRunning  SandboxState = "running"
+    SandboxStateStopped  SandboxState = "stopped"
+    SandboxStateError    SandboxState = "error"
 )
 
 type ExecResult struct {
@@ -71,16 +76,16 @@ type ExecResult struct {
 statechart-v2
     [*] --> Cold
     Cold --> Starting: EnsureRunning()
-    Starting --> Running: Daytona ready
+    Starting --> Running: Daytona ready + kernel started
     Starting --> Error: Boot failed
-    Running --> Running: ExecSync/ExecStream
+    Running --> Running: ExecBash/ExecInKernel
     Running --> Stopped: Auto-stop (15min idle)
     Running --> Stopped: Stop()
     Stopped --> Starting: EnsureRunning()
     Error --> Starting: EnsureRunning() retry
 ```
 
-One sandbox per project. The mapping is stored in a `project_sandboxes` table:
+One sandbox per project. Mapping stored in `project_sandboxes` table:
 
 ```sql
 CREATE TABLE ${TABLE_PREFIX}project_sandboxes (
@@ -93,43 +98,84 @@ CREATE TABLE ${TABLE_PREFIX}project_sandboxes (
 );
 ```
 
-## Implementation: Daytona Go SDK
+## Implementation
 
 ```go
 // backend/internal/service/sandbox/daytona.go
 
 type DaytonaSandboxService struct {
-    client     *daytona.Client        // Daytona Go SDK
-    repo       SandboxRepository      // DB binding
-    storageSvc storage.Service        // Supabase Storage for dataset file access
-    snapshotID string                 // Pre-built snapshot with Python + packages
-    sf         singleflight.Group     // Deduplicates concurrent EnsureRunning per project
+    client     *daytona.Client
+    repo       SandboxRepository
+    storageSvc storage.Service
+    snapshotID string
+    sf         singleflight.Group  // Deduplicates concurrent EnsureRunning per project
     logger     *slog.Logger
+}
+```
+
+### Persistent Jupyter Kernel
+
+The sandbox snapshot includes a pre-configured Jupyter kernel. On `EnsureRunning()`:
+
+1. Start sandbox from snapshot (if not running)
+2. Start Jupyter kernel gateway if not already running:
+   ```bash
+   jupyter kernelgateway --ip=0.0.0.0 --port=8888 --KernelGatewayApp.api='kernel_gateway.notebook_http' 2>/dev/null &
+   ```
+3. Wait for kernel to be responsive (health check)
+4. Store kernel connection info
+
+The kernel gateway provides a REST API for executing code:
+- `POST /api/kernels` — start a kernel
+- `POST /api/kernels/{id}/execute` — execute code (with streaming via WebSocket)
+
+```go
+// ExecInKernel sends code to the persistent kernel via the kernel gateway API
+func (s *DaytonaSandboxService) ExecInKernel(ctx context.Context, projectID uuid.UUID, code string, onOutput func(string, string)) (*ExecResult, error) {
+    info, err := s.EnsureRunning(ctx, projectID)
+    if err != nil { return nil, err }
+    
+    // Connect to kernel gateway WebSocket for streaming output
+    // Send execute_request message
+    // Stream stdout/stderr via onOutput callback
+    // Collect final result
+    
+    s.updateLastUsed(ctx, projectID)
+    return result, nil
+}
+```
+
+**Kernel recovery**: If the kernel becomes unresponsive (OOM, crash), `ExecInKernel` detects the failure, restarts the kernel, and retries once. The caller gets an error only if the retry also fails. Variables from the crashed kernel are lost — the AI must re-import modules and re-run setup code.
+
+### ExecBash
+
+Regular shell commands bypass the kernel entirely:
+
+```go
+func (s *DaytonaSandboxService) ExecBash(ctx context.Context, projectID uuid.UUID, cmd string, onOutput func(string, string)) (*ExecResult, error) {
+    info, err := s.EnsureRunning(ctx, projectID)
+    if err != nil { return nil, err }
+    
+    // Use Daytona exec API for shell command
+    // Stream stdout/stderr via onOutput callback
+    
+    s.updateLastUsed(ctx, projectID)
+    return result, nil
 }
 ```
 
 ### Snapshot Strategy
 
-A pre-built Daytona snapshot contains:
+Pre-built Daytona snapshot contains:
 - Ubuntu 22.04
 - Python 3.11
-- Pre-installed packages: `numpy scipy pandas SimpleITK pydicom scikit-image trimesh plotly matplotlib`
+- Jupyter kernel gateway (`jupyter_kernel_gateway`)
+- Pre-installed packages: `numpy scipy pandas SimpleITK pydicom scikit-image trimesh plotly matplotlib jupyter_client ipykernel`
 - The `result_helper.py` module at `/workspace/.meridian/`
 - Network egress allowlist: only Supabase Storage URL
 - Env scrubbed: only `PYTHONUNBUFFERED=1`, `SUPABASE_STORAGE_URL` set
-- No Supabase CLI or admin tools (principle of least privilege)
 
-Sandbox creation from snapshot takes ~2-5 seconds. The snapshot ID is configured via environment variable:
-
-```
-DAYTONA_API_KEY=...
-DAYTONA_API_URL=https://api.daytona.io
-DAYTONA_SNAPSHOT_ID=meridian-biomedical-v1
-DAYTONA_AUTO_STOP_MINUTES=15
-DAYTONA_SANDBOX_CPU=2
-DAYTONA_SANDBOX_MEMORY_GB=4
-DAYTONA_SANDBOX_DISK_GB=10
-```
+Sandbox creation from snapshot: ~2-5 seconds. Kernel startup: ~1-2 seconds additional.
 
 ### Dataset Hydration
 
@@ -146,7 +192,7 @@ func (s *DaytonaSandboxService) HydrateDatasets(ctx context.Context, projectID u
 }
 ```
 
-The manifest tracks which files have been hydrated to avoid redundant transfers:
+Manifest tracks hydrated files to avoid redundant transfers:
 
 ```json
 {
@@ -161,7 +207,7 @@ The manifest tracks which files have been hydrated to avoid redundant transfers:
 
 ### Auto-Stop Worker
 
-A background goroutine checks for idle sandboxes every 5 minutes:
+Background goroutine checks for idle sandboxes every 5 minutes:
 
 ```go
 func (s *DaytonaSandboxService) RunIdleChecker(ctx context.Context) {
@@ -171,7 +217,7 @@ func (s *DaytonaSandboxService) RunIdleChecker(ctx context.Context) {
         case <-ctx.Done(): return
         case <-ticker.C:
             // Find sandboxes where last_used_at < now - autoStopMinutes
-            // Call Daytona stop API
+            // Call Daytona stop API (kernel stops with sandbox)
             // Update state to "stopped" in DB
         }
     }
@@ -192,6 +238,7 @@ type SandboxConfig struct {
     SandboxMemoryGB     int    `env:"DAYTONA_SANDBOX_MEMORY_GB" envDefault:"4"`
     SandboxDiskGB       int    `env:"DAYTONA_SANDBOX_DISK_GB" envDefault:"10"`
     MaxExecTimeoutSecs  int    `env:"DAYTONA_MAX_EXEC_TIMEOUT" envDefault:"600"`
+    KernelPort          int    `env:"DAYTONA_KERNEL_PORT" envDefault:"8888"`
 }
 ```
 
@@ -200,11 +247,12 @@ type SandboxConfig struct {
 At 2 vCPU / 4 GiB:
 - Running: ~$0.13/hour
 - Stopped: ~$0.0001/hour (disk only)
-- Auto-stop at 15 minutes keeps costs reasonable for bursty research workflows
-- Expected usage: researcher interacts for 1-2 hours, sandbox auto-stops, resumes next session
+- Auto-stop at 15 minutes keeps costs reasonable
+- Expected: researcher interacts 1-2 hours, sandbox auto-stops, resumes next session
+- Kernel restart on resume: ~1-2 seconds (variables lost, filesystem preserved)
 
 ## Related Docs
 
-- [execute_python Tool](execute-python.md) — uses this service for code execution
+- [bash Tool](bash-tool.md) — uses this service for code execution
 - [Dataset Domain](dataset-domain.md) — files hydrated into sandbox
-- [Stream Extensions](stream-extensions.md) — stdout/result streaming from sandbox
+- [Display Result Pipeline](display-results.md) — results stream from sandbox execution

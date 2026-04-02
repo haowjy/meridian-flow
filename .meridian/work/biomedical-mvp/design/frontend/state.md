@@ -1,6 +1,8 @@
 # State Management
 
-Zustand stores for the biomedical MVP. This is v2's Phase 7 (data integration), scoped to what the biomedical workflow needs. See [overview](overview.md) for how stores fit into the frontend architecture.
+Zustand stores for the biomedical MVP. See [overview](overview.md) for how stores fit into the frontend architecture.
+
+**Revised from previous design**: Updated event names (`DISPLAY_RESULT` instead of `PYTHON_RESULT`), viewer store uses generic display result for mesh metadata, workspace store contracts clarified.
 
 ## Store Inventory
 
@@ -10,7 +12,7 @@ Zustand stores for the biomedical MVP. This is v2's Phase 7 (data integration), 
 | `useDatasetStore` | Dataset list, upload state per project | Per-project |
 | `useViewerStore` | Mesh data, viewer visibility, structure state | Singleton |
 
-The **thread streaming state** is already handled by the existing `StreamingChannelClient` + `useThreadStreaming` hook in `src/features/threads/streaming/`. No new store needed for streaming — the reducer-based approach already works.
+Thread streaming state is handled by the existing `StreamingChannelClient` + `useThreadStreaming` hook.
 
 ## Workspace Store
 
@@ -34,17 +36,14 @@ interface WorkspaceState {
 
   // Right panel
   activeContent: ContentView
-  /** Current viewer mesh ID — set when viewer is active, null otherwise. Used by ContentToolbar. */
+  /** Track last mesh ID for ContentToolbar tab visibility */
   viewerMeshId: string | null
 
   // Actions
   setActiveProject: (projectId: string) => void
   setActiveThread: (threadId: string) => void
   setActiveContent: (content: ContentView) => void
-
-  // Convenience: switch to viewer when mesh arrives
   showViewer: (meshId: string) => void
-  // Convenience: switch to datasets
   showDatasets: () => void
 }
 
@@ -74,7 +73,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
 ## Dataset Store
 
-Manages dataset state for the active project. Uses TanStack Query for server state (list, metadata) and zustand for client state (upload progress).
+Manages upload state. Server state (list, metadata) uses TanStack Query.
 
 ```typescript
 // stores/dataset-store.ts
@@ -97,8 +96,6 @@ type UploadState =
 
 interface DatasetState {
   upload: UploadState
-
-  // Actions
   startUpload: (datasetId: string, totalFiles: number, totalBytes: number) => void
   updateProgress: (filesUploaded: number, bytesUploaded: number) => void
   setProcessing: () => void
@@ -113,12 +110,9 @@ export const useDatasetStore = create<DatasetState>((set, get) => ({
   startUpload: (datasetId, totalFiles, totalBytes) =>
     set({
       upload: {
-        status: "uploading",
-        datasetId,
-        filesUploaded: 0,
-        totalFiles,
-        bytesUploaded: 0,
-        totalBytes,
+        status: "uploading", datasetId,
+        filesUploaded: 0, totalFiles,
+        bytesUploaded: 0, totalBytes,
       },
     }),
   updateProgress: (filesUploaded, bytesUploaded) =>
@@ -136,10 +130,8 @@ export const useDatasetStore = create<DatasetState>((set, get) => ({
       if (state.upload.status !== "processing") return state
       return { upload: { status: "complete", datasetId: state.upload.datasetId } }
     }),
-  setError: (message) =>
-    set({ upload: { status: "error", message } }),
-  resetUpload: () =>
-    set({ upload: { status: "idle" } }),
+  setError: (message) => set({ upload: { status: "error", message } }),
+  resetUpload: () => set({ upload: { status: "idle" } }),
 }))
 ```
 
@@ -147,8 +139,6 @@ export const useDatasetStore = create<DatasetState>((set, get) => ({
 
 ```typescript
 // features/datasets/hooks/useDatasets.ts
-
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 export function useDatasets(projectId: string) {
   return useQuery({
@@ -168,29 +158,18 @@ export function useCreateDataset(projectId: string) {
     },
   })
 }
-
-export function useFinalizeDataset() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (datasetId: string) => finalizeDataset(datasetId),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects", data.projectId, "datasets"],
-      })
-    },
-  })
-}
 ```
 
 ## Viewer Store
 
-Manages 3D viewer state — mesh data received from WS binary frames, structure visibility, camera state.
+Manages 3D viewer state — mesh data from WS binary frames, structure visibility.
 
 ```typescript
 // stores/viewer-store.ts
 
 import { create } from "zustand"
 import type { MeshData, BoneStructure } from "@/features/viewer-3d/types"
+import { BONE_COLORS } from "@/features/viewer-3d/constants"
 
 interface ViewerState {
   // Mesh data from binary WS frame
@@ -199,10 +178,14 @@ interface ViewerState {
 
   // Per-structure visibility
   structures: BoneStructure[]
-  structureVisibility: Record<number, boolean>  // label → visible
+  structureVisibility: Record<number, boolean>
+
+  /** Label names from DISPLAY_RESULT, keyed by mesh_id. Stored until binary arrives. */
+  pendingMeshLabels: Record<string, Record<string, string>>
 
   // Actions
-  setMeshData: (meshId: string, data: MeshData) => void
+  setPendingLabels: (meshId: string, labelNames: Record<string, string>) => void
+  receiveBinaryMesh: (meshId: string, data: MeshData) => void
   clearMesh: () => void
   toggleStructure: (label: number) => void
   setAllStructuresVisible: (visible: boolean) => void
@@ -213,38 +196,45 @@ export const useViewerStore = create<ViewerState>((set) => ({
   activeMeshId: null,
   structures: [],
   structureVisibility: {},
+  pendingMeshLabels: {},
 
-  setMeshData: (meshId, data) => {
-    // Build structures from mesh label data
-    const labelSet = new Set(Array.from(data.labels))
-    const structures: BoneStructure[] = []
-    const visibility: Record<number, boolean> = {}
+  // Called when DISPLAY_RESULT with mesh_ref arrives
+  setPendingLabels: (meshId, labelNames) =>
+    set((state) => ({
+      pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
+    })),
 
-    for (const label of labelSet) {
-      if (label === 0) continue  // Skip unlabeled
-      structures.push({
-        label,
-        name: data.labelNames[label] ?? `Structure ${label}`,
-        color: BONE_COLORS[data.labelNames[label]] ?? "#888888",
-      })
-      visibility[label] = true
-    }
+  // Called when WS binary frame arrives — merges with pending labels
+  receiveBinaryMesh: (meshId, data) =>
+    set((state) => {
+      const labelNames = state.pendingMeshLabels[meshId] ?? {}
+      const mergedData = { ...data, labelNames }
 
-    set({
-      meshData: data,
-      activeMeshId: meshId,
-      structures,
-      structureVisibility: visibility,
-    })
-  },
+      const labelSet = new Set(Array.from(mergedData.labels))
+      const structures: BoneStructure[] = []
+      const visibility: Record<number, boolean> = {}
+      for (const label of labelSet) {
+        if (label === 0) continue
+        const name = labelNames[String(label)] ?? `Structure ${label}`
+        structures.push({
+          label, name,
+          color: BONE_COLORS[name] ?? "#888888",
+        })
+        visibility[label] = true
+      }
+
+      const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
+      return {
+        meshData: mergedData,
+        activeMeshId: meshId,
+        structures,
+        structureVisibility: visibility,
+        pendingMeshLabels: remainingPending,
+      }
+    }),
 
   clearMesh: () =>
-    set({
-      meshData: null,
-      activeMeshId: null,
-      structures: [],
-      structureVisibility: {},
-    }),
+    set({ meshData: null, activeMeshId: null, structures: [], structureVisibility: {} }),
 
   toggleStructure: (label) =>
     set((state) => ({
@@ -263,77 +253,19 @@ export const useViewerStore = create<ViewerState>((set) => ({
       return { structureVisibility: visibility }
     }),
 }))
-
-// Import from the canonical location — single source of truth
-import { BONE_COLORS } from "@/features/viewer-3d/constants"
 ```
 
 ## Mesh Metadata/Binary Join
 
-Mesh data arrives in two separate messages that may race:
-1. `PYTHON_RESULT` with `resultType: "mesh_ref"` — carries `mesh_id`, `vertex_count`, `face_count`, `label_names`
-2. WS binary frame — carries the actual geometry (vertices, faces, labels)
+Mesh data arrives in two messages that may race:
+1. `DISPLAY_RESULT` with `resultType: "mesh_ref"` — metadata + label names
+2. WS binary frame — geometry (vertices, faces, labels)
 
-The binary frame typically follows within 1 second of the PYTHON_RESULT event but could arrive first if SSE is delayed. The viewer store uses a two-step merge:
-
-```typescript
-// Extended viewer store:
-interface ViewerState {
-  // ... existing fields ...
-
-  /** Label names from PYTHON_RESULT, keyed by mesh_id. Stored until binary arrives. */
-  pendingMeshLabels: Record<string, Record<string, string>>
-
-  // Actions
-  setPendingLabels: (meshId: string, labelNames: Record<string, string>) => void
-  receiveBinaryMesh: (meshId: string, data: MeshData) => void
-}
-
-// setPendingLabels: called when PYTHON_RESULT mesh_ref arrives
-setPendingLabels: (meshId, labelNames) =>
-  set((state) => ({
-    pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
-  })),
-
-// receiveBinaryMesh: called when WS binary frame arrives, merges with pending labels
-receiveBinaryMesh: (meshId, data) =>
-  set((state) => {
-    const labelNames = state.pendingMeshLabels[meshId] ?? {}
-    const mergedData = { ...data, labelNames }
-
-    // Build structures with label names
-    const labelSet = new Set(Array.from(mergedData.labels))
-    const structures: BoneStructure[] = []
-    const visibility: Record<number, boolean> = {}
-    for (const label of labelSet) {
-      if (label === 0) continue
-      const name = labelNames[String(label)] ?? `Structure ${label}`
-      structures.push({
-        label,
-        name,
-        color: BONE_COLORS[name] ?? "#888888",
-      })
-      visibility[label] = true
-    }
-
-    const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
-    return {
-      meshData: mergedData,
-      activeMeshId: meshId,
-      structures,
-      structureVisibility: visibility,
-      pendingMeshLabels: remainingPending,
-    }
-  }),
-```
+The viewer store uses a two-step merge: `setPendingLabels()` stores names from DISPLAY_RESULT, then `receiveBinaryMesh()` merges when binary arrives.
 
 ## WS Binary Frame → Viewer Store Wiring
 
-The `ThreadWsProvider` (existing) receives binary frames via `WsClient.onBinaryMessage`. The handler:
-
-1. Parses the binary frame with `parseMeshBinary`
-2. Calls `viewerStore.receiveBinaryMesh()` (merges with pending labels)
-3. Auto-switches the content panel to the viewer
+The `ThreadWsProvider` receives binary frames via `WsClient.onBinaryMessage`:
 
 ```typescript
 // In ThreadWsProvider setup:
@@ -342,10 +274,7 @@ const handleBinaryMessage = (subId: string, payload: Uint8Array) => {
   const meshData = parseMeshBinary(payload)
   if (!meshData) return
 
-  // Merge with labels + update store
   useViewerStore.getState().receiveBinaryMesh(meshData.meshId, meshData)
-
-  // Auto-switch content panel to viewer
   useWorkspaceStore.getState().showViewer(meshData.meshId)
 }
 
@@ -355,10 +284,10 @@ const client = new WsClient({
 })
 ```
 
-The PYTHON_RESULT handler (in the reducer's side effect or a separate listener) calls `setPendingLabels`:
+The DISPLAY_RESULT handler calls `setPendingLabels`:
 
 ```typescript
-// When PYTHON_RESULT with mesh_ref arrives:
+// When DISPLAY_RESULT with mesh_ref arrives (reducer side effect or listener):
 if (event.data.resultType === "mesh_ref") {
   useViewerStore.getState().setPendingLabels(
     event.data.mesh_id,
@@ -367,11 +296,9 @@ if (event.data.resultType === "mesh_ref") {
 }
 ```
 
-See [viewer-3d.md](viewer-3d.md) for the `parseMeshBinary` function.
-
 ## API Client
 
-A thin fetch wrapper for dataset endpoints. Follows the pattern used by v1 for authenticated API calls:
+Thin fetch wrapper for dataset endpoints:
 
 ```typescript
 // lib/api.ts
@@ -379,7 +306,7 @@ A thin fetch wrapper for dataset endpoints. Follows the pattern used by v1 for a
 const API_BASE = import.meta.env.VITE_API_URL ?? ""
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = await getAuthToken()  // From auth provider
+  const token = await getAuthToken()
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -388,26 +315,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       ...options?.headers,
     },
   })
-  if (!res.ok) {
-    throw new ApiError(res.status, await res.text())
-  }
+  if (!res.ok) throw new ApiError(res.status, await res.text())
   return res.json()
 }
 
-// Dataset API
 export const datasetApi = {
   list: (projectId: string) =>
     apiFetch<Dataset[]>(`/api/projects/${projectId}/datasets`),
-
   create: (projectId: string, params: { name: string; slug: string }) =>
     apiFetch<{ id: string; slug: string; upload_url: string }>(
       `/api/projects/${projectId}/datasets`,
       { method: "POST", body: JSON.stringify(params) }
     ),
-
   finalize: (datasetId: string) =>
     apiFetch<Dataset>(`/api/datasets/${datasetId}/finalize`, { method: "POST" }),
-
   delete: (datasetId: string) =>
     apiFetch<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
 }
@@ -415,40 +336,25 @@ export const datasetApi = {
 
 ## Auth Integration
 
-Authentication is not yet built in v2 (Phase 8). For the biomedical MVP:
-
 ```typescript
 // lib/auth.ts — minimal auth token provider
 
-/** Read from env var (set by scripts/get-token.sh in dev, Supabase Auth in prod) */
 let cachedToken: string | null = null
 
 export async function getAuthToken(): Promise<string> {
   if (cachedToken) return cachedToken
-
-  // Dev mode: read from env var injected by scripts/get-token.sh
   const envToken = import.meta.env.VITE_AUTH_TOKEN
-  if (envToken) {
-    cachedToken = envToken
-    return envToken
-  }
-
-  // TODO: Supabase Auth integration for prod
+  if (envToken) { cachedToken = envToken; return envToken }
   throw new Error("No auth token available. Set VITE_AUTH_TOKEN for dev mode.")
 }
 ```
 
-1. **Dev mode**: `VITE_AUTH_TOKEN` env var, set from `scripts/get-token.sh` output
-2. **Prod**: Supabase Auth integration (deferred — same as v1 pattern)
-
-The auth token is needed for:
-- API requests (`Authorization: Bearer` header via `lib/api.ts`)
-- WS connection (`auth` control message — already supported by WsClient)
-- Supabase Storage uploads (direct upload with auth token)
+1. **Dev mode**: `VITE_AUTH_TOKEN` env var from `scripts/get-token.sh`
+2. **Prod**: Supabase Auth integration (deferred)
 
 ## Related Docs
 
 - [Layout](layout.md) — workspace store drives panel switching
 - [Dataset Upload](dataset-upload.md) — uses dataset store + TanStack Query hooks
 - [3D Viewer](viewer-3d.md) — uses viewer store for mesh data
-- [Activity Stream Extensions](activity-stream-extensions.md) — PYTHON_RESULT triggers workspace store
+- [Activity Stream](activity-stream.md) — DISPLAY_RESULT triggers workspace store

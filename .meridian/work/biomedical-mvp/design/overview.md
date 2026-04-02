@@ -6,13 +6,13 @@ Transform Meridian from a fiction writing platform into a biomedical data analys
 
 ```mermaid
 flowchart TB
-    subgraph Frontend["Frontend v2 (React 19 + Vite 8)"]
+    subgraph Frontend["Frontend v2 (React 19 + Vite)"]
         Layout["Workspace Layout<br/>(react-resizable-panels)"]
         Layout --> ChatPanel["Chat Panel (left)"]
         Layout --> ContentPanel["Content Panel (right)"]
         ChatPanel --> TurnList["TurnList + ActivityBlock"]
         ChatPanel --> Composer["ChatComposer"]
-        TurnList --> InlineResults["Inline Result Blocks<br/>(Plotly, matplotlib, tables)"]
+        TurnList --> DisplayResults["Display Result Blocks<br/>(Plotly, matplotlib, tables, mesh)"]
         ContentPanel --> Viewer3D["3D Viewer<br/>(React Three Fiber)"]
         ContentPanel --> DatasetUI["Dataset Upload UI"]
         ContentPanel --> Editor["Editor (CM6, existing)"]
@@ -20,22 +20,22 @@ flowchart TB
 
     subgraph Backend["Backend (Go)"]
         ToolReg["Tool Registry<br/>(existing)"]
-        ExecPy["execute_python<br/>(new ToolExecutor)"]
+        BashTool["bash tool<br/>(new ToolExecutor)"]
         DatasetSvc["Dataset Service<br/>(new domain)"]
-        StreamExt["Stream Extensions<br/>(stdout, results, mesh)"]
-        ToolReg --> ExecPy
-        ExecPy --> StreamExt
+        DisplayPipeline["Display Result Pipeline<br/>(generic event emission)"]
+        ToolReg --> BashTool
+        BashTool --> DisplayPipeline
     end
 
     subgraph External["External Services"]
-        Daytona["Daytona Sandbox<br/>(Python runtime)"]
+        Daytona["Daytona Sandbox<br/>(Python + persistent kernel)"]
         Supabase["Supabase Storage<br/>(DICOM files)"]
     end
 
-    ExecPy -->|"REST API"| Daytona
+    BashTool -->|"REST/Exec API"| Daytona
     DatasetSvc -->|"Storage API"| Supabase
-    StreamExt -->|"SSE/AG-UI events"| ChatPanel
-    StreamExt -->|"Binary mesh data"| Viewer3D
+    DisplayPipeline -->|"SSE/AG-UI events"| ChatPanel
+    DisplayPipeline -->|"Binary mesh data"| Viewer3D
     Daytona -->|"File API"| Supabase
 ```
 
@@ -45,26 +45,26 @@ flowchart TB
 
 | Component | Extension |
 |-----------|-----------|
-| **Tool Registry** | Register new `execute_python` tool via existing `RegisterWithMetadata` |
+| **Tool Registry** | Register new `bash` tool via existing `RegisterWithMetadata` |
 | **ToolRegistryBuilder** | Add conditional Daytona client wiring (same pattern as web_search) |
-| **AG-UI Event Stream** | New event subtypes for Python stdout/stderr and rich results |
-| **TurnBlock types** | New `BlockType` constants for code output, charts, tables, meshes |
+| **AG-UI Event Stream** | New event subtype `DISPLAY_RESULT` for rich output from any tool |
+| **TurnBlock types** | New `BlockType` constants for tool output and display results |
 | **PersonaCatalog** | New `.agents/agents/data-analyst.md` file (no code changes) |
-| **SSE Event Handlers** | New handlers for Python execution events |
+| **SSE Event Handlers** | New handler for `DISPLAY_RESULT` events |
 | **Supabase Storage** | New bucket for DICOM datasets |
-| **Activity stream reducer** | New event types `PYTHON_OUTPUT` and `PYTHON_RESULT` |
-| **ToolDetail routing** | New `PythonDetail` component for `execute_python` tool |
+| **Activity stream reducer** | New event type `DISPLAY_RESULT` + revised ActivityBlock model |
+| **ToolDetail routing** | New `BashDetail` enhancement for sandbox stdout rendering |
 
 ### Add (new components)
 
 | Component | Description | Design Doc |
 |-----------|-------------|------------|
-| **execute_python tool** | ToolExecutor wrapping Daytona sandbox API | [execute-python.md](backend/execute-python.md) |
-| **Daytona service** | Sandbox lifecycle management | [daytona-service.md](backend/daytona-service.md) |
+| **bash tool** | ToolExecutor wrapping Daytona sandbox for shell + kernel execution | [bash-tool.md](backend/bash-tool.md) |
+| **Daytona service** | Sandbox lifecycle + persistent Jupyter kernel management | [daytona-service.md](backend/daytona-service.md) |
 | **Dataset domain** | Upload, storage, metadata for DICOM stacks | [dataset-domain.md](backend/dataset-domain.md) |
-| **Stream extensions** | New AG-UI events for Python output | [stream-extensions.md](backend/stream-extensions.md) |
+| **Display result pipeline** | Generic AG-UI events + OutputSink for rich results | [display-results.md](backend/display-results.md) |
 | **Workspace layout** | Two-panel resizable layout | [layout.md](frontend/layout.md) |
-| **Activity stream extensions** | Reducer + types for Python events | [activity-stream-extensions.md](frontend/activity-stream-extensions.md) |
+| **Activity stream redesign** | One ActivityBlock per turn, display results outside | [activity-stream.md](frontend/activity-stream.md) |
 | **Zustand stores** | Project, dataset, viewer state | [state.md](frontend/state.md) |
 | **3D viewer** | React Three Fiber mesh renderer | [viewer-3d.md](frontend/viewer-3d.md) |
 | **Inline results** | Plotly/matplotlib/table rendering in chat | [inline-results.md](frontend/inline-results.md) |
@@ -73,26 +73,29 @@ flowchart TB
 
 ## Key Architectural Decisions
 
-### 1. Daytona over Pyodide
-SimpleITK requires native C++ — Pyodide (WebAssembly) cannot run it. Daytona provides real Linux sandboxes with configurable CPU/RAM. One persistent sandbox per project with auto-stop on idle keeps costs manageable.
+### 1. Bash tool + Daytona (not a dedicated execute_python tool)
+The AI uses a generic `bash` tool to run commands in a persistent Daytona sandbox. No dedicated `execute_python` ToolExecutor. The AI writes Python files to the sandbox filesystem, then runs them via bash. Python scripts execute through a persistent Jupyter kernel so variables and imports survive between executions. This keeps the tool interface simple and familiar to the AI model.
 
-### 2. Streaming Python output via AG-UI events
-Python stdout/stderr and rich results (charts, tables, mesh data) stream through the existing AG-UI event pipeline. New event subtypes (`PYTHON_OUTPUT`, `PYTHON_RESULT`) carry typed payloads. The frontend-v2 activity stream reducer processes these into the ActivityBlockData model.
+### 2. Generic Display Results (not Python-specific events)
+Any tool can emit "display results" — rich outputs (charts, images, tables, mesh refs) that render prominently outside the collapsed ActivityBlock. The backend emits `DISPLAY_RESULT` events; the frontend renders them regardless of which tool produced them. Python's `show_*` helpers write to a result file that the bash tool reads post-execution.
 
-### 3. Binary mesh via existing WS binary frames
-The WS client already supports binary frames (`subId UTF-8 0x00 payload`). Mesh data (vertices + faces + labels) uses this path. No protocol changes needed. `frontend-v2/src/lib/ws/ws-client.ts` already has `onBinaryMessage` callback support.
+### 3. ActivityBlock model: all work collapses, results punch out
+One ActivityBlock per assistant turn. ALL work (thinking, tool calls, text between tool calls) collapses inside it. Display results render OUTSIDE the block, always visible. Final response text is always visible. The user expands the ActivityBlock to see tool call details.
 
-### 4. Frontend target: `frontend-v2/`
-Ship on `frontend-v2/` (ground-up rebuild). See [decisions.md](../decisions.md) D4 for full rationale. This means building the data integration layer (layouts, stores, routing, API client) as part of the biomedical MVP, targeted for biomedical needs rather than retrofitting v1 patterns.
+### 4. Extensibility for code fence execution (option 2)
+The execution path is designed so a streaming code fence interceptor (`python:run` blocks) can replace the bash tool as the trigger mechanism later. The downstream flow — execute in kernel → stream stdout → emit display results → render — is identical regardless of trigger. The Daytona service interface, `result_helper.py` protocol, `DISPLAY_RESULT` events, and frontend rendering are all decoupled from how code arrives.
 
-### 5. Dataset as new domain
-DICOM datasets are project-scoped resources stored in Supabase Storage with metadata in a `datasets` table. This follows the existing domain pattern (`docsystem`, `agents`, `billing`, etc.) with its own service, repository, and handler.
+### 5. Binary mesh via existing WS binary frames
+The WS client already supports binary frames (`subId UTF-8 0x00 payload`). Mesh data (vertices + faces + labels) uses this path. No protocol changes needed.
 
-### 6. Single agent profile
-One `data-analyst` persona with domain knowledge baked into the system prompt. No agent switching needed — the researcher talks to one AI that handles the full pipeline. Uses `execute_python` as its primary tool.
+### 6. Frontend target: `frontend-v2/`
+Ship on `frontend-v2/` (ground-up rebuild). See [decisions.md](../decisions.md) D4 for full rationale.
 
-### 7. Activity stream integration approach
-`PYTHON_OUTPUT` events accumulate on the ToolItem (rendered in PythonDetail). `PYTHON_RESULT` events create `ResultItem` entries in the activity items array that render as prominent, always-visible result blocks below the collapsible activity card. See [activity-stream-extensions.md](frontend/activity-stream-extensions.md).
+### 7. Dataset as new domain
+DICOM datasets are project-scoped resources stored in Supabase Storage with metadata in a `datasets` table. Follows existing domain pattern.
+
+### 8. Single agent profile
+One `data-analyst` persona with domain knowledge. Uses `bash` as its primary tool for all sandbox execution.
 
 ## Data Flow: End-to-End Pipeline
 
@@ -111,20 +114,27 @@ sequenceDiagram
 
     R->>F: "Segment the knee joint"
     F->>B: User message (SSE stream)
-    B->>B: LLM decides to use execute_python
-    B->>D: Ensure sandbox running
-    B->>D: Write Python script
-    B->>D: Execute script
+    B->>B: LLM decides to use bash tool
+
+    Note over B,D: AI writes Python module
+    B->>D: bash: write seg_utils.py
+    D-->>B: done
+
+    Note over B,D: AI runs segmentation script
+    B->>D: bash: python3 run_segmentation.py
+    D->>D: Executes in persistent kernel
 
     loop Streaming output
         D-->>B: stdout/stderr chunks
-        B-->>F: AG-UI PYTHON_OUTPUT events
-        F-->>R: Streaming output in PythonDetail
+        B-->>F: AG-UI TOOL_OUTPUT events (inside ActivityBlock)
+        F-->>R: Streaming output in tool detail
     end
 
-    D-->>B: Result: mesh data (vertices + faces + labels)
-    B-->>F: PYTHON_RESULT (mesh_ref) + Binary mesh frame via WS
-    F-->>R: ResultItem in chat + 3D viewer opens in right panel
+    D-->>B: Execution complete
+    B->>D: Read /workspace/.meridian/result.json
+    D-->>B: Display results (mesh_ref, charts, etc.)
+    B-->>F: DISPLAY_RESULT events + Binary mesh frame via WS
+    F-->>R: Display results visible in chat + 3D viewer opens
 
     R->>F: "That sesamoid is actually an osteophyte"
     F->>B: Correction message
@@ -135,7 +145,7 @@ sequenceDiagram
     R->>F: "Run the statistics"
     B->>D: Execute stats script
     D-->>B: Plotly JSON + table HTML
-    B-->>F: AG-UI PYTHON_RESULT events
+    B-->>F: DISPLAY_RESULT events
     F-->>R: Interactive charts + tables in chat
 ```
 
@@ -147,13 +157,14 @@ backend/
     domain/datasets/           # New domain: interfaces + types
     domain/sandbox/            # Sandbox domain: interfaces + types
     service/datasets/          # Dataset service implementation
-    service/sandbox/           # Daytona sandbox service
+    service/sandbox/           # Daytona sandbox service + kernel manager
     service/llm/tools/
-      execute_python.go        # New ToolExecutor
-      execute_python_meta.go   # Metadata for system prompt
+      bash_tool.go             # New ToolExecutor (Daytona bash + kernel)
+      bash_tool_meta.go        # Metadata for system prompt
       output_sink.go           # OutputSink interface for streaming
+      display_result.go        # DisplayResult types
     service/llm/streaming/
-      agui_output_sink.go      # OutputSink implementation wrapping emitter
+      agui_output_sink.go      # OutputSink → emitter bridge
     handler/dataset.go         # HTTP endpoints
     repository/postgres/
       dataset.go               # Dataset repository
@@ -167,12 +178,12 @@ frontend-v2/                   # Target frontend (NOT frontend/)
     features/
       activity-stream/
         streaming/
-          events.ts            # Extended with PYTHON_OUTPUT, PYTHON_RESULT
-          reducer.ts           # Extended with new event handlers
-        types.ts               # Extended with ResultItem, PythonOutputLine
+          events.ts            # Extended with DISPLAY_RESULT
+          reducer.ts           # Revised: ActivityBlock model + display results
+        types.ts               # Extended with DisplayResultItem
+        ActivityBlock.tsx       # Revised: all work inside, results outside
         items/
-          ResultRow.tsx        # New result block renderer
-        PythonDetail.tsx       # New ToolDetail for execute_python
+          DisplayResultRow.tsx  # New display result renderer
       viewer-3d/               # React Three Fiber viewer
         Viewer3DPanel.tsx
         MeshScene.tsx
@@ -187,14 +198,19 @@ frontend-v2/                   # Target frontend (NOT frontend/)
         DatasetList.tsx
         DatasetCard.tsx
         hooks/
+      inline-results/          # Display result block renderers
+        PlotlyBlock.tsx
+        ImageBlock.tsx
+        DataFrameBlock.tsx
+        MeshRefBlock.tsx
+        types.ts
       workspace/               # Layout shell
         WorkspaceLayout.tsx
         ContentPanel.tsx
     stores/                    # Zustand stores
-      project-store.ts
+      workspace-store.ts
       dataset-store.ts
       viewer-store.ts
-      workspace-store.ts
 
 .agents/
   agents/
@@ -203,16 +219,16 @@ frontend-v2/                   # Target frontend (NOT frontend/)
 
 ## Related Design Docs
 
-### Backend (unchanged)
-- [execute_python Tool](backend/execute-python.md) — ToolExecutor implementation and Daytona integration
-- [Daytona Service](backend/daytona-service.md) — Sandbox lifecycle management
+### Backend
+- [bash Tool](backend/bash-tool.md) — ToolExecutor for Daytona sandbox execution
+- [Daytona Service](backend/daytona-service.md) — Sandbox lifecycle + persistent kernel
 - [Dataset Domain](backend/dataset-domain.md) — DICOM upload, storage, metadata
-- [Stream Extensions](backend/stream-extensions.md) — New AG-UI events for Python output
+- [Display Result Pipeline](backend/display-results.md) — Generic AG-UI events for rich results
 
-### Frontend (revised for v2)
+### Frontend
 - [Frontend Overview](frontend/overview.md) — How all frontend pieces connect
+- [Activity Stream](frontend/activity-stream.md) — Revised ActivityBlock model + display results
 - [Workspace Layout](frontend/layout.md) — Two-panel resizable workspace
-- [Activity Stream Extensions](frontend/activity-stream-extensions.md) — Reducer + types for Python events
 - [State Management](frontend/state.md) — Zustand stores for project/dataset/viewer state
 - [3D Viewer](frontend/viewer-3d.md) — React Three Fiber mesh rendering
 - [Inline Results](frontend/inline-results.md) — Chart/table/image rendering in chat
