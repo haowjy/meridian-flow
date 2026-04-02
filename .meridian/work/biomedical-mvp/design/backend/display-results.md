@@ -328,18 +328,18 @@ On page reload, the frontend shows the mesh reference card. Mesh binary is trans
 
 ## Event Ordering
 
-Events arrive in this guaranteed order per tool call:
+Events arrive in this order per tool call:
 
 ```
 TOOL_CALL_START (bash)
   TOOL_CALL_ARGS (command parameter, may be multiple deltas)
+  TOOL_CALL_END (fires when LLM finishes writing tool_use block — before execution)
   TOOL_OUTPUT (0..N, sequenced — streaming during execution)
   DISPLAY_RESULT (0..N, after execution completes)
-TOOL_CALL_END (after all tool output and display results)
 TOOL_CALL_RESULT (final status)
 ```
 
-**Important**: `TOOL_CALL_END` arrives AFTER all `TOOL_OUTPUT` and `DISPLAY_RESULT` events. The `TOOL_OUTPUT` handler transitions the tool status to `"executing"` on first arrival (since TOOL_CALL_END normally triggers this transition).
+**Important**: `TOOL_CALL_END` is an AG-UI protocol event emitted by the SSE library when the LLM finishes streaming the tool_use block. It fires **before** tool execution starts and transitions the tool status to `"executing"`. The backend does not control when `TOOL_CALL_END` fires — it's generated during response parsing. `TOOL_OUTPUT` and `DISPLAY_RESULT` events arrive during/after execution, well after `TOOL_CALL_END`.
 
 ## Buffering
 

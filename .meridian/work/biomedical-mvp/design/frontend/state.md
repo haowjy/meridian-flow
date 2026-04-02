@@ -182,6 +182,8 @@ interface ViewerState {
 
   /** Label names from DISPLAY_RESULT, keyed by mesh_id. Stored until binary arrives. */
   pendingMeshLabels: Record<string, Record<string, string>>
+  /** Binary mesh data that arrived before its DISPLAY_RESULT labels. */
+  pendingMeshData: Record<string, MeshData>
 
   // Actions
   setPendingLabels: (meshId: string, labelNames: Record<string, string>) => void
@@ -191,46 +193,71 @@ interface ViewerState {
   setAllStructuresVisible: (visible: boolean) => void
 }
 
+/** Merge binary mesh data with label names into final viewer state. */
+function buildMeshState(
+  state: ViewerState,
+  meshId: string,
+  data: MeshData,
+  labelNames: Record<string, string>,
+  pendingMeshData: Record<string, MeshData>
+) {
+  const mergedData = { ...data, labelNames }
+  const labelSet = new Set(Array.from(mergedData.labels))
+  const structures: BoneStructure[] = []
+  const visibility: Record<number, boolean> = {}
+  for (const label of labelSet) {
+    if (label === 0) continue
+    const name = labelNames[String(label)] ?? `Structure ${label}`
+    structures.push({ label, name, color: BONE_COLORS[name] ?? "#888888" })
+    visibility[label] = true
+  }
+  const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
+  return {
+    meshData: mergedData,
+    activeMeshId: meshId,
+    structures,
+    structureVisibility: visibility,
+    pendingMeshLabels: remainingPending,
+    pendingMeshData,
+  }
+}
+
 export const useViewerStore = create<ViewerState>((set) => ({
   meshData: null,
   activeMeshId: null,
   structures: [],
   structureVisibility: {},
   pendingMeshLabels: {},
+  pendingMeshData: {},
 
   // Called when DISPLAY_RESULT with mesh_ref arrives
   setPendingLabels: (meshId, labelNames) =>
-    set((state) => ({
-      pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
-    })),
+    set((state) => {
+      // Check if binary data already arrived (binary-before-labels race)
+      const pendingData = state.pendingMeshData[meshId]
+      if (pendingData) {
+        // Binary arrived first — merge now
+        const { [meshId]: _, ...remainingPendingData } = state.pendingMeshData
+        return buildMeshState(state, meshId, pendingData, labelNames, remainingPendingData)
+      }
+      // Normal path: store labels, wait for binary
+      return {
+        pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
+      }
+    }),
 
   // Called when WS binary frame arrives — merges with pending labels
   receiveBinaryMesh: (meshId, data) =>
     set((state) => {
-      const labelNames = state.pendingMeshLabels[meshId] ?? {}
-      const mergedData = { ...data, labelNames }
-
-      const labelSet = new Set(Array.from(mergedData.labels))
-      const structures: BoneStructure[] = []
-      const visibility: Record<number, boolean> = {}
-      for (const label of labelSet) {
-        if (label === 0) continue
-        const name = labelNames[String(label)] ?? `Structure ${label}`
-        structures.push({
-          label, name,
-          color: BONE_COLORS[name] ?? "#888888",
-        })
-        visibility[label] = true
+      const labelNames = state.pendingMeshLabels[meshId]
+      if (labelNames === undefined) {
+        // Labels haven't arrived yet — store binary data, wait for DISPLAY_RESULT
+        return {
+          pendingMeshData: { ...state.pendingMeshData, [meshId]: data },
+        }
       }
-
-      const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
-      return {
-        meshData: mergedData,
-        activeMeshId: meshId,
-        structures,
-        structureVisibility: visibility,
-        pendingMeshLabels: remainingPending,
-      }
+      // Normal path: labels already stored, merge now
+      return buildMeshState(state, meshId, data, labelNames, state.pendingMeshData)
     }),
 
   clearMesh: () =>
@@ -257,30 +284,84 @@ export const useViewerStore = create<ViewerState>((set) => ({
 
 ## Mesh Metadata/Binary Join
 
-Mesh data arrives in two messages that may race:
-1. `DISPLAY_RESULT` with `resultType: "mesh_ref"` — metadata + label names
+Mesh data arrives in two messages over separate transports (SSE + WS) with **no cross-transport ordering guarantee**:
+1. `DISPLAY_RESULT` with `resultType: "mesh_ref"` — metadata + label names (SSE)
 2. WS binary frame — geometry (vertices, faces, labels)
 
-The viewer store uses a two-step merge: `setPendingLabels()` stores names from DISPLAY_RESULT, then `receiveBinaryMesh()` merges when binary arrives.
+The viewer store handles both orderings via symmetric pending:
+- **Labels first (normal)**: `setPendingLabels()` stores names → `receiveBinaryMesh()` finds labels, merges immediately
+- **Binary first (race)**: `receiveBinaryMesh()` stores data in `pendingMeshData` → `setPendingLabels()` finds pending data, merges immediately
 
-## WS Binary Frame → Viewer Store Wiring
+Either way, `buildMeshState()` runs exactly once per mesh, producing the final merged state.
 
-The `ThreadWsProvider` receives binary frames via `WsClient.onBinaryMessage`:
+## WS Binary Frame Dispatch
+
+`WsClient.onBinaryMessage` is a **single callback** (one consumer). Both Yjs document sync (`DocWsProvider`) and mesh binary data need binary frames. A dispatch layer routes frames by `subId`:
+
+- **Yjs frames** use `docId` as subId (registered by `DocWsProvider`)
+- **Mesh frames** use `toolCallId` as subId (deterministic AG-UI format, e.g. `call_abc123`)
+
+```typescript
+// lib/ws/binary-dispatch.ts
+
+type BinaryHandler = (subId: string, data: Uint8Array) => void
+
+/** Routes WS binary frames to the correct consumer by subId. */
+class BinaryDispatch {
+  private docSubscriptions = new Set<string>()
+  private docHandler: BinaryHandler | null = null
+  private meshHandler: BinaryHandler | null = null
+
+  /** Register a document subscription (called by DocWsProvider). */
+  registerDoc(docId: string, handler: BinaryHandler) {
+    this.docSubscriptions.add(docId)
+    this.docHandler = handler
+  }
+
+  unregisterDoc(docId: string) {
+    this.docSubscriptions.delete(docId)
+  }
+
+  /** Register the mesh handler (called by ThreadWsProvider). */
+  registerMesh(handler: BinaryHandler) {
+    this.meshHandler = handler
+  }
+
+  /** Route incoming binary frame. */
+  dispatch(subId: string, data: Uint8Array) {
+    if (this.docSubscriptions.has(subId)) {
+      this.docHandler?.(subId, data)
+    } else {
+      // Default to mesh — mesh subIds are toolCallIds not registered as docs
+      this.meshHandler?.(subId, data)
+    }
+  }
+}
+
+export const binaryDispatch = new BinaryDispatch()
+```
+
+`WsClient.onBinaryMessage` calls `binaryDispatch.dispatch()`. `DocWsProvider` registers doc subscriptions. `ThreadWsProvider` registers the mesh handler:
 
 ```typescript
 // In ThreadWsProvider setup:
-
-const handleBinaryMessage = (subId: string, payload: Uint8Array) => {
+binaryDispatch.registerMesh((subId: string, payload: Uint8Array) => {
   const meshData = parseMeshBinary(payload)
   if (!meshData) return
 
   useViewerStore.getState().receiveBinaryMesh(meshData.meshId, meshData)
   useWorkspaceStore.getState().showViewer(meshData.meshId)
-}
+})
 
+// In DocWsProvider setup:
+binaryDispatch.registerDoc(docId, (subId, data) => {
+  streamClient.handleBinaryMessage(subId, data)
+})
+
+// WsClient creation:
 const client = new WsClient({
   // ...existing config...
-  onBinaryMessage: handleBinaryMessage,
+  onBinaryMessage: (subId, data) => binaryDispatch.dispatch(subId, data),
 })
 ```
 

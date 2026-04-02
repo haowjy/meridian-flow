@@ -277,17 +277,19 @@ When executing Python through the kernel, the code is wrapped:
 # Preamble injected before user code
 import sys
 sys.path.insert(0, '/workspace/.meridian')
+sys.path.insert(0, '/workspace')
+sys.path.insert(0, '/workspace/scripts')
 from result_helper import show_plotly, show_matplotlib, show_dataframe, show_mesh, _flush, _results
 _results.clear()  # Clear from previous execution
 
 # --- User code ---
-{user_code}
-# --- End user code ---
-
-_flush()
+try:
+    {user_code}
+finally:
+    _flush()
 ```
 
-The `_results.clear()` + `_flush()` pattern handles the persistent kernel: previous results are cleared before each new execution, and new results are flushed at the end. The `atexit` pattern from the previous design doesn't work well with persistent kernels (atexit fires on kernel shutdown, not per-execution).
+The `_results.clear()` + `try/finally _flush()` pattern handles the persistent kernel: previous results are cleared before each new execution, and results are always flushed — even if user code raises an exception (partial results from `show_*` calls before the crash are still emitted). The `atexit` pattern from the previous design doesn't work well with persistent kernels (atexit fires on kernel shutdown, not per-execution). `sys.path` includes `/workspace` and `/workspace/scripts` so AI-written modules are importable.
 
 ## Extensibility: Code Fence Execution (Option 2)
 
