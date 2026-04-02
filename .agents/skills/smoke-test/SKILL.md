@@ -28,6 +28,12 @@ Start with the happy path — does the basic thing work? Then go adversarial:
 
 Focus on what the user actually experiences — error messages, exit codes, output format, side effects on disk. Internals are someone else's job.
 
+## Smoke Test Reference Docs
+
+Check `.meridian/fs/smoke/` for pre-written smoke test scenarios organized by feature area. Each file describes a specific scenario with reproduction steps, expected behavior, and what failure looks like. Use these as your test plan instead of inventing tests from scratch.
+
+**Important for orchestrators:** Smoke test files are independent — spawn one smoke-tester per file (or small group of related files) in parallel. Don't bundle all tests into one sequential agent. Each file is self-contained with its own setup and expected behavior.
+
 ## Reporting
 
 Structure your report so the orchestrator can act quickly:

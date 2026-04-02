@@ -4,7 +4,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Compartment } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 
-import { TabbedEditorShell } from "./TabbedEditorShell"
+import { TabbedEditorShell } from "./components/TabbedEditorShell"
 import {
   createEditorExtensions,
   createLocalEditorSession,

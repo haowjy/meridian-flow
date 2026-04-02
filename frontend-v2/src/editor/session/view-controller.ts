@@ -4,7 +4,7 @@ import * as Y from "yjs"
 import {
   clearCursorAwareness,
   refreshCursorAwareness,
-} from "../collab/awareness-lifecycle"
+} from "./awareness-lifecycle"
 import type { DocSession } from "./doc-session"
 import { SessionPool } from "./session-pool"
 

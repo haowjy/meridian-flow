@@ -1,0 +1,8 @@
+{
+  "name": "ws-smoke-client",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.0.0"
+  }
+}

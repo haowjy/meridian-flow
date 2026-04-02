@@ -9,7 +9,7 @@
 import { useEffect, useMemo } from "react"
 
 import { Editor } from "../../Editor"
-import { EditorShell } from "../../EditorShell"
+import { EditorShell } from "../../components/EditorShell"
 import { createLocalEditorSession } from "../../extensions"
 
 export interface StandaloneEditorProps {

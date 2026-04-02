@@ -25,7 +25,7 @@ const (
 	defaultReadLimitBytes    = 64 * 1024
 	defaultNotifyMaxBytes    = 1024
 
-	subscriptionQueueCapacity = 20
+	subscriptionQueueCapacity = 200
 	maxSubscriptionsPerConn   = 10
 	controlQueueCapacity      = 64
 	notifyQueueCapacity       = 64

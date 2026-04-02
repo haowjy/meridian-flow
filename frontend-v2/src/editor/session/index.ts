@@ -31,4 +31,4 @@ export { useFollowActiveDoc } from "./useFollowActiveDoc"
 export {
   clearCursorAwareness,
   refreshCursorAwareness,
-} from "../collab/awareness-lifecycle"
+} from "./awareness-lifecycle"

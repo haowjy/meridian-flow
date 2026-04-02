@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Meta, StoryObj } from "@storybook/react-vite"
 
-import { TabbedEditorShell } from "../TabbedEditorShell"
+import { TabbedEditorShell } from "../components/TabbedEditorShell"
 import {
   SessionPoolProvider,
   useDocumentSessions,

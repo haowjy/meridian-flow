@@ -15,16 +15,7 @@ export function SessionPoolProvider({
   config,
   children,
 }: SessionPoolProviderProps) {
-  const pool = useMemo(
-    () => new SessionPool(config),
-    [
-      config.idleMs,
-      config.warmBudget,
-      config.user.userId,
-      config.user.userName,
-      config.wsFactory,
-    ],
-  )
+  const pool = useMemo(() => new SessionPool(config), [config])
 
   useEffect(() => {
     return () => {
