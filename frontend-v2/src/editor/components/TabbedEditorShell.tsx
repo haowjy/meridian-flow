@@ -2,12 +2,12 @@ import { useCallback, useRef, useState } from "react"
 
 import { cn } from "@/lib/utils"
 
-import type { EditorContentAPI } from "./content/content-api"
+import type { EditorContentAPI } from "../content/content-api"
 import { EditorModeTabs, type EditorMode } from "./EditorModeTabs"
-import type { OpenDoc } from "./session/view-controller"
-import { TabBar } from "./tabs/TabBar"
-import { TitleHeader } from "./title-header/TitleHeader"
-import type { CollabConnectionState } from "./title-header/ConnectionStatus"
+import type { OpenDoc } from "../session/view-controller"
+import { TabBar } from "./TabBar"
+import { TitleHeader } from "../title-header/TitleHeader"
+import type { CollabConnectionState } from "../title-header/ConnectionStatus"
 
 export interface TabbedEditorShellProps {
   /** Open documents from useDocumentSessions() */

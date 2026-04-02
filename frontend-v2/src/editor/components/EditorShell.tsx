@@ -2,7 +2,7 @@ import { useCallback, useState } from "react"
 
 import { cn } from "@/lib/utils"
 
-import { Editor, type EditorProps } from "./Editor"
+import { Editor, type EditorProps } from "../Editor"
 import { EditorModeTabs, type EditorMode } from "./EditorModeTabs"
 
 // --- Single-document shell (original) ---

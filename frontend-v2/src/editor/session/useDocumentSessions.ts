@@ -1,6 +1,6 @@
 import { Compartment } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useSyncExternalStore } from "react"
 import * as Y from "yjs"
 
 import { createWordCountExtension } from "../content/content-api"
@@ -76,11 +76,7 @@ function hasSameSessionSnapshot(
 
 export function useDocumentSessions(): UseDocumentSessionsResult {
   const sessionPool = useSessionPool()
-  const surfaceIdRef = useRef<string>("")
-
-  if (!surfaceIdRef.current) {
-    surfaceIdRef.current = `surface-${Math.random().toString(36).slice(2, 10)}`
-  }
+  const surfaceId = useId()
 
   const createEditorView = useCallback(
     (args: {
@@ -139,11 +135,11 @@ export function useDocumentSessions(): UseDocumentSessionsResult {
   const controller = useMemo(
     () =>
       new ViewController({
-        surfaceId: surfaceIdRef.current,
+        surfaceId,
         sessionPool,
         createEditorView,
       }),
-    [sessionPool, createEditorView],
+    [surfaceId, sessionPool, createEditorView],
   )
 
   useEffect(() => {

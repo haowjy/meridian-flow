@@ -26,18 +26,29 @@
 
 ## Editor Refactor (Phases 2–7)
 
-Phase 1 (Yjs-first Editor) is complete — uncontrolled `Editor`, shared `createEditorExtensions()`, Storybook migrated. Phases 2–7 remain. Each has a blueprint in `plan/editor/`.
+Phase 1 (Yjs-first Editor) is complete — uncontrolled `Editor`, shared `createEditorExtensions()`, Storybook migrated. Phases 2–3 complete, Phase 4 partially complete. Each has a blueprint in `plan/editor/`.
 
 | Phase | Blueprint | What to Build | Status |
 |-------|-----------|--------------|--------|
 | 2 | `plan/editor/phase-2-doc-session-and-session-pool.md` | `DocSession` lifecycle (Y.Doc + IDB + awareness + undo), `SessionPool` with LRU eviction, Dexie schema, generation guards for idle timers, IDB health tracking + degraded mode | ✅ |
-| 3 | `plan/editor/phase-3-view-controller-and-use-document-sessions.md` | Per-surface `ViewController` with lease transfer, `useDocumentSessions()` hook replacing `useTabManager`, awareness clear on view detach (ghost cursor fix) | ⬜ |
-| 4 | `plan/editor/phase-4-websocket-provider.md` | Real WS provider matching backend protocol (`y-protocols/sync` handshake), reconnect, `AUTH_EXPIRED` token refresh, `document:restored` full-reset path | ⬜ |
+| 3 | `plan/editor/phase-3-view-controller-and-use-document-sessions.md` | Per-surface `ViewController` with lease transfer + view-owner registry, `useDocumentSessions()` hook replacing `useTabManager`, epoch-based async serialization, `useFollowActiveDoc` for mirrored surfaces, awareness lifecycle (`clearCursorAwareness`/`refreshCursorAwareness`), old TabManager deleted | ✅ |
+| 4 | `plan/editor/phase-4-websocket-provider.md` | Real WS provider matching backend protocol (`y-protocols/sync` handshake), reconnect, `AUTH_EXPIRED` token refresh, `document:restored` full-reset path | 🔶 P4.1 done |
 | 5 | `plan/editor/phase-5-proposal-persistence-and-offline-review.md` | Dexie-backed AI proposal runtime, diff derivation via Yjs projection clone+apply+diff, offline accept/reject, proposal GC | ⬜ |
 | 6 | `plan/editor/phase-6-sync-state-and-connection-ui.md` | Per-doc sync state machine, connection indicators ("Saved"/"Connected"/"Offline"), degraded-local-save banner | ⬜ |
 | 7 | `plan/editor/phase-7-decoration-audit.md` | ViewPlugin performance audit: viewport scoping, rebuild guards, widget `eq()`+`updateDOM()`, stress stories | ⬜ |
 
+**Phase 4 detail:** P4.1 (DocumentWsProvider with y-protocols/sync, heartbeat, reconnect backoff, auth expiry, control events) is complete. P4.2 (wire provider events into DocSession — syncState/connectionState/frozenReason updates) and P4.3 (connection lifecycle stories) remain.
+
 **Dependency chain:** P2 → P3 + P4 (parallel) → P5 + P6 (parallel) → P7. See `plan/editor-refactor-implementation.md` for execution rounds and agent team.
+
+## Deferred from Phase 3 Review
+
+| Item | Severity | What | Deferred to |
+|------|----------|------|-------------|
+| DocSession WS event wiring | HIGH | Provider emits `onConnectionState`/`onControlEvent` but DocSession never subscribes — syncState/connectionState/frozenReason don't update from real provider state | P4.2 (explicit scope) |
+| `getSession()` returns mutable DocSession | MEDIUM | Hook escape hatch leaks full mutable object; proposal pipeline should use narrower read-only interface | Phase 5 |
+| Word count integration | MEDIUM | Extension mounted in EditorView but getter discarded — shell can't display live word count from session-managed views | Layout integration |
+| Metadata ownership drift | LOW | `name`/`isModified` on ViewController (surface-scoped) but conceptually document-scoped. Two surfaces can diverge on same doc's name. | Document metadata layer |
 
 ## Open Decisions
 
@@ -63,5 +74,5 @@ Once ViewController connects SessionPool → Editor (Phase 3), a human should ve
 
 | Stale Doc | What Changed | Fix |
 |-----------|-------------|-----|
-| `features/layouts/studio-chrome.md` | Still says Converse always mirrors Studio's active tab. The editor refactor design supersedes this with independent per-surface `activeDocId` + lease transfer. | Update when Phase 3 lands, or earlier if the open decision above is resolved. |
-| `frontend-v2/CLAUDE.md` Phase 3 status | Says Phase 3 (Editor) is "not started" but a full WIP editor exists in `frontend-v2/src/editor/` with collab, IDB, decorations. Phase 1 of the refactor is now complete. | Update to reflect current state. |
+| `features/layouts/studio-chrome.md` | Still says Converse always mirrors Studio's active tab. Phase 3 landed with independent per-surface `activeDocId` + lease transfer + `useFollowActiveDoc` for optional mirroring. | Update to reflect Surface Coordination Modes from design doc. |
+| `frontend-v2/CLAUDE.md` Phase 3 status | Says Phase 3 (Editor) is "not started" but editor refactor Phases 1–3 are complete. Full session management, ViewController, awareness lifecycle, and WS provider (P4.1) are implemented. Directory structure reorganized into `session/`, `transport/`, `components/`, `collab/`. | Update to reflect current state. |

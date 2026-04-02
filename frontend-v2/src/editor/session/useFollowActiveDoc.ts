@@ -13,5 +13,5 @@ export function useFollowActiveDoc(
     if (!sourceDoc) return
 
     targetActivate({ id: sourceDoc.id, name: sourceDoc.name })
-  }, [sourceDoc?.id, sourceDoc?.name, targetActivate])
+  }, [sourceDoc, targetActivate])
 }
