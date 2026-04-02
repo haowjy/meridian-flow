@@ -346,10 +346,38 @@ func BashToolMetadata() *ToolMetadata {
 }
 ```
 
+## Dataset Hydration
+
+The bash tool automatically hydrates datasets on first sandbox startup. When `EnsureRunning()` is called, the tool also triggers `HydrateDatasets()` for all project datasets that aren't already in the sandbox:
+
+```go
+func (t *BashTool) ensureSandboxReady(ctx context.Context) error {
+    _, err := t.sandboxSvc.EnsureRunning(ctx, t.projectID)
+    if err != nil { return err }
+    
+    // Hydrate all project datasets (idempotent — skips already-hydrated via manifest)
+    datasets, err := t.datasetSvc.List(ctx, t.userID, t.projectID)
+    if err != nil { return err }
+    
+    var datasetIDs []uuid.UUID
+    for _, ds := range datasets {
+        if ds.Status == datasets.DatasetStatusReady {
+            datasetIDs = append(datasetIDs, ds.ID)
+        }
+    }
+    if len(datasetIDs) > 0 {
+        return t.sandboxSvc.HydrateDatasets(ctx, t.projectID, datasetIDs)
+    }
+    return nil
+}
+```
+
+The `HydrateDatasets` service resolves dataset IDs → slugs → storage paths and writes files to `/workspace/datasets/{slug}/`. The manifest file (`.manifest.json`) prevents redundant re-downloads on subsequent calls.
+
 ## File Access
 
 ```
-/workspace/datasets/{dataset_slug}/    # DICOM files from Supabase Storage
+/workspace/datasets/{dataset_slug}/    # DICOM files from Supabase Storage (auto-hydrated)
 /workspace/outputs/                    # Generated files (figures, meshes, CSVs)
 /workspace/.meridian/                  # Helper modules, result.json, meshes/
 /workspace/scripts/                    # AI-written Python modules

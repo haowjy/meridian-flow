@@ -336,8 +336,10 @@ export const datasetApi = {
 
 ## Auth Integration
 
+Single token provider used across all auth surfaces:
+
 ```typescript
-// lib/auth.ts — minimal auth token provider
+// lib/auth.ts — shared auth token provider
 
 let cachedToken: string | null = null
 
@@ -349,8 +351,18 @@ export async function getAuthToken(): Promise<string> {
 }
 ```
 
-1. **Dev mode**: `VITE_AUTH_TOKEN` env var from `scripts/get-token.sh`
-2. **Prod**: Supabase Auth integration (deferred)
+**Auth surfaces** — all use `getAuthToken()`:
+
+| Surface | How | Where |
+|---------|-----|-------|
+| **API requests** | `Authorization: Bearer` header | `lib/api.ts` → `apiFetch()` |
+| **WebSocket** | `getToken` callback in WsClient config | `ThreadWsProvider.tsx` → `new WsClient({ getToken: getAuthToken })` |
+| **Supabase Storage uploads** | `Authorization: Bearer` header on PUT | `useDatasetUpload.ts` → direct fetch to pre-signed URL with token |
+
+1. **Dev mode**: `VITE_AUTH_TOKEN` env var from `scripts/get-token.sh` output
+2. **Prod**: Replace `getAuthToken()` body with Supabase Auth session token (deferred)
+
+The existing `ThreadWsProvider` already takes a `getToken` callback — we pass `getAuthToken`. For Supabase Storage uploads, the backend's `GetUploadURL` returns a pre-signed URL that includes auth, so the frontend doesn't need to add auth headers for storage PUTs.
 
 ## Related Docs
 
