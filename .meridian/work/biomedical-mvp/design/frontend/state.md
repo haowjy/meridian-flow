@@ -34,6 +34,8 @@ interface WorkspaceState {
 
   // Right panel
   activeContent: ContentView
+  /** Current viewer mesh ID — set when viewer is active, null otherwise. Used by ContentToolbar. */
+  viewerMeshId: string | null
 
   // Actions
   setActiveProject: (projectId: string) => void
@@ -50,6 +52,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeProjectId: null,
   activeThreadId: null,
   activeContent: { type: "empty" },
+  viewerMeshId: null,
 
   setActiveProject: (projectId) =>
     set({ activeProjectId: projectId, activeContent: { type: "datasets", projectId } }),
@@ -59,7 +62,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ activeContent: content }),
 
   showViewer: (meshId) =>
-    set({ activeContent: { type: "viewer", meshId } }),
+    set({ activeContent: { type: "viewer", meshId }, viewerMeshId: meshId }),
   showDatasets: () => {
     const projectId = get().activeProjectId
     if (projectId) {
@@ -269,30 +272,103 @@ const BONE_COLORS: Record<string, string> = {
 }
 ```
 
+## Mesh Metadata/Binary Join
+
+Mesh data arrives in two separate messages that may race:
+1. `PYTHON_RESULT` with `resultType: "mesh_ref"` — carries `mesh_id`, `vertex_count`, `face_count`, `label_names`
+2. WS binary frame — carries the actual geometry (vertices, faces, labels)
+
+The binary frame typically follows within 1 second of the PYTHON_RESULT event but could arrive first if SSE is delayed. The viewer store uses a two-step merge:
+
+```typescript
+// Extended viewer store:
+interface ViewerState {
+  // ... existing fields ...
+
+  /** Label names from PYTHON_RESULT, keyed by mesh_id. Stored until binary arrives. */
+  pendingMeshLabels: Record<string, Record<string, string>>
+
+  // Actions
+  setPendingLabels: (meshId: string, labelNames: Record<string, string>) => void
+  receiveBinaryMesh: (meshId: string, data: MeshData) => void
+}
+
+// setPendingLabels: called when PYTHON_RESULT mesh_ref arrives
+setPendingLabels: (meshId, labelNames) =>
+  set((state) => ({
+    pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
+  })),
+
+// receiveBinaryMesh: called when WS binary frame arrives, merges with pending labels
+receiveBinaryMesh: (meshId, data) =>
+  set((state) => {
+    const labelNames = state.pendingMeshLabels[meshId] ?? {}
+    const mergedData = { ...data, labelNames }
+
+    // Build structures with label names
+    const labelSet = new Set(Array.from(mergedData.labels))
+    const structures: BoneStructure[] = []
+    const visibility: Record<number, boolean> = {}
+    for (const label of labelSet) {
+      if (label === 0) continue
+      const name = labelNames[String(label)] ?? `Structure ${label}`
+      structures.push({
+        label,
+        name,
+        color: BONE_COLORS[name] ?? "#888888",
+      })
+      visibility[label] = true
+    }
+
+    const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
+    return {
+      meshData: mergedData,
+      activeMeshId: meshId,
+      structures,
+      structureVisibility: visibility,
+      pendingMeshLabels: remainingPending,
+    }
+  }),
+```
+
 ## WS Binary Frame → Viewer Store Wiring
 
-The `ThreadWsProvider` (existing) receives binary frames via `WsClient.onBinaryMessage`. We add a handler that parses mesh frames and updates the viewer store + triggers content panel switch:
+The `ThreadWsProvider` (existing) receives binary frames via `WsClient.onBinaryMessage`. The handler:
+
+1. Parses the binary frame with `parseMeshBinary`
+2. Calls `viewerStore.receiveBinaryMesh()` (merges with pending labels)
+3. Auto-switches the content panel to the viewer
 
 ```typescript
 // In ThreadWsProvider setup:
 
 const handleBinaryMessage = (subId: string, payload: Uint8Array) => {
-  // Parse mesh binary frame
   const meshData = parseMeshBinary(payload)
   if (!meshData) return
 
-  // Update viewer store
-  useViewerStore.getState().setMeshData(meshData.meshId, meshData)
+  // Merge with labels + update store
+  useViewerStore.getState().receiveBinaryMesh(meshData.meshId, meshData)
 
   // Auto-switch content panel to viewer
   useWorkspaceStore.getState().showViewer(meshData.meshId)
 }
 
-// Wire into WsClient config:
 const client = new WsClient({
   // ...existing config...
   onBinaryMessage: handleBinaryMessage,
 })
+```
+
+The PYTHON_RESULT handler (in the reducer's side effect or a separate listener) calls `setPendingLabels`:
+
+```typescript
+// When PYTHON_RESULT with mesh_ref arrives:
+if (event.data.resultType === "mesh_ref") {
+  useViewerStore.getState().setPendingLabels(
+    event.data.mesh_id,
+    event.data.label_names ?? {}
+  )
+}
 ```
 
 See [viewer-3d.md](viewer-3d.md) for the `parseMeshBinary` function.
@@ -345,11 +421,32 @@ export const datasetApi = {
 
 Authentication is not yet built in v2 (Phase 8). For the biomedical MVP:
 
-1. **Dev mode**: Use a hardcoded JWT from `scripts/get-token.sh` (same as v1 dev)
-2. **Prod**: Supabase Auth integration (same as v1) — minimal wrapper
+```typescript
+// lib/auth.ts — minimal auth token provider
+
+/** Read from env var (set by scripts/get-token.sh in dev, Supabase Auth in prod) */
+let cachedToken: string | null = null
+
+export async function getAuthToken(): Promise<string> {
+  if (cachedToken) return cachedToken
+
+  // Dev mode: read from env var injected by scripts/get-token.sh
+  const envToken = import.meta.env.VITE_AUTH_TOKEN
+  if (envToken) {
+    cachedToken = envToken
+    return envToken
+  }
+
+  // TODO: Supabase Auth integration for prod
+  throw new Error("No auth token available. Set VITE_AUTH_TOKEN for dev mode.")
+}
+```
+
+1. **Dev mode**: `VITE_AUTH_TOKEN` env var, set from `scripts/get-token.sh` output
+2. **Prod**: Supabase Auth integration (deferred — same as v1 pattern)
 
 The auth token is needed for:
-- API requests (`Authorization: Bearer` header)
+- API requests (`Authorization: Bearer` header via `lib/api.ts`)
 - WS connection (`auth` control message — already supported by WsClient)
 - Supabase Storage uploads (direct upload with auth token)
 
