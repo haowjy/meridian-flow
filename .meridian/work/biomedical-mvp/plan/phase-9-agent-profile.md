@@ -1,6 +1,6 @@
-# Phase 8: Data Analyst Agent Profile
+# Phase 9: Data Analyst Agent Profile
 
-**Round 4** — Depends on Phase 3 (execute_python tool must be registered). Can run in parallel with Phase 7.
+**Round 3** — Depends on Phase 3 (execute_python tool must be registered). Can run in parallel with Phases 6 and 7.
 
 ## Scope
 
