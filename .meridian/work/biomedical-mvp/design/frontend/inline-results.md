@@ -134,7 +134,17 @@ Displays streaming stdout/stderr during execution:
 // features/inline-results/PythonOutputBlock.tsx
 
 function PythonOutputBlock({ lines, isStreaming }: Props) {
-  const [collapsed, setCollapsed] = useState(lines.length > 20)
+  // Auto-collapse once output grows beyond threshold. Uses ref to avoid
+  // re-collapsing after user manually expands — only collapses on the
+  // initial transition past the threshold.
+  const [collapsed, setCollapsed] = useState(false)
+  const autoCollapsedRef = useRef(false)
+
+  if (lines.length > 20 && !autoCollapsedRef.current) {
+    autoCollapsedRef.current = true
+    setCollapsed(true)
+  }
+
   const visibleLines = collapsed ? lines.slice(-20) : lines
 
   return (

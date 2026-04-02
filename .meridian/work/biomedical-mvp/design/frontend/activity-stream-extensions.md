@@ -252,15 +252,18 @@ const { blockItems, responseText, resultItems } = useMemo(() => {
 Add `"python"` to the tool category system in `tool-utils.ts`:
 
 ```typescript
-// In getToolCategory():
+// In getToolCategory() — MUST be placed BEFORE the bash check.
+// "execute_python" splits to segments ["execute", "python"].
+// The bash check matches "execute", so python must win first.
 if (hasSegment(segments, ["python"])) {
   return "python"
 }
 
-// Note: "execute" alone would match bash category. The tool name
-// "execute_python" has segments ["execute", "python"], so check
-// "python" specifically.
+// Existing bash check (line ~65) stays where it is:
+// if (hasSegment(segments, ["bash", "terminal", "command", "exec", "execute"])) ...
 ```
+
+**Ordering requirement**: The python check must appear before the bash check in `getToolCategory()`. The existing bash candidates include `"execute"` and `"exec"`, both of which match `execute_python`. Without this ordering, `execute_python` is silently classified as `"bash"` and routed to the wrong detail renderer.
 
 Then route to `PythonDetail` in `ToolDetail.tsx`:
 

@@ -79,3 +79,9 @@
 **What**: Workspace panel state, viewer mesh data, and upload progress use zustand stores. Dataset lists and metadata use TanStack Query. Thread streaming uses the existing reducer + useSyncExternalStore pattern.
 **Why**: Clear separation: zustand for client-only ephemeral state (what panel is showing, mesh in memory, upload progress), TanStack Query for server-cached state (dataset list, metadata). The existing streaming infrastructure already works well — no need to replace it with zustand.
 **Rejected**: (a) All zustand — would need manual cache invalidation for server data. (b) All TanStack Query — awkward for transient client state like upload progress and mesh binary data. (c) Context API — causes unnecessary re-renders for frequently-changing state like upload progress.
+
+## D13: Review fixes — tool category ordering, upload error handling, BONE_COLORS dedup
+**When**: Review synthesis round 2 (2026-04-01)
+**What**: Three fixes from p757 SOLID review: (1) Python tool category check must appear before bash check in `getToolCategory()` — `execute_python` segments include "execute", which matches the bash candidates. (2) Upload orchestration wrapped in try/catch with `store.setError()` call. (3) `BONE_COLORS` defined once in `features/viewer-3d/constants.ts`, imported by viewer store instead of duplicated. Also fixed: ContentToolbar properly destructures `activeProjectId` and `viewerMeshId` from store selector (was referencing undefined variables), and PythonOutputBlock auto-collapse uses ref to avoid re-collapsing after user manually expands.
+**Why**: H1 was a silent misclassification that would route `execute_python` to the bash detail renderer. M1 left upload failures unhandled — the UI would freeze in uploading state. M2 would be a runtime error.
+**Reviewers**: p757 (opus, SOLID/design quality)
