@@ -1,28 +1,34 @@
 # Dataset Upload UI
 
-Drag-and-drop DICOM stack upload with metadata extraction. Project-scoped, integrated into the existing workspace. See [overview](../overview.md) for system context.
+Drag-and-drop DICOM stack upload with metadata extraction. Project-scoped, rendered in the right panel's content area. See [overview](overview.md) for frontend architecture context.
 
 ## Entry Points
 
-Two ways to upload datasets:
+Two ways to access datasets:
 
-1. **Dataset panel in right panel**: A dedicated tab/view for managing datasets (list, upload, delete)
-2. **Chat-initiated**: User mentions uploading in chat, agent provides instructions, user uses the upload UI
+1. **Datasets tab in content panel**: Always-visible tab in the `ContentToolbar`. Shows dataset list + upload zone.
+2. **Chat-initiated**: User mentions uploading in chat, agent provides instructions, user switches to Datasets tab.
 
-The dataset panel is a new content type in `DocumentPanel`, accessible via the project tree or a toolbar button.
+The dataset panel is one of the content types in `ContentPanel`, always available as a tab. See [layout.md](layout.md).
 
 ## Component Architecture
 
 ```
 features/datasets/
-├── DatasetPanel.tsx            # Main panel: list + upload area
-├── DatasetUploadZone.tsx       # Drag-and-drop zone
-├── DatasetList.tsx             # List of existing datasets
-├── DatasetCard.tsx             # Individual dataset with metadata
-├── DatasetMetadataView.tsx     # Expanded metadata display
-└── hooks/
-    ├── useDatasetUpload.ts     # Upload state machine
-    └── useDatasets.ts          # List/fetch datasets (TanStack Query)
+├── DatasetPanel.tsx              # Main panel: upload zone + list
+├── DatasetPanel.stories.tsx      # Storybook story
+├── DatasetUploadZone.tsx         # Drag-and-drop zone
+├── DatasetUploadZone.stories.tsx
+├── DatasetList.tsx               # List of existing datasets
+├── DatasetCard.tsx               # Individual dataset with metadata
+├── DatasetCard.stories.tsx
+├── DatasetMetadataView.tsx       # Expanded metadata display
+├── hooks/
+│   ├── useDatasetUpload.ts       # Upload orchestration (calls store + API)
+│   └── useDatasets.ts            # TanStack Query hooks (list, create, finalize, delete)
+├── types.ts                      # Dataset, DatasetMetadata types
+└── examples/
+    └── mock-datasets.ts          # Mock data for Storybook
 ```
 
 ## Upload Flow
@@ -35,42 +41,131 @@ sequenceDiagram
     participant SB as Supabase Storage
 
     U->>DZ: Drag DICOM files/folder
-    DZ->>DZ: Validate files (.dcm extension or DICOM magic bytes)
-    DZ->>API: POST /datasets (name, slug)
-    API-->>DZ: { id, upload_url_prefix }
+    DZ->>DZ: Validate files (.dcm or DICOM magic bytes)
+    DZ->>API: POST /api/projects/{pid}/datasets
+    API-->>DZ: { id, slug, upload_url }
 
     loop Each file (parallel, max 5 concurrent)
-        DZ->>SB: PUT to signed URL
+        DZ->>SB: Upload to Supabase Storage
         SB-->>DZ: 200 OK
-        DZ->>DZ: Update progress bar
+        DZ->>DZ: Update progress (dataset store)
     end
 
-    DZ->>API: POST /datasets/{id}/finalize
+    DZ->>API: POST /api/datasets/{id}/finalize
     API-->>DZ: { dataset with metadata }
     DZ->>DZ: Show metadata summary
+```
+
+## TypeScript Types
+
+```typescript
+// features/datasets/types.ts
+
+export interface Dataset {
+  id: string
+  projectId: string
+  slug: string
+  name: string
+  description: string
+  status: "uploading" | "processing" | "ready" | "error"
+  metadata?: DatasetMetadata
+  fileCount: number
+  totalSizeBytes: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DatasetMetadata {
+  modality?: string
+  manufacturer?: string
+  scannerModel?: string
+  sliceCount?: number
+  sliceThickness?: number
+  pixelSpacingX?: number
+  pixelSpacingY?: number
+  rows?: number
+  columns?: number
+  bitsAllocated?: number
+  patientId?: string
+  studyDate?: string
+  studyDescription?: string
+}
+```
+
+## DatasetPanel
+
+Main panel combining upload zone and dataset list:
+
+```tsx
+// features/datasets/DatasetPanel.tsx
+
+function DatasetPanel({ projectId }: { projectId: string }) {
+  const { data: datasets, isLoading } = useDatasets(projectId)
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b px-4 py-3">
+        <h3 className="text-sm font-medium">Datasets</h3>
+        <p className="text-xs text-muted-foreground">
+          Upload DICOM stacks for analysis
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <DatasetUploadZone projectId={projectId} />
+
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner className="h-4 w-4" />
+            Loading datasets...
+          </div>
+        ) : datasets && datasets.length > 0 ? (
+          <DatasetList datasets={datasets} />
+        ) : (
+          <p className="text-sm text-muted-foreground">No datasets yet</p>
+        )}
+      </div>
+    </div>
+  )
+}
 ```
 
 ## DatasetUploadZone
 
 ```tsx
-function DatasetUploadZone({ projectId }: Props) {
-  const { uploadState, startUpload, cancelUpload } = useDatasetUpload(projectId)
+// features/datasets/DatasetUploadZone.tsx
+
+function DatasetUploadZone({ projectId }: { projectId: string }) {
+  const { startUpload } = useDatasetUpload(projectId)
+  const upload = useDatasetStore((s) => s.upload)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = await extractFiles(e.dataTransfer)
+    const validated = validateDicomFiles(files)
+    if (validated.valid.length > 0) {
+      startUpload(validated.valid)
+    }
+  }
 
   return (
     <div
       className={cn(
-        "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+        "rounded-lg border-2 border-dashed p-8 text-center transition-colors",
         "hover:border-accent-fill hover:bg-accent-fill/5",
         isDragging && "border-accent-fill bg-accent-fill/10"
       )}
       onDrop={handleDrop}
-      onDragOver={handleDragOver}
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+      onDragLeave={() => setIsDragging(false)}
     >
-      {uploadState.status === 'idle' && (
+      {upload.status === "idle" && (
         <>
-          <UploadIcon className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+          <UploadSimple className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
           <p className="text-sm font-medium">Drag DICOM files or folder here</p>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="mt-1 text-xs text-muted-foreground">
             Supports .dcm files and DICOM directories
           </p>
           <Button variant="outline" size="sm" className="mt-4" onClick={openFilePicker}>
@@ -79,20 +174,35 @@ function DatasetUploadZone({ projectId }: Props) {
         </>
       )}
 
-      {uploadState.status === 'uploading' && (
+      {upload.status === "uploading" && (
         <UploadProgress
-          filesUploaded={uploadState.filesUploaded}
-          totalFiles={uploadState.totalFiles}
-          bytesUploaded={uploadState.bytesUploaded}
-          totalBytes={uploadState.totalBytes}
-          onCancel={cancelUpload}
+          filesUploaded={upload.filesUploaded}
+          totalFiles={upload.totalFiles}
+          bytesUploaded={upload.bytesUploaded}
+          totalBytes={upload.totalBytes}
         />
       )}
 
-      {uploadState.status === 'processing' && (
-        <div className="flex items-center gap-3">
-          <Spinner />
+      {upload.status === "processing" && (
+        <div className="flex items-center justify-center gap-3">
+          <Spinner className="h-4 w-4" />
           <span className="text-sm">Extracting DICOM metadata...</span>
+        </div>
+      )}
+
+      {upload.status === "complete" && (
+        <div className="flex items-center justify-center gap-2 text-sm text-success">
+          <CheckCircle className="h-5 w-5" />
+          Upload complete
+        </div>
+      )}
+
+      {upload.status === "error" && (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive">{upload.message}</p>
+          <Button variant="outline" size="sm" onClick={resetUpload}>
+            Try again
+          </Button>
         </div>
       )}
     </div>
@@ -102,37 +212,68 @@ function DatasetUploadZone({ projectId }: Props) {
 
 ## File Validation
 
-Before upload, validate files client-side:
+Client-side validation before upload:
 
 ```typescript
-function validateDicomFiles(files: File[]): ValidationResult {
+// features/datasets/hooks/useDatasetUpload.ts
+
+function validateDicomFiles(files: File[]): { valid: File[]; invalid: string[] } {
   const valid: File[] = []
   const invalid: string[] = []
 
   for (const file of files) {
-    // Check extension
-    if (file.name.toLowerCase().endsWith('.dcm')) {
+    if (file.name.toLowerCase().endsWith(".dcm")) {
       valid.push(file)
-      continue
+    } else {
+      invalid.push(file.name)
     }
-    // Check DICOM magic bytes (first 132 bytes: 128 preamble + "DICM")
-    // This is async — read first 132 bytes of each file
-    invalid.push(file.name)
   }
 
   return { valid, invalid }
 }
 ```
 
-## Upload State Machine
+For the MVP, extension-based validation is sufficient. DICOM magic byte checking (128-byte preamble + "DICM") can be added as a refinement — it requires async file reads that slow down the validation UX.
+
+## Upload Orchestration
+
+The `useDatasetUpload` hook coordinates the dataset store, API calls, and Supabase uploads:
 
 ```typescript
-type UploadState =
-  | { status: 'idle' }
-  | { status: 'uploading'; filesUploaded: number; totalFiles: number; bytesUploaded: number; totalBytes: number }
-  | { status: 'processing' }  // Metadata extraction
-  | { status: 'complete'; dataset: Dataset }
-  | { status: 'error'; message: string }
+// features/datasets/hooks/useDatasetUpload.ts
+
+function useDatasetUpload(projectId: string) {
+  const createDataset = useCreateDataset(projectId)
+  const finalizeDataset = useFinalizeDataset()
+  const store = useDatasetStore()
+
+  async function startUpload(files: File[]) {
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
+
+    // 1. Create dataset record
+    const name = inferDatasetName(files)
+    const slug = slugify(name)
+    const { id, upload_url } = await createDataset.mutateAsync({ name, slug })
+
+    // 2. Start tracking in store
+    store.startUpload(id, files.length, totalBytes)
+
+    // 3. Upload files with bounded parallelism
+    await uploadFiles(files, upload_url, (uploaded, bytes) => {
+      store.updateProgress(uploaded, bytes)
+    })
+
+    // 4. Finalize
+    store.setProcessing()
+    await finalizeDataset.mutateAsync(id)
+    store.setComplete()
+
+    // 5. Reset after delay
+    setTimeout(() => store.resetUpload(), 3000)
+  }
+
+  return { startUpload }
+}
 ```
 
 ## Parallel Upload
@@ -140,17 +281,23 @@ type UploadState =
 DICOM stacks can have hundreds of files. Upload with bounded parallelism:
 
 ```typescript
-async function uploadFiles(files: File[], urlPrefix: string, onProgress: ProgressCallback) {
+async function uploadFiles(
+  files: File[],
+  uploadUrl: string,
+  onProgress: (filesUploaded: number, bytesUploaded: number) => void
+) {
   const CONCURRENCY = 5
   let uploaded = 0
+  let bytes = 0
 
   const queue = [...files]
   const workers = Array.from({ length: CONCURRENCY }, async () => {
     while (queue.length > 0) {
       const file = queue.shift()!
-      await uploadToStorage(urlPrefix, file)
+      await uploadToSupabaseStorage(uploadUrl, file)
       uploaded++
-      onProgress(uploaded, files.length)
+      bytes += file.size
+      onProgress(uploaded, bytes)
     }
   })
 
@@ -158,24 +305,28 @@ async function uploadFiles(files: File[], urlPrefix: string, onProgress: Progres
 }
 ```
 
-## Dataset List
+## DatasetList and DatasetCard
 
 ```tsx
-function DatasetList({ projectId }: Props) {
-  const { data: datasets, isLoading } = useDatasets(projectId)
+// features/datasets/DatasetList.tsx
 
+function DatasetList({ datasets }: { datasets: Dataset[] }) {
   return (
     <div className="space-y-3">
-      {datasets?.map(dataset => (
+      {datasets.map((dataset) => (
         <DatasetCard key={dataset.id} dataset={dataset} />
       ))}
     </div>
   )
 }
+```
+
+```tsx
+// features/datasets/DatasetCard.tsx
 
 function DatasetCard({ dataset }: { dataset: Dataset }) {
   return (
-    <div className="border rounded-lg p-4">
+    <div className="rounded-lg border p-4">
       <div className="flex items-center justify-between">
         <div>
           <h4 className="text-sm font-medium">{dataset.name}</h4>
@@ -183,17 +334,25 @@ function DatasetCard({ dataset }: { dataset: Dataset }) {
             {dataset.fileCount} files · {formatBytes(dataset.totalSizeBytes)}
           </p>
         </div>
-        <Badge variant={dataset.status === 'ready' ? 'success' : 'default'}>
+        <Badge variant={dataset.status === "ready" ? "success" : "secondary"}>
           {dataset.status}
         </Badge>
       </div>
 
       {dataset.metadata && (
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>Scanner: {dataset.metadata.manufacturer} {dataset.metadata.scannerModel}</span>
-          <span>Slices: {dataset.metadata.sliceCount}</span>
-          <span>Resolution: {dataset.metadata.pixelSpacingX}mm</span>
-          <span>Matrix: {dataset.metadata.rows}x{dataset.metadata.columns}</span>
+          {dataset.metadata.manufacturer && (
+            <span>Scanner: {dataset.metadata.manufacturer} {dataset.metadata.scannerModel}</span>
+          )}
+          {dataset.metadata.sliceCount && (
+            <span>Slices: {dataset.metadata.sliceCount}</span>
+          )}
+          {dataset.metadata.pixelSpacingX && (
+            <span>Resolution: {dataset.metadata.pixelSpacingX}mm</span>
+          )}
+          {dataset.metadata.rows && dataset.metadata.columns && (
+            <span>Matrix: {dataset.metadata.rows}x{dataset.metadata.columns}</span>
+          )}
         </div>
       )}
     </div>
@@ -201,39 +360,39 @@ function DatasetCard({ dataset }: { dataset: Dataset }) {
 }
 ```
 
-## Integration with Chat
+## TanStack Query Hooks
 
-The data-analyst agent knows about datasets via the `execute_python` tool. When the user uploads data and asks "segment the knee joint," the agent:
+See [state.md](state.md) for the full query hook definitions. Key queries:
 
-1. Lists available datasets (via `execute_python` reading `/workspace/datasets/`)
-2. Loads the DICOM stack using the proven pipeline code
-3. Runs segmentation
-4. Streams results back
+```typescript
+// Dataset list (auto-refetches on WS invalidation)
+useQuery({ queryKey: ["projects", projectId, "datasets"], ... })
 
-The dataset metadata is also available as context in the agent's system prompt, so it can reference specific datasets by name/slug without listing files.
+// Create dataset (returns id + upload URL)
+useMutation({ mutationFn: createDataset, ... })
 
-## Supabase Storage Configuration
-
-New bucket and RLS policies:
-
-```sql
--- Create datasets bucket
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('datasets', 'datasets', false);
-
--- RLS: project members can read/write their project's datasets
-CREATE POLICY "Project members can manage datasets"
-ON storage.objects FOR ALL
-USING (
-  bucket_id = 'datasets' AND
-  (storage.foldername(name))[1] IN (
-    SELECT id::text FROM projects
-    WHERE id IN (SELECT project_id FROM project_members WHERE user_id = auth.uid())
-  )
-);
+// Finalize (triggers metadata extraction)
+useMutation({ mutationFn: finalizeDataset, ... })
 ```
+
+## Storybook Stories
+
+- **DatasetUploadZone**: Idle state, dragging state, uploading progress, processing, complete, error
+- **DatasetCard**: Ready dataset with full metadata, uploading dataset, error dataset
+- **DatasetPanel**: Empty state, with datasets, during upload
+
+Stories use mock data from `features/datasets/examples/mock-datasets.ts` with sample DICOM metadata.
+
+## Dependencies
+
+Already in `package.json`:
+- `@tanstack/react-query` — data fetching
+- `@radix-ui/react-progress` — progress bar
+- shadcn/ui atoms (Button, Badge, Checkbox)
 
 ## Related Docs
 
-- [Dataset Domain](../backend/dataset-domain.md) — backend service and storage
+- [Layout](layout.md) — DatasetPanel renders in the content panel
+- [State Management](state.md) — dataset store, TanStack Query hooks, API client
+- [Dataset Domain (backend)](../backend/dataset-domain.md) — API endpoints and types
 - [Data Analyst Agent](../agent/data-analyst-agent.md) — how the agent uses datasets
