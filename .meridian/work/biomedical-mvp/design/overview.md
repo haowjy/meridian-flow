@@ -12,7 +12,7 @@ flowchart TB
         Layout --> ContentPanel["Content Panel (right)"]
         ChatPanel --> TurnList["TurnList + ActivityBlock"]
         ChatPanel --> Composer["ChatComposer"]
-        TurnList --> VisibleZone["Visible Zone<br/>(text, charts, tables, images, mesh cards, stdout)"]
+        TurnList --> InlineContent["Inline Content<br/>(text, charts, tables, images, mesh cards, stdout)"]
         ContentPanel --> Viewer3D["3D Viewer<br/>(React Three Fiber, multi-mesh)"]
         ContentPanel --> DatasetUI["Dataset Upload UI"]
         ContentPanel --> Editor["Editor (CM6, existing)"]
@@ -55,7 +55,7 @@ flowchart TB
 | **PersonaCatalog** | New `.agents/agents/data-analyst.md` file (no code changes) |
 | **SSE Event Handlers** | New handlers for `TOOL_OUTPUT` and `DISPLAY_RESULT` events |
 | **Supabase Storage** | New bucket for DICOM datasets |
-| **Activity stream reducer** | New event types + revised two-zone ActivityBlock model |
+| **Activity stream reducer** | New event types + per-item collapse defaults model |
 | **ToolDetail routing** | New `PythonDetail` + extended `BashDetail` for sandbox output rendering |
 
 ### Add (new components)
@@ -68,7 +68,7 @@ flowchart TB
 | **Dataset domain** | Upload, storage, metadata for DICOM stacks | [dataset-domain.md](backend/dataset-domain.md) |
 | **Display result pipeline** | Generic AG-UI events + OutputSink for rich results | [display-results.md](backend/display-results.md) |
 | **Workspace layout** | Two-panel resizable layout | [layout.md](frontend/layout.md) |
-| **Activity stream redesign** | Two-zone model: collapsed (details) + visible (content) | [activity-stream.md](frontend/activity-stream.md) |
+| **Activity stream redesign** | Per-item collapse defaults model + per-tool display config | [activity-stream.md](frontend/activity-stream.md) |
 | **Zustand stores** | Project, dataset, multi-mesh viewer state | [state.md](frontend/state.md) |
 | **3D viewer** | React Three Fiber multi-mesh renderer | [viewer-3d.md](frontend/viewer-3d.md) |
 | **Inline results** | Plotly/matplotlib/table/mesh rendering inline with text | [inline-results.md](frontend/inline-results.md) |
@@ -88,14 +88,16 @@ Both share the same Daytona sandbox service. The AI writes reusable modules via 
 The `python` tool is designed to be replaceable by a streaming code fence interceptor (`python:run` blocks). The downstream flow — ExecInKernel → stream stdout → read result.json → emit results → render — is identical regardless of trigger. The Daytona service, result_helper.py, DISPLAY_RESULT events, and frontend rendering are all decoupled from how code arrives.
 
 ### 3. Generic display results, inline with text
-Any tool can emit `DISPLAY_RESULT` events — the concept is not Python-specific. Results (charts, images, tables, mesh refs) render **inline with text** in the visible zone of the ActivityBlock. They are content, not a separate category.
+Any tool can emit `DISPLAY_RESULT` events — the concept is not Python-specific. Results (charts, images, tables, mesh refs) render **inline with text** in the ActivityBlock, never collapsed by default. They are content, not a separate category.
 
-### 4. Two-zone ActivityBlock model
-One ActivityBlock per assistant turn. Two rendering zones:
-- **Collapsed zone**: thinking, tool call details (input/args). Expandable for debugging.
-- **Visible zone**: text, images, charts, tables, mesh cards, tool stdout (for tools that default to uncollapsed output like python).
+### 4. ActivityBlock with per-item collapse defaults
+One ActivityBlock per assistant turn. Each item has a default collapse state based on its kind and tool category:
+- **Collapsed by default**: thinking, tool input/args. Expandable for debugging.
+- **Depends on tool category**: tool stdout (python: uncollapsed, bash: collapsed).
+- **Hidden by default**: tool stderr (click for popup).
+- **Never collapsed**: text content, display results (charts, images, tables, mesh cards) — inline with text.
 
-Per-tool-category display config (extensible) controls what goes where. stderr is hidden by default with click-to-view popup.
+Per-tool-category display config (extensible) controls collapse defaults. User can toggle any item.
 
 ### 5. Multi-mesh 3D scene
 The 3D viewer manages multiple named meshes by ID:
@@ -142,7 +144,7 @@ sequenceDiagram
     B->>D: python: ExecInKernel(segmentation code)
     D->>D: Executes in persistent Jupyter kernel
 
-    loop Streaming stdout (visible zone)
+    loop Streaming stdout (uncollapsed by default for python)
         D-->>B: stdout chunks
         B-->>F: AG-UI TOOL_OUTPUT events
         F-->>R: Streaming output inline
@@ -199,10 +201,10 @@ frontend-v2/                   # Target frontend (NOT frontend/)
       activity-stream/
         streaming/
           events.ts            # Extended with TOOL_OUTPUT, DISPLAY_RESULT
-          reducer.ts           # Revised: two-zone model + per-tool display config
+          reducer.ts           # Revised: per-item collapse defaults + per-tool display config
         types.ts               # Extended with DisplayResultItem
         tool-display-config.ts # Per-tool-category collapse defaults
-        ActivityBlock.tsx       # Revised: collapsed zone + visible zone
+        ActivityBlock.tsx       # Revised: per-item collapse defaults
         items/
           DisplayResultRow.tsx  # Inline result renderer
       viewer-3d/               # React Three Fiber multi-mesh viewer
@@ -251,7 +253,7 @@ frontend-v2/                   # Target frontend (NOT frontend/)
 
 ### Frontend
 - [Frontend Overview](frontend/overview.md) — How all frontend pieces connect
-- [Activity Stream](frontend/activity-stream.md) — Two-zone model + per-tool display config
+- [Activity Stream](frontend/activity-stream.md) — Per-item collapse defaults + per-tool display config
 - [Workspace Layout](frontend/layout.md) — Two-panel resizable workspace
 - [State Management](frontend/state.md) — Zustand stores for project/dataset/viewer state
 - [3D Viewer](frontend/viewer-3d.md) — React Three Fiber multi-mesh rendering

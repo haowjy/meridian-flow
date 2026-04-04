@@ -1,14 +1,14 @@
 # Display Result Pipeline
 
-Generic mechanism for tools to emit rich results (charts, images, tables, mesh references) that render **inline with text** in the chat. Results are content — they appear in the visible zone of the ActivityBlock alongside text, not in a separate rendering area. See [overview](../overview.md) for system context.
+Generic mechanism for tools to emit rich results (charts, images, tables, mesh references) that render **inline with text** in the chat. Results are content — they appear in the ActivityBlock alongside text, never collapsed by default, not in a separate rendering area. See [overview](../overview.md) for system context.
 
-**Key principle**: DISPLAY_RESULT events are a transport mechanism. The frontend renders them inline in the visible zone of the ActivityBlock, interleaved with text content. They are content, like text.
+**Key principle**: DISPLAY_RESULT events are a transport mechanism. The frontend renders them inline in the ActivityBlock, interleaved with text content. They are never collapsed by default. They are content, like text.
 
 ## Two Event Types
 
 ### 1. TOOL_OUTPUT — Streaming stdout/stderr
 
-Streams tool execution output. Per-tool-category display config determines whether stdout appears in the collapsed or visible zone. See [activity-stream.md](../frontend/activity-stream.md) for the two-zone model.
+Streams tool execution output. Per-tool-category display config determines whether stdout is collapsed or uncollapsed by default. See [activity-stream.md](../frontend/activity-stream.md) for the per-item collapse defaults model.
 
 ```typescript
 {
@@ -23,7 +23,7 @@ Streams tool execution output. Per-tool-category display config determines wheth
 
 ### 2. DISPLAY_RESULT — Rich inline results
 
-Rich result that renders inline in the visible zone of the ActivityBlock. Any tool can emit these via `OutputSink.EmitDisplayResult()`.
+Rich result that renders inline in the ActivityBlock, never collapsed by default. Any tool can emit these via `OutputSink.EmitDisplayResult()`.
 
 ```typescript
 {
@@ -86,7 +86,7 @@ AG-UI Emitter (for JSON events) + BinarySender (for mesh data)
     |
 mstream SSE transport (JSON events) / WS binary frames (mesh data)
     |
-Frontend event handlers -> inline rendering in visible zone
+Frontend event handlers -> inline rendering (never collapsed by default)
 ```
 
 ## OutputSink Interface
@@ -350,6 +350,6 @@ TOOL_CALL_RESULT (final status)
 
 - [Python Tool](python-tool.md) — produces display results via OutputSink
 - [Bash Tool](bash-tool.md) — produces tool output only (no display results)
-- [Activity Stream](../frontend/activity-stream.md) — frontend event handling + two-zone model
+- [Activity Stream](../frontend/activity-stream.md) — frontend event handling + per-item collapse defaults
 - [Inline Results](../frontend/inline-results.md) — renders DISPLAY_RESULT events inline
 - [3D Viewer](../frontend/viewer-3d.md) — consumes mesh_ref + binary data
