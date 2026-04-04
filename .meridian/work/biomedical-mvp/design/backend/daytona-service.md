@@ -2,7 +2,7 @@
 
 Manages persistent per-project sandboxes for code execution, including a persistent Jupyter kernel for Python variable persistence. See [overview](../overview.md) for system context.
 
-**Revised from previous design**: Added `ExecInKernel` for persistent Python execution and `KernelManager` for kernel lifecycle. The `ExecSync`/`ExecStream` methods are renamed to `ExecBash` for clarity. The sandbox now starts a Jupyter kernel on boot.
+**Revised from previous design**: Added `ExecInKernel` for persistent Python execution and `KernelManager` for kernel lifecycle. The `ExecSync`/`ExecStream` methods are renamed to `ExecBash` for clarity. The sandbox now starts a Jupyter kernel on boot. Both the `python` tool and `bash` tool share this service — `python` uses `ExecInKernel`, `bash` uses `ExecBash`.
 
 ## Interface
 
@@ -253,6 +253,7 @@ At 2 vCPU / 4 GiB:
 
 ## Related Docs
 
-- [bash Tool](bash-tool.md) — uses this service for code execution
+- [Python Tool](python-tool.md) — uses `ExecInKernel` for analysis + result capture
+- [Bash Tool](bash-tool.md) — uses `ExecBash` for shell commands
 - [Dataset Domain](dataset-domain.md) — files hydrated into sandbox
 - [Display Result Pipeline](display-results.md) — results stream from sandbox execution
