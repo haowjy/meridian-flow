@@ -11,70 +11,96 @@ An AI agent that autonomously processes uCT scans end-to-end: upload DICOMs → 
 
 ## Core Requirements
 
-### 1. Daytona Sandbox with Bash Tool
-- AI executes Python via bash in a persistent Daytona sandbox (not Pyodide — SimpleITK requires native C++)
-- Persistent Jupyter kernel — variables and imports survive between executions
-- AI writes reusable Python modules to the sandbox filesystem, then runs ephemeral scripts that import them
+### 1. Two Tools: `python` + `bash`
+- **`python` tool**: Input is raw Python code. Always executes in persistent Jupyter kernel. Always wrapped with result_helper (captures images, charts, tables, meshes via `show_*` helpers). This is the primary tool for analysis.
+- **`bash` tool**: Input is a shell command. For file operations, pip install, non-Python tasks. No result capture, no kernel.
+- Both run in a persistent Daytona sandbox (not Pyodide — SimpleITK requires native C++)
+- Persistent Jupyter kernel — variables and imports survive between `python` executions
+- AI writes reusable Python modules to the sandbox filesystem via `bash`, then runs analysis code via `python` that imports them
 - Packages pre-installed: SimpleITK, scipy, numpy, pandas, scikit-image, plotly, matplotlib, pydicom, trimesh
 - One persistent sandbox per project, auto-stops on idle
-- Progress streamed via existing WebSocket
 
-**Extensibility requirement**: Design the execution path so a streaming code fence interceptor (`python:run` blocks parsed from model output) can replace the bash tool as the trigger mechanism later. The downstream flow (execute → stream stdout → emit display results → render) must be identical regardless of trigger. See "Future: Code Fence Execution" below.
+**Extensibility requirement**: The `python` tool is designed to be replaceable by a streaming code fence interceptor (```python:run` blocks parsed from model output). The downstream flow (ExecInKernel → stream stdout → read result.json → emit results → render) must be identical regardless of trigger mechanism. Nothing downstream should know or care whether code came from a tool call or a code fence. See "Future: Code Fence Execution" below.
 
-### 2. Display Results (generic concept)
-- Any tool can emit "display results" — rich outputs shown prominently to the user
-- Display results are NOT tool-specific. The concept is: a tool result that the user should see, vs internal results the model reasons about
-- MVP display result types:
-  - Plotly charts (JSON → interactive chart)
-  - Matplotlib images (PNG base64 → image)
-  - DataFrames (HTML table)
-  - Mesh references (card with "View 3D" button)
-- Text output (stdout/stderr) stays inside the collapsed activity block
-- Mesh file download link (STL/OBJ export as byproduct)
-- Python `show_*` helpers (`show_plotly()`, `show_matplotlib()`, `show_dataframe()`, `show_mesh()`) write display results to a result file; the backend reads and emits them as DisplayResult events
+### 2. Result Capture Protocol
+- Python `show_*` helpers in `result_helper.py` (pre-installed in sandbox):
+  - `show_plotly(fig)` — capture Plotly chart
+  - `show_matplotlib(fig)` — capture matplotlib image as PNG
+  - `show_dataframe(df, title)` — capture DataFrame as HTML table
+  - `show_mesh(verts, faces, mesh_id, label, color)` — send mesh to 3D viewer
+- Results written to `/workspace/.meridian/result.json` + binary mesh files
+- Backend reads result file after execution, emits as events
+- Results render **inline with text** in the visible output area — they are content, not a separate category
 
 ### 3. Frontend Activity Stream Model
-- **ActivityBlock**: collapsible unit containing ALL "work" — thinking, tool calls, text between tool calls. User expands to see details.
-- **Display results**: render OUTSIDE the collapsed ActivityBlock, always visible. These are the charts, images, tables, 3D model cards.
-- **Final response text**: always visible after display results.
-- One ActivityBlock per turn. All work collapses into it. Display results and final text punch out.
-- This model is general — not Python-specific. Any tool that emits DisplayResults gets the same treatment.
+**ActivityBlock** = one per turn. Contains everything. Two rendering zones:
 
-### 4. Basic 3D viewer
-- React Three Fiber canvas component
-- Receives mesh data from Python (marching cubes → vertices + faces + labels)
-- Color-coded by label (femur=blue, tibia=green, patella=purple, osteophyte=red)
-- Rotate, zoom, pan
-- Toggle structures on/off
+**Collapsed zone** (user expands to see):
+- Thinking blocks
+- Tool calls with their details
+- BUT: collapse behavior is per-tool-category, extensible
+
+**Visible zone** (always shown, never collapsed):
+- Text the AI wrote
+- Images, charts, tables (inline with text — these are content)
+- 3D mesh cards ("View 3D" button)
+- Tool stdout (for categories that default to uncollapsed output)
+
+**Per-tool-category display config** (extensible):
+
+| Tool | Input (code/command) | stdout | stderr | Results |
+|------|---------------------|--------|--------|---------|
+| python | collapsed | uncollapsed | hidden (click for popup) | inline with text |
+| bash | collapsed | collapsed | collapsed | n/a |
+| read | collapsed | collapsed | collapsed | n/a |
+| edit | collapsed | collapsed | collapsed | n/a |
+
+Each tool category defines default collapse state for input, stdout, stderr. New tool categories register their own defaults. User can always toggle.
+
+**stderr handling**: Hidden by default. Click to see in a popup/modal. Stderr is usually noise (warnings, deprecation) unless there's an error. Available for debugging but doesn't clutter the output.
+
+### 4. 3D Viewer — Multi-Mesh Scene
+- React Three Fiber canvas, lives in right panel
+- **Multiple named meshes** managed by ID:
+  - `show_mesh(verts, faces, mesh_id="femur", label="Femur", color="blue")` — add mesh
+  - Same `mesh_id` = replace existing mesh
+  - New `mesh_id` = add to scene
+  - AI controls what's in the scene through IDs it chooses
+- User controls:
+  - Toggle visibility per mesh (checkboxes)
+  - All meshes loaded simultaneously in scene
+  - Rotate, zoom, pan (OrbitControls)
+- No per-vertex label splitting on frontend — each `show_mesh()` call is one complete mesh
 - Purpose: researcher validates segmentation ("that's a sesamoid, not an osteophyte")
 
-### 5. Dataset upload
+### 5. Dataset Upload
 - Drag-and-drop DICOM stacks into Supabase Storage
 - Metadata extraction on upload (scanner info, resolution, slice count)
 - Files accessible from Daytona sandbox
 - datasets table in DB (project-scoped)
 
-### 6. Biomedical agent profile
-- Single .agents/agents/data-analyst.md
+### 6. Biomedical Agent Profile
+- Single `.agents/agents/data-analyst.md`
 - Domain knowledge: uCT processing, bone morphometry, watershed segmentation, geometric indices (femoral W/L, tibial IIOC H/W), statistical methods
-- Uses bash tool to write Python files and execute scripts in Daytona
+- Uses `python` tool for analysis, `bash` tool for file operations
 - Shows work at each step, asks for validation at checkpoints
 
-### 7. Frontend target: frontend-v2/
+### 7. Frontend Target: frontend-v2/
 - Build on v2 (React 19, Tailwind v4, Storybook-first)
 - v2 has UI atoms, editor, thread components, AG-UI activity stream, WebSocket client
 - v2 does NOT have: layouts, routes, stores, API client — build these for biomedical from the start
 - Desktop-only (researchers use large monitors)
 
 ## Future: Code Fence Execution (Option 2)
-After MVP ships with bash tool (option 1), migrate to streaming code fence interceptor:
+After MVP ships with `python` tool (option 1), migrate to streaming code fence interceptor:
 - Model writes `python:run` fenced blocks in its response (natural markdown, not JSON tool calls)
 - Backend parses streaming response, intercepts on fence close
-- Executes code in the same persistent kernel
+- Executes code in the same persistent kernel via same `ExecInKernel` interface
 - Injects stdout back into model context as if it were a tool result
-- Display results (`show_*` calls) flow through the same DisplayResult pipeline
+- Results (`show_*` calls) flow through the same result capture pipeline
+- Frontend renders identically — code block with collapsible input, visible output, inline results
 - Better for weaker/cheaper models that struggle with large code blocks in JSON
-- The ONLY thing that changes is the trigger mechanism. Everything downstream is identical.
+- The `python` tool goes away. The `bash` tool stays. Everything downstream is unchanged.
 
 ## NOT in MVP
 - Code fence execution (option 2 — future, designed for extensibility)
@@ -110,11 +136,15 @@ Can reproduce the paper's full pipeline:
 - Mesh export (STL/OBJ) falls out naturally, validates second use case (Blender users)
 - Ship on frontend-v2: build data layer fresh with biomedical in mind
 - Desktop-only layout: zero value in mobile for researchers
-- Bash tool for MVP (option 1), design for code fence migration (option 2)
-- Persistent Jupyter kernel: variables survive between executions
-- AI writes reusable modules to FS, runs ephemeral scripts via bash
-- Display results are a generic concept: any tool can emit them, they render outside ActivityBlock
-- ActivityBlock model: all work collapses, display results + final text are always visible
+- Two tools: `python` (raw code, kernel, result capture) + `bash` (shell commands, file ops)
+- `python` tool designed to be replaceable by code fence syntax — downstream is trigger-agnostic
+- Persistent Jupyter kernel: variables survive between `python` executions
+- AI writes reusable modules to FS via `bash`, runs analysis via `python`
+- Images/charts/tables are inline content (like text), not a separate display result category
+- 3D viewer: multi-mesh scene managed by mesh ID (same ID = replace, new ID = add)
+- Per-tool-category display config: extensible collapse defaults for input/stdout/stderr
+- stderr hidden by default, click-to-view popup
+- ActivityBlock: collapsed zone (thinking + tool details) + visible zone (text + results + uncollapsed output)
 
 ## Existing Infrastructure to Reuse
 - Tool registry + ToolExecutor interface (backend)
