@@ -33,18 +33,18 @@ sequenceDiagram
     LLM-->>BE: thinking tokens
     BE-->>WS: THINKING_START
     BE-->>WS: THINKING_TEXT_MESSAGE_CONTENT (deltas)
-    WS-->>FE: reducer -> ThinkingItem (collapsed zone)
+    WS-->>FE: reducer -> ThinkingItem (collapsed by default)
 
     Note over LLM,BE: 5. LLM WRITES TEXT
     LLM-->>BE: "I'll segment the bones using..."
     BE-->>WS: TEXT_MESSAGE_START -> CONTENT (deltas) -> END
-    WS-->>FE: reducer -> ContentItem (visible zone)
+    WS-->>FE: reducer -> ContentItem (never collapsed)
 
     Note over LLM,DT: 6. LLM CALLS BASH TOOL (write module)
     LLM-->>BE: tool_use: bash {command: "cat > seg_utils.py..."}
     BE-->>WS: TOOL_CALL_START {toolName: "bash"}
     BE-->>WS: TOOL_CALL_ARGS (streaming JSON deltas)
-    WS-->>FE: reducer -> ToolItem (collapsed zone)
+    WS-->>FE: reducer -> ToolItem (collapsed by default)
 
     BE-->>WS: TOOL_CALL_END
     BE->>DT: BashTool.Execute() -> ExecBash
@@ -55,14 +55,14 @@ sequenceDiagram
     LLM-->>BE: tool_use: python {code: "from seg_utils import..."}
     BE-->>WS: TOOL_CALL_START {toolName: "python"}
     BE-->>WS: TOOL_CALL_ARGS (streaming code)
-    WS-->>FE: reducer -> ToolItem (collapsed zone, code input collapsed)
+    WS-->>FE: reducer -> ToolItem (collapsed by default, code input collapsed)
 
     BE-->>WS: TOOL_CALL_END
 
     Note over BE,DT: 8. PYTHON EXECUTES IN KERNEL
     BE->>DT: PythonTool.Execute() -> ExecInKernel(wrapped code)
 
-    loop Streaming stdout (visible zone)
+    loop Streaming stdout (uncollapsed by default for python)
         DT-->>BE: "Loading DICOM stack..."
         BE-->>WS: TOOL_OUTPUT {stream: "stdout"}
         WS-->>FE: reducer -> ToolItem.toolOutput[]
@@ -82,7 +82,7 @@ sequenceDiagram
 
     loop For each mesh
         BE-->>WS: DISPLAY_RESULT {resultType: "mesh_ref", mesh_id, label, color}
-        WS-->>FE: reducer -> DisplayResultItem (visible zone, inline)
+        WS-->>FE: reducer -> DisplayResultItem (never collapsed, inline)
         FE-->>U: MeshRefBlock card appears inline with text
 
         BE->>DT: ReadFile(mesh binary)
@@ -97,7 +97,7 @@ sequenceDiagram
     Note over LLM,BE: 11. LLM WRITES RESPONSE
     LLM-->>BE: "Segmentation complete. I identified 3 structures..."
     BE-->>WS: TEXT_MESSAGE_START -> CONTENT -> END
-    WS-->>FE: reducer -> ContentItem (visible zone, inline after mesh cards)
+    WS-->>FE: reducer -> ContentItem (never collapsed, inline after mesh cards)
 
     BE-->>WS: RUN_FINISHED {inputTokens, outputTokens}
 ```
@@ -126,7 +126,7 @@ The frontend subscribes to the assistant turn via WebSocket. Events flow through
 
 ### Steps 4-5: Thinking + Text
 
-Standard AG-UI flow. Thinking goes to collapsed zone, text to visible zone.
+Standard AG-UI flow. Thinking is collapsed by default, text is never collapsed.
 
 ### Step 6: LLM Writes a Module (bash tool)
 
@@ -136,7 +136,7 @@ The AI writes a Python module file using the bash tool:
 {"name": "bash", "input": {"command": "cat > /workspace/scripts/seg_utils.py << 'EOF'\nimport SimpleITK as sitk\n..."}}
 ```
 
-`BashTool.Execute()` → `sandboxSvc.ExecBash()`. No kernel, no display results. The tool row appears in the collapsed zone (bash config: input=collapsed, stdout=collapsed).
+`BashTool.Execute()` → `sandboxSvc.ExecBash()`. No kernel, no display results. The tool row is collapsed by default (bash config: input=collapsed, stdout=collapsed).
 
 ### Step 7-8: LLM Runs Analysis (python tool)
 
@@ -150,7 +150,7 @@ The AI runs analysis code directly:
 1. Wraps code with result_helper preamble
 2. Calls `sandboxSvc.ExecInKernel(wrappedCode, onOutput)`
 3. Stdout streams via `sink.EmitToolOutput()` → `TOOL_OUTPUT` events
-4. Python tool config says `stdout: "visible"` → stdout appears **inline in the visible zone**
+4. Python tool config says `stdout: "visible"` → stdout appears **inline, uncollapsed by default**
 
 ### Step 9: Python Calls show_mesh() Multiple Times
 
@@ -175,7 +175,7 @@ Each writes a separate binary file. `_flush()` writes a result.json with 3 entri
 
 ### Step 11: LLM Response Text
 
-The final response text appears inline in the visible zone, after the mesh cards.
+The final response text appears inline, never collapsed, after the mesh cards.
 
 ## What the User Sees (Final State)
 
@@ -185,12 +185,12 @@ The final response text appears inline in the visible zone, after the mesh cards
 |                                                      |
 | [User] "Segment the knee joint"                      |
 |                                                      |
-| +-- Collapsed Zone (expand for details) -----------+ |
+| +-- Collapsed by default (expand for details) -----+ |
 | | > Ran 1 command, 1 analysis                 done | |
 | | (expand to see thinking, tool inputs)            | |
 | +--------------------------------------------------+ |
 |                                                      |
-| -- Visible Zone (always shown) --------------------  |
+| -- Uncollapsed by default (always shown) ----------  |
 | "I'll segment the bones using threshold..."          |
 |                                                      |
 | Loading DICOM stack...                               |
@@ -257,15 +257,15 @@ WebSocket message arrives
     -> Text? -> parseEnvelope() -> dispatch:
       -> "stream" -> StreamingChannelClient
         -> useReducer(reduceStreamEvent)
-          -> TOOL_CALL_START -> ToolItem (collapsed zone)
+          -> TOOL_CALL_START -> ToolItem (collapsed by default)
           -> TOOL_OUTPUT -> append to toolOutput[]
-            -> python config: stdout visible -> renders in visible zone
-            -> bash config: stdout collapsed -> renders in collapsed zone
-          -> DISPLAY_RESULT -> DisplayResultItem (visible zone, inline)
+            -> python config: stdout visible -> renders uncollapsed
+            -> bash config: stdout collapsed -> renders collapsed
+          -> DISPLAY_RESULT -> DisplayResultItem (never collapsed, inline)
             -> mesh_ref? -> viewerStore.setPendingMeta()
-          -> TEXT_MESSAGE_CONTENT -> ContentItem (visible zone)
+          -> TEXT_MESSAGE_CONTENT -> ContentItem (never collapsed)
           -> RUN_FINISHED -> isStreaming: false
-        -> ActivityBlock renders two zones
+        -> ActivityBlock renders items with per-item collapse defaults
 ```
 
 ## Two Transports

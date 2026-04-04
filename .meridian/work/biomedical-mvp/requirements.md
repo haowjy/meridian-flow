@@ -33,18 +33,16 @@ An AI agent that autonomously processes uCT scans end-to-end: upload DICOMs → 
 - Results render **inline with text** in the visible output area — they are content, not a separate category
 
 ### 3. Frontend Activity Stream Model
-**ActivityBlock** = one per turn. Contains everything. Two rendering zones:
+**ActivityBlock** = one per turn. Contains all items. Each item has a per-item collapse default based on its kind and tool category:
 
-**Collapsed zone** (user expands to see):
-- Thinking blocks
-- Tool calls with their details
-- BUT: collapse behavior is per-tool-category, extensible
+- **Thinking** → collapsed by default
+- **Tool input/args** → collapsed by default
+- **Tool stdout** → depends on tool category (python: uncollapsed, bash: collapsed)
+- **Tool stderr** → hidden by default (click for popup)
+- **Text content** → never collapsed
+- **Display results** (charts, images, tables, mesh cards) → never collapsed, inline with text
 
-**Visible zone** (always shown, never collapsed):
-- Text the AI wrote
-- Images, charts, tables (inline with text — these are content)
-- 3D mesh cards ("View 3D" button)
-- Tool stdout (for categories that default to uncollapsed output)
+User can toggle any item.
 
 **Per-tool-category display config** (extensible):
 
@@ -144,7 +142,7 @@ Can reproduce the paper's full pipeline:
 - 3D viewer: multi-mesh scene managed by mesh ID (same ID = replace, new ID = add)
 - Per-tool-category display config: extensible collapse defaults for input/stdout/stderr
 - stderr hidden by default, click-to-view popup
-- ActivityBlock: collapsed zone (thinking + tool details) + visible zone (text + results + uncollapsed output)
+- ActivityBlock: per-item collapse defaults based on item kind and tool category
 
 ## Existing Infrastructure to Reuse
 - Tool registry + ToolExecutor interface (backend)

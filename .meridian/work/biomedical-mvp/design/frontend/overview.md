@@ -68,14 +68,14 @@ The existing reducer processes `StreamEvent` into `ActivityBlockData`. We extend
 - `TOOL_OUTPUT` → appends to ToolItem's `toolOutput` field
 - `DISPLAY_RESULT` → creates new `DisplayResultItem` in activity items array
 
-See [activity-stream.md](activity-stream.md) for the two-zone model.
+See [activity-stream.md](activity-stream.md) for per-item collapse defaults.
 
-### 2. Two-Zone Rendering
-The ActivityBlock is revised to render two zones:
-- **Collapsed zone**: thinking, tool rows (input/args, stderr badge)
-- **Visible zone**: text, inline results (charts, tables, images, mesh cards), tool stdout for categories with `stdout: "visible"` (like python)
+### 2. Per-Item Collapse Defaults
+Each item in the ActivityBlock has a collapse default based on its kind and tool category:
+- **Collapsed by default**: thinking, tool rows (input/args, stderr badge)
+- **Never collapsed**: text, inline results (charts, tables, images, mesh cards), tool stdout for categories with `stdout: "visible"` (like python)
 
-Per-tool-category display config determines what goes where. See [activity-stream.md](activity-stream.md).
+Per-tool-category display config determines collapse defaults. User can toggle any item. See [activity-stream.md](activity-stream.md).
 
 ### 3. ToolDetail Routing
 The existing `ToolDetail.tsx` routes to specialized detail renderers by tool category:
@@ -101,12 +101,12 @@ App
     |       +-- TurnList (existing)
     |       |   +-- TurnRow (existing)
     |       |       +-- UserBubble (existing)
-    |       |       +-- ActivityBlock (revised: two zones)
-    |       |           +-- Collapsed Zone (Card, collapsible)
+    |       |       +-- ActivityBlock (revised: per-item collapse defaults)
+    |       |           +-- Collapsed items (Card, collapsible)
     |       |           |   +-- ThinkingRow (existing)
     |       |           |   +-- ToolRow -> PythonDetail / BashDetail
     |       |           |       +-- StderrBadge -> StderrPopover
-    |       |           +-- Visible Zone (always shown)
+    |       |           +-- Uncollapsed items (always shown)
     |       |               +-- ContentItem text (inline)
     |       |               +-- VisibleToolOutput (python stdout)
     |       |               +-- DisplayResultRow (inline)
@@ -147,7 +147,7 @@ plotly.js-dist-min             # Plotly core (minified)
 
 ## Related Docs
 
-- [Activity Stream](activity-stream.md) — two-zone model and per-tool display config
+- [Activity Stream](activity-stream.md) — per-item collapse defaults and per-tool display config
 - [Layout](layout.md) — workspace shell and panel design
 - [State Management](state.md) — zustand store designs
 - [3D Viewer](viewer-3d.md) — multi-mesh rendering component

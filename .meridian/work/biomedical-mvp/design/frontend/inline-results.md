@@ -1,17 +1,17 @@
 # Inline Result Rendering
 
-Renders display results (charts, images, tables, code output, mesh references) inline in the visible zone of the ActivityBlock. Results are content — they appear interleaved with text, not in a separate area. See [overview](overview.md) for frontend architecture context.
+Renders display results (charts, images, tables, code output, mesh references) inline in the ActivityBlock. Results are content — they are never collapsed by default, appearing interleaved with text. See [overview](overview.md) for frontend architecture context.
 
-**Key principle**: Images, charts, tables, and mesh cards are content, like text. They render in the visible zone alongside text in the order they arrive. The researcher sees a natural flow: text → chart → text → table → mesh card.
+**Key principle**: Images, charts, tables, and mesh cards are content, like text. They are never collapsed by default, rendering alongside text in the order they arrive. The researcher sees a natural flow: text → chart → text → table → mesh card.
 
 ## Architecture
 
 Two rendering paths:
 
-1. **ToolOutputBlock** — streaming stdout/stderr. For tools with `stdout: "visible"` config (like python), this renders in the visible zone. For tools with `stdout: "collapsed"` config (like bash), it renders inside the collapsed zone's tool detail.
-2. **DisplayResultRow** — always in the visible zone. Charts, images, tables, mesh cards rendered inline with text.
+1. **ToolOutputBlock** — streaming stdout/stderr. For tools with `stdout: "visible"` config (like python), this is uncollapsed by default. For tools with `stdout: "collapsed"` config (like bash), it renders inside the collapsed tool detail.
+2. **DisplayResultRow** — never collapsed by default. Charts, images, tables, mesh cards rendered inline with text.
 
-See [activity-stream.md](activity-stream.md) for the two-zone model and per-tool display config.
+See [activity-stream.md](activity-stream.md) for per-item collapse defaults and per-tool display config.
 
 ## Component Architecture
 
@@ -79,7 +79,7 @@ function DisplayResultRow({ item }: { item: DisplayResultItem }) {
 
 ## ToolOutputBlock
 
-Displays streaming stdout during execution. Used in the visible zone for python tool (config: `stdout: "visible"`) and inside BashDetail for bash tool (config: `stdout: "collapsed"`):
+Displays streaming stdout during execution. Uncollapsed by default for python tool (config: `stdout: "visible"`) and inside BashDetail for bash tool (config: `stdout: "collapsed"`):
 
 ```tsx
 // features/inline-results/ToolOutputBlock.tsx
@@ -316,6 +316,6 @@ Each block component has a co-located `.stories.tsx` file. Stories use shared mo
 
 ## Related Docs
 
-- [Activity Stream](activity-stream.md) — two-zone model and per-tool display config
+- [Activity Stream](activity-stream.md) — per-item collapse defaults and per-tool display config
 - [3D Viewer](viewer-3d.md) — MeshRefBlock triggers viewer via workspace store
 - [Display Result Pipeline (backend)](../backend/display-results.md) — event payloads

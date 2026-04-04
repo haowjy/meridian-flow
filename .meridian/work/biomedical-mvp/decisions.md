@@ -154,18 +154,22 @@
 
 ## D24: Results are inline content, not a separate rendering area
 **When**: Requirements revision (2026-04-04)
-**What**: DISPLAY_RESULT events render inline in the visible zone of the ActivityBlock, interleaved with text. They are content, like text — not "outside the block" in a separate area.
+**What**: DISPLAY_RESULT events render inline in the ActivityBlock, interleaved with text. They are never collapsed by default. They are content, like text — not "outside the block" in a separate area.
 **Why**: User requirement. Charts, tables, images, and mesh cards should appear naturally in the conversation flow alongside text. The previous design rendered display results "outside the collapsed ActivityBlock" in a separate section, which created an artificial separation between text and results.
 **Supersedes**: D16 (results "punch out" of the block)
 
-## D25: Two-zone ActivityBlock with per-tool display config
+## D25: ActivityBlock with per-item collapse defaults
 **When**: Requirements revision (2026-04-04)
-**What**: ActivityBlock has two rendering zones:
-- Collapsed zone: thinking, tool call details (input/args)
-- Visible zone: text, images, charts, tables, mesh cards, tool stdout (for tools that default to uncollapsed output)
-Per-tool-category display config (extensible) controls what goes where. Each tool category defines default collapse state for input, stdout, stderr. stderr is hidden by default with click-to-view popup.
+**What**: One ActivityBlock per turn contains all items. Each item has a per-item collapse default based on its kind and tool category:
+- Thinking → collapsed by default
+- Tool input/args → collapsed by default
+- Tool stdout → depends on tool category (python: uncollapsed, bash: collapsed)
+- Tool stderr → hidden by default (click for popup)
+- Text content → never collapsed
+- Display results (charts, images, tables, mesh cards) → never collapsed, inline with text
+Per-tool-category display config (extensible) controls collapse defaults. Each tool category defines default collapse state for input, stdout, stderr. User can toggle any item.
 **Why**: User requirement. Different tools have different output profiles. Python stdout (progress updates, data summaries) is useful to see; bash stdout (file listings, install logs) is noise. The extensible config pattern allows new tool categories to register their own defaults without touching ActivityBlock logic.
-**Config**: python: input=collapsed, stdout=visible, stderr=hidden. bash: input=collapsed, stdout=collapsed, stderr=collapsed.
+**Config**: python: input=collapsed, stdout=uncollapsed, stderr=hidden. bash: input=collapsed, stdout=collapsed, stderr=collapsed.
 
 ## D26: Multi-mesh 3D scene managed by mesh ID
 **When**: Requirements revision (2026-04-04)
