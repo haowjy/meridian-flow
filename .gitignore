@@ -49,3 +49,5 @@ __pycache__/
 
 # Stray screenshots (agent/playwright artifacts dumped in root)
 /*.png
+mars.local.toml
+.mars/
