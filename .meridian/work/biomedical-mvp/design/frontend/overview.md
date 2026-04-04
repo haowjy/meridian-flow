@@ -2,8 +2,6 @@
 
 All frontend work targets `frontend-v2/`. This doc explains how the biomedical components integrate with v2's existing architecture and what new infrastructure is needed. See [design overview](../overview.md) for system context.
 
-**Revised from previous design**: Updated for generic display results (not Python-specific), revised ActivityBlock model, bash tool instead of execute_python.
-
 ## What v2 Has Today
 
 | Layer | Status | Key Files |
@@ -30,6 +28,7 @@ flowchart TB
         Layout["WorkspaceLayout<br/>(react-resizable-panels)"]
         Stores["Zustand Stores<br/>(workspace, dataset, viewer)"]
         StreamExt["Activity Stream Extensions<br/>(TOOL_OUTPUT, DISPLAY_RESULT)"]
+        ToolConfig["Per-Tool Display Config<br/>(python, bash, etc.)"]
     end
 
     subgraph Existing["Existing v2 Components"]
@@ -42,10 +41,10 @@ flowchart TB
     end
 
     subgraph BioComponents["Biomedical Components"]
-        Viewer["Viewer3DPanel"]
-        Results["Display Result Renderers<br/>(Plotly, Image, DataFrame, MeshRef)"]
+        Viewer["Viewer3DPanel<br/>(multi-mesh scene)"]
+        Results["Inline Result Renderers<br/>(Plotly, Image, DataFrame, MeshRef)"]
         Dataset["DatasetPanel + Upload"]
-        Output["ToolOutputBlock<br/>(streaming stdout)"]
+        Output["ToolOutputBlock + StderrPopover"]
     end
 
     Layout --> Thread
@@ -53,6 +52,7 @@ flowchart TB
     Layout --> Dataset
     Stores --> Layout
     StreamExt --> Reducer
+    ToolConfig --> AB
     Reducer --> AB
     AB --> Output
     AB --> Results
@@ -65,50 +65,61 @@ flowchart TB
 ### 1. Activity Stream Reducer
 The existing reducer processes `StreamEvent` into `ActivityBlockData`. We extend it with two new event types:
 
-- `TOOL_OUTPUT` → appends to ToolItem's `toolOutput` field (inside collapsible card)
-- `DISPLAY_RESULT` → creates new `DisplayResultItem` in activity items array (outside card, always visible)
+- `TOOL_OUTPUT` → appends to ToolItem's `toolOutput` field
+- `DISPLAY_RESULT` → creates new `DisplayResultItem` in activity items array
 
-See [activity-stream.md](activity-stream.md) for the revised model.
+See [activity-stream.md](activity-stream.md) for the two-zone model.
 
-### 2. ToolDetail Routing
-The existing `ToolDetail.tsx` routes to specialized detail renderers by tool category. The `bash` tool name matches the existing bash category. The existing `BashDetail` component is extended with streaming `ToolOutputBlock` rendering.
+### 2. Two-Zone Rendering
+The ActivityBlock is revised to render two zones:
+- **Collapsed zone**: thinking, tool rows (input/args, stderr badge)
+- **Visible zone**: text, inline results (charts, tables, images, mesh cards), tool stdout for categories with `stdout: "visible"` (like python)
 
-### 3. WebSocket Binary Frames
-The existing `WsClient` supports `onBinaryMessage(subId, data)`. Mesh binary frames use this path. `ThreadWsProvider` wires the callback to the viewer store.
+Per-tool-category display config determines what goes where. See [activity-stream.md](activity-stream.md).
 
-### 4. Workspace Layout
+### 3. ToolDetail Routing
+The existing `ToolDetail.tsx` routes to specialized detail renderers by tool category:
+- `python` → `PythonDetail` (new) — shows code input, stderr badge
+- `bash` → `BashDetail` (extended) — shows command + collapsed stdout + stderr badge
+
+### 4. WebSocket Binary Frames
+The existing `WsClient` supports `onBinaryMessage(subId, data)`. Mesh binary frames use this path. `ThreadWsProvider` wires the callback to the viewer store. A `BinaryDispatch` layer routes between Yjs and mesh frames.
+
+### 5. Workspace Layout
 v2 has no layout shell yet. The biomedical MVP builds a workspace layout using `react-resizable-panels` with chat left, content right.
 
-### 5. State Management
-v2 has no data stores yet. The biomedical MVP introduces zustand stores for workspace panel state, dataset management, and viewer state.
+### 6. State Management
+v2 has no data stores yet. The biomedical MVP introduces zustand stores for workspace panel state, dataset management, and multi-mesh viewer state.
 
 ## Component Hierarchy
 
 ```
 App
-└── WorkspaceLayout (react-resizable-panels)
-    ├── ChatPanel (left, resizable)
-    │   └── FloatingScrollLayout (existing)
-    │       ├── TurnList (existing)
-    │       │   └── TurnRow (existing)
-    │       │       ├── UserBubble (existing)
-    │       │       └── ActivityBlock (revised)
-    │       │           ├── Card (collapsible)
-    │       │           │   ├── ToolRow → BashDetail + ToolOutputBlock
-    │       │           │   ├── ThinkingRow (existing)
-    │       │           │   └── ContentRow (existing narration)
-    │       │           ├── DisplayResultRow (always visible)
-    │       │           │   ├── PlotlyBlock
-    │       │           │   ├── ImageBlock
-    │       │           │   ├── DataFrameBlock
-    │       │           │   └── MeshRefBlock
-    │       │           └── Response text (always visible)
-    │       └── bottomSlot: ChatComposer (existing)
-    │
-    └── ContentPanel (right, resizable)
-        ├── Viewer3DPanel (when mesh data received)
-        ├── DatasetPanel (dataset browsing)
-        └── EditorPanel (document editing)
++-- WorkspaceLayout (react-resizable-panels)
+    +-- ChatPanel (left, resizable)
+    |   +-- FloatingScrollLayout (existing)
+    |       +-- TurnList (existing)
+    |       |   +-- TurnRow (existing)
+    |       |       +-- UserBubble (existing)
+    |       |       +-- ActivityBlock (revised: two zones)
+    |       |           +-- Collapsed Zone (Card, collapsible)
+    |       |           |   +-- ThinkingRow (existing)
+    |       |           |   +-- ToolRow -> PythonDetail / BashDetail
+    |       |           |       +-- StderrBadge -> StderrPopover
+    |       |           +-- Visible Zone (always shown)
+    |       |               +-- ContentItem text (inline)
+    |       |               +-- VisibleToolOutput (python stdout)
+    |       |               +-- DisplayResultRow (inline)
+    |       |                   +-- PlotlyBlock
+    |       |                   +-- ImageBlock
+    |       |                   +-- DataFrameBlock
+    |       |                   +-- MeshRefBlock
+    |       +-- bottomSlot: ChatComposer (existing)
+    |
+    +-- ContentPanel (right, resizable)
+        +-- Viewer3DPanel (multi-mesh scene)
+        +-- DatasetPanel (dataset browsing)
+        +-- EditorPanel (document editing)
 ```
 
 ## Conventions
@@ -136,9 +147,9 @@ plotly.js-dist-min             # Plotly core (minified)
 
 ## Related Docs
 
-- [Activity Stream](activity-stream.md) — revised reducer and ActivityBlock model
+- [Activity Stream](activity-stream.md) — two-zone model and per-tool display config
 - [Layout](layout.md) — workspace shell and panel design
 - [State Management](state.md) — zustand store designs
-- [3D Viewer](viewer-3d.md) — mesh rendering component
-- [Inline Results](inline-results.md) — display result renderers
+- [3D Viewer](viewer-3d.md) — multi-mesh rendering component
+- [Inline Results](inline-results.md) — inline display result renderers
 - [Dataset Upload](dataset-upload.md) — DICOM upload interface

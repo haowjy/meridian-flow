@@ -12,19 +12,21 @@ flowchart TB
         Layout --> ContentPanel["Content Panel (right)"]
         ChatPanel --> TurnList["TurnList + ActivityBlock"]
         ChatPanel --> Composer["ChatComposer"]
-        TurnList --> DisplayResults["Display Result Blocks<br/>(Plotly, matplotlib, tables, mesh)"]
-        ContentPanel --> Viewer3D["3D Viewer<br/>(React Three Fiber)"]
+        TurnList --> VisibleZone["Visible Zone<br/>(text, charts, tables, images, mesh cards, stdout)"]
+        ContentPanel --> Viewer3D["3D Viewer<br/>(React Three Fiber, multi-mesh)"]
         ContentPanel --> DatasetUI["Dataset Upload UI"]
         ContentPanel --> Editor["Editor (CM6, existing)"]
     end
 
     subgraph Backend["Backend (Go)"]
         ToolReg["Tool Registry<br/>(existing)"]
+        PythonTool["python tool<br/>(new ToolExecutor)"]
         BashTool["bash tool<br/>(new ToolExecutor)"]
         DatasetSvc["Dataset Service<br/>(new domain)"]
         DisplayPipeline["Display Result Pipeline<br/>(generic event emission)"]
+        ToolReg --> PythonTool
         ToolReg --> BashTool
-        BashTool --> DisplayPipeline
+        PythonTool --> DisplayPipeline
     end
 
     subgraph External["External Services"]
@@ -32,7 +34,8 @@ flowchart TB
         Supabase["Supabase Storage<br/>(DICOM files)"]
     end
 
-    BashTool -->|"REST/Exec API"| Daytona
+    PythonTool -->|"ExecInKernel"| Daytona
+    BashTool -->|"ExecBash"| Daytona
     DatasetSvc -->|"Storage API"| Supabase
     DisplayPipeline -->|"SSE/AG-UI events"| ChatPanel
     DisplayPipeline -->|"Binary mesh data"| Viewer3D
@@ -45,57 +48,73 @@ flowchart TB
 
 | Component | Extension |
 |-----------|-----------|
-| **Tool Registry** | Register new `bash` tool via existing `RegisterWithMetadata` |
+| **Tool Registry** | Register `python` and `bash` tools via existing `RegisterWithMetadata` |
 | **ToolRegistryBuilder** | Add conditional Daytona client wiring (same pattern as web_search) |
-| **AG-UI Event Stream** | New event subtype `DISPLAY_RESULT` for rich output from any tool |
+| **AG-UI Event Stream** | New event subtypes `TOOL_OUTPUT` and `DISPLAY_RESULT` for rich output |
 | **TurnBlock types** | New `BlockType` constants for tool output and display results |
 | **PersonaCatalog** | New `.agents/agents/data-analyst.md` file (no code changes) |
-| **SSE Event Handlers** | New handler for `DISPLAY_RESULT` events |
+| **SSE Event Handlers** | New handlers for `TOOL_OUTPUT` and `DISPLAY_RESULT` events |
 | **Supabase Storage** | New bucket for DICOM datasets |
-| **Activity stream reducer** | New event type `DISPLAY_RESULT` + revised ActivityBlock model |
-| **ToolDetail routing** | New `BashDetail` enhancement for sandbox stdout rendering |
+| **Activity stream reducer** | New event types + revised two-zone ActivityBlock model |
+| **ToolDetail routing** | New `PythonDetail` + extended `BashDetail` for sandbox output rendering |
 
 ### Add (new components)
 
 | Component | Description | Design Doc |
 |-----------|-------------|------------|
-| **bash tool** | ToolExecutor wrapping Daytona sandbox for shell + kernel execution | [bash-tool.md](backend/bash-tool.md) |
+| **python tool** | ToolExecutor for Jupyter kernel execution + result capture | [python-tool.md](backend/python-tool.md) |
+| **bash tool** | ToolExecutor for shell commands in Daytona sandbox | [bash-tool.md](backend/bash-tool.md) |
 | **Daytona service** | Sandbox lifecycle + persistent Jupyter kernel management | [daytona-service.md](backend/daytona-service.md) |
 | **Dataset domain** | Upload, storage, metadata for DICOM stacks | [dataset-domain.md](backend/dataset-domain.md) |
 | **Display result pipeline** | Generic AG-UI events + OutputSink for rich results | [display-results.md](backend/display-results.md) |
 | **Workspace layout** | Two-panel resizable layout | [layout.md](frontend/layout.md) |
-| **Activity stream redesign** | One ActivityBlock per turn, display results outside | [activity-stream.md](frontend/activity-stream.md) |
-| **Zustand stores** | Project, dataset, viewer state | [state.md](frontend/state.md) |
-| **3D viewer** | React Three Fiber mesh renderer | [viewer-3d.md](frontend/viewer-3d.md) |
-| **Inline results** | Plotly/matplotlib/table rendering in chat | [inline-results.md](frontend/inline-results.md) |
+| **Activity stream redesign** | Two-zone model: collapsed (details) + visible (content) | [activity-stream.md](frontend/activity-stream.md) |
+| **Zustand stores** | Project, dataset, multi-mesh viewer state | [state.md](frontend/state.md) |
+| **3D viewer** | React Three Fiber multi-mesh renderer | [viewer-3d.md](frontend/viewer-3d.md) |
+| **Inline results** | Plotly/matplotlib/table/mesh rendering inline with text | [inline-results.md](frontend/inline-results.md) |
 | **Dataset upload UI** | DICOM drag-and-drop with metadata | [dataset-upload.md](frontend/dataset-upload.md) |
-| **Data analyst agent** | Biomedical persona profile | [data-analyst-agent.md](agent/data-analyst-agent.md) |
+| **Data analyst agent** | Biomedical persona profile | [agent/data-analyst-agent.md](agent/data-analyst-agent.md) |
 
 ## Key Architectural Decisions
 
-### 1. Bash tool + Daytona (not a dedicated execute_python tool)
-The AI uses a generic `bash` tool to run commands in a persistent Daytona sandbox. No dedicated `execute_python` ToolExecutor. The AI writes Python files to the sandbox filesystem, then runs them via bash. Python scripts execute through a persistent Jupyter kernel so variables and imports survive between executions. This keeps the tool interface simple and familiar to the AI model.
+### 1. Two tools: `python` + `bash`
+The AI uses two tools in the Daytona sandbox:
+- **`python` tool**: Input is raw Python code. Always executes in a persistent Jupyter kernel. Always wrapped with result_helper (captures images, charts, tables, meshes via `show_*` helpers). Primary tool for analysis.
+- **`bash` tool**: Input is a shell command. For file operations, pip install, non-Python tasks. No kernel, no result capture.
 
-### 2. Generic Display Results (not Python-specific events)
-Any tool can emit "display results" — rich outputs (charts, images, tables, mesh refs) that render prominently outside the collapsed ActivityBlock. The backend emits `DISPLAY_RESULT` events; the frontend renders them regardless of which tool produced them. Python's `show_*` helpers write to a result file that the bash tool reads post-execution.
+Both share the same Daytona sandbox service. The AI writes reusable modules via `bash` (file writes), then runs analysis code via `python` (kernel execution).
 
-### 3. ActivityBlock model: all work collapses, results punch out
-One ActivityBlock per assistant turn. ALL work (thinking, tool calls, text between tool calls) collapses inside it. Display results render OUTSIDE the block, always visible. Final response text is always visible. The user expands the ActivityBlock to see tool call details.
+### 2. Trigger-agnostic downstream flow
+The `python` tool is designed to be replaceable by a streaming code fence interceptor (`python:run` blocks). The downstream flow — ExecInKernel → stream stdout → read result.json → emit results → render — is identical regardless of trigger. The Daytona service, result_helper.py, DISPLAY_RESULT events, and frontend rendering are all decoupled from how code arrives.
 
-### 4. Extensibility for code fence execution (option 2)
-The execution path is designed so a streaming code fence interceptor (`python:run` blocks) can replace the bash tool as the trigger mechanism later. The downstream flow — execute in kernel → stream stdout → emit display results → render — is identical regardless of trigger. The Daytona service interface, `result_helper.py` protocol, `DISPLAY_RESULT` events, and frontend rendering are all decoupled from how code arrives.
+### 3. Generic display results, inline with text
+Any tool can emit `DISPLAY_RESULT` events — the concept is not Python-specific. Results (charts, images, tables, mesh refs) render **inline with text** in the visible zone of the ActivityBlock. They are content, not a separate category.
 
-### 5. Binary mesh via existing WS binary frames
-The WS client already supports binary frames (`subId UTF-8 0x00 payload`). Mesh data (vertices + faces + labels) uses this path. No protocol changes needed.
+### 4. Two-zone ActivityBlock model
+One ActivityBlock per assistant turn. Two rendering zones:
+- **Collapsed zone**: thinking, tool call details (input/args). Expandable for debugging.
+- **Visible zone**: text, images, charts, tables, mesh cards, tool stdout (for tools that default to uncollapsed output like python).
 
-### 6. Frontend target: `frontend-v2/`
+Per-tool-category display config (extensible) controls what goes where. stderr is hidden by default with click-to-view popup.
+
+### 5. Multi-mesh 3D scene
+The 3D viewer manages multiple named meshes by ID:
+- `show_mesh(verts, faces, mesh_id="femur", label="Femur", color="#4488ff")`
+- Same `mesh_id` = replace. New `mesh_id` = add to scene.
+- No per-vertex label splitting on frontend — each call is one complete mesh.
+- User toggles visibility per mesh via checkboxes.
+
+### 6. Binary mesh via existing WS binary frames
+The WS client already supports binary frames (`subId UTF-8 0x00 payload`). Mesh data (vertices + faces) uses this path. No protocol changes needed.
+
+### 7. Frontend target: `frontend-v2/`
 Ship on `frontend-v2/` (ground-up rebuild). See [decisions.md](../decisions.md) D4 for full rationale.
 
-### 7. Dataset as new domain
+### 8. Dataset as new domain
 DICOM datasets are project-scoped resources stored in Supabase Storage with metadata in a `datasets` table. Follows existing domain pattern.
 
-### 8. Single agent profile
-One `data-analyst` persona with domain knowledge. Uses `bash` as its primary tool for all sandbox execution.
+### 9. Single agent profile
+One `data-analyst` persona with domain knowledge. Uses `python` for analysis and `bash` for file operations.
 
 ## Data Flow: End-to-End Pipeline
 
@@ -110,43 +129,42 @@ sequenceDiagram
     R->>F: Upload DICOM stack
     F->>S: Store files in dataset bucket
     F->>B: POST /api/projects/{pid}/datasets (metadata)
-    B->>B: Extract DICOM metadata
 
     R->>F: "Segment the knee joint"
     F->>B: User message (SSE stream)
-    B->>B: LLM decides to use bash tool
+    B->>B: LLM decides to use tools
 
-    Note over B,D: AI writes Python module
-    B->>D: bash: write seg_utils.py
+    Note over B,D: AI writes module via bash tool
+    B->>D: bash: cat > seg_utils.py
     D-->>B: done
 
-    Note over B,D: AI runs segmentation script
-    B->>D: bash: python3 run_segmentation.py
-    D->>D: Executes in persistent kernel
+    Note over B,D: AI runs segmentation via python tool
+    B->>D: python: ExecInKernel(segmentation code)
+    D->>D: Executes in persistent Jupyter kernel
 
-    loop Streaming output
-        D-->>B: stdout/stderr chunks
-        B-->>F: AG-UI TOOL_OUTPUT events (inside ActivityBlock)
-        F-->>R: Streaming output in tool detail
+    loop Streaming stdout (visible zone)
+        D-->>B: stdout chunks
+        B-->>F: AG-UI TOOL_OUTPUT events
+        F-->>R: Streaming output inline
     end
 
     D-->>B: Execution complete
     B->>D: Read /workspace/.meridian/result.json
-    D-->>B: Display results (mesh_ref, charts, etc.)
-    B-->>F: DISPLAY_RESULT events + Binary mesh frame via WS
-    F-->>R: Display results visible in chat + 3D viewer opens
+    D-->>B: Display results (mesh_refs, charts)
+    B-->>F: DISPLAY_RESULT events + Binary mesh frames via WS
+    F-->>R: Charts + mesh cards inline, 3D viewer opens
 
     R->>F: "That sesamoid is actually an osteophyte"
     F->>B: Correction message
-    B->>D: Re-run with adjusted labels
-    D-->>B: Updated mesh
+    B->>D: python: Re-run with show_mesh(mesh_id="osteophyte")
+    D-->>B: Updated mesh (same ID replaces)
     B-->>F: Updated 3D model
 
     R->>F: "Run the statistics"
-    B->>D: Execute stats script
+    B->>D: python: stats code with show_plotly() + show_dataframe()
     D-->>B: Plotly JSON + table HTML
     B-->>F: DISPLAY_RESULT events
-    F-->>R: Interactive charts + tables in chat
+    F-->>R: Interactive charts + tables inline
 ```
 
 ## Directory Map
@@ -159,12 +177,14 @@ backend/
     service/datasets/          # Dataset service implementation
     service/sandbox/           # Daytona sandbox service + kernel manager
     service/llm/tools/
-      bash_tool.go             # New ToolExecutor (Daytona bash + kernel)
+      python_tool.go           # New ToolExecutor (kernel + result capture)
+      python_tool_meta.go      # Metadata for system prompt
+      bash_tool.go             # New ToolExecutor (shell commands)
       bash_tool_meta.go        # Metadata for system prompt
       output_sink.go           # OutputSink interface for streaming
       display_result.go        # DisplayResult types
     service/llm/streaming/
-      agui_output_sink.go      # OutputSink → emitter bridge
+      agui_output_sink.go      # OutputSink -> emitter bridge
     handler/dataset.go         # HTTP endpoints
     repository/postgres/
       dataset.go               # Dataset repository
@@ -178,13 +198,14 @@ frontend-v2/                   # Target frontend (NOT frontend/)
     features/
       activity-stream/
         streaming/
-          events.ts            # Extended with DISPLAY_RESULT
-          reducer.ts           # Revised: ActivityBlock model + display results
+          events.ts            # Extended with TOOL_OUTPUT, DISPLAY_RESULT
+          reducer.ts           # Revised: two-zone model + per-tool display config
         types.ts               # Extended with DisplayResultItem
-        ActivityBlock.tsx       # Revised: all work inside, results outside
+        tool-display-config.ts # Per-tool-category collapse defaults
+        ActivityBlock.tsx       # Revised: collapsed zone + visible zone
         items/
-          DisplayResultRow.tsx  # New display result renderer
-      viewer-3d/               # React Three Fiber viewer
+          DisplayResultRow.tsx  # Inline result renderer
+      viewer-3d/               # React Three Fiber multi-mesh viewer
         Viewer3DPanel.tsx
         MeshScene.tsx
         BoneMesh.tsx
@@ -203,6 +224,8 @@ frontend-v2/                   # Target frontend (NOT frontend/)
         ImageBlock.tsx
         DataFrameBlock.tsx
         MeshRefBlock.tsx
+        ToolOutputBlock.tsx
+        StderrPopover.tsx
         types.ts
       workspace/               # Layout shell
         WorkspaceLayout.tsx
@@ -220,18 +243,19 @@ frontend-v2/                   # Target frontend (NOT frontend/)
 ## Related Design Docs
 
 ### Backend
-- [bash Tool](backend/bash-tool.md) — ToolExecutor for Daytona sandbox execution
+- [Python Tool](backend/python-tool.md) — ToolExecutor for Jupyter kernel execution + result capture
+- [Bash Tool](backend/bash-tool.md) — ToolExecutor for shell commands
 - [Daytona Service](backend/daytona-service.md) — Sandbox lifecycle + persistent kernel
 - [Dataset Domain](backend/dataset-domain.md) — DICOM upload, storage, metadata
 - [Display Result Pipeline](backend/display-results.md) — Generic AG-UI events for rich results
 
 ### Frontend
 - [Frontend Overview](frontend/overview.md) — How all frontend pieces connect
-- [Activity Stream](frontend/activity-stream.md) — Revised ActivityBlock model + display results
+- [Activity Stream](frontend/activity-stream.md) — Two-zone model + per-tool display config
 - [Workspace Layout](frontend/layout.md) — Two-panel resizable workspace
 - [State Management](frontend/state.md) — Zustand stores for project/dataset/viewer state
-- [3D Viewer](frontend/viewer-3d.md) — React Three Fiber mesh rendering
-- [Inline Results](frontend/inline-results.md) — Chart/table/image rendering in chat
+- [3D Viewer](frontend/viewer-3d.md) — React Three Fiber multi-mesh rendering
+- [Inline Results](frontend/inline-results.md) — Chart/table/image/mesh rendering inline
 - [Dataset Upload UI](frontend/dataset-upload.md) — DICOM drag-and-drop interface
 
 ### Agent

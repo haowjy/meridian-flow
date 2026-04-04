@@ -18,95 +18,88 @@ sequenceDiagram
     FE->>BE: POST /api/turns {thread_id, content}
     BE->>BE: CreateTurn pipeline (5 stages)
     BE-->>FE: 201 {user_turn, assistant_turn}
-    
+
     Note over BE,LLM: 2. BACKGROUND: LLM STREAMING STARTS
     BE->>BE: Launch background goroutine
     BE->>BE: Build conversation messages + tool registry
-    BE->>LLM: StreamResponse(messages, tools=[bash])
-    
+    BE->>LLM: StreamResponse(messages, tools=[python, bash])
+
     Note over FE,WS: 3. FRONTEND SUBSCRIBES
     FE->>WS: SUBSCRIBE {resource: turn, id: assistant_turn_id}
     WS-->>FE: RUN_STARTED
     WS-->>FE: STEP_STARTED
-    
+
     Note over LLM,BE: 4. LLM STREAMS THINKING
     LLM-->>BE: thinking tokens
     BE-->>WS: THINKING_START
     BE-->>WS: THINKING_TEXT_MESSAGE_CONTENT (deltas)
-    WS-->>FE: reducer → ThinkingItem
-    FE-->>U: ActivityBlock card shows "Thinking..."
+    WS-->>FE: reducer -> ThinkingItem (collapsed zone)
 
     Note over LLM,BE: 5. LLM WRITES TEXT
     LLM-->>BE: "I'll segment the bones using..."
-    BE-->>WS: TEXT_MESSAGE_START → CONTENT (deltas) → END
-    WS-->>FE: reducer → ContentItem
-    FE-->>U: Text inside ActivityBlock
+    BE-->>WS: TEXT_MESSAGE_START -> CONTENT (deltas) -> END
+    WS-->>FE: reducer -> ContentItem (visible zone)
 
-    Note over LLM,DT: 6. LLM CALLS BASH TOOL (write script)
-    LLM-->>BE: tool_use: bash {command: "cat > segment.py << 'EOF'..."}
+    Note over LLM,DT: 6. LLM CALLS BASH TOOL (write module)
+    LLM-->>BE: tool_use: bash {command: "cat > seg_utils.py..."}
     BE-->>WS: TOOL_CALL_START {toolName: "bash"}
     BE-->>WS: TOOL_CALL_ARGS (streaming JSON deltas)
-    WS-->>FE: reducer → ToolItem {status: "streaming-args"}
-    FE-->>U: ToolRow shows "Bash(...)" progressively
-    
+    WS-->>FE: reducer -> ToolItem (collapsed zone)
+
     BE-->>WS: TOOL_CALL_END
-    WS-->>FE: reducer → ToolItem {status: "executing"}
-    
-    Note over BE,DT: 7. TOOL EXECUTES IN DAYTONA
-    BE->>BE: BashTool.Execute() → not Python → ExecBash
-    BE->>DT: Run "cat > segment.py" in sandbox
+    BE->>DT: BashTool.Execute() -> ExecBash
     DT-->>BE: exit 0
     BE-->>WS: TOOL_CALL_RESULT {exit_code: 0}
-    WS-->>FE: reducer → ToolItem {status: "done"}
 
-    Note over LLM,DT: 8. LLM CALLS BASH TOOL (run script)
-    LLM-->>BE: tool_use: bash {command: "python3 segment.py"}
-    BE-->>WS: TOOL_CALL_START → ARGS → END
-    
-    Note over BE,DT: 9. PYTHON EXECUTES WITH KERNEL
-    BE->>BE: BashTool.Execute() → isPython=true → ExecInKernel
-    BE->>DT: Execute in persistent Jupyter kernel
-    
-    loop Streaming stdout
+    Note over LLM,DT: 7. LLM CALLS PYTHON TOOL (run analysis)
+    LLM-->>BE: tool_use: python {code: "from seg_utils import..."}
+    BE-->>WS: TOOL_CALL_START {toolName: "python"}
+    BE-->>WS: TOOL_CALL_ARGS (streaming code)
+    WS-->>FE: reducer -> ToolItem (collapsed zone, code input collapsed)
+
+    BE-->>WS: TOOL_CALL_END
+
+    Note over BE,DT: 8. PYTHON EXECUTES IN KERNEL
+    BE->>DT: PythonTool.Execute() -> ExecInKernel(wrapped code)
+
+    loop Streaming stdout (visible zone)
         DT-->>BE: "Loading DICOM stack..."
-        BE-->>WS: TOOL_OUTPUT {stream: "stdout", text: "Loading..."}
-        WS-->>FE: reducer → ToolItem.toolOutput[]
-        FE-->>U: (inside collapsed card if expanded)
-        
-        DT-->>BE: "Processing slice 171/342..."
         BE-->>WS: TOOL_OUTPUT {stream: "stdout"}
-        WS-->>FE: reducer appends to toolOutput
+        WS-->>FE: reducer -> ToolItem.toolOutput[]
+        FE-->>U: stdout visible inline (python config: stdout=visible)
     end
 
-    Note over DT,BE: 10. PYTHON CALLS show_mesh()
-    DT->>DT: show_mesh() writes binary to /workspace/.meridian/meshes/mesh_abc.bin
-    DT->>DT: _flush() writes result.json
+    Note over DT,BE: 9. PYTHON CALLS show_mesh() multiple times
+    DT->>DT: show_mesh(verts, faces, "femur", "Femur", "#4488ff")
+    DT->>DT: show_mesh(verts, faces, "tibia", "Tibia", "#44cc66")
+    DT->>DT: show_mesh(verts, faces, "patella", "Patella", "#9966cc")
+    DT->>DT: _flush() writes result.json with 3 mesh entries
     DT-->>BE: exit 0
 
-    Note over BE,FE: 11. DISPLAY RESULTS EMITTED
+    Note over BE,FE: 10. DISPLAY RESULTS EMITTED
     BE->>DT: ReadFile("/workspace/.meridian/result.json")
-    BE->>BE: Parse results array
-    BE-->>WS: DISPLAY_RESULT {resultType: "mesh_ref", data: {mesh_id, vertex_count, label_names}}
-    WS-->>FE: reducer → DisplayResultItem {kind: "display-result"}
-    FE-->>U: MeshRefBlock card appears (OUTSIDE collapsed card, always visible)
+    BE->>BE: Parse results array (3 mesh_refs)
 
-    Note over BE,FE: 12. BINARY MESH DATA
-    BE->>DT: ReadFile("/workspace/.meridian/meshes/mesh_abc.bin")
-    BE-->>WS: WS Binary Frame [subId + 0x00 + meshId + 0x00 + vertices + faces + labels]
-    WS-->>FE: parseMeshBinary() → MeshData {vertices, faces, labels}
-    FE->>FE: viewerStore.setMeshData(meshId, meshData)
-    FE-->>U: MeshRefBlock merges labels → "femur, tibia, patella"
+    loop For each mesh
+        BE-->>WS: DISPLAY_RESULT {resultType: "mesh_ref", mesh_id, label, color}
+        WS-->>FE: reducer -> DisplayResultItem (visible zone, inline)
+        FE-->>U: MeshRefBlock card appears inline with text
 
-    BE-->>WS: TOOL_CALL_RESULT {exit_code: 0}
+        BE->>DT: ReadFile(mesh binary)
+        BE-->>WS: WS Binary Frame [meshId + vertices + faces]
+        WS-->>FE: parseMeshBinary() -> viewerStore.receiveBinaryMesh()
+    end
 
-    Note over LLM,BE: 13. LLM WRITES RESPONSE
-    LLM-->>BE: "Segmentation complete. I identified 5 regions..."
-    BE-->>WS: TEXT_MESSAGE_START → CONTENT → END
-    WS-->>FE: reducer → ContentItem (last one = responseText)
-    
-    BE-->>WS: STEP_FINISHED
+    FE-->>U: 3D viewer opens with all 3 meshes
+
+    BE-->>WS: TOOL_CALL_RESULT
+
+    Note over LLM,BE: 11. LLM WRITES RESPONSE
+    LLM-->>BE: "Segmentation complete. I identified 3 structures..."
+    BE-->>WS: TEXT_MESSAGE_START -> CONTENT -> END
+    WS-->>FE: reducer -> ContentItem (visible zone, inline after mesh cards)
+
     BE-->>WS: RUN_FINISHED {inputTokens, outputTokens}
-    WS-->>FE: reducer → isStreaming = false
 ```
 
 ## Step-by-Step Walkthrough
@@ -117,295 +110,176 @@ sequenceDiagram
 
 **Backend** (`handler/thread.go` → `CreateTurnV2()`): Runs a 5-stage pipeline:
 
-1. **TurnContextResolver** — resolves thread, persona, model, provider. Acquires a stream slot (concurrency limit: 3 free, 10 paid).
-2. **TurnWriter** — creates user turn (with message blocks) and empty assistant turn (status: `pending`).
-3. **ToolRegistryFactory** — builds tool registry with enabled tools. The `bash` tool is registered via `builder.WithBashTool(sandboxSvc, datasetSvc)`.
+1. **TurnContextResolver** — resolves thread, persona, model, provider. Acquires a stream slot.
+2. **TurnWriter** — creates user turn and empty assistant turn (status: `pending`).
+3. **ToolRegistryFactory** — builds tool registry with enabled tools. Both `python` and `bash` tools are registered via `builder.WithPythonTool(sandboxSvc, datasetSvc).WithBashTool(sandboxSvc, datasetSvc)`.
 4. **StreamRuntime.Launch()** — creates `StreamExecutor`, registers in `mstream.Registry`, launches background goroutine.
-5. HTTP 201 returns immediately with both turns. Streaming hasn't started yet.
-
-**Key file**: `backend/internal/service/llm/streaming/service.go`
+5. HTTP 201 returns immediately with both turns.
 
 ### Step 2: Background Streaming
 
-**Backend** (`stream_executor.go` → `workFunc()`): The background goroutine:
-
-1. Updates turn status to `streaming`
-2. Creates AG-UI emitter with the `send` callback from mstream
-3. Emits `RUN_STARTED`
-4. Checks credit admission
-5. Emits `STEP_STARTED`
-6. Calls `provider.StreamResponse()` — returns a channel of `StreamEvent`
-7. Enters `processProviderStream()` loop
-
-The provider streams AG-UI events. The emitter serializes each to JSON, wraps in an `mstream.Event`, and calls `send()` — which broadcasts to all subscribed clients.
-
-**Key files**: `stream_executor.go`, `agui/emitter.go`
+The background goroutine emits `RUN_STARTED`, calls `provider.StreamResponse()`, and enters `processProviderStream()` loop.
 
 ### Step 3: Frontend Subscribes
 
-**Frontend** (`StreamingChannelClient`): When the assistant turn arrives, the frontend subscribes:
-
-```
-WS → SUBSCRIBE {resource: "turn", id: assistant_turn_id}
-```
-
-The backend's `TurnStreamHandler.OnSubscribe()` looks up the turn in `mstream.Registry`, subscribes with catchup (replaying any events the client missed), and begins forwarding live events.
-
-Events arrive as WebSocket messages with `kind: "stream"`, `op: "event"`. The `StreamingChannelClient` validates the event type against `STREAM_EVENT_TYPE_SET` and passes it to the subscriber callback, which dispatches to the activity stream reducer.
-
-**Key files**: `frontend-v2/src/features/threads/streaming/streaming-channel-client.ts`, `frontend-v2/src/lib/ws/ws-client.ts`
+The frontend subscribes to the assistant turn via WebSocket. Events flow through `StreamingChannelClient` to the activity stream reducer.
 
 ### Steps 4-5: Thinking + Text
 
-**Backend**: Provider streams `THINKING_START`, `THINKING_TEXT_MESSAGE_CONTENT` (deltas), then `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT` (deltas), `TEXT_MESSAGE_END`.
+Standard AG-UI flow. Thinking goes to collapsed zone, text to visible zone.
 
-**Frontend reducer** (`reducer.ts`):
-- `THINKING_START` → creates `ThinkingItem` in `items[]`
-- `THINKING_TEXT_MESSAGE_CONTENT` → appends to `ThinkingItem.text`
-- `TEXT_MESSAGE_START` → creates `ContentItem` in `items[]`
-- `TEXT_MESSAGE_CONTENT` → appends to `ContentItem.text`
+### Step 6: LLM Writes a Module (bash tool)
 
-**User sees**: ActivityBlock card with thinking indicator. Text accumulates inside the card.
+The AI writes a Python module file using the bash tool:
 
-### Steps 6-7: LLM Writes a Python Script (bash tool call)
-
-**Backend**: Provider emits `stop_reason: "tool_use"`. The `StreamExecutor`:
-1. Collects tool_use blocks via `collectToolUse()`
-2. Calls `toolRegistry.ExecuteParallel()` — dispatches to `BashTool.Execute()`
-3. `BashTool` detects `cat > segment.py` is NOT a Python execution → calls `sandboxSvc.ExecBash()`
-4. Daytona writes the file, returns exit 0
-5. `BashTool` checks for display results (none for a file write)
-6. Returns `{success: true, exit_code: 0}` to the executor
-
-**Frontend reducer**:
-- `TOOL_CALL_START` → creates `ToolItem {status: "streaming-args"}`
-- `TOOL_CALL_ARGS` (multiple deltas) → accumulates `argsText`, partial-parses with `partial-json`
-- `TOOL_CALL_END` → status transitions to `"executing"`
-- `TOOL_CALL_RESULT` → status transitions to `"done"`
-
-**User sees**: Inside the collapsed ActivityBlock card, a tool row: `Bash("cat > segment.py...") ✓`. Not visible unless the user expands the card.
-
-**Key file**: `backend/internal/service/llm/tools/bash_tool.go`
-
-### Steps 8-9: LLM Runs the Python Script (bash tool call with kernel)
-
-**Backend**: Second tool_use — `bash {command: "python3 segment.py"}`.
-
-`BashTool.Execute()`:
-1. Calls `isPythonExecution("python3 segment.py")` → true
-2. Reads `segment.py` content from sandbox via `sandboxSvc.ReadFile()`
-3. Wraps code with result_helper preamble (imports `show_*` functions, `_results.clear()`, `try/finally _flush()`)
-4. Calls `sandboxSvc.ExecInKernel(projectID, wrappedCode, onOutput)`
-5. The `onOutput` callback receives each stdout/stderr line from the Jupyter kernel
-6. For each line: `sink.EmitToolOutput(stream, text, seq)` → emits `TOOL_OUTPUT` AG-UI event
-
-**Frontend reducer**:
-- `TOOL_OUTPUT` events → appends to `ToolItem.toolOutput[]`
-- First `TOOL_OUTPUT` transitions status to `"executing"` if still `"streaming-args"`
-
-**User sees**: If they expand the ActivityBlock, they see streaming stdout: "Loading DICOM stack...", "Processing slice 171/342...", etc. This is inside the collapsed card — not visible by default.
-
-**Key files**: `bash_tool.go`, `backend/internal/service/sandbox/daytona.go`
-
-### Step 10: Python Calls show_mesh()
-
-**In the Daytona sandbox**: The Python script calls `show_mesh(vertices, faces, labels, label_names)` from `result_helper.py`:
-
-1. Generates a unique `mesh_id`
-2. Writes binary data to `/workspace/.meridian/meshes/mesh_abc.bin` (header: vertex_count + face_count, then float32 vertices, uint32 faces, uint8 labels)
-3. Appends metadata to `_results` list
-4. When script finishes, `_flush()` writes `_results` to `/workspace/.meridian/result.json`
-
-Nothing streams to the backend yet — this all happens inside the sandbox.
-
-**Key file**: `/workspace/.meridian/result_helper.py` (pre-installed in sandbox snapshot)
-
-### Step 11: Display Results Emitted
-
-**Backend**: After `ExecInKernel` returns, `BashTool.emitDisplayResults()`:
-
-1. Reads `/workspace/.meridian/result.json` from sandbox
-2. Parses the JSON array
-3. For each result: `sink.EmitDisplayResult(payload)` → emits `DISPLAY_RESULT` AG-UI event
-4. For mesh results: reads the binary file, calls `sink.SendBinary(meshID, binaryData)`
-5. Cleans up result.json
-
-The `aguiOutputSink` implementation delegates:
-- `EmitDisplayResult()` → `emitter.EmitDisplayResult()` → JSON event via mstream
-- `SendBinary()` → `wsSession.SendBinaryToSub()` → raw WS binary frame
-
-**Frontend reducer**:
-- `DISPLAY_RESULT` → creates `DisplayResultItem {kind: "display-result"}` in `items[]`
-
-**User sees**: A MeshRefBlock card appears OUTSIDE the collapsed ActivityBlock — always visible:
-```
-🧊 3D Model Generated
-45,000 vertices — femur, tibia, patella
-                                [View 3D]
+```json
+{"name": "bash", "input": {"command": "cat > /workspace/scripts/seg_utils.py << 'EOF'\nimport SimpleITK as sitk\n..."}}
 ```
 
-**Key files**: `bash_tool.go`, `agui_output_sink.go`, `agui/emitter.go`
+`BashTool.Execute()` → `sandboxSvc.ExecBash()`. No kernel, no display results. The tool row appears in the collapsed zone (bash config: input=collapsed, stdout=collapsed).
 
-### Step 12: Binary Mesh Data
+### Step 7-8: LLM Runs Analysis (python tool)
 
-**Backend**: `sink.SendBinary(meshID, data)` sends a WS binary frame:
-```
-[subId UTF-8] 0x00 [meshId UTF-8] 0x00 [binary payload]
-```
+The AI runs analysis code directly:
 
-The binary payload is: `vertex_count(u32) + face_count(u32) + vertices(float32[]) + faces(uint32[]) + labels(uint8[])`.
-
-**Frontend** (`WsClient.onmessage`): Detects `ArrayBuffer`, extracts `subId`, routes to binary handler.
-
-`parseMeshBinary()`:
-1. Finds null delimiters to extract meshId
-2. Reads vertex_count and face_count from header (DataView, little-endian)
-3. Copies vertex/face data into aligned ArrayBuffers (typed arrays require alignment)
-4. Constructs `MeshData {meshId, vertices: Float32Array, faces: Uint32Array, labels: Uint8Array}`
-
-The viewer store receives the mesh data. The MeshRefBlock (already rendered from the DISPLAY_RESULT event) merges the label names from the metadata event.
-
-**User sees**: The MeshRefBlock now shows structure names ("femur, tibia, patella"). Clicking "View 3D" opens the React Three Fiber canvas in the right panel.
-
-**Key files**: `frontend-v2/src/features/viewer-3d/hooks/useMeshData.ts`, `frontend-v2/src/lib/ws/ws-client.ts`
-
-### Step 13: LLM Response Text
-
-**Backend**: After tool execution completes, the `StreamExecutor` checks for interjections (none), then continues the LLM with tool results. The LLM streams its final response text.
-
-**Frontend reducer**: The last `ContentItem` in the items array becomes the response text, rendered OUTSIDE the collapsed ActivityBlock — always visible.
-
-**User sees**:
-```
-"Segmentation complete. I identified 5 regions: femur (blue),
- tibia (green), patella (purple), and 2 suspected osteophytes.
- Does this look correct?"
+```json
+{"name": "python", "input": {"code": "from seg_utils import load_dicom_stack\nimport numpy as np\n..."}}
 ```
 
-`RUN_FINISHED` arrives with token counts. `isStreaming` flips to false. The ActivityBlock header shows "done" badge.
+`PythonTool.Execute()`:
+1. Wraps code with result_helper preamble
+2. Calls `sandboxSvc.ExecInKernel(wrappedCode, onOutput)`
+3. Stdout streams via `sink.EmitToolOutput()` → `TOOL_OUTPUT` events
+4. Python tool config says `stdout: "visible"` → stdout appears **inline in the visible zone**
 
-## Two Transports
+### Step 9: Python Calls show_mesh() Multiple Times
 
-| What | Transport | Format |
-|------|-----------|--------|
-| AG-UI events (text, thinking, tool calls, tool output, display results) | SSE-over-WebSocket | JSON envelope: `{kind: "stream", op: "event", payload: {type: "...", ...}}` |
-| Binary mesh data | WS binary frame | Raw bytes: `[subId] 0x00 [meshId] 0x00 [vertex_count, face_count, vertices, faces, labels]` |
+The code calls `show_mesh()` three times, each with a unique `mesh_id`:
 
-Both go through the same WebSocket connection. The frontend dispatches based on message type — text frames to the reducer, binary frames to the viewer store.
+```python
+show_mesh(femur_verts, femur_faces, mesh_id="femur", label="Femur", color="#4488ff")
+show_mesh(tibia_verts, tibia_faces, mesh_id="tibia", label="Tibia", color="#44cc66")
+show_mesh(patella_verts, patella_faces, mesh_id="patella", label="Patella", color="#9966cc")
+```
+
+Each writes a separate binary file. `_flush()` writes a result.json with 3 entries.
+
+### Step 10: Display Results Emitted
+
+`PythonTool.emitDisplayResults()`:
+1. Reads result.json (3 mesh_ref entries)
+2. For each: emits `DISPLAY_RESULT` event + reads binary file + sends WS binary frame
+3. Frontend: each DISPLAY_RESULT creates a `DisplayResultItem` → MeshRefBlock card inline
+4. Frontend: each binary frame → `parseMeshBinary()` → `viewerStore.receiveBinaryMesh()`
+5. Viewer store accumulates all 3 meshes, scene renders all simultaneously
+
+### Step 11: LLM Response Text
+
+The final response text appears inline in the visible zone, after the mesh cards.
 
 ## What the User Sees (Final State)
 
 ```
-┌──────────────────────────────────────────────────────┐
-│ Chat Panel (left, 45%)                               │
-│                                                      │
-│ ┌──────────────────────────────────────────────────┐ │
-│ │ 👤 "Segment the knee joint"                      │ │
-│ └──────────────────────────────────────────────────┘ │
-│                                                      │
-│ ┌─ ActivityBlock (collapsed) ──────────────────────┐ │
-│ │ ▶ Ran 2 commands, processed 342 slices      done │ │
-│ │                                                  │ │
-│ │  (expand to see:)                                │ │
-│ │  💭 "I need to load the DICOM stack and..."      │ │
-│ │  📝 "I'll segment the bones using threshold..."  │ │
-│ │  🔧 Bash("cat > segment.py << 'EOF'...")    ✓   │ │
-│ │  🔧 Bash("python3 segment.py")              ✓   │ │
-│ │      stdout: Loading DICOM stack...              │ │
-│ │      stdout: Processing slice 342/342...         │ │
-│ │      stdout: Found 5 regions                     │ │
-│ └──────────────────────────────────────────────────┘ │
-│                                                      │
-│ ┌─ Display Result (always visible) ────────────────┐ │
-│ │ 🧊 3D Model Generated                           │ │
-│ │ 45,000 vertices — femur, tibia, patella          │ │
-│ │                                     [View 3D]    │ │
-│ └──────────────────────────────────────────────────┘ │
-│                                                      │
-│ "Segmentation complete. I identified 5 regions:      │
-│  femur (blue), tibia (green), patella (purple),      │
-│  and 2 suspected osteophytes on the medial condyle.  │
-│  Does the segmentation look correct?"                │
-│                                                      │
-│ [input box]                                          │
-├──────────────────────────────────────────────────────┤
-│ Content Panel (right, 55%)                           │
-│ — after clicking [View 3D] —                         │
-│                                                      │
-│ ┌──────────────────────────────────────────────────┐ │
-│ │                                                  │ │
-│ │         [Interactive 3D mesh]                     │ │
-│ │         femur (blue)                              │ │
-│ │         tibia (green)                             │ │
-│ │         patella (purple)                          │ │
-│ │         osteophytes (red)                         │ │
-│ │                                                  │ │
-│ │         rotate / zoom / pan                       │ │
-│ │                                                  │ │
-│ └──────────────────────────────────────────────────┘ │
-│                                                      │
-│ Structures:                                          │
-│   ☑ Femur (blue)      ☑ Tibia (green)               │
-│   ☑ Patella (purple)  ☑ Osteophyte 1 (red)          │
-│                       ☑ Osteophyte 2 (red)           │
-│                                                      │
-│ [Export STL] [Screenshot] [Reset View] [Close]       │
-└──────────────────────────────────────────────────────┘
++------------------------------------------------------+
+| Chat Panel (left, 45%)                               |
+|                                                      |
+| [User] "Segment the knee joint"                      |
+|                                                      |
+| +-- Collapsed Zone (expand for details) -----------+ |
+| | > Ran 1 command, 1 analysis                 done | |
+| | (expand to see thinking, tool inputs)            | |
+| +--------------------------------------------------+ |
+|                                                      |
+| -- Visible Zone (always shown) --------------------  |
+| "I'll segment the bones using threshold..."          |
+|                                                      |
+| Loading DICOM stack...                               |
+| Processing slice 342/342...                          |
+| Found 5 regions                                      |
+|                                                      |
+| [Mesh: Femur - 45,000 verts]            [View 3D]   |
+| [Mesh: Tibia - 38,000 verts]            [View 3D]   |
+| [Mesh: Patella - 12,000 verts]          [View 3D]   |
+|                                                      |
+| "Segmentation complete. I identified 3 bones..."     |
+|                                                      |
+| [input box]                                          |
++------------------------------------------------------+
+| Content Panel (right, 55%)                           |
+| -- after clicking [View 3D] or auto-open --          |
+|                                                      |
+| +--------------------------------------------------+ |
+| |                                                  | |
+| |         [Interactive 3D scene]                   | |
+| |         femur (blue)                             | |
+| |         tibia (green)                            | |
+| |         patella (purple)                         | |
+| |                                                  | |
+| |         rotate / zoom / pan                      | |
+| |                                                  | |
+| +--------------------------------------------------+ |
+|                                                      |
+| Structures:                                          |
+|   [x] Femur (blue)      [x] Tibia (green)           |
+|   [x] Patella (purple)                              |
+|                                                      |
+| [Screenshot] [Reset View] [Export STL]               |
++------------------------------------------------------+
 ```
 
 ## Backend Code Path Summary
 
 ```
 POST /api/turns
-  → handler/thread.go: CreateTurnV2()
-  → service/llm/streaming/service.go: CreateTurn()
-    → turn_context_resolver.go: resolve thread, persona, model, slot
-    → turn_creation.go: create user + assistant turns
-    → tool_registry_factory.go: build registry with bash tool
-    → stream_runtime.go: Launch() → background goroutine
-      → stream_executor.go: workFunc()
-        → agui/emitter.go: EmitRunStarted()
-        → provider.StreamResponse() → channel of StreamEvents
-        → processProviderStream() loop:
-            → processAGUIEvent() → emitter forwards to mstream → WS
-            → on tool_use: collectToolUse() → ExecuteParallel()
-              → tools/bash_tool.go: Execute()
-                → isPythonExecution()? 
-                  → yes: sandboxSvc.ExecInKernel() + OutputSink streaming
-                  → no:  sandboxSvc.ExecBash()
-                → emitDisplayResults() → read result.json → EmitDisplayResult + SendBinary
-              → emitter.EmitToolCallResult()
-              → check interjection → continue or switch stream
-            → on metadata: handleCompletion() → Terminate()
+  -> handler/thread.go: CreateTurnV2()
+  -> service/llm/streaming/service.go: CreateTurn()
+    -> tool_registry_factory.go: build registry with python + bash tools
+    -> stream_runtime.go: Launch() -> background goroutine
+      -> stream_executor.go: workFunc()
+        -> processProviderStream() loop:
+            -> on tool_use "bash": BashTool.Execute()
+              -> sandboxSvc.ExecBash() + OutputSink streaming
+            -> on tool_use "python": PythonTool.Execute()
+              -> wrap code with result_helper
+              -> sandboxSvc.ExecInKernel() + OutputSink streaming
+              -> emitDisplayResults() -> read result.json
+                -> EmitDisplayResult + SendBinary for each result
+            -> emitter.EmitToolCallResult()
 ```
 
 ## Frontend Code Path Summary
 
 ```
 WebSocket message arrives
-  → ws-client.ts: onmessage()
-    → Binary? → handleBinaryFrame() → extract subId → onBinaryMessage callback
-      → parseMeshBinary() → viewerStore.setMeshData()
-    → Text? → parseEnvelope() → dispatch by kind:
-      → "stream" → StreamingChannelClient.handleStreamMessage()
-        → validate event type → subscriber callback
-          → useReducer(reduceStreamEvent)
-            → TOOL_CALL_START → ToolItem {status: "streaming-args"}
-            → TOOL_CALL_ARGS → accumulate argsText, partial-parse
-            → TOOL_CALL_END → status: "executing"
-            → TOOL_OUTPUT → append to toolOutput[]
-            → DISPLAY_RESULT → DisplayResultItem {kind: "display-result"}
-            → TOOL_CALL_RESULT → status: "done"
-            → TEXT_MESSAGE_CONTENT → append to ContentItem.text
-            → RUN_FINISHED → isStreaming: false
-          → ActivityBlock.tsx renders:
-            → Card (collapsible): ThinkingRow, ContentRow, ToolRow
-            → DisplayResultRow (outside card): PlotlyBlock, ImageBlock, DataFrameBlock, MeshRefBlock
-            → Response text (outside card): last ContentItem
+  -> ws-client.ts: onmessage()
+    -> Binary? -> binaryDispatch.dispatch()
+      -> mesh handler -> parseMeshBinary() -> viewerStore.receiveBinaryMesh()
+    -> Text? -> parseEnvelope() -> dispatch:
+      -> "stream" -> StreamingChannelClient
+        -> useReducer(reduceStreamEvent)
+          -> TOOL_CALL_START -> ToolItem (collapsed zone)
+          -> TOOL_OUTPUT -> append to toolOutput[]
+            -> python config: stdout visible -> renders in visible zone
+            -> bash config: stdout collapsed -> renders in collapsed zone
+          -> DISPLAY_RESULT -> DisplayResultItem (visible zone, inline)
+            -> mesh_ref? -> viewerStore.setPendingMeta()
+          -> TEXT_MESSAGE_CONTENT -> ContentItem (visible zone)
+          -> RUN_FINISHED -> isStreaming: false
+        -> ActivityBlock renders two zones
 ```
+
+## Two Transports
+
+| What | Transport | Format |
+|------|-----------|--------|
+| AG-UI events (text, thinking, tool calls, tool output, display results) | SSE-over-WebSocket | JSON envelope |
+| Binary mesh data | WS binary frame | Raw bytes: `[subId] 0x00 [meshId] 0x00 [vertices + faces]` |
+
+Both go through the same WebSocket connection. Binary frames no longer include per-vertex labels.
 
 ## Related Docs
 
+- [Backend: Python Tool](backend/python-tool.md)
 - [Backend: Bash Tool](backend/bash-tool.md)
 - [Backend: Display Results](backend/display-results.md)
 - [Backend: Daytona Service](backend/daytona-service.md)

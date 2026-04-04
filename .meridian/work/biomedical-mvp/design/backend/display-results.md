@@ -1,14 +1,14 @@
 # Display Result Pipeline
 
-Generic mechanism for tools to emit rich results (charts, images, tables, mesh references) that render prominently in the chat. **Any tool can emit display results** — the concept is not Python-specific. See [overview](../overview.md) for system context.
+Generic mechanism for tools to emit rich results (charts, images, tables, mesh references) that render **inline with text** in the chat. Results are content — they appear in the visible zone of the ActivityBlock alongside text, not in a separate rendering area. See [overview](../overview.md) for system context.
 
-**Replaces**: the previously-designed `stream-extensions.md` which had Python-specific `PYTHON_OUTPUT` and `PYTHON_RESULT` events. The new design separates tool output streaming (tool-specific, inside ActivityBlock) from display results (generic, outside ActivityBlock).
+**Key principle**: DISPLAY_RESULT events are a transport mechanism. The frontend renders them inline in the visible zone of the ActivityBlock, interleaved with text content. They are content, like text.
 
 ## Two Event Types
 
-### 1. TOOL_OUTPUT — Streaming stdout/stderr (tool-specific, inside ActivityBlock)
+### 1. TOOL_OUTPUT — Streaming stdout/stderr
 
-Streams tool execution output. Accumulates on the ToolItem, rendered in the tool detail when expanded. Not specific to any single tool — any tool that uses `OutputSink.EmitToolOutput()` gets streaming output.
+Streams tool execution output. Per-tool-category display config determines whether stdout appears in the collapsed or visible zone. See [activity-stream.md](../frontend/activity-stream.md) for the two-zone model.
 
 ```typescript
 {
@@ -21,9 +21,9 @@ Streams tool execution output. Accumulates on the ToolItem, rendered in the tool
 }
 ```
 
-### 2. DISPLAY_RESULT — Rich results (generic, outside ActivityBlock)
+### 2. DISPLAY_RESULT — Rich inline results
 
-Rich result that should be displayed prominently. Renders outside the collapsed ActivityBlock, always visible. Any tool can emit these via `OutputSink.EmitDisplayResult()`.
+Rich result that renders inline in the visible zone of the ActivityBlock. Any tool can emit these via `OutputSink.EmitDisplayResult()`.
 
 ```typescript
 {
@@ -61,29 +61,32 @@ interface DataFrameData {
 ```
 
 #### Mesh Reference
-Metadata only. Binary data arrives separately via WS binary frame.
+Metadata only. Binary data arrives separately via WS binary frame. One mesh per result — the AI sends multiple `show_mesh()` calls to build a multi-mesh scene.
 
 ```typescript
 interface MeshRefData {
-  mesh_id: string
+  mesh_id: string        // AI-chosen ID (e.g. "femur", "tibia")
   vertex_count: number
   face_count: number
-  label_names?: Record<string, string>
+  label: string          // Display name (e.g. "Femur")
+  color: string          // Hex color (e.g. "#4488ff")
 }
 ```
+
+**Change from previous design**: No `label_names` map. Each mesh is a single named structure with one color, identified by `mesh_id`. Same `mesh_id` replaces an existing mesh in the viewer; new `mesh_id` adds to the scene.
 
 ## Architecture: How Streaming Flows
 
 ```
-bash tool (or any tool)
-    ↓ calls sink.EmitToolOutput() / sink.EmitDisplayResult() / sink.SendBinary()
+python tool (primary) or any tool
+    | calls sink.EmitToolOutput() / sink.EmitDisplayResult() / sink.SendBinary()
 OutputSink (implemented by aguiOutputSink in stream_executor.go)
-    ↓ delegates to
+    | delegates to
 AG-UI Emitter (for JSON events) + BinarySender (for mesh data)
-    ↓
+    |
 mstream SSE transport (JSON events) / WS binary frames (mesh data)
-    ↓
-Frontend event handlers
+    |
+Frontend event handlers -> inline rendering in visible zone
 ```
 
 ## OutputSink Interface
@@ -102,7 +105,7 @@ type OutputSink interface {
     SendBinary(meshID string, data []byte)
 }
 
-// Context injection (same pattern as before)
+// Context injection
 type outputSinkKey struct{}
 
 func OutputSinkFromContext(ctx context.Context) OutputSink {
@@ -156,8 +159,6 @@ func (s *aguiOutputSink) SendBinary(meshID string, data []byte) {
 
 ### StreamExecutor Integration
 
-The StreamExecutor creates and injects the OutputSink before each tool execution:
-
 ```go
 // In stream_executor.go, before calling registry.Execute():
 sink := &aguiOutputSink{
@@ -170,8 +171,6 @@ ctx = tools.ContextWithOutputSink(ctx, sink)
 ```
 
 ### BinarySender Plumbing
-
-The WS subscription handler provides a `binarySend` callback:
 
 ```go
 binarySend := func(subID string, data []byte) error {
@@ -192,8 +191,9 @@ Binary payload layout (all little-endian):
   [4 bytes] face_count (uint32)
   [vertex_count * 12 bytes] vertices (float32 x,y,z)
   [face_count * 12 bytes] faces (uint32 v0,v1,v2)
-  [vertex_count bytes] labels (uint8 per vertex)
 ```
+
+**Simplified from previous design**: No per-vertex labels in the binary. Each mesh is one complete structure. The `mesh_id`, `label`, and `color` come from the DISPLAY_RESULT event metadata.
 
 Frontend must copy payload into aligned buffers before constructing typed array views (Decision D9).
 
@@ -202,8 +202,6 @@ Frontend must copy payload into aligned buffers before constructing typed array 
 New methods on the AG-UI emitter:
 
 ```go
-// backend/internal/service/llm/streaming/agui/emitter.go
-
 func (e *Emitter) EmitToolOutput(messageID, toolCallID, stream, text string, seq int) {
     evt := events.MeridianToolOutputEvent{
         Type:       "TOOL_OUTPUT",
@@ -265,7 +263,7 @@ const (
 ### Aggregation Strategy
 
 - **tool_output**: One block per tool invocation, aggregating all stdout/stderr lines. Finalized when execution completes.
-- **display_result**: One block per rich result. Multiple blocks possible per tool execution.
+- **display_result**: One block per rich result. Multiple blocks possible per tool execution (e.g. multiple `show_mesh()` calls).
 
 ### Persisted Block Content Schemas
 
@@ -273,6 +271,7 @@ const (
 ```json
 {
   "tool_use_id": "call_abc123",
+  "tool_name": "python",
   "lines": [
     { "stream": "stdout", "text": "Loading DICOM stack...", "sequence": 0 },
     { "stream": "stderr", "text": "Warning: slice gap", "sequence": 1 }
@@ -285,7 +284,7 @@ const (
 {
   "tool_use_id": "call_abc123",
   "result_type": "plotly",
-  "data": { "plotly_json": { "data": [...], "layout": {...} } }
+  "data": { "plotly_json": { "data": [], "layout": {} } }
 }
 ```
 
@@ -310,19 +309,20 @@ const (
   "tool_use_id": "call_abc123",
   "result_type": "mesh_ref",
   "data": {
-    "mesh_id": "mesh_abc123",
+    "mesh_id": "femur",
     "vertex_count": 50000,
     "face_count": 100000,
-    "label_names": {"1": "femur", "2": "tibia"}
+    "label": "Femur",
+    "color": "#4488ff"
   }
 }
 ```
 
-The `turn-mapper.ts` reads `result_type` to construct the correct `DisplayResultPayload` variant, and `tool_use_id` to set the `toolCallId` on the `DisplayResultItem`. For `tool_output` blocks, the `lines` array maps directly to `ToolItem.toolOutput`.
+The `turn-mapper.ts` reads `result_type` to construct the correct `DisplayResultPayload` variant. For `tool_output` blocks, the `tool_name` field determines which tool category's display config to apply. The `lines` array maps to the tool's output data.
 
 ### Mesh Persistence
 
-Binary mesh data is NOT stored in TurnBlocks. The mesh file remains in the sandbox. The `display_result` block stores a `mesh_ref` reference (see schema above).
+Binary mesh data is NOT stored in TurnBlocks. The mesh file remains in the sandbox. The `display_result` block stores a `mesh_ref` reference.
 
 On page reload, the frontend shows the mesh reference card. Mesh binary is transient (in-memory only). The researcher re-runs segmentation or continues in the same session.
 
@@ -331,11 +331,11 @@ On page reload, the frontend shows the mesh reference card. Mesh binary is trans
 Events arrive in this order per tool call:
 
 ```
-TOOL_CALL_START (bash)
-  TOOL_CALL_ARGS (command parameter, may be multiple deltas)
-  TOOL_CALL_END (fires when LLM finishes writing tool_use block — before execution)
-  TOOL_OUTPUT (0..N, sequenced — streaming during execution)
-  DISPLAY_RESULT (0..N, after execution completes)
+TOOL_CALL_START (python or bash)
+  TOOL_CALL_ARGS (code/command parameter, may be multiple deltas)
+  TOOL_CALL_END (fires when LLM finishes writing tool_use block -- before execution)
+  TOOL_OUTPUT (0..N, sequenced -- streaming during execution)
+  DISPLAY_RESULT (0..N, after execution completes -- python tool only)
 TOOL_CALL_RESULT (final status)
 ```
 
@@ -348,7 +348,8 @@ TOOL_CALL_RESULT (final status)
 
 ## Related Docs
 
-- [bash Tool](bash-tool.md) — produces events via OutputSink
-- [Activity Stream](../frontend/activity-stream.md) — frontend event handling
-- [Inline Results](../frontend/inline-results.md) — renders DISPLAY_RESULT events
+- [Python Tool](python-tool.md) — produces display results via OutputSink
+- [Bash Tool](bash-tool.md) — produces tool output only (no display results)
+- [Activity Stream](../frontend/activity-stream.md) — frontend event handling + two-zone model
+- [Inline Results](../frontend/inline-results.md) — renders DISPLAY_RESULT events inline
 - [3D Viewer](../frontend/viewer-3d.md) — consumes mesh_ref + binary data

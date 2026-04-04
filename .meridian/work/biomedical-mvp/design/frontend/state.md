@@ -2,15 +2,13 @@
 
 Zustand stores for the biomedical MVP. See [overview](overview.md) for how stores fit into the frontend architecture.
 
-**Revised from previous design**: Updated event names (`DISPLAY_RESULT` instead of `PYTHON_RESULT`), viewer store uses generic display result for mesh metadata, workspace store contracts clarified.
-
 ## Store Inventory
 
 | Store | Purpose | Scope |
 |-------|---------|-------|
 | `useWorkspaceStore` | Panel state, active content, active project/thread | Singleton |
 | `useDatasetStore` | Dataset list, upload state per project | Per-project |
-| `useViewerStore` | Mesh data, viewer visibility, structure state | Singleton |
+| `useViewerStore` | Multi-mesh scene, per-mesh visibility | Singleton |
 
 Thread streaming state is handled by the existing `StreamingChannelClient` + `useThreadStreaming` hook.
 
@@ -25,33 +23,30 @@ import { create } from "zustand"
 
 type ContentView =
   | { type: "empty" }
-  | { type: "viewer"; meshId: string }
+  | { type: "viewer"; meshId?: string }
   | { type: "datasets"; projectId: string }
   | { type: "editor"; documentId?: string }
 
 interface WorkspaceState {
-  // Active context
   activeProjectId: string | null
   activeThreadId: string | null
-
-  // Right panel
   activeContent: ContentView
-  /** Track last mesh ID for ContentToolbar tab visibility */
-  viewerMeshId: string | null
+  /** True when any mesh exists in the viewer store */
+  hasViewerContent: boolean
 
-  // Actions
   setActiveProject: (projectId: string) => void
   setActiveThread: (threadId: string) => void
   setActiveContent: (content: ContentView) => void
-  showViewer: (meshId: string) => void
+  showViewer: (meshId?: string) => void
   showDatasets: () => void
+  setHasViewerContent: (has: boolean) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeProjectId: null,
   activeThreadId: null,
   activeContent: { type: "empty" },
-  viewerMeshId: null,
+  hasViewerContent: false,
 
   setActiveProject: (projectId) =>
     set({ activeProjectId: projectId, activeContent: { type: "datasets", projectId } }),
@@ -61,13 +56,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ activeContent: content }),
 
   showViewer: (meshId) =>
-    set({ activeContent: { type: "viewer", meshId }, viewerMeshId: meshId }),
+    set({ activeContent: { type: "viewer", meshId } }),
   showDatasets: () => {
     const projectId = get().activeProjectId
     if (projectId) {
       set({ activeContent: { type: "datasets", projectId } })
     }
   },
+  setHasViewerContent: (has) =>
+    set({ hasViewerContent: has }),
 }))
 ```
 
@@ -162,137 +159,142 @@ export function useCreateDataset(projectId: string) {
 
 ## Viewer Store
 
-Manages 3D viewer state — mesh data from WS binary frames, structure visibility.
+Manages the multi-mesh 3D scene. Each mesh is stored by its AI-chosen ID. Same ID replaces, new ID adds.
 
 ```typescript
 // stores/viewer-store.ts
 
 import { create } from "zustand"
-import type { MeshData, BoneStructure } from "@/features/viewer-3d/types"
-import { BONE_COLORS } from "@/features/viewer-3d/constants"
+import type { MeshData } from "@/features/viewer-3d/types"
 
 interface ViewerState {
-  // Mesh data from binary WS frame
-  meshData: MeshData | null
-  activeMeshId: string | null
+  /** All meshes in the scene, keyed by mesh_id */
+  meshes: Record<string, MeshData>
+  /** Per-mesh visibility (true = visible) */
+  meshVisibility: Record<string, boolean>
 
-  // Per-structure visibility
-  structures: BoneStructure[]
-  structureVisibility: Record<number, boolean>
-
-  /** Label names from DISPLAY_RESULT, keyed by mesh_id. Stored until binary arrives. */
-  pendingMeshLabels: Record<string, Record<string, string>>
-  /** Binary mesh data that arrived before its DISPLAY_RESULT labels. */
-  pendingMeshData: Record<string, MeshData>
+  /** Pending metadata from DISPLAY_RESULT, keyed by mesh_id. Stored until binary arrives. */
+  pendingMeshMeta: Record<string, { label: string; color: string; vertexCount: number; faceCount: number }>
+  /** Pending binary data that arrived before its DISPLAY_RESULT metadata. */
+  pendingMeshBinary: Record<string, { vertices: Float32Array; faces: Uint32Array; vertexCount: number; faceCount: number }>
 
   // Actions
-  setPendingLabels: (meshId: string, labelNames: Record<string, string>) => void
-  receiveBinaryMesh: (meshId: string, data: MeshData) => void
-  clearMesh: () => void
-  toggleStructure: (label: number) => void
-  setAllStructuresVisible: (visible: boolean) => void
-}
-
-/** Merge binary mesh data with label names into final viewer state. */
-function buildMeshState(
-  state: ViewerState,
-  meshId: string,
-  data: MeshData,
-  labelNames: Record<string, string>,
-  pendingMeshData: Record<string, MeshData>
-) {
-  const mergedData = { ...data, labelNames }
-  const labelSet = new Set(Array.from(mergedData.labels))
-  const structures: BoneStructure[] = []
-  const visibility: Record<number, boolean> = {}
-  for (const label of labelSet) {
-    if (label === 0) continue
-    const name = labelNames[String(label)] ?? `Structure ${label}`
-    structures.push({ label, name, color: BONE_COLORS[name] ?? "#888888" })
-    visibility[label] = true
-  }
-  const { [meshId]: _, ...remainingPending } = state.pendingMeshLabels
-  return {
-    meshData: mergedData,
-    activeMeshId: meshId,
-    structures,
-    structureVisibility: visibility,
-    pendingMeshLabels: remainingPending,
-    pendingMeshData,
-  }
+  setPendingMeta: (meshId: string, meta: { label: string; color: string; vertexCount: number; faceCount: number }) => void
+  receiveBinaryMesh: (meshId: string, binary: { vertices: Float32Array; faces: Uint32Array; vertexCount: number; faceCount: number }) => void
+  clearAllMeshes: () => void
+  removeMesh: (meshId: string) => void
+  toggleMesh: (meshId: string) => void
+  setAllMeshesVisible: (visible: boolean) => void
 }
 
 export const useViewerStore = create<ViewerState>((set) => ({
-  meshData: null,
-  activeMeshId: null,
-  structures: [],
-  structureVisibility: {},
-  pendingMeshLabels: {},
-  pendingMeshData: {},
+  meshes: {},
+  meshVisibility: {},
+  pendingMeshMeta: {},
+  pendingMeshBinary: {},
 
-  // Called when DISPLAY_RESULT with mesh_ref arrives
-  setPendingLabels: (meshId, labelNames) =>
+  // Called when DISPLAY_RESULT with mesh_ref arrives (SSE)
+  setPendingMeta: (meshId, meta) =>
     set((state) => {
-      // Check if binary data already arrived (binary-before-labels race)
-      const pendingData = state.pendingMeshData[meshId]
-      if (pendingData) {
-        // Binary arrived first — merge now
-        const { [meshId]: _, ...remainingPendingData } = state.pendingMeshData
-        return buildMeshState(state, meshId, pendingData, labelNames, remainingPendingData)
-      }
-      // Normal path: store labels, wait for binary
-      return {
-        pendingMeshLabels: { ...state.pendingMeshLabels, [meshId]: labelNames },
-      }
-    }),
-
-  // Called when WS binary frame arrives — merges with pending labels
-  receiveBinaryMesh: (meshId, data) =>
-    set((state) => {
-      const labelNames = state.pendingMeshLabels[meshId]
-      if (labelNames === undefined) {
-        // Labels haven't arrived yet — store binary data, wait for DISPLAY_RESULT
+      // Check if binary data already arrived (binary-before-metadata race)
+      const pendingBinary = state.pendingMeshBinary[meshId]
+      if (pendingBinary) {
+        const { [meshId]: _, ...remainingBinary } = state.pendingMeshBinary
+        const meshData: MeshData = {
+          meshId,
+          vertices: pendingBinary.vertices,
+          faces: pendingBinary.faces,
+          vertexCount: pendingBinary.vertexCount,
+          faceCount: pendingBinary.faceCount,
+          label: meta.label,
+          color: meta.color,
+        }
         return {
-          pendingMeshData: { ...state.pendingMeshData, [meshId]: data },
+          meshes: { ...state.meshes, [meshId]: meshData },
+          meshVisibility: { ...state.meshVisibility, [meshId]: true },
+          pendingMeshBinary: remainingBinary,
         }
       }
-      // Normal path: labels already stored, merge now
-      return buildMeshState(state, meshId, data, labelNames, state.pendingMeshData)
+      // Normal path: store metadata, wait for binary
+      return {
+        pendingMeshMeta: { ...state.pendingMeshMeta, [meshId]: meta },
+      }
     }),
 
-  clearMesh: () =>
-    set({ meshData: null, activeMeshId: null, structures: [], structureVisibility: {} }),
+  // Called when WS binary frame arrives
+  receiveBinaryMesh: (meshId, binary) =>
+    set((state) => {
+      const meta = state.pendingMeshMeta[meshId]
+      if (meta === undefined) {
+        // Metadata hasn't arrived yet — store binary data, wait for DISPLAY_RESULT
+        return {
+          pendingMeshBinary: { ...state.pendingMeshBinary, [meshId]: binary },
+        }
+      }
+      // Normal path: metadata already stored, merge now
+      const { [meshId]: _, ...remainingMeta } = state.pendingMeshMeta
+      const meshData: MeshData = {
+        meshId,
+        vertices: binary.vertices,
+        faces: binary.faces,
+        vertexCount: binary.vertexCount,
+        faceCount: binary.faceCount,
+        label: meta.label,
+        color: meta.color,
+      }
+      return {
+        meshes: { ...state.meshes, [meshId]: meshData },
+        meshVisibility: { ...state.meshVisibility, [meshId]: true },
+        pendingMeshMeta: remainingMeta,
+      }
+    }),
 
-  toggleStructure: (label) =>
+  clearAllMeshes: () =>
+    set({ meshes: {}, meshVisibility: {}, pendingMeshMeta: {}, pendingMeshBinary: {} }),
+
+  removeMesh: (meshId) =>
+    set((state) => {
+      const { [meshId]: _, ...remainingMeshes } = state.meshes
+      const { [meshId]: __, ...remainingVis } = state.meshVisibility
+      return { meshes: remainingMeshes, meshVisibility: remainingVis }
+    }),
+
+  toggleMesh: (meshId) =>
     set((state) => ({
-      structureVisibility: {
-        ...state.structureVisibility,
-        [label]: !state.structureVisibility[label],
+      meshVisibility: {
+        ...state.meshVisibility,
+        [meshId]: !(state.meshVisibility[meshId] ?? true),
       },
     })),
 
-  setAllStructuresVisible: (visible) =>
+  setAllMeshesVisible: (visible) =>
     set((state) => {
-      const visibility: Record<number, boolean> = {}
-      for (const label of Object.keys(state.structureVisibility)) {
-        visibility[Number(label)] = visible
+      const visibility: Record<string, boolean> = {}
+      for (const id of Object.keys(state.meshes)) {
+        visibility[id] = visible
       }
-      return { structureVisibility: visibility }
+      return { meshVisibility: visibility }
     }),
 }))
 ```
 
+**Key changes from previous design**:
+- `meshes` is a `Record<string, MeshData>` — multiple meshes by ID, not a single `meshData` field
+- No `structures` array or `structureVisibility` by numeric label — each mesh IS a structure
+- `pendingMeshMeta` holds `label` + `color` from DISPLAY_RESULT (not `labelNames` map)
+- Same `mesh_id` replaces an existing mesh (e.g. re-running segmentation)
+
 ## Mesh Metadata/Binary Join
 
 Mesh data arrives in two messages over separate transports (SSE + WS) with **no cross-transport ordering guarantee**:
-1. `DISPLAY_RESULT` with `resultType: "mesh_ref"` — metadata + label names (SSE)
-2. WS binary frame — geometry (vertices, faces, labels)
+1. `DISPLAY_RESULT` with `resultType: "mesh_ref"` — metadata: label, color, counts (SSE)
+2. WS binary frame — geometry: vertices, faces
 
 The viewer store handles both orderings via symmetric pending:
-- **Labels first (normal)**: `setPendingLabels()` stores names → `receiveBinaryMesh()` finds labels, merges immediately
-- **Binary first (race)**: `receiveBinaryMesh()` stores data in `pendingMeshData` → `setPendingLabels()` finds pending data, merges immediately
+- **Metadata first (normal)**: `setPendingMeta()` stores label/color → `receiveBinaryMesh()` finds metadata, merges immediately
+- **Binary first (race)**: `receiveBinaryMesh()` stores data in `pendingMeshBinary` → `setPendingMeta()` finds pending data, merges immediately
 
-Either way, `buildMeshState()` runs exactly once per mesh, producing the final merged state.
+Either way, the mesh appears in `meshes` exactly once, fully formed.
 
 ## WS Binary Frame Dispatch
 
@@ -306,13 +308,11 @@ Either way, `buildMeshState()` runs exactly once per mesh, producing the final m
 
 type BinaryHandler = (subId: string, data: Uint8Array) => void
 
-/** Routes WS binary frames to the correct consumer by subId. */
 class BinaryDispatch {
   private docSubscriptions = new Set<string>()
   private docHandler: BinaryHandler | null = null
   private meshHandler: BinaryHandler | null = null
 
-  /** Register a document subscription (called by DocWsProvider). */
   registerDoc(docId: string, handler: BinaryHandler) {
     this.docSubscriptions.add(docId)
     this.docHandler = handler
@@ -322,17 +322,14 @@ class BinaryDispatch {
     this.docSubscriptions.delete(docId)
   }
 
-  /** Register the mesh handler (called by ThreadWsProvider). */
   registerMesh(handler: BinaryHandler) {
     this.meshHandler = handler
   }
 
-  /** Route incoming binary frame. */
   dispatch(subId: string, data: Uint8Array) {
     if (this.docSubscriptions.has(subId)) {
       this.docHandler?.(subId, data)
     } else {
-      // Default to mesh — mesh subIds are toolCallIds not registered as docs
       this.meshHandler?.(subId, data)
     }
   }
@@ -341,39 +338,36 @@ class BinaryDispatch {
 export const binaryDispatch = new BinaryDispatch()
 ```
 
-`WsClient.onBinaryMessage` calls `binaryDispatch.dispatch()`. `DocWsProvider` registers doc subscriptions. `ThreadWsProvider` registers the mesh handler:
+`ThreadWsProvider` registers the mesh handler:
 
 ```typescript
 // In ThreadWsProvider setup:
 binaryDispatch.registerMesh((subId: string, payload: Uint8Array) => {
-  const meshData = parseMeshBinary(payload)
-  if (!meshData) return
+  const parsed = parseMeshBinary(payload)
+  if (!parsed) return
 
-  useViewerStore.getState().receiveBinaryMesh(meshData.meshId, meshData)
-  useWorkspaceStore.getState().showViewer(meshData.meshId)
-})
-
-// In DocWsProvider setup:
-binaryDispatch.registerDoc(docId, (subId, data) => {
-  streamClient.handleBinaryMessage(subId, data)
-})
-
-// WsClient creation:
-const client = new WsClient({
-  // ...existing config...
-  onBinaryMessage: (subId, data) => binaryDispatch.dispatch(subId, data),
+  useViewerStore.getState().receiveBinaryMesh(parsed.meshId, {
+    vertices: parsed.vertices,
+    faces: parsed.faces,
+    vertexCount: parsed.vertexCount,
+    faceCount: parsed.faceCount,
+  })
+  useWorkspaceStore.getState().showViewer(parsed.meshId)
+  useWorkspaceStore.getState().setHasViewerContent(true)
 })
 ```
 
-The DISPLAY_RESULT handler calls `setPendingLabels`:
+The DISPLAY_RESULT handler calls `setPendingMeta`:
 
 ```typescript
-// When DISPLAY_RESULT with mesh_ref arrives (reducer side effect or listener):
+// When DISPLAY_RESULT with mesh_ref arrives:
 if (event.data.resultType === "mesh_ref") {
-  useViewerStore.getState().setPendingLabels(
-    event.data.mesh_id,
-    event.data.label_names ?? {}
-  )
+  useViewerStore.getState().setPendingMeta(event.data.mesh_id, {
+    label: event.data.label,
+    color: event.data.color,
+    vertexCount: event.data.vertex_count,
+    faceCount: event.data.face_count,
+  })
 }
 ```
 
@@ -420,7 +414,7 @@ export const datasetApi = {
 Single token provider used across all auth surfaces:
 
 ```typescript
-// lib/auth.ts — shared auth token provider
+// lib/auth.ts
 
 let cachedToken: string | null = null
 
@@ -436,18 +430,16 @@ export async function getAuthToken(): Promise<string> {
 
 | Surface | How | Where |
 |---------|-----|-------|
-| **API requests** | `Authorization: Bearer` header | `lib/api.ts` → `apiFetch()` |
-| **WebSocket** | `getToken` callback in WsClient config | `ThreadWsProvider.tsx` → `new WsClient({ getToken: getAuthToken })` |
-| **Supabase Storage uploads** | `Authorization: Bearer` header on PUT | `useDatasetUpload.ts` → direct fetch to pre-signed URL with token |
+| **API requests** | `Authorization: Bearer` header | `lib/api.ts` -> `apiFetch()` |
+| **WebSocket** | `getToken` callback in WsClient config | `ThreadWsProvider.tsx` -> `new WsClient({ getToken: getAuthToken })` |
+| **Supabase Storage uploads** | `Authorization: Bearer` header on PUT | `useDatasetUpload.ts` -> direct fetch to pre-signed URL with token |
 
 1. **Dev mode**: `VITE_AUTH_TOKEN` env var from `scripts/get-token.sh` output
 2. **Prod**: Replace `getAuthToken()` body with Supabase Auth session token (deferred)
-
-The existing `ThreadWsProvider` already takes a `getToken` callback — we pass `getAuthToken`. For Supabase Storage uploads, the backend's `GetUploadURL` returns a pre-signed URL that includes auth, so the frontend doesn't need to add auth headers for storage PUTs.
 
 ## Related Docs
 
 - [Layout](layout.md) — workspace store drives panel switching
 - [Dataset Upload](dataset-upload.md) — uses dataset store + TanStack Query hooks
-- [3D Viewer](viewer-3d.md) — uses viewer store for mesh data
+- [3D Viewer](viewer-3d.md) — uses viewer store for multi-mesh scene
 - [Activity Stream](activity-stream.md) — DISPLAY_RESULT triggers workspace store

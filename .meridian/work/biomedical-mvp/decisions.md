@@ -140,3 +140,45 @@
 **When**: Correctness review (2026-04-02), reviewer p760 (opus)
 **What**: Kernel wrapper uses `try/finally` around user code to ensure `_flush()` runs even on exceptions. Added `/workspace` and `/workspace/scripts` to `sys.path` so AI-written modules are importable.
 **Why**: Without try/finally, partial results from `show_*` calls before a crash are lost. Without sys.path extension, `import seg_utils` fails unless the kernel cwd happens to be right.
+
+---
+
+## D23: Two tools — `python` + `bash` — replacing single bash tool
+**When**: Requirements revision (2026-04-04)
+**What**: Split the single `bash` ToolExecutor into two separate tools:
+- `python` tool: input is raw Python code, always executes in Jupyter kernel, always wrapped with result_helper
+- `bash` tool: input is a shell command, for file ops and non-Python tasks, no kernel, no result capture
+**Why**: User requirement. The previous design had a single bash tool that auto-detected Python execution via command prefix matching (`python3 script.py`). This was fragile — detection heuristics, file reading indirection, and mixing concerns. Two tools is cleaner: the AI sends raw code to `python` and raw commands to `bash`. The `python` tool is also designed to be replaceable by a code fence interceptor — making it a separate tool with raw code input makes the trigger-agnostic downstream flow natural.
+**Supersedes**: D14 (single bash tool with Python detection)
+**Rejected**: (a) Single bash tool with detection — fragile heuristics, unnecessary indirection. (b) Three tools (python + bash + file_write) — file_write is redundant with bash.
+
+## D24: Results are inline content, not a separate rendering area
+**When**: Requirements revision (2026-04-04)
+**What**: DISPLAY_RESULT events render inline in the visible zone of the ActivityBlock, interleaved with text. They are content, like text — not "outside the block" in a separate area.
+**Why**: User requirement. Charts, tables, images, and mesh cards should appear naturally in the conversation flow alongside text. The previous design rendered display results "outside the collapsed ActivityBlock" in a separate section, which created an artificial separation between text and results.
+**Supersedes**: D16 (results "punch out" of the block)
+
+## D25: Two-zone ActivityBlock with per-tool display config
+**When**: Requirements revision (2026-04-04)
+**What**: ActivityBlock has two rendering zones:
+- Collapsed zone: thinking, tool call details (input/args)
+- Visible zone: text, images, charts, tables, mesh cards, tool stdout (for tools that default to uncollapsed output)
+Per-tool-category display config (extensible) controls what goes where. Each tool category defines default collapse state for input, stdout, stderr. stderr is hidden by default with click-to-view popup.
+**Why**: User requirement. Different tools have different output profiles. Python stdout (progress updates, data summaries) is useful to see; bash stdout (file listings, install logs) is noise. The extensible config pattern allows new tool categories to register their own defaults without touching ActivityBlock logic.
+**Config**: python: input=collapsed, stdout=visible, stderr=hidden. bash: input=collapsed, stdout=collapsed, stderr=collapsed.
+
+## D26: Multi-mesh 3D scene managed by mesh ID
+**When**: Requirements revision (2026-04-04)
+**What**: `show_mesh(verts, faces, mesh_id, label, color)` — one mesh per call. Same mesh_id = replace, new mesh_id = add to scene. No per-vertex labels, no label splitting on frontend. User toggles visibility per mesh via checkboxes.
+**Why**: User requirement. The previous design sent one blob with per-vertex label arrays, requiring frontend label splitting. The new design is simpler: each `show_mesh()` call is one complete structure with one color. The AI manages the scene through IDs it chooses. This eliminates the frontend `splitByLabel()` function and simplifies the binary frame format (no label bytes).
+**Supersedes**: Previous mesh design with per-vertex labels and label_names maps.
+
+## D27: show_mesh() signature change
+**When**: Requirements revision (2026-04-04)
+**What**: `show_mesh(vertices, faces, mesh_id, label, color)` instead of `show_mesh(vertices, faces, labels, label_names)`. Binary format simplified: vertices + faces only, no per-vertex label array.
+**Why**: Direct consequence of D26. Each mesh is one structure. The mesh_id, label, and color are per-mesh metadata sent in the DISPLAY_RESULT event, not per-vertex data in the binary frame.
+
+## D28: stderr hidden by default, click-to-view popup
+**When**: Requirements revision (2026-04-04)
+**What**: stderr is hidden by default for all tool categories. Available via a click-to-view popup (not inline, not collapsed). A small badge appears on the tool row when stderr exists.
+**Why**: User requirement. stderr is usually noise — deprecation warnings, progress bars, library chatter. When there IS an error, the tool result status shows the failure. stderr is available for debugging but shouldn't clutter the output. A popup is the right interaction: available on demand, invisible by default.

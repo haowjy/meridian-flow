@@ -1,37 +1,38 @@
 # Inline Result Rendering
 
-Renders display results (charts, images, tables, code output, mesh references) in the chat activity stream. Display results render outside the collapsed ActivityBlock card, always visible. See [overview](overview.md) for frontend architecture context.
+Renders display results (charts, images, tables, code output, mesh references) inline in the visible zone of the ActivityBlock. Results are content — they appear interleaved with text, not in a separate area. See [overview](overview.md) for frontend architecture context.
 
-**Revised from previous design**: Driven by generic `DISPLAY_RESULT` events instead of Python-specific `PYTHON_RESULT`. Components are the same; the data pipeline is generic.
+**Key principle**: Images, charts, tables, and mesh cards are content, like text. They render in the visible zone alongside text in the order they arrive. The researcher sees a natural flow: text → chart → text → table → mesh card.
 
 ## Architecture
 
 Two rendering paths:
 
-1. **ToolOutputBlock** — streaming stdout/stderr for tools that use OutputSink. Renders inside the collapsible ActivityBlock card when the tool is expanded (in BashDetail or any future tool detail).
-2. **DisplayResultRow** — always-visible rich result blocks (charts, tables, images, mesh refs). Render outside the collapsible card in the activity stream.
+1. **ToolOutputBlock** — streaming stdout/stderr. For tools with `stdout: "visible"` config (like python), this renders in the visible zone. For tools with `stdout: "collapsed"` config (like bash), it renders inside the collapsed zone's tool detail.
+2. **DisplayResultRow** — always in the visible zone. Charts, images, tables, mesh cards rendered inline with text.
 
-See [activity-stream.md](activity-stream.md) for how events flow through the reducer into these components.
+See [activity-stream.md](activity-stream.md) for the two-zone model and per-tool display config.
 
 ## Component Architecture
 
 ```
 features/activity-stream/
-├── items/
-│   └── DisplayResultRow.tsx       # Rich result block renderer (routes to sub-renderers)
-│
++-- items/
+|   +-- DisplayResultRow.tsx       # Routes to sub-renderers
+
 features/inline-results/
-├── PlotlyBlock.tsx                # Interactive Plotly chart
-├── PlotlyBlock.stories.tsx
-├── ImageBlock.tsx                 # Matplotlib PNG display
-├── ImageBlock.stories.tsx
-├── DataFrameBlock.tsx             # Styled HTML table
-├── DataFrameBlock.stories.tsx
-├── MeshRefBlock.tsx               # "View in 3D" card
-├── MeshRefBlock.stories.tsx
-├── ToolOutputBlock.tsx            # Streaming stdout/stderr
-├── ToolOutputBlock.stories.tsx
-└── types.ts                       # Shared result types
++-- PlotlyBlock.tsx                # Interactive Plotly chart
++-- PlotlyBlock.stories.tsx
++-- ImageBlock.tsx                 # Matplotlib PNG display
++-- ImageBlock.stories.tsx
++-- DataFrameBlock.tsx             # Styled HTML table
++-- DataFrameBlock.stories.tsx
++-- MeshRefBlock.tsx               # "View in 3D" card (per mesh)
++-- MeshRefBlock.stories.tsx
++-- ToolOutputBlock.tsx            # Streaming stdout/stderr
++-- ToolOutputBlock.stories.tsx
++-- StderrPopover.tsx              # Click-to-view stderr popup
++-- types.ts                       # Shared result types
 ```
 
 ## DisplayResultRow
@@ -68,7 +69,8 @@ function DisplayResultRow({ item }: { item: DisplayResultItem }) {
           meshId={item.data.mesh_id}
           vertexCount={item.data.vertex_count}
           faceCount={item.data.face_count}
-          labelNames={item.data.label_names}
+          label={item.data.label}
+          color={item.data.color}
         />
       )
   }
@@ -77,7 +79,7 @@ function DisplayResultRow({ item }: { item: DisplayResultItem }) {
 
 ## ToolOutputBlock
 
-Displays streaming stdout/stderr during execution. Used inside BashDetail (and any future tool detail that supports streaming output):
+Displays streaming stdout during execution. Used in the visible zone for python tool (config: `stdout: "visible"`) and inside BashDetail for bash tool (config: `stdout: "collapsed"`):
 
 ```tsx
 // features/inline-results/ToolOutputBlock.tsx
@@ -108,10 +110,7 @@ function ToolOutputBlock({ lines, isStreaming }: Props) {
         {visibleLines.map((line) => (
           <div
             key={line.sequence}
-            className={cn(
-              "whitespace-pre-wrap",
-              line.stream === "stderr" && "text-destructive"
-            )}
+            className="whitespace-pre-wrap"
           >
             {line.text}
           </div>
@@ -123,7 +122,7 @@ function ToolOutputBlock({ lines, isStreaming }: Props) {
 }
 ```
 
-Auto-collapses at 20 lines. Uses ref to avoid re-collapsing after manual expand.
+Auto-collapses at 20 lines. Uses ref to avoid re-collapsing after manual expand. Only renders stdout lines — stderr is handled by the [StderrPopover](activity-stream.md#stderrpopover).
 
 ## PlotlyBlock
 
@@ -253,18 +252,9 @@ function DataFrameBlock({ html, title, rowCount, colCount }: Props) {
 }
 ```
 
-Table styles via global CSS class in `src/index.css`:
-
-```css
-.meridian-table-wrapper table { @apply w-full text-sm; }
-.meridian-table-wrapper th { @apply sticky top-0 border-b bg-muted/30 px-3 py-2 text-left font-medium; }
-.meridian-table-wrapper td { @apply border-b px-3 py-2 tabular-nums; }
-.meridian-table-wrapper tr:hover td { @apply bg-muted/20; }
-```
-
 ## MeshRefBlock
 
-Shows a reference to 3D mesh data with a button to open the viewer:
+Shows a reference to a single named mesh with a button to open the viewer. Multiple MeshRefBlocks appear for multi-mesh scenes — one per `show_mesh()` call.
 
 ```tsx
 // features/inline-results/MeshRefBlock.tsx
@@ -272,19 +262,24 @@ Shows a reference to 3D mesh data with a button to open the viewer:
 import { Cube } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { useWorkspaceStore } from "@/stores/workspace-store"
+import { useViewerStore } from "@/stores/viewer-store"
 
-function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
+function MeshRefBlock({ meshId, vertexCount, faceCount, label, color }: Props) {
   const showViewer = useWorkspaceStore((s) => s.showViewer)
-  const hasMeshData = useViewerStore((s) => s.activeMeshId === meshId || s.meshData?.meshId === meshId)
+  const hasMeshData = useViewerStore((s) => s.meshes[meshId] !== undefined)
 
   return (
     <div className="my-2 flex items-center gap-3 rounded-lg border p-3">
-      <Cube className="h-8 w-8 text-accent-fill" />
+      <div
+        className="flex h-8 w-8 items-center justify-center rounded"
+        style={{ backgroundColor: color + "20" }}
+      >
+        <Cube className="h-5 w-5" style={{ color }} />
+      </div>
       <div className="flex-1">
-        <p className="text-sm font-medium">3D Model Generated</p>
+        <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground">
           {vertexCount.toLocaleString()} vertices, {faceCount.toLocaleString()} faces
-          {labelNames && ` — ${Object.values(labelNames).join(", ")}`}
         </p>
       </div>
       <Button
@@ -292,7 +287,7 @@ function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
         size="sm"
         onClick={() => showViewer(meshId)}
         disabled={!hasMeshData}
-        title={hasMeshData ? "Open 3D viewer" : "3D data not loaded — re-run segmentation"}
+        title={hasMeshData ? "Open 3D viewer" : "3D data not loaded -- re-run segmentation"}
       >
         View 3D
       </Button>
@@ -300,6 +295,8 @@ function MeshRefBlock({ meshId, vertexCount, faceCount, labelNames }: Props) {
   )
 }
 ```
+
+**Change from previous design**: Each MeshRefBlock shows one mesh with its own label and color. Multiple blocks appear for multi-mesh scenes. The "View 3D" button opens the viewer focused on this mesh (all scene meshes visible).
 
 ## Dependencies
 
@@ -311,6 +308,7 @@ plotly.js-dist-min        # Plotly core (minified, ~1.2MB gzip)
 Already in `package.json`:
 - `dompurify` — HTML sanitization
 - `@radix-ui/react-dialog` — image expand dialog
+- `@radix-ui/react-popover` — stderr popup
 
 ## Storybook Stories
 
@@ -318,6 +316,6 @@ Each block component has a co-located `.stories.tsx` file. Stories use shared mo
 
 ## Related Docs
 
-- [Activity Stream](activity-stream.md) — how events become DisplayResultItems
+- [Activity Stream](activity-stream.md) — two-zone model and per-tool display config
 - [3D Viewer](viewer-3d.md) — MeshRefBlock triggers viewer via workspace store
 - [Display Result Pipeline (backend)](../backend/display-results.md) — event payloads
