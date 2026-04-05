@@ -186,3 +186,57 @@ Per-tool-category display config (extensible) controls collapse defaults. Each t
 **When**: Requirements revision (2026-04-04)
 **What**: stderr is hidden by default for all tool categories. Available via a click-to-view popup (not inline, not collapsed). A small badge appears on the tool row when stderr exists.
 **Why**: User requirement. stderr is usually noise — deprecation warnings, progress bars, library chatter. When there IS an error, the tool result status shows the failure. stderr is available for debugging but shouldn't clutter the output. A popup is the right interaction: available on demand, invisible by default.
+
+---
+
+## D29: Unified filesystem — text in DB, binary in bucket, metadata unifies
+**When**: Filesystem redesign (2026-04-05)
+**What**: All files get a row in the `documents` table with a `storage_type` field (`text` or `binary`). Text file content stays in the DB `content` column (Yjs state already lives there). Binary file content goes to a Supabase Storage bucket. The metadata layer (documents table) provides one unified project tree regardless of where content lives.
+**Why**: The research platform handles arbitrary files — DICOM stacks, Python scripts, meshes, PDFs. The fiction-era assumption "file = markdown with content in DB" doesn't scale. The user's insight is correct: text files already have their content in DB via Yjs, so forcing them into a bucket would add sync complexity for no benefit. Binary files are too large for TEXT columns. The split is natural along the line that already exists.
+**Rejected**: (a) All files in bucket — forces sync between bucket and DB for Yjs collab state. Adds latency and consistency problems for text editing. (b) All files in DB — DICOM stacks can be hundreds of MB, inappropriate for TEXT columns. (c) Virtual filesystem (FUSE/WebDAV) — adds infrastructure complexity without clear benefit for MVP.
+**Constraint**: Supabase is already committed (upgrading to Pro). Must support files up to ~500MB. Collab (Yjs) must keep working for text files without changes.
+
+## D30: StorageType as allowlist — unknown extensions default to binary
+**When**: Filesystem redesign (2026-04-05)
+**What**: `StorageTypeFromExtension()` uses an allowlist of text extensions. Any extension not in the list defaults to `StorageTypeBinary`. This is the single routing function that determines where content lives.
+**Why**: Binary is the safe default. An unknown extension stored as text could mean gigabytes in a TEXT column (e.g., someone uploads a `.dat` file). An unknown extension stored in a bucket always works — the metadata row still exists for tree navigation. The allowlist grows as we add support for new text-editable formats.
+**Rejected**: (a) Blocklist of binary extensions — open-ended, can't anticipate all binary formats. A missed extension means data in a TEXT column. (b) MIME type sniffing — requires reading file content before deciding storage location, adds complexity to the upload flow. (c) User choice — adds UI friction and users don't know or care about storage routing.
+
+## D31: Dataset domain collapses into filesystem
+**When**: Filesystem redesign (2026-04-05)
+**What**: The separate `datasets` domain (designed in Phase 4 of the MVP) is eliminated. A DICOM dataset is a folder with `Metadata["dataset"]` JSONB containing status, modality, scanner info. Upload uses the same bulk file upload endpoints. Metadata extraction runs on finalize.
+**Why**: Datasets are just folders of binary files with metadata. Having two parallel file systems (docsystem for text, datasets for binary) is architecturally wrong — it means two tree views, two upload flows, two delete cascades, two authorization checks. The unified filesystem handles both text and binary files, so datasets become a folder pattern, not a domain.
+**Eliminated**: ~500 lines of code: `domain/datasets/`, `service/datasets/`, `handler/dataset.go`, `repository/postgres/dataset.go`, `create_datasets` migration.
+**Replaced by**: `Folder.Metadata["dataset"]` JSONB + bulk upload endpoints + DICOM metadata extractor.
+
+## D32: ISP split (Reader/Writer/Searcher/PathResolver) survives and strengthens
+**When**: Filesystem redesign (2026-04-05), from docsystem audit (p768)
+**What**: The existing ISP interface split on DocumentStore is kept. The Reader/Writer/Searcher/PathResolver separation becomes *more* valuable with binary files — a component that only reads metadata doesn't need to know about bucket storage.
+**Why**: The split was designed for SRP: different consumers need different subsets of document operations. With binary files, the split also provides isolation: the collab domain depends on DocumentReader (which never touches buckets), not DocumentStore. DocumentWriter stays DB-only; bucket cleanup is orchestrated at the service layer (DocumentService.DeleteDocument).
+**Rejected**: (a) Collapsing into a single interface — loses the SRP benefit and forces all consumers to accept the bucket storage dependency. (b) New parallel interfaces for binary files — creates the same duplication problem as the datasets domain.
+
+## D33: file_type column kept for backwards compatibility during migration
+**When**: Filesystem redesign (2026-04-05)
+**What**: The `file_type` column (with values markdown/skill/agent/tool/excalidraw/mermaid/image/pdf) stays in the schema temporarily. New code uses `storage_type` + `mime_type`. The old column can be dropped in a cleanup migration after all queries are migrated.
+**Why**: The file_type column has a CHECK constraint and is referenced by queries across handlers, services, and repositories. Dropping it atomically with the filesystem migration risks breaking existing functionality. A phased approach (add storage_type → migrate queries → drop file_type) is safer.
+**Constraint discovered**: The file_type CHECK constraint (`CHECK (file_type IN (...))`) must be dropped before any binary files can be created, since binary DICOM files don't fit the existing enum. The migration must drop this constraint even if the column stays.
+
+## D34: Sandbox file access — Direct S3 API, not FUSE mount
+**When**: Filesystem redesign (2026-04-05)
+**What**: Daytona sandbox accesses Supabase Storage files via boto3 (S3-compatible API) with credentials injected as environment variables. For bulk DICOM processing, files are pre-staged to the sandbox via copy-on-start. FUSE mount rejected.
+**Why**: DICOM processing involves heavy seek operations (reading metadata at specific offsets, then pixel data). FUSE on object storage has 5–100× latency for random-access seeks because each seek triggers an HTTP range request. Deepnote documents this same problem (recommending users copy files to `/tmp` before processing). Jupyter cloud deployments have the same "path gap" pain point. Direct S3 API gives explicit control over what's downloaded and when.
+**Rejected**: (a) FUSE mount (Daytona Volumes) — seek latency unacceptable for DICOM. Would need benchmarking before adoption. Also unclear whether Daytona volumes support custom S3 endpoints (they use Daytona's own storage). (b) Virtual filesystem (WebDAV) — adds infrastructure, same latency issues. (c) Backend API proxy — unnecessary indirection when S3 API works directly.
+**Evidence**: Platform research (Deepnote §2, Google Colab §3 in platform-storage-patterns.md), Supabase Storage research (§9 in supabase-storage-capabilities.md).
+
+## D35: Upload protocol — TUS resumable for browser, S3 multipart for backend
+**When**: Filesystem redesign (2026-04-05)
+**What**: Browser uploads > 6 MB use TUS resumable protocol (24-hour resume window, 6 MB chunks). Go backend uploads use AWS SDK v2 S3 multipart (parallel chunks with automatic retry). Small browser uploads (≤ 6 MB) use standard PUT to signed URL.
+**Why**: TUS is the optimal browser protocol — Supabase implements it natively, tus-js-client handles retry/resume, and the 24-hour window covers interrupted DICOM stack uploads. S3 multipart is the optimal server-side protocol — AWS SDK v2 handles chunking, parallelization, and retry transparently.
+**Rejected**: (a) Standard upload for all sizes — no resumability, full restart on interruption for large files. (b) TUS for backend uploads — unnecessary complexity when S3 multipart works better server-side. (c) Custom chunked upload protocol — why reinvent TUS.
+**Constraint discovered**: TUS chunk size is hardcoded at 6 MB by Supabase — cannot be changed. Only one active client per upload URL (concurrent uploads to same URL get 409 Conflict).
+
+## D36: Go SDK — AWS SDK v2 for uploads, storage-go for admin
+**When**: Filesystem redesign (2026-04-05)
+**What**: Use AWS SDK v2 (via S3-compatible endpoint) for file upload/download operations. Use supabase-community/storage-go for administrative operations (bucket management, signed URL generation).
+**Why**: The storage-go library (v0.7.0, October 2023) doesn't implement TUS or multipart uploads — insufficient for large binary files. AWS SDK v2 is actively maintained, provides multipart upload via `s3manager.Uploader`, and works with Supabase's S3-compatible endpoint. storage-go is adequate for simple operations like `CreateSignedUrl`.
+**Rejected**: (a) storage-go only — no multipart upload support, 18+ months stale. (b) AWS SDK v2 only — signed URL generation is simpler via storage-go's purpose-built methods. (c) Raw HTTP + TUS client — more code, less battle-tested than AWS SDK v2.
