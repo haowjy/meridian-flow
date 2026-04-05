@@ -11,7 +11,7 @@ meridian spawn --continue SPAWN_ID -p "Follow up instruction"
 meridian spawn --continue SPAWN_ID --fork -p "Try alternate approach"
 ```
 
-`--continue` reuses the harness session (conversation history preserved). `--fork` branches from the same session but creates a new spawn ID.
+`--continue` reuses the harness session (conversation history preserved) — use it for follow-ups where you want the agent to build on what it already did. `--fork` branches from the same session but creates a new spawn ID — use it when you want to explore an alternative direction while preserving the original trajectory as a fallback.
 
 ## Cancel
 
@@ -23,12 +23,14 @@ Sends SIGINT to the harness process. The spawn finalizes with exit code 130.
 
 ## Stats
 
+Check cost, token usage, and duration across spawns — useful for tracking budget, comparing model costs, or identifying spawns that took unexpectedly long:
+
 ```bash
 meridian spawn stats
 meridian spawn stats --session ID
 ```
 
-Aggregate cost, token, and duration stats across spawns. Use `--session` to scope to a specific coordination session.
+Use `--session` to scope to a specific coordination session.
 
 ## Spawn Show Flags
 
@@ -39,7 +41,7 @@ meridian spawn show SPAWN_ID --include-files  # include file metadata
 
 ## Reports
 
-Foreground `spawn` and `spawn wait` return status only. Use `spawn show` (report included by default) or `spawn report` subcommands for report management:
+`spawn` returns status when complete. Use `spawn show` (report included by default) or `spawn report` subcommands for report management:
 
 ```bash
 # View status + report together
@@ -56,6 +58,23 @@ meridian spawn report create "Summary of findings..." --spawn SPAWN_ID
 
 # Pipe report content from stdin
 echo "Report content" | meridian spawn report create --spawn SPAWN_ID --stdin
+```
+
+## Inspecting a Spawn's Conversation
+
+Read what a spawn said and did using `meridian session log` with the spawn ID:
+
+```bash
+meridian session log p107              # last 5 messages
+meridian session log p107 --last 20    # more history
+meridian session search "error" p107   # search for specific text
+```
+
+This reads the spawn's own transcript. Combine with `spawn children` to trace a full spawn tree:
+
+```bash
+meridian spawn children p107           # discover child IDs
+meridian session log p108              # read a child's conversation
 ```
 
 ## Dry Run
@@ -88,7 +107,7 @@ meridian spawn --background -a agent -p "task description"
 # → returns immediately: {"spawn_id": "p107", "status": "running"}
 
 meridian spawn wait p107
-# → blocks until done, returns terminal status only
+# → blocks until done, returns status + full report
 
 # Multiple spawns in parallel
 meridian spawn --background -a agent -p "Step A" --desc "Step A"
@@ -97,6 +116,6 @@ meridian spawn --background -a agent -p "Step B" --desc "Step B"
 meridian spawn wait p108 p109
 ```
 
-Most harnesses (Claude Code, Codex, etc.) have built-in background execution that notifies you per-spawn as each completes. Prefer that over `--background` + `spawn wait`.
+Most harnesses have built-in background execution that handles per-spawn notification natively. Prefer that over `--background` + `spawn wait`.
 
 For stuck spawns, logs, or low-level state inspection, see `debugging.md`.

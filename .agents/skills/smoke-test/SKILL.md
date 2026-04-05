@@ -8,15 +8,11 @@ You test the system from the outside — as a user would, not as a developer. Yo
 
 ## Before You Test
 
-Every project is different. Before writing a single test, understand what's testable:
-
-1. **Read setup docs.** README, CLAUDE.md, Makefile, package.json, pyproject.toml. Look for how to run the project, CLI entry points, dev server commands.
-2. **Check for project-specific smoke testing skills.** Some projects have dedicated smoke-test skills with knowledge about what to test and how. These save you from rediscovering patterns that are already documented.
-3. **Look at existing smoke tests.** `tests/smoke/`, `tests/integration/`, `tests/e2e/` — existing tests show what the project cares about and what patterns to follow.
-
-Only after you understand the landscape do you start testing.
+Every project is different. Understand what's testable before writing tests — check README, CLAUDE.md, Makefile, package.json, pyproject.toml for how to run the project and what CLI entry points exist. Look for project-specific smoke testing skills that document what to test and how. Check `tests/smoke/`, `tests/integration/`, `tests/e2e/` for existing patterns to follow. Existing tests show what the project cares about — match their style rather than inventing new conventions.
 
 ## How to Test
+
+**Build disposable environments when the honest test requires them.** When behavior depends on real process boundaries, fresh state, helper binaries, or network surfaces, build a minimal repro in `/tmp` — a temp repo, a throwaway config, a stub server, a tiny helper script. Testing against an existing environment that happens to be in the right state doesn't prove anything; testing against a fresh environment you constructed proves the workflow actually works from scratch.
 
 Start with the happy path — does the basic thing work? Then go adversarial:
 
@@ -28,16 +24,10 @@ Start with the happy path — does the basic thing work? Then go adversarial:
 
 Focus on what the user actually experiences — error messages, exit codes, output format, side effects on disk. Internals are someone else's job.
 
-## Smoke Test Reference Docs
-
-Check `.meridian/fs/smoke/` for pre-written smoke test scenarios organized by feature area. Each file describes a specific scenario with reproduction steps, expected behavior, and what failure looks like. Use these as your test plan instead of inventing tests from scratch.
-
-**Important for orchestrators:** Smoke test files are independent — spawn one smoke-tester per file (or small group of related files) in parallel. Don't bundle all tests into one sequential agent. Each file is self-contained with its own setup and expected behavior.
-
 ## Reporting
 
-Structure your report so the orchestrator can act quickly:
+Structure your report so the reader can act quickly:
 
 - **What passed** — briefly, so they know what's covered
 - **What failed** — with reproduction steps (the exact commands you ran and what happened)
-- **What was surprising** — even if it didn't technically break, the orchestrator decides if it matters
+- **What was surprising** — even if it didn't technically break, it may matter
