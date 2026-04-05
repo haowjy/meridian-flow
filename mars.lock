@@ -6,13 +6,13 @@ commit = "98669c11ca63e9c81c11501e1437e5c47b556621"
 
 [dependencies.meridian-base]
 url = "https://github.com/haowjy/meridian-base"
-version = "v0.0.5"
-commit = "8ede3e6b0851027877e6755da86cc5b22481b97a"
+version = "v0.0.9"
+commit = "fd0d79b85c256e64060edc59523ae24338798dc1"
 
 [dependencies.meridian-dev-workflow]
 url = "https://github.com/haowjy/meridian-dev-workflow"
-version = "v0.0.2"
-commit = "0df4c02a5c3928357ab7aee7cd61e9358bbc8827"
+version = "v0.0.5"
+commit = "74c3fb13aec4cbb92f87d6ce26ba283d374883ec"
 
 [dependencies.superdesign-skill]
 url = "https://github.com/superdesigndev/superdesign-skill"
@@ -21,9 +21,9 @@ commit = "12a637f7782194256818d3e47c2aff2be41b2634"
 [items."agents/__meridian-orchestrator.md"]
 source = "meridian-base"
 kind = "agent"
-version = "v0.0.5"
-source_checksum = "sha256:1fc9ed52303dbb00676bccafe85bea94cc0c7ddb9caf52a41063b374807d0e8a"
-installed_checksum = "sha256:1fc9ed52303dbb00676bccafe85bea94cc0c7ddb9caf52a41063b374807d0e8a"
+version = "v0.0.9"
+source_checksum = "sha256:6d28d20d5669a673d4c4e464bbc4903478a0d011b0730cd2723c306016ca6d23"
+installed_checksum = "sha256:6d28d20d5669a673d4c4e464bbc4903478a0d011b0730cd2723c306016ca6d23"
 dest_path = "agents/__meridian-orchestrator.md"
 
 [items."agents/__meridian-subagent.md"]
@@ -50,6 +50,14 @@ source_checksum = "sha256:f47556b60c5824c380a1b6452018cacf20e9c4003a979eceb56dab
 installed_checksum = "sha256:f47556b60c5824c380a1b6452018cacf20e9c4003a979eceb56dab7ff4d92963"
 dest_path = "agents/browser-tester.md"
 
+[items."agents/code-documenter.md"]
+source = "meridian-dev-workflow"
+kind = "agent"
+version = "v0.0.5"
+source_checksum = "sha256:b2a718643eb13af37ba55bbb002f219b908eea96fd3d6168aae450ddccf553d8"
+installed_checksum = "sha256:b2a718643eb13af37ba55bbb002f219b908eea96fd3d6168aae450ddccf553d8"
+dest_path = "agents/code-documenter.md"
+
 [items."agents/coder.md"]
 source = "meridian-dev-workflow"
 kind = "agent"
@@ -61,26 +69,18 @@ dest_path = "agents/coder.md"
 [items."agents/design-orchestrator.md"]
 source = "meridian-dev-workflow"
 kind = "agent"
-version = "v0.0.2"
-source_checksum = "sha256:af6e14cf500428ff69da1a76c4c7cbeccf2b5289f3db82c5db2d295dcd5cad44"
-installed_checksum = "sha256:af6e14cf500428ff69da1a76c4c7cbeccf2b5289f3db82c5db2d295dcd5cad44"
+version = "v0.0.5"
+source_checksum = "sha256:34d2c8ed62d6f69e166362c02b491d2d71899660dc2f4c9fa9ecab49e894fa88"
+installed_checksum = "sha256:34d2c8ed62d6f69e166362c02b491d2d71899660dc2f4c9fa9ecab49e894fa88"
 dest_path = "agents/design-orchestrator.md"
 
 [items."agents/dev-orchestrator.md"]
 source = "meridian-dev-workflow"
 kind = "agent"
-version = "v0.0.2"
-source_checksum = "sha256:34298a03c945534186874c598d04ada9868610997e2f6effee81aa33daaa466e"
-installed_checksum = "sha256:34298a03c945534186874c598d04ada9868610997e2f6effee81aa33daaa466e"
+version = "v0.0.5"
+source_checksum = "sha256:b2e36bab58c53d2502575b46ee0c4aa33d6558ef391e46698e7b22bd6dcda59d"
+installed_checksum = "sha256:b2e36bab58c53d2502575b46ee0c4aa33d6558ef391e46698e7b22bd6dcda59d"
 dest_path = "agents/dev-orchestrator.md"
-
-[items."agents/documenter.md"]
-source = "meridian-dev-workflow"
-kind = "agent"
-version = "v0.0.2"
-source_checksum = "sha256:fde22a6db4062bb014b37c6206f8630f8713d4b92ef9e42f21e0a0724f9a4b0e"
-installed_checksum = "sha256:fde22a6db4062bb014b37c6206f8630f8713d4b92ef9e42f21e0a0724f9a4b0e"
-dest_path = "agents/documenter.md"
 
 [items."agents/explorer.md"]
 source = "meridian-dev-workflow"
@@ -109,9 +109,9 @@ dest_path = "agents/frontend-designer.md"
 [items."agents/impl-orchestrator.md"]
 source = "meridian-dev-workflow"
 kind = "agent"
-version = "v0.0.2"
-source_checksum = "sha256:296d826f067cf5ba80613ca0e17bacb68be8fd6ff848247fd2792418528fddd6"
-installed_checksum = "sha256:296d826f067cf5ba80613ca0e17bacb68be8fd6ff848247fd2792418528fddd6"
+version = "v0.0.5"
+source_checksum = "sha256:3c32aa2a91c98fa39f4367c6323baa1daa33ba284e3fd7a5e07da2d9ab51fe28"
+installed_checksum = "sha256:3c32aa2a91c98fa39f4367c6323baa1daa33ba284e3fd7a5e07da2d9ab51fe28"
 dest_path = "agents/impl-orchestrator.md"
 
 [items."agents/investigator.md"]
@@ -141,9 +141,9 @@ dest_path = "agents/refactor-reviewer.md"
 [items."agents/researcher.md"]
 source = "meridian-dev-workflow"
 kind = "agent"
-version = "v0.0.2"
-source_checksum = "sha256:54a86003a945f0dd59d5bdb3743f46eb719e1dd0e646e325eeb1122ee89fd193"
-installed_checksum = "sha256:54a86003a945f0dd59d5bdb3743f46eb719e1dd0e646e325eeb1122ee89fd193"
+version = "v0.0.5"
+source_checksum = "sha256:d8ef7e03befba7aaf653036334c773b6d9e4c1117f841f152c12c558154e78e1"
+installed_checksum = "sha256:d8ef7e03befba7aaf653036334c773b6d9e4c1117f841f152c12c558154e78e1"
 dest_path = "agents/researcher.md"
 
 [items."agents/reviewer.md"]
@@ -161,6 +161,14 @@ version = "v0.0.2"
 source_checksum = "sha256:2802569a64ba9b74f2da9c0eba4811377fb6726881590a4f4744dbe6938a00af"
 installed_checksum = "sha256:2802569a64ba9b74f2da9c0eba4811377fb6726881590a4f4744dbe6938a00af"
 dest_path = "agents/smoke-tester.md"
+
+[items."agents/tech-writer.md"]
+source = "meridian-dev-workflow"
+kind = "agent"
+version = "v0.0.5"
+source_checksum = "sha256:e7db9a9d8ab8ba001b5d3ede763f0af3e3ef5fc554d640ea9ea888e881f7347b"
+installed_checksum = "sha256:e7db9a9d8ab8ba001b5d3ede763f0af3e3ef5fc554d640ea9ea888e881f7347b"
+dest_path = "agents/tech-writer.md"
 
 [items."agents/unit-tester.md"]
 source = "meridian-dev-workflow"
@@ -205,17 +213,17 @@ dest_path = "skills/__meridian-privilege-escalation"
 [items."skills/__meridian-session-context"]
 source = "meridian-base"
 kind = "skill"
-version = "v0.0.5"
-source_checksum = "sha256:59b5bee8715fe2f6be60ca20401ff82c5c01d4f51e0b4aaa4c30d14a7df29b32"
-installed_checksum = "sha256:59b5bee8715fe2f6be60ca20401ff82c5c01d4f51e0b4aaa4c30d14a7df29b32"
+version = "v0.0.9"
+source_checksum = "sha256:dd63724aa3717404dff5d0a56c2bcc005fecef233931f179ec71646cee034f59"
+installed_checksum = "sha256:dd63724aa3717404dff5d0a56c2bcc005fecef233931f179ec71646cee034f59"
 dest_path = "skills/__meridian-session-context"
 
 [items."skills/__meridian-spawn"]
 source = "meridian-base"
 kind = "skill"
-version = "v0.0.5"
-source_checksum = "sha256:e604ccd6213ee52e19346ab3707da1094c46c05957c89ec22a024eb003e1180d"
-installed_checksum = "sha256:e604ccd6213ee52e19346ab3707da1094c46c05957c89ec22a024eb003e1180d"
+version = "v0.0.9"
+source_checksum = "sha256:ddd9a97618f0112b478179b55208506d497a44c07637f0d278fd7dbcf89b809e"
+installed_checksum = "sha256:ddd9a97618f0112b478179b55208506d497a44c07637f0d278fd7dbcf89b809e"
 dest_path = "skills/__meridian-spawn"
 
 [items."skills/__meridian-work-coordination"]
@@ -229,9 +237,9 @@ dest_path = "skills/__meridian-work-coordination"
 [items."skills/agent-staffing"]
 source = "meridian-dev-workflow"
 kind = "skill"
-version = "v0.0.2"
-source_checksum = "sha256:c487c84a1c0d736830597929d860edf6d4db79d70bc1531a1e26a695a90b634d"
-installed_checksum = "sha256:c487c84a1c0d736830597929d860edf6d4db79d70bc1531a1e26a695a90b634d"
+version = "v0.0.5"
+source_checksum = "sha256:97f271401b0d00c4b68fbb4242c91caa070b0e67e94ce0fb61b1c722075f89f3"
+installed_checksum = "sha256:97f271401b0d00c4b68fbb4242c91caa070b0e67e94ce0fb61b1c722075f89f3"
 dest_path = "skills/agent-staffing"
 
 [items."skills/algorithmic-art"]
@@ -305,9 +313,9 @@ dest_path = "skills/dev-artifacts"
 [items."skills/dev-principles"]
 source = "meridian-dev-workflow"
 kind = "skill"
-version = "v0.0.2"
-source_checksum = "sha256:2fec44a0d7736dc86d530f370c24429d97760af89ae6022e2b034e8e1f5eda69"
-installed_checksum = "sha256:2fec44a0d7736dc86d530f370c24429d97760af89ae6022e2b034e8e1f5eda69"
+version = "v0.0.5"
+source_checksum = "sha256:9b9048eb2f42a0b1e36bacbdab54525813cdd6e53eb7c1c2f9dd920bf38ad09e"
+installed_checksum = "sha256:9b9048eb2f42a0b1e36bacbdab54525813cdd6e53eb7c1c2f9dd920bf38ad09e"
 dest_path = "skills/dev-principles"
 
 [items."skills/doc-coauthoring"]
