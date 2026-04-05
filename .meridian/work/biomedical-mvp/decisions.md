@@ -235,8 +235,40 @@ Per-tool-category display config (extensible) controls collapse defaults. Each t
 **Rejected**: (a) Standard upload for all sizes — no resumability, full restart on interruption for large files. (b) TUS for backend uploads — unnecessary complexity when S3 multipart works better server-side. (c) Custom chunked upload protocol — why reinvent TUS.
 **Constraint discovered**: TUS chunk size is hardcoded at 6 MB by Supabase — cannot be changed. Only one active client per upload URL (concurrent uploads to same URL get 409 Conflict).
 
-## D36: Go SDK — AWS SDK v2 for uploads, storage-go for admin
-**When**: Filesystem redesign (2026-04-05)
-**What**: Use AWS SDK v2 (via S3-compatible endpoint) for file upload/download operations. Use supabase-community/storage-go for administrative operations (bucket management, signed URL generation).
-**Why**: The storage-go library (v0.7.0, October 2023) doesn't implement TUS or multipart uploads — insufficient for large binary files. AWS SDK v2 is actively maintained, provides multipart upload via `s3manager.Uploader`, and works with Supabase's S3-compatible endpoint. storage-go is adequate for simple operations like `CreateSignedUrl`.
-**Rejected**: (a) storage-go only — no multipart upload support, 18+ months stale. (b) AWS SDK v2 only — signed URL generation is simpler via storage-go's purpose-built methods. (c) Raw HTTP + TUS client — more code, less battle-tested than AWS SDK v2.
+## D36: Go SDK — storage-go only for MVP, AWS SDK v2 deferred
+**When**: Filesystem redesign (2026-04-05), revised after review synthesis
+**What**: Use supabase-community/storage-go (v0.7.0) exclusively for the MVP. Defer AWS SDK v2 until server-side large file upload is needed.
+**Why**: The Go backend doesn't do large file uploads in the MVP — browsers upload directly to Supabase via signed URLs. storage-go covers all MVP needs: signed URL generation, file listing, deletion, metadata. Adding AWS SDK v2 introduces S3 credential management (separate from Supabase JWT), path-style addressing config, a second dependency, and different error types — unnecessary complexity for a single-user MVP.
+**Revised from**: Original D36 used both SDKs. Sonnet reviewer (p776 finding #10) correctly identified this as over-engineering for MVP.
+**Rejected for now**: (a) AWS SDK v2 — deferred, not rejected. Add when server-side multipart upload becomes necessary. (b) Raw HTTP — less ergonomic than storage-go for URL generation.
+
+## D37: Standard upload for MVP, TUS resumable deferred
+**When**: Filesystem redesign review synthesis (2026-04-05)
+**What**: Use standard Supabase Storage upload (PUT to signed URL) for all file sizes in the MVP. Defer TUS resumable uploads to a later iteration.
+**Why**: Supabase standard upload supports up to 500 MB. For a single researcher in a controlled environment, resumable uploads add frontend complexity (tus-js-client, chunk management, resume state) without clear MVP value. If a DICOM stack upload is interrupted, the user re-uploads. Orphan rows are cleaned up automatically (see consistency model).
+**Rejected for now**: TUS — deferred for production reliability when network conditions matter. The design documents the TUS path so it's ready when needed.
+**Reviewers**: sonnet (p776 finding #11) identified this correctly.
+
+## D38: DB is source of truth, bucket orphans are harmless
+**When**: Filesystem redesign review synthesis (2026-04-05)
+**What**: The consistency model: (1) DB row with `upload_status = NULL` is the canonical "file exists" signal. (2) Bucket files without a ready DB row are garbage-collectible. (3) Delete order: bucket first, then DB (so a DB failure leaves a visible file the user can retry-delete, rather than an invisible orphan). (4) Finalize is idempotent (`UPDATE ... WHERE upload_status = 'uploading'`).
+**Why**: Two-phase commit across DB + object storage is impractical. Instead, define which side is authoritative (DB) and handle failures by eventual cleanup. Bucket orphans waste storage but don't corrupt the user-visible state. The reverse (DB row with no bucket file) is the dangerous case — prevented by finalize-verifies-existence and delete-bucket-first ordering.
+**Reviewers**: opus (p773 finding H1) and gpt-5.4 (p775 finding #3) both identified this gap.
+
+## D39: upload_status field on documents (not folder metadata)
+**When**: Filesystem redesign review synthesis (2026-04-05)
+**What**: Add `upload_status` nullable TEXT column to documents table. `NULL` = complete/ready, `"uploading"` = in-progress. Tree queries filter `WHERE upload_status IS NULL` to exclude in-progress uploads. Lazy orphan cleanup on tree fetch for rows stuck in uploading > 2 hours.
+**Why**: Sonnet reviewer (p776 finding #2) identified that the upload flow referenced a status field that was never defined. NULL-as-complete avoids changing any existing queries (all current documents have NULL upload_status). The field lives on the document row, not in folder metadata, because upload status is per-file, not per-dataset.
+**Rejected**: (a) `Metadata["upload"]["status"]` — harder to index, harder to filter in queries. (b) Separate upload tracking table — over-engineering for MVP.
+
+## D40: Inline binary content via proxy endpoint (not signed URLs)
+**When**: Filesystem redesign review synthesis (2026-04-05)
+**What**: Add `GET /api/files/{id}/content` endpoint that proxies binary file content through the backend. Used for `<img>` tags in the activity stream where signed URL expiry (5 min) would silently break images in long sessions. Max proxied size: 10 MB. Larger files use the redirect endpoint.
+**Why**: Sonnet reviewer (p776 finding #8) identified that 5-minute signed URL expiry breaks inline image display. A long analysis session (> 5 min between page loads) would show broken images for matplotlib/plotly output. The proxy endpoint avoids this by generating fresh backend-to-bucket requests on each load.
+**Rejected**: (a) Longer signed URL expiry (1 hour) — security tradeoff, and still expires eventually. (b) Client-side URL refresh — complex, requires intercepting <img> load failures.
+
+## D41: Bulk finalize validates expected file count
+**When**: Filesystem redesign review synthesis (2026-04-05)
+**What**: `finalize-bulk` endpoint takes `expected_count` from the client and rejects if >5% of files are missing from the bucket. Response includes `missing_files` list so the client can show which files failed to upload.
+**Why**: GPT-5.4 reviewer (p775 finding #2) identified that finalize-bulk could mark incomplete DICOM stacks as ready, leading to processing failures in the sandbox. The original dataset-domain.md had explicit completeness checks — this restores that safety without the separate domain.
+**Constraint discovered**: The completeness threshold (5%) balances strictness against DICOM stacks where a few slices can fail upload without affecting analysis quality.

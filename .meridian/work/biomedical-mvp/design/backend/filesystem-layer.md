@@ -69,19 +69,24 @@ func StorageTypeFromExtension(ext string) StorageType {
 
 **Why an allowlist for text, not a blocklist for binary**: Binary is the safe default. An unknown extension stored as text could mean gigabytes in a TEXT column. An unknown extension stored in a bucket always works. The allowlist grows as we add support for new text-editable formats.
 
+**Text file size guard**: If a text-extension file exceeds **10 MB**, override to `StorageTypeBinary`. This prevents a 500 MB CSV from going into a TEXT column. The guard is in `StorageTypeFromExtensionWithSize(ext string, sizeBytes int64) StorageType`.
+
+**Compound extensions** (`.nii.gz`, `.tar.gz`, `.csv.gz`): Go's `filepath.Ext()` returns the final segment (`.gz`). Since `.gz` isn't in the text allowlist, compound extensions route to binary. This is correct behavior for all known biomedical compound extensions. Document this — don't add special-case handling for MVP.
+
 ## Database Schema
 
 ### Migration: Transform documents table
 
 ```sql
--- Replace file_type enum with storage_type
+-- Add storage_type and upload_status columns
 ALTER TABLE ${TABLE_PREFIX}documents
-    ADD COLUMN IF NOT EXISTS storage_type TEXT NOT NULL DEFAULT 'text';
+    ADD COLUMN IF NOT EXISTS storage_type TEXT NOT NULL DEFAULT 'text',
+    ADD COLUMN IF NOT EXISTS upload_status TEXT;  -- NULL = complete, 'uploading' = in-progress
 
 -- Backfill: all existing documents are text (fiction platform had no binary files)
 UPDATE ${TABLE_PREFIX}documents SET storage_type = 'text';
 
--- Drop the fiction-specific file_type constraint
+-- Drop the fiction-specific file_type constraint (blocks binary file creation)
 ALTER TABLE ${TABLE_PREFIX}documents
     DROP CONSTRAINT IF EXISTS ${TABLE_PREFIX}documents_file_type_check;
 
@@ -90,9 +95,10 @@ ALTER TABLE ${TABLE_PREFIX}documents
     ADD CONSTRAINT ${TABLE_PREFIX}documents_storage_type_check
         CHECK (storage_type IN ('text', 'binary'));
 
--- Content column stays but is empty for binary files
--- storage_url is populated for binary files, null for text files
--- mime_type becomes required for binary, derived for text
+-- Add upload_status constraint
+ALTER TABLE ${TABLE_PREFIX}documents
+    ADD CONSTRAINT ${TABLE_PREFIX}documents_upload_status_check
+        CHECK (upload_status IS NULL OR upload_status IN ('uploading'));
 
 -- Index for binary file lookups by storage URL
 CREATE INDEX IF NOT EXISTS idx_documents_storage_url
@@ -102,9 +108,14 @@ CREATE INDEX IF NOT EXISTS idx_documents_storage_url
 -- Index for filtering by storage type
 CREATE INDEX IF NOT EXISTS idx_documents_storage_type
     ON ${TABLE_PREFIX}documents(storage_type);
+
+-- Index for orphan cleanup queries
+CREATE INDEX IF NOT EXISTS idx_documents_upload_status
+    ON ${TABLE_PREFIX}documents(upload_status)
+    WHERE upload_status IS NOT NULL;
 ```
 
-The `file_type` column stays temporarily for backwards compatibility during migration but all new code uses `storage_type` + `mime_type`. The column can be dropped in a later cleanup migration.
+The `file_type` column stays temporarily for backwards compatibility during migration but all new code uses `storage_type` + `mime_type`. During transition, `EnsureFileType()` sets `file_type = "binary"` for non-text files (avoids nonsensical "markdown" default for `.dcm` files). The column can be dropped in a later cleanup migration.
 
 ### Document model changes
 
@@ -126,12 +137,13 @@ type Document struct {
     PendingProposalCount int     `json:"pending_proposal_count,omitempty" db:"pending_proposal_count"`
 
     // --- Changed ---
-    StorageType StorageType      `json:"storage_type" db:"storage_type"`   // "text" or "binary" (replaces FileType)
-    FileType    string           `json:"file_type" db:"file_type"`         // Kept for backwards compat, derived from extension
-    Content     string           `json:"content" db:"content"`             // Populated for text files, empty for binary
-    StorageURL  *string          `json:"storage_url,omitempty" db:"storage_url"`   // Bucket path for binary files
-    MimeType    *string          `json:"mime_type,omitempty" db:"mime_type"`
-    SizeBytes   *int64           `json:"size_bytes,omitempty" db:"size_bytes"`
+    StorageType  StorageType      `json:"storage_type" db:"storage_type"`    // "text" or "binary" (replaces FileType)
+    UploadStatus *string          `json:"upload_status,omitempty" db:"upload_status"` // NULL=complete, "uploading"=in-progress
+    FileType     string           `json:"file_type" db:"file_type"`          // Kept for backwards compat, derived from extension
+    Content      string           `json:"content" db:"content"`              // Populated for text files, empty for binary
+    StorageURL   *string          `json:"storage_url,omitempty" db:"storage_url"`    // Bucket path, set at row creation for binary files
+    MimeType     *string          `json:"mime_type,omitempty" db:"mime_type"`
+    SizeBytes    *int64           `json:"size_bytes,omitempty" db:"size_bytes"`
 }
 
 // IsTextBased returns true if this file stores content in the DB.
@@ -165,6 +177,40 @@ supabase-storage/
 - Bucket visibility: Private (all access via signed URLs or service key)
 - No MIME type restriction at bucket level (we accept arbitrary research files)
 
+## Consistency Model
+
+The DB is the **source of truth** for the project tree. A bucket file without a `upload_status = NULL` (ready) DB row is garbage-collectible. A ready DB row without a bucket file is a bug (finalize verifies existence before marking ready).
+
+### Field timing — what's set when
+
+| Field | Set at row creation | Set at finalize |
+|-------|-------------------|-----------------|
+| `id`, `project_id`, `folder_id`, `name`, `extension` | ✓ | |
+| `storage_type`, `mime_type` | ✓ | |
+| `storage_url` | ✓ (computed: `{project_id}/{doc_id}/{filename}`) | |
+| `upload_status` | `"uploading"` | → `NULL` (complete) |
+| `size_bytes` | | ✓ (from bucket) |
+| `content` | empty for binary | |
+
+### Orphan cleanup
+
+Documents stuck in `upload_status = 'uploading'` for >2 hours are considered abandoned. Cleanup strategy:
+
+1. **Tree queries exclude uploading documents**: `WHERE upload_status IS NULL` filter on tree, search, and list queries. Uploading documents are invisible in the project tree.
+2. **Lazy cleanup on tree fetch**: When building the project tree, also check for stale uploads (created_at < NOW() - 2 hours, upload_status = 'uploading'). Delete DB rows. Delete bucket files if they exist (best-effort, bucket orphans are harmless storage waste).
+3. **Frontend shows upload progress independently**: The upload UI tracks in-progress uploads via client state, not by querying the DB.
+
+### Failure modes
+
+| Failure | State | Recovery |
+|---------|-------|----------|
+| Client uploads to bucket, never calls finalize | DB row: uploading, bucket: file exists | Orphan cleanup deletes both |
+| Finalize DB update fails after bucket verification | DB row: uploading, bucket: file exists | Client retries finalize (idempotent: `UPDATE ... WHERE upload_status = 'uploading'`) |
+| Delete succeeds in DB, fails in bucket | DB row: deleted, bucket: file exists | Bucket orphan, harmless storage waste. Periodic sweep can clean. |
+| Delete succeeds in bucket, fails in DB | DB row: exists, bucket: file gone | Download returns 404. Tree shows file that can't be opened. Fix: mark as error or delete row. |
+
+The most dangerous case is "DB row exists, bucket file gone." The finalize step prevents this for new uploads (verifies existence). For existing files, this only happens on delete failures. The delete flow should delete from bucket first, then DB — this way, if the DB delete fails, the user still sees the file and can retry delete.
+
 ## Upload Flow
 
 ### Binary file upload (pre-signed URL)
@@ -178,16 +224,16 @@ sequenceDiagram
 
     F->>B: POST /api/projects/{pid}/files/upload-url
     Note right of F: {name: "scan.dcm", folder_path: "datasets/knee-001"}
-    B->>DB: Create document row (storage_type: binary, status: uploading)
-    B->>S: Generate pre-signed upload URL
+    B->>DB: Create document row (storage_type: binary, upload_status: uploading, storage_url: computed)
+    B->>S: Generate signed upload URL for storage_url path
     B-->>F: {document_id, upload_url, expires_at}
 
     F->>S: PUT upload_url (binary content)
     S-->>F: 200 OK
 
     F->>B: POST /api/files/{id}/finalize
-    B->>S: Verify file exists, get size
-    B->>DB: Update document (size_bytes, status: ready)
+    B->>S: Verify file exists at storage_url, get size
+    B->>DB: Update document (size_bytes, upload_status: NULL) in transaction
     B-->>F: 200 {document}
 ```
 
@@ -228,38 +274,118 @@ sequenceDiagram
     end
 
     F->>B: POST /api/projects/{pid}/files/finalize-bulk
-    Note right of F: {document_ids: [...]}
-    B->>S: Verify files, get sizes
-    B->>DB: Update documents (size_bytes, status: ready)
+    Note right of F: {folder_id, expected_count: 400}
+    B->>S: Verify files exist, get sizes (parallel)
+    B->>B: Check: actual count vs expected_count (reject if >5% missing)
+    B->>DB: Update documents (size_bytes, upload_status: NULL) in transaction
     B->>B: Extract metadata from representative file (e.g., DICOM headers)
     B->>DB: Update folder metadata (dataset info)
-    B-->>F: 200 {folder with metadata, documents}
+    B-->>F: 200 {folder with metadata, documents, missing_files: [...]}
 ```
+
+### Request/Response Types
+
+```go
+// --- Single file upload ---
+
+type UploadURLRequest struct {
+    Name       string  `json:"name"`                    // Filename with extension: "scan.dcm"
+    FolderPath *string `json:"folder_path,omitempty"`   // Resolve/create: "datasets/knee-001"
+    FolderID   *string `json:"folder_id,omitempty"`     // Alternative: direct folder ID
+    MimeType   *string `json:"mime_type,omitempty"`     // Optional, detected from extension if absent
+}
+
+type UploadURLResponse struct {
+    DocumentID string    `json:"document_id"`
+    UploadURL  string    `json:"upload_url"`   // Signed upload URL (2-hour expiry)
+    ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// --- Bulk upload ---
+
+type BulkUploadURLsRequest struct {
+    FolderPath string         `json:"folder_path"`  // Target folder: "datasets/knee-001"
+    Files      []BulkFileSpec `json:"files"`
+}
+
+type BulkFileSpec struct {
+    Name string `json:"name"`  // Filename: "0001.dcm"
+}
+
+type BulkUploadURLsResponse struct {
+    FolderID string            `json:"folder_id"`
+    Files    []UploadURLResponse `json:"files"`
+}
+
+// --- Finalize ---
+
+type FinalizeResponse struct {
+    Document Document `json:"document"`
+}
+
+type BulkFinalizeRequest struct {
+    FolderID      string `json:"folder_id"`
+    ExpectedCount int    `json:"expected_count"`  // Client sends how many files were expected
+}
+
+type BulkFinalizeResponse struct {
+    Folder       Folder     `json:"folder"`        // With dataset metadata populated
+    Documents    []Document `json:"documents"`      // Successfully finalized
+    MissingFiles []string   `json:"missing_files"`  // Document IDs where bucket file was not found
+}
+
+// --- Sandbox file registration ---
+
+type RegisterFileRequest struct {
+    Name        string  `json:"name"`                    // Filename: "femur.stl"
+    FolderPath  *string `json:"folder_path,omitempty"`   // Target: "results/"
+    StoragePath string  `json:"storage_path"`            // Bucket path (set by sandbox helper)
+    MimeType    *string `json:"mime_type,omitempty"`
+    SizeBytes   int64   `json:"size_bytes"`
+}
+```
+
+### Sandbox file registration endpoint
+
+When the sandbox uploads a file to the bucket via S3 API, it calls the backend to create the metadata row:
+
+```
+POST /api/projects/{pid}/files/register → 201 {document}
+```
+
+This creates a document row with `upload_status = NULL` (already complete — the file is in the bucket). The sandbox helper calls this after a successful S3 PUT. Without this endpoint, sandbox-created files would exist in the bucket but never appear in the project tree.
 
 ### Upload protocol selection
 
-The frontend chooses the upload protocol based on file size:
+**MVP: Standard upload for all sizes.** Supabase Storage's standard upload supports up to 500 MB. For the single-user MVP with controlled uploads, standard PUT is sufficient. If a DICOM stack upload is interrupted, the user re-uploads. Orphan rows get cleaned up (see Consistency Model).
 
-| File size | Protocol | Client library |
-|-----------|----------|---------------|
-| ≤ 6 MB | Standard PUT to signed URL | `fetch` |
-| > 6 MB | TUS resumable upload | `tus-js-client` (6 MB chunks, server-side resumability) |
+**Future: TUS resumable uploads.** For production reliability (unreliable networks, very large files), add TUS resumable uploads:
+- Frontend uses `tus-js-client` with 6 MB chunks (Supabase-mandated chunk size)
+- TUS uploads go directly to Supabase's TUS endpoint: `https://<project-ref>.storage.supabase.co/storage/v1/upload/resumable`
+- 24-hour resume window — interrupted uploads can resume by querying the server for the current offset
+- The backend never proxies TUS uploads — they go client → Supabase directly
 
-TUS upload URLs expire after **24 hours**. If a DICOM stack upload is interrupted, the client can resume within that window by querying the server for the current offset. After 24 hours, the upload must restart.
-
-For the Go backend uploading files server-side (e.g., sandbox result upload), use **AWS SDK v2 S3 multipart upload** via the Supabase S3-compatible endpoint (`forcePathStyle: true`). This provides parallel chunk upload with automatic retry.
+The backend's signed upload URLs support both standard PUT and TUS. The frontend decides which protocol to use based on file size and network conditions.
 
 ## Download Flow
 
 ### Binary file download
 
 ```
-GET /api/files/{id}/download → 302 redirect to signed download URL
+GET /api/files/{id}/download → 302 redirect to signed download URL (5 min expiry)
 ```
 
 The backend generates a short-lived (5 min) signed download URL from Supabase Storage and redirects. The frontend never knows the bucket path.
 
-**Important**: Signed URLs expire. The frontend must not cache download URLs across navigation events. Each download request generates a fresh URL. The frontend can cache URLs for the duration of a single page view (< 5 min), but must re-request on navigation.
+### Inline binary content (images, charts)
+
+For binary files displayed inline in the activity stream (matplotlib PNG output, generated figures):
+
+```
+GET /api/files/{id}/content → 200 with binary body (proxied through backend)
+```
+
+This endpoint proxies the file content through the backend instead of redirecting. Used for `<img>` tags in the activity stream where signed URL expiry would silently break images in long sessions. The backend fetches from the bucket and streams to the client. Max proxied file size: 10 MB (larger files use the redirect endpoint).
 
 ### Text file content
 
@@ -388,25 +514,60 @@ The `SearchOptions.Fields` enum gains `SearchFieldMetadata`. The repository impl
 ```go
 // StorageService manages binary file storage in Supabase bucket.
 // Separated from DocumentService (SRP) — this handles bucket operations only.
+// Implementation uses storage-go for URL generation, AWS SDK v2 for file operations.
+// All methods use the service role key (bypass RLS). No DB access — that's DocumentService's job.
 type StorageService interface {
-    // GenerateUploadURL creates a pre-signed URL for uploading a binary file.
-    GenerateUploadURL(ctx context.Context, projectID, documentID, filename string) (url string, expiresAt time.Time, err error)
+    // GenerateUploadURL creates a signed URL for uploading a binary file.
+    // storagePath is the full bucket path: "{project_id}/{document_id}/{filename}"
+    GenerateUploadURL(ctx context.Context, storagePath string) (url string, expiresAt time.Time, err error)
 
-    // GenerateDownloadURL creates a pre-signed URL for downloading a binary file.
-    GenerateDownloadURL(ctx context.Context, projectID, documentID string) (url string, expiresAt time.Time, err error)
+    // GenerateUploadURLs creates signed URLs for multiple files (batch).
+    // Used by bulk upload endpoints. Generates URLs in parallel internally.
+    GenerateUploadURLs(ctx context.Context, storagePaths []string) ([]StorageURLResult, error)
+
+    // GenerateDownloadURL creates a signed URL for downloading a binary file.
+    // storagePath is the full bucket path.
+    GenerateDownloadURL(ctx context.Context, storagePath string) (url string, expiresAt time.Time, err error)
+
+    // GenerateDownloadURLs creates signed download URLs for multiple files (batch).
+    // Used by sandbox copy-on-start.
+    GenerateDownloadURLs(ctx context.Context, storagePaths []string) ([]StorageURLResult, error)
+
+    // GetContent streams file content through the backend (for inline display).
+    // Max size: 10 MB. Returns ErrFileTooLarge for larger files.
+    GetContent(ctx context.Context, storagePath string) (io.ReadCloser, int64, error)
 
     // DeleteFile removes a file from the bucket.
-    DeleteFile(ctx context.Context, projectID, documentID string) error
+    DeleteFile(ctx context.Context, storagePath string) error
 
-    // DeleteProjectFiles removes all files for a project from the bucket.
-    DeleteProjectFiles(ctx context.Context, projectID string) error
+    // DeleteFiles removes multiple files from the bucket (batch).
+    DeleteFiles(ctx context.Context, storagePaths []string) error
 
     // GetFileInfo returns size and existence check for a bucket file.
-    GetFileInfo(ctx context.Context, projectID, documentID string) (sizeBytes int64, exists bool, err error)
+    GetFileInfo(ctx context.Context, storagePath string) (sizeBytes int64, exists bool, err error)
+
+    // GetFilesInfo checks existence and size for multiple files (batch).
+    GetFilesInfo(ctx context.Context, storagePaths []string) ([]StorageFileInfo, error)
+}
+
+type StorageURLResult struct {
+    StoragePath string
+    URL         string
+    ExpiresAt   time.Time
+    Err         error  // Per-item error (nil on success)
+}
+
+type StorageFileInfo struct {
+    StoragePath string
+    SizeBytes   int64
+    Exists      bool
+    Err         error
 }
 
 // MetadataExtractor extracts format-specific metadata from file content.
 // Strategy pattern: one extractor per file format family.
+// DICOM extractor uses github.com/suyashkumar/dicom (pure Go, header-only reads).
+// PatientID is stored as-is — caller (the research lab) is responsible for de-identification.
 type MetadataExtractor interface {
     Extract(ctx context.Context, content io.Reader, filename string) (DocumentMetadata, error)
     SupportedExtensions() []string
@@ -414,12 +575,14 @@ type MetadataExtractor interface {
 }
 ```
 
+**Note on StorageService parameter style**: Methods take `storagePath` (the full bucket path) rather than `documentID`. This keeps the service purely about bucket operations — callers construct the path from document metadata. `DocumentService` and the handler layer do the DB lookup and path construction.
+
 ### Modified interfaces
 
 See [docsystem-audit](../research/docsystem-audit.md) for the full audit. Key changes:
 
 - **DocumentService**: Gains `GetUploadURL`, `GetDownloadURL` methods. `CreateDocument` routes text vs binary. `DeleteDocument` orchestrates DB + bucket cleanup.
-- **DocumentResolver** (collab): Gates on `StorageTypeText` — binary files cannot open collab sessions.
+- **DocumentResolver** (collab): Gates on `StorageTypeText` — binary files cannot open collab sessions. The guard goes in **both** `ResolveDocument` and `VerifyOwnership` (defense in depth — prevents any code path from bypassing the check). Extract into a private `ensureCollabEligible(doc)` helper.
 - **ImportService**: `ProcessFiles` routes binary files to bucket, text files to DB. Absorbs the dataset upload flow.
 - **TreeService**: Tree now includes binary file nodes with `StorageURL`, `MimeType`, `SizeBytes`.
 - **ContentAnalyzer**: Unchanged interface, narrowed scope to text files only.
@@ -443,11 +606,13 @@ FolderStore, FolderService, ProjectStore, ProjectService, FavoriteStore, Favorit
 ### New endpoints
 
 ```
-POST   /api/projects/{pid}/files/upload-url       Get pre-signed upload URL for a binary file
-POST   /api/projects/{pid}/files/bulk-upload-urls  Get pre-signed URLs for multiple files
+POST   /api/projects/{pid}/files/upload-url       Get signed upload URL for a binary file
+POST   /api/projects/{pid}/files/bulk-upload-urls  Get signed URLs for multiple files
 POST   /api/files/{id}/finalize                    Finalize single file upload
 POST   /api/projects/{pid}/files/finalize-bulk     Finalize bulk upload + extract metadata
-GET    /api/files/{id}/download                    Redirect to pre-signed download URL
+POST   /api/projects/{pid}/files/register          Register a sandbox-uploaded file (create metadata row)
+GET    /api/files/{id}/download                    Redirect to signed download URL
+GET    /api/files/{id}/content                     Proxy binary content (for inline display, max 10MB)
 ```
 
 ### Existing endpoints (unchanged)
@@ -487,18 +652,15 @@ backend/internal/
 
 ## Go SDK Strategy
 
-Based on [Supabase Storage research](../research/supabase-storage-capabilities.md) §6:
+Based on [Supabase Storage research](../research/supabase-storage-capabilities.md) §6.
 
-| Purpose | SDK | Why |
-|---------|-----|-----|
-| Large file upload (server-side) | **AWS SDK v2** via S3-compatible endpoint | Multipart upload with parallel chunks, automatic retry, battle-tested |
-| Signed URL generation | **storage-go** (v0.7.0) | Simple API for `CreateSignedUrl`, `CreateSignedUploadUrl` |
-| Bucket management | **storage-go** | Bucket CRUD, file listing, metadata queries |
-| File deletion | **AWS SDK v2** `DeleteObject` | Reliable, supports batch `DeleteObjects` for project cleanup |
+**MVP: `storage-go` only.** The community Go SDK (v0.7.0) covers all MVP needs: signed URL generation, file upload/download, file listing, deletion. It doesn't support multipart upload, but the Go backend doesn't do large file uploads in the MVP — browsers upload directly to Supabase via signed URLs.
 
-The S3-compatible endpoint requires `forcePathStyle: true` and the endpoint URL `https://<project-ref>.storage.supabase.co/storage/v1/s3`.
+**Future: Add AWS SDK v2 if needed.** If server-side large file upload becomes necessary (e.g., backend-to-bucket migration, batch processing), add the AWS SDK v2 via the S3-compatible endpoint (`forcePathStyle: true`, endpoint: `https://<project-ref>.storage.supabase.co/storage/v1/s3`).
 
-**Authentication**: Service role key (bypasses RLS) for all backend-to-bucket operations. S3 access keys generated from Supabase dashboard.
+**Authentication**: Service role key (bypasses RLS) for all backend-to-bucket operations.
+
+**Sandbox credentials**: S3 access keys generated from Supabase dashboard, injected as environment variables. For the single-user MVP, these credentials have full bucket access (no project scoping). For multi-user, generate scoped session tokens per sandbox.
 
 ## Related Docs
 
