@@ -497,15 +497,15 @@ A folder that represents a dataset (e.g., a DICOM stack) stores dataset-level me
 
 This replaces the separate `datasets` table entirely. The `DatasetService.FinalizeUpload` logic moves into the bulk upload finalization endpoint, which extracts DICOM metadata and writes it to the folder.
 
+**Known limitation (D42)**: Dataset folder metadata is snapshot-at-finalize, not live-computed. If files are manually added/removed from a dataset folder after finalize, `fileCount` and `totalSizeBytes` become stale. This is acceptable for the single-user MVP — researchers don't manually edit finalized dataset folders. The tree and actual files are always correct; only the cached counts can drift.
+
 ## Search Changes
 
 Full-text search adapts to the text/binary split:
 
 - **Name search**: Works for all files (text and binary)
 - **Content search**: Only searches text files (binary content isn't in DB)
-- **Metadata search**: New capability — search JSONB metadata fields (e.g., find files by MIME type, find datasets by modality)
-
-The `SearchOptions.Fields` enum gains `SearchFieldMetadata`. The repository implementation adds a JSONB containment query for metadata search.
+- **Metadata search (deferred, D43)**: Folder-based dataset metadata search is not in MVP scope. Users find datasets through the project tree. When needed, add JSONB containment queries on `folders.metadata` via a separate `FolderSearcher` interface.
 
 ## Interface Changes Summary
 

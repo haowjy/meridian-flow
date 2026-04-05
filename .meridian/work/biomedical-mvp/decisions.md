@@ -272,3 +272,28 @@ Per-tool-category display config (extensible) controls collapse defaults. Each t
 **What**: `finalize-bulk` endpoint takes `expected_count` from the client and rejects if >5% of files are missing from the bucket. Response includes `missing_files` list so the client can show which files failed to upload.
 **Why**: GPT-5.4 reviewer (p775 finding #2) identified that finalize-bulk could mark incomplete DICOM stacks as ready, leading to processing failures in the sandbox. The original dataset-domain.md had explicit completeness checks — this restores that safety without the separate domain.
 **Constraint discovered**: The completeness threshold (5%) balances strictness against DICOM stacks where a few slices can fail upload without affecting analysis quality.
+
+## D42: Dataset folder metadata is snapshot-at-finalize, not live-computed
+**When**: Filesystem redesign review round 2 (2026-04-05)
+**What**: `Folder.Metadata["dataset"]` fields (fileCount, totalSizeBytes, status) are written once during `finalize-bulk` and not dynamically updated when files are added/moved/deleted from the folder afterward.
+**Why**: GPT-5.4 reviewer (p779 finding H2) correctly identified that file operations on a dataset folder silently stale the cached metadata. For the single-user MVP, this is acceptable — the researcher uploads a dataset, finalizes it, and processes it. They don't manually add/remove individual DICOM files from a finalized dataset. The metadata represents "what was uploaded," not "current folder contents." A future enhancement can add computed aggregates (COUNT/SUM queries) or event-based recomputation.
+**Rejected**: (a) Live-computed metadata on every tree query — N+1 queries per dataset folder, unnecessary for MVP. (b) Event hooks on FolderService to recompute on child changes — over-engineering for MVP. (c) Moving metadata to computed views — adds DB complexity for a scenario that doesn't occur in practice.
+**Accepted risk**: If a user manually deletes files from a dataset folder, the metadata becomes stale. This is a UX blemish, not a data integrity issue — the actual files and the tree are always correct.
+
+## D43: Dataset search deferred — project tree is sufficient for MVP
+**When**: Filesystem redesign review round 2 (2026-04-05)
+**What**: `DocumentSearcher` does not search folder metadata. Finding datasets by modality, scanner model, or other metadata attributes is not supported in MVP. Users find datasets through the project tree.
+**Why**: GPT-5.4 reviewer (p779 finding H1) identified that dataset metadata lives on folders but search only covers documents. For the single-user MVP with < 20 datasets, browsing the project tree is sufficient. Full-text search of folder metadata (JSONB containment queries) can be added when multi-project or multi-user scenarios create a discovery problem.
+**Rejected for now**: (a) Extending DocumentSearcher to include folders — mixes document and folder results in a single interface, violates ISP. (b) Separate FolderSearcher — adds interface surface for a feature with no MVP user. (c) Unified search that returns both — deferred to when it's needed.
+
+## D44: StorageService takes storagePath — intentional simplicity over abstraction
+**When**: Filesystem redesign review round 2 (2026-04-05)
+**What**: `StorageService` methods take raw `storagePath` (e.g., `{project_id}/{doc_id}/{filename}`) rather than `documentID`. Path construction happens at the service layer (`DocumentService`), not inside `StorageService`.
+**Why**: GPT-5.4 reviewer (p779 finding M2) identified this as a layout leak. The choice is intentional: StorageService is purely about bucket operations (SRP). It doesn't know about documents, projects, or the DB. The calling service (`DocumentService`) owns the path pattern and constructs it from document metadata. This is simpler than having StorageService depend on document/project types, and the path pattern (`{project_id}/{doc_id}/{filename}`) is documented and deterministic.
+**Rejected**: (a) StorageService takes documentID and looks up the path — adds DB dependency to a service that should be DB-free. (b) Path builder abstraction — unnecessary indirection for one pattern.
+
+## D45: textExtensions allowlist is the intentional OCP mechanism
+**When**: Filesystem redesign review round 2 (2026-04-05)
+**What**: Adding support for a new text-editable file format requires adding one entry to the `textExtensions` map in `storage_type.go`. This is a deliberate simplicity choice.
+**Why**: GPT-5.4 reviewer (p779 finding M1) identified that the OCP story is weaker than claimed — new formats require editing the central allowlist. This is true and acceptable. The allowlist is ~20 entries and grows by ~1 entry per new format. A full registry/plugin pattern (where formats self-register their storage mode, collab eligibility, and analyzer) would be over-engineering for a collection that changes once per quarter. The allowlist is trivial to modify, easy to test, and easy to read.
+**Rejected**: (a) Format registry where each format declares its capabilities — unnecessary abstraction for ~20 entries. (b) Configuration-driven format list — adds runtime complexity for something that's a compile-time decision.

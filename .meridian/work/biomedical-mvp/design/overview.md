@@ -22,24 +22,26 @@ flowchart TB
         ToolReg["Tool Registry<br/>(existing)"]
         PythonTool["python tool<br/>(new ToolExecutor)"]
         BashTool["bash tool<br/>(new ToolExecutor)"]
-        DatasetSvc["Dataset Service<br/>(new domain)"]
+        FileSvc["Document Service<br/>(extended: text+binary routing)"]
+        StorageSvc["Storage Service<br/>(Supabase bucket ops)"]
         DisplayPipeline["Display Result Pipeline<br/>(generic event emission)"]
         ToolReg --> PythonTool
         ToolReg --> BashTool
         PythonTool --> DisplayPipeline
+        FileSvc --> StorageSvc
     end
 
     subgraph External["External Services"]
         Daytona["Daytona Sandbox<br/>(Python + persistent kernel)"]
-        Supabase["Supabase Storage<br/>(DICOM files)"]
+        Supabase["Supabase Storage<br/>(binary files)"]
     end
 
     PythonTool -->|"ExecInKernel"| Daytona
     BashTool -->|"ExecBash"| Daytona
-    DatasetSvc -->|"Storage API"| Supabase
+    StorageSvc -->|"storage-go"| Supabase
     DisplayPipeline -->|"SSE/AG-UI events"| ChatPanel
     DisplayPipeline -->|"Binary mesh data"| Viewer3D
-    Daytona -->|"File API"| Supabase
+    Daytona -->|"S3 API (boto3)"| Supabase
 ```
 
 ## What We Extend vs What We Add
@@ -65,7 +67,8 @@ flowchart TB
 | **python tool** | ToolExecutor for Jupyter kernel execution + result capture | [python-tool.md](backend/python-tool.md) |
 | **bash tool** | ToolExecutor for shell commands in Daytona sandbox | [bash-tool.md](backend/bash-tool.md) |
 | **Daytona service** | Sandbox lifecycle + persistent Jupyter kernel management | [daytona-service.md](backend/daytona-service.md) |
-| **Dataset domain** | Upload, storage, metadata for DICOM stacks | [dataset-domain.md](backend/dataset-domain.md) |
+| **Filesystem layer** | Unified text (DB) + binary (bucket) storage with metadata tree | [filesystem-layer.md](backend/filesystem-layer.md) |
+| ~~**Dataset domain**~~ | ~~Upload, storage, metadata for DICOM stacks~~ | ~~[dataset-domain.md](backend/dataset-domain.md)~~ — **REPLACED by filesystem layer** (D31). See [impact analysis](backend/filesystem-mvp-impact.md) |
 | **Display result pipeline** | Generic AG-UI events + OutputSink for rich results | [display-results.md](backend/display-results.md) |
 | **Workspace layout** | Two-panel resizable layout | [layout.md](frontend/layout.md) |
 | **Activity stream redesign** | Per-item collapse defaults model + per-tool display config | [activity-stream.md](frontend/activity-stream.md) |
@@ -112,8 +115,8 @@ The WS client already supports binary frames (`subId UTF-8 0x00 payload`). Mesh 
 ### 7. Frontend target: `frontend-v2/`
 Ship on `frontend-v2/` (ground-up rebuild). See [decisions.md](../decisions.md) D4 for full rationale.
 
-### 8. Dataset as new domain
-DICOM datasets are project-scoped resources stored in Supabase Storage with metadata in a `datasets` table. Follows existing domain pattern.
+### 8. ~~Dataset as new domain~~ → Unified filesystem layer (D29, D31)
+~~DICOM datasets are project-scoped resources stored in Supabase Storage with metadata in a `datasets` table.~~ **Replaced**: Text files stay in DB (Yjs collab state already lives there), binary files go to Supabase Storage bucket. A metadata layer (documents table with `storage_type` field) unifies them into one project tree. "Dataset" is a folder with JSONB metadata tags, not a separate domain. See [filesystem-layer.md](backend/filesystem-layer.md) and [impact analysis](backend/filesystem-mvp-impact.md).
 
 ### 9. Single agent profile
 One `data-analyst` persona with domain knowledge. Uses `python` for analysis and `bash` for file operations.
@@ -174,9 +177,16 @@ sequenceDiagram
 ```
 backend/
   internal/
-    domain/datasets/           # New domain: interfaces + types
+    domain/docsystem/
+      storage_type.go          # NEW: StorageType enum + routing function
+      storage_service.go       # NEW: StorageService interface
+      metadata_extractor.go    # NEW: MetadataExtractor interface
+      document.go              # MODIFIED: StorageType, IsTextBased(), IsBinary()
     domain/sandbox/            # Sandbox domain: interfaces + types
-    service/datasets/          # Dataset service implementation
+    service/docsystem/
+      storage.go               # NEW: StorageService impl (Supabase client)
+      metadata/
+        dicom_extractor.go     # NEW: DICOM header metadata extraction
     service/sandbox/           # Daytona sandbox service + kernel manager
     service/llm/tools/
       python_tool.go           # New ToolExecutor (kernel + result capture)
@@ -187,12 +197,11 @@ backend/
       display_result.go        # DisplayResult types
     service/llm/streaming/
       agui_output_sink.go      # OutputSink -> emitter bridge
-    handler/dataset.go         # HTTP endpoints
+    handler/file_upload.go     # NEW: upload URL + finalize endpoints
     repository/postgres/
-      dataset.go               # Dataset repository
       sandbox.go               # Sandbox repository
   migrations/
-    NNNNNN_create_datasets.up.sql
+    NNNNNN_filesystem_layer.up.sql
     NNNNNN_create_project_sandboxes.up.sql
 
 frontend-v2/                   # Target frontend (NOT frontend/)
@@ -245,10 +254,12 @@ frontend-v2/                   # Target frontend (NOT frontend/)
 ## Related Design Docs
 
 ### Backend
+- [Filesystem Layer](backend/filesystem-layer.md) — Unified text (DB) + binary (bucket) storage with metadata tree
+- [Filesystem MVP Impact](backend/filesystem-mvp-impact.md) — How the filesystem redesign changes the MVP plan
 - [Python Tool](backend/python-tool.md) — ToolExecutor for Jupyter kernel execution + result capture
 - [Bash Tool](backend/bash-tool.md) — ToolExecutor for shell commands
 - [Daytona Service](backend/daytona-service.md) — Sandbox lifecycle + persistent kernel
-- [Dataset Domain](backend/dataset-domain.md) — DICOM upload, storage, metadata
+- ~~[Dataset Domain](backend/dataset-domain.md)~~ — **Replaced by filesystem layer** (D31)
 - [Display Result Pipeline](backend/display-results.md) — Generic AG-UI events for rich results
 
 ### Frontend
