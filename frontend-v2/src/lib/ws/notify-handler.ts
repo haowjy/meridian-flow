@@ -11,6 +11,12 @@
 
 import type { QueryClient, QueryKey } from "@tanstack/react-query"
 
+import {
+  isDocumentTreeQueryKey,
+  isProjectThreadsListQueryKey,
+  queryKeys,
+} from "@/lib/queries/keys"
+
 import type { Envelope } from "./protocol"
 import { RESOURCE_TYPE } from "./protocol"
 
@@ -39,14 +45,15 @@ export function getInvalidationKeys(
   switch (resourceType) {
     case RESOURCE_TYPE.TURN:
       return [
-        ["turns", resourceId],
-        ["turns", resourceId, "blocks"],
+        queryKeys.turns.detail(resourceId),
+        queryKeys.turns.blocks(resourceId),
       ]
 
     case RESOURCE_TYPE.THREAD:
       return [
-        ["threads", resourceId],
-        ["threads", resourceId, "turns"],
+        queryKeys.threads.detail(resourceId),
+        queryKeys.threads.turns(resourceId),
+        queryKeys.threads.spawns(resourceId),
       ]
 
     case RESOURCE_TYPE.PROPOSAL:
@@ -56,7 +63,7 @@ export function getInvalidationKeys(
       ]
 
     case RESOURCE_TYPE.DOCUMENT:
-      return [["documents", resourceId]]
+      return [queryKeys.documents.detail(resourceId)]
 
     default:
       return []
@@ -88,5 +95,18 @@ export function handleNotify(
 
   for (const key of keys) {
     void queryClient.invalidateQueries({ queryKey: key })
+  }
+
+  // List/tree queries are keyed by projectId; resource notifies only carry entity ids.
+  if (resource.type === RESOURCE_TYPE.DOCUMENT) {
+    void queryClient.invalidateQueries({
+      predicate: (query) => isDocumentTreeQueryKey(query.queryKey),
+    })
+  }
+
+  if (resource.type === RESOURCE_TYPE.THREAD) {
+    void queryClient.invalidateQueries({
+      predicate: (query) => isProjectThreadsListQueryKey(query.queryKey),
+    })
   }
 }

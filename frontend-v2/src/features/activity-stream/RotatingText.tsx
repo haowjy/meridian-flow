@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
+import { useIsShellActive } from "@/layouts/app-shell/shell-visibility-context"
 import { cn } from "@/lib/utils"
 
 type RotatingTextProps = {
@@ -17,6 +18,8 @@ export function RotatingText({
   fadeMs = 220,
   className,
 }: RotatingTextProps) {
+  const isShellActive = useIsShellActive()
+  const isAnimating = active && isShellActive
   const [index, setIndex] = useState(0)
   const [previousIndex, setPreviousIndex] = useState<number | null>(null)
   const intervalRef = useRef<number | null>(null)
@@ -32,7 +35,7 @@ export function RotatingText({
   }
 
   useEffect(() => {
-    if (!active || messages.length < 2) {
+    if (!isAnimating || messages.length < 2) {
       return
     }
 
@@ -60,7 +63,7 @@ export function RotatingText({
         window.clearTimeout(timeoutRef.current)
       }
     }
-  }, [active, fadeMs, intervalMs, messages.length])
+  }, [isAnimating, fadeMs, intervalMs, messages.length])
 
   const currentMessage = messages[index] ?? ""
   const previousMessage = previousIndex === null ? null : messages[previousIndex]
@@ -71,13 +74,13 @@ export function RotatingText({
       aria-live="polite"
     >
       {previousMessage ? (
-        <span className="pointer-events-none absolute inset-0 animate-out fade-out duration-moderate">
+        <span className="pointer-events-none absolute inset-0 animate-out fade-out duration-200">
           {previousMessage}
         </span>
       ) : null}
       <span
         key={index}
-        className={cn(previousMessage ? "animate-in fade-in duration-moderate" : undefined)}
+        className={cn(previousMessage ? "animate-in fade-in duration-200" : undefined)}
       >
         {currentMessage}
       </span>

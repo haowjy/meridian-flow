@@ -26,6 +26,7 @@ import {
   NOTIFY_EVENT,
   RESOURCE_TYPE,
 } from "@/lib/ws/protocol"
+import { queryKeys } from "@/lib/queries/keys"
 import { WsClient, buildWsUrl } from "@/lib/ws/ws-client"
 import { handleNotify } from "@/lib/ws/notify-handler"
 
@@ -170,7 +171,7 @@ function handleSpawnNotify(
   // The notify resource is the parent thread
   if (msg.resource.type === RESOURCE_TYPE.THREAD) {
     void queryClient.invalidateQueries({
-      queryKey: ["threads", msg.resource.id, "spawns"],
+      queryKey: queryKeys.threads.spawns(msg.resource.id),
     })
   }
 }

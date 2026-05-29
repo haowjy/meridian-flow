@@ -78,14 +78,14 @@ function validateBlockType(blockType: string): BlockType {
 
 const TERMINAL_STATUSES = new Set<string>(["complete", "cancelled", "error", "credit_limited"])
 
-// --- Block mapping (backend snake_case → frontend camelCase) ---
+// --- Block mapping (API DTO → TurnBlock view model) ---
 
 function mapBlock(b: BackendTurnBlock): TurnBlock {
   return {
     id: b.id,
-    blockType: validateBlockType(b.block_type),
+    blockType: validateBlockType(b.blockType),
     sequence: b.sequence,
-    textContent: b.text_content ?? undefined,
+    textContent: b.textContent ?? undefined,
     content: b.content ?? undefined,
     status: b.status === "partial" ? "partial" : "complete",
   }
@@ -160,12 +160,12 @@ function extractToolResultText(
   const isError = resultContent?.is_error ?? false
 
   if (isError) {
-    const resultText = stringifyValue(resultContent?.error) ?? resultBlock.text_content ?? undefined
+    const resultText = stringifyValue(resultContent?.error) ?? resultBlock.textContent ?? undefined
     return { resultText, isError }
   }
 
   // result can be a string or structured object (e.g. doc_search, web_search return maps)
-  const resultText = stringifyValue(resultContent?.result) ?? resultBlock.text_content ?? undefined
+  const resultText = stringifyValue(resultContent?.result) ?? resultBlock.textContent ?? undefined
   return { resultText, isError }
 }
 
@@ -185,7 +185,7 @@ export function mapBlocksToActivityItems(
   // Index tool_result and web_search_result blocks by tool_use_id for O(1) pairing
   const resultByToolUseId = new Map<string, BackendTurnBlock>()
   for (const b of blocks) {
-    if (b.block_type === "tool_result" || b.block_type === "web_search_result") {
+    if (b.blockType === "tool_result" || b.blockType === "web_search_result") {
       const toolUseId = extractToolUseId(b)
       if (toolUseId) {
         resultByToolUseId.set(toolUseId, b)
@@ -196,13 +196,13 @@ export function mapBlocksToActivityItems(
   const items: ActivityItem[] = []
 
   for (const b of blocks) {
-    switch (b.block_type) {
+    switch (b.blockType) {
       case "text": {
-        if (b.text_content) {
+        if (b.textContent) {
           const item: ContentItem = {
             kind: "content",
             id: b.id,
-            text: b.text_content,
+            text: b.textContent,
           }
           items.push(item)
         }
@@ -211,13 +211,13 @@ export function mapBlocksToActivityItems(
 
       case "thinking": {
         // Skip whitespace-only thinking blocks (matches backend FilterWhitespaceOnlyThinkingBlocks)
-        if (!b.text_content || b.text_content.trim() === "") {
+        if (!b.textContent || b.textContent.trim() === "") {
           break
         }
         const item: ThinkingItem = {
           kind: "thinking",
           id: b.id,
-          text: b.text_content,
+          text: b.textContent,
         }
         items.push(item)
         break
@@ -228,7 +228,7 @@ export function mapBlocksToActivityItems(
         // Defensive: validate tool_use_id exists before pairing (fix #6)
         const toolUseId = extractToolUseId(b)
         if (!toolUseId) {
-          console.warn(`${b.block_type} block ${b.id} missing tool_use_id, creating fallback item`)
+          console.warn(`${b.blockType} block ${b.id} missing tool_use_id, creating fallback item`)
           // Create a fallback ToolItem so the UI still shows something
           const item: ToolItem = {
             kind: "tool",
@@ -305,25 +305,25 @@ export function mapTurnToViewModel(turn: BackendTurn): ThreadTurn {
   const sortedBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence)
 
   // Compute sibling index (position of this turn within its siblings)
-  const siblingIds = turn.sibling_ids ?? []
+  const siblingIds = turn.siblingIds ?? []
   const idx = siblingIds.indexOf(turn.id)
   if (idx === -1) {
-    // fix #8: warn when turn is not found in its own sibling_ids
-    console.warn(`Turn ${turn.id} not found in its own sibling_ids`)
+    // fix #8: warn when turn is not found in its own siblingIds
+    console.warn(`Turn ${turn.id} not found in its own siblingIds`)
   }
   const siblingIndex = Math.max(0, idx)
 
   const base = {
     id: turn.id,
-    threadId: turn.thread_id,
-    parentId: turn.prev_turn_id ?? null,
+    threadId: turn.threadId,
+    parentId: turn.prevTurnId ?? null,
     status,
     siblingIds,
     siblingIndex,
-    createdAt: new Date(turn.created_at),
+    createdAt: new Date(turn.createdAt),
     model: turn.model ?? undefined,
-    inputTokens: turn.input_tokens ?? undefined,
-    outputTokens: turn.output_tokens ?? undefined,
+    inputTokens: turn.inputTokens ?? undefined,
+    outputTokens: turn.outputTokens ?? undefined,
     error: turn.error ?? undefined,
   }
 
@@ -349,11 +349,11 @@ export function mapTurnToViewModel(turn: BackendTurn): ThreadTurn {
     }
 
     case "system": {
-      // fix #4: preserve request_params.turn_type for system turns
+      // fix #4: preserve requestParams.turnType for system turns
       const turnType =
-        typeof (turn.request_params as Record<string, unknown> | undefined | null)?.turn_type ===
+        typeof (turn.requestParams as Record<string, unknown> | undefined | null)?.turnType ===
         "string"
-          ? ((turn.request_params as Record<string, unknown>).turn_type as string)
+          ? ((turn.requestParams as Record<string, unknown>).turnType as string)
           : undefined
 
       return {

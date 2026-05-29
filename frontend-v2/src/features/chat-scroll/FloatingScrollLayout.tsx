@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { ScrollBar } from "@/components/ui/scroll-area"
+import { useIsShellActive } from "@/layouts/app-shell/shell-visibility-context"
 import { cn } from "@/lib/utils"
 
 const BOTTOM_THRESHOLD_PX = 20
@@ -44,6 +45,8 @@ export function FloatingScrollLayout({
   isStreaming = false,
   resetKey,
 }: FloatingScrollLayoutProps) {
+  const isShellActive = useIsShellActive()
+  const wasShellActiveRef = useRef(isShellActive)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const topSlotRef = useRef<HTMLDivElement | null>(null)
@@ -130,7 +133,36 @@ export function FloatingScrollLayout({
     }
   }, [refreshScrollState])
 
+  // Deferred reconciliation when a hidden mode shell becomes active again.
   useEffect(() => {
+    const becameActive = isShellActive && !wasShellActiveRef.current
+    wasShellActiveRef.current = isShellActive
+
+    if (!becameActive) {
+      return
+    }
+
+    let frame = 0
+    frame = requestAnimationFrame(() => {
+      refreshSlotHeights()
+      refreshScrollState()
+
+      const viewport = viewportRef.current
+      if (viewport && autoScrollToBottom && shouldStickToBottomRef.current) {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" })
+      }
+    })
+
+    return () => {
+      cancelAnimationFrame(frame)
+    }
+  }, [isShellActive, autoScrollToBottom, refreshScrollState, refreshSlotHeights])
+
+  useEffect(() => {
+    if (!isShellActive) {
+      return
+    }
+
     const frame = requestAnimationFrame(() => {
       refreshSlotHeights()
     })
@@ -160,7 +192,7 @@ export function FloatingScrollLayout({
       cancelAnimationFrame(frame)
       observer.disconnect()
     }
-  }, [topSlot, bottomSlot, refreshSlotHeights])
+  }, [isShellActive, topSlot, bottomSlot, refreshSlotHeights])
 
   useLayoutEffect(() => {
     if (resetKey === undefined) {
@@ -168,6 +200,10 @@ export function FloatingScrollLayout({
       // Intentional synchronous restore: a prior reset cycle may have hidden content.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsContentReady(true)
+      return
+    }
+
+    if (!isShellActive) {
       return
     }
 
@@ -230,10 +266,10 @@ export function FloatingScrollLayout({
     }
     // Only re-run when resetKey changes — autoScrollToBottom and refreshScrollState
     // are read from refs to avoid cancelling in-flight gating cycles.
-  }, [resetKey])
+  }, [isShellActive, resetKey])
 
   useEffect(() => {
-    if (typeof ResizeObserver === "undefined") {
+    if (!isShellActive || typeof ResizeObserver === "undefined") {
       return
     }
 
@@ -262,7 +298,7 @@ export function FloatingScrollLayout({
     return () => {
       observer.disconnect()
     }
-  }, [autoScrollToBottom, isStreaming, refreshScrollState])
+  }, [isShellActive, autoScrollToBottom, isStreaming, refreshScrollState])
 
   const topContentPadding = topSlotHeight + SLOT_GUTTER_PX
   const bottomContentPadding = bottomSlotHeight + SLOT_GUTTER_PX

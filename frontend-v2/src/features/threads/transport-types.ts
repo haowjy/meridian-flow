@@ -4,65 +4,62 @@
 // Defines the contract between the thread store and consumers.
 // Two data paths: REST for paginated history, plus streaming state.
 //
-// BackendTurn / BackendTurnBlock are the raw API JSON shapes before
-// mapping through turn-mapper.ts into the ThreadTurn view model.
+// BackendTurn / BackendTurnBlock are camelCase JSON shapes after
+// fetchAPI normalization, before mapping through turn-mapper.ts.
 // ═══════════════════════════════════════════════════════════════════
 
 import type { ThreadTurn } from "./types"
 
-// --- Raw backend response types (JSON from REST API) ---
+// --- Raw backend response types (camelCase from REST API) ---
 
 /**
- * Raw turn block from the backend API.
- * Mirrors backend TurnBlock struct — field names match JSON tags.
+ * Raw turn block from the backend API (after fetchAPI camelCase conversion).
  */
 export type BackendTurnBlock = {
   id: string
-  turn_id: string
-  block_type: string
+  turnId: string
+  blockType: string
   sequence: number
-  text_content?: string | null
+  textContent?: string | null
   content?: Record<string, unknown> | null
   provider?: string | null
-  provider_data?: unknown | null
-  execution_side?: string | null
+  providerData?: unknown | null
+  executionSide?: string | null
   status: string
-  collapsed_content?: string | null
-  created_at: string
-  updated_at?: string | null
+  collapsedContent?: string | null
+  createdAt: string
+  updatedAt?: string | null
 }
 
 /**
- * Raw turn from the backend API.
- * Mirrors backend Turn struct — field names match JSON tags.
+ * Raw turn from the backend API (after fetchAPI camelCase conversion).
  */
 export type BackendTurn = {
   id: string
-  thread_id: string
-  prev_turn_id?: string | null
+  threadId: string
+  prevTurnId?: string | null
   role: string
   status: string
   error?: string | null
   model?: string | null
-  input_tokens?: number | null
-  output_tokens?: number | null
-  created_at: string
-  completed_at?: string | null
-  request_params?: Record<string, unknown> | null
-  stop_reason?: string | null
-  response_metadata?: Record<string, unknown> | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  createdAt: string
+  completedAt?: string | null
+  requestParams?: Record<string, unknown> | null
+  stopReason?: string | null
+  responseMetadata?: Record<string, unknown> | null
   blocks?: BackendTurnBlock[] | null
-  sibling_ids?: string[] | null
+  siblingIds?: string[] | null
 }
 
 /**
  * Paginated turns response from GET /api/threads/{id}/turns.
- * Matches backend PaginatedTurnsResponse struct.
  */
 export type PaginatedTurnsResponse = {
   turns: BackendTurn[]
-  has_more_before: boolean
-  has_more_after: boolean
+  hasMoreBefore: boolean
+  hasMoreAfter: boolean
 }
 
 // --- Thread store state ---

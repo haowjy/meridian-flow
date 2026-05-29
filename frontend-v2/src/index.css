@@ -181,6 +181,10 @@
 /* Theme mappings — wire CSS vars to Tailwind                         */
 /* ------------------------------------------------------------------ */
 @theme inline {
+    /* Meridian responsive tiers — see foundations/responsive.md */
+    --breakpoint-tablet: 37.5rem;    /* 600px — Phone → Tablet */
+    --breakpoint-nav-rail: 56.25rem; /* 900px — BottomNav → Rail */
+    --breakpoint-desktop: 75rem;     /* 1200px — Tablet → Desktop */
     /* Font families */
     --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
@@ -291,6 +295,17 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout perf utilities — see foundations/motion.md §content-visibility */
+/* ------------------------------------------------------------------ */
+@utility cv-auto {
+    content-visibility: auto;
+}
+
+@utility cv-hidden {
+    content-visibility: hidden;
 }
 
 /* ------------------------------------------------------------------ */
