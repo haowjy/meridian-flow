@@ -11,6 +11,9 @@ import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
 import { StandaloneEditor } from "@/editor/stories/helpers/StandaloneEditor"
 import { cn } from "@/lib/utils"
+import { useThreadStore } from "@/lib/thread-store"
+import { subscribeToStream } from "@/lib/thread-store-streaming"
+import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
 
 import { useShellActive } from "../app-shell/shell-visibility-context"
 import {
@@ -41,6 +44,15 @@ function StudioShell({
 }: StudioShellProps) {
   const isActive = useShellActive("studio")
   const liveProject = isLiveProjectId(projectId)
+
+  // Streaming client for sidecar chat
+  let streamingClient: ReturnType<typeof useThreadWsContext>["streaming"] | null = null
+  try {
+    const ctx = useThreadWsContext()
+    streamingClient = ctx.streaming
+  } catch { /* outside ThreadWsProvider */ }
+
+  const storeIsStreaming = useThreadStore((s) => s.isStreaming)
   const treeQuery = useDocumentTree(projectId, { enabled: liveProject })
   const {
     isLoading: treeLoading,
@@ -153,8 +165,26 @@ function StudioShell({
             <div className="pointer-events-auto">
               <ChatComposer
                 placeholder="Discuss in sidecar…"
+                isStreaming={liveProject ? storeIsStreaming : false}
                 onSubmit={(text) => {
-                  console.log("[StudioShell] sidecar submit", text)
+                  if (!liveProject || !projectId || !sidecarThreadId) {
+                    console.log("[StudioShell] demo sidecar submit", text)
+                    return
+                  }
+                  void (async () => {
+                    try {
+                      const result = await useThreadStore.getState().sendMessage(text, {
+                        projectId,
+                        threadId: sidecarThreadId,
+                      })
+                      if (streamingClient) {
+                        subscribeToStream(streamingClient, result.assistantTurnId)
+                      }
+                    } catch { /* error in store */ }
+                  })()
+                }}
+                onStop={() => {
+                  void useThreadStore.getState().interruptStream()
                 }}
               />
             </div>
