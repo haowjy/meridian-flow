@@ -142,8 +142,11 @@ function ConverseShell({
   // Live thread data from store
   const converse = useConverseThread(projectId, threadId)
 
-  // Mock fallback for demo mode
-  const { turns: mockTurns } = useShellThreadTurns(projectId, threadId)
+  // Mock fallback for demo mode only — live projects use the thread store
+  const { turns: mockTurns } = useShellThreadTurns(
+    liveProject ? undefined : projectId,
+    liveProject ? undefined : threadId,
+  )
 
   const displayTitle =
     liveProject && threadQuery.data?.title ? threadQuery.data.title : threadTitle

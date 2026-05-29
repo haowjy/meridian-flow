@@ -241,13 +241,13 @@ export class WsClient {
       if (socket.readyState !== WS_OPEN) return
 
       if (!token) {
-        console.warn("[WsClient] auth: no token available, closing connection")
+        // No token available — close without reconnecting.
+        // This is expected when auth hasn't been set up yet (demo mode).
         this.shouldReconnect = false
         socket.close()
         return
       }
 
-      console.debug(`[WsClient] auth: sending token (${token.length} chars) to ${this.config.url}`)
       this.send(controlEnvelope(CONTROL_OP.AUTH, { token }))
     } catch {
       // Auth token unavailable — close and don't reconnect
