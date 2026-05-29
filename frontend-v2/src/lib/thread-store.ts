@@ -73,6 +73,9 @@ export interface ThreadStoreActions {
     assistantTurnId: string
   }>
 
+  // Interjection (submit while streaming)
+  submitInterjection: (text: string) => Promise<void>
+
   // Streaming (called by the streaming bridge, not by UI directly)
   applyStreamEvent: (turnId: string, event: StreamEvent) => void
   handleStreamEnded: (
@@ -268,6 +271,54 @@ export const useThreadStore = create<ThreadStore>()((set, get) => ({
         error: getErrorMessage(error, "Failed to send message"),
       })
       throw error
+    }
+  },
+
+  // -----------------------------------------------------------------------
+  // Interjection
+  // -----------------------------------------------------------------------
+
+  submitInterjection: async (text: string) => {
+    const state = get()
+    const turnId = state.activeStreamTurnId
+    if (!turnId) {
+      // Not streaming — fall through to normal send
+      return
+    }
+
+    try {
+      const response = await api.turns.submitInterjection(turnId, text, "append")
+
+      if (response.mode === "queued") {
+        // Interjection was buffered server-side. Stream will switch automatically.
+        // The StreamingChannelClient handles stream_switch auto-follow.
+        return
+      }
+
+      if (response.mode === "created") {
+        // Turn wasn't streaming — server created new turns directly.
+        // Merge them into state.
+        if (response.userTurn && response.assistantTurn) {
+          const { turnIds: incomingIds, turnById: incomingById } = normalizeTurns([
+            response.userTurn as unknown as BackendTurn,
+            response.assistantTurn as unknown as BackendTurn,
+          ])
+
+          const streamState = createInitialState(response.assistantTurn.id)
+
+          set((s) => ({
+            turnIds: mergeTurnIds([...s.turnIds, ...incomingIds]),
+            turnById: { ...s.turnById, ...incomingById },
+            activeStreamTurnId: response.assistantTurn!.id,
+            isStreaming: true,
+            _streamState: streamState,
+          }))
+        }
+      }
+    } catch (error) {
+      set({
+        error: getErrorMessage(error, "Failed to submit interjection"),
+      })
     }
   },
 

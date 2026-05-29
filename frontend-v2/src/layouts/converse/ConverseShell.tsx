@@ -107,6 +107,14 @@ function useConverseThread(projectId: string | undefined, threadId: string | und
     void useThreadStore.getState().interruptStream()
   }, [])
 
+  const handleInterjection = React.useCallback(
+    (text: string) => {
+      if (!liveProject) return
+      void useThreadStore.getState().submitInterjection(text)
+    },
+    [liveProject],
+  )
+
   // Show toast on errors
   React.useEffect(() => {
     if (storeError) {
@@ -122,6 +130,7 @@ function useConverseThread(projectId: string | undefined, threadId: string | und
     error: storeError,
     handleSubmit,
     handleStop,
+    handleInterjection,
     isLive: liveProject,
   }
 }
@@ -185,6 +194,7 @@ function ConverseShell({
                 }}
                 isStreaming={converse.isStreaming}
                 onStop={converse.handleStop}
+                onInterjection={converse.isLive ? converse.handleInterjection : undefined}
               />
             </div>
           </div>

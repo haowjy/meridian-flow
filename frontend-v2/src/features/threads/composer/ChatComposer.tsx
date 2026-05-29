@@ -36,6 +36,12 @@ export interface ChatComposerProps {
   placeholder?: string
   isStreaming?: boolean
   onStop?: () => void
+  /**
+   * Called when the user submits while streaming (interjection).
+   * If provided, submit is allowed during streaming and routes here.
+   * If not provided, submit is blocked during streaming (default).
+   */
+  onInterjection?: (text: string) => void
   className?: string
   /** Replace the default controls bar. Rendered below the editor. */
   controls?: ReactNode
@@ -48,6 +54,7 @@ export const ChatComposer = forwardRef<ChatComposerRef, ChatComposerProps>(
       placeholder = "Write a reply...",
       isStreaming = false,
       onStop,
+      onInterjection,
       className,
       controls,
     },
@@ -61,19 +68,26 @@ export const ChatComposer = forwardRef<ChatComposerRef, ChatComposerProps>(
     }, [])
 
     const handleSubmit = useCallback(() => {
-      if (isStreaming) {
+      const text = editorRef.current?.extractText().trim() ?? ""
+      if (text.length === 0) {
         return
       }
 
-      const text = editorRef.current?.extractText().trim() ?? ""
-      if (text.length === 0) {
+      if (isStreaming) {
+        // During streaming, route to interjection if supported
+        if (onInterjection) {
+          onInterjection(text)
+          editorRef.current?.clear()
+          setHasContent(false)
+        }
+        // If no interjection handler, block submit during streaming
         return
       }
 
       onSubmit(text)
       editorRef.current?.clear()
       setHasContent(false)
-    }, [isStreaming, onSubmit])
+    }, [isStreaming, onSubmit, onInterjection])
 
     const handleEscape = useCallback(() => {
       if (!isStreaming) {
