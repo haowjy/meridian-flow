@@ -15,8 +15,9 @@ export function useShellThreadTurns(
   threadId: string | undefined,
 ) {
   const live = isLiveProjectId(projectId)
+  const isRealThread = Boolean(threadId) && threadId !== "new"
   const turnsQuery = useThreadTurns(threadId, {
-    enabled: live && Boolean(threadId),
+    enabled: live && isRealThread,
   })
 
   const turns: ThreadTurn[] = React.useMemo(() => {
