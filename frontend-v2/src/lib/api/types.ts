@@ -149,6 +149,14 @@ export type SendTurnResponse = {
   streamUrl: string
 }
 
+export type InterjectionResponse = {
+  mode: "queued" | "created"
+  content?: string
+  userTurn?: TurnDto
+  assistantTurn?: TurnDto
+  streamUrl?: string
+}
+
 export function fromProjectDto(dto: ProjectDto): Project {
   return {
     id: dto.id,

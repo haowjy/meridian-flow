@@ -7,23 +7,14 @@ import {
 
 import { APP_MODE_LABELS, APP_MODES, type AppMode } from "@/components/ui/app-mode"
 
-import {
-  DEMO_DOCUMENT_PATH,
-  DEMO_PROJECT_ID,
-  DEMO_THREAD_ID,
-} from "../shared/mock-data"
-import {
-  defaultRoute,
-  routeForMode,
-  type AppRoute,
-} from "./route-paths"
+import { routeForMode } from "./route-paths"
 import { agentsRoute, converseRoute, studioRoute } from "./routes"
 
 function deriveAppRoute(
   params: Record<string, string | undefined>,
   matches: Array<{ routeId: string }>,
 ): AppRoute {
-  const projectId = params.projectId ?? DEMO_PROJECT_ID
+  const projectId = params.projectId ?? ""
 
   if (matches.some((match) => match.routeId === agentsRoute.id)) {
     return { projectId, mode: "agents" }
@@ -33,7 +24,7 @@ function deriveAppRoute(
     return {
       projectId,
       mode: "converse",
-      threadId: params.threadId ?? DEMO_THREAD_ID,
+      threadId: params.threadId,
     }
   }
 
@@ -41,11 +32,12 @@ function deriveAppRoute(
     return {
       projectId,
       mode: "studio",
-      documentPath: params._splat ?? DEMO_DOCUMENT_PATH,
+      documentPath: params._splat,
     }
   }
 
-  return defaultRoute()
+  // Fallback — shouldn't reach here since routes.ts handles redirects
+  return { projectId, mode: "converse" }
 }
 
 function isModKey(event: KeyboardEvent): boolean {
@@ -72,7 +64,7 @@ function useModeKeyboardShortcuts(onModeChange: (mode: AppMode) => void) {
   }, [onModeChange])
 }
 
-function useAppRoute(projectId?: string) {
+function useAppRoute() {
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const matches = useRouterState({ select: (state) => state.matches })
@@ -81,23 +73,6 @@ function useAppRoute(projectId?: string) {
     () => deriveAppRoute(params, matches),
     [params, matches],
   )
-
-  React.useEffect(() => {
-    if (projectId && route.projectId !== projectId) {
-      const next = routeForMode(
-        { ...defaultRoute(), projectId },
-        "converse",
-      )
-      navigate({
-        to: converseRoute.to,
-        params: {
-          projectId: next.projectId,
-          threadId: next.threadId ?? DEMO_THREAD_ID,
-        },
-        replace: true,
-      })
-    }
-  }, [projectId, route.projectId, navigate])
 
   const [announcement, setAnnouncement] = React.useState("")
 
@@ -118,7 +93,7 @@ function useAppRoute(projectId?: string) {
           to: converseRoute.to,
           params: {
             projectId: next.projectId,
-            threadId: next.threadId ?? DEMO_THREAD_ID,
+            threadId: next.threadId ?? "new",
           },
         })
       } else {
@@ -126,7 +101,7 @@ function useAppRoute(projectId?: string) {
           to: studioRoute.to,
           params: {
             projectId: next.projectId,
-            _splat: next.documentPath ?? DEMO_DOCUMENT_PATH,
+            _splat: next.documentPath ?? "",
           },
         })
       }

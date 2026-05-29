@@ -71,7 +71,8 @@
     "y-codemirror.next": "^0.3.5",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
-    "yjs": "^13.6.30"
+    "yjs": "^13.6.30",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^5.0.1",

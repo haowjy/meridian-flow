@@ -8,7 +8,6 @@ import { ThemeToggle } from "@/components/ui/theme-toggle"
 import type { AppMode } from "@/components/ui/app-mode"
 import { cn } from "@/lib/utils"
 
-import { DEMO_PROJECT_ID } from "../shared/mock-data"
 import { AgentsShell } from "../agents/AgentsShell"
 import { ConverseShell } from "../converse/ConverseShell"
 import { StudioShell } from "../studio/StudioShell"
@@ -22,9 +21,9 @@ type AppShellProps = {
   className?: string
 }
 
-function AppShell({ projectId = DEMO_PROJECT_ID, className }: AppShellProps) {
+function AppShell({ projectId, className }: AppShellProps) {
   const { route, activeMode, announcement, navigateToMode } =
-    useAppRoute(projectId)
+    useAppRoute()
   const { connected } = useConnectionStatus()
   const [bottomTab, setBottomTab] = React.useState<BottomNavTab>(activeMode)
   const [moreOpen, setMoreOpen] = React.useState(false)

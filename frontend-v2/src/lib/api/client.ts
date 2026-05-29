@@ -5,6 +5,7 @@ import type {
   DocumentDto,
   DocumentTreeDto,
   FolderDto,
+  InterjectionResponse,
   PaginatedTurnsDto,
   ProjectDto,
   SendTurnResponse,
@@ -255,6 +256,40 @@ export const api = {
         assistantTurn: response.assistantTurn as BackendTurn,
         streamUrl: response.streamUrl,
       }
+    },
+
+    interrupt: async (turnId: string, options?: { signal?: AbortSignal }) => {
+      await fetchAPI<void>(`/api/turns/${turnId}/interrupt`, {
+        method: "POST",
+        signal: options?.signal,
+      })
+    },
+
+    getBlocks: async (
+      turnId: string,
+      options?: { signal?: AbortSignal },
+    ) => {
+      const data = await fetchAPI<BackendTurn>(`/api/turns/${turnId}`, {
+        signal: options?.signal,
+      })
+      return data
+    },
+
+    submitInterjection: async (
+      turnId: string,
+      content: string,
+      mode: "append" | "replace" = "append",
+      options?: { signal?: AbortSignal },
+    ) => {
+      const response = await fetchAPI<InterjectionResponse>(
+        `/api/turns/${turnId}/interjection`,
+        {
+          method: "POST",
+          body: JSON.stringify({ content, mode }),
+          signal: options?.signal,
+        },
+      )
+      return response
     },
   },
 }

@@ -1,11 +1,5 @@
 import type { AppMode } from "@/components/ui/app-mode"
 
-import {
-  DEMO_DOCUMENT_PATH,
-  DEMO_PROJECT_ID,
-  DEMO_THREAD_ID,
-} from "../shared/mock-data"
-
 export type AppRoute = {
   projectId: string
   mode: AppMode
@@ -19,14 +13,6 @@ export type NavigateOptions = {
   documentPath?: string
 }
 
-export function defaultRoute(): AppRoute {
-  return {
-    projectId: DEMO_PROJECT_ID,
-    mode: "converse",
-    threadId: DEMO_THREAD_ID,
-  }
-}
-
 export function routeForMode(
   current: AppRoute,
   mode: AppMode,
@@ -37,13 +23,11 @@ export function routeForMode(
     mode,
     threadId:
       mode === "converse"
-        ? (overrides?.threadId ?? current.threadId ?? DEMO_THREAD_ID)
+        ? (overrides?.threadId ?? current.threadId)
         : current.threadId,
     documentPath:
       mode === "studio"
-        ? (overrides?.documentPath ??
-          current.documentPath ??
-          DEMO_DOCUMENT_PATH)
+        ? (overrides?.documentPath ?? current.documentPath)
         : current.documentPath,
   }
 }

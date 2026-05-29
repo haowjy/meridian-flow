@@ -11,6 +11,13 @@ import {
 } from "../shared/mock-data"
 import { AppRoot } from "./app-root"
 
+/**
+ * Default redirect for `/` and catch-all routes.
+ *
+ * Uses the demo project as the default landing page until auth + project
+ * selection is implemented. Once auth lands, this will redirect to
+ * `/projects` (project list) or the user's last-visited project.
+ */
 function redirectToDefaultConverse() {
   throw redirect({
     to: "/projects/$projectId/converse/$threadId",
@@ -41,11 +48,12 @@ const projectIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "projects/$projectId",
   beforeLoad: ({ params }) => {
+    // Default to converse mode when just navigating to a project
     throw redirect({
       to: "/projects/$projectId/converse/$threadId",
       params: {
         projectId: params.projectId,
-        threadId: DEMO_THREAD_ID,
+        threadId: "new",
       },
     })
   },

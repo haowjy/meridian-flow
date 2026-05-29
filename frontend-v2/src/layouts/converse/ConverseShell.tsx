@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button"
 import { FloatingScrollLayout } from "@/features/chat-scroll/FloatingScrollLayout"
 import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
+import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
 import { cn } from "@/lib/utils"
+import { useThreadStore } from "@/lib/thread-store"
+import { subscribeToStream } from "@/lib/thread-store-streaming"
 
 import { useShellActive } from "../app-shell/shell-visibility-context"
 import { isLiveProjectId } from "../shared/data-mappers"
@@ -37,6 +40,83 @@ function EditorPlaceholder({ title }: { title: string }) {
   )
 }
 
+/**
+ * Hook that bridges the ConverseShell to the thread store for live projects.
+ * Handles loading turns, sending messages, and streaming.
+ */
+function useConverseThread(projectId: string | undefined, threadId: string | undefined) {
+  const liveProject = isLiveProjectId(projectId)
+  const isNewThread = threadId === "new"
+
+  // Access streaming client from WS provider (may not exist in demo mode)
+  let streamingClient: ReturnType<typeof useThreadWsContext>["streaming"] | null = null
+  try {
+    const ctx = useThreadWsContext()
+    streamingClient = ctx.streaming
+  } catch {
+    // Outside ThreadWsProvider — demo mode
+  }
+
+  // Store state
+  const storeTurnIds = useThreadStore((s) => s.turnIds)
+  const storeTurnById = useThreadStore((s) => s.turnById)
+  const storeIsStreaming = useThreadStore((s) => s.isStreaming)
+  const storeThreadId = useThreadStore((s) => s.threadId)
+  const storeLoadStatus = useThreadStore((s) => s.loadStatus)
+  const storeError = useThreadStore((s) => s.error)
+
+  // Load thread turns when threadId changes
+  React.useEffect(() => {
+    if (!liveProject || !threadId || isNewThread) return
+    if (storeThreadId === threadId) return // Already loaded
+
+    useThreadStore.getState().loadThread(threadId)
+  }, [liveProject, threadId, isNewThread, storeThreadId])
+
+  // Derive turns array from store
+  const turns = React.useMemo(() => {
+    if (!liveProject) return null // Will use mock data
+    return storeTurnIds
+      .map((id) => storeTurnById[id])
+      .filter(Boolean)
+  }, [liveProject, storeTurnIds, storeTurnById])
+
+  const handleSubmit = React.useCallback(
+    async (text: string) => {
+      if (!liveProject || !projectId) return
+
+      try {
+        const result = await useThreadStore.getState().sendMessage(text, {
+          projectId,
+          threadId: isNewThread ? undefined : threadId,
+        })
+
+        // Subscribe to the assistant turn's stream
+        if (streamingClient) {
+          subscribeToStream(streamingClient, result.assistantTurnId)
+        }
+      } catch {
+        // Error is set in the store
+      }
+    },
+    [liveProject, projectId, threadId, isNewThread, streamingClient],
+  )
+
+  const handleStop = React.useCallback(() => {
+    void useThreadStore.getState().interruptStream()
+  }, [])
+
+  return {
+    turns,
+    isStreaming: liveProject ? storeIsStreaming : false,
+    isLoading: storeLoadStatus === "loading",
+    error: storeError,
+    handleSubmit,
+    handleStop,
+    isLive: liveProject,
+  }
+}
+
 function ConverseShell({
   projectId,
   threadId,
@@ -47,11 +127,20 @@ function ConverseShell({
   const [editorOpen, setEditorOpen] = React.useState(true)
   const liveProject = isLiveProjectId(projectId)
   const threadQuery = useThread(threadId, {
-    enabled: liveProject && Boolean(threadId),
+    enabled: liveProject && Boolean(threadId) && threadId !== "new",
   })
-  const { turns } = useShellThreadTurns(projectId, threadId)
+
+  // Live thread data from store
+  const converse = useConverseThread(projectId, threadId)
+
+  // Mock fallback for demo mode
+  const { turns: mockTurns } = useShellThreadTurns(projectId, threadId)
+
   const displayTitle =
     liveProject && threadQuery.data?.title ? threadQuery.data.title : threadTitle
+
+  // Use store turns for live, mock for demo
+  const displayTurns = converse.isLive ? (converse.turns ?? []) : mockTurns
 
   const threadPane = (
     <PaneWrapper className="h-full">
@@ -73,22 +162,24 @@ function ConverseShell({
       </header>
       <FloatingScrollLayout
         className="min-h-0 flex-1"
-        autoScrollToBottom={false}
-        isStreaming={false}
+        autoScrollToBottom={converse.isStreaming}
+        isStreaming={converse.isStreaming}
         bottomSlot={
           <div className="pointer-events-none px-4 pb-4 pt-6">
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
-                onSubmit={(text) => {
-                  console.log("[ConverseShell] submit", text)
+                onSubmit={converse.isLive ? converse.handleSubmit : (text) => {
+                  console.log("[ConverseShell] demo submit", text)
                 }}
+                isStreaming={converse.isStreaming}
+                onStop={converse.handleStop}
               />
             </div>
           </div>
         }
       >
         <div className="px-4 py-4 cv-auto">
-          <TurnList turns={turns} />
+          <TurnList turns={displayTurns} />
         </div>
       </FloatingScrollLayout>
     </PaneWrapper>
