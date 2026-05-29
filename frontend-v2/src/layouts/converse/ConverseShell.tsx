@@ -179,7 +179,12 @@ function ConverseShell({
         }
       >
         <div className="px-4 py-4 cv-auto">
-          <TurnList turns={displayTurns} />
+          <TurnList
+            turns={displayTurns}
+            onSwitchSibling={converse.isLive ? (targetTurnId) => {
+              void useThreadStore.getState().switchSibling(targetTurnId)
+            } : undefined}
+          />
         </div>
       </FloatingScrollLayout>
     </PaneWrapper>
