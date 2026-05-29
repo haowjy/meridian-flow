@@ -52,15 +52,58 @@
 
     /* Destructive — warm vermillion, harmonizes with paper */
     --destructive: oklch(0.540 0.140 25);
+    --destructive-foreground: oklch(0.985 0 0);
 
     /* Success — muted warm green, used sparingly (accepted edits) */
     --success: oklch(0.520 0.100 150);
     --success-foreground: oklch(0.985 0 0);
 
+    /* Warning — amber, pending state / caution */
+    --warning: oklch(0.750 0.130 75);
+    --warning-foreground: oklch(0.190 0.018 75);   /* Near-black on amber for AA */
+
     /* Borders + inputs */
     --border: oklch(0.895 0.008 85);
     --input: oklch(0.895 0.008 85);
     --ring: oklch(0.555 0.100 175);                /* Jade-teal ring */
+
+    /* Elevation — border-first philosophy, shadows only when necessary */
+    --elevation-none: none;
+    --elevation-subtle: 0 1px 3px oklch(0 0 0 / 4%);
+    --elevation-overlay: 0 4px 12px oklch(0 0 0 / 10%);
+
+    /* Motion — duration tokens */
+    --duration-instant: 0ms;
+    --duration-fast: 100ms;
+    --duration-normal: 150ms;
+    --duration-moderate: 200ms;
+    --duration-slow: 300ms;
+
+    /* Motion — easing tokens */
+    --ease-default: cubic-bezier(0.2, 0, 0, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.8, 0, 1, 1);
+    --ease-linear: linear;
+
+    /* Interaction — focus ring + touch targets */
+    --focus-ring-width: 3px;
+    --focus-ring-opacity: 50%;
+    --touch-target-min: 44px;
+
+    /* Semantic spacing */
+    --padding-compact: 0.5rem;      /* 8px — dense chrome, toolbar items */
+    --padding-default: 0.75rem;     /* 12px — standard component padding */
+    --padding-relaxed: 1rem;        /* 16px — spacious elements, cards */
+
+    /* Editor rhythm */
+    --editor-measure: 68ch;
+    --editor-leading: 1.65;
+    --editor-paragraph-spacing: 1em;
+    --editor-font-size: clamp(1rem, 0.95rem + 0.2vw, 1.125rem);
+
+    /* Responsive shell */
+    --bottom-nav-height: 56px;
+    --accessory-bar-height: 44px;
 
     /* Radius */
     --radius: 0.5rem;
@@ -106,10 +149,19 @@
 
     /* Destructive — warm vermillion for dark mode */
     --destructive: oklch(0.620 0.140 25);
+    --destructive-foreground: oklch(0.985 0 0);
 
     /* Success — muted warm green for dark mode */
     --success: oklch(0.600 0.110 150);
     --success-foreground: oklch(0.175 0.006 55);
+
+    /* Warning — amber, pending state / caution */
+    --warning: oklch(0.800 0.130 75);
+    --warning-foreground: oklch(0.175 0.006 55);    /* Espresso on amber for AA */
+
+    /* Elevation — darker shadows for dark mode */
+    --elevation-subtle: 0 1px 3px oklch(0 0 0 / 15%);
+    --elevation-overlay: 0 4px 12px oklch(0 0 0 / 25%);
 
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
@@ -180,11 +232,46 @@
     --color-accent-fill: var(--accent-fill);
     --color-accent-text: var(--accent-text);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
+
+    /* Elevation */
+    --shadow-elevation-subtle: var(--elevation-subtle);
+    --shadow-elevation-overlay: var(--elevation-overlay);
+
+    /* Motion */
+    --duration-instant: var(--duration-instant);
+    --duration-fast: var(--duration-fast);
+    --duration-normal: var(--duration-normal);
+    --duration-moderate: var(--duration-moderate);
+    --duration-slow: var(--duration-slow);
+
+    --ease-default: var(--ease-default);
+    --ease-out: var(--ease-out);
+    --ease-in: var(--ease-in);
+    --ease-linear: var(--ease-linear);
+
+    /* Interaction */
+    --spacing-touch-target: var(--touch-target-min);
+    --spacing-focus-ring-width: var(--focus-ring-width);
+
+    /* Semantic spacing */
+    --spacing-padding-compact: var(--padding-compact);
+    --spacing-padding-default: var(--padding-default);
+    --spacing-padding-relaxed: var(--padding-relaxed);
+
+    /* Editor rhythm */
+    --spacing-editor-measure: var(--editor-measure);
+
+    /* Responsive shell */
+    --spacing-bottom-nav-height: var(--bottom-nav-height);
+    --spacing-accessory-bar-height: var(--accessory-bar-height);
 
     /* Sidebar */
     --color-sidebar: var(--sidebar);
