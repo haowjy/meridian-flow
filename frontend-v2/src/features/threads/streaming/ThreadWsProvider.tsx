@@ -202,3 +202,12 @@ export function useThreadWsContext(): ThreadWsContextValue {
   }
   return ctx
 }
+
+/**
+ * Safe variant: returns null when outside a <ThreadWsProvider>
+ * instead of throwing. Use this in components that render in
+ * both live and demo/storybook contexts.
+ */
+export function useThreadWsContextSafe(): ThreadWsContextValue | null {
+  return useContext(ThreadWsContext)
+}

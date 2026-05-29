@@ -8,8 +8,6 @@
 // fetchAPI normalization, before mapping through turn-mapper.ts.
 // ═══════════════════════════════════════════════════════════════════
 
-import type { ThreadTurn } from "./types"
-
 // --- Raw backend response types (camelCase from REST API) ---
 
 /**
@@ -62,42 +60,3 @@ export type PaginatedTurnsResponse = {
   hasMoreAfter: boolean
 }
 
-// --- Thread store state ---
-
-export type ThreadStoreState = {
-  /** Active-path turns, ordered oldest → newest */
-  turns: ThreadTurn[]
-  /** Lookup by turn ID for O(1) access */
-  turnById: Record<string, ThreadTurn>
-  /** Currently streaming turn */
-  activeTurnId: string | null
-  /** Can paginate backwards (older turns exist) */
-  hasMoreBefore: boolean
-  /** Can paginate forwards (newer turns exist) */
-  hasMoreAfter: boolean
-  /** Streaming is active */
-  isStreaming: boolean
-}
-
-// --- Thread store interface ---
-
-/**
- * Store contract for thread data.
- *
- * Core data operations:
- * - paginated history (loadThread, paginateBefore/After, switchSibling)
- * - streaming state exposure via ThreadStoreState
- *
- * Implementations: production (real data), Storybook (in-memory mock).
- */
-export type ThreadStoreInterface = {
-  // REST — paginated turn history
-  loadThread(threadId: string, fromTurnId?: string): Promise<void>
-  paginateBefore(): Promise<void>
-  paginateAfter(): Promise<void>
-  /** Navigate to a different sibling turn. The thread reloads the path from this turn forward. */
-  switchSibling(targetTurnId: string): Promise<void>
-
-  // State
-  readonly state: ThreadStoreState
-}

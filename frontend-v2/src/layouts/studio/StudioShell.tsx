@@ -11,9 +11,7 @@ import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
 import { StandaloneEditor } from "@/editor/stories/helpers/StandaloneEditor"
 import { cn } from "@/lib/utils"
-import { useThreadStore } from "@/lib/thread-store"
-import { subscribeToStream } from "@/lib/thread-store-streaming"
-import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
+import { useChatThread } from "@/lib/use-chat-thread"
 
 import { useShellActive } from "../app-shell/shell-visibility-context"
 import {
@@ -45,14 +43,6 @@ function StudioShell({
   const isActive = useShellActive("studio")
   const liveProject = isLiveProjectId(projectId)
 
-  // Streaming client for sidecar chat
-  let streamingClient: ReturnType<typeof useThreadWsContext>["streaming"] | null = null
-  try {
-    const ctx = useThreadWsContext()
-    streamingClient = ctx.streaming
-  } catch { /* outside ThreadWsProvider */ }
-
-  const storeIsStreaming = useThreadStore((s) => s.isStreaming)
   const treeQuery = useDocumentTree(projectId, { enabled: liveProject })
   const {
     isLoading: treeLoading,
@@ -62,6 +52,10 @@ function StudioShell({
   } = treeQuery
   const threadsQuery = useThreads(projectId, { enabled: liveProject })
   const sidecarThreadId = threadsQuery.data?.[0]?.id
+
+  // Per-instance chat thread for the sidecar panel
+  const chat = useChatThread(projectId, sidecarThreadId)
+
   const { turns: sidecarTurns } = useShellThreadTurns(projectId, sidecarThreadId)
   const stableProjectId = projectId ?? "demo"
   const [tabs, setTabs] = React.useState<TabBarTab[]>(() =>
@@ -148,12 +142,12 @@ function StudioShell({
   )
 
   const sidecar = (
-    <PaneWrapper className="h-full border-l border-border" hideOnPhone>
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+    <PaneWrapper className="border-border h-full border-l" hideOnPhone>
+      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <ChatTeardrop size={16} className="text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">Sidecar thread</h2>
-          <p className="text-xs text-muted-foreground">Manual thread selection</p>
+          <p className="text-muted-foreground text-xs">Manual thread selection</p>
         </div>
       </header>
       <FloatingScrollLayout
@@ -161,37 +155,25 @@ function StudioShell({
         autoScrollToBottom={false}
         isStreaming={false}
         bottomSlot={
-          <div className="pointer-events-none px-3 pb-3 pt-4">
+          <div className="pointer-events-none px-3 pt-4 pb-3">
             <div className="pointer-events-auto">
               <ChatComposer
                 placeholder="Discuss in sidecar…"
-                isStreaming={liveProject ? storeIsStreaming : false}
+                isStreaming={chat.isStreaming}
                 onSubmit={(text) => {
-                  if (!liveProject || !projectId || !sidecarThreadId) {
+                  if (!chat.isLive) {
                     console.log("[StudioShell] demo sidecar submit", text)
                     return
                   }
-                  void (async () => {
-                    try {
-                      const result = await useThreadStore.getState().sendMessage(text, {
-                        projectId,
-                        threadId: sidecarThreadId,
-                      })
-                      if (streamingClient) {
-                        subscribeToStream(streamingClient, result.assistantTurnId)
-                      }
-                    } catch { /* error in store */ }
-                  })()
+                  void chat.send(text)
                 }}
-                onStop={() => {
-                  void useThreadStore.getState().interruptStream()
-                }}
+                onStop={chat.stop}
               />
             </div>
           </div>
         }
       >
-        <div className="px-3 py-3 cv-auto">
+        <div className="cv-auto px-3 py-3">
           <TurnList turns={sidecarTurns.slice(0, 3)} />
         </div>
       </FloatingScrollLayout>
@@ -199,7 +181,7 @@ function StudioShell({
   )
 
   const explorer = explorerOpen ? (
-    <PaneWrapper className="h-full w-full border-r border-border">
+    <PaneWrapper className="border-border h-full w-full border-r">
       <FileExplorer
         state={explorerData.state}
         nodes={explorerData.nodes}
@@ -236,7 +218,7 @@ function StudioShell({
       className={cn("flex h-full min-h-0 flex-col bg-background", className)}
       data-shell-active={isActive || undefined}
     >
-      <div className="hidden min-h-0 flex-1 nav-rail:flex">
+      <div className="nav-rail:flex hidden min-h-0 flex-1">
         {explorerOpen ? (
           <div className="flex min-h-0 min-w-0 flex-1">
             <div className="w-52 shrink-0">{explorer}</div>
@@ -247,7 +229,7 @@ function StudioShell({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col nav-rail:hidden">
+      <div className="nav-rail:hidden flex min-h-0 flex-1 flex-col">
         {editorArea}
       </div>
     </div>

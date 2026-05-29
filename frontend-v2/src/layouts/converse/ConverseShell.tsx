@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button"
 import { FloatingScrollLayout } from "@/features/chat-scroll/FloatingScrollLayout"
 import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
-import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
-import { useThreadStore } from "@/lib/thread-store"
-import { subscribeToStream } from "@/lib/thread-store-streaming"
+import { useChatThread } from "@/lib/use-chat-thread"
 
 import { useShellActive } from "../app-shell/shell-visibility-context"
 import { isLiveProjectId } from "../shared/data-mappers"
@@ -28,111 +25,17 @@ type ConverseShellProps = {
 
 function EditorPlaceholder({ title }: { title: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <Article size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+    <div className="bg-card flex h-full min-h-0 flex-col">
+      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+        <Article size={16} className="text-muted-foreground shrink-0" aria-hidden />
         <h2 className="truncate text-sm font-medium italic">{title}</h2>
-        <span className="text-xs text-muted-foreground">Preview</span>
+        <span className="text-muted-foreground text-xs">Preview</span>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 font-editor text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+      <div className="font-editor text-foreground flex-1 overflow-y-auto p-4 text-sm leading-relaxed whitespace-pre-wrap">
         {MOCK_EDITOR_SNIPPET}
       </div>
     </div>
   )
-}
-
-/**
- * Hook that bridges the ConverseShell to the thread store for live projects.
- * Handles loading turns, sending messages, and streaming.
- */
-function useConverseThread(projectId: string | undefined, threadId: string | undefined) {
-  const liveProject = isLiveProjectId(projectId)
-  const isNewThread = threadId === "new"
-
-  // Access streaming client from WS provider (may not exist in demo mode)
-  let streamingClient: ReturnType<typeof useThreadWsContext>["streaming"] | null = null
-  try {
-    const ctx = useThreadWsContext()
-    streamingClient = ctx.streaming
-  } catch {
-    // Outside ThreadWsProvider — demo mode
-  }
-
-  // Store state
-  const storeTurnIds = useThreadStore((s) => s.turnIds)
-  const storeTurnById = useThreadStore((s) => s.turnById)
-  const storeIsStreaming = useThreadStore((s) => s.isStreaming)
-  const storeThreadId = useThreadStore((s) => s.threadId)
-  const storeLoadStatus = useThreadStore((s) => s.loadStatus)
-  const storeError = useThreadStore((s) => s.error)
-
-  // Load thread turns when threadId changes
-  React.useEffect(() => {
-    if (!liveProject || !threadId || isNewThread) return
-    if (storeThreadId === threadId) return // Already loaded
-
-    useThreadStore.getState().loadThread(threadId)
-  }, [liveProject, threadId, isNewThread, storeThreadId])
-
-  // Derive turns array from store
-  const turns = React.useMemo(() => {
-    if (!liveProject) return null // Will use mock data
-    return storeTurnIds
-      .map((id) => storeTurnById[id])
-      .filter(Boolean)
-  }, [liveProject, storeTurnIds, storeTurnById])
-
-  const handleSubmit = React.useCallback(
-    async (text: string) => {
-      if (!liveProject || !projectId) return
-
-      try {
-        const result = await useThreadStore.getState().sendMessage(text, {
-          projectId,
-          threadId: isNewThread ? undefined : threadId,
-        })
-
-        // Subscribe to the assistant turn's stream
-        if (streamingClient) {
-          subscribeToStream(streamingClient, result.assistantTurnId)
-        }
-      } catch {
-        // Error is set in the store
-      }
-    },
-    [liveProject, projectId, threadId, isNewThread, streamingClient],
-  )
-
-  const handleStop = React.useCallback(() => {
-    void useThreadStore.getState().interruptStream()
-  }, [])
-
-  const handleInterjection = React.useCallback(
-    (text: string) => {
-      if (!liveProject) return
-      void useThreadStore.getState().submitInterjection(text)
-    },
-    [liveProject],
-  )
-
-  // Show toast on errors
-  React.useEffect(() => {
-    if (storeError) {
-      toast.error(storeError)
-      useThreadStore.getState().clearError()
-    }
-  }, [storeError])
-
-  return {
-    turns,
-    isStreaming: liveProject ? storeIsStreaming : false,
-    isLoading: storeLoadStatus === "loading",
-    error: storeError,
-    handleSubmit,
-    handleStop,
-    handleInterjection,
-    isLive: liveProject,
-  }
 }
 
 function ConverseShell({
@@ -148,8 +51,8 @@ function ConverseShell({
     enabled: liveProject && Boolean(threadId) && threadId !== "new",
   })
 
-  // Live thread data from store
-  const converse = useConverseThread(projectId, threadId)
+  // Live thread data from per-instance store
+  const chat = useChatThread(projectId, threadId)
 
   // Mock fallback for demo mode only — live projects use the thread store
   const { turns: mockTurns } = useShellThreadTurns(
@@ -161,14 +64,14 @@ function ConverseShell({
     liveProject && threadQuery.data?.title ? threadQuery.data.title : threadTitle
 
   // Use store turns for live, mock for demo
-  const displayTurns = converse.isLive ? (converse.turns ?? []) : mockTurns
+  const displayTurns = chat.isLive ? (chat.turns ?? []) : mockTurns
 
   const threadPane = (
     <PaneWrapper className="h-full">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{displayTitle}</h1>
-          <p className="text-xs text-muted-foreground">Converse thread</p>
+          <p className="text-muted-foreground text-xs">Converse thread</p>
         </div>
         <Button
           type="button"
@@ -183,32 +86,30 @@ function ConverseShell({
       </header>
       <FloatingScrollLayout
         className="min-h-0 flex-1"
-        autoScrollToBottom={converse.isStreaming}
-        isStreaming={converse.isStreaming}
+        autoScrollToBottom={chat.isStreaming}
+        isStreaming={chat.isStreaming}
         bottomSlot={
-          <div className="pointer-events-none px-4 pb-4 pt-6">
+          <div className="pointer-events-none px-4 pt-6 pb-4">
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
-                onSubmit={converse.isLive ? converse.handleSubmit : (text) => {
+                onSubmit={chat.isLive ? (text) => void chat.send(text) : (text) => {
                   console.log("[ConverseShell] demo submit", text)
                 }}
-                isStreaming={converse.isStreaming}
-                onStop={converse.handleStop}
-                onInterjection={converse.isLive ? converse.handleInterjection : undefined}
+                isStreaming={chat.isStreaming}
+                onStop={chat.stop}
+                onInterjection={chat.isLive ? chat.interject : undefined}
               />
             </div>
           </div>
         }
       >
-        <div className="px-4 py-4 cv-auto">
+        <div className="cv-auto px-4 py-4">
           <TurnList
             turns={displayTurns}
-            onSwitchSibling={converse.isLive ? (targetTurnId) => {
-              void useThreadStore.getState().switchSibling(targetTurnId)
-            } : undefined}
-            onEditTurn={converse.isLive ? (turnId) => {
+            onSwitchSibling={chat.isLive ? chat.switchSibling : undefined}
+            onEditTurn={chat.isLive ? (turnId) => {
               // For now, prompt-based edit. A proper inline edit UI comes later.
-              const turn = useThreadStore.getState().turnById[turnId]
+              const turn = chat.store.getState().turnById[turnId]
               if (!turn || turn.role !== "user") return
               const text = turn.blocks
                 .filter((b) => b.blockType === "text")
@@ -216,12 +117,10 @@ function ConverseShell({
                 .join("")
               const newText = window.prompt("Edit message:", text)
               if (newText && newText !== text) {
-                void useThreadStore.getState().editTurn(turnId, newText)
+                chat.editTurn(turnId, newText)
               }
             } : undefined}
-            onRegenerateTurn={converse.isLive ? (turnId) => {
-              void useThreadStore.getState().regenerateTurn(turnId)
-            } : undefined}
+            onRegenerateTurn={chat.isLive ? chat.regenerateTurn : undefined}
           />
         </div>
       </FloatingScrollLayout>
@@ -238,7 +137,7 @@ function ConverseShell({
       className={cn("flex h-full min-h-0 flex-col bg-background", className)}
       data-shell-active={isActive || undefined}
     >
-      <div className="hidden min-h-0 flex-1 tablet:flex">
+      <div className="tablet:flex hidden min-h-0 flex-1">
         {editorOpen ? (
           <ResizableSplit
             storageKey="converse"
@@ -254,7 +153,7 @@ function ConverseShell({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col tablet:hidden">
+      <div className="tablet:hidden flex min-h-0 flex-1 flex-col">
         {threadPane}
       </div>
     </div>

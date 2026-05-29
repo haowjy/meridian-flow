@@ -1,7 +1,7 @@
 // Barrel exports for thread streaming feature
 
 // Provider
-export { ThreadWsProvider, useThreadWsContext } from "./ThreadWsProvider"
+export { ThreadWsProvider, useThreadWsContext, useThreadWsContextSafe } from "./ThreadWsProvider"
 export type { ThreadWsContextValue } from "./ThreadWsProvider"
 
 // Streaming client

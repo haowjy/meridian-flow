@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/lib/auth-token"
+import { getAccessTokenSync } from "@/lib/auth-token"
 import { convertKeysToCamelCase } from "@/lib/case-convert"
 
 /**
@@ -32,7 +32,7 @@ export async function fetchAPI<T>(
     headers.set("Content-Type", "application/json")
   }
 
-  const token = await getAccessToken()
+  const token = getAccessTokenSync()
   if (token) {
     headers.set("Authorization", `Bearer ${token}`)
   }

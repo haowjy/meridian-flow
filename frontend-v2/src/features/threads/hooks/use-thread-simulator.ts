@@ -4,8 +4,29 @@ import { createInitialState, reduceStreamEvent } from "@/features/activity-strea
 import type { TimelineEntry } from "@/features/activity-stream/streaming/types"
 import { type TimelinePlayback, useTimelinePlayback } from "@/lib/use-timeline-playback"
 
-import type { ThreadStoreInterface, ThreadStoreState } from "../transport-types"
 import type { AssistantTurn, ThreadTurn, TurnStatus } from "../types"
+
+// ---------------------------------------------------------------------------
+// Simulator-local types — lightweight mock contracts for Storybook only.
+// The real thread store (lib/thread-store.ts) has its own, richer types.
+// ---------------------------------------------------------------------------
+
+type SimulatorStoreState = {
+  turns: ThreadTurn[]
+  turnById: Record<string, ThreadTurn>
+  activeTurnId: string | null
+  hasMoreBefore: boolean
+  hasMoreAfter: boolean
+  isStreaming: boolean
+}
+
+type SimulatorStoreInterface = {
+  loadThread(threadId: string, fromTurnId?: string): Promise<void>
+  paginateBefore(): Promise<void>
+  paginateAfter(): Promise<void>
+  switchSibling(targetTurnId: string): Promise<void>
+  readonly state: SimulatorStoreState
+}
 
 const DEFAULT_LOAD_DELAY_MS = 250
 export type ThreadSimulatorConfig = {
@@ -22,13 +43,13 @@ type SimulatorPhase = "loading" | "history" | "streaming" | "complete"
 
 export type ThreadSimulator = TimelinePlayback & {
   /**
-   * Storybook-only store mock. Conforms to ThreadStoreInterface shape but
+   * Storybook-only store mock. Conforms to SimulatorStoreInterface shape but
    * stubs multi-thread operations: loadThread ignores fromTurnId and
    * switchSibling is a no-op.
    * Do not use as a reference for real store behavior.
    */
-  store: ThreadStoreInterface
-  state: ThreadStoreState
+  store: SimulatorStoreInterface
+  state: SimulatorStoreState
   cursor: number
   maxCursor: number
   speed: number
@@ -109,7 +130,7 @@ function buildStateAtCursor(
   cursor: number,
   activeTurnId: string,
   threadId: string,
-): ThreadStoreState {
+): SimulatorStoreState {
   const maxCursor = config.activeTimeline.length + 1
   const clampedCursor = Math.min(Math.max(cursor, 0), maxCursor)
   const historyLoaded = clampedCursor >= 1
@@ -199,7 +220,7 @@ function buildTurnMarkers(activeTimeline: TimelineEntry[]): number[] {
 
 /**
  * Storybook-only hook that simulates a single-thread conversation with
- * cursor-based playback. The returned store conforms to ThreadStoreInterface
+ * cursor-based playback. The returned store conforms to SimulatorStoreInterface
  * shape but stubs multi-thread operations (loadThread, switchSibling,
  * pagination methods). See ThreadSimulator.store JSDoc for details.
  */
@@ -274,7 +295,7 @@ export function useThreadSimulator(config: ThreadSimulatorConfig): ThreadSimulat
     void targetTurnId
   }, [])
 
-  const store = useMemo<ThreadStoreInterface>(
+  const store = useMemo<SimulatorStoreInterface>(
     () => ({
       loadThread,
       paginateBefore: async () => {},

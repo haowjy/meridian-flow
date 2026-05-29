@@ -8,9 +8,7 @@ import { FloatingScrollLayout } from "@/features/chat-scroll/FloatingScrollLayou
 import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
 import { cn } from "@/lib/utils"
-import { useThreadStore } from "@/lib/thread-store"
-import { subscribeToStream } from "@/lib/thread-store-streaming"
-import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
+import { useChatThread } from "@/lib/use-chat-thread"
 
 import { useShellActive } from "../app-shell/shell-visibility-context"
 import {
@@ -34,15 +32,6 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
   const isActive = useShellActive("agents")
   const liveProject = isLiveProjectId(projectId)
   const threadsQuery = useThreads(projectId, { enabled: liveProject })
-
-  // Get streaming client at hook level (safe — null if outside provider)
-  let streamingClient: ReturnType<typeof useThreadWsContext>["streaming"] | null = null
-  try {
-    const ctx = useThreadWsContext()
-    streamingClient = ctx.streaming
-  } catch { /* outside ThreadWsProvider */ }
-
-  const storeIsStreaming = useThreadStore((s) => s.isStreaming)
 
   const workItems: ShellWorkItem[] = React.useMemo(() => {
     if (!liveProject) return MOCK_WORK_ITEMS
@@ -71,6 +60,9 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
 
   const selectedItem =
     workItems.find((item) => item.id === selectedId) ?? workItems[0]
+
+  // Per-instance chat thread for the detail panel
+  const chat = useChatThread(projectId, selectedItem?.threadId)
 
   const { turns: detailTurns } = useShellThreadTurns(
     projectId,
@@ -144,27 +136,15 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
                 placeholder="Reply in session context…"
-                isStreaming={liveProject ? storeIsStreaming : false}
+                isStreaming={chat.isStreaming}
                 onSubmit={(text) => {
-                  if (!liveProject || !projectId || !selectedItem?.threadId) {
+                  if (!chat.isLive) {
                     console.log("[AgentsShell] demo submit", text)
                     return
                   }
-                  void (async () => {
-                    try {
-                      const result = await useThreadStore.getState().sendMessage(text, {
-                        projectId,
-                        threadId: selectedItem.threadId,
-                      })
-                      if (streamingClient) {
-                        subscribeToStream(streamingClient, result.assistantTurnId)
-                      }
-                    } catch { /* error in store */ }
-                  })()
+                  void chat.send(text)
                 }}
-                onStop={() => {
-                  void useThreadStore.getState().interruptStream()
-                }}
+                onStop={chat.stop}
               />
             </div>
           </div>
