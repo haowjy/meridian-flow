@@ -23,6 +23,7 @@ See `_docs/high-level/1-overview.md` for product details.
 | Feature docs | `_docs/features/` |
 | Plans | `_docs/plans/` |
 | Agent profiles | `.claude/agents/` |
+| Smoke tests | `.meridian/fs/smoke/` — manual edge case tests with toy clients |
 
 ## Dev Environment
 
@@ -42,6 +43,7 @@ Tmux with worktree-aware port allocation. Backend port: `8080 + hash(dir) % 100`
 | Frontend | `pnpm` (not npm). `pnpm run lint`, `pnpm run format` |
 | Backend | See `backend/AGENTS.md` |
 | Smoke tests | `backend/AGENTS.md` -> "Smoke Testing" |
+| WS edge case smoke tests | `.meridian/fs/smoke/websocket/CLAUDE.md` — toy client + manual test scripts |
 
 ## Git Conventions
 

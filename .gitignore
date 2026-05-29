@@ -38,6 +38,7 @@ backend/orchestrator
 
 # Tool-local caches
 .playwright-mcp/
+.playwright-cli
 .codex-local/
 
 # Python bytecode/cache artifacts

@@ -1,11 +1,13 @@
 [dependencies.meridian-dev-workflow]
 url = "https://github.com/haowjy/meridian-dev-workflow"
 
-[dependencies.superdesign-skill]
-url = "https://github.com/superdesigndev/superdesign-skill"
-
 [settings]
 targets = [
-    ".agents",
     ".claude",
+    ".cursor",
+    ".codex",
+    ".opencode",
+    ".pi",
 ]
+
+models_cache_ttl_hours = 24

@@ -29,7 +29,7 @@ minimal shadow use for content-focused apps.*
 
 | Token | Value | Px equivalent | Use |
 |---|---|---|---|
-| `--elevation-none` | `none` | — | Default surface: canvas, sidebar, card, popover |
+| `--elevation-none` | `none` | — | Default surface: canvas, sidebar, card, and the *popover surface color layer* (the warm tint — distinct from the floating Popover component, which lifts; see Shadow Usage Map) |
 | `--elevation-subtle` | `0 1px 3px oklch(0 0 0 / 4%)` | 1px / 3px | Composer edge separation, tooltip |
 | `--elevation-overlay` | `0 4px 12px oklch(0 0 0 / 10%)` | 4px / 12px | Floating toolbars, dropdowns, command palette |
 
@@ -54,6 +54,7 @@ Every shadow in the product must use an elevation token. No ad-hoc
 | Hunk action widget | `--elevation-overlay` | Floating above editor content |
 | ProposalReviewToolbar | `--elevation-overlay` | Floating at bottom of editor |
 | Formatting toolbar | `--elevation-overlay` | Floating above text selection |
+| Popover | `--elevation-overlay` | Transient floating overlay — same interaction class as menus; lifts off the canvas |
 | DropdownMenu | `--elevation-overlay` | Popover menu |
 | ContextMenu | `--elevation-overlay` | Right-click menu |
 | Command palette | `--elevation-overlay` | Plus backdrop |
