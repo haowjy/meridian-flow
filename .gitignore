@@ -52,3 +52,9 @@ __pycache__/
 mars.local.toml
 mars.lock
 .mars/
+.claude
+.cursor
+.pi
+.codex
+.opencode
+
