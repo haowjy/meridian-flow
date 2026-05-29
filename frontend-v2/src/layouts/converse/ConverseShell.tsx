@@ -7,6 +7,7 @@ import { TurnList } from "@/features/threads"
 import { ChatComposer } from "@/features/threads/composer"
 import { useThreadWsContext } from "@/features/threads/streaming/ThreadWsProvider"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 import { useThreadStore } from "@/lib/thread-store"
 import { subscribeToStream } from "@/lib/thread-store-streaming"
 
@@ -105,6 +106,14 @@ function useConverseThread(projectId: string | undefined, threadId: string | und
   const handleStop = React.useCallback(() => {
     void useThreadStore.getState().interruptStream()
   }, [])
+
+  // Show toast on errors
+  React.useEffect(() => {
+    if (storeError) {
+      toast.error(storeError)
+      useThreadStore.getState().clearError()
+    }
+  }, [storeError])
 
   return {
     turns,
