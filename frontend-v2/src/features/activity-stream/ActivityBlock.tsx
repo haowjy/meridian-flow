@@ -149,7 +149,7 @@ export function ActivityBlock({
                     className="relative z-10 flex h-0 w-full cursor-pointer items-center justify-center"
                   >
                     <span className="absolute inset-x-4 top-1/2 h-px bg-border/70" />
-                    <span className="relative rounded-full border border-border/70 bg-card px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:text-foreground">
+                    <span className="relative rounded-full border border-border/70 bg-card px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground">
                       {showAllTools
                         ? "Collapse"
                         : `${hiddenToolCount} earlier ${hiddenToolCount === 1 ? "tool" : "tools"}...`}

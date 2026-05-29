@@ -17,7 +17,7 @@ export interface TabBarProps {
  * Horizontal tab strip above the editor area.
  *
  * Compact pills with file icon, truncated name, close button, and
- * modified indicator dot. Active tab has accent fill. Overflow
+ * modified indicator dot. Active tab uses card bg + accent bottom border. Overflow
  * scrolls horizontally. Keyboard navigation: ArrowLeft/Right between
  * tabs, Ctrl+W closes active tab.
  */
@@ -84,21 +84,18 @@ export function TabBar({
             }}
             className={cn(
               "group flex cursor-pointer items-center gap-1.5 px-3 h-7 rounded-md text-xs font-medium",
-              "max-w-[180px] shrink-0 transition-colors",
+              "max-w-44 shrink-0 transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
               isActive
-                ? "bg-accent-fill text-white"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ? "border-b-2 border-accent-fill bg-card text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             <FileText size={14} className="shrink-0" />
             <span className="truncate">
               {tab.isModified && (
                 <span
-                  className={cn(
-                    "mr-1 inline-block",
-                    isActive ? "text-white" : "text-accent-fill",
-                  )}
+                  className="mr-1 inline-block text-accent-fill"
                   aria-label="Modified"
                 >
                   {"\u25CF"}
@@ -114,7 +111,7 @@ export function TabBar({
               }}
               className={cn(
                 "shrink-0 ml-1 rounded-sm p-0.5 transition-opacity",
-                "hover:bg-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                "hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 isActive
                   ? "opacity-70 hover:opacity-100"
                   : "opacity-0 group-hover:opacity-70 group-hover:hover:opacity-100",

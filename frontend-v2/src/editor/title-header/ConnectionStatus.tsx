@@ -16,8 +16,7 @@ const statusConfig: Record<
     label: "Connected",
   },
   reconnecting: {
-    // Amber color inline -- no --warning token in the brand palette
-    dotClass: "bg-[oklch(0.700_0.130_80)] animate-spin",
+    dotClass: "bg-warning animate-spin",
     label: "Reconnecting...",
   },
   disconnected: {

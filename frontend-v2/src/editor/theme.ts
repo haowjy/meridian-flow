@@ -16,8 +16,8 @@ const meridianEditorBaseTheme = EditorView.theme({
     color: "var(--foreground)",
     backgroundColor: "transparent",
     fontFamily: "var(--font-editor, 'iA Writer Quattro', Georgia, serif)",
-    fontSize: "16px",
-    lineHeight: "1.75",
+    fontSize: "var(--editor-font-size)",
+    lineHeight: "var(--editor-leading)",
   },
   ".cm-scroller": {
     fontFamily: "inherit",
@@ -98,13 +98,13 @@ const meridianEditorBaseTheme = EditorView.theme({
     color: "var(--foreground)",
     fontFamily: "var(--font-mono)",
     padding: "1px 4px",
-    borderRadius: "3px",
+    borderRadius: "var(--radius-sm)",
     fontSize: "0.9em",
   },
   ".md-code-block": {
     background: "color-mix(in oklab, var(--muted) 90%, transparent)",
     border: "1px solid color-mix(in oklab, var(--border) 92%, transparent)",
-    borderRadius: "0.65rem",
+    borderRadius: "var(--radius-xl)",
     color: "var(--foreground)",
     display: "block",
     fontFamily: "var(--font-mono)",
@@ -133,7 +133,7 @@ const meridianEditorBaseTheme = EditorView.theme({
   ".md-code-copy-btn": {
     background: "color-mix(in oklab, var(--foreground) 10%, transparent)",
     border: "1px solid color-mix(in oklab, var(--border) 80%, transparent)",
-    borderRadius: "0.35rem",
+    borderRadius: "var(--radius-md)",
     color: "var(--muted-foreground)",
     cursor: "pointer",
     fontSize: "0.75em",
@@ -208,8 +208,8 @@ const meridianEditorBaseTheme = EditorView.theme({
   },
   ".md-image": {
     border: "1px solid color-mix(in oklab, var(--border) 90%, transparent)",
-    borderRadius: "0.75rem",
-    boxShadow: "0 8px 24px oklch(0 0 0 / 0.08)",
+    borderRadius: "var(--radius-xl)",
+    boxShadow: "var(--elevation-overlay)",
     cursor: "zoom-in",
     display: "block",
     height: "auto",
@@ -224,11 +224,11 @@ const meridianEditorBaseTheme = EditorView.theme({
   // sees syntax before their edit intention expires.
   ".md-hidden-syntax": {
     opacity: "0",
-    transition: "opacity 100ms ease-out",
+    transition: "opacity var(--duration-fast) var(--ease-out)",
   },
   ".md-hidden-syntax.md-revealed": {
     opacity: "1",
-    transition: "opacity 80ms ease-in",
+    transition: "opacity 80ms var(--ease-in)",
   },
 
   // Wrapper for atomic widget decorations (fenced code, mermaid, images).
@@ -245,7 +245,7 @@ const meridianEditorBaseTheme = EditorView.theme({
     top: "4px",
     right: "4px",
     opacity: "0",
-    transition: "opacity 200ms ease-out",
+    transition: "opacity var(--duration-moderate) var(--ease-out)",
     pointerEvents: "none",
   },
   ".md-widget-wrapper:hover .md-widget-overlay": {
@@ -264,7 +264,7 @@ const meridianEditorBaseTheme = EditorView.theme({
   ".md-mermaid-block": {
     background: "color-mix(in oklab, var(--muted) 70%, transparent)",
     border: "1px solid color-mix(in oklab, var(--border) 92%, transparent)",
-    borderRadius: "0.65rem",
+    borderRadius: "var(--radius-xl)",
     margin: "0.6em 0",
     minHeight: "60px",
     padding: "0.5em",
@@ -275,7 +275,7 @@ const meridianEditorBaseTheme = EditorView.theme({
     alignItems: "center",
     background: "color-mix(in oklab, var(--muted) 50%, transparent)",
     border: "1px dashed var(--border)",
-    borderRadius: "0.75rem",
+    borderRadius: "var(--radius-xl)",
     color: "var(--muted-foreground)",
     display: "flex",
     flexDirection: "column",
@@ -291,8 +291,8 @@ const meridianEditorBaseTheme = EditorView.theme({
   ".md-image-load-btn": {
     background: "var(--accent-fill)",
     border: "none",
-    borderRadius: "0.4rem",
-    color: "white",
+    borderRadius: "var(--radius-md)",
+    color: "var(--primary-foreground)",
     cursor: "pointer",
     fontSize: "0.85em",
     padding: "0.4em 0.8em",

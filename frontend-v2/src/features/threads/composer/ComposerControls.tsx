@@ -84,7 +84,7 @@ export function ComposerControls({
               <span className={cn("flex-1 truncate", model.id === selectedModel.id && "font-medium")}>
                 {model.name}
               </span>
-              <span className="font-mono text-[10px] text-muted-foreground">{model.contextWindow}</span>
+              <span className="font-mono text-xs text-muted-foreground">{model.contextWindow}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -129,7 +129,9 @@ export function ComposerControls({
         size="icon"
         className={cn(
           "size-8 rounded-full transition-transform hover:scale-105 active:scale-95",
-          showStop && "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          showStop
+            ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            : "bg-accent-fill text-primary-foreground hover:bg-accent-fill/90",
         )}
         disabled={!showStop && !hasContent}
         onClick={showStop ? onStop : onSend}

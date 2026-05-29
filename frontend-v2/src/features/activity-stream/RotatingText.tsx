@@ -71,13 +71,13 @@ export function RotatingText({
       aria-live="polite"
     >
       {previousMessage ? (
-        <span className="pointer-events-none absolute inset-0 animate-out fade-out duration-200">
+        <span className="pointer-events-none absolute inset-0 animate-out fade-out duration-moderate">
           {previousMessage}
         </span>
       ) : null}
       <span
         key={index}
-        className={cn(previousMessage ? "animate-in fade-in duration-200" : undefined)}
+        className={cn(previousMessage ? "animate-in fade-in duration-moderate" : undefined)}
       >
         {currentMessage}
       </span>

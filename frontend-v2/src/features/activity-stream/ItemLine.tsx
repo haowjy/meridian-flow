@@ -79,7 +79,7 @@ export function ItemLine({
         ) : null}
       </span>
 
-      {detail ? <div className="col-span-3 pb-2 pl-[11px]">{detail}</div> : null}
+      {detail ? <div className="col-span-3 pb-2 pl-3">{detail}</div> : null}
     </div>
   )
 }

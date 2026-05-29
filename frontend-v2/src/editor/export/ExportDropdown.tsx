@@ -104,7 +104,7 @@ export function ExportDropdown({
         >
           <FilePdf size={14} className="mr-2 shrink-0" />
           PDF (.pdf)
-          <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0">
+          <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">
             Server
           </Badge>
         </DropdownMenuItem>
@@ -115,7 +115,7 @@ export function ExportDropdown({
         >
           <FileDoc size={14} className="mr-2 shrink-0" />
           Word (.docx)
-          <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0">
+          <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">
             Server
           </Badge>
         </DropdownMenuItem>
@@ -126,7 +126,7 @@ export function ExportDropdown({
         >
           <BookOpen size={14} className="mr-2 shrink-0" />
           EPUB (.epub)
-          <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0">
+          <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">
             Server
           </Badge>
         </DropdownMenuItem>

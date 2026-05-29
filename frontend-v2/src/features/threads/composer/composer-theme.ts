@@ -2,7 +2,7 @@ import { EditorView } from "@codemirror/view"
 
 export const composerTheme = EditorView.theme({
   "&.cm-editor": {
-    fontSize: "14px",
+    fontSize: "var(--text-base)",
     fontFamily: "var(--font-sans)",
     outline: "none",
   },
@@ -10,13 +10,13 @@ export const composerTheme = EditorView.theme({
     outline: "none",
   },
   ".cm-content": {
-    padding: "5px 0",
+    padding: "4px 0",
     caretColor: "var(--foreground)",
     cursor: "text",
   },
   ".cm-scroller": {
     overflow: "auto",
-    maxHeight: "200px",
+    maxHeight: "40vh",
   },
   ".cm-line": {
     lineHeight: "1.5",

@@ -33,12 +33,7 @@ function CancelledTurn({ turn }: { turn: AssistantTurn }) {
     <div className="space-y-2 opacity-70">
       <div className="flex items-center gap-2">
         <TurnStatusBanner variant="warning" message="This response was cancelled." className="flex-1" />
-        <Badge
-          variant="outline"
-          className="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300"
-        >
-          Cancelled
-        </Badge>
+        <Badge variant="warning">Cancelled</Badge>
       </div>
       {hasRenderableActivity(turn) ? <ActivityBlock activity={turn.activity} /> : null}
     </div>

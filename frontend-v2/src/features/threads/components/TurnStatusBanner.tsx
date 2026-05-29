@@ -16,7 +16,7 @@ export function TurnStatusBanner({ variant, message, className }: TurnStatusBann
         variant === "error" &&
           "border-destructive/30 bg-destructive/5 text-destructive",
         variant === "warning" &&
-          "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+          "border-warning/60 bg-warning/10 text-foreground [&>svg]:text-warning",
         className,
       )}
       role={variant === "error" ? "alert" : "status"}

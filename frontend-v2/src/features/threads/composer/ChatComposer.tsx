@@ -101,7 +101,7 @@ export const ChatComposer = forwardRef<ChatComposerRef, ChatComposerProps>(
     return (
       <div
         className={cn(
-          "rounded-lg border border-border/60 bg-card shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md",
+          "rounded-lg border border-border bg-card shadow-elevation-subtle transition-shadow focus-within:border-border focus-within:shadow-elevation-overlay",
           className,
         )}
       >

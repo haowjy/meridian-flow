@@ -28,7 +28,7 @@ For construction phases, also checkpoint the *approach* BEFORE building.
 1. **Primitives consistency** — `components/ui` fully token-driven
    (elevation, radius, focus ring, height, spacing, color). [in progress]
 2. **Feature components** — threads, docs, activity, editor surfaces to the
-   same bar.
+   same bar. [self-verified + reviewed; awaiting human checkpoint]
 3. **Phase 6 layouts** — app-shell + mode shells + routing per
    `design/layouts/`. **Checkpoint the structural approach before coding.**
 4. **Wire real data** — WS / Yjs / query integration.
@@ -112,3 +112,35 @@ nothing — that is a **hard stop + escalate, NEVER a pass.**
     the overlay lift.
   - Changes are UNCOMMITTED (p25 + p28 edits to `components/ui` + the
     `elevation.md` clarification) — commit as the Phase-1 checkpoint when ready.
+  - **CLOSED:** committed in `67a256b4 phase 1`. CommandDialog follow-up resolved
+    — the `DialogMode` story already exercises the elevated `CommandDialog` path.
+
+- **Phase 2 (feature + editor surfaces): self-verified + reviewed; AWAITING HUMAN CHECKPOINT (2026-05-29).**
+  - Full fix-list: `_docs/plans/frontend-v2-phase2-audit.md`. Audited by p34
+    (activity-stream), p35 (threads), p36 (editor surfaces) + direct read of
+    chat-scroll/docs. Corrected several cheap-model explorer errors.
+  - Decisions (human): sub-`text-xs` labels snap to `text-xs` (no new token).
+    Dropped ~26 `data-slot` findings (lint scopes it to shadcn primitives only).
+  - Impl (p37): 22 in-scope files. Shadows→`--elevation-*`; **added `warning`
+    variant to Badge+Alert** (spec inventory claimed it; code lacked it — features
+    were open-coding amber); amber→`--warning`; `white`→`--primary-foreground`/
+    `--destructive-foreground`; raw oklch→`--warning`; durations→`duration-moderate`;
+    theme radii→tokens; editor font/leading→tokens; composer font→`text-base`,
+    max→40vh, border→`border-border`, send→`accent-fill`; micro-fonts→`text-xs`;
+    arbitrary→utilities. **TabBar active state**: teal pill → `bg-card text-foreground
+    border-b-2 border-accent-fill` (spec alignment).
+  - Self-verified: grep gate clean (no raw shadow/amber/white/`text-[N`/`duration-200`/
+    `bg-[oklch` in scope); `pnpm run lint` 0 errors, **zero regression** (385 systemic
+    warnings both with/without changes — plugin doesn't know custom `@theme` tokens);
+    computed styles measured light+dark (warning banner→foreground text + warning
+    icon/bg/border; warning badge→warning fill; TabBar active→card bg + accent
+    underline; composer send→accent-fill); before/after screenshot of TabBar.
+  - Review round 1: p38 alignment **ALIGNED** (no blocking) + p39 adversarial
+    **REQUEST CHANGES** (badge destructive `text-white`; theme image-btn radius).
+  - Fixes: badge destructive→`text-destructive-foreground`; image-btn→`var(--radius-md)`.
+  - Review round 2: p40 adversarial **APPROVE**. Both reviewers now agree, ≤2 rounds.
+  - **Open follow-up (flag at checkpoint):** TabBar implements `Ctrl/Cmd+W` to close
+    (TabBar.tsx:46) but `components.md` §TabBar says no global close keystroke in the
+    web build (Mod+W is Future-Desktop-Wrapper only). Tangential to token consistency
+    — left as-is pending a product call (remove to match spec, or amend the spec).
+  - Changes UNCOMMITTED — commit as the Phase-2 checkpoint on human OK.

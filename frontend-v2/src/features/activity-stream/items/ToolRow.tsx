@@ -57,7 +57,7 @@ export function ToolRow({ tool, expanded, onToggle, onViewFile, className }: Too
       className={className}
       detail={hasDetail && expanded ? <ToolDetail tool={tool} /> : undefined}
     >
-      <Badge variant={statusVariant} className="h-5 px-2 text-[11px] font-medium">
+      <Badge variant={statusVariant} className="h-5 px-2 text-xs font-medium">
         <ToolStatusGlyph status={tool.status} />
         {statusText}
       </Badge>

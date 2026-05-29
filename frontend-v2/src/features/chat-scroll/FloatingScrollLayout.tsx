@@ -319,7 +319,7 @@ export function FloatingScrollLayout({
       {showScrollToBottom ? (
         <div
           className={cn(
-            "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4 transition-opacity duration-200",
+            "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4 transition-opacity duration-moderate",
             shouldShowScrollToBottomButton ? "opacity-100" : "opacity-0"
           )}
           style={{ bottom: bottomSlotHeight + SLOT_GUTTER_PX }}
@@ -329,7 +329,7 @@ export function FloatingScrollLayout({
             variant="secondary"
             size="icon"
             className={cn(
-              "pointer-events-auto size-10 rounded-full border border-border/80 bg-background/95 shadow-md backdrop-blur",
+              "pointer-events-auto size-10 rounded-full border border-border/80 bg-background/95 shadow-elevation-overlay backdrop-blur",
               !shouldShowScrollToBottomButton && "pointer-events-none"
             )}
             aria-label="Scroll to bottom"

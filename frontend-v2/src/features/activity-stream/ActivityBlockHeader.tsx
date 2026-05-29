@@ -47,7 +47,7 @@ export function ActivityBlockHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <Badge variant="secondary" className="h-5 px-2 text-[11px]">
+        <Badge variant="secondary" className="h-5 px-2 text-xs">
           {isWaitingSubagents ? (
             <>
               <CircleNotch className="size-3 animate-spin" aria-hidden="true" />

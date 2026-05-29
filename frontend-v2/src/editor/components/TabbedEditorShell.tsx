@@ -96,7 +96,7 @@ export function TabbedEditorShell({
     <section
       className={cn(
         "flex h-full min-h-[420px] flex-col overflow-hidden rounded-2xl border border-border/80",
-        "bg-background/40 shadow-[0_10px_30px_oklch(0_0_0/0.06)]",
+        "bg-background/40 shadow-elevation-overlay",
         className,
       )}
     >
