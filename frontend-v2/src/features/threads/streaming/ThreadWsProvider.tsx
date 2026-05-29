@@ -129,13 +129,21 @@ export function ThreadWsProvider({
     })
   }, [client, streaming, getToken, queryClient])
 
-  // Connect on mount, destroy on unmount or projectId change
+  // Connect on mount, disconnect on unmount or projectId change.
+  //
+  // Use disconnect() not destroy() — React StrictMode in dev mode
+  // runs effects twice (mount→unmount→remount). destroy() permanently
+  // disables the client, so the remount's connect() would be a no-op.
+  // disconnect() is reversible: the same client can connect() again.
+  //
+  // When projectId changes, useMemo creates new client/streaming
+  // instances anyway, so the old client just needs to stop cleanly.
   useEffect(() => {
     hasConnectedRef.current = false
     client.connect()
     return () => {
       streaming.destroy()
-      client.destroy()
+      client.disconnect()
     }
   }, [client, streaming])
 

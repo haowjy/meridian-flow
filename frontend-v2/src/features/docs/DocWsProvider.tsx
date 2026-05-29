@@ -126,13 +126,14 @@ export function DocWsProvider({
     })
   }, [client, streamClient, getToken, queryClient])
 
-  // Connect on mount, destroy on unmount or projectId change
+  // Connect on mount, disconnect on unmount or projectId change.
+  // Use disconnect() not destroy() — React StrictMode double-invokes effects.
   useEffect(() => {
     hasConnectedRef.current = false
     client.connect()
     return () => {
       streamClient.destroy()
-      client.destroy()
+      client.disconnect()
     }
   }, [client, streamClient])
 
