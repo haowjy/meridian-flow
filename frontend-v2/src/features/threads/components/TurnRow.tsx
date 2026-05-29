@@ -5,12 +5,15 @@ import type { AssistantTurn, ThreadTurn } from "../types"
 
 import { PendingTurn } from "./PendingTurn"
 import { SiblingNav } from "./SiblingNav"
+import { TurnActions } from "./TurnActions"
 import { TurnStatusBanner } from "./TurnStatusBanner"
 import { UserBubble } from "./UserBubble"
 
 type TurnRowProps = {
   turn: ThreadTurn
   onSwitchSibling?: (targetTurnId: string) => void
+  onEditTurn?: (turnId: string) => void
+  onRegenerateTurn?: (turnId: string) => void
 }
 
 function hasRenderableActivity(turn: AssistantTurn): boolean {
@@ -49,10 +52,11 @@ function CreditLimitedTurn({ turn }: { turn: AssistantTurn }) {
   )
 }
 
-export function TurnRow({ turn, onSwitchSibling }: TurnRowProps) {
+export function TurnRow({ turn, onSwitchSibling, onEditTurn, onRegenerateTurn }: TurnRowProps) {
   const hasSiblings = turn.siblingIds.length > 1
   const previousSiblingId = hasSiblings ? turn.siblingIds[turn.siblingIndex - 1] : undefined
   const nextSiblingId = hasSiblings ? turn.siblingIds[turn.siblingIndex + 1] : undefined
+  const isTerminal = turn.status === "complete" || turn.status === "error" || turn.status === "cancelled"
 
   const handlePrevious = previousSiblingId
     ? () => {
@@ -96,8 +100,11 @@ export function TurnRow({ turn, onSwitchSibling }: TurnRowProps) {
       <UserBubble turn={turn} />
     )
 
+  // Show actions only on terminal turns (not while streaming/pending)
+  const showActions = isTerminal && (onEditTurn || onRegenerateTurn)
+
   return (
-    <div className="min-w-0">
+    <div className="group/turn min-w-0">
       {hasSiblings ? (
         <SiblingNav
           current={turn.siblingIndex}
@@ -108,6 +115,23 @@ export function TurnRow({ turn, onSwitchSibling }: TurnRowProps) {
       ) : null}
 
       {content}
+
+      {showActions ? (
+        <TurnActions
+          turn={turn}
+          onEdit={
+            turn.role === "user" && onEditTurn
+              ? () => onEditTurn(turn.id)
+              : undefined
+          }
+          onRegenerate={
+            turn.role === "assistant" && onRegenerateTurn
+              ? () => onRegenerateTurn(turn.id)
+              : undefined
+          }
+          className="mt-1"
+        />
+      ) : null}
     </div>
   )
 }

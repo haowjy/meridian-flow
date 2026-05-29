@@ -184,6 +184,22 @@ function ConverseShell({
             onSwitchSibling={converse.isLive ? (targetTurnId) => {
               void useThreadStore.getState().switchSibling(targetTurnId)
             } : undefined}
+            onEditTurn={converse.isLive ? (turnId) => {
+              // For now, prompt-based edit. A proper inline edit UI comes later.
+              const turn = useThreadStore.getState().turnById[turnId]
+              if (!turn || turn.role !== "user") return
+              const text = turn.blocks
+                .filter((b) => b.blockType === "text")
+                .map((b) => b.textContent ?? "")
+                .join("")
+              const newText = window.prompt("Edit message:", text)
+              if (newText && newText !== text) {
+                void useThreadStore.getState().editTurn(turnId, newText)
+              }
+            } : undefined}
+            onRegenerateTurn={converse.isLive ? (turnId) => {
+              void useThreadStore.getState().regenerateTurn(turnId)
+            } : undefined}
           />
         </div>
       </FloatingScrollLayout>
