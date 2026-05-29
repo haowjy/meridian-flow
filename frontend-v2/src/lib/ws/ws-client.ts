@@ -385,12 +385,28 @@ export function buildWsUrl(path: string): string {
   return url.toString()
 }
 
+/**
+ * Resolve the WS base origin. In production, uses the page origin
+ * (same-host proxy). In dev, uses VITE_API_URL (backend is on a
+ * different port than the Vite dev server).
+ */
 function getWsBaseOrigin(): string {
+  // In dev, the Vite dev server runs on a different port than the backend.
+  // Use the API URL to build WS connections.
+  const apiUrl = import.meta.env.VITE_API_URL as string | undefined
+  if (apiUrl) return apiUrl
+
+  // Default: same origin in production, explicit dev fallback
   if (
     typeof window !== "undefined" &&
     typeof window.location?.origin === "string"
   ) {
+    // In dev, window.location.origin is the Vite server, not the backend.
+    // Check if we're in dev mode and use the default backend port.
+    if (import.meta.env.DEV) {
+      return "http://localhost:8130"
+    }
     return window.location.origin
   }
-  return "http://localhost:8080"
+  return "http://localhost:8130"
 }

@@ -1,8 +1,12 @@
 import { getAccessToken } from "@/lib/auth-token"
 import { convertKeysToCamelCase } from "@/lib/case-convert"
 
+/**
+ * API base URL. Set via VITE_API_URL env var, or defaults to
+ * localhost:8130 (the dev server port for the meridian-collab worktree).
+ */
 export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ?? "http://localhost:8080"
+  import.meta.env.VITE_API_URL ?? "http://localhost:8130"
 
 export class ApiError extends Error {
   readonly status: number
