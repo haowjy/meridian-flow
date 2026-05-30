@@ -71,7 +71,6 @@ function ConverseShell({
       <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{displayTitle}</h1>
-          <p className="text-muted-foreground text-xs">Converse thread</p>
         </div>
         <Button
           type="button"

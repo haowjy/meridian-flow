@@ -76,7 +76,6 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
       <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{MOCK_SESSION.title}</h1>
-          <p className="text-muted-foreground text-xs">Session dashboard</p>
         </div>
         <Badge variant="success">Active</Badge>
       </header>
@@ -116,7 +115,6 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
         </Button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{selectedItem?.title}</h2>
-          <p className="text-muted-foreground text-xs">Thread detail</p>
         </div>
         <Button
           type="button"
@@ -134,7 +132,7 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
         autoScrollToBottom={false}
         isStreaming={false}
         bottomSlot={
-          <div className="pointer-events-none bg-gradient-to-t from-background from-80% to-transparent px-4 pt-8 pb-4">
+          <div className="from-background pointer-events-none bg-gradient-to-t from-80% to-transparent px-4 pt-8 pb-4">
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
                 placeholder="Reply in session context…"

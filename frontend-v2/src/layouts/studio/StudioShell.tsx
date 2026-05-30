@@ -151,8 +151,7 @@ function StudioShell({
       <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <ChatTeardrop size={16} className="text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">Sidecar thread</h2>
-          <p className="text-muted-foreground text-xs">Manual thread selection</p>
+          <h2 className="truncate text-sm font-semibold">Sidecar</h2>
         </div>
       </header>
       <FloatingScrollLayout
