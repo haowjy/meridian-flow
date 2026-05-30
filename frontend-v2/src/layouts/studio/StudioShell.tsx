@@ -56,7 +56,12 @@ function StudioShell({
   // Per-instance chat thread for the sidecar panel
   const chat = useChatThread(projectId, sidecarThreadId)
 
-  const { turns: sidecarTurns } = useShellThreadTurns(projectId, sidecarThreadId)
+  // Use chat store turns for live display, mock fallback for demo
+  const { turns: mockSidecarTurns } = useShellThreadTurns(
+    liveProject ? undefined : projectId,
+    liveProject ? undefined : sidecarThreadId,
+  )
+  const sidecarTurns = chat.isLive ? (chat.turns ?? []) : mockSidecarTurns
   const stableProjectId = projectId ?? "demo"
   const [tabs, setTabs] = React.useState<TabBarTab[]>(() =>
     readPersistedTabs(stableProjectId, MOCK_STUDIO_TABS),
@@ -142,8 +147,8 @@ function StudioShell({
   )
 
   const sidecar = (
-    <PaneWrapper className="border-border h-full border-l" hideOnPhone>
-      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+    <PaneWrapper className="h-full" hideOnPhone>
+      <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <ChatTeardrop size={16} className="text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">Sidecar thread</h2>
@@ -155,7 +160,7 @@ function StudioShell({
         autoScrollToBottom={false}
         isStreaming={false}
         bottomSlot={
-          <div className="pointer-events-none px-3 pt-4 pb-3">
+          <div className="from-background pointer-events-none bg-gradient-to-t from-80% to-transparent px-3 pt-6 pb-3">
             <div className="pointer-events-auto">
               <ChatComposer
                 placeholder="Discuss in sidecar…"
@@ -174,14 +179,14 @@ function StudioShell({
         }
       >
         <div className="cv-auto px-3 py-3">
-          <TurnList turns={sidecarTurns.slice(0, 3)} />
+          <TurnList turns={sidecarTurns} />
         </div>
       </FloatingScrollLayout>
     </PaneWrapper>
   )
 
   const explorer = explorerOpen ? (
-    <PaneWrapper className="border-border h-full w-full border-r">
+    <PaneWrapper className="border-border/40 h-full w-full border-r">
       <FileExplorer
         state={explorerData.state}
         nodes={explorerData.nodes}

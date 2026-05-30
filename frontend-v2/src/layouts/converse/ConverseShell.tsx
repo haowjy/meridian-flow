@@ -26,7 +26,7 @@ type ConverseShellProps = {
 function EditorPlaceholder({ title }: { title: string }) {
   return (
     <div className="bg-card flex h-full min-h-0 flex-col">
-      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <Article size={16} className="text-muted-foreground shrink-0" aria-hidden />
         <h2 className="truncate text-sm font-medium italic">{title}</h2>
         <span className="text-muted-foreground text-xs">Preview</span>
@@ -68,7 +68,7 @@ function ConverseShell({
 
   const threadPane = (
     <PaneWrapper className="h-full">
-      <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{displayTitle}</h1>
           <p className="text-muted-foreground text-xs">Converse thread</p>
@@ -89,7 +89,7 @@ function ConverseShell({
         autoScrollToBottom={chat.isStreaming}
         isStreaming={chat.isStreaming}
         bottomSlot={
-          <div className="pointer-events-none px-4 pt-6 pb-4">
+          <div className="from-background pointer-events-none bg-gradient-to-t from-80% to-transparent px-4 pt-8 pb-4">
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
                 onSubmit={chat.isLive ? (text) => void chat.send(text) : (text) => {

@@ -1,5 +1,3 @@
-import { WifiHigh, WifiSlash } from "@phosphor-icons/react"
-
 import { cn } from "@/lib/utils"
 
 type StatusBarProps = {
@@ -17,7 +15,7 @@ function StatusBar({ connected, creditBalance, className }: StatusBarProps) {
       aria-live="polite"
       aria-label="Application status"
       className={cn(
-        "flex h-6 w-full shrink-0 items-center border-t border-sidebar-border bg-sidebar px-padding-default text-xs text-muted-foreground",
+        "flex h-5 w-full shrink-0 items-center bg-sidebar px-padding-default text-xs text-muted-foreground/60",
         className,
       )}
     >
@@ -25,20 +23,14 @@ function StatusBar({ connected, creditBalance, className }: StatusBarProps) {
         data-slot="status-bar-connection"
         className="flex items-center gap-1.5"
       >
-        {connected ? (
-          <WifiHigh
-            size={14}
-            className="text-success"
-            aria-hidden
-          />
-        ) : (
-          <WifiSlash
-            size={14}
-            className="text-destructive"
-            aria-hidden
-          />
-        )}
-        <span>{connected ? "Connected" : "Disconnected"}</span>
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            connected ? "bg-success" : "bg-muted-foreground/40",
+          )}
+          aria-hidden
+        />
+        <span>{connected ? "Connected" : "Offline"}</span>
       </div>
 
       <div className="flex-1" aria-hidden />

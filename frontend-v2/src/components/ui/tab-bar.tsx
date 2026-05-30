@@ -15,14 +15,14 @@ export type TabBarTab = {
 }
 
 const tabItemVariants = cva(
-  "group/tab relative flex h-7 max-w-44 shrink-0 cursor-pointer items-center gap-1.5 rounded-none px-padding-compact text-sm font-medium outline-none transition-colors focus-visible:ring-focus-ring-width focus-visible:ring-ring/50",
+  "group/tab px-padding-compact focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 relative flex h-7 max-w-44 shrink-0 cursor-pointer items-center gap-1.5 rounded-none text-sm font-medium transition-colors outline-none",
   {
     variants: {
       state: {
         activePersistent:
-          "border-b-2 border-accent-fill bg-card text-foreground",
+          "border-accent-fill bg-card text-foreground border-b-2",
         activePreview:
-          "border-b-2 border-accent-fill bg-card text-foreground italic",
+          "border-accent-fill bg-card text-foreground border-b-2 italic",
         inactivePersistent: "text-muted-foreground",
         inactivePreview: "text-muted-foreground italic",
         inactiveHover: "bg-muted/50 text-foreground",
@@ -96,7 +96,7 @@ function TabBar({
     <div
       data-slot="tab-bar"
       className={cn(
-        "relative flex h-9 shrink-0 items-stretch border-b border-border bg-background",
+        "relative flex h-9 shrink-0 items-stretch border-b border-border/40 bg-background",
         className,
       )}
     >
@@ -151,7 +151,7 @@ function TabBar({
                 {tab.isDirty && !tab.isPreview ? (
                   <span
                     data-slot="tab-bar-dirty-dot"
-                    className="size-1.5 shrink-0 rounded-full bg-accent-fill"
+                    className="bg-accent-fill size-1.5 shrink-0 rounded-full"
                     aria-label="Unsaved changes"
                   />
                 ) : null}
@@ -160,7 +160,7 @@ function TabBar({
                   <button
                     type="button"
                     data-slot="tab-bar-pin"
-                    className="relative flex size-3.5 shrink-0 items-center justify-center rounded-sm opacity-70 outline-none before:absolute before:-inset-2.5 before:content-[''] hover:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+                    className="focus-visible:ring-ring relative flex size-3.5 shrink-0 items-center justify-center rounded-sm opacity-70 outline-none before:absolute before:-inset-2.5 before:content-[''] hover:opacity-100 focus-visible:ring-1"
                     aria-label={`Pin ${tab.label}`}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -175,7 +175,7 @@ function TabBar({
                   <button
                     type="button"
                     data-slot="tab-bar-close"
-                    className="relative flex size-3.5 shrink-0 items-center justify-center rounded-sm opacity-70 outline-none before:absolute before:-inset-2.5 before:content-[''] hover:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+                    className="focus-visible:ring-ring relative flex size-3.5 shrink-0 items-center justify-center rounded-sm opacity-70 outline-none before:absolute before:-inset-2.5 before:content-[''] hover:opacity-100 focus-visible:ring-1"
                     aria-label={`Close ${tab.label}`}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -194,7 +194,7 @@ function TabBar({
       {showOverflowIndicator ? (
         <div
           data-slot="tab-bar-overflow"
-          className="pointer-events-none flex w-8 shrink-0 items-center justify-center border-l border-border bg-background text-muted-foreground"
+          className="border-border bg-background text-muted-foreground pointer-events-none flex w-8 shrink-0 items-center justify-center border-l"
           aria-hidden
         >
           <CaretRight size={14} />

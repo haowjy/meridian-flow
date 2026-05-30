@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 
 const BOTTOM_THRESHOLD_PX = 20
 const MASK_FADE_PX = 28
-const SLOT_GUTTER_PX = 12
+const SLOT_GUTTER_PX = 24
 
 type FloatingScrollLayoutProps = {
   topSlot?: ReactNode

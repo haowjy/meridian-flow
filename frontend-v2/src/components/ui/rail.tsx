@@ -33,7 +33,7 @@ const MODE_ICONS: Record<AppMode, Icon> = {
 
 /** 36px visual control with invisible padding to 44px touch target. */
 const railIconButtonVariants = cva(
-  "relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-foreground outline-none transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-muted focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+  "text-sidebar-foreground hover:bg-muted focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors outline-none before:absolute before:-inset-1 before:content-[''] disabled:pointer-events-none disabled:opacity-50"
 )
 
 type RailProps = {
@@ -88,7 +88,7 @@ function Rail({ activeMode, onModeChange, onOpenSettings, className }: RailProps
         data-slot="rail"
         aria-label="Application modes"
         className={cn(
-          "flex h-full w-12 shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
+          "flex h-full w-12 shrink-0 flex-col bg-sidebar",
           className,
         )}
       >
@@ -122,7 +122,7 @@ function Rail({ activeMode, onModeChange, onOpenSettings, className }: RailProps
                     {isActive && (
                       <span
                         data-slot="rail-active-indicator"
-                        className="absolute top-0 bottom-0 left-0 w-0.5 rounded-full bg-accent-fill"
+                        className="bg-accent-fill absolute top-0 bottom-0 left-0 w-0.5 rounded-full"
                         aria-hidden
                       />
                     )}

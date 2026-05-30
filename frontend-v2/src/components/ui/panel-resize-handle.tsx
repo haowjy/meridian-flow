@@ -4,14 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const panelResizeHandleVariants = cva(
-  "group/handle relative z-10 shrink-0 outline-none focus-visible:ring-focus-ring-width focus-visible:ring-ring/50",
+  "group/handle focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 relative z-10 shrink-0 outline-none",
   {
     variants: {
       orientation: {
         vertical:
           "w-1 cursor-col-resize before:absolute before:-inset-x-1 before:inset-y-0 before:content-['']",
         horizontal:
-          "h-1 cursor-row-resize before:absolute before:-inset-y-1 before:inset-x-0 before:content-['']",
+          "h-1 cursor-row-resize before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
       },
     },
     defaultVariants: {
@@ -185,13 +185,13 @@ function PanelResizeHandle({
         data-slot="panel-resize-handle-line"
         aria-hidden
         className={cn(
-          "pointer-events-none absolute bg-border transition-colors",
+          "pointer-events-none absolute transition-all duration-moderate",
           orientation === "vertical"
             ? "top-0 bottom-0 left-1/2 -translate-x-1/2"
             : "top-1/2 right-0 left-0 -translate-y-1/2",
           lineActive
             ? "bg-accent-fill"
-            : undefined,
+            : "bg-border/0",
           orientation === "vertical"
             ? lineActive
               ? "w-0.5"

@@ -48,9 +48,9 @@ type FileExplorerProps = {
 function FolderIcon() {
   const nodeState = useTreeViewNodeContext()
   return nodeState.expanded ? (
-    <FolderOpen className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <FolderOpen className="text-muted-foreground size-4 shrink-0" aria-hidden />
   ) : (
-    <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <Folder className="text-muted-foreground size-4 shrink-0" aria-hidden />
   )
 }
 
@@ -102,7 +102,7 @@ function ExplorerTreeNode({
           onClick={() => onFileSelect?.(node.id)}
         >
           <TreeViewItemText>
-            <FileText className="size-4 shrink-0 text-muted-foreground" />
+            <FileText className="text-muted-foreground size-4 shrink-0" />
             {node.name}
           </TreeViewItemText>
         </TreeViewItem>
@@ -127,10 +127,10 @@ function FileExplorerEmpty({ onCreateDocument }: { onCreateDocument?: () => void
       data-slot="file-explorer-empty"
       className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center"
     >
-      <FolderPlus className="size-8 text-muted-foreground" aria-hidden />
+      <FolderPlus className="text-muted-foreground size-8" aria-hidden />
       <div>
-        <p className="text-base text-foreground">No documents</p>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-foreground text-base">No documents</p>
+        <p className="text-muted-foreground mt-1 text-sm">
           Create a document to start writing in Studio.
         </p>
       </div>
@@ -150,10 +150,10 @@ function FileExplorerError({ onRetry }: { onRetry?: () => void }) {
       data-slot="file-explorer-error"
       className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center"
     >
-      <Warning className="size-8 text-destructive" aria-hidden />
+      <Warning className="text-destructive size-8" aria-hidden />
       <div>
-        <p className="text-base text-foreground">Could not load documents</p>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-foreground text-base">Could not load documents</p>
+        <p className="text-muted-foreground mt-1 text-sm">
           Check your connection and try again.
         </p>
       </div>
@@ -191,7 +191,7 @@ function FileExplorer({
       data-slot="file-explorer"
       aria-label="Documents"
       className={cn(
-        "flex h-full w-48 min-w-36 max-w-72 flex-col border-r border-sidebar-border bg-sidebar text-sm",
+        "flex h-full w-48 min-w-36 max-w-72 flex-col bg-sidebar text-sm",
         className,
       )}
     >

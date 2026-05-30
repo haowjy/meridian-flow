@@ -72,7 +72,7 @@ function AppShell({ projectId, className }: AppShellProps) {
           activeMode={activeMode}
           onModeChange={handleModeChange}
           onOpenSettings={() => setMoreOpen(true)}
-          className="col-start-1 row-start-1 hidden nav-rail:flex"
+          className="nav-rail:flex col-start-1 row-start-1 hidden"
         />
 
         <main
@@ -107,7 +107,7 @@ function AppShell({ projectId, className }: AppShellProps) {
           connected={connected}
           creditBalance="42 credits"
           className={cn(
-            "col-span-1 row-start-2 hidden border-t border-sidebar-border",
+            "col-span-1 row-start-2 hidden",
             "desktop:col-span-2 desktop:flex",
           )}
         />
@@ -116,7 +116,7 @@ function AppShell({ projectId, className }: AppShellProps) {
           activeTab={bottomTab}
           onTabChange={handleBottomNavChange}
           showMoreAlert={!connected}
-          className="col-start-1 row-start-2 nav-rail:hidden static inset-auto z-30"
+          className="nav-rail:hidden static inset-auto z-30 col-start-1 row-start-2"
         />
 
         <p className="sr-only" aria-live="polite" aria-atomic="true">
@@ -134,7 +134,7 @@ function AppShell({ projectId, className }: AppShellProps) {
               <span className="text-sm font-medium">Theme</span>
               <ThemeToggle />
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               Connected · 42 credits (mock shell)
             </p>
           </div>

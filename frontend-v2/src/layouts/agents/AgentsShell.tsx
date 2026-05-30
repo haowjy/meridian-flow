@@ -64,21 +64,23 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
   // Per-instance chat thread for the detail panel
   const chat = useChatThread(projectId, selectedItem?.threadId)
 
-  const { turns: detailTurns } = useShellThreadTurns(
-    projectId,
-    selectedItem?.threadId,
+  // Use chat store turns for live display, mock fallback for demo
+  const { turns: mockDetailTurns } = useShellThreadTurns(
+    liveProject ? undefined : projectId,
+    liveProject ? undefined : selectedItem?.threadId,
   )
+  const detailTurns = chat.isLive ? (chat.turns ?? []) : mockDetailTurns
 
   const dashboard = (
-    <PaneWrapper className="h-full border-r border-border">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+    <PaneWrapper className="h-full">
+      <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{MOCK_SESSION.title}</h1>
-          <p className="text-xs text-muted-foreground">Session dashboard</p>
+          <p className="text-muted-foreground text-xs">Session dashboard</p>
         </div>
         <Badge variant="success">Active</Badge>
       </header>
-      <div className="flex-1 overflow-y-auto p-3 cv-auto">
+      <div className="cv-auto flex-1 overflow-y-auto p-3">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
           {workItems.map((item) => (
             <WorkItemCard
@@ -101,7 +103,7 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
 
   const detail = (
     <PaneWrapper className="h-full">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <header className="border-border/40 flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <Button
           type="button"
           variant="ghost"
@@ -114,13 +116,13 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
         </Button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{selectedItem?.title}</h2>
-          <p className="text-xs text-muted-foreground">Thread detail</p>
+          <p className="text-muted-foreground text-xs">Thread detail</p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="hidden tablet:inline-flex"
+          className="tablet:inline-flex hidden"
           onClick={() => selectedItem && onOpenInConverse?.(selectedItem.threadId)}
         >
           <ChatTeardrop size={16} className="mr-1.5" />
@@ -132,7 +134,7 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
         autoScrollToBottom={false}
         isStreaming={false}
         bottomSlot={
-          <div className="pointer-events-none px-4 pb-4 pt-6">
+          <div className="pointer-events-none bg-gradient-to-t from-background from-80% to-transparent px-4 pt-8 pb-4">
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
               <ChatComposer
                 placeholder="Reply in session context…"
@@ -150,8 +152,8 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
           </div>
         }
       >
-        <div className="px-4 py-4 cv-auto">
-          <TurnList turns={detailTurns.slice(0, 4)} />
+        <div className="cv-auto px-4 py-4">
+          <TurnList turns={detailTurns} />
         </div>
       </FloatingScrollLayout>
     </PaneWrapper>
@@ -163,7 +165,7 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
       className={cn("flex h-full min-h-0 flex-col bg-background", className)}
       data-shell-active={isActive || undefined}
     >
-      <div className="hidden min-h-0 flex-1 nav-rail:flex">
+      <div className="nav-rail:flex hidden min-h-0 flex-1">
         <ResizableSplit
           storageKey="agents"
           defaultPrimarySize={360}
@@ -175,13 +177,13 @@ function AgentsShell({ projectId, onOpenInConverse, className }: AgentsShellProp
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col nav-rail:hidden">
+      <div className="nav-rail:hidden flex min-h-0 flex-1 flex-col">
         {showDetailOnPhone ? (
           detail
         ) : (
           <>
             {dashboard}
-            <div className="border-t border-border p-2 tablet:hidden">
+            <div className="border-border/40 tablet:hidden border-t p-2">
               <Button
                 type="button"
                 variant="secondary"

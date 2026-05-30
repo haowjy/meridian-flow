@@ -31,7 +31,7 @@ const TAB_LABELS: Record<BottomNavTab, string> = {
 }
 
 const bottomNavTabVariants = cva(
-  "relative flex min-h-touch-target flex-1 flex-col items-center justify-center gap-0.5 px-1 pt-1 text-xs outline-none transition-colors focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+  "min-h-touch-target focus-visible:ring-focus-ring-width focus-visible:ring-ring/50 relative flex flex-1 flex-col items-center justify-center gap-0.5 px-1 pt-1 text-xs transition-colors outline-none disabled:pointer-events-none disabled:opacity-50"
 )
 
 type BottomNavProps = {
@@ -82,7 +82,7 @@ function BottomNav({
       data-slot="bottom-nav"
       aria-label="Application navigation"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-40 border-t border-sidebar-border bg-sidebar",
+        "fixed inset-x-0 bottom-0 z-40 border-t border-sidebar-border/40 bg-sidebar",
         "pb-[env(safe-area-inset-bottom)]",
         className,
       )}
@@ -91,7 +91,7 @@ function BottomNav({
         ref={tabListRef}
         role="tablist"
         aria-label="Modes"
-        className="flex h-bottom-nav-height items-stretch"
+        className="h-bottom-nav-height flex items-stretch"
       >
         {NAV_TABS.map((tab) => {
           const isActive = tab === activeTab
@@ -115,7 +115,7 @@ function BottomNav({
               {isActive && (
                 <span
                   data-slot="bottom-nav-active-indicator"
-                  className="absolute top-0 right-4 left-4 h-0.5 rounded-full bg-accent-fill"
+                  className="bg-accent-fill absolute top-0 right-4 left-4 h-0.5 rounded-full"
                   aria-hidden
                 />
               )}
@@ -128,12 +128,12 @@ function BottomNav({
                 {tab === "more" && showMoreAlert ? (
                   <span
                     data-slot="bottom-nav-more-alert"
-                    className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-destructive"
+                    className="bg-destructive absolute -top-0.5 -right-0.5 size-2 rounded-full"
                     aria-label="Connection issue"
                   />
                 ) : null}
               </span>
-              <span className={isActive ? "font-medium text-accent-text" : ""}>
+              <span className={isActive ? "text-accent-text font-medium" : ""}>
                 {TAB_LABELS[tab]}
               </span>
             </button>
