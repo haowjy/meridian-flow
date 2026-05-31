@@ -1,61 +1,49 @@
-_docs/hidden/
-
 .DS_Store
 node_modules/
+dist/
+.output/
 
-# Go workspace files (local development only)
-go.work
-go.work.sum
+# Environment
+.env
+.env.*
+!.env.example
 
-__debug_bin*
-
+# Temp / scratch
 tmp/
 temp/
 .runs/
-# Skill-local data directories
 .data/
 
-# Local Go build cache (when GOCACHE is pointed inside repo for sandboxed runs)
-backend/.gocache/
+# Build artifacts
+__debug_bin*
 
-.gemini-clipboard
-
+# Package manager
 .pnpm-store
-remote-workspace/dist/
+pnpm-lock.yaml
 
-.env
-
-scripts/get-token.sh
-
-# Remote workspace upload clipboard
-.clipboard/
-
-# Per-worktree dev port overrides
-.dev-ports
-
-# Go build artifacts outside of standard paths
-backend/orchestrator
-
-# Tool-local caches
+# Tool caches
 .playwright-mcp/
 .playwright-cli
-.codex-local/
-
-# Python bytecode/cache artifacts
 __pycache__/
 *.py[cod]
 
-# Local editor settings
+# Editor/IDE config (local)
 .vscode/settings.json
-
-# Stray screenshots (agent/playwright artifacts dumped in root)
-/*.png
-mars.local.toml
-mars.lock
-.mars/
-.claude
+.claude/*
+!.claude/settings.json
 .cursor
 .pi
 .codex
+.codex-local/
 .opencode
 
+# Meridian / Mars
+mars.local.toml
+mars.lock
+.mars/
+
+# Stray screenshots
+/*.png
+
+# Dev scripts with secrets
+scripts/get-token.sh
