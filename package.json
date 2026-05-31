@@ -1,0 +1,31 @@
+{
+  "name": "meridian",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "bootstrap": "tsx tools/dev/bootstrap.ts",
+    "dev": "tsx tools/dev/dev-tmux.ts",
+    "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",
+    "dev:infra": "docker compose -f tools/dev/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f tools/dev/docker-compose.yml down -t 5",
+    "lint": "biome check .",
+    "format": "biome check .",
+    "format:write": "biome check --write .",
+    "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
+    "test": "vitest run --passWithNoTests",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "portless:trust": "portless trust",
+    "portless:list": "portless list",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@types/node": "catalog:",
+    "lefthook": "^2.1.8",
+    "nx": "^22.7.3",
+    "portless": "^0.13.0",
+    "tsx": "^4.22.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,13 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+catalog:
+  typescript: ^6.0.3
+  vitest: ^4.1.7
+  vite: ^8.0.14
+  '@types/node': ^24.12.4
+  '@anthropic-ai/sdk': ^0.100.1
+  postgres: ^3.4.9
+  drizzle-orm: ^0.45.2
+  drizzle-kit: ^0.31.10
