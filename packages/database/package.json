@@ -1,5 +1,5 @@
 {
-  "name": "@meridian/ui-kit",
+  "name": "@meridian/database",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
+  "dependencies": {
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
+  },
   "devDependencies": {
+    "drizzle-kit": "catalog:",
     "typescript": "catalog:"
   }
 }

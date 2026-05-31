@@ -1,21 +1,15 @@
 {
-  "name": "@meridian/foundation",
+  "name": "@meridian/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
-  },
   "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
-  "dependencies": {
-    "drizzle-orm": "catalog:",
-    "postgres": "catalog:"
-  },
   "devDependencies": {
-    "drizzle-kit": "catalog:",
     "typescript": "catalog:"
   }
 }

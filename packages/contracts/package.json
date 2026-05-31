@@ -1,12 +1,10 @@
 {
-  "name": "@meridian/runtime-contracts",
+  "name": "@meridian/contracts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./ports": "./src/ports/index.ts",
-    "./domain": "./src/domain/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

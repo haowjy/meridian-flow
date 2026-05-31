@@ -38,7 +38,7 @@ TypeScript monorepo (pnpm + Nx). Apps are thin shells over domain packages.
 | Directory | Purpose |
 |-----------|---------|
 | `packages/` | Shared TypeScript libraries (domain + contracts + support) |
-| `apps/` | Deployable services (api, app) |
+| `apps/` | Deployable services (app, server, www) |
 | `tools/dev/` | Dev scripts (tmux, portless, bootstrap) |
 | `tools/ci/` | CI tooling (graph check, nx runner) |
 
@@ -57,23 +57,23 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 
 | Package | Purpose |
 |---------|---------|
-| `runtime-contracts` | Branded IDs, DI port interfaces, domain types |
-| `api-contracts` | HTTP wire DTOs, WebSocket protocol, streaming events |
-| `foundation` | Database initialization (Drizzle), Postgres utilities, base types |
-| `ui-kit` | React components + warm-paper design tokens (shadcn-based) |
+| `contracts` | Shared types — branded IDs, wire DTOs, WebSocket protocol, streaming events |
+| `database` | Database initialization (Drizzle), Postgres utilities, schema |
+| `design-tokens` | Warm-paper design tokens — colors, typography, spacing, shared primitives |
 
 ### Current apps
 
 | App | Purpose |
 |-----|---------|
-| `api` | Nitro HTTP + WebSocket server |
 | `app` | TanStack Start authenticated workbench (React, Vite) |
+| `server` | Nitro HTTP + WebSocket server |
+| `www` | Landing / marketing site |
 
 ## Implementation constraints
 
 ### Ports and adapters
 
-- Keep protocol boundaries explicit via **port interfaces** (in `*-contracts` packages).
+- Keep protocol boundaries explicit via **port interfaces** (in domain packages or `contracts`).
 - Domain packages depend on ports, never on concrete adapters.
 - Adapter/provider choice is **configuration-driven** (DI at composition root), not hardcoded.
 - Keep provider-specific types out of core business logic.
