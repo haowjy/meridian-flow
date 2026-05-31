@@ -16,7 +16,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Documentation
 
-**For development:** See [`CLAUDE.md`](CLAUDE.md) for:
+**For development:** See [`AGENTS.md`](AGENTS.md) for:
 
 - Architecture overview (caching, stores, sync system)
 - Development commands
@@ -55,4 +55,4 @@ pnpm run test         # Run unit tests
 pnpm run test:watch   # Run tests in watch mode
 ```
 
-For detailed architecture, conventions, and workflows, see `CLAUDE.md`.
+For detailed architecture, conventions, and workflows, see `AGENTS.md`.

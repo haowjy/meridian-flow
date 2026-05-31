@@ -345,4 +345,4 @@ echo $ENVIRONMENT
 **Documentation:**
 - `_docs/technical/deployment.md` - Deployment guide
 - `_docs/technical/backend/database/connections.md` - Database setup
-- `CLAUDE.md` - Development conventions
+- `AGENTS.md` - Development conventions

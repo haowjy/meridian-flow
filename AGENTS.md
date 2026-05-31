@@ -2,28 +2,26 @@
 
 Agentic writing platform for fiction writers managing 100+ chapter web serials. No real users or user data. No backwards compatibility needed. Schema can change freely.
 
-See `_docs/high-level/1-overview.md` for product details.
+See `$MERIDIAN_CONTEXT_KB_DIR/wiki/product/high-level/1-overview.md` for product details.
 
-## Development Principles
+## v3 Full-Stack Rebuild (active)
 
-- **SOLID**: SRP (one file = one purpose), OCP (registries/factories), ISP (Reader vs Writer splits), DIP (depend on interfaces)
-- **Comment the "weird" and the "why"** -- guards, races, non-obvious invariants
-- **Search before implementing** -- reuse existing patterns, check shared utilities, consolidate divergences
-- **Plan before implementing** -- anything beyond a few lines needs a plan in `_docs/plans/`
+Ground-up rebuild -- frontend AND backend. Backend rewrites from Go to TypeScript. Design package lives in the active work item directory (`meridian work current`).
+
+Key decisions: TypeScript backend (canonical Yjs, no hashline port), Milkdown (ProseMirror), Y.XmlFragment, agent definitions replace skills, credits-only billing gate, linear turns, Drizzle ORM.
 
 ## Where to Find Things
 
 | Area | Location |
 |------|----------|
-| Backend | `backend/AGENTS.md` |
-| Frontend | `frontend/CLAUDE.md` |
-| Frontend v2 | `frontend-v2/CLAUDE.md` |
-| Documentation rules | `_docs/CLAUDE.md` |
-| Technical docs | `_docs/technical/` |
-| Feature docs | `_docs/features/` |
-| Plans | `_docs/plans/` |
+| Backend (Go, current) | `backend/AGENTS.md` |
+| Frontend v1 (production) | `frontend/AGENTS.md` |
+| Frontend v2 (h/collab) | `frontend-v2/AGENTS.md` |
+| v3 Design | Work item dir (`meridian work current`) |
+| Plans | `$MERIDIAN_CONTEXT_KB_DIR/plans/` |
+| Knowledge base | `$MERIDIAN_CONTEXT_KB_DIR` (`meridian context kb`) |
 | Agent profiles | `.claude/agents/` |
-| Smoke tests | `.meridian/fs/smoke/` — manual edge case tests with toy clients |
+| Smoke tests | `.meridian/fs/smoke/` -- manual edge case tests with toy clients |
 
 ## Dev Environment
 
@@ -43,7 +41,7 @@ Tmux with worktree-aware port allocation. Backend port: `8080 + hash(dir) % 100`
 | Frontend | `pnpm` (not npm). `pnpm run lint`, `pnpm run format` |
 | Backend | See `backend/AGENTS.md` |
 | Smoke tests | `backend/AGENTS.md` -> "Smoke Testing" |
-| WS edge case smoke tests | `.meridian/fs/smoke/websocket/CLAUDE.md` — toy client + manual test scripts |
+| WS edge case smoke tests | `.meridian/fs/smoke/websocket/AGENTS.md` -- toy client + manual test scripts |
 
 ## Git Conventions
 

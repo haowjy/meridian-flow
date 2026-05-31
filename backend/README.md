@@ -57,7 +57,7 @@ backend/
 │   └── config/             # Configuration
 ├── schema.sql              # Database schema
 ├── QUICKSTART.md           # 5-minute setup guide
-├── CLAUDE.md               # Development commands
+├── AGENTS.md               # Development commands
 └── .ENVIRONMENTS.md        # Environment quick reference
 ```
 
@@ -65,7 +65,7 @@ backend/
 
 ### Commands
 
-See [CLAUDE.md](CLAUDE.md) for full command reference.
+See [AGENTS.md](AGENTS.md) for full command reference.
 
 ```bash
 make run          # Start server
@@ -151,7 +151,7 @@ Use **manual script** for one-time environment setup:
 ### Quick References (in `/backend/`)
 
 - [QUICKSTART.md](QUICKSTART.md) - 5-minute setup
-- [CLAUDE.md](CLAUDE.md) - Development commands
+- [AGENTS.md](AGENTS.md) - Development commands
 - [.ENVIRONMENTS.md](.ENVIRONMENTS.md) - Environment configuration
 
 ### Technical Documentation (in `/_docs/technical/backend/`)

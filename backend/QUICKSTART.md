@@ -145,7 +145,7 @@ Change `PORT` in `.env` (e.g., `8081`).
 ## Further Reading
 
 - **Environment details**: `ENVIRONMENTS.md`
-- **Backend conventions**: `CLAUDE.md`
+- **Backend conventions**: `AGENTS.md`
 - **Frontend setup**: `_docs/technical/frontend/setup-quickstart.md`
 - **Database connections**: `_docs/technical/backend/database/connections.md`
 - **Seeding**: `scripts/README.md`

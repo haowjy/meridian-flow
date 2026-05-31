@@ -22,7 +22,7 @@ meridian/
 │   ├── src/                 # Python package
 │   ├── tests/               # Tests
 │   ├── README.md            # Agent documentation
-│   └── CLAUDE.md            # Development guide
+│   └── AGENTS.md            # Development guide
 ├── _docs/                   # Product & technical documentation
 ├── frontend/                # Vite + TanStack Router + CodeMirror
 └── README.md                # This file
