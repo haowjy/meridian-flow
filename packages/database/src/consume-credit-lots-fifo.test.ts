@@ -200,4 +200,38 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
       await sql.end();
     }
   });
+
+  it("rejects null or empty usage_event_id", async () => {
+    assertSafeTestDatabase();
+    const sql = postgres(databaseUrl!, { max: 1 });
+    const userId = testUserId!;
+
+    try {
+      await expect(
+        sql`
+          SELECT * FROM consume_credit_lots_fifo(
+            ${userId}::uuid,
+            ${100}::bigint,
+            ${randomUUID()}::uuid,
+            NULL,
+            '{}'::jsonb
+          )
+        `,
+      ).rejects.toThrow(/usage_event_id is required/);
+
+      await expect(
+        sql`
+          SELECT * FROM consume_credit_lots_fifo(
+            ${userId}::uuid,
+            ${100}::bigint,
+            ${randomUUID()}::uuid,
+            ${"   "},
+            '{}'::jsonb
+          )
+        `,
+      ).rejects.toThrow(/usage_event_id is required/);
+    } finally {
+      await sql.end();
+    }
+  });
 });

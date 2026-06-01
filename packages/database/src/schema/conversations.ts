@@ -102,7 +102,7 @@ export const modelResponses = pgTable(
     model: text("model").notNull(),
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
-    usageBreakdown: jsonb("usage_breakdown"),
+    usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     credits: integer("credits"),
     stopReason: text("stop_reason"),

@@ -1,3 +1,5 @@
+-- p113: require usage_event_id on consume_credit_lots_fifo (GENERATED FROM src/functions/consume_credit_lots_fifo.sql)
+
 CREATE OR REPLACE FUNCTION consume_credit_lots_fifo(
   p_user_id UUID,
   p_amount BIGINT,

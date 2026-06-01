@@ -1,49 +1,65 @@
 -- Deferred FKs, FTS indexes, updated_at triggers, billing function
 
+ALTER TABLE "folders" DROP CONSTRAINT IF EXISTS "folders_parent_id_folders_id_fk";
+--> statement-breakpoint
 ALTER TABLE "folders"
   ADD CONSTRAINT "folders_parent_id_folders_id_fk"
   FOREIGN KEY ("parent_id") REFERENCES "public"."folders"("id")
   ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "context_sources" DROP CONSTRAINT IF EXISTS "context_sources_thread_id_threads_id_fk";
 --> statement-breakpoint
 ALTER TABLE "context_sources"
   ADD CONSTRAINT "context_sources_thread_id_threads_id_fk"
   FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id")
   ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
+ALTER TABLE "threads" DROP CONSTRAINT IF EXISTS "threads_parent_thread_id_threads_id_fk";
+--> statement-breakpoint
 ALTER TABLE "threads"
   ADD CONSTRAINT "threads_parent_thread_id_threads_id_fk"
   FOREIGN KEY ("parent_thread_id") REFERENCES "public"."threads"("id")
   ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "threads" DROP CONSTRAINT IF EXISTS "threads_origin_turn_id_turns_id_fk";
 --> statement-breakpoint
 ALTER TABLE "threads"
   ADD CONSTRAINT "threads_origin_turn_id_turns_id_fk"
   FOREIGN KEY ("origin_turn_id") REFERENCES "public"."turns"("id")
   ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
+ALTER TABLE "agent_definitions" DROP CONSTRAINT IF EXISTS "agent_definitions_base_definition_id_agent_definitions_id_fk";
+--> statement-breakpoint
 ALTER TABLE "agent_definitions"
   ADD CONSTRAINT "agent_definitions_base_definition_id_agent_definitions_id_fk"
   FOREIGN KEY ("base_definition_id") REFERENCES "public"."agent_definitions"("id")
   ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "skills" DROP CONSTRAINT IF EXISTS "skills_base_skill_id_skills_id_fk";
 --> statement-breakpoint
 ALTER TABLE "skills"
   ADD CONSTRAINT "skills_base_skill_id_skills_id_fk"
   FOREIGN KEY ("base_skill_id") REFERENCES "public"."skills"("id")
   ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
+ALTER TABLE "user_installed_skills" DROP CONSTRAINT IF EXISTS "user_installed_skills_base_skill_id_user_installed_skills_id_fk";
+--> statement-breakpoint
 ALTER TABLE "user_installed_skills"
   ADD CONSTRAINT "user_installed_skills_base_skill_id_user_installed_skills_id_fk"
   FOREIGN KEY ("base_skill_id") REFERENCES "public"."user_installed_skills"("id")
   ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "document_yjs_heads" DROP CONSTRAINT IF EXISTS "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk";
 --> statement-breakpoint
 ALTER TABLE "document_yjs_heads"
   ADD CONSTRAINT "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk"
   FOREIGN KEY ("latest_checkpoint_id") REFERENCES "public"."document_yjs_checkpoints"("id")
   ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
-CREATE INDEX "documents_markdown_projection_fts"
+CREATE INDEX IF NOT EXISTS "documents_markdown_projection_fts"
   ON "documents" USING gin (to_tsvector('simple', "markdown_projection"));
 --> statement-breakpoint
-CREATE INDEX "documents_name_fts"
+CREATE INDEX IF NOT EXISTS "documents_name_fts"
   ON "documents" USING gin (to_tsvector('simple', "name"));
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -54,37 +70,55 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS projects_updated_at ON "projects";
+--> statement-breakpoint
 CREATE TRIGGER projects_updated_at
   BEFORE UPDATE ON "projects"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS folders_updated_at ON "folders";
 --> statement-breakpoint
 CREATE TRIGGER folders_updated_at
   BEFORE UPDATE ON "folders"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS documents_updated_at ON "documents";
+--> statement-breakpoint
 CREATE TRIGGER documents_updated_at
   BEFORE UPDATE ON "documents"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS threads_updated_at ON "threads";
 --> statement-breakpoint
 CREATE TRIGGER threads_updated_at
   BEFORE UPDATE ON "threads"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS agent_definitions_updated_at ON "agent_definitions";
+--> statement-breakpoint
 CREATE TRIGGER agent_definitions_updated_at
   BEFORE UPDATE ON "agent_definitions"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS skills_updated_at ON "skills";
 --> statement-breakpoint
 CREATE TRIGGER skills_updated_at
   BEFORE UPDATE ON "skills"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS user_installed_skills_updated_at ON "user_installed_skills";
+--> statement-breakpoint
 CREATE TRIGGER user_installed_skills_updated_at
   BEFORE UPDATE ON "user_installed_skills"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS user_subscriptions_updated_at ON "user_subscriptions";
+--> statement-breakpoint
 CREATE TRIGGER user_subscriptions_updated_at
   BEFORE UPDATE ON "user_subscriptions"
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS user_preferences_updated_at ON "user_preferences";
 --> statement-breakpoint
 CREATE TRIGGER user_preferences_updated_at
   BEFORE UPDATE ON "user_preferences"

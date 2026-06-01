@@ -12,7 +12,7 @@ export type CreateDbOptions = {
 
 export function createDb(databaseUrl: string, options?: CreateDbOptions) {
   const client = postgres(databaseUrl, {
-    max: options?.max ?? 1,
+    max: options?.max ?? 10,
     ...options?.postgres,
   });
   const db = drizzle(client, { schema });

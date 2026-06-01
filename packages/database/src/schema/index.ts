@@ -1,4 +1,4 @@
-export * from "./auth";
+export { authSchema, authUsers } from "./auth";
 export * from "./billing";
 export * from "./content";
 export * from "./conversations";
@@ -7,7 +7,7 @@ export * from "./provenance";
 export * from "./user";
 export * from "./yjs";
 
-import * as auth from "./auth";
+import { authUsers } from "./auth";
 import * as billing from "./billing";
 import * as content from "./content";
 import * as conversations from "./conversations";
@@ -18,7 +18,7 @@ import * as yjs from "./yjs";
 
 /** Runtime Drizzle client schema (includes auth.users for FK-aware queries). */
 export const schema = {
-  ...auth,
+  authUsers,
   ...billing,
   ...content,
   ...conversations,

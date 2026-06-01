@@ -35,7 +35,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 | Column | Role |
 |--------|------|
 | `input_tokens` / `output_tokens` | Headline totals (queryable) |
-| `usage_breakdown` | Nullable JSONB billable sub-dimensions for pricing |
+| `usage_breakdown` | Nullable JSONB with DB default `'{}'`; omit only when usage is unknown |
 | `response_metadata` | Audit only (request IDs, provider-reported cost) |
 
 `output_tokens` is total billable output (includes reasoning when known). See `@meridian/contracts` (`UsageBreakdown`, `parseUsageBreakdown`).
@@ -43,7 +43,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ## Billing
 
 - **Engine:** `credit_lots` (grant, subscription, purchase, debt), FIFO via `consume_credit_lots_fifo`, balances in `credit_balances` view.
-- **Idempotency:** `usage_event_id` on consumption rows; enforced in SQL under advisory lock (no unique index — multi-lot debits per turn).
+- **Idempotency:** `usage_event_id` is **required** (non-empty); enforced in SQL under advisory lock (no unique index — multi-lot debits per turn).
 - **Overspend:** remainder goes to a single `source_type = 'debt'` lot per user (never `grant` + `overspend_debt`).
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
