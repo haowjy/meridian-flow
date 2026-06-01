@@ -120,6 +120,8 @@ pnpm db:studio
 
 Commit after each testable state. Follow repository commit message style.
 
+Hooks, worktree `lefthook install`, and phase-by-phase commits: [DEVELOPMENT.md](DEVELOPMENT.md).
+
 ## Agent Spawning
 
 - `meridian spawn` for delegated work (coding, reviewing, testing, research)
