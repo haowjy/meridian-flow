@@ -8,7 +8,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:apply-functions": "tsx scripts/apply-functions.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
@@ -16,6 +20,8 @@
   },
   "devDependencies": {
     "drizzle-kit": "catalog:",
-    "typescript": "catalog:"
+    "tsx": "^4.22.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
