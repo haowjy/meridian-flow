@@ -86,6 +86,22 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 - No raw hex/color values outside token files.
 - `pnpm` (not npm). Biome for lint + format. Nx for task orchestration.
 
+## Local Supabase (database + auth)
+
+Dev Postgres and `auth.users` run via Supabase CLI. App schema is Drizzle in `packages/database` (not `supabase/migrations`).
+
+```bash
+pnpm supabase:start   # Docker: API :54421, Postgres :54422, Studio :54423
+pnpm supabase:env     # print keys → copy into .env from .env.example
+pnpm bootstrap        # auth user + db:migrate + apply-functions + seed project
+pnpm db:migrate       # apply Drizzle migrations (packages/database)
+pnpm db:apply-functions  # sync PL/pgSQL from packages/database/src/functions/
+pnpm db:generate      # generate migration SQL from schema changes
+pnpm db:studio        # drizzle-kit studio
+```
+
+See [supabase/README.md](supabase/README.md) and [packages/database/README.md](packages/database/README.md). Stop v2 `meridian/backend` Supabase first if ports clash (v2 uses `543xx`).
+
 ## Build and Test
 
 ```bash
@@ -94,7 +110,10 @@ pnpm lint           # biome check
 pnpm typecheck      # nx typecheck across all packages
 pnpm test           # vitest run
 pnpm dev            # start dev environment (portless + tmux)
-pnpm bootstrap      # first-time setup (schema + seed)
+pnpm bootstrap      # dev auth user (after supabase:start + .env)
+pnpm db:migrate     # Drizzle → local Postgres (DATABASE_URL port 54422)
+pnpm db:apply-functions  # after migrate when editing src/functions/*.sql
+pnpm db:studio
 ```
 
 ## Git Conventions

@@ -1,0 +1,2 @@
+-- Supabase db reset runs this file after supabase/migrations.
+-- v3 app tables live in packages/database (Drizzle). Keep this file for CLI compatibility.
