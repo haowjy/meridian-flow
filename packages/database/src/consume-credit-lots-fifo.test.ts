@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
 import postgres from "postgres";
+import { describe, expect, it } from "vitest";
 
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
@@ -44,9 +44,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
           (${grantB}::uuid, ${userId}::uuid, 'grant', 3000, 3000, 'monthly_2026_05', ${later})
       `;
 
-      const first = await sql<
-        { remaining_balance: string; went_negative: boolean }[]
-      >`
+      const first = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
         SELECT * FROM consume_credit_lots_fifo(
           ${userId}::uuid,
           ${6000}::bigint,
@@ -85,9 +83,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
       expect(Number(signupLot?.remaining_millicredits)).toBe(0);
       expect(Number(monthlyLot?.remaining_millicredits)).toBe(2000);
 
-      const second = await sql<
-        { remaining_balance: string; went_negative: boolean }[]
-      >`
+      const second = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
         SELECT * FROM consume_credit_lots_fifo(
           ${userId}::uuid,
           ${6000}::bigint,
@@ -97,14 +93,10 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
         )
       `;
 
-      expect(Number(second[0]?.remaining_balance)).toBe(
-        Number(first[0]?.remaining_balance),
-      );
+      expect(Number(second[0]?.remaining_balance)).toBe(Number(first[0]?.remaining_balance));
       expect(second[0]?.went_negative).toBe(false);
 
-      const third = await sql<
-        { remaining_balance: string; went_negative: boolean }[]
-      >`
+      const third = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
         SELECT * FROM consume_credit_lots_fifo(
           ${userId}::uuid,
           ${5000}::bigint,

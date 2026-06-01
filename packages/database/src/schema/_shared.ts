@@ -17,9 +17,6 @@ export const updatedAt = () =>
 
 export const softDeleteAt = () => timestamp("deleted_at", { withTimezone: true });
 
-export const jsonbDefault = (name: string) =>
-  jsonb(name)
-    .notNull()
-    .default(sql`'{}'::jsonb`);
+export const jsonbDefault = (name: string) => jsonb(name).notNull().default(sql`'{}'::jsonb`);
 
 export const millicredits = (name: string) => bigint(name, { mode: "number" });

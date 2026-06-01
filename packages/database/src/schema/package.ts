@@ -4,20 +4,15 @@ import {
   check,
   index,
   integer,
+  pgTable,
   primaryKey,
   text,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { pgTable } from "drizzle-orm/pg-core";
+import { createdAt, idColumn, jsonbDefault, updatedAt } from "./_shared";
 import { authUsers } from "./auth";
 import { projects } from "./content";
-import {
-  createdAt,
-  idColumn,
-  jsonbDefault,
-  updatedAt,
-} from "./_shared";
 
 export const agentDefinitions = pgTable(
   "agent_definitions",
@@ -112,9 +107,7 @@ export const userInstalledSkills = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    uniqueIndex("user_installed_skills_user_slug").on(table.userId, table.slug),
-  ],
+  (table) => [uniqueIndex("user_installed_skills_user_slug").on(table.userId, table.slug)],
 );
 
 export const agentSkills = pgTable(
@@ -130,9 +123,7 @@ export const agentSkills = pgTable(
     modelInvocable: boolean("model_invocable"),
     userInvocable: boolean("user_invocable"),
   },
-  (table) => [
-    primaryKey({ columns: [table.agentDefinitionId, table.skillId] }),
-  ],
+  (table) => [primaryKey({ columns: [table.agentDefinitionId, table.skillId] })],
 );
 
 export const agentSubagents = pgTable(
@@ -147,10 +138,7 @@ export const agentSubagents = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.parentAgentId, table.childAgentId] }),
-    check(
-      "agent_subagents_no_self",
-      sql`${table.parentAgentId} != ${table.childAgentId}`,
-    ),
+    check("agent_subagents_no_self", sql`${table.parentAgentId} != ${table.childAgentId}`),
   ],
 );
 

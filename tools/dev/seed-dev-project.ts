@@ -1,10 +1,7 @@
 import { contextSources, createDb, projects } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 
-export async function seedDevProject(
-  databaseUrl: string,
-  userId: string,
-): Promise<string | null> {
+export async function seedDevProject(databaseUrl: string, userId: string): Promise<string | null> {
   const db = createDb(databaseUrl);
   try {
     const rows = await db

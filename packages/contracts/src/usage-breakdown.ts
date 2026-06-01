@@ -21,10 +21,7 @@ export interface OpenAIUsageBreakdown {
   reasoning?: number;
 }
 
-export function parseUsageBreakdown(
-  _provider: string,
-  raw: unknown,
-): UsageBreakdown {
+export function parseUsageBreakdown(_provider: string, raw: unknown): UsageBreakdown {
   if (raw === null || raw === undefined) {
     return {};
   }

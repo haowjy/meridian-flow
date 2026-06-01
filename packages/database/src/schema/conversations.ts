@@ -7,23 +7,17 @@ import {
   integer,
   jsonb,
   numeric,
+  pgTable,
   primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { pgTable } from "drizzle-orm/pg-core";
+import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { authUsers } from "./auth";
 import { documents, projects } from "./content";
 import { agentDefinitions } from "./package";
-import {
-  createdAt,
-  idColumn,
-  jsonbDefault,
-  softDeleteAt,
-  updatedAt,
-} from "./_shared";
 
 export const threads = pgTable(
   "threads",
@@ -64,9 +58,7 @@ export const threads = pgTable(
       .where(sql`${table.deletedAt} is null`),
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
-      .where(
-        sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`,
-      ),
+      .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
   ],
@@ -200,12 +192,8 @@ export const threadDocuments = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     relationship: text("relationship").notNull().default("editing"),
-    firstTouchedAt: timestamp("first_touched_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    lastTouchedAt: timestamp("last_touched_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    firstTouchedAt: timestamp("first_touched_at", { withTimezone: true }).notNull().defaultNow(),
+    lastTouchedAt: timestamp("last_touched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.documentId] })],
 );

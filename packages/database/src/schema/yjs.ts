@@ -1,15 +1,7 @@
-import {
-  bigint,
-  bigserial,
-  index,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { pgTable } from "drizzle-orm/pg-core";
+import { bigint, bigserial, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { byteaColumn, createdAt, idColumn } from "./_shared";
 import { authUsers } from "./auth";
 import { documents } from "./content";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -25,10 +17,7 @@ export const documentYjsCheckpoints = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    index("document_yjs_checkpoints_document_id_desc").on(
-      table.documentId,
-      table.id.desc(),
-    ),
+    index("document_yjs_checkpoints_document_id_desc").on(table.documentId, table.id.desc()),
   ],
 );
 

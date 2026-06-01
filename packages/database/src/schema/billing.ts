@@ -1,24 +1,17 @@
 import { sql } from "drizzle-orm";
 import {
-  bigint,
   boolean,
   check,
   index,
+  pgTable,
   pgView,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { pgTable } from "drizzle-orm/pg-core";
+import { createdAt, idColumn, jsonbDefault, millicredits, updatedAt } from "./_shared";
 import { authUsers } from "./auth";
-import {
-  createdAt,
-  idColumn,
-  jsonbDefault,
-  millicredits,
-  updatedAt,
-} from "./_shared";
 
 export const userSubscriptions = pgTable(
   "user_subscriptions",
@@ -78,16 +71,9 @@ export const creditLots = pgTable(
       .on(table.userId, table.grantReason)
       .where(sql`${table.grantReason} LIKE 'monthly_%'`),
     index("credit_lots_fifo_spend")
-      .on(
-        table.userId,
-        table.expiresAt.asc().nullsLast(),
-        table.createdAt,
-        table.id,
-      )
+      .on(table.userId, table.expiresAt.asc().nullsLast(), table.createdAt, table.id)
       .where(sql`${table.remainingMillicredits} > 0`),
-    uniqueIndex("credit_lots_debt_user")
-      .on(table.userId)
-      .where(sql`${table.sourceType} = 'debt'`),
+    uniqueIndex("credit_lots_debt_user").on(table.userId).where(sql`${table.sourceType} = 'debt'`),
     check(
       "credit_lots_source_type",
       sql`${table.sourceType} IN ('purchase', 'grant', 'subscription', 'debt')`,
@@ -124,10 +110,7 @@ export const creditTransactions = pgTable(
       "credit_transactions_consumption_group",
       sql`${table.transactionType} != 'consumption' OR ${table.consumptionGroupId} IS NOT NULL`,
     ),
-    index("credit_transactions_user_created").on(
-      table.userId,
-      table.createdAt.desc(),
-    ),
+    index("credit_transactions_user_created").on(table.userId, table.createdAt.desc()),
     index("credit_transactions_consumption_group")
       .on(table.consumptionGroupId)
       .where(sql`${table.consumptionGroupId} IS NOT NULL`),

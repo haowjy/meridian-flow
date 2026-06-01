@@ -6,20 +6,14 @@ import {
   index,
   integer,
   jsonb,
+  pgTable,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { pgTable } from "drizzle-orm/pg-core";
+import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { authUsers } from "./auth";
-import {
-  createdAt,
-  idColumn,
-  jsonbDefault,
-  softDeleteAt,
-  updatedAt,
-} from "./_shared";
 
 export const projects = pgTable(
   "projects",
@@ -32,9 +26,7 @@ export const projects = pgTable(
     slug: text("slug").notNull(),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings"),
-    lastActivityAt: timestamp("last_activity_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
