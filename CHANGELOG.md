@@ -4,11 +4,12 @@
 
 ### Added
 
-- **database:** v3 Drizzle schema (26 tables + `credit_balances` view), migrations `0000`–`0003`, `consume_credit_lots_fifo` with debt-lot overspend, `pg_trgm` indexes, `db:apply-functions`, integration tests.
+- **database:** v3 Drizzle schema (26 tables + `credit_balances` view), single fresh `0001_initial` migration, `consume_credit_lots_fifo` with debt-lot overspend, integrity triggers, `pg_trgm` indexes, `db:apply-functions`, integration tests.
 
 ### Fixed
 
-- **database (p113):** `0001_post_schema.sql` idempotent (DROP IF EXISTS / IF NOT EXISTS); `usage_event_id` required for consumption; Drizzle `usage_breakdown` default `'{}'` matches DB.
+- **database:** enforce conversation roots, active leaf, session context thread scope, and purchase subscription gates in DB triggers/indexes.
+- **database (p113):** `usage_event_id` required for consumption; Drizzle `usage_breakdown` default `'{}'` matches DB.
 - **contracts:** `UsageBreakdown` types and `parseUsageBreakdown` for flat `model_responses.usage_breakdown` JSONB.
 - **dev:** Collab Supabase (`54422`), `.env.example`, bootstrap pipeline (`db:migrate` → `db:apply-functions` → Drizzle seed).
 

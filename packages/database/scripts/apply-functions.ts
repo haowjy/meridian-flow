@@ -15,6 +15,8 @@ const functionsDir = join(root, "src/functions");
 const files = [
   "update_updated_at.sql",
   "validate_turn_thread_integrity.sql",
+  "validate_context_source_scope.sql",
+  "validate_credit_lot_purchase.sql",
   "consume_credit_lots_fifo.sql",
 ];
 

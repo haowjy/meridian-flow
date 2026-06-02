@@ -120,7 +120,9 @@ export const turns = pgTable(
     index("turns_parent_created")
       .on(table.parentTurnId, table.createdAt.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
-    index("turns_thread_roots").on(table.threadId).where(sql`${table.parentTurnId} IS NULL`),
+    uniqueIndex("turns_thread_single_root")
+      .on(table.threadId)
+      .where(sql`${table.parentTurnId} IS NULL`),
     check(
       "turns_no_self_parent",
       sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,

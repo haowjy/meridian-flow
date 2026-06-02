@@ -1,5 +1,5 @@
 {
-  "id": "6d5421a2-dcf7-437f-a25f-9682dc5135c5",
+  "id": "6a08bf49-f284-4c46-b97e-b98224071f91",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2200,8 +2200,8 @@
           "method": "btree",
           "with": {}
         },
-        "turns_thread_roots": {
-          "name": "turns_thread_roots",
+        "turns_thread_single_root": {
+          "name": "turns_thread_single_root",
           "columns": [
             {
               "expression": "thread_id",
@@ -2210,7 +2210,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "where": "\"turns\".\"parent_turn_id\" IS NULL",
           "concurrently": false,
           "method": "btree",

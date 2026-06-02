@@ -5,6 +5,13 @@ import { describe, expect, it } from "vitest";
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
 
+function testConfig(): { databaseUrl: string; userId: string } {
+  if (!databaseUrl || !testUserId) {
+    throw new Error("databaseUrl and testUserId are required");
+  }
+  return { databaseUrl, userId: testUserId };
+}
+
 function assertSafeTestDatabase(): void {
   if (!databaseUrl) {
     return;
@@ -22,8 +29,8 @@ function assertSafeTestDatabase(): void {
 describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   it("debits FIFO, is idempotent, and can go negative via debt lot", async () => {
     assertSafeTestDatabase();
-    const sql = postgres(databaseUrl!, { max: 1 });
-    const userId = testUserId!;
+    const { databaseUrl: dbUrl, userId } = testConfig();
+    const sql = postgres(dbUrl, { max: 1 });
     const groupId = randomUUID();
     const usageEventId = `test-${randomUUID()}`;
 
@@ -123,8 +130,8 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("creates debt lot on overspend when user has no lots", async () => {
     assertSafeTestDatabase();
-    const sql = postgres(databaseUrl!, { max: 1 });
-    const userId = testUserId!;
+    const { databaseUrl: dbUrl, userId } = testConfig();
+    const sql = postgres(dbUrl, { max: 1 });
 
     try {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
@@ -155,17 +162,41 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("debits expiring grant before non-expiring purchase", async () => {
     assertSafeTestDatabase();
-    const sql = postgres(databaseUrl!, { max: 1 });
-    const userId = testUserId!;
+    const { databaseUrl: dbUrl, userId } = testConfig();
+    const sql = postgres(dbUrl, { max: 1 });
     const usageEventId = `test-${randomUUID()}`;
 
     try {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
 
       const grantId = randomUUID();
       const purchaseId = randomUUID();
       const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const periodStart = new Date();
+      const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      await sql`
+        INSERT INTO user_subscriptions (
+          user_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          status,
+          credits_per_period,
+          current_period_start,
+          current_period_end
+        )
+        VALUES (
+          ${userId}::uuid,
+          ${`sub_${randomUUID()}`},
+          ${`cus_${randomUUID()}`},
+          'active',
+          10000,
+          ${periodStart},
+          ${periodEnd}
+        )
+      `;
 
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, grant_reason, expires_at)
@@ -197,14 +228,90 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
     } finally {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
+      await sql.end();
+    }
+  });
+
+  it("rejects purchase lots without an active subscription", async () => {
+    assertSafeTestDatabase();
+    const { databaseUrl: dbUrl, userId } = testConfig();
+    const sql = postgres(dbUrl, { max: 1 });
+
+    try {
+      await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
+
+      await expect(
+        sql`
+          INSERT INTO credit_lots (
+            user_id,
+            source_type,
+            original_amount_millicredits,
+            remaining_millicredits,
+            stripe_session_id
+          )
+          VALUES (${userId}::uuid, 'purchase', 1000, 1000, ${`cs_${randomUUID()}`})
+        `,
+      ).rejects.toThrow(/purchase credit lots require an active subscription/);
+
+      const periodStart = new Date();
+      const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const purchaseId = randomUUID();
+
+      await sql`
+        INSERT INTO user_subscriptions (
+          user_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          status,
+          credits_per_period,
+          current_period_start,
+          current_period_end
+        )
+        VALUES (
+          ${userId}::uuid,
+          ${`sub_${randomUUID()}`},
+          ${`cus_${randomUUID()}`},
+          'active',
+          10000,
+          ${periodStart},
+          ${periodEnd}
+        )
+      `;
+      await sql`
+        INSERT INTO credit_lots (
+          id,
+          user_id,
+          source_type,
+          original_amount_millicredits,
+          remaining_millicredits,
+          stripe_session_id
+        )
+        VALUES (${purchaseId}::uuid, ${userId}::uuid, 'purchase', 1000, 1000, ${`cs_${randomUUID()}`})
+      `;
+      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
+
+      await expect(
+        sql`
+          UPDATE credit_lots
+          SET metadata = jsonb_build_object('updated_after_subscription', true)
+          WHERE id = ${purchaseId}::uuid
+        `,
+      ).rejects.toThrow(/purchase credit lots require an active subscription/);
+    } finally {
+      await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
       await sql.end();
     }
   });
 
   it("rejects null or empty usage_event_id", async () => {
     assertSafeTestDatabase();
-    const sql = postgres(databaseUrl!, { max: 1 });
-    const userId = testUserId!;
+    const { databaseUrl: dbUrl, userId } = testConfig();
+    const sql = postgres(dbUrl, { max: 1 });
 
     try {
       await expect(
