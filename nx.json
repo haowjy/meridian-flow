@@ -13,5 +13,6 @@
       "inputs": ["default", "^default"],
       "cache": true
     }
-  }
+  },
+  "analytics": false
 }

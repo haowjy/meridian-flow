@@ -2,7 +2,7 @@
 
 Drizzle schema and migrations for the v3 Meridian Postgres database (local Supabase in dev).
 
-**Schema spec:** `$MERIDIAN_CONTEXT_KB_DIR/work/v3-fullstack-rebuild/database-schema-v3.md` (or the work item copy under `orange-channel-vale`).
+**Schema spec:** v3-fullstack-rebuild work dir `schema/` + `specs/` (see `meridian work current`; repo mirror at `.meridian/context/orange-channel-vale/work/v3-fullstack-rebuild/`).
 
 ## Commands
 
