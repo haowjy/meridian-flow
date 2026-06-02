@@ -12,7 +12,11 @@ if (!databaseUrl) {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const functionsDir = join(root, "src/functions");
 
-const files = ["update_updated_at.sql", "consume_credit_lots_fifo.sql"];
+const files = [
+  "update_updated_at.sql",
+  "validate_turn_thread_integrity.sql",
+  "consume_credit_lots_fifo.sql",
+];
 
 const sql = postgres(databaseUrl, { max: 1 });
 

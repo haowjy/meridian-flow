@@ -110,6 +110,10 @@ export const creditTransactions = pgTable(
       "credit_transactions_consumption_group",
       sql`${table.transactionType} != 'consumption' OR ${table.consumptionGroupId} IS NOT NULL`,
     ),
+    check(
+      "credit_transactions_consumption_usage_event",
+      sql`${table.transactionType} != 'consumption' OR ${table.usageEventId} IS NOT NULL`,
+    ),
     index("credit_transactions_user_created").on(table.userId, table.createdAt.desc()),
     index("credit_transactions_consumption_group")
       .on(table.consumptionGroupId)

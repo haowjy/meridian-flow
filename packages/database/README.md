@@ -48,4 +48,4 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
 
-Canonical function SQL: `src/functions/*.sql`. Migration `0002` embeds the same bodies; `db:apply-functions` keeps dev DB in sync after edits.
+Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:apply-functions` keeps dev DB functions in sync after edits.

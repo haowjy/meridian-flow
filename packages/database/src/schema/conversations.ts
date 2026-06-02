@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -23,9 +24,9 @@ export const threads = pgTable(
   "threads",
   {
     id: idColumn(),
-    projectId: uuid("project_id").references(() => projects.id, {
-      onDelete: "cascade",
-    }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
@@ -39,11 +40,11 @@ export const threads = pgTable(
     parentThreadId: uuid("parent_thread_id"),
     originTurnId: uuid("origin_turn_id"),
     originType: text("origin_type"),
+    handoffSummary: text("handoff_summary"),
     spawnStatus: text("spawn_status"),
     spawnResult: jsonb("spawn_result"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
-    historySummary: text("history_summary"),
-    nextSeq: bigint("next_seq", { mode: "number" }).notNull().default(1),
+    activeLeafTurnId: uuid("active_leaf_turn_id"),
     turnCount: integer("turn_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -52,15 +53,41 @@ export const threads = pgTable(
   (table) => [
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     index("threads_created_by_active")
       .on(table.createdByUserId)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
+    check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
+    check("threads_status_valid", sql`${table.status} IN ('active', 'archived')`),
+    check(
+      "threads_origin_type_valid",
+      sql`${table.originType} IS NULL OR ${table.originType} IN ('spawn', 'handoff', 'fork')`,
+    ),
+    check(
+      "threads_spawn_origin_subagent",
+      sql`${table.originType} != 'spawn' OR ${table.kind} = 'subagent'`,
+    ),
+    check(
+      "threads_handoff_fork_primary",
+      sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
+    ),
+    check(
+      "threads_handoff_summary_origin",
+      sql`${table.handoffSummary} IS NULL OR ${table.originType} = 'handoff'`,
+    ),
+    check(
+      "threads_spawn_status_subagent",
+      sql`${table.spawnStatus} IS NULL OR ${table.kind} = 'subagent'`,
+    ),
+    check(
+      "threads_spawn_status_valid",
+      sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'succeeded', 'failed', 'cancelled')`,
+    ),
   ],
 );
 
@@ -71,22 +98,42 @@ export const turns = pgTable(
     threadId: uuid("thread_id")
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    seq: bigint("seq", { mode: "number" }).notNull(),
+    parentTurnId: uuid("parent_turn_id"),
+    agentDefinitionId: uuid("agent_definition_id").references(() => agentDefinitions.id, {
+      onDelete: "set null",
+    }),
+    compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     status: text("status").notNull().default("pending"),
     finishReason: text("finish_reason"),
     error: text("error"),
+    requestParams: jsonb("request_params"),
     totalInputTokens: integer("total_input_tokens"),
     totalOutputTokens: integer("total_output_tokens"),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }),
-    totalCredits: integer("total_credits"),
-    requestParams: jsonb("request_params"),
+    totalMillicredits: bigint("total_millicredits", { mode: "number" }),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("turns_thread_seq").on(table.threadId, table.seq),
     index("turns_thread_created").on(table.threadId, table.createdAt.desc()),
+    index("turns_parent_created")
+      .on(table.parentTurnId, table.createdAt.desc())
+      .where(sql`${table.parentTurnId} IS NOT NULL`),
+    index("turns_thread_roots").on(table.threadId).where(sql`${table.parentTurnId} IS NULL`),
+    check(
+      "turns_no_self_parent",
+      sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,
+    ),
+    check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
+    check(
+      "turns_status_valid",
+      sql`${table.status} IN ('pending', 'streaming', 'complete', 'cancelled', 'error')`,
+    ),
+    check(
+      "turns_compaction_model_required",
+      sql`${table.role} != 'compaction' OR ${table.compactionModel} IS NOT NULL`,
+    ),
   ],
 );
 
@@ -104,7 +151,7 @@ export const modelResponses = pgTable(
     outputTokens: integer("output_tokens"),
     usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
-    credits: integer("credits"),
+    millicredits: bigint("millicredits", { mode: "number" }),
     stopReason: text("stop_reason"),
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
@@ -113,7 +160,7 @@ export const modelResponses = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    index("model_responses_turn_sequence").on(table.turnId, table.sequence),
+    uniqueIndex("model_responses_turn_sequence").on(table.turnId, table.sequence),
     index("model_responses_provider_model_created").on(
       table.provider,
       table.model,
@@ -136,9 +183,9 @@ export const turnBlocks = pgTable(
     sequence: integer("sequence").notNull(),
     textContent: text("text_content"),
     content: jsonb("content"),
-    collapsedContent: text("collapsed_content"),
+    compact: text("compact"),
+    pruned: boolean("pruned").notNull().default(false),
     executionSide: text("execution_side"),
-    status: text("status").notNull().default("complete"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -154,15 +201,11 @@ export const eventJournal = pgTable(
     threadId: uuid("thread_id")
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    seq: bigint("seq", { mode: "number" }).notNull(),
     eventType: text("event_type").notNull(),
     payload: jsonbDefault("payload"),
     createdAt: createdAt(),
   },
-  (table) => [
-    uniqueIndex("event_journal_thread_seq").on(table.threadId, table.seq),
-    index("event_journal_thread_id").on(table.threadId, table.id),
-  ],
+  (table) => [index("event_journal_thread_id").on(table.threadId, table.id)],
 );
 
 export const threadUserState = pgTable(
@@ -174,9 +217,6 @@ export const threadUserState = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
-    lastReadTurnId: uuid("last_read_turn_id").references(() => turns.id, {
-      onDelete: "set null",
-    }),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.userId] })],
@@ -198,4 +238,5 @@ export const threadDocuments = pgTable(
   (table) => [primaryKey({ columns: [table.threadId, table.documentId] })],
 );
 
-// Deferred FKs in custom SQL: threads.parent_thread_id, threads.origin_turn_id, context_sources.thread_id
+// Deferred FKs in migration SQL: threads.parent_thread_id, threads.origin_turn_id,
+// threads.active_leaf_turn_id, turns.parent_turn_id, context_sources.thread_id.

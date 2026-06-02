@@ -34,14 +34,14 @@ export const projects = pgTable(
   (table) => [
     uniqueIndex("projects_user_slug_active")
       .on(table.userId, table.slug)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     index("projects_user_last_activity_active")
       .on(table.userId, table.lastActivityAt.desc())
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 
-// thread_id FK added in custom SQL (circular dep with threads)
+// thread_id FK added in migration SQL (circular dep with threads)
 export const contextSources = pgTable(
   "context_sources",
   {
@@ -61,14 +61,15 @@ export const contextSources = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    deletedAt: softDeleteAt(),
   },
   (table) => [
     uniqueIndex("context_sources_project_slug")
       .on(table.projectId, table.slug)
-      .where(sql`${table.threadId} is null`),
+      .where(sql`${table.threadId} IS NULL`),
     uniqueIndex("context_sources_thread_slug")
       .on(table.threadId, table.slug)
-      .where(sql`${table.threadId} is not null`),
+      .where(sql`${table.threadId} IS NOT NULL`),
     index("context_sources_project_sort").on(table.projectId, table.sortOrder),
     check(
       "context_sources_scope_thread_project",
@@ -99,13 +100,13 @@ export const folders = pgTable(
   (table) => [
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("folders_context_parent_name_active")
       .on(table.contextSourceId, table.parentId, table.name)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("folders_context_root_name_active")
       .on(table.contextSourceId, table.name)
-      .where(sql`${table.parentId} is null AND ${table.deletedAt} is null`),
+      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
   ],
 );
 
@@ -135,10 +136,23 @@ export const documents = pgTable(
   (table) => [
     index("documents_context_folder_active")
       .on(table.contextSourceId, table.folderId)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("documents_context_folder_name_active")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} is null`),
+      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("documents_context_root_name_active")
+      .on(table.contextSourceId, table.name, table.extension)
+      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL`),
+    index("documents_markdown_projection_fts").using(
+      "gin",
+      sql`to_tsvector('simple', ${table.markdownProjection})`,
+    ),
+    index("documents_markdown_projection_trgm").using(
+      "gin",
+      sql`${table.markdownProjection} gin_trgm_ops`,
+    ),
+    index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
+    index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
     check(
       "documents_size_bytes_nonneg",
       sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`,
@@ -146,4 +160,4 @@ export const documents = pgTable(
   ],
 );
 
-// folders.parent_id self-FK added in custom SQL migration
+// folders.parent_id self-FK added in migration SQL

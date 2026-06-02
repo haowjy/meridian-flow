@@ -1,28 +1,9 @@
 {
-  "id": "011ef237-0c5f-4cb0-95cd-8983f135e9a8",
+  "id": "6d5421a2-dcf7-437f-a25f-9682dc5135c5",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "auth.users": {
-      "name": "users",
-      "schema": "auth",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.credit_lots": {
       "name": "credit_lots",
       "schema": "",
@@ -185,6 +166,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "credit_lots_debt_user": {
+          "name": "credit_lots_debt_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"credit_lots\".\"source_type\" = 'debt'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -206,6 +203,10 @@
         "credit_lots_original_positive": {
           "name": "credit_lots_original_positive",
           "value": "\"credit_lots\".\"original_amount_millicredits\" > 0"
+        },
+        "credit_lots_source_type": {
+          "name": "credit_lots_source_type",
+          "value": "\"credit_lots\".\"source_type\" IN ('purchase', 'grant', 'subscription', 'debt')"
         },
         "credit_lots_purchase_stripe": {
           "name": "credit_lots_purchase_stripe",
@@ -293,7 +294,7 @@
             {
               "expression": "created_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -314,22 +315,6 @@
           ],
           "isUnique": false,
           "where": "\"credit_transactions\".\"consumption_group_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "credit_transactions_usage_event": {
-          "name": "credit_transactions_usage_event",
-          "columns": [
-            {
-              "expression": "usage_event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"credit_transactions\".\"usage_event_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -367,6 +352,10 @@
         "credit_transactions_consumption_group": {
           "name": "credit_transactions_consumption_group",
           "value": "\"credit_transactions\".\"transaction_type\" != 'consumption' OR \"credit_transactions\".\"consumption_group_id\" IS NOT NULL"
+        },
+        "credit_transactions_consumption_usage_event": {
+          "name": "credit_transactions_consumption_usage_event",
+          "value": "\"credit_transactions\".\"transaction_type\" != 'consumption' OR \"credit_transactions\".\"usage_event_id\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false
@@ -605,6 +594,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -625,7 +620,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"thread_id\" is null",
+          "where": "\"context_sources\".\"thread_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -647,7 +642,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"thread_id\" is not null",
+          "where": "\"context_sources\".\"thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -820,7 +815,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"documents\".\"deleted_at\" is null",
+          "where": "\"documents\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -854,9 +849,97 @@
             }
           ],
           "isUnique": true,
-          "where": "\"documents\".\"deleted_at\" is null",
+          "where": "\"documents\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "documents_context_root_name_active": {
+          "name": "documents_context_root_name_active",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "extension",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"documents\".\"folder_id\" IS NULL AND \"documents\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "documents_markdown_projection_fts": {
+          "name": "documents_markdown_projection_fts",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"markdown_projection\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "documents_markdown_projection_trgm": {
+          "name": "documents_markdown_projection_trgm",
+          "columns": [
+            {
+              "expression": "\"markdown_projection\" gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "documents_name_fts": {
+          "name": "documents_name_fts",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "documents_name_trgm": {
+          "name": "documents_name_trgm",
+          "columns": [
+            {
+              "expression": "\"name\" gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },
@@ -972,7 +1055,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"folders\".\"deleted_at\" is null",
+          "where": "\"folders\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1000,7 +1083,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"folders\".\"deleted_at\" is null",
+          "where": "\"folders\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1022,7 +1105,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"folders\".\"parent_id\" is null AND \"folders\".\"deleted_at\" is null",
+          "where": "\"folders\".\"parent_id\" IS NULL AND \"folders\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1133,7 +1216,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"projects\".\"deleted_at\" is null",
+          "where": "\"projects\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1150,12 +1233,12 @@
             {
               "expression": "last_activity_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "where": "\"projects\".\"deleted_at\" is null",
+          "where": "\"projects\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1195,12 +1278,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
         "event_type": {
           "name": "event_type",
           "type": "text",
@@ -1223,27 +1300,6 @@
         }
       },
       "indexes": {
-        "event_journal_thread_seq": {
-          "name": "event_journal_thread_seq",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "event_journal_thread_id": {
           "name": "event_journal_thread_id",
           "columns": [
@@ -1334,7 +1390,7 @@
           "name": "usage_breakdown",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "'{}'::jsonb"
         },
         "cost_usd": {
@@ -1343,9 +1399,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "credits": {
-          "name": "credits",
-          "type": "integer",
+        "millicredits": {
+          "name": "millicredits",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },
@@ -1404,7 +1460,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1540,12 +1596,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "last_read_turn_id": {
-          "name": "last_read_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "last_opened_at": {
           "name": "last_opened_at",
           "type": "timestamp with time zone",
@@ -1572,15 +1622,6 @@
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_user_state_last_read_turn_id_turns_id_fk": {
-          "name": "thread_user_state_last_read_turn_id_turns_id_fk",
-          "tableFrom": "thread_user_state",
-          "tableTo": "turns",
-          "columnsFrom": ["last_read_turn_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1610,7 +1651,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_by_user_id": {
           "name": "created_by_user_id",
@@ -1669,6 +1710,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "handoff_summary": {
+          "name": "handoff_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "spawn_status": {
           "name": "spawn_status",
           "type": "text",
@@ -1688,18 +1735,11 @@
           "notNull": true,
           "default": 0
         },
-        "history_summary": {
-          "name": "history_summary",
-          "type": "text",
+        "active_leaf_turn_id": {
+          "name": "active_leaf_turn_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "next_seq": {
-          "name": "next_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
         },
         "turn_count": {
           "name": "turn_count",
@@ -1742,12 +1782,12 @@
             {
               "expression": "updated_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "where": "\"threads\".\"deleted_at\" is null",
+          "where": "\"threads\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1763,7 +1803,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"threads\".\"deleted_at\" is null",
+          "where": "\"threads\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1780,7 +1820,7 @@
             {
               "expression": "created_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -1832,6 +1872,38 @@
         "threads_spawn_depth_nonneg": {
           "name": "threads_spawn_depth_nonneg",
           "value": "\"threads\".\"spawn_depth\" >= 0"
+        },
+        "threads_kind_valid": {
+          "name": "threads_kind_valid",
+          "value": "\"threads\".\"kind\" IN ('primary', 'subagent')"
+        },
+        "threads_status_valid": {
+          "name": "threads_status_valid",
+          "value": "\"threads\".\"status\" IN ('active', 'archived')"
+        },
+        "threads_origin_type_valid": {
+          "name": "threads_origin_type_valid",
+          "value": "\"threads\".\"origin_type\" IS NULL OR \"threads\".\"origin_type\" IN ('spawn', 'handoff', 'fork')"
+        },
+        "threads_spawn_origin_subagent": {
+          "name": "threads_spawn_origin_subagent",
+          "value": "\"threads\".\"origin_type\" != 'spawn' OR \"threads\".\"kind\" = 'subagent'"
+        },
+        "threads_handoff_fork_primary": {
+          "name": "threads_handoff_fork_primary",
+          "value": "\"threads\".\"origin_type\" NOT IN ('handoff', 'fork') OR \"threads\".\"kind\" = 'primary'"
+        },
+        "threads_handoff_summary_origin": {
+          "name": "threads_handoff_summary_origin",
+          "value": "\"threads\".\"handoff_summary\" IS NULL OR \"threads\".\"origin_type\" = 'handoff'"
+        },
+        "threads_spawn_status_subagent": {
+          "name": "threads_spawn_status_subagent",
+          "value": "\"threads\".\"spawn_status\" IS NULL OR \"threads\".\"kind\" = 'subagent'"
+        },
+        "threads_spawn_status_valid": {
+          "name": "threads_spawn_status_valid",
+          "value": "\"threads\".\"spawn_status\" IS NULL OR \"threads\".\"spawn_status\" IN ('running', 'succeeded', 'failed', 'cancelled')"
         }
       },
       "isRLSEnabled": false
@@ -1883,24 +1955,24 @@
           "primaryKey": false,
           "notNull": false
         },
-        "collapsed_content": {
-          "name": "collapsed_content",
+        "compact": {
+          "name": "compact",
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "pruned": {
+          "name": "pruned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "execution_side": {
           "name": "execution_side",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'complete'"
         },
         "created_at": {
           "name": "created_at",
@@ -1997,11 +2069,23 @@
           "primaryKey": false,
           "notNull": true
         },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
+        "parent_turn_id": {
+          "name": "parent_turn_id",
+          "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "agent_definition_id": {
+          "name": "agent_definition_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "compaction_model": {
+          "name": "compaction_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "role": {
           "name": "role",
@@ -2028,6 +2112,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "request_params": {
+          "name": "request_params",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "total_input_tokens": {
           "name": "total_input_tokens",
           "type": "integer",
@@ -2046,15 +2136,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "total_credits": {
-          "name": "total_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_params": {
-          "name": "request_params",
-          "type": "jsonb",
+        "total_millicredits": {
+          "name": "total_millicredits",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },
@@ -2073,27 +2157,6 @@
         }
       },
       "indexes": {
-        "turns_thread_seq": {
-          "name": "turns_thread_seq",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "turns_thread_created": {
           "name": "turns_thread_created",
           "columns": [
@@ -2106,11 +2169,49 @@
             {
               "expression": "created_at",
               "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "turns_parent_created": {
+          "name": "turns_parent_created",
+          "columns": [
+            {
+              "expression": "parent_turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"turns\".\"parent_turn_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "turns_thread_roots": {
+          "name": "turns_thread_roots",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "\"turns\".\"parent_turn_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2125,12 +2226,38 @@
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "turns_agent_definition_id_agent_definitions_id_fk": {
+          "name": "turns_agent_definition_id_agent_definitions_id_fk",
+          "tableFrom": "turns",
+          "tableTo": "agent_definitions",
+          "columnsFrom": ["agent_definition_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "turns_no_self_parent": {
+          "name": "turns_no_self_parent",
+          "value": "\"turns\".\"parent_turn_id\" IS NULL OR \"turns\".\"parent_turn_id\" != \"turns\".\"id\""
+        },
+        "turns_role_valid": {
+          "name": "turns_role_valid",
+          "value": "\"turns\".\"role\" IN ('user', 'assistant', 'system', 'compaction')"
+        },
+        "turns_status_valid": {
+          "name": "turns_status_valid",
+          "value": "\"turns\".\"status\" IN ('pending', 'streaming', 'complete', 'cancelled', 'error')"
+        },
+        "turns_compaction_model_required": {
+          "name": "turns_compaction_model_required",
+          "value": "\"turns\".\"role\" != 'compaction' OR \"turns\".\"compaction_model\" IS NOT NULL"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.agent_definitions": {
@@ -2903,7 +3030,7 @@
             {
               "expression": "touched_at",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -3225,7 +3352,7 @@
             {
               "expression": "id",
               "isExpression": false,
-              "asc": true,
+              "asc": false,
               "nulls": "last"
             }
           ],
@@ -3414,9 +3541,7 @@
     }
   },
   "enums": {},
-  "schemas": {
-    "auth": "auth"
-  },
+  "schemas": {},
   "sequences": {},
   "roles": {},
   "policies": {},
@@ -3430,7 +3555,7 @@
           "notNull": true
         }
       },
-      "definition": "select \"user_id\", COALESCE(SUM(\"remaining_millicredits\"), 0) as \"total_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"source_type\" = 'grant'), 0) as \"grant_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"source_type\" = 'purchase'), 0) as \"purchased_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"remaining_millicredits\" < 0), 0) as \"debt_balance_millicredits\" from \"credit_lots\" where \"credit_lots\".\"expires_at\" IS NULL OR \"credit_lots\".\"expires_at\" > NOW() OR \"credit_lots\".\"remaining_millicredits\" < 0 group by \"credit_lots\".\"user_id\"",
+      "definition": "select \"user_id\", COALESCE(SUM(\"remaining_millicredits\"), 0) as \"total_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"source_type\" = 'grant'), 0) as \"grant_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"source_type\" = 'purchase'), 0) as \"purchased_balance_millicredits\", COALESCE(SUM(\"remaining_millicredits\") FILTER (WHERE \"source_type\" = 'debt'), 0) as \"debt_balance_millicredits\" from \"credit_lots\" where \"credit_lots\".\"expires_at\" IS NULL OR \"credit_lots\".\"expires_at\" > NOW() OR \"credit_lots\".\"source_type\" = 'debt' group by \"credit_lots\".\"user_id\"",
       "name": "credit_balances",
       "schema": "public",
       "isExisting": false,
