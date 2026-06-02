@@ -85,9 +85,14 @@ export const contextSources = pgTable(
       "context_sources_scope_thread_project",
       sql`${table.scope} = 'session' OR ${table.threadId} IS NULL`,
     ),
+    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'session')`),
     check(
       "context_sources_scope_thread_session",
       sql`${table.scope} = 'project' OR ${table.threadId} IS NOT NULL`,
+    ),
+    check(
+      "context_sources_adapter_type_valid",
+      sql`${table.adapterType} IN ('local', 'google_drive', 'dropbox', 'notion')`,
     ),
   ],
 );
@@ -170,6 +175,10 @@ export const documents = pgTable(
     check(
       "documents_size_bytes_nonneg",
       sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`,
+    ),
+    check(
+      "documents_file_type_valid",
+      sql`${table.fileType} IN ('markdown', 'docx', 'image', 'pdf', 'text')`,
     ),
   ],
 );

@@ -47,6 +47,11 @@ export const userSubscriptions = pgTable(
       .on(table.userId)
       .where(sql`${table.status} IN ('active', 'past_due', 'trialing')`),
     index("user_subscriptions_stripe_customer").on(table.stripeCustomerId),
+    check("user_subscriptions_plan_valid", sql`${table.plan} IN ('pro')`),
+    check(
+      "user_subscriptions_status_valid",
+      sql`${table.status} IN ('active', 'past_due', 'cancelled', 'trialing')`,
+    ),
   ],
 );
 
@@ -119,6 +124,10 @@ export const creditTransactions = pgTable(
   },
   (table) => [
     check("credit_transactions_nonzero", sql`${table.amountMillicredits} != 0`),
+    check(
+      "credit_transactions_transaction_type_valid",
+      sql`${table.transactionType} IN ('purchase', 'grant', 'consumption', 'expiration', 'refund')`,
+    ),
     check(
       "credit_transactions_consumption_group",
       sql`${table.transactionType} != 'consumption' OR ${table.consumptionGroupId} IS NOT NULL`,

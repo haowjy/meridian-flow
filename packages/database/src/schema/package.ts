@@ -89,6 +89,8 @@ export const skills = pgTable(
     index("skills_project_global_enabled")
       .on(table.projectId)
       .where(sql`${table.isGlobal} = true AND ${table.enabled} = true`),
+    check("skills_type_valid", sql`${table.type} IN ('principle', 'guardrail', 'reference')`),
+    check("skills_source_type_valid", sql`${table.sourceType} IN ('builtin', 'package', 'user')`),
   ],
 );
 
@@ -135,7 +137,13 @@ export const agentSkills = pgTable(
     modelInvocable: boolean("model_invocable"),
     userInvocable: boolean("user_invocable"),
   },
-  (table) => [primaryKey({ columns: [table.agentDefinitionId, table.skillId] })],
+  (table) => [
+    primaryKey({ columns: [table.agentDefinitionId, table.skillId] }),
+    check(
+      "agent_skills_loading_mode_valid",
+      sql`${table.loadingMode} IN ('preloaded', 'available')`,
+    ),
+  ],
 );
 
 export const agentSubagents = pgTable(

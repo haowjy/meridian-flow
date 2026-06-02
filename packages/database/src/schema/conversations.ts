@@ -88,8 +88,24 @@ export const threads = pgTable(
       sql`${table.originType} != 'spawn' OR ${table.kind} = 'subagent'`,
     ),
     check(
+      "threads_spawn_origin_required_fields",
+      sql`${table.originType} != 'spawn' OR (${table.kind} = 'subagent' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL AND ${table.spawnStatus} IS NOT NULL)`,
+    ),
+    check(
       "threads_handoff_fork_primary",
       sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
+    ),
+    check(
+      "threads_fork_origin_required_fields",
+      sql`${table.originType} != 'fork' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL AND ${table.handoffSummary} IS NULL)`,
+    ),
+    check(
+      "threads_handoff_origin_required_fields",
+      sql`${table.originType} != 'handoff' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.handoffSummary} IS NOT NULL)`,
+    ),
+    check(
+      "threads_organic_origin_fields_empty",
+      sql`${table.originType} IS NOT NULL OR (${table.parentThreadId} IS NULL AND ${table.originTurnId} IS NULL AND ${table.handoffSummary} IS NULL AND ${table.spawnStatus} IS NULL)`,
     ),
     check(
       "threads_handoff_summary_origin",
@@ -264,7 +280,13 @@ export const threadDocuments = pgTable(
     firstTouchedAt: timestamp("first_touched_at", { withTimezone: true }).notNull().defaultNow(),
     lastTouchedAt: timestamp("last_touched_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.threadId, table.documentId] })],
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.documentId] }),
+    check(
+      "thread_documents_relationship_valid",
+      sql`${table.relationship} IN ('editing', 'reading', 'created')`,
+    ),
+  ],
 );
 
 // Deferred FKs in migration SQL: threads.parent_thread_id, threads.origin_turn_id,
