@@ -12,7 +12,6 @@ import type {
 import { sql } from "drizzle-orm";
 import {
   bigint,
-  bigserial,
   boolean,
   check,
   index,
@@ -237,7 +236,7 @@ export const turnBlocks = pgTable(
 export const eventJournal = pgTable(
   "event_journal",
   {
-    id: bigserial("id", { mode: "number" }).$type<EventJournalId>().primaryKey(),
+    id: idColumn<EventJournalId>(),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
@@ -246,7 +245,7 @@ export const eventJournal = pgTable(
     payload: jsonbDefault("payload"),
     createdAt: createdAt(),
   },
-  (table) => [index("event_journal_thread_id").on(table.threadId, table.id)],
+  (table) => [index("event_journal_thread_id").on(table.threadId, table.createdAt)],
 );
 
 export const threadUserState = pgTable(

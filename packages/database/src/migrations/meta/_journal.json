@@ -15,6 +15,13 @@
       "when": 1780386448772,
       "tag": "0002_add_check_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780387249369,
+      "tag": "0003_event_journal_uuid",
+      "breakpoints": true
     }
   ]
 }

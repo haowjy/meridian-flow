@@ -49,5 +49,5 @@ export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePoint
 export type TurnDocumentTouchId = string & { readonly __brand: "TurnDocumentTouchId" };
 export const asTurnDocumentTouchId = (s: string) => s as TurnDocumentTouchId;
 
-export type EventJournalId = number & { readonly __brand: "EventJournalId" };
-export const asEventJournalId = (n: number) => n as EventJournalId;
+export type EventJournalId = string & { readonly __brand: "EventJournalId" };
+export const asEventJournalId = (s: string) => s as EventJournalId;
