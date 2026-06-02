@@ -1,6 +1,9 @@
 export type ProjectId = string & { readonly __brand: "ProjectId" };
 export const asProjectId = (s: string) => s as ProjectId;
 
+export type WorkId = string & { readonly __brand: "WorkId" };
+export const asWorkId = (s: string) => s as WorkId;
+
 export type ContextSourceId = string & { readonly __brand: "ContextSourceId" };
 export const asContextSourceId = (s: string) => s as ContextSourceId;
 

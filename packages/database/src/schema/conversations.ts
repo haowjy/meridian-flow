@@ -8,6 +8,7 @@ import type {
   TurnBlockId,
   TurnId,
   UserId,
+  WorkId,
 } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -27,13 +28,17 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { authUsers } from "./auth";
-import { documents, projects } from "./content";
+import { documents, projects, works } from "./content";
 import { agentDefinitions } from "./package";
 
 export const threads = pgTable(
   "threads",
   {
     id: idColumn<ThreadId>(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .notNull()
+      .references(() => works.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .notNull()
@@ -51,10 +56,11 @@ export const threads = pgTable(
         onDelete: "set null",
       }),
     workingState: jsonb("working_state"),
+    composedSystemPrompt: text("composed_system_prompt"),
+    systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),
     originType: text("origin_type"),
-    handoffSummary: text("handoff_summary"),
     spawnStatus: text("spawn_status"),
     spawnResult: jsonb("spawn_result"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
@@ -65,6 +71,9 @@ export const threads = pgTable(
     deletedAt: softDeleteAt(),
   },
   (table) => [
+    index("threads_work_updated_active")
+      .on(table.workId, table.updatedAt.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -96,19 +105,15 @@ export const threads = pgTable(
     ),
     check(
       "threads_fork_origin_required_fields",
-      sql`${table.originType} != 'fork' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL AND ${table.handoffSummary} IS NULL)`,
+      sql`${table.originType} != 'fork' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL)`,
     ),
     check(
       "threads_handoff_origin_required_fields",
-      sql`${table.originType} != 'handoff' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.handoffSummary} IS NOT NULL)`,
+      sql`${table.originType} != 'handoff' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL)`,
     ),
     check(
       "threads_organic_origin_fields_empty",
-      sql`${table.originType} IS NOT NULL OR (${table.parentThreadId} IS NULL AND ${table.originTurnId} IS NULL AND ${table.handoffSummary} IS NULL AND ${table.spawnStatus} IS NULL)`,
-    ),
-    check(
-      "threads_handoff_summary_origin",
-      sql`${table.handoffSummary} IS NULL OR ${table.originType} = 'handoff'`,
+      sql`${table.originType} IS NOT NULL OR (${table.parentThreadId} IS NULL AND ${table.originTurnId} IS NULL AND ${table.spawnStatus} IS NULL)`,
     ),
     check(
       "threads_spawn_status_subagent",
@@ -128,7 +133,7 @@ export const turns = pgTable(
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
+      .references(() => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
     agentDefinitionId: uuid("agent_definition_id")
       .$type<AgentDefinitionId>()
@@ -140,7 +145,6 @@ export const turns = pgTable(
     status: text("status").notNull().default("pending"),
     finishReason: text("finish_reason"),
     error: text("error"),
-    requestParams: jsonb("request_params"),
     totalInputTokens: integer("total_input_tokens"),
     totalOutputTokens: integer("total_output_tokens"),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }),
@@ -220,7 +224,7 @@ export const turnBlocks = pgTable(
       }),
     blockType: text("block_type").notNull(),
     sequence: integer("sequence").notNull(),
-    textContent: text("text_content"),
+    modelText: text("model_text"),
     content: jsonb("content"),
     compact: text("compact"),
     pruned: boolean("pruned").notNull().default(false),
@@ -240,12 +244,20 @@ export const eventJournal = pgTable(
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
+      .references(() => threads.id, { onDelete: "restrict" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "restrict" }),
     eventType: text("event_type").notNull(),
     payload: jsonbDefault("payload"),
     createdAt: createdAt(),
   },
-  (table) => [index("event_journal_thread_id").on(table.threadId, table.createdAt)],
+  (table) => [
+    index("event_journal_thread_id").on(table.threadId, table.createdAt),
+    index("event_journal_turn_id")
+      .on(table.turnId, table.createdAt)
+      .where(sql`${table.turnId} IS NOT NULL`),
+  ],
 );
 
 export const threadUserState = pgTable(
@@ -289,4 +301,4 @@ export const threadDocuments = pgTable(
 );
 
 // Deferred FKs in migration SQL: threads.parent_thread_id, threads.origin_turn_id,
-// threads.active_leaf_turn_id, turns.parent_turn_id, context_sources.thread_id.
+// threads.active_leaf_turn_id, turns.parent_turn_id.

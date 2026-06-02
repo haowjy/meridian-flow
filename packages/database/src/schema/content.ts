@@ -3,8 +3,8 @@ import type {
   DocumentId,
   FolderId,
   ProjectId,
-  ThreadId,
   UserId,
+  WorkId,
 } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -33,6 +33,7 @@ export const projects = pgTable(
       .references(() => authUsers.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    isPersonal: boolean("is_personal").notNull().default(false),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
@@ -47,19 +48,52 @@ export const projects = pgTable(
     index("projects_user_last_activity_active")
       .on(table.userId, table.lastActivityAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("projects_user_personal")
+      .on(table.userId)
+      .where(sql`${table.isPersonal} = true AND ${table.deletedAt} IS NULL`),
   ],
 );
 
-// thread_id FK added in migration SQL (circular dep with threads)
+export const works = pgTable(
+  "works",
+  {
+    id: idColumn<WorkId>(),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id")
+      .$type<UserId>()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    visibility: text("visibility").notNull().default("private"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: softDeleteAt(),
+  },
+  (table) => [
+    index("works_project_updated_active")
+      .on(table.projectId, table.updatedAt.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("works_created_by_active")
+      .on(table.createdByUserId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    check("works_visibility_valid", sql`${table.visibility} IN ('private', 'shared')`),
+  ],
+);
+
+// work_id FK for work-scoped context sources
 export const contextSources = pgTable(
   "context_sources",
   {
     id: idColumn<ContextSourceId>(),
     projectId: uuid("project_id")
       .$type<ProjectId>()
-      .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id").$type<ThreadId>(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -76,19 +110,25 @@ export const contextSources = pgTable(
   (table) => [
     uniqueIndex("context_sources_project_slug")
       .on(table.projectId, table.slug)
-      .where(sql`${table.threadId} IS NULL`),
-    uniqueIndex("context_sources_thread_slug")
-      .on(table.threadId, table.slug)
-      .where(sql`${table.threadId} IS NOT NULL`),
-    index("context_sources_project_sort").on(table.projectId, table.sortOrder),
+      .where(sql`${table.workId} IS NULL AND ${table.deletedAt} IS NULL`),
+    uniqueIndex("context_sources_work_slug")
+      .on(table.workId, table.slug)
+      .where(sql`${table.workId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    index("context_sources_project_sort")
+      .on(table.projectId, table.sortOrder)
+      .where(sql`${table.deletedAt} IS NULL`),
     check(
-      "context_sources_scope_thread_project",
-      sql`${table.scope} = 'session' OR ${table.threadId} IS NULL`,
+      "context_sources_exactly_one_scope",
+      sql`(${table.projectId} IS NOT NULL AND ${table.workId} IS NULL) OR (${table.projectId} IS NULL AND ${table.workId} IS NOT NULL)`,
     ),
-    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'session')`),
+    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work')`),
     check(
-      "context_sources_scope_thread_session",
-      sql`${table.scope} = 'project' OR ${table.threadId} IS NOT NULL`,
+      "context_sources_scope_work_fk",
+      sql`${table.scope} = 'project' OR ${table.workId} IS NOT NULL`,
+    ),
+    check(
+      "context_sources_scope_project_fk",
+      sql`${table.scope} = 'work' OR ${table.workId} IS NULL`,
     ),
     check(
       "context_sources_adapter_type_valid",

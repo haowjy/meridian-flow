@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ContextScope = z.enum(["project", "session"]);
+export const ContextScope = z.enum(["project", "work"]);
 export type ContextScope = z.infer<typeof ContextScope>;
 
 export const AdapterType = z.enum(["local", "google_drive", "dropbox", "notion"]);
@@ -29,12 +29,12 @@ export type TurnStatus = z.infer<typeof TurnStatus>;
 
 export const BlockType = z.enum([
   "text",
+  "image",
+  "file",
   "thinking",
   "tool_use",
   "tool_result",
-  "image",
-  "reference",
-  "helper_status",
+  "custom",
 ]);
 export type BlockType = z.infer<typeof BlockType>;
 
@@ -70,3 +70,6 @@ export type ExecutionSide = z.infer<typeof ExecutionSide>;
 
 export const DocumentRelationship = z.enum(["editing", "reading", "created"]);
 export type DocumentRelationship = z.infer<typeof DocumentRelationship>;
+
+export const WorkVisibility = z.enum(["private", "shared"]);
+export type WorkVisibility = z.infer<typeof WorkVisibility>;
