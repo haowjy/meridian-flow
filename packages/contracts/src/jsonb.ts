@@ -8,9 +8,9 @@ export const ProjectSettings = z.object({
 export type ProjectSettings = z.infer<typeof ProjectSettings>;
 
 export const AgentConfig = z.object({
-  model: z.string(),
-  systemPrompt: z.string(),
-  tools: z.array(z.string()),
+  model: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  tools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
   temperature: z.number().min(0).max(1).optional(),
   maxTokens: z.number().optional(),
@@ -43,7 +43,7 @@ export const UserPreferences = z.object({
 export type UserPreferences = z.infer<typeof UserPreferences>;
 
 export const OnboardingState = z.object({
-  status: z.enum(["not_started", "in_progress", "completed"]),
+  status: z.enum(["not_started", "in_progress", "completed"]).optional(),
   completedSteps: z.array(z.string()).optional(),
   firstProjectId: z.string().uuid().optional(),
   referralSource: z.string().optional(),
