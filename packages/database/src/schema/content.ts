@@ -1,3 +1,11 @@
+import type {
+  ContextSourceId,
+  DocumentId,
+  FolderId,
+  ProjectId,
+  ThreadId,
+  UserId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -18,8 +26,9 @@ import { authUsers } from "./auth";
 export const projects = pgTable(
   "projects",
   {
-    id: idColumn(),
+    id: idColumn<ProjectId>(),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -45,11 +54,12 @@ export const projects = pgTable(
 export const contextSources = pgTable(
   "context_sources",
   {
-    id: idColumn(),
+    id: idColumn<ContextSourceId>(),
     projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id"),
+    threadId: uuid("thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -85,11 +95,12 @@ export const contextSources = pgTable(
 export const folders = pgTable(
   "folders",
   {
-    id: idColumn(),
+    id: idColumn<FolderId>(),
     contextSourceId: uuid("context_source_id")
+      .$type<ContextSourceId>()
       .notNull()
       .references(() => contextSources.id, { onDelete: "cascade" }),
-    parentId: uuid("parent_id"),
+    parentId: uuid("parent_id").$type<FolderId>(),
     name: text("name").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -113,13 +124,16 @@ export const folders = pgTable(
 export const documents = pgTable(
   "documents",
   {
-    id: idColumn(),
+    id: idColumn<DocumentId>(),
     contextSourceId: uuid("context_source_id")
+      .$type<ContextSourceId>()
       .notNull()
       .references(() => contextSources.id, { onDelete: "cascade" }),
-    folderId: uuid("folder_id").references(() => folders.id, {
-      onDelete: "cascade",
-    }),
+    folderId: uuid("folder_id")
+      .$type<FolderId>()
+      .references(() => folders.id, {
+        onDelete: "cascade",
+      }),
     name: text("name").notNull(),
     extension: text("extension").notNull().default("md"),
     fileType: text("file_type").notNull().default("markdown"),

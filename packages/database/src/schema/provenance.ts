@@ -1,3 +1,4 @@
+import type { DocumentId, ThreadId, TurnDocumentTouchId, TurnId } from "@meridian/contracts";
 import { index, pgTable, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { idColumn } from "./_shared";
 import { documents } from "./content";
@@ -6,14 +7,17 @@ import { threads, turns } from "./conversations";
 export const turnDocumentTouches = pgTable(
   "turn_document_touches",
   {
-    id: idColumn(),
+    id: idColumn<TurnDocumentTouchId>(),
     turnId: uuid("turn_id")
+      .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
     documentId: uuid("document_id")
+      .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
+      .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     touchedAt: timestamp("touched_at", { withTimezone: true }).notNull().defaultNow(),

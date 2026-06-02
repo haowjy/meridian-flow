@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Provider-specific billable usage stored on model_responses.usage_breakdown (flat JSONB).
  * Provider identity lives on model_responses.provider — not inside this object.
@@ -5,21 +7,24 @@
  */
 
 /** Extensible map for future providers; values are token counts or USD amounts. */
-export type UsageBreakdown = Record<string, number>;
+export const UsageBreakdown = z.record(z.string(), z.number().finite());
+export type UsageBreakdown = z.infer<typeof UsageBreakdown>;
 
 /** Anthropic billable dimensions */
-export interface AnthropicUsageBreakdown {
-  cache_read?: number;
-  cache_write?: number;
-  web_searches?: number;
-  web_search_cost_usd?: number;
-}
+export const AnthropicUsageBreakdown = z.object({
+  cache_read: z.number().finite().optional(),
+  cache_write: z.number().finite().optional(),
+  web_searches: z.number().finite().optional(),
+  web_search_cost_usd: z.number().finite().optional(),
+});
+export type AnthropicUsageBreakdown = z.infer<typeof AnthropicUsageBreakdown>;
 
 /** OpenAI billable dimensions */
-export interface OpenAIUsageBreakdown {
-  cached?: number;
-  reasoning?: number;
-}
+export const OpenAIUsageBreakdown = z.object({
+  cached: z.number().finite().optional(),
+  reasoning: z.number().finite().optional(),
+});
+export type OpenAIUsageBreakdown = z.infer<typeof OpenAIUsageBreakdown>;
 
 export function parseUsageBreakdown(_provider: string, raw: unknown): UsageBreakdown {
   if (raw === null || raw === undefined) {

@@ -15,6 +15,7 @@
     "db:apply-functions": "tsx scripts/apply-functions.ts"
   },
   "dependencies": {
+    "@meridian/contracts": "workspace:*",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"
   },

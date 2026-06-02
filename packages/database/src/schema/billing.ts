@@ -1,3 +1,9 @@
+import type {
+  CreditLotId,
+  CreditTransactionId,
+  UserId,
+  UserSubscriptionId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -16,8 +22,9 @@ import { authUsers } from "./auth";
 export const userSubscriptions = pgTable(
   "user_subscriptions",
   {
-    id: idColumn(),
+    id: idColumn<UserSubscriptionId>(),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
@@ -46,8 +53,9 @@ export const userSubscriptions = pgTable(
 export const creditLots = pgTable(
   "credit_lots",
   {
-    id: idColumn(),
+    id: idColumn<CreditLotId>(),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     sourceType: text("source_type").notNull(),
@@ -92,13 +100,18 @@ export const creditLots = pgTable(
 export const creditTransactions = pgTable(
   "credit_transactions",
   {
-    id: idColumn(),
+    id: idColumn<CreditTransactionId>(),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     transactionType: text("transaction_type").notNull(),
     amountMillicredits: millicredits("amount_millicredits").notNull(),
-    lotId: uuid("lot_id").references(() => creditLots.id, { onDelete: "set null" }),
+    lotId: uuid("lot_id")
+      .$type<CreditLotId>()
+      .references(() => creditLots.id, {
+        onDelete: "set null",
+      }),
     consumptionGroupId: uuid("consumption_group_id"),
     usageEventId: text("usage_event_id"),
     metadata: jsonbDefault("metadata"),

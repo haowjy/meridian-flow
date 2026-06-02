@@ -1,3 +1,14 @@
+import type {
+  AgentDefinitionId,
+  DocumentId,
+  EventJournalId,
+  ModelResponseId,
+  ProjectId,
+  ThreadId,
+  TurnBlockId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -23,28 +34,32 @@ import { agentDefinitions } from "./package";
 export const threads = pgTable(
   "threads",
   {
-    id: idColumn(),
+    id: idColumn<ThreadId>(),
     projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     createdByUserId: uuid("created_by_user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("active"),
-    currentAgentId: uuid("current_agent_id").references(() => agentDefinitions.id, {
-      onDelete: "set null",
-    }),
+    currentAgentId: uuid("current_agent_id")
+      .$type<AgentDefinitionId>()
+      .references(() => agentDefinitions.id, {
+        onDelete: "set null",
+      }),
     workingState: jsonb("working_state"),
-    parentThreadId: uuid("parent_thread_id"),
-    originTurnId: uuid("origin_turn_id"),
+    parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
+    originTurnId: uuid("origin_turn_id").$type<TurnId>(),
     originType: text("origin_type"),
     handoffSummary: text("handoff_summary"),
     spawnStatus: text("spawn_status"),
     spawnResult: jsonb("spawn_result"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
-    activeLeafTurnId: uuid("active_leaf_turn_id"),
+    activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(),
     turnCount: integer("turn_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -94,14 +109,17 @@ export const threads = pgTable(
 export const turns = pgTable(
   "turns",
   {
-    id: idColumn(),
+    id: idColumn<TurnId>(),
     threadId: uuid("thread_id")
+      .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    parentTurnId: uuid("parent_turn_id"),
-    agentDefinitionId: uuid("agent_definition_id").references(() => agentDefinitions.id, {
-      onDelete: "set null",
-    }),
+    parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
+    agentDefinitionId: uuid("agent_definition_id")
+      .$type<AgentDefinitionId>()
+      .references(() => agentDefinitions.id, {
+        onDelete: "set null",
+      }),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     status: text("status").notNull().default("pending"),
@@ -142,8 +160,9 @@ export const turns = pgTable(
 export const modelResponses = pgTable(
   "model_responses",
   {
-    id: idColumn(),
+    id: idColumn<ModelResponseId>(),
     turnId: uuid("turn_id")
+      .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
@@ -174,13 +193,16 @@ export const modelResponses = pgTable(
 export const turnBlocks = pgTable(
   "turn_blocks",
   {
-    id: idColumn(),
+    id: idColumn<TurnBlockId>(),
     turnId: uuid("turn_id")
+      .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
-    modelResponseId: uuid("model_response_id").references(() => modelResponses.id, {
-      onDelete: "set null",
-    }),
+    modelResponseId: uuid("model_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, {
+        onDelete: "set null",
+      }),
     blockType: text("block_type").notNull(),
     sequence: integer("sequence").notNull(),
     textContent: text("text_content"),
@@ -199,8 +221,9 @@ export const turnBlocks = pgTable(
 export const eventJournal = pgTable(
   "event_journal",
   {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
+    id: bigserial("id", { mode: "number" }).$type<EventJournalId>().primaryKey(),
     threadId: uuid("thread_id")
+      .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     eventType: text("event_type").notNull(),
@@ -214,9 +237,11 @@ export const threadUserState = pgTable(
   "thread_user_state",
   {
     threadId: uuid("thread_id")
+      .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
@@ -228,9 +253,11 @@ export const threadDocuments = pgTable(
   "thread_documents",
   {
     threadId: uuid("thread_id")
+      .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     documentId: uuid("document_id")
+      .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     relationship: text("relationship").notNull().default("editing"),

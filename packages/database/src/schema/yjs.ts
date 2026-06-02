@@ -1,3 +1,4 @@
+import type { DocumentId, DocumentRestorePointId, UserId } from "@meridian/contracts";
 import { bigint, bigserial, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, idColumn } from "./_shared";
 import { authUsers } from "./auth";
@@ -8,6 +9,7 @@ export const documentYjsCheckpoints = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     documentId: uuid("document_id")
+      .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     state: byteaColumn("state").notNull(),
@@ -26,13 +28,16 @@ export const documentYjsUpdates = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     documentId: uuid("document_id")
+      .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     updateData: byteaColumn("update_data").notNull(),
     originType: text("origin_type"),
-    actorUserId: uuid("actor_user_id").references(() => authUsers.id, {
-      onDelete: "set null",
-    }),
+    actorUserId: uuid("actor_user_id")
+      .$type<UserId>()
+      .references(() => authUsers.id, {
+        onDelete: "set null",
+      }),
     actorAgentRunId: uuid("actor_agent_run_id"),
     createdAt: createdAt(),
   },
@@ -41,6 +46,7 @@ export const documentYjsUpdates = pgTable(
 
 export const documentYjsHeads = pgTable("document_yjs_heads", {
   documentId: uuid("document_id")
+    .$type<DocumentId>()
     .primaryKey()
     .references(() => documents.id, { onDelete: "cascade" }),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
@@ -51,8 +57,9 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
 });
 
 export const documentRestorePoints = pgTable("document_restore_points", {
-  id: idColumn(),
+  id: idColumn<DocumentRestorePointId>(),
   documentId: uuid("document_id")
+    .$type<DocumentId>()
     .notNull()
     .references(() => documents.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -60,9 +67,11 @@ export const documentRestorePoints = pgTable("document_restore_points", {
     () => documentYjsCheckpoints.id,
   ),
   upToSeq: bigint("up_to_seq", { mode: "number" }),
-  createdByUserId: uuid("created_by_user_id").references(() => authUsers.id, {
-    onDelete: "set null",
-  }),
+  createdByUserId: uuid("created_by_user_id")
+    .$type<UserId>()
+    .references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
   createdAt: createdAt(),
 });
 

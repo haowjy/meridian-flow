@@ -7,7 +7,8 @@ export const byteaColumn = customType<{ data: Buffer; driverData: string }>({
   },
 });
 
-export const idColumn = () => uuid("id").primaryKey().defaultRandom();
+export const idColumn = <T extends string = string>() =>
+  uuid("id").$type<T>().primaryKey().defaultRandom();
 
 export const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();

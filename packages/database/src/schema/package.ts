@@ -1,3 +1,10 @@
+import type {
+  AgentDefinitionId,
+  ProjectId,
+  SkillId,
+  UserId,
+  UserInstalledSkillId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -17,8 +24,9 @@ import { projects } from "./content";
 export const agentDefinitions = pgTable(
   "agent_definitions",
   {
-    id: idColumn(),
+    id: idColumn<AgentDefinitionId>(),
     projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -26,7 +34,7 @@ export const agentDefinitions = pgTable(
     description: text("description").notNull().default(""),
     mode: text("mode").notNull().default("primary"),
     sourceType: text("source_type").notNull().default("builtin"),
-    baseDefinitionId: uuid("base_definition_id"),
+    baseDefinitionId: uuid("base_definition_id").$type<AgentDefinitionId>(),
     sourcePackageId: text("source_package_id"),
     sourceVersion: text("source_version"),
     config: jsonbDefault("config"),
@@ -49,8 +57,9 @@ export const agentDefinitions = pgTable(
 export const skills = pgTable(
   "skills",
   {
-    id: idColumn(),
+    id: idColumn<SkillId>(),
     projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -63,7 +72,7 @@ export const skills = pgTable(
     content: text("content").notNull().default(""),
     config: jsonbDefault("config"),
     sourceType: text("source_type").notNull().default("builtin"),
-    baseSkillId: uuid("base_skill_id"),
+    baseSkillId: uuid("base_skill_id").$type<SkillId>(),
     sourcePackageId: text("source_package_id"),
     sourcePackageVersion: text("source_package_version"),
     isModified: boolean("is_modified").notNull().default(false),
@@ -86,8 +95,9 @@ export const skills = pgTable(
 export const userInstalledSkills = pgTable(
   "user_installed_skills",
   {
-    id: idColumn(),
+    id: idColumn<UserInstalledSkillId>(),
     userId: uuid("user_id")
+      .$type<UserId>()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -101,7 +111,7 @@ export const userInstalledSkills = pgTable(
     sourceType: text("source_type").notNull().default("user"),
     sourcePackageId: text("source_package_id"),
     sourcePackageVersion: text("source_package_version"),
-    baseSkillId: uuid("base_skill_id"),
+    baseSkillId: uuid("base_skill_id").$type<UserInstalledSkillId>(),
     isModified: boolean("is_modified").notNull().default(false),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: createdAt(),
@@ -114,9 +124,11 @@ export const agentSkills = pgTable(
   "agent_skills",
   {
     agentDefinitionId: uuid("agent_definition_id")
+      .$type<AgentDefinitionId>()
       .notNull()
       .references(() => agentDefinitions.id, { onDelete: "cascade" }),
     skillId: uuid("skill_id")
+      .$type<SkillId>()
       .notNull()
       .references(() => skills.id, { onDelete: "cascade" }),
     loadingMode: text("loading_mode").notNull().default("available"),
@@ -130,9 +142,11 @@ export const agentSubagents = pgTable(
   "agent_subagents",
   {
     parentAgentId: uuid("parent_agent_id")
+      .$type<AgentDefinitionId>()
       .notNull()
       .references(() => agentDefinitions.id, { onDelete: "cascade" }),
     childAgentId: uuid("child_agent_id")
+      .$type<AgentDefinitionId>()
       .notNull()
       .references(() => agentDefinitions.id, { onDelete: "cascade" }),
   },
