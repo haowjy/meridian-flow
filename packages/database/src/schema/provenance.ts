@@ -1,8 +1,8 @@
 import type { DocumentId, ThreadId, TurnDocumentTouchId, TurnId } from "@meridian/contracts";
 import { index, pgTable, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { idColumn } from "./_shared";
+import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
-import { threads, turns } from "./conversations";
 
 export const turnDocumentTouches = pgTable(
   "turn_document_touches",

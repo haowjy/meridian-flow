@@ -1,17 +1,17 @@
+export * from "./agent-packages";
+export * from "./agent-threads";
 export { authSchema, authUsers } from "./auth";
 export * from "./billing";
 export * from "./content";
-export * from "./conversations";
-export * from "./package";
 export * from "./provenance";
 export * from "./user";
 export * from "./yjs";
 
+import * as agentPackages from "./agent-packages";
+import * as agentThreads from "./agent-threads";
 import { authUsers } from "./auth";
 import * as billing from "./billing";
 import * as content from "./content";
-import * as conversations from "./conversations";
-import * as packageSchema from "./package";
 import * as provenance from "./provenance";
 import * as user from "./user";
 import * as yjs from "./yjs";
@@ -21,8 +21,8 @@ export const schema = {
   authUsers,
   ...billing,
   ...content,
-  ...conversations,
-  ...packageSchema,
+  ...agentThreads,
+  ...agentPackages,
   ...provenance,
   ...user,
   ...yjs,

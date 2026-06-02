@@ -27,9 +27,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { agentDefinitions } from "./agent-packages";
 import { authUsers } from "./auth";
 import { documents, projects, works } from "./content";
-import { agentDefinitions } from "./package";
 
 export const threads = pgTable(
   "threads",
