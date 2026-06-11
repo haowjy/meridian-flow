@@ -4,12 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nitro dev",
+    "dev": "NODE_ENV=development nitro dev",
     "build": "nitro build",
+    "start": "NODE_ENV=production node .output/server/index.mjs",
+    "preview": "nitro preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@meridian/contracts": "workspace:*",
+    "@meridian/database": "workspace:*",
+    "@t3-oss/env-core": "^0.13.11",
+    "drizzle-orm": "catalog:",
+    "nitro": "catalog:",
+    "postgres": "catalog:",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

@@ -4,16 +4,26 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./components": "./src/components/index.ts",
+    "./threads": "./src/threads/index.ts",
+    "./projects": "./src/projects/index.ts",
+    "./works": "./src/works/index.ts",
+    "./interrupt": "./src/interrupt/index.ts",
+    "./spawn": "./src/spawn/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
-  "devDependencies": {
-    "typescript": "catalog:"
-  },
   "dependencies": {
+    "@ag-ui/core": "0.0.53",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
