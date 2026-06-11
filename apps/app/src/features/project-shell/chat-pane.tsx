@@ -85,13 +85,16 @@ export function ChatPane({ threadId }: ChatPaneProps) {
           messages.map((message) => (
             <article
               className={`turn ${message.role}`}
+              data-turn-id={message.id}
               data-testid={`${message.role}-turn`}
               key={message.id}
             >
               <p className="turn-role">{message.role === "user" ? "You" : "Assistant"}</p>
               <p>{message.text}</p>
               {message.state ? (
-                <small data-testid="assistant-turn-state">{message.state}</small>
+                <small data-testid="assistant-turn-state" data-turn-id={message.id}>
+                  {message.state}
+                </small>
               ) : null}
             </article>
           ))

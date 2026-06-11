@@ -22,6 +22,9 @@ export type DocumentWriteResult = {
   markdown: string;
   updateSeq: number;
   updateData: Buffer;
+  originType: DocumentWriteOrigin["type"];
+  actorTurnId: TurnId | null;
+  actorUserId: UserId | null;
 };
 
 export type DocumentUpdateListener = (update: DocumentWriteResult) => void;
@@ -49,8 +52,21 @@ export type DocumentStore = {
 
 type ActivityDb = Pick<Database, "select" | "update">;
 
-function yjsReplacePayload(documentId: DocumentId, markdown: string): Buffer {
-  return Buffer.from(JSON.stringify({ type: "markdown-replace", documentId, markdown }));
+function yjsReplacePayload(
+  documentId: DocumentId,
+  markdown: string,
+  origin: DocumentWriteOrigin,
+): Buffer {
+  return Buffer.from(
+    JSON.stringify({
+      type: "markdown-replace",
+      documentId,
+      markdown,
+      originType: origin.type,
+      actorTurnId: origin.type === "agent" ? origin.actorTurnId : null,
+      actorUserId: origin.type === "user" ? origin.actorUserId : null,
+    }),
+  );
 }
 
 export function createDocumentSyncService(deps: { db: Database }): DocumentSyncService {
@@ -105,7 +121,7 @@ export function createDocumentSyncService(deps: { db: Database }): DocumentSyncS
   return {
     async writeDocument(input) {
       const now = new Date();
-      const updateData = yjsReplacePayload(input.documentId, input.markdown);
+      const updateData = yjsReplacePayload(input.documentId, input.markdown, input.origin);
 
       const result = await deps.db.transaction(async (tx) => {
         if (input.origin.type === "agent" && input.threadId) {
@@ -166,6 +182,9 @@ export function createDocumentSyncService(deps: { db: Database }): DocumentSyncS
           markdown: input.markdown,
           updateSeq: update.id,
           updateData,
+          originType: input.origin.type,
+          actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
+          actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
         };
       });
 
@@ -203,7 +222,7 @@ export function createDocumentSyncService(deps: { db: Database }): DocumentSyncS
         if (!document) throw new HTTPError({ status: 404, message: "Document not found" });
 
         const markdown = input.transform(document.markdown);
-        const updateData = yjsReplacePayload(input.documentId, markdown);
+        const updateData = yjsReplacePayload(input.documentId, markdown, input.origin);
 
         await tx
           .update(documents)
@@ -247,6 +266,9 @@ export function createDocumentSyncService(deps: { db: Database }): DocumentSyncS
           markdown,
           updateSeq: update.id,
           updateData,
+          originType: input.origin.type,
+          actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
+          actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
         };
       });
 

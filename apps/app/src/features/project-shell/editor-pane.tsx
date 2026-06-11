@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { type ContextDocument, readThreadContext } from "@/client/phase5-api";
-import { subscribeDocumentUpdates } from "@/client/yjs-client";
+import { type DocumentMarkdownUpdate, subscribeDocumentUpdates } from "@/client/yjs-client";
 
 type EditorPaneProps = {
   threadId: string;
@@ -12,6 +12,7 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
   const [markdown, setMarkdown] = useState("");
   const [loadState, setLoadState] = useState("loading");
   const [syncState, setSyncState] = useState("waiting");
+  const [lastAttribution, setLastAttribution] = useState<DocumentMarkdownUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
     setMarkdown("");
     setLoadState("loading");
     setSyncState("waiting");
+    setLastAttribution(null);
     setError(null);
 
     readThreadContext(threadId, uri)
@@ -50,8 +52,10 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
       onError: (nextError) => {
         if (active) setError(nextError);
       },
-      onMarkdown: (nextMarkdown) => {
-        if (active) setMarkdown(nextMarkdown);
+      onUpdate: (update) => {
+        if (!active) return;
+        setMarkdown(update.markdown);
+        setLastAttribution(update);
       },
     });
 
@@ -74,6 +78,16 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
           </span>
           <span className="debug-pill" data-testid="yjs-status">
             Yjs {syncState}
+          </span>
+          <span
+            className="debug-pill"
+            data-actor-turn-id={lastAttribution?.actorTurnId ?? ""}
+            data-actor-user-id={lastAttribution?.actorUserId ?? ""}
+            data-origin-type={lastAttribution?.originType ?? ""}
+            data-testid="editor-attribution"
+          >
+            Last update {lastAttribution?.originType ?? "none"}
+            {lastAttribution?.actorTurnId ? ` ${lastAttribution.actorTurnId}` : ""}
           </span>
         </div>
       </header>
