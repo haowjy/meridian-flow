@@ -15,7 +15,6 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
 import type { DocumentSyncTransport, UpdateOrigin } from "../domains/collab/ports/document-sync.js";
-import { KeyedMutex } from "../shared/keyed-mutex.js";
 import type { AppServices } from "./app.js";
 import { safeWsSend } from "./ws-safe-send.js";
 
@@ -28,7 +27,11 @@ export interface YjsWsHandlerDeps {
   transport: DocumentSyncTransport;
   canAccessDocument: (userId: UserId, documentId: string) => Promise<boolean>;
   updateOrigin?: (peer: YjsWsPeer) => UpdateOrigin;
-  afterPersist?: (documentId: string, origin: UpdateOrigin) => Promise<void>;
+  commitEditorUpdate?: (
+    documentId: string,
+    update: Uint8Array,
+    origin: UpdateOrigin,
+  ) => Promise<void>;
 }
 
 export type YjsWsAuthenticatedContext = {
@@ -83,10 +86,9 @@ function logWsError(name: string, payload: Record<string, unknown>): void {
 export function createYjsWsHandler(deps: YjsWsHandlerDeps) {
   const { transport } = deps;
   const updateOrigin = deps.updateOrigin ?? (() => ({ type: "system" as const }));
-  const afterPersist = deps.afterPersist ?? (async () => {});
+  const commitEditorUpdate = deps.commitEditorUpdate;
   const docs = new Map<string, DocRegistryEntry>();
   const peers = new WeakMap<YjsWsPeer, PeerState>();
-  const persistMutex = new KeyedMutex();
 
   function getPeerState(peer: YjsWsPeer): PeerState {
     let state = peers.get(peer);
@@ -323,17 +325,18 @@ export function createYjsWsHandler(deps: YjsWsHandlerDeps) {
           const delta =
             capturedUpdates.length === 1 ? capturedUpdates[0] : Y.mergeUpdates(capturedUpdates);
           const origin = updateOrigin(peer);
-          await persistMutex.run(conn.documentId, async () => {
-            const result = await transport.applyUpdate(conn.documentId, delta, origin);
-            if (!result.ok) {
-              logWsError("apply_update.failed", {
-                documentId: conn.documentId,
-                error: result.error,
-              });
-              return;
-            }
-            await afterPersist(conn.documentId, origin);
-          });
+          if (!commitEditorUpdate) {
+            logWsError("commit_editor_update.missing", { documentId: conn.documentId });
+            return;
+          }
+          try {
+            await commitEditorUpdate(conn.documentId, delta, origin);
+          } catch (error) {
+            logWsError("commit_editor_update.failed", {
+              documentId: conn.documentId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
         break;
       }
@@ -564,5 +567,11 @@ export function createYjsWsHandler(deps: YjsWsHandlerDeps) {
     });
   }
 
-  return { open, message, close };
+  function forgetDocument(documentId: string): void {
+    const entry = docs.get(documentId);
+    if (!entry) return;
+    destroyDocEntry(entry);
+  }
+
+  return { open, message, close, forgetDocument };
 }

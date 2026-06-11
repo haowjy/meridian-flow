@@ -54,7 +54,10 @@ export function createInMemoryAppServices(): AppServices {
     async getLastUpdateAttribution() {
       throw new Error("in-memory document sync is not implemented");
     },
-    async afterEditorApply() {
+    async applyEditorUpdate() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    forgetMirror() {
       throw new Error("in-memory document sync is not implemented");
     },
     async getOrCreateMirror() {

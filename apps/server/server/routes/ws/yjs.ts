@@ -32,7 +32,9 @@ type YjsRoutePeer = Omit<YjsWsPeer, "context"> & {
 
 type YjsRouteServices = Pick<AppServices, "documentSync">;
 
-let handlerPromise: Promise<ReturnType<typeof createYjsWsHandler>> | null = null;
+type YjsWsHandler = ReturnType<typeof createYjsWsHandler>;
+
+let handlerPromise: Promise<YjsWsHandler> | null = null;
 
 function selectYjsRouteServices(app: AppServices): YjsRouteServices {
   return {
@@ -40,7 +42,7 @@ function selectYjsRouteServices(app: AppServices): YjsRouteServices {
   };
 }
 
-function createHandler(services: YjsRouteServices): ReturnType<typeof createYjsWsHandler> {
+function createHandler(services: YjsRouteServices): YjsWsHandler {
   return createYjsWsHandler({
     transport: services.documentSync,
     canAccessDocument: async (userId, documentId) => {
@@ -55,22 +57,24 @@ function createHandler(services: YjsRouteServices): ReturnType<typeof createYjsW
       const userId = peer.context?.userId;
       return userId ? { type: "user", userId } : { type: "system" };
     },
-    async afterPersist(documentId, origin) {
-      try {
-        await services.documentSync.afterEditorApply({
-          documentId: documentId as DocumentId,
-          origin,
-        });
-      } catch (error) {
-        console.error("ws-yjs-route: afterEditorApply failed", documentId, error);
-      }
+    async commitEditorUpdate(documentId, update, origin) {
+      await services.documentSync.applyEditorUpdate({
+        documentId: documentId as DocumentId,
+        update,
+        origin,
+      });
     },
   });
 }
 
-function getHandler(): Promise<ReturnType<typeof createYjsWsHandler>> {
+function getHandler(): Promise<YjsWsHandler> {
   handlerPromise ??= getApp().then((app) => createHandler(selectYjsRouteServices(app)));
   return handlerPromise;
+}
+
+export async function forgetYjsDocumentCache(documentId: string): Promise<void> {
+  const handler = await getHandler();
+  handler.forgetDocument(documentId);
 }
 
 export default defineWebSocketHandler(() => ({

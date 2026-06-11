@@ -14,6 +14,7 @@ import {
 } from "@meridian/database";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
+import { KeyedMutex } from "../../shared/keyed-mutex.js";
 import { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
 import {
   createDocumentSyncService as createInnerDocumentSyncService,
@@ -64,11 +65,13 @@ export type DocumentSyncFacade = DocumentSyncPort &
       actorUserId: UserId | null;
       updateSeq: number | null;
     }>;
-    afterEditorApply(input: {
+    applyEditorUpdate(input: {
       documentId: DocumentId;
+      update: Uint8Array;
       origin: UpdateOrigin;
       threadId?: ThreadId;
     }): Promise<void>;
+    forgetMirror(documentId: DocumentId): void;
   };
 
 export type DocumentSyncService = DocumentSyncFacade;
@@ -177,6 +180,7 @@ export function createDocumentSyncService(deps: {
 }): DocumentSyncFacade {
   const store = createDrizzleDocumentStore(deps.db);
   const inner = createInnerDocumentSyncService(store, { compaction: false, ...deps.options });
+  const facadeMutex = new KeyedMutex();
 
   return Object.assign(inner, {
     async initializeMirror(documentId: DocumentId): Promise<void> {
@@ -189,40 +193,42 @@ export function createDocumentSyncService(deps: {
       origin: DocumentWriteOrigin;
       threadId?: ThreadId;
     }) {
-      const now = new Date();
-      if (input.origin.type === "agent") {
-        await validateAgentTurn(deps.db, input.threadId, input.origin.actorTurnId);
-      }
-      await ensureMirrorForDocument(deps.db, inner, input.documentId);
+      return facadeMutex.run(input.documentId, async () => {
+        const now = new Date();
+        if (input.origin.type === "agent") {
+          await validateAgentTurn(deps.db, input.threadId, input.origin.actorTurnId);
+        }
+        await ensureMirrorForDocument(deps.db, inner, input.documentId);
 
-      const beforeSeq = await latestUpdateSeq(deps.db, input.documentId);
-      const result = await inner.writeFromMarkdown(
-        input.documentId,
-        input.markdown,
-        toUpdateOrigin(input.origin),
-      );
-      if (!result.ok) throw syncErrorToHttp(result.error);
+        const beforeSeq = await latestUpdateSeq(deps.db, input.documentId);
+        const result = await inner.writeFromMarkdown(
+          input.documentId,
+          input.markdown,
+          toUpdateOrigin(input.origin),
+        );
+        if (!result.ok) throw syncErrorToHttp(result.error);
 
-      const markdownResult = await inner.readAsMarkdown(input.documentId);
-      if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
-      const { updateSeq, updateData } = await resolveWriteUpdateResult(
-        result.value,
-        beforeSeq,
-        (seq) => latestUpdateData(deps.db, input.documentId, seq),
-      );
+        const markdownResult = await inner.readAsMarkdown(input.documentId);
+        if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
+        const { updateSeq, updateData } = await resolveWriteUpdateResult(
+          result.value,
+          beforeSeq,
+          (seq) => latestUpdateData(deps.db, input.documentId, seq),
+        );
 
-      await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
-      await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
+        await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
+        await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
 
-      return {
-        documentId: input.documentId,
-        markdown: markdownResult.value,
-        updateSeq,
-        updateData,
-        originType: input.origin.type,
-        actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
-        actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
-      };
+        return {
+          documentId: input.documentId,
+          markdown: markdownResult.value,
+          updateSeq,
+          updateData,
+          originType: input.origin.type,
+          actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
+          actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
+        };
+      });
     },
 
     async editDocument(input: {
@@ -231,40 +237,42 @@ export function createDocumentSyncService(deps: {
       origin: DocumentWriteOrigin;
       threadId?: ThreadId;
     }) {
-      const now = new Date();
-      if (input.origin.type === "agent") {
-        await validateAgentTurn(deps.db, input.threadId, input.origin.actorTurnId);
-      }
-      await ensureMirrorForDocument(deps.db, inner, input.documentId);
+      return facadeMutex.run(input.documentId, async () => {
+        const now = new Date();
+        if (input.origin.type === "agent") {
+          await validateAgentTurn(deps.db, input.threadId, input.origin.actorTurnId);
+        }
+        await ensureMirrorForDocument(deps.db, inner, input.documentId);
 
-      const beforeSeq = await latestUpdateSeq(deps.db, input.documentId);
-      const result = await inner.transformFromMarkdown(
-        input.documentId,
-        input.transform,
-        toUpdateOrigin(input.origin),
-      );
-      if (!result.ok) throw syncErrorToHttp(result.error);
+        const beforeSeq = await latestUpdateSeq(deps.db, input.documentId);
+        const result = await inner.transformFromMarkdown(
+          input.documentId,
+          input.transform,
+          toUpdateOrigin(input.origin),
+        );
+        if (!result.ok) throw syncErrorToHttp(result.error);
 
-      const { beforeMarkdown, markdown, persistedUpdate } = result.value;
-      const { updateSeq, updateData } = await resolveWriteUpdateResult(
-        persistedUpdate,
-        beforeSeq,
-        (seq) => latestUpdateData(deps.db, input.documentId, seq),
-      );
+        const { beforeMarkdown, markdown, persistedUpdate } = result.value;
+        const { updateSeq, updateData } = await resolveWriteUpdateResult(
+          persistedUpdate,
+          beforeSeq,
+          (seq) => latestUpdateData(deps.db, input.documentId, seq),
+        );
 
-      await updateMarkdownProjection(deps.db, input.documentId, markdown, now);
-      await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
+        await updateMarkdownProjection(deps.db, input.documentId, markdown, now);
+        await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
 
-      return {
-        documentId: input.documentId,
-        beforeMarkdown,
-        markdown,
-        updateSeq,
-        updateData,
-        originType: input.origin.type,
-        actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
-        actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
-      };
+        return {
+          documentId: input.documentId,
+          beforeMarkdown,
+          markdown,
+          updateSeq,
+          updateData,
+          originType: input.origin.type,
+          actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
+          actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
+        };
+      });
     },
 
     async requireOwnedDocument(documentId: DocumentId, userId: UserId) {
@@ -310,17 +318,24 @@ export function createDocumentSyncService(deps: {
       };
     },
 
-    async afterEditorApply(input: {
+    async applyEditorUpdate(input: {
       documentId: DocumentId;
+      update: Uint8Array;
       origin: UpdateOrigin;
       threadId?: ThreadId;
     }) {
-      const now = new Date();
-      const markdownResult = await inner.readAsMarkdown(input.documentId);
-      if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
-      await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
-      await touchDocumentActivity(deps.db, input.documentId, input.threadId, now, {
-        touchAllThreadDocuments: !input.threadId && input.origin.type === "user",
+      return facadeMutex.run(input.documentId, async () => {
+        const result = await inner.applyUpdate(input.documentId, input.update, input.origin);
+        if (!result.ok) throw syncErrorToHttp(result.error);
+
+        const markdownResult = await inner.readAsMarkdown(input.documentId);
+        if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
+
+        const now = new Date();
+        await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
+        await touchDocumentActivity(deps.db, input.documentId, input.threadId, now, {
+          touchAllThreadDocuments: !input.threadId && input.origin.type === "user",
+        });
       });
     },
   });

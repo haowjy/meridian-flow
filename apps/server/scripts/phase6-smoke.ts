@@ -145,6 +145,33 @@ if (messageResponse.status !== 202) {
 }
 const messageBody = (await messageResponse.json()) as { assistantTurnId: TurnId };
 
+const db = createDb(databaseUrl);
+let agentUpdate: typeof documentYjsUpdates.$inferSelect | undefined;
+for (let attempt = 0; attempt < 60; attempt++) {
+  const [update] = await db
+    .select()
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.actorTurnId, messageBody.assistantTurnId))
+    .limit(1);
+  if (update) {
+    agentUpdate = update;
+    break;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+if (!agentUpdate) throw new Error("timed out waiting for agent-attributed Yjs update");
+
+const forgetCacheResponse = await fetch(new URL("/api/_smoke/collab/forget-cache", serverUrl), {
+  method: "POST",
+  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  body: JSON.stringify({ documentId: bootstrap.documentId }),
+});
+if (forgetCacheResponse.status !== 200) {
+  throw new Error(
+    `forget-cache failed: ${forgetCacheResponse.status} ${await forgetCacheResponse.text()}`,
+  );
+}
+
 const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
   headers: { authorization: `Bearer ${token}` },
 });
@@ -160,13 +187,6 @@ if (!syncedState.markdown.includes(expectedSnippet)) {
   throw new Error("Yjs synced markdown missing agent edit");
 }
 
-const db = createDb(databaseUrl);
-const [agentUpdate] = await db
-  .select()
-  .from(documentYjsUpdates)
-  .where(eq(documentYjsUpdates.actorTurnId, messageBody.assistantTurnId))
-  .limit(1);
-if (!agentUpdate) throw new Error("missing agent-attributed Yjs update");
 if (agentUpdate.originType !== "agent") throw new Error("Yjs update origin_type mismatch");
 
 const documentSync = createDocumentSyncService({ db });
