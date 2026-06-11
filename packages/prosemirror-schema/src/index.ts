@@ -1,6 +1,9 @@
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
 
+/** Y.XmlFragment name shared by editor Collaboration and server Yjs mirror. */
+export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
+
 function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | "toDOM"> {
   const { parseDOM, toDOM, ...structural } = spec;
   return structural as Omit<T, "parseDOM" | "toDOM">;

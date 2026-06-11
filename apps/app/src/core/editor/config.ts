@@ -1,3 +1,4 @@
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { EditorOptions, Extensions } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import StarterKit from "@tiptap/starter-kit";
@@ -14,7 +15,6 @@ import {
   MeridianOrderedList,
   MeridianStrong,
 } from "./meridian-extensions";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type CreateEditorExtensionsOptions = {
   document: Y.Doc;

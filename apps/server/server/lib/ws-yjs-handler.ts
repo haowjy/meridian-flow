@@ -28,7 +28,7 @@ export interface YjsWsHandlerDeps {
   transport: DocumentSyncTransport;
   canAccessDocument: (userId: UserId, documentId: string) => Promise<boolean>;
   updateOrigin?: (peer: YjsWsPeer) => UpdateOrigin;
-  afterPersist?: (documentId: string) => Promise<void>;
+  afterPersist?: (documentId: string, origin: UpdateOrigin) => Promise<void>;
 }
 
 export type YjsWsAuthenticatedContext = {
@@ -322,8 +322,9 @@ export function createYjsWsHandler(deps: YjsWsHandlerDeps) {
         if (capturedUpdates.length > 0) {
           const delta =
             capturedUpdates.length === 1 ? capturedUpdates[0] : Y.mergeUpdates(capturedUpdates);
+          const origin = updateOrigin(peer);
           await persistMutex.run(conn.documentId, async () => {
-            const result = await transport.applyUpdate(conn.documentId, delta, updateOrigin(peer));
+            const result = await transport.applyUpdate(conn.documentId, delta, origin);
             if (!result.ok) {
               logWsError("apply_update.failed", {
                 documentId: conn.documentId,
@@ -331,7 +332,7 @@ export function createYjsWsHandler(deps: YjsWsHandlerDeps) {
               });
               return;
             }
-            await afterPersist(conn.documentId);
+            await afterPersist(conn.documentId, origin);
           });
         }
         break;

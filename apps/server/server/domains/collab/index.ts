@@ -20,10 +20,10 @@ import {
   type DocumentSyncServiceOptions,
   type DocumentSyncService as InnerDocumentSyncService,
 } from "./domain/document-sync-service.js";
-import { FRAGMENT_NAME } from "./domain/yjs-mirror.js";
 import type {
   DocumentSyncPort,
   DocumentSyncTransport,
+  PersistedUpdate,
   SyncError,
   UpdateOrigin,
 } from "./ports/document-sync.js";
@@ -64,6 +64,11 @@ export type DocumentSyncFacade = DocumentSyncPort &
       actorUserId: UserId | null;
       updateSeq: number | null;
     }>;
+    afterEditorApply(input: {
+      documentId: DocumentId;
+      origin: UpdateOrigin;
+      threadId?: ThreadId;
+    }): Promise<void>;
   };
 
 export type DocumentSyncService = DocumentSyncFacade;
@@ -99,6 +104,7 @@ async function touchDocumentActivity(
   documentId: DocumentId,
   threadId: ThreadId | undefined,
   now: Date,
+  options?: { touchAllThreadDocuments?: boolean },
 ): Promise<void> {
   const [scope] = await db
     .select({
@@ -118,6 +124,11 @@ async function touchDocumentActivity(
       .where(
         and(eq(threadDocuments.threadId, threadId), eq(threadDocuments.documentId, documentId)),
       );
+  } else if (options?.touchAllThreadDocuments) {
+    await db
+      .update(threadDocuments)
+      .set({ lastTouchedAt: now })
+      .where(eq(threadDocuments.documentId, documentId));
   }
   if (scope?.workId) {
     await db.update(works).set({ updatedAt: now }).where(eq(works.id, scope.workId));
@@ -194,8 +205,11 @@ export function createDocumentSyncService(deps: {
 
       const markdownResult = await inner.readAsMarkdown(input.documentId);
       if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
-      const updateSeq = (await latestUpdateSeq(deps.db, input.documentId)) ?? beforeSeq ?? 0;
-      const updateData = await latestUpdateData(deps.db, input.documentId, updateSeq);
+      const { updateSeq, updateData } = await resolveWriteUpdateResult(
+        result.value,
+        beforeSeq,
+        (seq) => latestUpdateData(deps.db, input.documentId, seq),
+      );
 
       await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
       await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
@@ -223,27 +237,27 @@ export function createDocumentSyncService(deps: {
       }
       await ensureMirrorForDocument(deps.db, inner, input.documentId);
 
-      const before = await inner.readAsMarkdown(input.documentId);
-      if (!before.ok) throw syncErrorToHttp(before.error);
-
-      const markdown = input.transform(before.value);
       const beforeSeq = await latestUpdateSeq(deps.db, input.documentId);
-      const result = await inner.writeFromMarkdown(
+      const result = await inner.transformFromMarkdown(
         input.documentId,
-        markdown,
+        input.transform,
         toUpdateOrigin(input.origin),
       );
       if (!result.ok) throw syncErrorToHttp(result.error);
 
-      const updateSeq = (await latestUpdateSeq(deps.db, input.documentId)) ?? beforeSeq ?? 0;
-      const updateData = await latestUpdateData(deps.db, input.documentId, updateSeq);
+      const { beforeMarkdown, markdown, persistedUpdate } = result.value;
+      const { updateSeq, updateData } = await resolveWriteUpdateResult(
+        persistedUpdate,
+        beforeSeq,
+        (seq) => latestUpdateData(deps.db, input.documentId, seq),
+      );
 
       await updateMarkdownProjection(deps.db, input.documentId, markdown, now);
       await touchDocumentActivity(deps.db, input.documentId, input.threadId, now);
 
       return {
         documentId: input.documentId,
-        beforeMarkdown: before.value,
+        beforeMarkdown,
         markdown,
         updateSeq,
         updateData,
@@ -295,6 +309,20 @@ export function createDocumentSyncService(deps: {
         updateSeq: update?.id ?? null,
       };
     },
+
+    async afterEditorApply(input: {
+      documentId: DocumentId;
+      origin: UpdateOrigin;
+      threadId?: ThreadId;
+    }) {
+      const now = new Date();
+      const markdownResult = await inner.readAsMarkdown(input.documentId);
+      if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
+      await updateMarkdownProjection(deps.db, input.documentId, markdownResult.value, now);
+      await touchDocumentActivity(deps.db, input.documentId, input.threadId, now, {
+        touchAllThreadDocuments: !input.threadId && input.origin.type === "user",
+      });
+    },
   });
 }
 
@@ -332,6 +360,22 @@ async function resetMirrorRows(db: Database, documentId: DocumentId): Promise<vo
   });
 }
 
+async function resolveWriteUpdateResult(
+  persisted: PersistedUpdate | null,
+  beforeSeq: number | null,
+  loadUpdateData: (updateSeq: number) => Promise<Buffer>,
+): Promise<{ updateSeq: number; updateData: Buffer }> {
+  if (persisted) {
+    return {
+      updateSeq: persisted.updateSeq,
+      updateData: Buffer.from(persisted.updateData),
+    };
+  }
+  const updateSeq = beforeSeq ?? 0;
+  const updateData = beforeSeq ? await loadUpdateData(beforeSeq) : Buffer.alloc(0);
+  return { updateSeq, updateData };
+}
+
 async function latestUpdateSeq(db: Database, documentId: DocumentId): Promise<number | null> {
   const [update] = await db
     .select({ id: documentYjsUpdates.id })
@@ -359,5 +403,4 @@ export function createInMemoryDocumentStore(): { phase: "phase4" } {
   return { phase: "phase4" };
 }
 
-export type { DocumentSyncServiceOptions, SyncError, UpdateOrigin };
-export { FRAGMENT_NAME };
+export type { DocumentSyncServiceOptions, PersistedUpdate, SyncError, UpdateOrigin };

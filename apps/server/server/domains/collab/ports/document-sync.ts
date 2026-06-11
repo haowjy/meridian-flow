@@ -21,6 +21,11 @@ export interface CheckpointInfo {
   createdAt: string;
 }
 
+export type PersistedUpdate = {
+  updateSeq: number;
+  updateData: Uint8Array;
+};
+
 export interface DocumentSyncPort {
   getOrCreateMirror(
     documentId: string,
@@ -34,12 +39,12 @@ export interface DocumentSyncPort {
     oldText: string,
     newText: string,
     origin: UpdateOrigin,
-  ): Promise<Result<void, SyncError>>;
+  ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeFromMarkdown(
     documentId: string,
     markdown: string,
     origin: UpdateOrigin,
-  ): Promise<Result<void, SyncError>>;
+  ): Promise<Result<PersistedUpdate | null, SyncError>>;
   checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
   restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;

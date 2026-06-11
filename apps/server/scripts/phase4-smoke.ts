@@ -8,6 +8,8 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb, documents, documentYjsUpdates } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import WebSocket from "ws";
+import * as Y from "yjs";
+import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
   loadEnvFile("../../.env");
@@ -71,8 +73,7 @@ function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
     );
     ws.on("message", (raw) => {
       if (typeof raw !== "string" && !Buffer.isBuffer(raw)) return;
-      const text = raw.toString();
-      const frame = parseYjsServerControlFrame(text);
+      const frame = parseYjsServerControlFrame(raw.toString());
       if (frame?.type === "subscribed") {
         clearTimeout(timeout);
         resolve({ channelIndex: frame.channelIndex });
@@ -81,21 +82,27 @@ function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
   });
 }
 
-function waitForBinaryUpdate(
+function waitForSyncedMarkdown(
   ws: WebSocket,
-): Promise<{ channelIndex: number; payload: Uint8Array }> {
+  expected: string,
+): Promise<{ channelIndex: number; markdown: string }> {
+  const doc = new Y.Doc();
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("timed out waiting for yjs update")), 10_000);
+    const timeout = setTimeout(() => {
+      doc.destroy();
+      reject(new Error("timed out waiting for yjs markdown sync"));
+    }, 10_000);
     ws.on("message", (raw) => {
       if (typeof raw === "string") return;
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.concat(raw as Buffer[]);
+      if (bytes[0] === 0x7b) return;
       const envelope = decodeYjsBinaryEnvelope(bytes);
-      if (envelope) {
+      if (envelope?.payload[0] !== 0) return;
+      const markdown = applyWsSyncPayloadToMarkdown(doc, envelope.payload);
+      if (markdown.includes(expected)) {
         clearTimeout(timeout);
-        resolve({
-          channelIndex: envelope.channelIndex,
-          payload: envelope.payload,
-        });
+        doc.destroy();
+        resolve({ channelIndex: envelope.channelIndex, markdown });
       }
     });
   });
@@ -114,12 +121,6 @@ if (bootstrapResponse.status !== 201) {
 }
 const bootstrap = (await bootstrapResponse.json()) as BootstrapResponse;
 
-const yjs = new WebSocket(wsUrlFor(serverUrl), { headers: { authorization: `Bearer ${token}` } });
-await waitForOpen(yjs);
-const subscribed = waitForSubscribed(yjs);
-yjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
-const { channelIndex } = await subscribed;
-
 const messageResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/messages`, serverUrl),
   {
@@ -134,7 +135,7 @@ if (messageResponse.status !== 202) {
 const messageBody = (await messageResponse.json()) as { assistantTurnId: string };
 
 const markdown = `# Chapter 1\n\nPhase 4 smoke ${Date.now()}\n`;
-const updatePromise = waitForBinaryUpdate(yjs);
+const expectedMarkdown = markdown.trimEnd();
 const writeResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/context/write`, serverUrl),
   {
@@ -150,8 +151,6 @@ if (writeResponse.status !== 202) {
   throw new Error(`context write failed: ${writeResponse.status} ${await writeResponse.text()}`);
 }
 const writeBody = (await writeResponse.json()) as { updateSeq: number };
-const update = await updatePromise;
-yjs.close();
 
 const readResponse = await fetch(
   new URL(
@@ -164,7 +163,19 @@ if (readResponse.status !== 200) {
   throw new Error(`context read failed: ${readResponse.status} ${await readResponse.text()}`);
 }
 const readBody = (await readResponse.json()) as { markdown: string };
-if (readBody.markdown !== markdown) throw new Error("context read did not return written markdown");
+if (readBody.markdown !== expectedMarkdown)
+  throw new Error("context read did not return written markdown");
+
+const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
+  headers: { authorization: `Bearer ${token}` },
+});
+await waitForOpen(verifyYjs);
+const synced = waitForSyncedMarkdown(verifyYjs, expectedMarkdown);
+const subscribed = waitForSubscribed(verifyYjs);
+verifyYjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
+const { channelIndex } = await subscribed;
+const syncedState = await synced;
+verifyYjs.close();
 
 const db = createDb(databaseUrl);
 const [document] = await db
@@ -177,11 +188,11 @@ const [yjsUpdate] = await db
   .where(eq(documentYjsUpdates.id, writeBody.updateSeq));
 await db.close();
 
-if (document?.markdownProjection !== markdown) throw new Error("DB markdown projection mismatch");
+if (document?.markdownProjection !== expectedMarkdown)
+  throw new Error("DB markdown projection mismatch");
 if (yjsUpdate?.originType !== "user") throw new Error("Yjs update origin_type mismatch");
-if (update.channelIndex !== channelIndex) throw new Error("Yjs update channel mismatch");
-if (update.payload.length < 2) throw new Error("Yjs update payload too small for sync frame");
-if (update.payload[0] !== 0) throw new Error("Yjs update payload is not a sync message");
+if (syncedState.channelIndex !== channelIndex) throw new Error("Yjs sync channel mismatch");
+if (syncedState.markdown !== expectedMarkdown) throw new Error("Yjs synced markdown mismatch");
 
 console.log(
   JSON.stringify(
@@ -194,7 +205,7 @@ console.log(
       documentId: bootstrap.documentId,
       assistantTurnId: messageBody.assistantTurnId,
       updateSeq: writeBody.updateSeq,
-      yjsChannelIndex: update.channelIndex,
+      yjsChannelIndex: channelIndex,
     },
     null,
     2,

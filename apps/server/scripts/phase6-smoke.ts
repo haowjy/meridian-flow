@@ -17,9 +17,11 @@ import {
 } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import WebSocket from "ws";
+import * as Y from "yjs";
 import { createDocumentSyncService } from "../server/domains/collab/index.js";
 import { createProductionContextPortFactory } from "../server/domains/context/index.js";
 import { createRuntimeToolRegistry } from "../server/domains/runtime/tool-registry.js";
+import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
   loadEnvFile("../../.env");
@@ -89,18 +91,28 @@ function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
   });
 }
 
-function waitForBinaryUpdate(
+function waitForSyncedMarkdown(
   ws: WebSocket,
-): Promise<{ channelIndex: number; payload: Uint8Array }> {
+  expected: string,
+): Promise<{ channelIndex: number; markdown: string }> {
+  const doc = new Y.Doc();
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("timed out waiting for yjs update")), 10_000);
+    const timeout = setTimeout(() => {
+      doc.destroy();
+      reject(new Error("timed out waiting for yjs markdown sync"));
+    }, 10_000);
     ws.on("message", (raw) => {
       if (typeof raw === "string") return;
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.concat(raw as Buffer[]);
+      if (bytes[0] === 0x7b) return;
       const envelope = decodeYjsBinaryEnvelope(bytes);
-      if (!envelope || envelope.payload.length < 1 || envelope.payload[0] !== 0) return;
-      clearTimeout(timeout);
-      resolve({ channelIndex: envelope.channelIndex, payload: envelope.payload });
+      if (envelope?.payload[0] !== 0) return;
+      const markdown = applyWsSyncPayloadToMarkdown(doc, envelope.payload);
+      if (markdown.includes(expected)) {
+        clearTimeout(timeout);
+        doc.destroy();
+        resolve({ channelIndex: envelope.channelIndex, markdown });
+      }
     });
   });
 }
@@ -118,14 +130,8 @@ if (bootstrapResponse.status !== 201) {
 }
 const bootstrap = (await bootstrapResponse.json()) as BootstrapResponse;
 
-const yjs = new WebSocket(wsUrlFor(serverUrl), { headers: { authorization: `Bearer ${token}` } });
-await waitForOpen(yjs);
-const subscribed = waitForSubscribed(yjs);
-yjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
-const { channelIndex } = await subscribed;
-
-const updatePromise = waitForBinaryUpdate(yjs);
 const messageText = `phase six edit ${Date.now()}`;
+const expectedSnippet = `Acknowledged: ${messageText}`;
 const messageResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/messages`, serverUrl),
   {
@@ -138,11 +144,21 @@ if (messageResponse.status !== 202) {
   throw new Error(`message failed: ${messageResponse.status} ${await messageResponse.text()}`);
 }
 const messageBody = (await messageResponse.json()) as { assistantTurnId: TurnId };
-const update = await updatePromise;
-yjs.close();
 
-if (update.channelIndex !== channelIndex) throw new Error("Yjs update channel mismatch");
-if (update.payload[0] !== 0) throw new Error("Yjs update payload is not a sync message");
+const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
+  headers: { authorization: `Bearer ${token}` },
+});
+await waitForOpen(verifyYjs);
+const synced = waitForSyncedMarkdown(verifyYjs, expectedSnippet);
+const subscribed = waitForSubscribed(verifyYjs);
+verifyYjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
+const { channelIndex } = await subscribed;
+const syncedState = await synced;
+verifyYjs.close();
+if (syncedState.channelIndex !== channelIndex) throw new Error("Yjs sync channel mismatch");
+if (!syncedState.markdown.includes(expectedSnippet)) {
+  throw new Error("Yjs synced markdown missing agent edit");
+}
 
 const db = createDb(databaseUrl);
 const [agentUpdate] = await db

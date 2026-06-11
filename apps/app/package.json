@@ -16,6 +16,7 @@
   "dependencies": {
     "@meridian/contracts": "workspace:*",
     "@meridian/design-tokens": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
     "@tiptap/core": "^2.26.1",
     "@tiptap/extension-bold": "^2.26.1",
     "@tiptap/extension-bullet-list": "^2.26.1",

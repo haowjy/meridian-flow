@@ -1,12 +1,8 @@
 import { encodeYjsControlFrame, type YjsControlErrorCode } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { Database } from "@meridian/database";
-import { documents } from "@meridian/database";
-import { eq } from "drizzle-orm";
 import { defineWebSocketHandler } from "nitro";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
-import { getDb } from "../../lib/db.js";
 import { safeWsSend } from "../../lib/ws-safe-send.js";
 import {
   deferWsClose,
@@ -34,28 +30,14 @@ type YjsRoutePeer = Omit<YjsWsPeer, "context"> & {
   context?: YjsRouteContext;
 };
 
-type YjsRouteServices = Pick<AppServices, "documentSync"> & {
-  db: Database;
-};
+type YjsRouteServices = Pick<AppServices, "documentSync">;
 
 let handlerPromise: Promise<ReturnType<typeof createYjsWsHandler>> | null = null;
 
 function selectYjsRouteServices(app: AppServices): YjsRouteServices {
   return {
-    db: getDb(),
     documentSync: app.documentSync,
   };
-}
-
-async function updateDocumentProjection(
-  db: Database,
-  documentId: string,
-  markdown: string,
-): Promise<void> {
-  await db
-    .update(documents)
-    .set({ markdownProjection: markdown, updatedAt: new Date() })
-    .where(eq(documents.id, documentId as DocumentId));
 }
 
 function createHandler(services: YjsRouteServices): ReturnType<typeof createYjsWsHandler> {
@@ -73,13 +55,15 @@ function createHandler(services: YjsRouteServices): ReturnType<typeof createYjsW
       const userId = peer.context?.userId;
       return userId ? { type: "user", userId } : { type: "system" };
     },
-    async afterPersist(documentId) {
-      const markdown = await services.documentSync.readAsMarkdown(documentId as DocumentId);
-      if (!markdown.ok) {
-        console.error("ws-yjs-route: projection markdown read failed", documentId, markdown.error);
-        return;
+    async afterPersist(documentId, origin) {
+      try {
+        await services.documentSync.afterEditorApply({
+          documentId: documentId as DocumentId,
+          origin,
+        });
+      } catch (error) {
+        console.error("ws-yjs-route: afterEditorApply failed", documentId, error);
       }
-      await updateDocumentProjection(services.db, documentId, markdown.value);
     },
   });
 }

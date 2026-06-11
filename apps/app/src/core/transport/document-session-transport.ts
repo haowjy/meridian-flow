@@ -221,6 +221,7 @@ export class DocumentChannel implements DocumentChannelProvider {
 
 export class DocumentSessionTransport {
   private socket: WebSocket | null = null;
+  private socketGeneration = 0;
   private readonly channels = new Map<string, DocumentChannel>();
   private readonly channelIndexToDocument = new Map<number, string>();
 
@@ -264,7 +265,12 @@ export class DocumentSessionTransport {
       this.channelIndexToDocument.clear();
       this.socket?.close();
       this.socket = null;
+      this.socketGeneration += 1;
     }
+  }
+
+  private isCurrentSocket(socket: WebSocket, generation: number): boolean {
+    return this.socket === socket && this.socketGeneration === generation;
   }
 
   private ensureConnected(): void {
@@ -276,9 +282,12 @@ export class DocumentSessionTransport {
     }
     const socket = new WebSocket(serverWebSocketUrl(yjsWsPath()));
     socket.binaryType = "arraybuffer";
+    const generation = this.socketGeneration + 1;
+    this.socketGeneration = generation;
     this.socket = socket;
 
     socket.addEventListener("open", () => {
+      if (!this.isCurrentSocket(socket, generation)) return;
       this.channelIndexToDocument.clear();
       for (const documentId of this.channels.keys()) {
         this.sendControl({ type: "subscribe", documentId });
@@ -289,10 +298,12 @@ export class DocumentSessionTransport {
     });
 
     socket.addEventListener("message", (event) => {
-      void this.handleSocketMessage(event.data);
+      if (!this.isCurrentSocket(socket, generation)) return;
+      void this.handleSocketMessage(event.data, socket, generation);
     });
 
     socket.addEventListener("close", () => {
+      if (!this.isCurrentSocket(socket, generation)) return;
       this.channelIndexToDocument.clear();
       for (const channel of this.channels.values()) {
         channel.onDisconnected({ kind: "disconnected" });
@@ -304,19 +315,21 @@ export class DocumentSessionTransport {
     });
 
     socket.addEventListener("error", () => {
+      if (!this.isCurrentSocket(socket, generation)) return;
       for (const channel of this.channels.values()) {
         channel.publishConnectionState({ kind: "degraded", attempt: 1, nextRetryAt: Date.now() });
       }
     });
   }
 
-  private handleSocketMessage(data: unknown): void {
+  private handleSocketMessage(data: unknown, socket: WebSocket, generation: number): void {
+    if (!this.isCurrentSocket(socket, generation)) return;
     if (typeof data === "string") {
       this.handleControlFrame(data);
       return;
     }
     void this.readMessageData(data).then((bytes) => {
-      if (!bytes) return;
+      if (!this.isCurrentSocket(socket, generation) || !bytes) return;
       this.handleBinaryFrame(bytes);
     });
   }

@@ -11,6 +11,8 @@ test("streams an agent edit into the live TipTap editor with attribution", async
   await expect(page.getByTestId("thread-ws-status")).toContainText("subscribed");
   await expect(page.getByTestId("yjs-status")).toContainText("subscribed");
 
+  await expect(editor).toHaveClass(/ProseMirror/);
+  await expect(editor).toHaveAttribute("contenteditable", "true");
   await expect(editor).toContainText("Chapter 1");
 
   const uniqueMessage = `Phase 7 final gate ${Date.now()}`;
@@ -30,9 +32,8 @@ test("streams an agent edit into the live TipTap editor with attribution", async
   await expect(attribution).toHaveAttribute("data-origin-type", "agent");
   await expect(attribution).toHaveAttribute("data-actor-turn-id", assistantTurnId ?? "");
   await expect(attribution).toContainText(assistantTurnId ?? "");
-
-  const debugText = await page.evaluate(() => window.__MERIDIAN_EDITOR_DEBUG__?.getText() ?? "");
-  expect(debugText).toContain(`Acknowledged: ${uniqueMessage}`);
+  await expect(editor).toHaveAttribute("contenteditable", "true");
+  await expect(editor).toContainText(`Acknowledged: ${uniqueMessage}`);
 });
 
 test("source tree has no markdown-replace protocol path", () => {

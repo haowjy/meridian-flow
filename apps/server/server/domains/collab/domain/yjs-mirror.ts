@@ -1,3 +1,4 @@
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import {
   prosemirrorToYXmlFragment,
@@ -8,8 +9,6 @@ import * as Y from "yjs";
 import type { SchemaType, UpdateOrigin } from "../ports/document-sync.js";
 import { buildFragmentCache, type FragmentCache } from "./fragment-cache.js";
 import { getSchema, markdownToNode, nodeToMarkdown } from "./schemas.js";
-
-export const FRAGMENT_NAME = "prosemirror";
 
 export interface MirrorEntry {
   doc: Y.Doc;
@@ -35,7 +34,7 @@ function applyBytes(doc: Y.Doc, update: Uint8Array, origin?: UpdateOrigin): void
 }
 
 function fragmentOf(doc: Y.Doc): Y.XmlFragment {
-  return doc.getXmlFragment(FRAGMENT_NAME);
+  return doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
 }
 
 function rootOf(doc: Y.Doc, schemaType: SchemaType): PMNode {
@@ -57,7 +56,7 @@ export function createMirror(initialContent: string, filetype: string): MirrorEn
   prosemirrorToYXmlFragment(node, fragmentOf(doc));
   return {
     doc,
-    fragmentName: FRAGMENT_NAME,
+    fragmentName: PROSEMIRROR_FRAGMENT_NAME,
     filetype,
     schemaType,
     cache: buildFragmentCache(node, schemaType),
@@ -79,7 +78,7 @@ export function rebuildMirror(
   }
   const entry: MirrorEntry = {
     doc,
-    fragmentName: FRAGMENT_NAME,
+    fragmentName: PROSEMIRROR_FRAGMENT_NAME,
     filetype,
     schemaType,
     cache: buildFragmentCache(rootOf(doc, schemaType), schemaType),

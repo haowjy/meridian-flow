@@ -6,6 +6,7 @@ import type {
   CheckpointInfo,
   DocumentSyncPort,
   DocumentSyncTransport,
+  PersistedUpdate,
   SyncError,
   UpdateOrigin,
 } from "../ports/document-sync.js";
@@ -89,7 +90,7 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
     oldText: string,
     newText: string,
     origin: UpdateOrigin,
-  ): Promise<Result<void, SyncError>> {
+  ): Promise<Result<PersistedUpdate | null, SyncError>> {
     return this.run(documentId, async () => {
       const entry = await this.load(documentId);
       if (!entry) {
@@ -105,8 +106,8 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
       }
       const index = full.indexOf(oldText);
       const target = full.slice(0, index) + newText + full.slice(index + oldText.length);
-      await this.applyTarget(documentId, entry, target, origin);
-      return Ok(undefined);
+      const persisted = await this.applyTarget(documentId, entry, target, origin);
+      return Ok(persisted);
     });
   }
 
@@ -114,14 +115,36 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
     documentId: string,
     markdown: string,
     origin: UpdateOrigin,
-  ): Promise<Result<void, SyncError>> {
+  ): Promise<Result<PersistedUpdate | null, SyncError>> {
     return this.run(documentId, async () => {
       const entry = await this.load(documentId);
       if (!entry) {
         return Err<SyncError>({ code: "not_found", documentId });
       }
-      await this.applyTarget(documentId, entry, markdown, origin);
-      return Ok(undefined);
+      const persisted = await this.applyTarget(documentId, entry, markdown, origin);
+      return Ok(persisted);
+    });
+  }
+
+  async transformFromMarkdown(
+    documentId: string,
+    transform: (markdown: string) => string,
+    origin: UpdateOrigin,
+  ): Promise<
+    Result<
+      { beforeMarkdown: string; markdown: string; persistedUpdate: PersistedUpdate | null },
+      SyncError
+    >
+  > {
+    return this.run(documentId, async () => {
+      const entry = await this.load(documentId);
+      if (!entry) {
+        return Err<SyncError>({ code: "not_found", documentId });
+      }
+      const beforeMarkdown = readAsMarkdown(entry);
+      const markdown = transform(beforeMarkdown);
+      const persistedUpdate = await this.applyTarget(documentId, entry, markdown, origin);
+      return Ok({ beforeMarkdown, markdown, persistedUpdate });
     });
   }
 
@@ -228,13 +251,15 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
     entry: MirrorEntry,
     target: string,
     origin: UpdateOrigin,
-  ): Promise<void> {
+  ): Promise<PersistedUpdate | null> {
     const staged = cloneMirror(entry);
     const update = setDocumentToMarkdown(staged, target, origin);
-    if (update) {
-      await this.persistUpdate(documentId, staged, update, origin);
-      applyRemoteUpdate(entry, update, origin);
+    if (!update) {
+      return null;
     }
+    const persisted = await this.persistUpdate(documentId, staged, update, origin);
+    applyRemoteUpdate(entry, update, origin);
+    return persisted;
   }
 
   private run<T>(
@@ -282,19 +307,21 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
     entry: MirrorEntry,
     update: Uint8Array,
     origin: UpdateOrigin,
-  ): Promise<void> {
+  ): Promise<PersistedUpdate> {
+    let updateSeq = 0;
     await this.store.transaction(async (store) => {
-      const seq = await store.appendUpdate({
+      updateSeq = await store.appendUpdate({
         documentId,
         updateData: update,
         ...originColumns(origin),
       });
       const head = await store.getHead(documentId);
       await store.upsertHead(
-        this.headFor(documentId, entry, seq, head?.latestCheckpointId ?? null),
+        this.headFor(documentId, entry, updateSeq, head?.latestCheckpointId ?? null),
       );
-      await this.maybeAutoCheckpoint(store, documentId, entry, seq);
+      await this.maybeAutoCheckpoint(store, documentId, entry, updateSeq);
     });
+    return { updateSeq, updateData: update };
   }
 
   private async maybeAutoCheckpoint(

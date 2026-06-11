@@ -1,20 +1,10 @@
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useMemo } from "react";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { getDocumentSessionTransport } from "@/core/transport/document-session-transport";
 import { createEditorConfig } from "./config";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-
-declare global {
-  interface Window {
-    __MERIDIAN_EDITOR_DEBUG__?: {
-      getText: () => string;
-      getFragmentText: () => string;
-      documentId: string;
-    };
-  }
-}
 
 type ChapterEditorProps = {
   documentId: string;
@@ -57,19 +47,6 @@ export function ChapterEditor({ documentId, onSyncStatus, onError }: ChapterEdit
     }),
     immediatelyRender: false,
   });
-
-  useEffect(() => {
-    window.__MERIDIAN_EDITOR_DEBUG__ = {
-      documentId,
-      getText: () => editor?.getText() ?? "",
-      getFragmentText: () => document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString(),
-    };
-    return () => {
-      if (window.__MERIDIAN_EDITOR_DEBUG__?.documentId === documentId) {
-        delete window.__MERIDIAN_EDITOR_DEBUG__;
-      }
-    };
-  }, [document, documentId, editor]);
 
   return <EditorContent editor={editor} />;
 }
