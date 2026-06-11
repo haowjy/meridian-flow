@@ -207,11 +207,26 @@ export type ModelRequestDebugRecord = {
   systemPrompt: string;
 };
 
-export type OrchestratorEvent = {
-  type: JournalEventType;
+export type OrchestratorTurn = {
+  id: TurnId;
   threadId: ThreadId;
-  payload: JsonValue;
+  role: TurnRole;
+  status: TurnStatus;
+  blocks: Array<{ sequence: number }>;
+  createdAt: string;
+  completedAt: string | null;
 };
+
+export type OrchestratorEvent =
+  | { type: "turn.created"; turn: OrchestratorTurn }
+  | { type: "turn.completed"; turn: OrchestratorTurn }
+  | {
+      type: "stream.delta";
+      threadId: ThreadId;
+      turnId: TurnId;
+      kind: "text";
+      text: string;
+    };
 
 export type BlockUpsertedRow = {
   block: Block;

@@ -16,6 +16,7 @@ export { blockPlainText } from "../threads/block-plain-text.js";
 export type { TurnStatus } from "../threads/status.js";
 export { isTerminalTurnStatus } from "../threads/status.js";
 export * from "./agui.js";
+export * from "./event-seq.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
 export * from "./paths.js";

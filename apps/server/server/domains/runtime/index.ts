@@ -1,12 +1,24 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 
-/** Phase 0 placeholder for the model gateway seam wired in Phase 3+. */
-export type Gateway = {
-  readonly phase: "skeleton";
+export type GenerateAssistantTextInput = {
+  threadId: ThreadId;
+  userText: string;
 };
 
+export type Gateway = {
+  generateAssistantText(input: GenerateAssistantTextInput): Promise<string>;
+};
+
+export function createFakeGateway(): Gateway {
+  return {
+    async generateAssistantText(input) {
+      return `Acknowledged: ${input.userText}`;
+    },
+  };
+}
+
 export async function createGatewayFromEnv(): Promise<{ gateway: Gateway }> {
-  return { gateway: { phase: "skeleton" } };
+  return { gateway: createFakeGateway() };
 }
 
 export type RunTurnPort = {

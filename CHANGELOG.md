@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server:** add Phase 3 thread runtime POST + authenticated WebSocket event hub with AG-UI catchup/replay smoke coverage.
 - **auth:** add Supabase Phase 2 app/server auth gates, dev-login, portless Playwright auth setup, and protected auth smoke route.
 - **v3:** add TanStack/Nitro app-server skeleton and Phase 0 contracts surface for the Voluma rip-plan.
 - **database:** add Phase 1 thread event schema amendments plus Drizzle event-journal append/read adapter tests.

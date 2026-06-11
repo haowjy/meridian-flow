@@ -9,6 +9,7 @@ import type {
   EventJournalWriter,
   ThreadEventHub,
   ThreadRepositories,
+  ThreadRuntimeService,
 } from "../domains/threads/index.js";
 
 export type AppServices = {
@@ -17,6 +18,7 @@ export type AppServices = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   threadEventHub: ThreadEventHub;
+  threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
   contextPorts: ContextPortFactory;
   projects: ProjectRepository;
@@ -37,19 +39,60 @@ export function createProductionAppPorts(input: ProductionAppPorts): ProductionA
 
 export function createInMemoryAppServices(): AppServices {
   return {
-    gateway: { phase: "skeleton" },
-    threadRepos: { phase: "skeleton" },
+    gateway: {
+      async generateAssistantText(input) {
+        return `Acknowledged: ${input.userText}`;
+      },
+    },
+    threadRepos: { phase: "phase3" },
     journalReader: {
+      async readAfter() {
+        return [];
+      },
       async headSeq() {
         return "0";
       },
     },
     journalWriter: {
-      async append() {
-        return "1";
+      async appendEvent() {
+        return 1n;
       },
     },
-    threadEventHub: { phase: "skeleton" },
+    threadEventHub: {
+      publishPersistedEvent() {},
+      async appendEvent() {
+        return 0n;
+      },
+      async catchup() {
+        return [];
+      },
+      subscribe() {
+        return () => undefined;
+      },
+      async catchupAndSubscribe() {
+        return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
+      },
+      async headSeq() {
+        return 0n;
+      },
+      journalSeqForEventSeq(seq: bigint) {
+        return seq / 1000n;
+      },
+    },
+    threadRuntime: {
+      async requireOwnedThread() {
+        throw new Error("in-memory thread runtime is not implemented");
+      },
+      async liveState() {
+        throw new Error("in-memory thread runtime is not implemented");
+      },
+      async sendMessage() {
+        throw new Error("in-memory thread runtime is not implemented");
+      },
+      async journalEvents() {
+        return [];
+      },
+    },
     documentSync: { phase: "skeleton" },
     contextPorts: {
       forThread() {

@@ -1,51 +1,61 @@
-export type EventJournalReader = {
-  headSeq(_threadId: string): Promise<string>;
-};
+import type { ThreadId } from "@meridian/contracts/runtime";
+import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
+import {
+  createDrizzleEventJournal,
+  type Database,
+  type EventJournalRecord,
+} from "@meridian/database";
+import { createThreadEventHub, type ThreadEventHub } from "./event-hub.js";
+import { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 
-export type EventJournalWriter = {
-  append(_input: { threadId: string; payload: unknown }): Promise<string>;
-};
+export type JournalEventEnvelope = OrchestratorEvent;
+
+export interface EventJournalReader {
+  readAfter(threadId: ThreadId, afterSeq: string, limit?: number): Promise<EventJournalRecord[]>;
+  headSeq(threadId: ThreadId): Promise<string>;
+}
+
+export interface EventJournalWriter {
+  appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
+}
 
 export type ThreadRepositories = {
-  readonly phase: "skeleton";
+  readonly phase: "phase3";
 };
-
-export type ThreadEventHub = {
-  readonly phase: "skeleton";
-};
-
-export function createInMemoryEventJournalReader(): EventJournalReader {
-  return {
-    async headSeq() {
-      return "0";
-    },
-  };
-}
-
-export function createInMemoryEventJournalWriter(): EventJournalWriter {
-  return {
-    async append() {
-      return "1";
-    },
-  };
-}
 
 export function createInMemoryRepositories(): ThreadRepositories {
-  return { phase: "skeleton" };
+  return { phase: "phase3" };
 }
 
-export function createThreadEventHub(): ThreadEventHub {
-  return { phase: "skeleton" };
+export function createDrizzleEventJournalReader(db: Database): EventJournalReader {
+  const journal = createDrizzleEventJournal(db);
+  return {
+    async readAfter(threadId, afterSeq, limit) {
+      return journal.readAfter(threadId, afterSeq, limit);
+    },
+    headSeq: journal.headSeq,
+  };
 }
 
-export function createDrizzleEventJournalReader(_db: unknown): EventJournalReader {
-  return createInMemoryEventJournalReader();
+export function createDrizzleEventJournalWriter(db: Database): EventJournalWriter {
+  const journal = createDrizzleEventJournal(db);
+  return {
+    async appendEvent(threadId, event) {
+      const seq = await journal.append({
+        threadId,
+        turnId: "turn" in event ? event.turn.id : "turnId" in event ? event.turnId : null,
+        eventType: event.type,
+        payload: event as JsonValue,
+      });
+      return BigInt(seq);
+    },
+  };
 }
 
-export function createDrizzleEventJournalWriter(_db: unknown): EventJournalWriter {
-  return createInMemoryEventJournalWriter();
-}
-
-export function createDrizzleRepositories(_db: unknown): ThreadRepositories {
+export function createDrizzleRepositories(_db: Database): ThreadRepositories {
   return createInMemoryRepositories();
 }
+
+export type { SequencedEventInternal } from "./event-hub.js";
+export type { ThreadEventHub, ThreadRuntimeService };
+export { createThreadEventHub, createThreadRuntimeService };

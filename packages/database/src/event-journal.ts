@@ -23,7 +23,7 @@ export type AppendEventJournalInput = {
 
 export type DrizzleEventJournal = {
   append(input: AppendEventJournalInput): Promise<string>;
-  readAfter(threadId: ThreadId, seq: string): Promise<EventJournalRecord[]>;
+  readAfter(threadId: ThreadId, seq: string, limit?: number): Promise<EventJournalRecord[]>;
   headSeq(threadId: ThreadId): Promise<string>;
 };
 
@@ -50,12 +50,14 @@ export function createDrizzleEventJournal(db: Database): DrizzleEventJournal {
       });
     },
 
-    async readAfter(threadId, seq) {
-      const rows = await db
+    async readAfter(threadId, seq, limit) {
+      const query = db
         .select()
         .from(eventJournal)
         .where(sql`${eventJournal.threadId} = ${threadId} AND ${eventJournal.seq} > ${BigInt(seq)}`)
         .orderBy(asc(eventJournal.seq));
+
+      const rows = typeof limit === "number" ? await query.limit(limit) : await query;
 
       return rows.map(toEventJournalRecord);
     },

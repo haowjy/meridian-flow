@@ -24,12 +24,15 @@ const meridianErrorSchema: z.ZodType<MeridianError> = z.object({
 });
 
 export type SequencedEvent = {
+  /** AG-UI event cursor for WS resume; this is not the durable journal row seq. */
+  seq: string;
   event: AGUIEvent;
   error?: MeridianError;
   sourceThreadId?: string;
 };
 
 export const sequencedEventSchema: z.ZodType<SequencedEvent> = z.object({
+  seq: z.string().min(1),
   event: z.custom<AGUIEvent>((value) => EventSchemas.safeParse(value).success),
   error: meridianErrorSchema.optional(),
   sourceThreadId: z.string().min(1).optional(),
@@ -38,6 +41,8 @@ export const sequencedEventSchema: z.ZodType<SequencedEvent> = z.object({
 const wsSubscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
   threadId: z.string().min(1),
+  /** Resume after the last AG-UI event seq the client processed. */
+  lastSeq: z.string().optional(),
 });
 
 const wsUnsubscribeMessageSchema = z.object({
@@ -85,6 +90,8 @@ export type WsServerMessage =
   | {
       type: "event";
       threadId: string;
+      /** AG-UI event cursor for WS resume; this is not the durable journal row seq. */
+      seq: string;
       event: AGUIEvent;
       error?: MeridianError;
       sourceThreadId?: string;
@@ -122,6 +129,7 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   z.object({
     type: z.literal("event"),
     threadId: z.string().min(1),
+    seq: z.string().min(1),
     event: aguiEventSchema,
     error: meridianErrorSchema.optional(),
     sourceThreadId: z.string().min(1).optional(),

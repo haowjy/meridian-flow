@@ -9,7 +9,8 @@
     "start": "NODE_ENV=production node .output/server/index.mjs",
     "preview": "nitro preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts"
   },
   "dependencies": {
     "@meridian/contracts": "workspace:*",
@@ -22,7 +23,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.22.3",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "ws": "^8.18.3"
   }
 }
