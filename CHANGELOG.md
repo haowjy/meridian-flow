@@ -4,6 +4,7 @@
 
 ### Added
 
+- **app/server:** replace placeholder editor transport with TipTap/y-prosemirror bound to persisted Yjs documents, binary `/ws/yjs` sync, and cold-replay smoke coverage.
 - **app:** add Phase 5 project workbench shell with default bootstrap, chat streaming over `/api/threads/ws`, chapter context load, `/ws/yjs` subscription, and portless Playwright smoke coverage.
 - **app/server:** add Phase 7 final vertical-slice e2e coverage for AG-UI streaming edits, live Yjs editor updates, and visible agent attribution metadata.
 - **server:** add Phase 6 runtime tool registry, message-driven chapter edits through ContextPort/DocumentSyncService, Anthropic gateway seam, and checkpoint/spawn smoke coverage.
@@ -16,6 +17,7 @@
 
 ### Fixed
 
+- **server:** serialize Yjs document commits with markdown projection/activity updates and preserve agent attribution for persisted editor updates.
 - **database:** enforce conversation roots, active leaf, session context thread scope, and purchase subscription gates in DB triggers/indexes.
 - **database (p113):** `usage_event_id` required for consumption; Drizzle `usage_breakdown` default `'{}'` matches DB.
 - **contracts:** `UsageBreakdown` types and `parseUsageBreakdown` for flat `model_responses.usage_breakdown` JSONB.
