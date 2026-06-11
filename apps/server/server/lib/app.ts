@@ -5,6 +5,7 @@ import {
   createDrizzleWorkRepository,
 } from "../domains/projects/index.js";
 import { createGatewayFromEnv, type Gateway } from "../domains/runtime/index.js";
+import { createRuntimeToolRegistry } from "../domains/runtime/tool-registry.js";
 import {
   createDrizzleEventJournalReader,
   createDrizzleEventJournalWriter,
@@ -36,6 +37,8 @@ async function createAppServices(): Promise<AppServices> {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter });
   const documentSync = createDocumentSyncService({ db });
+  const contextPorts = createProductionContextPortFactory({ db, documentSync });
+  const tools = createRuntimeToolRegistry({ db, contextPorts });
 
   return composeAppServices(
     createProductionAppPorts({
@@ -45,9 +48,9 @@ async function createAppServices(): Promise<AppServices> {
       journalReader,
       journalWriter,
       threadEventHub,
-      threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub }),
+      threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
       documentSync,
-      contextPorts: createProductionContextPortFactory({ db, documentSync }),
+      contextPorts,
       projects: createDrizzleProjectRepository(db),
       works: createDrizzleWorkRepository(db),
     }),

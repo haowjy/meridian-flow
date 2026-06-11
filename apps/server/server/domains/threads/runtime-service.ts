@@ -21,6 +21,7 @@ import { eventJournal, projects, threads, turnBlocks, turns, works } from "@meri
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { Gateway } from "../runtime/index.js";
+import type { RuntimeToolRegistry } from "../runtime/tool-registry.js";
 import type { ThreadEventHub } from "./event-hub.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
@@ -65,10 +66,35 @@ function journalTurnId(event: OrchestratorEvent): TurnId | null {
   return null;
 }
 
+async function appendJournalEvent(
+  tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  threadId: ThreadId,
+  event: OrchestratorEvent,
+): Promise<PersistedJournalEvent> {
+  const [head] = await tx
+    .update(threads)
+    .set({ nextSeq: sql`${threads.nextSeq} + 1` })
+    .where(eq(threads.id, threadId))
+    .returning({ seq: threads.nextSeq });
+  const seq = head?.seq ?? 0n;
+  const payload = jsonClone(event);
+
+  await tx.insert(eventJournal).values({
+    threadId,
+    turnId: journalTurnId(payload),
+    seq,
+    eventType: payload.type,
+    payload,
+  });
+
+  return { seq, event: payload };
+}
+
 export function createThreadRuntimeService(deps: {
   db: Database;
   gateway: Gateway;
   hub: ThreadEventHub;
+  tools?: RuntimeToolRegistry;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
@@ -120,6 +146,11 @@ export function createThreadRuntimeService(deps: {
       const userBlockId = randomUUID() as TurnBlockId;
       const assistantTurnId = randomUUID() as TurnId;
       const assistantBlockId = randomUUID() as TurnBlockId;
+      await requireOwnedThread(input.threadId, input.userId);
+      const plan = await deps.gateway.generateTurnPlan({
+        threadId: input.threadId,
+        userText: input.text,
+      });
 
       const events = await deps.db.transaction(async (tx) => {
         const [thread] = await tx
@@ -145,11 +176,6 @@ export function createThreadRuntimeService(deps: {
           .limit(1);
 
         if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-
-        const assistantText = await deps.gateway.generateAssistantText({
-          threadId: input.threadId,
-          userText: input.text,
-        });
 
         if (thread.activeLeafTurnId) {
           await tx
@@ -180,9 +206,7 @@ export function createThreadRuntimeService(deps: {
             parentTurnId: userTurnId,
             agentDefinitionId: thread.currentAgentId,
             role: "assistant",
-            status: "complete",
-            finishReason: "end_turn",
-            completedAt: now,
+            status: "streaming",
           })
           .returning();
 
@@ -202,9 +226,9 @@ export function createThreadRuntimeService(deps: {
           blockType: "text",
           status: "complete",
           sequence: 0,
-          modelText: assistantText,
-          content: textBlockContent(assistantText),
-          compact: assistantText,
+          modelText: plan.assistantText,
+          content: textBlockContent(plan.assistantText),
+          compact: plan.assistantText,
         });
 
         await tx
@@ -239,38 +263,74 @@ export function createThreadRuntimeService(deps: {
           threadId: input.threadId,
           turnId: assistantTurnId,
           kind: "text",
-          text: assistantText,
+          text: plan.assistantText,
         };
-        const completedEvent: OrchestratorEvent = {
-          type: "turn.completed",
-          turn: toOrchestratorTurn(assistantTurn),
-        };
-
         const persistedEvents: PersistedJournalEvent[] = [];
-        for (const event of [userEvent, assistantEvent, deltaEvent, completedEvent]) {
-          const [head] = await tx
-            .update(threads)
-            .set({ nextSeq: sql`${threads.nextSeq} + 1` })
-            .where(eq(threads.id, input.threadId))
-            .returning({ seq: threads.nextSeq });
-          const seq = head?.seq ?? 0n;
-          const payload = jsonClone(event);
-
-          await tx.insert(eventJournal).values({
-            threadId: input.threadId,
-            turnId: journalTurnId(payload),
-            seq,
-            eventType: payload.type,
-            payload,
-          });
-
-          persistedEvents.push({ seq, event: payload });
+        for (const event of [userEvent, assistantEvent, deltaEvent]) {
+          persistedEvents.push(await appendJournalEvent(tx, input.threadId, event));
         }
 
         return persistedEvents;
       });
 
       for (const { seq, event } of events) {
+        deps.hub.publishPersistedEvent(input.threadId, seq, event);
+      }
+
+      try {
+        await deps.tools?.executePlanActions(
+          { threadId: input.threadId, userId: input.userId, assistantTurnId },
+          plan.actions,
+        );
+      } catch (error) {
+        const failedAt = new Date();
+        const message = error instanceof Error ? error.message : "Tool action failed";
+        const [errorEvent] = await deps.db.transaction(async (tx) => {
+          const [assistantTurn] = await tx
+            .update(turns)
+            .set({
+              status: "error",
+              finishReason: "error",
+              completedAt: failedAt,
+              error: message,
+            })
+            .where(eq(turns.id, assistantTurnId))
+            .returning();
+          if (!assistantTurn) throw new Error("Failed to mark assistant turn errored");
+
+          const event: OrchestratorEvent = {
+            type: "turn.error",
+            turn: toOrchestratorTurn(assistantTurn),
+            message,
+          };
+          return [await appendJournalEvent(tx, input.threadId, event)];
+        });
+        deps.hub.publishPersistedEvent(input.threadId, errorEvent.seq, errorEvent.event);
+        throw error;
+      }
+
+      const completedAt = new Date();
+      const completedEvents = await deps.db.transaction(async (tx) => {
+        const [assistantTurn] = await tx
+          .update(turns)
+          .set({
+            status: "complete",
+            finishReason: "end_turn",
+            completedAt,
+          })
+          .where(eq(turns.id, assistantTurnId))
+          .returning();
+        if (!assistantTurn) throw new Error("Failed to complete assistant turn");
+
+        const completedEvent: OrchestratorEvent = {
+          type: "turn.completed",
+          turn: toOrchestratorTurn(assistantTurn),
+        };
+
+        return [await appendJournalEvent(tx, input.threadId, completedEvent)];
+      });
+
+      for (const { seq, event } of completedEvents) {
         deps.hub.publishPersistedEvent(input.threadId, seq, event);
       }
 

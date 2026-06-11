@@ -90,6 +90,24 @@ export function createOrchestratorEventProjector() {
           return events;
         }
 
+        case "turn.error": {
+          const events = closeOpenTextMessage();
+          if (state.activeThreadId && state.activeRunId) {
+            events.push(
+              parseAguiEvent({
+                type: EventType.RUN_ERROR,
+                threadId: state.activeThreadId,
+                runId: state.activeRunId,
+                message: event.message,
+              }),
+            );
+          }
+          state.activeRunId = null;
+          state.activeThreadId = null;
+          state.nextBlockSequence = 0;
+          return events;
+        }
+
         default:
           return [];
       }

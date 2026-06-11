@@ -5,6 +5,7 @@
 ### Added
 
 - **app:** add Phase 5 project workbench shell with default bootstrap, chat streaming over `/api/threads/ws`, chapter context load, `/ws/yjs` subscription, and portless Playwright smoke coverage.
+- **server:** add Phase 6 runtime tool registry, message-driven chapter edits through ContextPort/DocumentSyncService, Anthropic gateway seam, and checkpoint/spawn smoke coverage.
 - **server:** add Phase 3 thread runtime POST + authenticated WebSocket event hub with AG-UI catchup/replay smoke coverage.
 - **server:** add Phase 4 default bootstrap, work context read/write, DocumentSyncService Yjs persistence, and minimal `/ws/yjs` live update smoke coverage.
 - **auth:** add Supabase Phase 2 app/server auth gates, dev-login, portless Playwright auth setup, and protected auth smoke route.

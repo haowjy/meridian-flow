@@ -29,6 +29,11 @@ export type ContextPort = {
     markdown: string;
     origin: { type: "agent"; actorTurnId: TurnId } | { type: "user"; actorUserId: UserId };
   }): Promise<ContextDocument & { updateSeq: number }>;
+  editDocument(input: {
+    uri: string;
+    transform: (markdown: string) => string;
+    origin: { type: "agent"; actorTurnId: TurnId } | { type: "user"; actorUserId: UserId };
+  }): Promise<ContextDocument & { updateSeq: number; beforeMarkdown: string }>;
 };
 
 export type ContextPortFactory = {
@@ -66,6 +71,9 @@ export function createInMemoryContextPortFactory(): ContextPortFactory {
           throw new Error("in-memory context port is not implemented");
         },
         async writeDocument() {
+          throw new Error("in-memory context port is not implemented");
+        },
+        async editDocument() {
           throw new Error("in-memory context port is not implemented");
         },
       };
@@ -150,6 +158,23 @@ export function createProductionContextPortFactory(deps: {
           return {
             documentId: document.documentId,
             uri: write.uri,
+            markdown: result.markdown,
+            updateSeq: result.updateSeq,
+          };
+        },
+
+        async editDocument(edit) {
+          const document = await resolveDocument(input.threadId, input.userId, edit.uri);
+          const result = await deps.documentSync.editDocument({
+            documentId: document.documentId,
+            threadId: input.threadId,
+            transform: edit.transform,
+            origin: edit.origin,
+          });
+          return {
+            documentId: document.documentId,
+            uri: edit.uri,
+            beforeMarkdown: result.beforeMarkdown,
             markdown: result.markdown,
             updateSeq: result.updateSeq,
           };

@@ -42,6 +42,9 @@ export function createInMemoryAppServices(): AppServices {
     async writeDocument() {
       throw new Error("in-memory document sync is not implemented");
     },
+    async editDocument() {
+      throw new Error("in-memory document sync is not implemented");
+    },
     async requireOwnedDocument() {
       throw new Error("in-memory document sync is not implemented");
     },
@@ -54,6 +57,12 @@ export function createInMemoryAppServices(): AppServices {
     gateway: {
       async generateAssistantText(input) {
         return `Acknowledged: ${input.userText}`;
+      },
+      async generateTurnPlan(input) {
+        return {
+          assistantText: `Acknowledged: ${input.userText}`,
+          actions: [],
+        };
       },
     },
     threadRepos: { phase: "phase3" },
@@ -113,6 +122,9 @@ export function createInMemoryAppServices(): AppServices {
             throw new Error("in-memory context port is not implemented");
           },
           async writeDocument() {
+            throw new Error("in-memory context port is not implemented");
+          },
+          async editDocument() {
             throw new Error("in-memory context port is not implemented");
           },
         };

@@ -33,6 +33,12 @@ export type DocumentSyncService = {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  editDocument(input: {
+    documentId: DocumentId;
+    transform: (markdown: string) => string;
+    origin: DocumentWriteOrigin;
+    threadId?: ThreadId;
+  }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
   requireOwnedDocument(documentId: DocumentId, userId: UserId): Promise<void>;
   subscribe(documentId: DocumentId, listener: DocumentUpdateListener): () => void;
 };
@@ -158,6 +164,87 @@ export function createDocumentSyncService(deps: { db: Database }): DocumentSyncS
         return {
           documentId: input.documentId,
           markdown: input.markdown,
+          updateSeq: update.id,
+          updateData,
+        };
+      });
+
+      publish(result);
+      return result;
+    },
+
+    async editDocument(input) {
+      const now = new Date();
+
+      const result = await deps.db.transaction(async (tx) => {
+        if (input.origin.type === "agent" && input.threadId) {
+          const [actorTurn] = await tx
+            .select({ id: turns.id })
+            .from(turns)
+            .where(
+              and(
+                eq(turns.id, input.origin.actorTurnId),
+                eq(turns.threadId, input.threadId),
+                eq(turns.role, "assistant"),
+              ),
+            )
+            .limit(1);
+          if (!actorTurn) {
+            throw new HTTPError({ status: 400, message: "actorTurnId must be an assistant turn" });
+          }
+        }
+
+        const [document] = await tx
+          .select({ markdown: documents.markdownProjection })
+          .from(documents)
+          .where(eq(documents.id, input.documentId))
+          .for("update")
+          .limit(1);
+        if (!document) throw new HTTPError({ status: 404, message: "Document not found" });
+
+        const markdown = input.transform(document.markdown);
+        const updateData = yjsReplacePayload(input.documentId, markdown);
+
+        await tx
+          .update(documents)
+          .set({ markdownProjection: markdown, updatedAt: now })
+          .where(eq(documents.id, input.documentId));
+
+        const [update] = await tx
+          .insert(documentYjsUpdates)
+          .values({
+            documentId: input.documentId,
+            updateData,
+            originType: input.origin.type,
+            actorUserId: input.origin.type === "user" ? input.origin.actorUserId : null,
+            actorTurnId: input.origin.type === "agent" ? input.origin.actorTurnId : null,
+          })
+          .returning({ id: documentYjsUpdates.id });
+        if (!update) throw new Error("Failed to append Yjs update");
+
+        await tx
+          .insert(documentYjsHeads)
+          .values({
+            documentId: input.documentId,
+            latestUpdateSeq: update.id,
+            latestStateVector: Buffer.alloc(0),
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: documentYjsHeads.documentId,
+            set: {
+              latestUpdateSeq: update.id,
+              latestStateVector: Buffer.alloc(0),
+              updatedAt: now,
+            },
+          });
+
+        await touchDocumentActivity(tx, input.documentId, input.threadId, now);
+
+        return {
+          documentId: input.documentId,
+          beforeMarkdown: document.markdown,
+          markdown,
           updateSeq: update.id,
           updateData,
         };

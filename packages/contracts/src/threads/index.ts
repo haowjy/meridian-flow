@@ -220,6 +220,7 @@ export type OrchestratorTurn = {
 export type OrchestratorEvent =
   | { type: "turn.created"; turn: OrchestratorTurn }
   | { type: "turn.completed"; turn: OrchestratorTurn }
+  | { type: "turn.error"; turn: OrchestratorTurn; message: string }
   | {
       type: "stream.delta";
       threadId: ThreadId;
@@ -238,5 +239,6 @@ export type ModelResponseReceivedRow = {
 
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
+export { checkpointIdForBlock } from "./checkpoint-id-for-block.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
