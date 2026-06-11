@@ -15,7 +15,10 @@ import { Route as DevLoginRouteImport } from './routes/dev-login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
+import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
+import { Route as AuthenticatedProjectsProjectIdIndexRouteImport } from './routes/_authenticated/projects/$projectId/index'
+import { Route as AuthenticatedProjectsProjectIdAgentRouteImport } from './routes/_authenticated/projects/$projectId/agent'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -46,11 +49,29 @@ const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
   path: '/auth-check',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedProjectsIndexRoute =
+  AuthenticatedProjectsIndexRouteImport.update({
+    id: '/projects/',
+    path: '/projects/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiAuthDevLoginRoute = ApiAuthDevLoginRouteImport.update({
   id: '/api/auth/dev-login',
   path: '/api/auth/dev-login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedProjectsProjectIdIndexRoute =
+  AuthenticatedProjectsProjectIdIndexRouteImport.update({
+    id: '/projects/$projectId/',
+    path: '/projects/$projectId/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedProjectsProjectIdAgentRoute =
+  AuthenticatedProjectsProjectIdAgentRouteImport.update({
+    id: '/projects/$projectId/agent',
+    path: '/projects/$projectId/agent',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,6 +80,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
+  '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
+  '/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -67,6 +91,9 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
+  '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
+  '/projects/$projectId': typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,6 +104,9 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
+  '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
+  '/_authenticated/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,6 +117,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/auth-check'
     | '/api/auth/dev-login'
+    | '/projects/'
+    | '/projects/$projectId/agent'
+    | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -95,6 +128,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/auth-check'
     | '/api/auth/dev-login'
+    | '/projects'
+    | '/projects/$projectId/agent'
+    | '/projects/$projectId'
   id:
     | '__root__'
     | '/'
@@ -104,6 +140,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/auth-check'
     | '/api/auth/dev-login'
+    | '/_authenticated/projects/'
+    | '/_authenticated/projects/$projectId/agent'
+    | '/_authenticated/projects/$projectId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -159,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuthCheckRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/projects/': {
+      id: '/_authenticated/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/auth/dev-login': {
       id: '/api/auth/dev-login'
       path: '/api/auth/dev-login'
@@ -166,15 +212,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthDevLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/projects/$projectId/': {
+      id: '/_authenticated/projects/$projectId/'
+      path: '/projects/$projectId'
+      fullPath: '/projects/$projectId/'
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/projects/$projectId/agent': {
+      id: '/_authenticated/projects/$projectId/agent'
+      path: '/projects/$projectId/agent'
+      fullPath: '/projects/$projectId/agent'
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdAgentRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
+  AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
+  AuthenticatedProjectsProjectIdAgentRoute: typeof AuthenticatedProjectsProjectIdAgentRoute
+  AuthenticatedProjectsProjectIdIndexRoute: typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
+  AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
+  AuthenticatedProjectsProjectIdAgentRoute:
+    AuthenticatedProjectsProjectIdAgentRoute,
+  AuthenticatedProjectsProjectIdIndexRoute:
+    AuthenticatedProjectsProjectIdIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

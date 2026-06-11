@@ -9,7 +9,7 @@ const STATE_PATH = process.env.STATE_PATH ?? resolve(HERE, "../.auth/state.json"
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["auth.spec.ts"],
+  testMatch: ["auth.spec.ts", "phase5.spec.ts"],
   timeout: 30_000,
   use: {
     baseURL: APP_URL,
