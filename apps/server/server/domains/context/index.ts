@@ -1,19 +1,160 @@
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
+import {
+  contextSources,
+  documents,
+  projects,
+  threadDocuments,
+  threads,
+  works,
+} from "@meridian/database";
+import { and, eq, isNull } from "drizzle-orm";
+import { HTTPError } from "nitro/h3";
+import type { DocumentSyncService } from "../collab/index.js";
+
+const WORK_SCHEME = "work:";
+const MANUSCRIPT_SOURCE = "manuscript";
+const CHAPTER_ONE_PATH = "chapter-1.md";
+
+export type ContextDocument = {
+  documentId: DocumentId;
+  uri: string;
+  markdown: string;
+};
+
 export type ContextPort = {
-  readonly phase: "skeleton";
+  readDocument(uri: string): Promise<ContextDocument>;
+  writeDocument(input: {
+    uri: string;
+    markdown: string;
+    origin: { type: "agent"; actorTurnId: TurnId } | { type: "user"; actorUserId: UserId };
+  }): Promise<ContextDocument & { updateSeq: number }>;
 };
 
 export type ContextPortFactory = {
-  forThread(_threadId: string): ContextPort;
+  forThread(input: { threadId: ThreadId; userId: UserId }): ContextPort;
 };
+
+function parseWorkUri(uri: string): { source: string; path: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw new HTTPError({ status: 400, message: "Context URI must be work://..." });
+  }
+
+  const path = parsed.pathname.replace(/^\/+/, "");
+  if (
+    parsed.protocol !== WORK_SCHEME ||
+    parsed.hostname !== MANUSCRIPT_SOURCE ||
+    path !== CHAPTER_ONE_PATH
+  ) {
+    throw new HTTPError({
+      status: 400,
+      message: "Phase 4 supports only work://manuscript/chapter-1.md",
+    });
+  }
+
+  return { source: parsed.hostname, path };
+}
 
 export function createInMemoryContextPortFactory(): ContextPortFactory {
   return {
     forThread() {
-      return { phase: "skeleton" };
+      return {
+        async readDocument() {
+          throw new Error("in-memory context port is not implemented");
+        },
+        async writeDocument() {
+          throw new Error("in-memory context port is not implemented");
+        },
+      };
     },
   };
 }
 
-export function createProductionContextPortFactory(_db: unknown): ContextPortFactory {
-  return createInMemoryContextPortFactory();
+export function createProductionContextPortFactory(deps: {
+  db: Database;
+  documentSync: DocumentSyncService;
+}): ContextPortFactory {
+  async function resolveThreadScope(
+    threadId: ThreadId,
+    userId: UserId,
+  ): Promise<{ workId: WorkId }> {
+    const [thread] = await deps.db
+      .select({ workId: threads.workId })
+      .from(threads)
+      .innerJoin(projects, eq(projects.id, threads.projectId))
+      .innerJoin(works, eq(works.id, threads.workId))
+      .where(
+        and(
+          eq(threads.id, threadId),
+          eq(projects.userId, userId),
+          eq(works.createdByUserId, userId),
+          isNull(threads.deletedAt),
+          isNull(projects.deletedAt),
+          isNull(works.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
+    return thread;
+  }
+
+  async function resolveDocument(threadId: ThreadId, userId: UserId, uri: string) {
+    const parsed = parseWorkUri(uri);
+    const { workId } = await resolveThreadScope(threadId, userId);
+
+    const [document] = await deps.db
+      .select({
+        documentId: documents.id,
+        markdown: documents.markdownProjection,
+      })
+      .from(documents)
+      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .innerJoin(threadDocuments, eq(threadDocuments.documentId, documents.id))
+      .where(
+        and(
+          eq(contextSources.workId, workId),
+          eq(contextSources.slug, parsed.source),
+          eq(documents.name, "chapter-1"),
+          eq(documents.extension, "md"),
+          eq(threadDocuments.threadId, threadId),
+          eq(threadDocuments.relationship, "editing"),
+          isNull(contextSources.deletedAt),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!document) throw new HTTPError({ status: 404, message: "Document not found" });
+    return document;
+  }
+
+  return {
+    forThread(input) {
+      return {
+        async readDocument(uri) {
+          const document = await resolveDocument(input.threadId, input.userId, uri);
+          return { documentId: document.documentId, uri, markdown: document.markdown };
+        },
+
+        async writeDocument(write) {
+          const document = await resolveDocument(input.threadId, input.userId, write.uri);
+          const result = await deps.documentSync.writeDocument({
+            documentId: document.documentId,
+            threadId: input.threadId,
+            markdown: write.markdown,
+            origin: write.origin,
+          });
+          return {
+            documentId: document.documentId,
+            uri: write.uri,
+            markdown: result.markdown,
+            updateSeq: result.updateSeq,
+          };
+        },
+      };
+    },
+  };
 }

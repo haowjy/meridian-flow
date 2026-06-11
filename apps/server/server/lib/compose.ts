@@ -38,6 +38,18 @@ export function createProductionAppPorts(input: ProductionAppPorts): ProductionA
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const documentSync: DocumentSyncService = {
+    async writeDocument() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async requireOwnedDocument() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    subscribe() {
+      return () => undefined;
+    },
+  };
+
   return {
     gateway: {
       async generateAssistantText(input) {
@@ -93,14 +105,25 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    documentSync: { phase: "skeleton" },
+    documentSync,
     contextPorts: {
       forThread() {
-        return { phase: "skeleton" };
+        return {
+          async readDocument() {
+            throw new Error("in-memory context port is not implemented");
+          },
+          async writeDocument() {
+            throw new Error("in-memory context port is not implemented");
+          },
+        };
       },
     },
-    projects: { phase: "skeleton" },
-    works: { phase: "skeleton" },
+    projects: {
+      async ensureDefaultBootstrap() {
+        throw new Error("in-memory projects are not implemented");
+      },
+    },
+    works: { phase: "phase4" },
     creditLedger: { phase: "skeleton" },
     agents: { phase: "skeleton" },
   };

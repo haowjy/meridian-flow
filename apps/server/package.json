@@ -9,8 +9,9 @@
     "start": "NODE_ENV=production node .output/server/index.mjs",
     "preview": "nitro preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts"
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts",
+    "smoke:phase4": "tsx scripts/phase4-smoke.ts"
   },
   "dependencies": {
     "@meridian/contracts": "workspace:*",

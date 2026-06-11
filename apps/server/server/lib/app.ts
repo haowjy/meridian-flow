@@ -1,3 +1,9 @@
+import { createDocumentSyncService } from "../domains/collab/index.js";
+import { createProductionContextPortFactory } from "../domains/context/index.js";
+import {
+  createDrizzleProjectRepository,
+  createDrizzleWorkRepository,
+} from "../domains/projects/index.js";
 import { createGatewayFromEnv, type Gateway } from "../domains/runtime/index.js";
 import {
   createDrizzleEventJournalReader,
@@ -29,6 +35,7 @@ async function createAppServices(): Promise<AppServices> {
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter });
+  const documentSync = createDocumentSyncService({ db });
 
   return composeAppServices(
     createProductionAppPorts({
@@ -39,6 +46,10 @@ async function createAppServices(): Promise<AppServices> {
       journalWriter,
       threadEventHub,
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub }),
+      documentSync,
+      contextPorts: createProductionContextPortFactory({ db, documentSync }),
+      projects: createDrizzleProjectRepository(db),
+      works: createDrizzleWorkRepository(db),
     }),
   );
 }

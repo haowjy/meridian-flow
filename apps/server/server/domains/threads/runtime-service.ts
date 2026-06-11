@@ -151,6 +151,13 @@ export function createThreadRuntimeService(deps: {
           userText: input.text,
         });
 
+        if (thread.activeLeafTurnId) {
+          await tx
+            .update(threads)
+            .set({ activeLeafTurnId: null })
+            .where(eq(threads.id, input.threadId));
+        }
+
         const [userTurn] = await tx
           .insert(turns)
           .values({
