@@ -1,4 +1,5 @@
 import type {
+  BlockStatus,
   BlockType,
   ExecutionSide,
   OriginType,
@@ -20,6 +21,7 @@ import type {
 import type { TurnStatus } from "./status.js";
 
 export type {
+  BlockStatus,
   BlockType,
   ExecutionSide,
   OriginType,
@@ -141,6 +143,7 @@ export interface Block {
   turnId: TurnId;
   responseId: ModelResponseId | null;
   blockType: BlockType;
+  status: BlockStatus;
   sequence: number;
   textContent?: string | null;
   content: JsonValue;

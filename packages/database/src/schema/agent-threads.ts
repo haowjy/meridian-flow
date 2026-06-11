@@ -66,6 +66,7 @@ export const threads = pgTable(
     spawnDepth: integer("spawn_depth").notNull().default(0),
     activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(),
     turnCount: integer("turn_count").notNull().default(0),
+    nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -85,6 +86,7 @@ export const threads = pgTable(
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
+    check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
     check("threads_status_valid", sql`${table.status} IN ('active', 'archived')`),
     check(
@@ -167,7 +169,7 @@ export const turns = pgTable(
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
     check(
       "turns_status_valid",
-      sql`${table.status} IN ('pending', 'streaming', 'complete', 'cancelled', 'error')`,
+      sql`${table.status} IN ('pending', 'streaming', 'waiting_checkpoint', 'complete', 'cancelled', 'error')`,
     ),
     check(
       "turns_compaction_model_required",
@@ -223,6 +225,7 @@ export const turnBlocks = pgTable(
         onDelete: "set null",
       }),
     blockType: text("block_type").notNull(),
+    status: text("status").notNull().default("complete"),
     sequence: integer("sequence").notNull(),
     modelText: text("model_text"),
     content: jsonb("content"),
@@ -234,6 +237,11 @@ export const turnBlocks = pgTable(
   (table) => [
     uniqueIndex("turn_blocks_turn_sequence").on(table.turnId, table.sequence),
     index("turn_blocks_turn_type").on(table.turnId, table.blockType),
+    check("turn_blocks_status_valid", sql`${table.status} IN ('complete', 'partial')`),
+    check(
+      "turn_blocks_block_type_valid",
+      sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
+    ),
   ],
 );
 
@@ -248,12 +256,14 @@ export const eventJournal = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "restrict" }),
+    seq: bigint("seq", { mode: "bigint" }).notNull(),
     eventType: text("event_type").notNull(),
     payload: jsonbDefault("payload"),
     createdAt: createdAt(),
   },
   (table) => [
-    index("event_journal_thread_id").on(table.threadId, table.createdAt),
+    uniqueIndex("event_journal_thread_seq_unique").on(table.threadId, table.seq),
+    index("event_journal_thread_seq").on(table.threadId, table.seq),
     index("event_journal_turn_id")
       .on(table.turnId, table.createdAt)
       .where(sql`${table.turnId} IS NOT NULL`),

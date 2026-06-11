@@ -1,6 +1,7 @@
-import type { DocumentId, DocumentRestorePointId, UserId } from "@meridian/contracts";
+import type { DocumentId, DocumentRestorePointId, TurnId, UserId } from "@meridian/contracts";
 import { bigint, bigserial, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { turns } from "./agent-threads";
 import { authUsers } from "./auth";
 import { documents } from "./content";
 
@@ -36,6 +37,11 @@ export const documentYjsUpdates = pgTable(
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
       .references(() => authUsers.id, {
+        onDelete: "set null",
+      }),
+    actorTurnId: uuid("actor_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, {
         onDelete: "set null",
       }),
     actorAgentRunId: uuid("actor_agent_run_id"),

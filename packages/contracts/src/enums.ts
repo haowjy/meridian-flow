@@ -24,7 +24,14 @@ export type SpawnStatus = z.infer<typeof SpawnStatus>;
 export const TurnRole = z.enum(["user", "assistant", "system", "compaction"]);
 export type TurnRole = z.infer<typeof TurnRole>;
 
-export const TurnStatus = z.enum(["pending", "streaming", "complete", "cancelled", "error"]);
+export const TurnStatus = z.enum([
+  "pending",
+  "streaming",
+  "waiting_checkpoint",
+  "complete",
+  "cancelled",
+  "error",
+]);
 export type TurnStatus = z.infer<typeof TurnStatus>;
 
 export const BlockType = z.enum([
@@ -32,11 +39,15 @@ export const BlockType = z.enum([
   "image",
   "file",
   "thinking",
+  "reasoning",
   "tool_use",
   "tool_result",
   "custom",
 ]);
 export type BlockType = z.infer<typeof BlockType>;
+
+export const BlockStatus = z.enum(["complete", "partial"]);
+export type BlockStatus = z.infer<typeof BlockStatus>;
 
 export const AgentMode = z.enum(["primary", "subagent"]);
 export type AgentMode = z.infer<typeof AgentMode>;

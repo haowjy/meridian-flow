@@ -1,7 +1,7 @@
 import type { BlockType, JsonValue } from "./index.js";
 
 export function blockPlainText(blockType: BlockType, content: JsonValue): string | null {
-  if (blockType !== "text" && blockType !== "thinking") {
+  if (blockType !== "text" && blockType !== "thinking" && blockType !== "reasoning") {
     return null;
   }
   if (typeof content === "string") return content;

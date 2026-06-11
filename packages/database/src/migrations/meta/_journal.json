@@ -29,6 +29,13 @@
       "when": 1780406496769,
       "tag": "0004_voluma_alignment",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781182602086,
+      "tag": "0005_phase1_schema_amendments",
+      "breakpoints": true
     }
   ]
 }
