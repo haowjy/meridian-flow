@@ -4,6 +4,7 @@
 
 ### Added
 
+- **auth:** add Supabase Phase 2 app/server auth gates, dev-login, portless Playwright auth setup, and protected auth smoke route.
 - **v3:** add TanStack/Nitro app-server skeleton and Phase 0 contracts surface for the Voluma rip-plan.
 - **database:** add Phase 1 thread event schema amendments plus Drizzle event-journal append/read adapter tests.
 - **database:** v3 Drizzle schema (26 tables + `credit_balances` view), single fresh `0001_initial` migration, `consume_credit_lots_fifo` with debt-lot overspend, integrity triggers, `pg_trgm` indexes, `db:apply-functions`, integration tests.

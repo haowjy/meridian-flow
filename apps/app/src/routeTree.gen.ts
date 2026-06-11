@@ -9,12 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as HealthzRouteImport } from './routes/healthz'
+import { Route as DevLoginRouteImport } from './routes/dev-login'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
+import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HealthzRoute = HealthzRouteImport.update({
   id: '/healthz',
   path: '/healthz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevLoginRoute = DevLoginRouteImport.update({
+  id: '/dev-login',
+  path: '/dev-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -22,40 +41,108 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
+  id: '/auth-check',
+  path: '/auth-check',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiAuthDevLoginRoute = ApiAuthDevLoginRouteImport.update({
+  id: '/api/auth/dev-login',
+  path: '/api/auth/dev-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/healthz'
+  fullPaths:
+    | '/'
+    | '/dev-login'
+    | '/healthz'
+    | '/login'
+    | '/auth-check'
+    | '/api/auth/dev-login'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/healthz'
-  id: '__root__' | '/' | '/healthz'
+  to:
+    | '/'
+    | '/dev-login'
+    | '/healthz'
+    | '/login'
+    | '/auth-check'
+    | '/api/auth/dev-login'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/dev-login'
+    | '/healthz'
+    | '/login'
+    | '/_authenticated/auth-check'
+    | '/api/auth/dev-login'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  DevLoginRoute: typeof DevLoginRoute
   HealthzRoute: typeof HealthzRoute
+  LoginRoute: typeof LoginRoute
+  ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/healthz': {
       id: '/healthz'
       path: '/healthz'
       fullPath: '/healthz'
       preLoaderRoute: typeof HealthzRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev-login': {
+      id: '/dev-login'
+      path: '/dev-login'
+      fullPath: '/dev-login'
+      preLoaderRoute: typeof DevLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -65,12 +152,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/auth-check': {
+      id: '/_authenticated/auth-check'
+      path: '/auth-check'
+      fullPath: '/auth-check'
+      preLoaderRoute: typeof AuthenticatedAuthCheckRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/auth/dev-login': {
+      id: '/api/auth/dev-login'
+      path: '/api/auth/dev-login'
+      fullPath: '/api/auth/dev-login'
+      preLoaderRoute: typeof ApiAuthDevLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  DevLoginRoute: DevLoginRoute,
   HealthzRoute: HealthzRoute,
+  LoginRoute: LoginRoute,
+  ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

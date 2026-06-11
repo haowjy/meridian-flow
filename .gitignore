@@ -48,3 +48,6 @@ mars.lock
 
 # Dev scripts with secrets
 scripts/get-token.sh
+apps/app/.auth/
+apps/app/test-results/
+apps/app/playwright-report/
