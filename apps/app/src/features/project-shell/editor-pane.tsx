@@ -1,24 +1,44 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type ContextDocument, readThreadContext } from "@/client/phase5-api";
-import { type DocumentMarkdownUpdate, subscribeDocumentUpdates } from "@/client/yjs-client";
+import { serverOrigin } from "@/client/server-origin";
+import { ChapterEditor } from "@/core/editor/chapter-editor";
 
 type EditorPaneProps = {
   threadId: string;
   uri: string;
 };
 
+type DocumentAttribution = {
+  originType: string | null;
+  actorTurnId: string | null;
+  actorUserId: string | null;
+};
+
 export function EditorPane({ threadId, uri }: EditorPaneProps) {
   const [document, setDocument] = useState<ContextDocument | null>(null);
-  const [markdown, setMarkdown] = useState("");
   const [loadState, setLoadState] = useState("loading");
   const [syncState, setSyncState] = useState("waiting");
-  const [lastAttribution, setLastAttribution] = useState<DocumentMarkdownUpdate | null>(null);
+  const [lastAttribution, setLastAttribution] = useState<DocumentAttribution | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshAttribution = useCallback(async () => {
+    if (!uri) return;
+    try {
+      const response = await fetch(
+        `${serverOrigin()}/api/threads/${threadId}/context/attribution?uri=${encodeURIComponent(uri)}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) return;
+      const body = (await response.json()) as DocumentAttribution;
+      setLastAttribution(body);
+    } catch {
+      // attribution polling is best-effort
+    }
+  }, [threadId, uri]);
 
   useEffect(() => {
     let cancelled = false;
     setDocument(null);
-    setMarkdown("");
     setLoadState("loading");
     setSyncState("waiting");
     setLastAttribution(null);
@@ -28,7 +48,6 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
       .then((loaded) => {
         if (cancelled) return;
         setDocument(loaded);
-        setMarkdown(loaded.markdown);
         setLoadState("loaded");
       })
       .catch((loadError) => {
@@ -44,26 +63,22 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
 
   useEffect(() => {
     if (!document) return undefined;
-    let active = true;
-    const unsubscribe = subscribeDocumentUpdates(document.documentId, {
-      onStatus: (nextStatus) => {
-        if (active) setSyncState(nextStatus);
-      },
-      onError: (nextError) => {
-        if (active) setError(nextError);
-      },
-      onUpdate: (update) => {
-        if (!active) return;
-        setMarkdown(update.markdown);
-        setLastAttribution(update);
-      },
-    });
+    void refreshAttribution();
+    const timer = window.setInterval(() => {
+      void refreshAttribution();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [document, refreshAttribution]);
 
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [document]);
+  const handleSyncStatus = useCallback(
+    (status: string) => {
+      setSyncState(status);
+      if (status === "subscribed") {
+        void refreshAttribution();
+      }
+    },
+    [refreshAttribution],
+  );
 
   return (
     <section className="pane editor-pane" data-testid="editor-pane" aria-label="Chapter editor">
@@ -98,15 +113,15 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
         </p>
       ) : null}
 
-      <textarea
-        aria-label="Chapter markdown"
-        className="editor-textarea"
-        data-document-id={document?.documentId ?? ""}
-        data-testid="chapter-editor"
-        onChange={(event) => setMarkdown(event.currentTarget.value)}
-        spellCheck="true"
-        value={markdown}
-      />
+      <div className="editor-host">
+        {document ? (
+          <ChapterEditor
+            documentId={document.documentId}
+            onError={setError}
+            onSyncStatus={handleSyncStatus}
+          />
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -48,8 +48,41 @@ export function createInMemoryAppServices(): AppServices {
     async requireOwnedDocument() {
       throw new Error("in-memory document sync is not implemented");
     },
-    subscribe() {
-      return () => undefined;
+    async initializeMirror() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async getLastUpdateAttribution() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async getOrCreateMirror() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async readAsMarkdown() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async editFromMarkdown() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async writeFromMarkdown() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async checkpoint() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async restore() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async listCheckpoints() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async getDoc() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async applyUpdate() {
+      throw new Error("in-memory document sync is not implemented");
+    },
+    async encodeState() {
+      throw new Error("in-memory document sync is not implemented");
     },
   };
 

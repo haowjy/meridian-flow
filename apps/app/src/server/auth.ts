@@ -71,13 +71,14 @@ export function serializeSupabaseSessionCookies(input: {
   host: string;
   protocol: string;
 }): string[] {
+  const secure = input.protocol === "https";
   const attributes = [
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    secure ? "SameSite=None" : "SameSite=Lax",
     `Max-Age=${60 * 60 * 24 * 7}`,
     ...cookieDomainAttributes(input.host),
-    ...(input.protocol === "https" ? ["Secure"] : []),
+    ...(secure ? ["Secure"] : []),
   ];
 
   return [

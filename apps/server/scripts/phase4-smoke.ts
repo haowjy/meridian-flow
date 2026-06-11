@@ -81,7 +81,9 @@ function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
   });
 }
 
-function waitForBinaryUpdate(ws: WebSocket): Promise<{ channelIndex: number; payload: string }> {
+function waitForBinaryUpdate(
+  ws: WebSocket,
+): Promise<{ channelIndex: number; payload: Uint8Array }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("timed out waiting for yjs update")), 10_000);
     ws.on("message", (raw) => {
@@ -92,7 +94,7 @@ function waitForBinaryUpdate(ws: WebSocket): Promise<{ channelIndex: number; pay
         clearTimeout(timeout);
         resolve({
           channelIndex: envelope.channelIndex,
-          payload: Buffer.from(envelope.payload).toString("utf8"),
+          payload: envelope.payload,
         });
       }
     });
@@ -141,7 +143,6 @@ const writeResponse = await fetch(
     body: JSON.stringify({
       uri: bootstrap.uri,
       markdown,
-      actorTurnId: messageBody.assistantTurnId,
     }),
   },
 );
@@ -177,13 +178,10 @@ const [yjsUpdate] = await db
 await db.close();
 
 if (document?.markdownProjection !== markdown) throw new Error("DB markdown projection mismatch");
-if (yjsUpdate?.originType !== "agent") throw new Error("Yjs update origin_type mismatch");
-if (yjsUpdate?.actorTurnId !== messageBody.assistantTurnId) {
-  throw new Error("Yjs update actor_turn_id mismatch");
-}
+if (yjsUpdate?.originType !== "user") throw new Error("Yjs update origin_type mismatch");
 if (update.channelIndex !== channelIndex) throw new Error("Yjs update channel mismatch");
-const yjsPayload = JSON.parse(update.payload) as { markdown?: string };
-if (yjsPayload.markdown !== markdown) throw new Error("Yjs update payload markdown mismatch");
+if (update.payload.length < 2) throw new Error("Yjs update payload too small for sync frame");
+if (update.payload[0] !== 0) throw new Error("Yjs update payload is not a sync message");
 
 console.log(
   JSON.stringify(

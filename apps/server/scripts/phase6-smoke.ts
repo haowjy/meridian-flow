@@ -89,21 +89,18 @@ function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
   });
 }
 
-function waitForBinaryUpdate(ws: WebSocket): Promise<{ channelIndex: number; markdown: string }> {
+function waitForBinaryUpdate(
+  ws: WebSocket,
+): Promise<{ channelIndex: number; payload: Uint8Array }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("timed out waiting for yjs update")), 10_000);
     ws.on("message", (raw) => {
       if (typeof raw === "string") return;
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.concat(raw as Buffer[]);
       const envelope = decodeYjsBinaryEnvelope(bytes);
-      if (!envelope) return;
-      const payload = JSON.parse(Buffer.from(envelope.payload).toString("utf8")) as {
-        markdown?: string;
-      };
-      if (typeof payload.markdown === "string") {
-        clearTimeout(timeout);
-        resolve({ channelIndex: envelope.channelIndex, markdown: payload.markdown });
-      }
+      if (!envelope || envelope.payload.length < 1 || envelope.payload[0] !== 0) return;
+      clearTimeout(timeout);
+      resolve({ channelIndex: envelope.channelIndex, payload: envelope.payload });
     });
   });
 }
@@ -145,9 +142,7 @@ const update = await updatePromise;
 yjs.close();
 
 if (update.channelIndex !== channelIndex) throw new Error("Yjs update channel mismatch");
-if (!update.markdown.includes(`Acknowledged: ${messageText}`)) {
-  throw new Error("runtime edit did not append assistant text to markdown");
-}
+if (update.payload[0] !== 0) throw new Error("Yjs update payload is not a sync message");
 
 const db = createDb(databaseUrl);
 const [agentUpdate] = await db

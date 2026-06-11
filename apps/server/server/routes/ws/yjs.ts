@@ -1,76 +1,105 @@
-import type { YjsControlErrorCode } from "@meridian/contracts/protocol";
-import {
-  encodeYjsBinaryEnvelope,
-  encodeYjsControlFrame,
-  parseYjsClientControlFrame,
-} from "@meridian/contracts/protocol";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import { encodeYjsControlFrame, type YjsControlErrorCode } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
+import { documents } from "@meridian/database";
+import { eq } from "drizzle-orm";
 import { defineWebSocketHandler } from "nitro";
 import type { AppServices } from "../../lib/app.js";
-import { resolveWsUpgradeAuth, type WsDeferredClose } from "../../lib/ws-upgrade-auth.js";
+import { getApp } from "../../lib/app.js";
+import { getDb } from "../../lib/db.js";
+import { safeWsSend } from "../../lib/ws-safe-send.js";
+import {
+  deferWsClose,
+  resolveWsUpgradeAuth,
+  type WsDeferredClose,
+} from "../../lib/ws-upgrade-auth.js";
+import {
+  createYjsWsHandler,
+  type YjsWsAuthenticatedContext,
+  type YjsWsPeer,
+} from "../../lib/ws-yjs-handler.js";
 
 type YjsRouteContext =
-  | { kind: "authenticated"; app: AppServices; userId: UserId }
-  | { kind: "deferred-close"; close: WsDeferredClose };
-
-type YjsPeer = {
-  context?: YjsRouteContext;
-  send: (data: string | Uint8Array) => void;
-  close: (code?: number, reason?: string) => void;
-};
-
-type YjsPeerState = {
-  nextChannelIndex: number;
-  documentToChannel: Map<DocumentId, number>;
-  channelToDocument: Map<number, DocumentId>;
-  subscriptions: Map<DocumentId, () => void>;
-};
-
-const states = new WeakMap<YjsPeer, YjsPeerState>();
-
-function stateFor(peer: YjsPeer): YjsPeerState {
-  let state = states.get(peer);
-  if (!state) {
-    state = {
-      nextChannelIndex: 0,
-      documentToChannel: new Map(),
-      channelToDocument: new Map(),
-      subscriptions: new Map(),
+  | (YjsWsAuthenticatedContext & { kind: "authenticated" })
+  | {
+      kind: "deferred-close";
+      close: WsDeferredClose & {
+        errorCode: YjsControlErrorCode;
+        reasonFrame: string;
+      };
     };
-    states.set(peer, state);
-  }
-  return state;
+
+type YjsRoutePeer = Omit<YjsWsPeer, "context"> & {
+  request: Request;
+  context?: YjsRouteContext;
+};
+
+type YjsRouteServices = Pick<AppServices, "documentSync"> & {
+  db: Database;
+};
+
+let handlerPromise: Promise<ReturnType<typeof createYjsWsHandler>> | null = null;
+
+function selectYjsRouteServices(app: AppServices): YjsRouteServices {
+  return {
+    db: getDb(),
+    documentSync: app.documentSync,
+  };
 }
 
-function sendError(
-  peer: YjsPeer,
-  code: YjsControlErrorCode,
-  documentId?: DocumentId,
-  reason = code,
-): void {
-  peer.send(
-    encodeYjsControlFrame({
-      type: "error",
-      code,
-      reason,
-      documentId,
-    }),
-  );
+async function updateDocumentProjection(
+  db: Database,
+  documentId: string,
+  markdown: string,
+): Promise<void> {
+  await db
+    .update(documents)
+    .set({ markdownProjection: markdown, updatedAt: new Date() })
+    .where(eq(documents.id, documentId as DocumentId));
 }
 
-function dispose(peer: YjsPeer): void {
-  const state = states.get(peer);
-  if (!state) return;
-  for (const unsubscribe of state.subscriptions.values()) unsubscribe();
-  states.delete(peer);
+function createHandler(services: YjsRouteServices): ReturnType<typeof createYjsWsHandler> {
+  return createYjsWsHandler({
+    transport: services.documentSync,
+    canAccessDocument: async (userId, documentId) => {
+      try {
+        await services.documentSync.requireOwnedDocument(documentId as DocumentId, userId);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    updateOrigin(peer) {
+      const userId = peer.context?.userId;
+      return userId ? { type: "user", userId } : { type: "system" };
+    },
+    async afterPersist(documentId) {
+      const markdown = await services.documentSync.readAsMarkdown(documentId as DocumentId);
+      if (!markdown.ok) {
+        console.error("ws-yjs-route: projection markdown read failed", documentId, markdown.error);
+        return;
+      }
+      await updateDocumentProjection(services.db, documentId, markdown.value);
+    },
+  });
+}
+
+function getHandler(): Promise<ReturnType<typeof createYjsWsHandler>> {
+  handlerPromise ??= getApp().then((app) => createHandler(selectYjsRouteServices(app)));
+  return handlerPromise;
 }
 
 export default defineWebSocketHandler(() => ({
   async upgrade(request) {
     const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
     if (auth.kind === "deferred-close") {
+      const isAuthFailure = auth.close.reason === "auth_failed";
       return {
-        context: { kind: "deferred-close", close: auth.close } satisfies YjsRouteContext,
+        context: deferWsClose({
+          ...auth.close,
+          errorCode: isAuthFailure ? "auth_failed" : "internal",
+          reasonFrame: isAuthFailure ? "Authentication failed" : "Internal server error",
+        }) satisfies YjsRouteContext,
       };
     }
     return {
@@ -82,71 +111,54 @@ export default defineWebSocketHandler(() => ({
     };
   },
 
-  open(peer) {
-    const yjsPeer = peer as unknown as YjsPeer;
-    const context = yjsPeer.context;
+  async open(peer) {
+    const wsPeer = peer as unknown as YjsRoutePeer;
+    const context = wsPeer.context;
     if (context?.kind === "deferred-close") {
-      sendError(yjsPeer, "auth_failed");
-      yjsPeer.close(context.close.code, context.close.reason);
+      safeWsSend(
+        wsPeer,
+        encodeYjsControlFrame({
+          type: "error",
+          code: context.close.errorCode,
+          reason: context.close.reasonFrame,
+        }),
+        { logPrefix: "ws-yjs-route" },
+      );
+      wsPeer.close(context.close.code, context.close.reason);
+      return;
+    }
+
+    const authenticatedPeer = wsPeer as unknown as YjsWsPeer;
+    const handler = await getHandler();
+    if (!handler.open(authenticatedPeer)) {
+      handler.close(authenticatedPeer);
     }
   },
 
   async message(peer, message) {
-    const yjsPeer = peer as unknown as YjsPeer;
-    const context = yjsPeer.context;
-    if (context?.kind !== "authenticated") {
-      sendError(yjsPeer, "auth_failed");
-      return;
-    }
+    const wsPeer = peer as unknown as YjsRoutePeer;
+    const context = wsPeer.context;
+    if (context?.kind !== "authenticated") return;
 
-    const text = message.text();
-    const control = parseYjsClientControlFrame(text);
-    if (!control) {
-      sendError(yjsPeer, "bad_request");
-      return;
-    }
-
-    if (control.type === "unsubscribe") {
-      const documentId = control.documentId as DocumentId;
-      const state = stateFor(yjsPeer);
-      state.subscriptions.get(documentId)?.();
-      state.subscriptions.delete(documentId);
-      return;
-    }
-
-    const documentId = control.documentId as DocumentId;
-    try {
-      await context.app.documentSync.requireOwnedDocument(documentId, context.userId);
-    } catch {
-      sendError(yjsPeer, "document_not_found", documentId);
-      return;
-    }
-
-    const state = stateFor(yjsPeer);
-    state.subscriptions.get(documentId)?.();
-    const channelIndex = state.documentToChannel.get(documentId) ?? state.nextChannelIndex++;
-    state.documentToChannel.set(documentId, channelIndex);
-    state.channelToDocument.set(channelIndex, documentId);
-    let unsubscribe: () => void = () => undefined;
-    unsubscribe = context.app.documentSync.subscribe(documentId, (update) => {
-      try {
-        yjsPeer.send(encodeYjsBinaryEnvelope(channelIndex, update.updateData));
-      } catch {
-        unsubscribe();
-        state.subscriptions.delete(documentId);
-        state.documentToChannel.delete(documentId);
-        state.channelToDocument.delete(channelIndex);
-      }
-    });
-    state.subscriptions.set(documentId, unsubscribe);
-    yjsPeer.send(encodeYjsControlFrame({ type: "subscribed", documentId, channelIndex }));
+    const rawData = (message as { rawData?: unknown }).rawData;
+    const handler = await getHandler();
+    handler.message(
+      wsPeer as unknown as YjsWsPeer,
+      typeof rawData === "string" ? rawData : message.uint8Array(),
+    );
   },
 
-  close(peer) {
-    dispose(peer as unknown as YjsPeer);
+  async close(peer) {
+    const wsPeer = peer as unknown as YjsRoutePeer;
+    const context = wsPeer.context;
+    if (context?.kind !== "authenticated") return;
+    (await getHandler()).close(wsPeer as unknown as YjsWsPeer);
   },
 
-  error(peer) {
-    dispose(peer as unknown as YjsPeer);
+  async error(peer) {
+    const wsPeer = peer as unknown as YjsRoutePeer;
+    const context = wsPeer.context;
+    if (context?.kind !== "authenticated") return;
+    (await getHandler()).close(wsPeer as unknown as YjsWsPeer);
   },
 }));

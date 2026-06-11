@@ -9,7 +9,8 @@
       "@meridian/contracts/runtime": ["../../packages/contracts/src/runtime/index.ts"],
       "@meridian/contracts/runtime/*": ["../../packages/contracts/src/runtime/*"],
       "@meridian/contracts/threads": ["../../packages/contracts/src/threads/index.ts"],
-      "@meridian/contracts/projects": ["../../packages/contracts/src/projects/index.ts"]
+      "@meridian/contracts/projects": ["../../packages/contracts/src/projects/index.ts"],
+      "@meridian/prosemirror-schema": ["../../packages/prosemirror-schema/src/index.ts"]
     }
   },
   "include": ["server/**/*", "nitro.config.ts"]

@@ -7,7 +7,7 @@ test("opens project shell, loads chapter, and streams an assistant turn", async 
   await expect(page.getByTestId("project-shell")).toBeVisible();
   const projectId = await page.getByTestId("project-id").textContent();
   expect(page.url()).toContain(`/projects/${projectId}/agent`);
-  await expect(page.getByTestId("chapter-editor")).toContainText("# Chapter 1");
+  await expect(page.getByTestId("chapter-editor")).toContainText("Chapter 1");
   await expect(page.getByTestId("thread-ws-status")).toContainText("subscribed");
   await expect(page.getByTestId("yjs-status")).toContainText("subscribed");
 

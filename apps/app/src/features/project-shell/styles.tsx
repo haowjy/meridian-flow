@@ -191,12 +191,35 @@ export function ProjectShellStyles() {
         padding: 0.55rem 0.9rem;
       }
 
-      .editor-textarea {
+      .editor-host {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .editor-textarea,
+      .editor-surface {
         flex: 1;
         line-height: 1.65;
         margin: 1rem;
         padding: 1.25rem;
         resize: none;
+      }
+
+      .editor-surface {
+        background: Canvas;
+        border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+        border-radius: 0.75rem;
+        color: CanvasText;
+        min-height: 16rem;
+        outline: none;
+        resize: vertical;
+      }
+
+      .editor-surface .ProseMirror {
+        min-height: 14rem;
+        outline: none;
       }
 
       .sr-only {
