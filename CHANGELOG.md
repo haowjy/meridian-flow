@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- **server/build:** align copied workbench user provisioning with Supabase auth IDs so Nitro production build resolves database exports.
 - **www:** move waitlist persistence onto the shared Drizzle migration flow and align public copy with Meridian Flow’s fiction-writing positioning.
 - **www:** use the exported Meridian design-token stylesheet so the marketing app production build resolves package exports.
 - **server:** activate the copied upstream turn orchestrator on the production message route, adapt its Drizzle repositories to Meridian Flow's current Supabase/Postgres schema, and restore live WS/cold replay smoke coverage.
