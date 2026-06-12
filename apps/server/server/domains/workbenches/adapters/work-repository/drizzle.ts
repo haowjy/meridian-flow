@@ -3,7 +3,7 @@ import type { WorkbenchId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -66,28 +66,33 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return rows.map(mapWork);
     },
     async ensureDefaultForWorkbench(workbenchId: WorkbenchId, title?: string): Promise<Work> {
-      const [existing] = await db
-        .select()
-        .from(works)
-        .where(and(eq(works.projectId, workbenchId), isNull(works.deletedAt)))
-        .orderBy(desc(works.updatedAt))
-        .limit(1);
-      if (existing) return mapWork(existing);
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, workbenchId))
-        .limit(1);
-      const [created] = await db
-        .insert(works)
-        .values({
-          projectId: workbenchId,
-          createdByUserId: project?.userId,
-          title: title?.trim() || DEFAULT_WORK_TITLE,
-        })
-        .returning();
-      if (!created) throw new Error(`Default work not found for workbench: ${workbenchId}`);
-      return mapWork(created);
+      return db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${workbenchId}, 42::bigint))`,
+        );
+        const [existing] = await tx
+          .select()
+          .from(works)
+          .where(and(eq(works.projectId, workbenchId), isNull(works.deletedAt)))
+          .orderBy(desc(works.updatedAt))
+          .limit(1);
+        if (existing) return mapWork(existing);
+        const [project] = await tx
+          .select()
+          .from(projects)
+          .where(eq(projects.id, workbenchId))
+          .limit(1);
+        const [created] = await tx
+          .insert(works)
+          .values({
+            projectId: workbenchId,
+            createdByUserId: project?.userId,
+            title: title?.trim() || DEFAULT_WORK_TITLE,
+          })
+          .returning();
+        if (!created) throw new Error(`Default work not found for workbench: ${workbenchId}`);
+        return mapWork(created);
+      });
     },
     async touch(id: WorkId): Promise<void> {
       const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);

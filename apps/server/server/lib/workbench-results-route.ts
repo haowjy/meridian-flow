@@ -10,7 +10,7 @@ import { requireWorkbenchOwner, type WorkbenchRepository } from "../domains/work
 export interface WorkbenchResultListItem {
   id: string;
   workbenchId: string;
-  sourcePath: string;
+  workspacePath: string;
   resultsUri: string;
   mimeType: string;
   sizeBytes: number;
@@ -49,7 +49,7 @@ function toListItem(row: WorkbenchResultRecord): WorkbenchResultListItem {
   return {
     id: row.id,
     workbenchId: row.workbenchId,
-    sourcePath: row.sourcePath,
+    workspacePath: row.sourcePath,
     resultsUri: row.resultsUri,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,

@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- **server/context:** align Results rail wire fields with the app, share `user://` context across a user personal project, and route object checkpoint artifacts into Results.
 - **server/build:** align copied workbench user provisioning with Supabase auth IDs so Nitro production build resolves database exports.
 - **www:** move waitlist persistence onto the shared Drizzle migration flow and align public copy with Meridian Flow’s fiction-writing positioning.
 - **www:** use the exported Meridian design-token stylesheet so the marketing app production build resolves package exports.

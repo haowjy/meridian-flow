@@ -1,6 +1,6 @@
 /** Workbench context-port factory: builds per-workbench ContextFS routers without external execution providers. */
 import type { Database } from "@meridian/database";
-import { contextSources } from "@meridian/database/schema";
+import { contextSources, projects } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { createInMemoryDocumentStore } from "../collab/adapters/in-memory/index.js";
 import { createDocumentSyncService } from "../collab/domain/document-sync-service.js";
@@ -30,17 +30,45 @@ export interface WorkbenchContextPortFactory {
   forWorkbench(workbenchId: string, userId: string): ContextPort;
 }
 
+async function ensureUserContextProject(db: Database, userId: string): Promise<string> {
+  const [existing] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
+    )
+    .limit(1);
+  if (existing) return existing.id;
+
+  const id = crypto.randomUUID();
+  const [created] = await db
+    .insert(projects)
+    .values({
+      id,
+      userId,
+      name: "User Files",
+      slug: `user-files-${id}`,
+      isPersonal: true,
+    })
+    .returning({ id: projects.id });
+  if (!created) throw new Error(`Failed to provision user context project for ${userId}`);
+  return created.id;
+}
+
 async function findWorkbenchContextSource(
   db: Database,
   workbenchId: string,
   scheme: ContextScheme,
+  userId: string,
 ): Promise<string | null> {
+  const sourceProjectId =
+    scheme === "user" ? await ensureUserContextProject(db, userId) : workbenchId;
   const [row] = await db
     .select({ id: contextSources.id })
     .from(contextSources)
     .where(
       and(
-        eq(contextSources.projectId, workbenchId),
+        eq(contextSources.projectId, sourceProjectId),
         eq(contextSources.slug, scheme),
         isNull(contextSources.workId),
         isNull(contextSources.deletedAt),
@@ -54,14 +82,17 @@ async function ensureWorkbenchContextSource(
   db: Database,
   workbenchId: string,
   scheme: ContextScheme,
+  userId: string,
 ): Promise<string> {
-  const existing = await findWorkbenchContextSource(db, workbenchId, scheme);
+  const sourceProjectId =
+    scheme === "user" ? await ensureUserContextProject(db, userId) : workbenchId;
+  const existing = await findWorkbenchContextSource(db, workbenchId, scheme, userId);
   if (existing) return existing;
 
   const [created] = await db
     .insert(contextSources)
     .values({
-      projectId: workbenchId,
+      projectId: sourceProjectId,
       name: CONTEXT_SOURCE_NAMES[scheme],
       slug: scheme,
       scope: "project",
@@ -74,7 +105,7 @@ async function ensureWorkbenchContextSource(
     .returning({ id: contextSources.id });
   if (created) return created.id;
 
-  const raced = await findWorkbenchContextSource(db, workbenchId, scheme);
+  const raced = await findWorkbenchContextSource(db, workbenchId, scheme, userId);
   if (!raced) throw new Error(`Failed to provision ${scheme} context source for ${workbenchId}`);
   return raced;
 }
@@ -86,10 +117,16 @@ class WorkbenchContextDocumentStore implements ContextDocumentStore {
     private readonly db: Database,
     private readonly workbenchId: string,
     private readonly scheme: ContextScheme,
+    private readonly userId: string,
   ) {}
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
-    this.sourceId ??= ensureWorkbenchContextSource(this.db, this.workbenchId, this.scheme);
+    this.sourceId ??= ensureWorkbenchContextSource(
+      this.db,
+      this.workbenchId,
+      this.scheme,
+      this.userId,
+    );
     return new DrizzleContextDocumentStore({ db: this.db, contextSourceId: await this.sourceId });
   }
 
@@ -164,7 +201,7 @@ export function createProductionWorkbenchContextPortFactory(options: {
       let port = entries.get(key);
       if (!port) {
         port = buildPort(
-          (scheme) => new WorkbenchContextDocumentStore(options.db, workbenchId, scheme),
+          (scheme) => new WorkbenchContextDocumentStore(options.db, workbenchId, scheme, userId),
           options.documentSync,
         );
         entries.set(key, port);

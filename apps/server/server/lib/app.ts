@@ -2,11 +2,13 @@
 import { createDrizzleCreditLedger } from "../domains/billing/index.js";
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import {
+  createCheckpointArtifactFlush,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
   createFigureAssetService,
   createProductionContextPortFactory,
+  createPromotionService,
 } from "../domains/context/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import {
@@ -25,7 +27,6 @@ import {
   createChildRunCoordinator,
   createGatewayFromEnv,
   createLateBindRunTurnPort,
-  createNoopCheckpointArtifactFlushPort,
   createOrchestrator,
   createPermissionGate,
   createToolExecutor,
@@ -84,6 +85,7 @@ async function createAppServices(): Promise<AppServices> {
     eventSink,
   });
   const results = createDrizzleResultRepository(db);
+  const promotionService = createPromotionService({ objectStore, results });
   const documentAccess = createDrizzleDocumentAccess(db);
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
   const tools = createRuntimeToolRegistry({ db, contextPorts });
@@ -137,7 +139,10 @@ async function createAppServices(): Promise<AppServices> {
     childRunCoordinator,
     checkpointRegistry,
     creditLedger,
-    checkpointArtifacts: createNoopCheckpointArtifactFlushPort(),
+    checkpointArtifacts: createCheckpointArtifactFlush({
+      promotion: promotionService,
+      objectStore,
+    }),
     eventSink,
     modelRequestDebug,
   });

@@ -246,8 +246,10 @@ export type {
 } from "./ports/context-port.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
+export { createCheckpointArtifactFlush } from "./promotion/checkpoint-artifact-flush.js";
 export type {
   ResultRepository,
   WorkbenchResultRecord,
 } from "./promotion/ports/result-repository.js";
+export { createPromotionService, type PromotionService } from "./promotion/promotion-service.js";
 export * from "./uploads/index.js";
