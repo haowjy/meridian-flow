@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,21 +46,48 @@ function runGit(args: string[]): string {
   return result.stdout.trim();
 }
 
-/**
- * Detect the portless hostname prefix for linked worktrees. Portless uses the
- * worktree directory basename as the prefix (for example
- * `v3-voluma-parity-copy.app.meridian.localhost`).
- */
-function detectWorktreePrefix(): string | undefined {
+const DEFAULT_PORTLESS_BRANCHES = new Set(["main", "master"]);
+const MAX_DNS_LABEL_LENGTH = 63;
+
+function truncateDnsLabel(label: string): string {
+  if (label.length <= MAX_DNS_LABEL_LENGTH) return label;
+  const hash = createHash("sha256").update(label).digest("hex").slice(0, 6);
+  const head = label.slice(0, MAX_DNS_LABEL_LENGTH - 7).replace(/-+$/, "");
+  return `${head}-${hash}`;
+}
+
+function sanitizeForHostname(value: string): string {
+  return truncateDnsLabel(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, ""),
+  );
+}
+
+function isLinkedWorktree(): boolean {
   const gitDir = runGit(["rev-parse", "--git-dir"]);
   const commonDir = runGit(["rev-parse", "--git-common-dir"]);
-  if (!gitDir || !commonDir) return undefined;
+  if (!gitDir || !commonDir) return false;
 
   const resolvedGitDir = path.resolve(repoRoot, gitDir);
   const resolvedCommonDir = path.resolve(repoRoot, commonDir);
-  if (resolvedGitDir === resolvedCommonDir) return undefined;
+  return resolvedGitDir !== resolvedCommonDir;
+}
 
-  return path.basename(repoRootRealpath);
+function branchToPortlessPrefix(branchName: string): string | undefined {
+  if (!branchName || branchName === "HEAD" || DEFAULT_PORTLESS_BRANCHES.has(branchName)) {
+    return undefined;
+  }
+
+  const lastSegment = branchName.split("/").at(-1) ?? branchName;
+  return sanitizeForHostname(lastSegment) || undefined;
+}
+
+function detectWorktreePrefix(branchName: string): string | undefined {
+  if (!isLinkedWorktree()) return undefined;
+  return branchToPortlessPrefix(branchName);
 }
 
 function shellQuote(value: string): string {
@@ -268,13 +296,19 @@ function failAndExit(
   process.exit(1);
 }
 
-function teardownExistingSession(tmuxStore: TmuxSessionStore, sessionName: string): void {
+function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string): void {
   if (tmuxStore.sessionExists(sessionName)) {
     const killResult = tmuxStore.killSession(sessionName);
     if (killResult.status !== 0) {
       console.error(killResult.stderr.trim() || `failed to kill tmux session '${sessionName}'`);
       process.exit(killResult.status ?? 1);
     }
+  }
+}
+
+function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: string[]): void {
+  for (const sessionName of [...new Set(sessionNames.filter(Boolean))]) {
+    killSessionIfPresent(tmuxStore, sessionName);
   }
 
   const pruneResult = tmuxStore.run("pnpm", ["exec", "portless", "prune"]);
@@ -307,7 +341,9 @@ async function main(): Promise<void> {
 
   applyModeEnv(mode);
 
-  const worktreePrefix = detectWorktreePrefix();
+  const previous = readJsonMetadata();
+  const worktreePrefix = detectWorktreePrefix(branchName);
+  const previousWorktreePrefix = previous ? detectWorktreePrefix(previous.branch) : undefined;
   const portlessCommand = createPortlessCommand(mode);
 
   if (cliOptions.print) {
@@ -327,14 +363,23 @@ async function main(): Promise<void> {
   }
 
   if (cliOptions.restart) {
-    teardownExistingSession(tmuxStore, identity.sessionName);
+    teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
-    const previous = readJsonMetadata();
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
     const routeState = waitForPortlessState(tmuxStore, runningMode, 5_000, worktreePrefix);
     printSessionInfo({
       headline: "already running",
       sessionName: identity.sessionName,
+      mode: runningMode,
+      routeLines: routeState.lines,
+    });
+    return;
+  } else if (previous?.sessionName && tmuxStore.sessionExists(previous.sessionName)) {
+    const runningMode = isDevMode(previous.mode) ? previous.mode : mode;
+    const routeState = waitForPortlessState(tmuxStore, runningMode, 5_000, previousWorktreePrefix);
+    printSessionInfo({
+      headline: "already running",
+      sessionName: previous.sessionName,
       mode: runningMode,
       routeLines: routeState.lines,
     });

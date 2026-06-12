@@ -26,7 +26,7 @@ for path in "${forbidden_paths[@]}"; do
   fi
 done
 
-scan_roots=(apps packages)
+scan_roots=(apps packages tools package.json pnpm-workspace.yaml nx.json)
 for pattern in \
   "markdown-replace" \
   "@workos" \
@@ -48,7 +48,7 @@ for pattern in \
   "highlight.js"; do
   while IFS= read -r hit; do
     violations+=("forbidden token '$pattern': $hit")
-  done < <(rg -n --glob '!**/node_modules/**' --glob '!**/.output/**' --glob '!**/*.md' --glob '!**/*.spec.ts' --glob '!**/*.test.ts' "$pattern" "${scan_roots[@]}" || true)
+  done < <(rg -n --glob '!**/node_modules/**' --glob '!**/.output/**' --glob '!**/*.md' --glob '!**/*.spec.ts' --glob '!**/*.test.ts' --glob '!tools/ci/check-negative-space.sh' "$pattern" "${scan_roots[@]}" || true)
 done
 
 if (( ${#violations[@]} > 0 )); then
