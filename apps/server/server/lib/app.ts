@@ -9,6 +9,7 @@ import {
   createFigureAssetService,
   createProductionContextPortFactory,
   createPromotionService,
+  createThreadUploadImportService,
 } from "../domains/context/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import {
@@ -78,6 +79,13 @@ async function createAppServices(): Promise<AppServices> {
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter, eventSink });
   const documentSync = createDocumentSyncService({ db });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
+  const threadUploadImports = createThreadUploadImportService({
+    repos: threadRepos,
+    uploadDocuments,
+    documentSync,
+    objectStore,
+    eventSink,
+  });
   const figureAssets = createFigureAssetService({
     objectStore,
     documents: createDrizzleFigureDocumentRepository({ db }),
@@ -184,6 +192,7 @@ async function createAppServices(): Promise<AppServices> {
       objectStore,
       localObjectStore,
       uploadDocuments,
+      threadUploadImports,
       figureAssets,
       results,
       documentAccess,

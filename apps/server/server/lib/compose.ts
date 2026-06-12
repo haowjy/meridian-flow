@@ -7,6 +7,7 @@ import type {
   FigureAssetService,
   ResultRepository,
   ThreadUploadDocumentStore,
+  ThreadUploadImportService,
 } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
 import type {
@@ -78,6 +79,7 @@ export type AppServices = {
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadDocuments: ThreadUploadDocumentStore;
+  threadUploadImports: ThreadUploadImportService;
   figureAssets: FigureAssetService;
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
@@ -395,6 +397,11 @@ export function createInMemoryAppServices(): AppServices {
       },
       async listRecent() {
         return [];
+      },
+    },
+    threadUploadImports: {
+      async importUpload() {
+        throw new Error("in-memory upload imports are not implemented");
       },
     },
     figureAssets: {
