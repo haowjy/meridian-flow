@@ -50,7 +50,7 @@ function drizzleRowFromBuilt(built: ReturnType<typeof buildSubagentThreadRow>) {
     kind: built.kind,
     status: built.status,
     composedSystemPrompt: built.composedSystemPrompt ?? null,
-    systemPromptHash: null,
+    systemPromptHash: "baked",
     workingState: built.workingState,
     currentAgentId: built.currentAgent,
     nextSeq: 0n,

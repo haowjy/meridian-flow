@@ -664,6 +664,22 @@ export function describeThreadRepositoriesConformance(
       const rebound = await repos.threads.updateCurrentAgent(thread.id, "agent-b");
       expect(rebound).toMatchObject({ currentAgent: "agent-b" });
 
+      const rawPromptThread = await repos.threads.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        workbenchId: workbench.id,
+        currentAgent: "agent-with-prompt-a",
+        systemPrompt: "Raw pre-bake prompt",
+      });
+      const rawPromptRebound = await repos.threads.updateCurrentAgent(
+        rawPromptThread.id,
+        "agent-with-prompt-b",
+      );
+      expect(rawPromptRebound).toMatchObject({
+        currentAgent: "agent-with-prompt-b",
+        systemPrompt: "Raw pre-bake prompt",
+        composedSystemPrompt: null,
+      });
+
       await repos.threads.bakeComposedSystemPrompt(thread.id, {
         composedSystemPrompt: "frozen",
         bakedSkillSlugs: [],

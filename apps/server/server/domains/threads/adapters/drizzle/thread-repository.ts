@@ -142,6 +142,7 @@ export function createDrizzleThreadRepository(
           kind: thread.kind,
           title: thread.title ?? "",
           composedSystemPrompt: thread.composedSystemPrompt,
+          systemPromptHash: "baked",
           currentAgentId: thread.currentAgent,
           parentThreadId: thread.parentThreadId,
           spawnStatus: thread.spawnStatus,
@@ -249,7 +250,7 @@ export function createDrizzleThreadRepository(
         .where(
           and(
             eq(schema.threads.id, id),
-            isNull(schema.threads.composedSystemPrompt),
+            isNull(schema.threads.systemPromptHash),
             eq(schema.threads.turnCount, 0),
           ),
         )
@@ -261,6 +262,7 @@ export function createDrizzleThreadRepository(
         .update(schema.threads)
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
+          systemPromptHash: "baked",
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))

@@ -32,7 +32,9 @@ export const Route = createFileRoute("/_authenticated")({
 
     const now = Date.now();
     const usesWorkspaceProviders =
-      location.pathname.startsWith("/workbench/") || location.pathname.startsWith("/chat/");
+      location.pathname === "/" ||
+      location.pathname.startsWith("/workbench/") ||
+      location.pathname.startsWith("/chat/");
 
     if (!usesWorkspaceProviders) {
       return { user, workbenches: null, now };
@@ -54,7 +56,7 @@ function AuthenticatedLayout() {
   const { workbenches, now } = Route.useLoaderData();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const usesWorkspaceProviders =
-    pathname.startsWith("/workbench/") || pathname.startsWith("/chat/");
+    pathname === "/" || pathname.startsWith("/workbench/") || pathname.startsWith("/chat/");
 
   useEffect(() => {
     if (!usesWorkspaceProviders) return;

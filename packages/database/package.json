@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./schema/*": "./src/schema/*.ts",
+    "./schema/sql/*": "./src/schema/sql/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
