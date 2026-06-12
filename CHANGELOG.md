@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added opt-in Drizzle thread repository conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
 - **server/threads:** add pre-bake current-agent rebinding to repository adapters for upstream parity.
 - Added thread repository/event-journal conformance suites for the in-memory adapter.
 - Added structural Checkpoint renderer parity coverage for artifacts, live preview slots, forms, and resolved summaries.
