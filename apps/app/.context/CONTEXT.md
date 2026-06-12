@@ -13,7 +13,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
   `useThreadActions()` only. Composer handoff uses `markHandoffPending` +
-  `useThreadHandoff` (not inline in `ChatView`).
+  `useThreadHandoff` (not inline in `ChatView`). Deferred first-send flows use
+  `markPendingCreation`, `clearPendingCreation`, and
+  `removeOptimisticUserTurn`; the last one is only rollback for a locally
+  appended user turn that failed before server acknowledgement.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`). The
   `_authenticated` loader seeds the project list + `now`; the `$projectId`
@@ -57,6 +60,15 @@ Both transports emit this shape; the reducer consumes this shape.
 `src/lib/optimistic-project.ts` is the template for client-led writes:
 client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
 on response. The Composer's submit-from-Home flow follows it.
+
+`src/lib/deferred-workbench-chat.ts` is the existing-workbench variant for a
+client-only thread that should not be created on the server until first send. It
+seeds an optimistic thread, marks **only the thread id** pending creation, and
+leaves `pendingCreation.workbenchIds` untouched because the workbench already
+exists. `DeferredFirstSendLatch` guards the create+submit path against
+double-submit; if first-send fails after an optimistic user turn is appended,
+`removeOptimisticUserTurn(threadId, optimisticTurnId)` removes that local user
+turn while preserving the pending thread row for retry.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
