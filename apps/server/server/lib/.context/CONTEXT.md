@@ -15,30 +15,72 @@ collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
 | `gateway.ts` | Singleton model `Gateway`, lazily constructed via `createGatewayFromEnv()`. |
 | `event-sink-factory.ts` | Env-driven observability adapter factory. |
 | `object-store-factory.ts` | Env-driven object-store adapter factory. |
-| `compose.ts` | DI composition root. Splits pure wiring from production adapter construction. |
-| `app.ts` | App singleton. `getApp()` caches `AppServices` on `Symbol.for("meridian.app.v1")` and calls `getDb()` / `getModelGateway()` / event sink setup / `createProductionAppPorts()` / `composeAppServices()`. |
+| `compose.ts` | `AppServices` type definition, pass-through combinators, and in-memory stub factory for tests/dev. Does **not** contain the production wiring. |
+| `app.ts` | App singleton + DI composition root. `getApp()` caches `AppServices` on `Symbol.for("meridian.app.v1")` and calls `createAppServices()` which performs all production wiring. |
 
-### `compose.ts` split
+### Wiring location
 
-**`composeAppServices(ports)`** — pure wiring, no env reads and no adapter
-construction. It assembles the hub, checkpoint registry, tool registry/executor,
-late-bound `RunTurnPort`, turn runner, child-run coordinator, spawn tools,
-explicit `PermissionGate` (`coding` profile), orchestrator, upload import
-service, input-ingest and promotion factories, and the returned `AppServices`.
+All production wiring lives in `createAppServices()` in `app.ts`. This is the
+single composition root that:
 
-**`createProductionAppPorts(options)`** — constructs Drizzle/postgres-backed and
-env-backed adapters from already-parsed inputs: projects/works/users,
-threads/journal, collab document sync, context port factory, document access,
-figure assets, results, credit ledger, and default package seeder.
+1. Creates Drizzle-backed domain adapters (thread repos, journal, credit ledger,
+   packages, projects, works, document sync, context port factory).
+2. Creates pure/in-memory adapters (preferences, checkpoint registry, noop event
+   sink, noop checkpoint artifact flush).
+3. Assembles the orchestrator stack in order: gateway, tool registry/executor,
+   late-bound `RunTurnPort`, turn runner, child-run coordinator, then
+   orchestrator. Binds the proxy after orchestrator construction.
+4. Composes an explicit `PermissionGate` with `coding` profile
+   (`computeEffectivePermissions(resolveProfile("coding"))`).
+5. Passes everything through `createProductionAppPorts()` / `composeAppServices()`
+   (currently thin pass-throughs) to form the final `AppServices`.
 
-**`createInMemoryAppServices(options)`** — test/dev composition. It creates
-in-memory repositories/adapters, requires an injected gateway and event sink, and
-then calls the same `composeAppServices()` pure-wiring path.
+**`compose.ts`** defines the `AppServices` type, `createProductionAppPorts()`
+(pass-through identity), `composeAppServices()` (pass-through identity), and
+`createInMemoryAppServices()` (stub factory with `phase: "skeleton"` sentinels
+and throwing stubs for unimplemented methods).
 
-The late-bind `RunTurnPort` exists because the turn runner and child-run
-coordinator need a run-turn port before the orchestrator can be fully
-constructed; `composeAppServices()` creates the proxy, wires dependents, creates
-the orchestrator, then binds the proxy.
+**`createInMemoryAppServices()`** — test/dev composition. Creates in-memory stubs
+for every `AppServices` slot: gateway echo, skeleton repos, throwing document
+sync, noop event sink, pass-through checkpoint registry, and unimplemented throw
+stubs for orchestrator/runner/tool executor.
+
+### Late-binding `RunTurnPort`
+
+The turn runner and child-run coordinator both need a `RunTurnPort` (the
+orchestrator) before it can be fully constructed (child-run coordinator calls
+back into the orchestrator for subagent turns). `createLateBindRunTurnPort()`
+creates a proxy that defers to an unbound `RunTurnPort`; `runTurnProxy.bind(orchestrator)`
+completes the cycle after the orchestrator is created.
+
+### `AppServices` slots
+
+`compose.ts` defines the canonical `AppServices` type. Every domain port is
+represented as a fully-typed slot:
+
+| Slot | Domain | Production adapter |
+|---|---|---|
+| `gateway` | runtime | Env-driven Anthropic/OpenAI gateway |
+| `threadRepos` | threads | Drizzle (turns, blocks, model responses, threads) |
+| `journalReader` | threads | Drizzle event journal read |
+| `journalWriter` | threads | Drizzle event journal append |
+| `threadEventHub` | threads | In-memory pub/sub over journal |
+| `threadRuntime` | threads | Thread ownership + message dispatch |
+| `documentSync` | collab | Drizzle Yjs document persistence |
+| `contextPorts` | context | Drizzle-backed context reader/writer |
+| `projects` | projects | Drizzle project repository |
+| `works` | projects | Drizzle work repository |
+| `creditLedger` | billing | Drizzle credit lot/transaction ledger |
+| `agents` | agents | Package store (skeleton) |
+| `checkpointRegistry` | runtime | In-memory checkpoint registry |
+| `eventSink` | observability | Noop (env-configurable) |
+| `packageRepository` | packages | Drizzle package store |
+| `preferences` | preferences | In-memory only (Meridian Flow does not persist preferences) |
+| `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
+| `runner` | runtime | `TurnRunner` with child-run registry |
+| `toolRegistry` | runtime | Name-keyed tool registration map |
+| `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
+| `modelRequestDebug` | runtime | In-memory debug store for model requests |
 
 ## Tool wiring
 

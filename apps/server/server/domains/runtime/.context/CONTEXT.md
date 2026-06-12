@@ -39,7 +39,7 @@ skeleton and delegates the moving parts.
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. |
-| `persistence.ts` | Transactional persist/project-then-emit helper. |
+| `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 
 `OrchestratorDeps` is fully required: gateway, repos, package repository, tool
@@ -101,6 +101,9 @@ facet.
   `cancelled` and sets the thread back to `idle`.
 - **Persist/project-then-emit** — every state mutation goes through
   `persistAndAppendEvents` before any event is yielded to subscribers.
+  Within the transaction, `projectReadModelEvent` runs first (creating
+  turn/block/model-response rows), then `eventWriter.appendEvent` appends
+  to the journal (satisfying the `event_journal.turn_id` FK).
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
