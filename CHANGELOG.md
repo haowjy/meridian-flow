@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added Meridian-adapted runtime loop integration and composed prompt-freeze parity coverage.
 - Added Meridian-adapted in-process turn and provider-conformance smoke files under the upstream server tests path.
 - Added Meridian-adapted runtime skill, agent-thread context, turn-preview, and compose parity coverage without external execution hooks.
 - Added Meridian-safe backend policy/startup guard parity files and wired executable core tool registrations into production app composition.
