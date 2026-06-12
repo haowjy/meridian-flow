@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added Supabase request-auth route-boundary parity coverage.
 - Added the authenticated Home route parity file under the pathless auth layout.
 - Added collab DocumentSyncService parity coverage for markdown/code mirrors, persistence rollback, checkpoint restore, and transport updates.
 - Added opt-in Drizzle collab document-store conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
