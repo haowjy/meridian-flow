@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added thread projector, subagent-create, event-hub replay, and snapshot parity coverage.
 - Added thread upload document/import parity coverage plus uploads domain context notes.
 - Added Supabase request-auth route-boundary parity coverage.
 - Added the authenticated Home route parity file under the pathless auth layout.
