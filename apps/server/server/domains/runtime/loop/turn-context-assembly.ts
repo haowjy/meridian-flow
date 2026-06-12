@@ -86,12 +86,19 @@ export async function assembleNextTurnContext(
     });
 
     if (input.persistBake && input.bakeComposedSystemPrompt) {
+      const expectedCurrentAgent = thread.currentAgent;
+      const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
       thread = await input.bakeComposedSystemPrompt(input.thread.id as ThreadId, {
         composedSystemPrompt: bakedPrompt,
-        bakedSkillSlugs: modelInvocableSkillSlugs(agentContext.resolvedSkills),
-        expectedCurrentAgent: thread.currentAgent,
+        bakedSkillSlugs,
+        expectedCurrentAgent,
       });
-      if (!isThreadPromptFrozen(thread)) {
+      if (
+        !isThreadPromptFrozen(thread) ||
+        thread.currentAgent !== expectedCurrentAgent ||
+        thread.composedSystemPrompt !== bakedPrompt ||
+        JSON.stringify(thread.bakedSkillSlugs ?? null) !== JSON.stringify(bakedSkillSlugs)
+      ) {
         return assembleNextTurnContext({ ...input, thread });
       }
       tools = applyBakedInvokeAdvertisement({
