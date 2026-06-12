@@ -5,7 +5,7 @@ let gatewayPromise: Promise<Gateway> | undefined;
 
 export async function getModelGateway(): Promise<Gateway> {
   if (!gatewayPromise) {
-    gatewayPromise = createGatewayFromEnv().then(({ gateway }) => gateway);
+    gatewayPromise = createGatewayFromEnv(process.env).then(({ gateway }) => gateway);
   }
   return gatewayPromise;
 }

@@ -212,7 +212,7 @@ if (createdTurns.length !== 2) throw new Error(`turn rows=${createdTurns.length}
 const userBlock = createdBlocks.find((block) => block.turnId === postBody.userTurnId);
 const assistantBlock = createdBlocks.find((block) => block.turnId === postBody.assistantTurnId);
 if (userBlock?.compact !== "hello phase three") throw new Error("user text block missing");
-if (assistantBlock?.modelText !== "Acknowledged: hello phase three") {
+if (!assistantBlock?.modelText || assistantBlock.modelText.length === 0) {
   throw new Error("assistant final text block missing");
 }
 if (journalRows.length !== 4) throw new Error(`journal rows=${journalRows.length}, expected 4`);

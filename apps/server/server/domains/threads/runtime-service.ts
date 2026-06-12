@@ -62,6 +62,40 @@ function textBlockContent(text: string): JsonValue {
   return { type: "text", text };
 }
 
+async function generateTurnPlan(
+  gateway: Gateway,
+  input: { threadId: ThreadId; userText: string },
+): Promise<{ assistantText: string; actions: unknown[] }> {
+  const legacyGateway = gateway as Gateway & {
+    generateTurnPlan?: (input: { threadId: ThreadId; userText: string }) => Promise<{
+      assistantText: string;
+      actions?: unknown[];
+    }>;
+  };
+
+  if (typeof legacyGateway.generateTurnPlan === "function") {
+    const plan = await legacyGateway.generateTurnPlan(input);
+    return { assistantText: plan.assistantText, actions: plan.actions ?? [] };
+  }
+
+  const result = await gateway.generate({
+    messages: [{ role: "user", content: [{ type: "text", text: input.userText }] }],
+    maxTokens: 4096,
+  });
+  const assistantText = result.content
+    .filter(
+      (part): part is Extract<(typeof result.content)[number], { type: "text" }> =>
+        part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("");
+
+  return {
+    assistantText: assistantText || "",
+    actions: [],
+  };
+}
+
 function journalTurnId(event: OrchestratorEvent): TurnId | null {
   if ("turn" in event) return event.turn.id;
   if ("turnId" in event) return event.turnId;
@@ -153,7 +187,7 @@ export function createThreadRuntimeService(deps: {
       const assistantTurnId = randomUUID() as TurnId;
       const assistantBlockId = randomUUID() as TurnBlockId;
       await requireOwnedThread(input.threadId, input.userId);
-      const plan = await deps.gateway.generateTurnPlan({
+      const plan = await generateTurnPlan(deps.gateway, {
         threadId: input.threadId,
         userText: input.text,
       });

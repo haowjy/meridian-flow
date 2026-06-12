@@ -193,38 +193,47 @@ export function createThreadEventHub(
     return replayFromJournal(threadId, afterSeq);
   }
 
+  function publishPersistedEvent(
+    threadId: ThreadId,
+    journalSeq: bigint,
+    orchestratorEvent: OrchestratorEvent,
+  ): void {
+    if (orchestratorEvent.type === "turn.error") {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "threads.event-hub",
+        name: "turn.error",
+        payload: {
+          threadId,
+          turnId: orchestratorEvent.turn.id,
+          error: orchestratorEvent.error,
+        },
+      });
+    }
+    const state = getState(threadId);
+    const sequencedEvents = toSequencedEvents(
+      journalSeq,
+      state.projector.project(orchestratorEvent),
+      orchestratorEvent,
+    );
+
+    cacheHot(state, sequencedEvents);
+
+    for (const sequenced of sequencedEvents) {
+      notifyListeners(state, sequenced);
+    }
+
+    if (state.listeners.size === 0) {
+      scheduleEviction(threadId);
+    }
+  }
+
   return {
+    publishPersistedEvent,
+
     async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
       const journalSeq = await deps.journalWriter.appendEvent(threadId, orchestratorEvent);
-      if (orchestratorEvent.type === "turn.error") {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "threads.event-hub",
-          name: "turn.error",
-          payload: {
-            threadId,
-            turnId: orchestratorEvent.turn.id,
-            error: orchestratorEvent.error,
-          },
-        });
-      }
-      const state = getState(threadId);
-      const sequencedEvents = toSequencedEvents(
-        journalSeq,
-        state.projector.project(orchestratorEvent),
-        orchestratorEvent,
-      );
-
-      cacheHot(state, sequencedEvents);
-
-      for (const sequenced of sequencedEvents) {
-        notifyListeners(state, sequenced);
-      }
-
-      if (state.listeners.size === 0) {
-        scheduleEviction(threadId);
-      }
-
+      publishPersistedEvent(threadId, journalSeq, orchestratorEvent);
       return journalSeq;
     },
 

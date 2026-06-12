@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import { createProductionContextPortFactory } from "../domains/context/index.js";
+import { createNoopEventSink } from "../domains/observability/index.js";
 import {
   createDrizzleProjectRepository,
   createDrizzleWorkRepository,
@@ -30,11 +31,12 @@ let initPromise: Promise<AppServices> | undefined;
 
 async function createAppServices(): Promise<AppServices> {
   const inMemory = createInMemoryAppServices();
-  const { gateway } = await createGatewayFromEnv();
+  const { gateway } = await createGatewayFromEnv(process.env);
   const db = getDb();
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
-  const threadEventHub = createThreadEventHub({ journalReader, journalWriter });
+  const eventSink = createNoopEventSink();
+  const threadEventHub = createThreadEventHub({ journalReader, journalWriter, eventSink });
   const documentSync = createDocumentSyncService({ db });
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
   const tools = createRuntimeToolRegistry({ db, contextPorts });
@@ -46,6 +48,7 @@ async function createAppServices(): Promise<AppServices> {
       journalReader,
       journalWriter,
       threadEventHub,
+      eventSink,
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
       documentSync,
       contextPorts,

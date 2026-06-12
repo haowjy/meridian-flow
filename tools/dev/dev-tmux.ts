@@ -127,8 +127,32 @@ function portlessShareFlag(mode: DevMode): string {
   return "";
 }
 
+const APP_ENV_PASSTHROUGH_KEYS = [
+  "DATABASE_URL",
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "TEST_USER_EMAIL",
+  "TEST_USER_PASSWORD",
+  "TEST_USER_ID",
+  "MODEL_PROVIDER",
+  "MODEL_CALL_TIMEOUT_MS",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MODEL_REQUEST_DEBUG_CAPTURE",
+] as const;
+
+function appEnvPassthroughExports(): string {
+  const exports = APP_ENV_PASSTHROUGH_KEYS.filter((key) => process.env[key] !== undefined).map(
+    (key) => `export ${key}=${shellQuote(process.env[key] ?? "")}`,
+  );
+
+  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
+}
+
 function envSourcePreamble(): string {
-  return "set -a; [ -f .env ] && . ./.env; set +a";
+  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}`;
 }
 
 function portlessCommandBody(mode: DevMode): string {

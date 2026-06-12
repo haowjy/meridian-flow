@@ -3,6 +3,7 @@ import type { AgentPackageStore } from "../domains/agents/index.js";
 import type { CreditLedger } from "../domains/billing/index.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import type { ContextPortFactory } from "../domains/context/index.js";
+import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
 import type { ProjectRepository, WorkRepository } from "../domains/projects/index.js";
 import type { Gateway } from "../domains/runtime/index.js";
 import {
@@ -31,6 +32,7 @@ export type AppServices = {
   creditLedger: CreditLedger;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
+  eventSink: EventSink;
 };
 
 export type ProductionAppPorts = Omit<AppServices, never>;
@@ -184,6 +186,7 @@ export function createInMemoryAppServices(): AppServices {
     creditLedger: { phase: "skeleton" },
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
+    eventSink: createNoopEventSink(),
   };
 }
 
