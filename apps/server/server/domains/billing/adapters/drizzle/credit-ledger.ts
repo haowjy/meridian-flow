@@ -72,6 +72,20 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
     async debit(input: CreditDebitInput) {
       const amount = assertPositiveMillicredits(input.millicredits);
       const tx = activeDb(db);
+      const [existing] = await tx
+        .select({ consumptionGroupId: creditTransactions.consumptionGroupId })
+        .from(creditTransactions)
+        .where(
+          and(
+            eq(creditTransactions.userId, input.userId),
+            eq(creditTransactions.transactionType, "consumption"),
+            eq(creditTransactions.usageEventId, input.usageEventId),
+          ),
+        )
+        .limit(1);
+      if (existing?.consumptionGroupId) {
+        return { transactionId: existing.consumptionGroupId };
+      }
       const consumptionGroupId = crypto.randomUUID();
       const metadata = JSON.stringify({
         rootThreadId: input.rootThreadId,

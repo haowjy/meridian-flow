@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added exact-path parity coverage for HTTP interrupt envelopes, context reads, figure assets, thread-upload DB documents, billing ledger DB invariants, and package repository DB conformance.
 - Added thread agent rebind route-core parity tests for agent switching, unknown agents, baked threads, and owner gating.
 - Added Mars package version-constraint parsing, library definition source-line labels, thread upload import route wiring, and pre-turn thread agent rebind route parity.
 - Added Nitro global typings and documented remaining exact-path parity categories.
@@ -56,6 +57,8 @@
 - **database:** v3 Drizzle schema (26 tables + `credit_balances` view), single fresh `0001_initial` migration, `consume_credit_lots_fifo` with debt-lot overspend, integrity triggers, `pg_trgm` indexes, `db:apply-functions`, integration tests.
 
 ### Fixed
+- **server/context:** return durable figure upload references even when post-attach signed URL generation fails.
+- **server/billing:** return the original consumption transaction group for replayed usage-event debits.
 - **server/runtime:** bound first-turn bake/rebind retries and re-resolve context when stale agent rows win the prompt freeze race.
 - **server/threads:** persist baked skill slugs and agent slugs in Drizzle thread rows, including migration backfill.
 - **database:** expose schema compatibility modules through package subpath exports.
