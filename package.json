@@ -22,13 +22,15 @@
     "format:write": "biome check --write .",
     "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
     "test": "vitest run --passWithNoTests",
-    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm lint && pnpm check:negative-space && pnpm typecheck && pnpm test && pnpm check:graph",
     "portless:trust": "portless trust",
     "portless:list": "portless list",
     "prepare": "lefthook install",
     "dev:tmux": "tsx tools/dev/dev-tmux.ts",
     "dev:tailscale": "tsx tools/dev/dev-tmux.ts --tailscale",
-    "dev:funnel": "tsx tools/dev/dev-tmux.ts --funnel"
+    "dev:funnel": "tsx tools/dev/dev-tmux.ts --funnel",
+    "check:graph": "node tools/ci/check-graph.mjs",
+    "check:negative-space": "bash tools/ci/check-negative-space.sh"
   },
   "devDependencies": {
     "@meridian/database": "workspace:*",
