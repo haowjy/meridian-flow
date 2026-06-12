@@ -36,6 +36,13 @@
       "when": 1781182602086,
       "tag": "0005_phase1_schema_amendments",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781280000000,
+      "tag": "0006_waitlist_emails",
+      "breakpoints": true
     }
   ]
 }

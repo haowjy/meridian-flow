@@ -9,4 +9,5 @@ export * from "./billing";
 export * from "./content";
 export * from "./provenance";
 export * from "./user";
+export * from "./waitlist";
 export * from "./yjs";

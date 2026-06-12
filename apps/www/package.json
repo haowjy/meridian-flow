@@ -10,12 +10,10 @@
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
-    "test": "vitest run --passWithNoTests",
-    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
-    "db:push": "drizzle-kit push --config drizzle.config.ts"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@meridian/database": "workspace:*",
     "@meridian/design-tokens": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "@tanstack/react-router": "^1.170.7",

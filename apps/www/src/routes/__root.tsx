@@ -15,7 +15,7 @@ export const Route = createRootRoute({
       ...seo({
         title: "Meridian",
         description:
-          "Meridian is building agent-driven workflows that turn raw work into provable results.",
+          "Meridian Flow is the AI-native writing workspace for long-running web serials, built for continuity, chapters, and high-output fiction workflows.",
       }),
     ],
     links: [

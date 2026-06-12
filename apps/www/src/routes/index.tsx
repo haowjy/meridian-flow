@@ -121,16 +121,16 @@ function HomeComponent() {
             id="page-title"
             className="m-0 font-[‘Fraunces’,Georgia,serif] text-[clamp(2.2rem,7vw,4.6rem)] leading-[0.98] font-[750] tracking-normal sm:text-[clamp(3.5rem,7.5vw,8.4rem)]"
           >
-            Automating the work between raw input and trusted results.
+            Write sprawling serials without losing the thread.
           </h1>
 
-          <p className="mt-4 max-w-[760px] text-[clamp(0.95rem,1.6vw,1.35rem)] leading-[1.5] text-[#5b6f67] sm:mt-6">
-            Agent-driven workflows for teams moving from source data to analysis, evidence,
-            artifacts, review, and publication-ready outputs.
+          <p className="mt-4 max-w-[760px] text-[clamp(0.95rem,1.6vw,1.35rem)] leading-[1.5] text-muted-foreground sm:mt-6">
+            Meridian Flow gives web-serial authors a warm, scalable writing desk for chapters,
+            continuity, notes, and AI assistance that understands narrative structure.
           </p>
 
           <div className="mt-6 sm:mt-8">
-            <p className="mb-2 text-sm font-semibold tracking-[0.01em] text-[#124839]">
+            <p className="mb-2 text-sm font-semibold tracking-[0.01em] text-primary">
               Join the waitlist
             </p>
             <form
@@ -154,20 +154,20 @@ function HomeComponent() {
                   }
                 }}
                 placeholder="you@example.com"
-                className="h-[48px] w-full rounded-[8px] border border-[#dce7e2] bg-white px-4 text-base text-[#10211c] shadow-[0_12px_28px_rgba(18,72,57,0.08)] outline-none transition focus:border-[#1d6b57] focus:ring-3 focus:ring-[#1d6b5738] sm:flex-1"
+                className="h-[48px] w-full rounded-[8px] border border-border bg-white px-4 text-base text-foreground shadow-card outline-none transition focus:border-ring focus:ring-3 focus:ring-[var(--color-status-streaming-ring-strong)] sm:flex-1"
                 aria-describedby={emailDescribedBy}
                 aria-invalid={hasEmailValidationError ? true : undefined}
                 disabled={isSubmitting}
               />
               <button
                 type="submit"
-                className="inline-flex h-[48px] w-full shrink-0 items-center justify-center rounded-[8px] border border-[#1d6b57] bg-[#1d6b57] px-7 text-base font-bold text-white shadow-[0_12px_28px_rgba(18,72,57,0.14),inset_0_1px_0_rgba(255,255,255,0.14)] transition hover:border-[#124839] hover:bg-[#124839] hover:shadow-[0_16px_34px_rgba(18,72,57,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#1d6b5738] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+                className="inline-flex h-[48px] w-full shrink-0 items-center justify-center rounded-[8px] border border-primary bg-primary px-7 text-base font-bold text-primary-foreground shadow-button transition hover:border-[var(--color-mark-to)] hover:bg-[var(--color-mark-to)] hover:shadow-hero focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-status-streaming-ring-strong)] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? "Joining…" : "Join waitlist"}
               </button>
             </form>
-            <p id={emailHintId} className="mt-1.5 text-sm text-[#5b6f67]">
+            <p id={emailHintId} className="mt-1.5 text-sm text-muted-foreground">
               We’ll only use your email for waitlist updates.
             </p>
             <p
@@ -178,7 +178,7 @@ function HomeComponent() {
               role="status"
             >
               {submitState.message ? (
-                <span className={submitState.tone === "error" ? "text-rose-700" : "text-[#124839]"}>
+                <span className={submitState.tone === "error" ? "text-rose-700" : "text-primary"}>
                   {submitState.message}
                 </span>
               ) : null}

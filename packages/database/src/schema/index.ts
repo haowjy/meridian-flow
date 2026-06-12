@@ -5,6 +5,7 @@ export * from "./billing";
 export * from "./content";
 export * from "./provenance";
 export * from "./user";
+export * from "./waitlist";
 export * from "./yjs";
 
 import * as agentPackages from "./agent-packages";
@@ -14,6 +15,7 @@ import * as billing from "./billing";
 import * as content from "./content";
 import * as provenance from "./provenance";
 import * as user from "./user";
+import * as waitlist from "./waitlist";
 import * as yjs from "./yjs";
 
 /** Runtime Drizzle client schema (includes auth.users for FK-aware queries). */
@@ -25,5 +27,6 @@ export const schema = {
   ...agentPackages,
   ...provenance,
   ...user,
+  ...waitlist,
   ...yjs,
 };
