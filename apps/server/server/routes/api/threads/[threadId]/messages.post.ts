@@ -17,11 +17,14 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
     throw createError({ statusCode: 400, message: "text is required" });
   }
 
-  const response = await app.threadRuntime.sendMessage({
-    threadId,
-    userId: user.userId,
-    text: body.text,
-  });
+  await app.threadRuntime.requireOwnedThread(threadId, user.userId);
+  const result = await app.runner.startTurn({ threadId, userText: body.text });
   setResponseStatus(event, 202);
-  return response;
+  return {
+    threadId,
+    userTurnId: result.userTurnId,
+    assistantTurnId: result.assistantTurnId,
+    streamCursor: result.streamCursor,
+    status: "accepted",
+  };
 });

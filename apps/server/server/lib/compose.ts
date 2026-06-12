@@ -4,12 +4,21 @@ import type { CreditLedger } from "../domains/billing/index.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import type { ContextPortFactory } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
+import type { PackageRepository } from "../domains/packages/index.js";
+import type { WorkbenchPreferencesRepository } from "../domains/preferences/index.js";
 import type { ProjectRepository, WorkRepository } from "../domains/projects/index.js";
-import type { Gateway } from "../domains/runtime/index.js";
+import type {
+  Gateway,
+  RunTurnPort,
+  ToolExecutor,
+  ToolRegistry,
+  TurnRunner,
+} from "../domains/runtime/index.js";
 import {
   type CheckpointRegistry,
   createCheckpointRegistry,
 } from "../domains/runtime/loop/checkpoints.js";
+import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
@@ -33,6 +42,13 @@ export type AppServices = {
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
+  packageRepository: PackageRepository;
+  preferences: WorkbenchPreferencesRepository;
+  orchestrator: RunTurnPort;
+  runner: TurnRunner;
+  toolRegistry: ToolRegistry;
+  toolExecutor: ToolExecutor;
+  modelRequestDebug: ModelRequestDebugStore;
 };
 
 export type ProductionAppPorts = Omit<AppServices, never>;
@@ -146,6 +162,9 @@ export function createInMemoryAppServices(): AppServices {
       journalSeqForEventSeq(seq: bigint) {
         return seq / 1000n;
       },
+      async readModelProjectionWatermark() {
+        return 0n;
+      },
     },
     threadRuntime: {
       async requireOwnedThread() {
@@ -187,6 +206,50 @@ export function createInMemoryAppServices(): AppServices {
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),
+    packageRepository: { phase: "skeleton" },
+    preferences: { phase: "skeleton" },
+    orchestrator: {
+      async runTurn() {
+        throw new Error("in-memory orchestrator is not implemented");
+      },
+    },
+    runner: {
+      childRunRegistry: {
+        registerChild() {},
+        unregisterChild() {},
+        abortChild() {},
+        abortChildrenOf() {},
+      },
+      getRunningTurnId() {
+        return null;
+      },
+      async startTurn() {
+        throw new Error("in-memory turn runner is not implemented");
+      },
+      async cancel() {
+        return "not_found" as const;
+      },
+    },
+    toolRegistry: {
+      getDefinitions() {
+        return [];
+      },
+      getRegistration() {
+        return undefined;
+      },
+      register() {},
+    },
+    toolExecutor: {
+      async executeTool() {
+        throw new Error("in-memory tool executor is not implemented");
+      },
+    },
+    modelRequestDebug: {
+      record() {},
+      list() {
+        return [];
+      },
+    },
   };
 }
 

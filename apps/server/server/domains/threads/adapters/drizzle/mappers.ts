@@ -8,7 +8,7 @@ import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/co
 import type * as schema from "@meridian/database/schema";
 import { toIsoString, toSeqString } from "../../domain/contract-serialization.js";
 
-function decimalString(value: string | null): string {
+function decimalString(value: string | null | undefined): string {
   return value ?? "0";
 }
 
@@ -16,40 +16,39 @@ export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsa
   return {
     inputTokens: row.totalInputTokens ?? 0,
     outputTokens: row.totalOutputTokens ?? 0,
-    reasoningTokens: row.totalReasoningTokens,
-    cacheReadTokens: row.cacheReadTokens,
-    cacheWriteTokens: row.cacheWriteTokens,
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
     totalCostUsd: decimalString(row.totalCostUsd),
     totalMillicredits: row.totalMillicredits?.toString(),
-    responseCount: row.responseCount,
+    responseCount: 0,
   };
 }
 
 export function mapThread(row: typeof schema.threads.$inferSelect): Thread {
-  const isFrozen = row.bakedSkillSlugs != null;
+  const isFrozen = Boolean(row.composedSystemPrompt);
   return {
     id: row.id,
-    workbenchId: row.workbenchId,
+    workbenchId: row.projectId,
     workId: row.workId,
-    userId: row.createdBy,
+    userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
-    status: row.status as Thread["status"],
+    status: row.status === "archived" ? "archived" : "idle",
     title: row.title,
-    composedSystemPrompt: isFrozen ? row.composedSystemPrompt : null,
-    bakedSkillSlugs: row.bakedSkillSlugs ?? null,
-    // Agent-bound threads resolve the raw body from the package at first attempt.
-    systemPrompt: isFrozen || row.currentAgent ? null : row.composedSystemPrompt,
+    composedSystemPrompt: row.composedSystemPrompt ?? null,
+    bakedSkillSlugs: null,
+    systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
-    currentAgent: row.currentAgent,
+    currentAgent: row.currentAgentId,
     nextSeq: toSeqString(row.nextSeq),
     parentThreadId: row.parentThreadId,
-    rootThreadId: row.rootThreadId,
+    rootThreadId: row.parentThreadId ?? row.id,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     spawnResult: row.spawnResult as Thread["spawnResult"],
-    totalCostUsd: row.totalCostUsd,
+    totalCostUsd: "0",
     turnCount: row.turnCount,
-    historySummary: row.historySummary,
+    historySummary: null,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
     deletedAt: row.deletedAt ? toIsoString(row.deletedAt) : null,
@@ -66,20 +65,20 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     status: row.status as Turn["status"],
     agentDefinitionId: row.agentDefinitionId,
     finishReason: row.finishReason as Turn["finishReason"],
-    model: row.model,
-    provider: row.provider,
+    model: null,
+    provider: null,
     inputTokens: row.totalInputTokens ?? 0,
     outputTokens: row.totalOutputTokens ?? 0,
-    reasoningTokens: row.totalReasoningTokens,
-    cacheReadTokens: row.cacheReadTokens,
-    cacheWriteTokens: row.cacheWriteTokens,
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
     totalCostUsd: decimalString(row.totalCostUsd),
     totalMillicredits: row.totalMillicredits?.toString(),
-    responseCount: row.responseCount,
+    responseCount: 0,
     usage: turnUsageFromRow(row),
     error: row.error,
-    requestParams: row.requestParams as Turn["requestParams"],
-    responseMetadata: row.responseMetadata as Turn["responseMetadata"],
+    requestParams: null,
+    responseMetadata: null,
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
     blocks: [],
@@ -89,7 +88,8 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
 }
 
 export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
-  const textContent = row.modelText.length > 0 ? row.modelText : null;
+  const modelText = row.modelText ?? "";
+  const textContent = modelText.length > 0 ? modelText : null;
   return {
     id: row.id,
     turnId: row.turnId,
@@ -98,11 +98,11 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     sequence: row.sequence,
     textContent,
     content: row.content as Block["content"],
-    modelText: row.modelText,
-    compact: row.compact,
+    modelText,
+    compact: row.compact ?? "",
     pruned: row.pruned,
-    provider: row.provider,
-    providerData: row.providerData as Block["providerData"],
+    provider: null,
+    providerData: null,
     executionSide: row.executionSide as Block["executionSide"],
     status: row.status as Block["status"],
     collapsedContent: row.compact,
@@ -117,23 +117,23 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     sequence: row.sequence,
     provider: row.provider,
     model: row.model,
-    providerRequestId: row.providerRequestId,
+    providerRequestId: null,
     inputTokens: row.inputTokens ?? 0,
     outputTokens: row.outputTokens ?? 0,
-    reasoningTokens: row.reasoningTokens,
-    cacheReadTokens: row.cacheReadTokens,
-    cacheWriteTokens: row.cacheWriteTokens,
-    usageBreakdown: row.rawUsage as ModelResponse["usageBreakdown"],
-    costUsd: row.costUsd,
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    usageBreakdown: row.usageBreakdown as ModelResponse["usageBreakdown"],
+    costUsd: decimalString(row.costUsd),
     millicredits: row.millicredits?.toString(),
-    priceSource: row.priceSource as ModelResponse["priceSource"],
-    pricingSnapshot: row.pricingSnapshot as ModelResponse["pricingSnapshot"],
-    finishReason: row.finishReason as ModelResponse["finishReason"],
+    priceSource: "computed",
+    pricingSnapshot: null,
+    finishReason: row.stopReason as ModelResponse["finishReason"],
     stopReason: row.stopReason,
     requestParams: row.requestParams as ModelResponse["requestParams"],
     responseMetadata: row.responseMetadata as ModelResponse["responseMetadata"],
     latencyMs: row.latencyMs != null ? Number(row.latencyMs) : null,
-    rawUsage: row.rawUsage as ModelResponse["rawUsage"],
+    rawUsage: row.usageBreakdown as ModelResponse["rawUsage"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
   };

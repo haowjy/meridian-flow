@@ -42,7 +42,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .insert(creditLots)
         .values({
           userId: input.userId,
-          workbenchId: input.workbenchId,
           sourceType: sourceTypeForGrant(input.source),
           originalAmountMillicredits: amount,
           remainingMillicredits: amount,
@@ -55,7 +54,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .insert(creditTransactions)
         .values({
           userId: input.userId,
-          workbenchId: input.workbenchId,
           transactionType: "grant",
           amountMillicredits: amount,
           lotId: lot.id,
@@ -82,15 +80,12 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         agentSlug: input.agentSlug,
       });
       const rows = await tx.execute<{
-        transaction_id: string | null;
         remaining_balance: bigint;
         went_negative: boolean;
-        already_consumed: boolean;
       }>(sql`
         SELECT *
         FROM consume_credit_lots_fifo(
           ${input.userId}::uuid,
-          ${input.workbenchId}::uuid,
           ${amount},
           ${consumptionGroupId}::uuid,
           ${input.usageEventId},
@@ -98,10 +93,10 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         )
       `);
       const row = rows[0];
-      if (!row?.transaction_id) {
+      if (!row) {
         throw new Error("Failed to create or find credit debit transaction");
       }
-      return { transactionId: row.transaction_id };
+      return { transactionId: consumptionGroupId };
     },
 
     async getBalance(input) {
@@ -111,7 +106,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .where(
           and(
             eq(creditLots.userId, input.userId),
-            eq(creditLots.workbenchId, input.workbenchId),
             sql`(${creditLots.expiresAt} IS NULL OR ${creditLots.expiresAt} > NOW() OR ${creditLots.sourceType} = 'debt')`,
           ),
         );
@@ -125,7 +119,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .where(
           and(
             eq(creditTransactions.userId, input.userId),
-            eq(creditTransactions.workbenchId, input.workbenchId),
             sql`${creditTransactions.amountMillicredits} < 0`,
             sql`${creditTransactions.metadata}->>'rootThreadId' = ${input.rootThreadId}`,
           ),
@@ -143,7 +136,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .where(
           and(
             eq(creditTransactions.userId, input.userId),
-            eq(creditTransactions.workbenchId, input.workbenchId),
             sql`${creditTransactions.amountMillicredits} < 0`,
             sql`${creditTransactions.metadata}->>'rootThreadId' = ${input.rootThreadId}`,
           ),
@@ -162,7 +154,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .where(
           and(
             eq(creditTransactions.userId, input.userId),
-            eq(creditTransactions.workbenchId, input.workbenchId),
             sql`${creditTransactions.amountMillicredits} < 0`,
             sql`${creditTransactions.metadata}->>'threadId' = ${input.threadId}`,
           ),

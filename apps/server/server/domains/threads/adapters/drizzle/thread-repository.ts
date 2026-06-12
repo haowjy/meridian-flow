@@ -4,11 +4,11 @@
  * list/get, soft-delete, and cost recomputation). Direct lifecycle writes stay
  * separate from projector-driven model-response cost aggregation.
  */
-import type { ThreadId, UserId, WorkbenchId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId, WorkbenchId, WorkId } from "@meridian/contracts/runtime";
 import type { TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { toIsoString } from "../../domain/contract-serialization.js";
+
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
@@ -77,15 +77,13 @@ function threadListSelect() {
 export async function writeThreadCostUpdate(
   db: DrizzleDb,
   id: ThreadId,
-  deltaCostUsd: string,
-  turnCountIncrement = 0,
+  _deltaCostUsd: string,
+  _turnCountIncrement = 0,
 ) {
   const [row] = await currentDrizzleDb(db)
     .update(schema.threads)
     .set({
-      totalCostUsd: sql`${schema.threads.totalCostUsd} + ${deltaCostUsd}`,
-      turnCount: sql`${schema.threads.turnCount} + ${turnCountIncrement}`,
-      updatedAt: toIsoString(new Date()),
+      updatedAt: new Date(),
     })
     .where(eq(schema.threads.id, id))
     .returning({ id: schema.threads.id });
@@ -94,19 +92,10 @@ export async function writeThreadCostUpdate(
 
 export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
   const activeDb = currentDrizzleDb(db);
-  const [aggregate] = await activeDb
-    .select({
-      totalCostUsd: sql<string>`COALESCE(SUM(${schema.modelResponses.costUsd}), 0)::numeric(12,6)`,
-    })
-    .from(schema.modelResponses)
-    .innerJoin(schema.turns, eq(schema.modelResponses.turnId, schema.turns.id))
-    .where(eq(schema.turns.threadId, id));
-
   const [row] = await activeDb
     .update(schema.threads)
     .set({
-      totalCostUsd: aggregate?.totalCostUsd ?? "0",
-      updatedAt: toIsoString(new Date()),
+      updatedAt: new Date(),
     })
     .where(eq(schema.threads.id, id))
     .returning({ id: schema.threads.id });
@@ -124,19 +113,18 @@ export function createDrizzleThreadRepository(
         .insert(schema.threads)
         .values({
           id: threadId,
-          workbenchId: input.workbenchId,
-          ...(input.workId ? { workId: input.workId } : {}),
-          createdBy: input.userId as string,
+          projectId: input.workbenchId as ProjectId,
+          workId: input.workId,
+          createdByUserId: input.userId as string,
           kind: normalized.kind,
           title: normalized.title,
           composedSystemPrompt: normalized.systemPrompt,
-          currentAgent: normalized.currentAgent,
+          currentAgentId: normalized.currentAgent,
           workingState: input.workingState ?? null,
           parentThreadId: normalized.parentThreadId,
-          rootThreadId: threadId,
           spawnStatus: normalized.spawnStatus,
           spawnDepth: normalized.spawnDepth,
-          status: "idle",
+          status: "active",
         })
         .returning();
       if (!row) throw new Error("Failed to create thread");
@@ -148,19 +136,17 @@ export function createDrizzleThreadRepository(
         .insert(schema.threads)
         .values({
           id: thread.id,
-          workbenchId: thread.workbenchId,
-          ...(thread.workId ? { workId: thread.workId } : {}),
-          createdBy: thread.userId,
+          projectId: thread.workbenchId as ProjectId,
+          workId: thread.workId,
+          createdByUserId: thread.userId,
           kind: thread.kind,
           title: thread.title ?? "",
           composedSystemPrompt: thread.composedSystemPrompt,
-          bakedSkillSlugs: thread.bakedSkillSlugs,
-          currentAgent: thread.currentAgent,
+          currentAgentId: thread.currentAgent,
           parentThreadId: thread.parentThreadId,
-          rootThreadId: thread.rootThreadId,
           spawnStatus: thread.spawnStatus,
           spawnDepth: thread.spawnDepth,
-          status: thread.status,
+          status: thread.status === "archived" ? "archived" : "active",
         })
         .returning();
       if (!row) throw new Error("Failed to create subagent thread");
@@ -172,7 +158,7 @@ export function createDrizzleThreadRepository(
         .set({
           spawnStatus: input.spawnStatus,
           ...(input.spawnResult !== undefined ? { spawnResult: input.spawnResult } : {}),
-          updatedAt: toIsoString(new Date()),
+          updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
         .returning();
@@ -183,12 +169,12 @@ export function createDrizzleThreadRepository(
       const [row] = await currentDrizzleDb(db)
         .select(getTableColumns(schema.threads))
         .from(schema.threads)
-        .innerJoin(schema.workbenches, eq(schema.threads.workbenchId, schema.workbenches.id))
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .where(
           and(
             eq(schema.threads.id, id),
             isNull(schema.threads.deletedAt),
-            isNull(schema.workbenches.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         );
       return row ? mapThread(row) : null;
@@ -197,12 +183,12 @@ export function createDrizzleThreadRepository(
       const rows = await currentDrizzleDb(db)
         .select(getTableColumns(schema.threads))
         .from(schema.threads)
-        .innerJoin(schema.workbenches, eq(schema.threads.workbenchId, schema.workbenches.id))
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .where(
           and(
-            eq(schema.threads.createdBy, userId),
+            eq(schema.threads.createdByUserId, userId),
             isNull(schema.threads.deletedAt),
-            isNull(schema.workbenches.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
@@ -212,13 +198,13 @@ export function createDrizzleThreadRepository(
       const rows = await currentDrizzleDb(db)
         .select(threadListSelect())
         .from(schema.threads)
-        .innerJoin(schema.workbenches, eq(schema.threads.workbenchId, schema.workbenches.id))
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.works, eq(schema.threads.workId, schema.works.id))
         .where(
           and(
-            eq(schema.threads.workbenchId, workbenchId),
+            eq(schema.threads.projectId, workbenchId),
             isNull(schema.threads.deletedAt),
-            isNull(schema.workbenches.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
@@ -228,14 +214,14 @@ export function createDrizzleThreadRepository(
       const rows = await currentDrizzleDb(db)
         .select(threadListSelect())
         .from(schema.threads)
-        .innerJoin(schema.workbenches, eq(schema.threads.workbenchId, schema.workbenches.id))
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.works, eq(schema.threads.workId, schema.works.id))
         .where(
           and(
-            eq(schema.threads.workbenchId, workbenchId),
+            eq(schema.threads.projectId, workbenchId),
             eq(schema.threads.workId, workId),
             isNull(schema.threads.deletedAt),
-            isNull(schema.workbenches.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
@@ -244,7 +230,10 @@ export function createDrizzleThreadRepository(
     async updateStatus(id, status) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
-        .set({ status, updatedAt: toIsoString(new Date()) })
+        .set({
+          status: status === "archived" ? "archived" : "active",
+          updatedAt: new Date(),
+        })
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);
@@ -255,10 +244,9 @@ export function createDrizzleThreadRepository(
         .update(schema.threads)
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
-          bakedSkillSlugs: input.bakedSkillSlugs,
-          updatedAt: toIsoString(new Date()),
+          updatedAt: new Date(),
         })
-        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
+        .where(eq(schema.threads.id, id))
         .returning();
       if (row) return mapThread(row);
       const existing = await this.findById(id);
@@ -278,7 +266,7 @@ export function createDrizzleThreadRepository(
         .where(eq(schema.threads.id, id));
       if (!existingRow) throw new Error(`Thread not found: ${id}`);
       if (existingRow.deletedAt) return mapThread(existingRow);
-      const now = toIsoString(new Date());
+      const now = new Date();
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
         .set({ deletedAt: now, updatedAt: now })

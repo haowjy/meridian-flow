@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- **server:** activate the copied Voluma turn orchestrator on the production message route, adapt its Drizzle repositories to Meridian Flow's current Supabase/Postgres schema, and restore live WS/cold replay smoke coverage.
 - **dev:** ignore generated portless dev logs.
 - **server:** serialize Yjs document commits with markdown projection/activity updates and preserve agent attribution for persisted editor updates.
 - **database:** enforce conversation roots, active leaf, session context thread scope, and purchase subscription gates in DB triggers/indexes.

@@ -29,7 +29,7 @@ export function createDrizzleTurnDocumentTouchRepository(
         .where(eq(schema.turns.id, turnId))
         .limit(1);
       if (!turn) throw new Error(`Turn not found: ${turnId}`);
-      const now = toIsoString(new Date());
+      const now = new Date();
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnDocumentTouches)
         .values({ turnId, documentId, touchedAt: now })

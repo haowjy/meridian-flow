@@ -20,7 +20,7 @@ function mapThreadDocument(row: typeof schema.threadDocuments.$inferSelect): Thr
 export function createDrizzleThreadDocumentRepository(db: DrizzleDb): ThreadDocumentRepository {
   return {
     async attach(threadId, documentId, relationship) {
-      const now = toIsoString(new Date());
+      const now = new Date();
       const [row] = await currentDrizzleDb(db)
         .insert(schema.threadDocuments)
         .values({ threadId, documentId, relationship, firstTouchedAt: now, lastTouchedAt: now })

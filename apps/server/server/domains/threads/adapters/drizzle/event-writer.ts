@@ -8,6 +8,7 @@ import {
   type DrizzleDatabase,
   type DrizzleDb,
 } from "../../../../shared/drizzle-transaction.js";
+import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type { EventJournalWriter, JournalEventEnvelope } from "../../ports/event-journal.js";
 
 async function appendJournalEvent(db: DrizzleDb, threadId: ThreadId, event: JournalEventEnvelope) {
@@ -25,7 +26,9 @@ async function appendJournalEvent(db: DrizzleDb, threadId: ThreadId, event: Jour
 
   await db.insert(schema.eventJournal).values({
     threadId,
+    turnId: deriveJournalTurnId(event),
     seq: nextSeq,
+    eventType: event.type,
     payload: event,
   });
 

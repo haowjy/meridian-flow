@@ -8,7 +8,7 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { asc, desc, eq, sql } from "drizzle-orm";
-import { toIsoString } from "../../domain/contract-serialization.js";
+import { toDate } from "../../domain/contract-serialization.js";
 import type {
   CreateTurnInput,
   TurnRepository,
@@ -23,39 +23,19 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
     .select({
       inputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.inputTokens}), 0)::int`,
       outputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.outputTokens}), 0)::int`,
-      reasoningTokens: sql<number | null>`SUM(${schema.modelResponses.reasoningTokens})::int`,
-      cacheReadTokens: sql<number | null>`SUM(${schema.modelResponses.cacheReadTokens})::int`,
-      cacheWriteTokens: sql<number | null>`SUM(${schema.modelResponses.cacheWriteTokens})::int`,
       totalCostUsd: sql<string>`COALESCE(SUM(${schema.modelResponses.costUsd}), 0)::numeric(12,6)`,
       totalMillicredits: sql<bigint | null>`SUM(${schema.modelResponses.millicredits})`,
-      responseCount: sql<number>`COUNT(${schema.modelResponses.id})::int`,
     })
     .from(schema.modelResponses)
     .where(eq(schema.modelResponses.turnId, id));
-
-  const [latestResponse] = await activeDb
-    .select({
-      model: schema.modelResponses.model,
-      provider: schema.modelResponses.provider,
-    })
-    .from(schema.modelResponses)
-    .where(eq(schema.modelResponses.turnId, id))
-    .orderBy(desc(schema.modelResponses.sequence))
-    .limit(1);
 
   const [row] = await activeDb
     .update(schema.turns)
     .set({
       totalInputTokens: aggregate?.inputTokens ?? 0,
       totalOutputTokens: aggregate?.outputTokens ?? 0,
-      totalReasoningTokens: aggregate?.reasoningTokens ?? null,
-      cacheReadTokens: aggregate?.cacheReadTokens ?? null,
-      cacheWriteTokens: aggregate?.cacheWriteTokens ?? null,
       totalCostUsd: aggregate?.totalCostUsd ?? "0",
       totalMillicredits: aggregate?.totalMillicredits ?? null,
-      responseCount: aggregate?.responseCount ?? 0,
-      model: latestResponse?.model ?? null,
-      provider: latestResponse?.provider ?? null,
     })
     .where(eq(schema.turns.id, id))
     .returning();
@@ -74,11 +54,10 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
           parentTurnId: input.prevTurnId ?? null,
           role: input.role,
           status: input.status ?? "pending",
-          requestParams: input.requestParams ?? null,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCostUsd: "0",
-          createdAt: input.createdAt,
+          createdAt: toDate(input.createdAt),
         })
         .onConflictDoNothing({ target: schema.turns.id })
         .returning();
@@ -87,6 +66,33 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
         const existing = await this.findById(input.id);
         if (!existing) throw new Error("Failed to create turn");
         return existing;
+      }
+      const now = new Date();
+      await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({
+          activeLeafTurnId: row.id,
+          turnCount: sql`${schema.threads.turnCount} + 1`,
+          updatedAt: now,
+        })
+        .where(eq(schema.threads.id, row.threadId));
+      const [thread] = await currentDrizzleDb(db)
+        .select({
+          projectId: schema.threads.projectId,
+          workId: schema.threads.workId,
+        })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, row.threadId))
+        .limit(1);
+      if (thread) {
+        await currentDrizzleDb(db)
+          .update(schema.works)
+          .set({ updatedAt: now })
+          .where(eq(schema.works.id, thread.workId));
+        await currentDrizzleDb(db)
+          .update(schema.projects)
+          .set({ updatedAt: now, lastActivityAt: now })
+          .where(eq(schema.projects.id, thread.projectId));
       }
       return mapTurn(row);
     },
@@ -123,7 +129,7 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
       } = { status: input.status };
       if (input.finishReason !== undefined) patch.finishReason = input.finishReason;
       if (input.completedAt !== undefined) {
-        patch.completedAt = input.completedAt === null ? null : toIsoString(input.completedAt);
+        patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
       }
       if (input.error !== undefined) patch.error = input.error;
       const [row] = await currentDrizzleDb(db)

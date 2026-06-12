@@ -3,6 +3,8 @@ import { loadEnvFile } from "node:process";
 import { EventType } from "@meridian/contracts/protocol";
 import {
   createDb,
+  creditLots,
+  creditTransactions,
   eventJournal,
   projects,
   threads,
@@ -135,6 +137,22 @@ await db.insert(threads).values({
   createdByUserId: userId,
   title: "Smoke thread",
 });
+const creditLotId = randomUUID();
+await db.insert(creditLots).values({
+  id: creditLotId,
+  userId,
+  sourceType: "grant",
+  originalAmountMillicredits: 1_000_000n,
+  remainingMillicredits: 1_000_000n,
+  grantReason: `smoke-${threadId}`,
+});
+await db.insert(creditTransactions).values({
+  userId,
+  transactionType: "grant",
+  amountMillicredits: 1_000_000n,
+  lotId: creditLotId,
+  metadata: { source: "smoke" },
+});
 
 const ws = new WebSocket(wsUrlFor(serverUrl), {
   headers: { authorization: `Bearer ${token}` },
@@ -210,12 +228,24 @@ if (thread.activeLeafTurnId !== postBody.assistantTurnId)
 if (thread.turnCount !== 2) throw new Error(`turn_count=${thread.turnCount}, expected 2`);
 if (createdTurns.length !== 2) throw new Error(`turn rows=${createdTurns.length}, expected 2`);
 const userBlock = createdBlocks.find((block) => block.turnId === postBody.userTurnId);
-const assistantBlock = createdBlocks.find((block) => block.turnId === postBody.assistantTurnId);
-if (userBlock?.compact !== "hello phase three") throw new Error("user text block missing");
-if (!assistantBlock?.modelText || assistantBlock.modelText.length === 0) {
+const assistantTextBlock = createdBlocks.find(
+  (block) => block.turnId === postBody.assistantTurnId && block.blockType === "text",
+);
+if (userBlock?.modelText !== "hello phase three") throw new Error("user text block missing");
+if (!assistantTextBlock?.modelText || assistantTextBlock.modelText.length === 0) {
   throw new Error("assistant final text block missing");
 }
-if (journalRows.length !== 4) throw new Error(`journal rows=${journalRows.length}, expected 4`);
+for (const eventType of [
+  "turn.created",
+  "block.upserted",
+  "model.response_received",
+  "usage",
+  "turn.completed",
+]) {
+  if (!journalRows.some((row) => row.eventType === eventType)) {
+    throw new Error(`journal missing ${eventType}`);
+  }
+}
 if (!project || project.lastActivityAt <= beforeActivity)
   throw new Error("project activity did not advance");
 const catchupEventTypes = (catchupFrame.catchup ?? []).map((entry) => entry.event.type);

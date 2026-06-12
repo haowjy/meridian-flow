@@ -1,16 +1,34 @@
 // @ts-nocheck
+import { createDrizzleCreditLedger } from "../domains/billing/index.js";
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import { createProductionContextPortFactory } from "../domains/context/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
+import { createDrizzlePackageStore } from "../domains/packages/index.js";
+import { createInMemoryWorkbenchPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createDrizzleProjectRepository,
   createDrizzleWorkRepository,
 } from "../domains/projects/index.js";
-import { createGatewayFromEnv, type Gateway } from "../domains/runtime/index.js";
+import {
+  computeEffectivePermissions,
+  createChildRunCoordinator,
+  createGatewayFromEnv,
+  createLateBindRunTurnPort,
+  createNoopCheckpointArtifactFlushPort,
+  createOrchestrator,
+  createPermissionGate,
+  createToolExecutor,
+  createToolRegistry,
+  createTurnRunner,
+  type Gateway,
+  resolveProfile,
+} from "../domains/runtime/index.js";
 import { createCheckpointRegistry } from "../domains/runtime/loop/checkpoints.js";
+import { createModelRequestDebugStoreFromEnv } from "../domains/runtime/model-request-debug/index.js";
 import { createRuntimeToolRegistry } from "../domains/runtime/tool-registry.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
+import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
 import { createThreadRuntimeService } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import {
@@ -33,6 +51,7 @@ async function createAppServices(): Promise<AppServices> {
   const inMemory = createInMemoryAppServices();
   const { gateway } = await createGatewayFromEnv(process.env);
   const db = getDb();
+  const threadRepos = createDrizzleRepositories(db);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const eventSink = createNoopEventSink();
@@ -40,11 +59,56 @@ async function createAppServices(): Promise<AppServices> {
   const documentSync = createDocumentSyncService({ db });
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
   const tools = createRuntimeToolRegistry({ db, contextPorts });
+  const packageRepository = createDrizzlePackageStore({ db });
+  const preferences = createInMemoryWorkbenchPreferencesRepository();
+  const creditLedger = createDrizzleCreditLedger(db);
+  const checkpointRegistry = createCheckpointRegistry();
+  const toolRegistry = createToolRegistry();
+  const toolExecutor = createToolExecutor(toolRegistry);
+  const runTurnProxy = createLateBindRunTurnPort();
+  const runner = createTurnRunner({
+    orchestrator: runTurnProxy,
+    hub: threadEventHub,
+    repos: { turns: threadRepos.turns },
+    eventSink,
+  });
+  const childRunCoordinator = createChildRunCoordinator({
+    orchestrator: runTurnProxy,
+    repos: {
+      threads: threadRepos.threads,
+      subagentThreads: threadRepos.threads,
+      turns: threadRepos.turns,
+      blocks: threadRepos.blocks,
+    },
+    eventWriter: threadEventHub,
+    packageRepository,
+    childRunRegistry: runner.childRunRegistry,
+    creditLedger,
+  });
+  const modelRequestDebug = createModelRequestDebugStoreFromEnv();
+  const orchestrator = createOrchestrator({
+    gateway,
+    toolExecutor,
+    repos: threadRepos,
+    eventWriter: threadEventHub,
+    packageRepository,
+    toolRegistry,
+    workbenchPreferences: preferences,
+    permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
+    childRunCoordinator,
+    checkpointRegistry,
+    creditLedger,
+    checkpointArtifacts: createNoopCheckpointArtifactFlushPort(),
+    eventSink,
+    modelRequestDebug,
+  });
+  runTurnProxy.bind(orchestrator);
 
   return composeAppServices(
     createProductionAppPorts({
       ...inMemory,
       gateway,
+      threadRepos,
       journalReader,
       journalWriter,
       threadEventHub,
@@ -54,7 +118,15 @@ async function createAppServices(): Promise<AppServices> {
       contextPorts,
       projects: createDrizzleProjectRepository(db),
       works: createDrizzleWorkRepository(db),
-      checkpointRegistry: createCheckpointRegistry(),
+      creditLedger,
+      checkpointRegistry,
+      packageRepository,
+      preferences,
+      orchestrator,
+      runner,
+      toolRegistry,
+      toolExecutor,
+      modelRequestDebug,
     }),
   );
 }

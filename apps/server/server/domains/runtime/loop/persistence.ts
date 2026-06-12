@@ -12,10 +12,10 @@
  *    block.upserted, turn.completed/cancelled/error).  Within a single repo
  *    transaction:
  *    a) The operation callback produces `{ result, events }`.
- *    b) Each event is appended to the event journal (durable log).
- *    c) Each event is passed to `projectReadModelEvent`, which writes the
+ *    b) Each event is passed to `projectReadModelEvent`, which writes the
  *       corresponding read-model rows (turns, model_responses, turn_blocks)
  *       and recomputes rollups.
+ *    c) Each event is appended to the event journal (durable log).
  *    This guarantees journal + read-model stay consistent — either both
  *    are committed or neither is.
  *
@@ -46,8 +46,8 @@ export type PersistenceDeps = {
 
 // The transactional path: journal append + read-model projection in a
 // single repo transaction.  The operation callback produces events; each
-// event is appended to the journal then passed to the read-model projector
-// which writes repository rows.
+// event is passed to the read-model projector before journal append so
+// Meridian's event_journal.turn_id FK can see the referenced turn row.
 export async function persistAndAppendEvents<T>(
   deps: PersistenceDeps,
   threadId: ThreadId,
@@ -56,8 +56,8 @@ export async function persistAndAppendEvents<T>(
   return deps.repos.transaction(async () => {
     const persisted = await operation();
     for (const event of persisted.events) {
-      await deps.eventWriter.appendEvent(threadId, event);
       await projectReadModelEvent(deps.repos, event);
+      await deps.eventWriter.appendEvent(threadId, event);
     }
     return persisted;
   });

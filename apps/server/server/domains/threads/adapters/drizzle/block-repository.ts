@@ -21,8 +21,6 @@ function blockValues(input: CreateBlockInput) {
     content: input.content ?? null,
     modelText: textContent ?? "",
     compact: input.collapsedContent ?? "",
-    provider: input.provider ?? null,
-    providerData: input.providerData ?? null,
     executionSide: input.executionSide ?? null,
     status: input.status ?? "complete",
   };
@@ -53,8 +51,6 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
             content: values.content,
             modelText: values.modelText,
             compact: values.compact,
-            provider: values.provider,
-            providerData: values.providerData,
             executionSide: values.executionSide,
             status: values.status,
           },
