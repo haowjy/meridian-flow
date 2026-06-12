@@ -2,7 +2,7 @@
 
 Minimal Meridian-specific bootstrap code for the first authenticated workspace.
 This domain is not the full workbench CRUD surface; that lives in
-`../workbenches/` and is used by the Voluma-parity `/api/workbenches/*` routes.
+`../workbenches/` and is used by the upstream-parity `/api/workbenches/*` routes.
 
 ## What it owns
 

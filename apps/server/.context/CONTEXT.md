@@ -37,7 +37,7 @@ so hot reloads do not compose duplicate singletons.
 
 ## Workbench route surface
 
-Voluma-parity routes under `server/routes/api/workbenches/` keep the upstream
+upstream-parity routes under `server/routes/api/workbenches/` keep the upstream
 `workbench` URL and service vocabulary at the API boundary. Meridian product UI
 can call the concept "project workspace"; server code preserves the copied route
 shape for parity and lower merge risk.
@@ -56,8 +56,8 @@ The shipped route surface covers:
 
 Workbench-scoped handlers gate through `requireWorkbenchOwner` from
 `server/domains/workbenches` before reading or mutating workbench-owned data.
-Supabase remains the auth boundary; WorkOS/AuthKit route code is not part of
-Meridian Flow. The sandbox/runtime-execution provider route surface is also out
+Supabase remains the auth boundary; alternate auth adapter route code is not part of
+Meridian Flow. The removed external execution-provider route surface is also out
 of scope for Meridian; do not port it back while filling route parity gaps.
 
 ## Supabase auth boundary

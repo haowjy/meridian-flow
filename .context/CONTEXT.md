@@ -50,7 +50,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/runtime/tools` | Tool registry/executor for Meridian-owned tools; no external execution runtime |
 | `domains/packages` | Agent/package catalog and future package install surface |
 | `domains/projects` | Project/work ownership and default bootstrap |
-| `domains/workbenches` | Voluma-parity workbench CRUD, work lists, and owner gates for workbench-scoped routes |
+| `domains/workbenches` | upstream-parity workbench CRUD, work lists, and owner gates for workbench-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
 | `domains/collab` | Yjs document sync and markdown projection |
 

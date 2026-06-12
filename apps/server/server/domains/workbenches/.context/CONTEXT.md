@@ -5,7 +5,7 @@ hangs off of. Split out of the former `domains/content` grab-bag.
 
 This domain intentionally keeps the upstream **workbench** service/API name.
 Meridian product language can present the concept as a project workspace, but
-the server route surface stays `/api/workbenches/*` for Voluma parity.
+the server route surface stays `/api/workbenches/*` for upstream parity.
 
 ## What it owns
 

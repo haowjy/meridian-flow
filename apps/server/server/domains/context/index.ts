@@ -183,3 +183,44 @@ export function createProductionContextPortFactory(deps: {
     },
   };
 }
+
+export { ContextFS } from "./adapters/context-fs/context-fs.js";
+export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
+export { firstLineMatch } from "./adapters/context-fs/match.js";
+export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
+export { createContextPortRouter } from "./context/router.js";
+export { parseContextUri, toCanonical } from "./context/uri.js";
+export type {
+  AdapterFault,
+  AdapterFileEntry,
+  AdapterFileRef,
+  AdapterSearchHit,
+  ContextSchemeAdapter,
+  SchemeCapabilities,
+} from "./ports/context-adapter.js";
+export type {
+  ContextDocumentStore,
+  ContextFolder,
+  ContextSearchRow,
+  CreateBinaryDocumentInput,
+  UpsertDocumentInput,
+} from "./ports/context-document-store.js";
+export type {
+  BinaryFileEntry,
+  BinaryFileRef,
+  ContextError,
+  ContextFileEntry,
+  ContextListEntry,
+  ContextReadResult,
+  ContextScheme,
+  ContextWriteBinaryOptions,
+  ContextWriteOptions,
+  ContextWriteResult,
+  DirectoryEntry,
+  EditableFileEntry,
+  FileEntry,
+  FileRef,
+  SearchResult,
+  TrackedFileRef,
+  WriteProvenance,
+} from "./ports/context-port.js";

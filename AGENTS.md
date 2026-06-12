@@ -10,7 +10,7 @@ See `$MERIDIAN_CONTEXT_KB_DIR/wiki/product/high-level/1-overview.md` for product
 
 Ground-up rebuild. TypeScript throughout. Design package lives in the active work item directory (`meridian work current`).
 
-Key decisions: TypeScript backend (canonical Yjs, Voluma edit pipeline), TipTap (ProseMirror) + y-prosemirror, Y.XmlFragment, agent definitions replace skills, credits-only billing gate, linear turns, Drizzle ORM.
+Key decisions: TypeScript backend (canonical Yjs, copied upstream edit pipeline), TipTap (ProseMirror) + y-prosemirror, Y.XmlFragment, agent definitions replace skills, credits-only billing gate, linear turns, Drizzle ORM.
 
 ## Where to Find Things
 
