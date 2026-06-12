@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added Meridian-adapted in-process turn and provider-conformance smoke files under the upstream server tests path.
 - Added Meridian-adapted runtime skill, agent-thread context, turn-preview, and compose parity coverage without external execution hooks.
 - Added Meridian-safe backend policy/startup guard parity files and wired executable core tool registrations into production app composition.
 - Added exact-path parity coverage for workbench results, thread WebSocket checkpoint control, and Yjs WebSocket multiplexing/persistence behavior.
