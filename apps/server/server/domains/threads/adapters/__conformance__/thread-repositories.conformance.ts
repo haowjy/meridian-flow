@@ -680,9 +680,21 @@ export function describeThreadRepositoriesConformance(
         composedSystemPrompt: null,
       });
 
+      const staleBake = await repos.threads.bakeComposedSystemPrompt(thread.id, {
+        composedSystemPrompt: "stale",
+        bakedSkillSlugs: ["stale-skill"],
+        expectedCurrentAgent: "agent-a",
+      });
+      expect(staleBake).toMatchObject({
+        currentAgent: "agent-b",
+        composedSystemPrompt: null,
+        bakedSkillSlugs: null,
+      });
+
       await repos.threads.bakeComposedSystemPrompt(thread.id, {
         composedSystemPrompt: "frozen",
         bakedSkillSlugs: [],
+        expectedCurrentAgent: "agent-b",
       });
       expect(await repos.threads.updateCurrentAgent(thread.id, "agent-c")).toBeNull();
 

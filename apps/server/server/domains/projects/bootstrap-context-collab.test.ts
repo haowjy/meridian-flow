@@ -87,7 +87,7 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
     expect(work?.createdByUserId).toBe(userId);
     expect(thread?.workId).toBe(first.workId);
     expect(thread?.projectId).toBe(first.projectId);
-    expect(thread?.currentAgentId).toBe(first.agentDefinitionId);
+    expect(thread?.currentAgentId).toBe("writer");
     expect(document?.contextSourceId).toBe(first.contextSourceId);
     expect(threadDocument?.documentId).toBe(first.documentId);
     expect(threadDocument?.relationship).toBe("editing");

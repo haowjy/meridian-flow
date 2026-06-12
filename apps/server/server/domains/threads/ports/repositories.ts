@@ -116,6 +116,7 @@ export interface UpdateSpawnLifecycleInput {
 export interface BakeComposedSystemPromptInput {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
+  expectedCurrentAgent?: string | null;
 }
 
 export interface ThreadRepository {

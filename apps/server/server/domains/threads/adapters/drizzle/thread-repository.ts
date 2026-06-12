@@ -267,7 +267,17 @@ export function createDrizzleThreadRepository(
           systemPromptHash: "baked",
           updatedAt: new Date(),
         })
-        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
+        .where(
+          and(
+            eq(schema.threads.id, id),
+            isNull(schema.threads.bakedSkillSlugs),
+            input.expectedCurrentAgent === null
+              ? isNull(schema.threads.currentAgentId)
+              : input.expectedCurrentAgent === undefined
+                ? undefined
+                : eq(schema.threads.currentAgentId, input.expectedCurrentAgent),
+          ),
+        )
         .returning();
       if (row) return mapThread(row);
       const existing = await this.findById(id);

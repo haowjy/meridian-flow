@@ -89,7 +89,11 @@ export async function assembleNextTurnContext(
       thread = await input.bakeComposedSystemPrompt(input.thread.id as ThreadId, {
         composedSystemPrompt: bakedPrompt,
         bakedSkillSlugs: modelInvocableSkillSlugs(agentContext.resolvedSkills),
+        expectedCurrentAgent: thread.currentAgent,
       });
+      if (!isThreadPromptFrozen(thread)) {
+        return assembleNextTurnContext({ ...input, thread });
+      }
       tools = applyBakedInvokeAdvertisement({
         tools: agentContext.tools,
         bakedSkillSlugs: thread.bakedSkillSlugs,

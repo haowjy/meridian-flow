@@ -281,6 +281,12 @@ export function createInMemoryRepositories(
       if (thread.bakedSkillSlugs !== null) {
         return thread;
       }
+      if (
+        input.expectedCurrentAgent !== undefined &&
+        thread.currentAgent !== input.expectedCurrentAgent
+      ) {
+        return thread;
+      }
       const updated = {
         ...thread,
         composedSystemPrompt: input.composedSystemPrompt,
