@@ -4,7 +4,11 @@ import type { CreditLedger } from "../domains/billing/index.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import type { ContextPortFactory } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
-import type { PackageRepository } from "../domains/packages/index.js";
+import type {
+  DefaultPackageSeeder,
+  MarsPackageFetcher,
+  PackageRepository,
+} from "../domains/packages/index.js";
 import type { WorkbenchPreferencesRepository } from "../domains/preferences/index.js";
 import type { ProjectRepository, WorkRepository } from "../domains/projects/index.js";
 import type {
@@ -26,23 +30,38 @@ import type {
 } from "../domains/threads/ports/index.js";
 import type { ThreadRuntimeService } from "../domains/threads/runtime-service.js";
 import type { ThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import type {
+  UserRepository,
+  WorkbenchRepository,
+  WorkRepository as WorkbenchWorkRepository,
+} from "../domains/workbenches/index.js";
 
 export type AppServices = {
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
+  /** Upstream-compatible alias used by copied route/lib code. */
+  repos: ThreadRepositories;
+  /** Upstream-compatible alias used by copied route/lib code. */
+  hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
   contextPorts: ContextPortFactory;
   projects: ProjectRepository;
   works: WorkRepository;
+  workbenchRepo: WorkbenchRepository;
+  users: UserRepository;
+  workRepo: WorkbenchWorkRepository;
   creditLedger: CreditLedger;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   packageRepository: PackageRepository;
+  marsPackageFetcher: MarsPackageFetcher;
+  defaultPackageSeeder: DefaultPackageSeeder;
+  seedDefaultPackagesForWorkbench(workbenchId: string): Promise<void>;
   preferences: WorkbenchPreferencesRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
@@ -129,6 +148,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadRepos: { phase: "phase3" },
+    repos: { phase: "phase3" },
     journalReader: {
       async readAfter() {
         return [];
@@ -143,6 +163,30 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     threadEventHub: {
+      publishPersistedEvent() {},
+      async appendEvent() {
+        return 0n;
+      },
+      async catchup() {
+        return [];
+      },
+      subscribe() {
+        return () => undefined;
+      },
+      async catchupAndSubscribe() {
+        return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
+      },
+      async headSeq() {
+        return 0n;
+      },
+      journalSeqForEventSeq(seq: bigint) {
+        return seq / 1000n;
+      },
+      async readModelProjectionWatermark() {
+        return 0n;
+      },
+    },
+    hub: {
       publishPersistedEvent() {},
       async appendEvent() {
         return 0n;
@@ -202,11 +246,66 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     works: { phase: "phase4" },
+    workbenchRepo: {
+      async create() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async findById() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async listByUser() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async search() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async update() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async softDelete() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async restore() {
+        throw new Error("in-memory workbench repository is not implemented");
+      },
+      async touch() {},
+    },
+    users: {
+      async ensureUser() {
+        throw new Error("in-memory user repository is not implemented");
+      },
+    },
+    workRepo: {
+      async create() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async findById() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async listByWorkbench() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async ensureDefaultForWorkbench() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async touch() {},
+    },
     creditLedger: { phase: "skeleton" },
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),
     packageRepository: { phase: "skeleton" },
+    marsPackageFetcher: {
+      async fetch() {
+        throw new Error("in-memory Mars package fetcher is not implemented");
+      },
+    },
+    defaultPackageSeeder: {
+      async seedWorkbench() {
+        return [];
+      },
+    },
+    async seedDefaultPackagesForWorkbench() {},
     preferences: { phase: "skeleton" },
     orchestrator: {
       async runTurn() {

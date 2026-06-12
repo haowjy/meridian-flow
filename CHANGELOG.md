@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server/routes:** port upstream workbench, thread, package catalog, agent catalog, preferences, package install/update/export, model-debug, and readiness route surfaces with Meridian/Supabase composition wiring.
 - **app/tests:** port upstream thread-store, session reducer, editor schema, chat rendering, workbench lifecycle, and deferred-chat regression coverage.
 - **prosemirror-schema:** align the shared server schema with the richer TipTap editor nodes for figures, images, math, and tables.
 - **app/library:** port upstream Library/package install UI, agent package APIs, related query hooks, and agent-mode helpers with Meridian naming.

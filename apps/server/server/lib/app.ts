@@ -3,7 +3,12 @@ import { createDrizzleCreditLedger } from "../domains/billing/index.js";
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import { createProductionContextPortFactory } from "../domains/context/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
-import { createDrizzlePackageStore } from "../domains/packages/index.js";
+import {
+  createDefaultPackageSeeder,
+  createDrizzlePackageStore,
+  createGitHubMarsPackageFetcher,
+  defaultPackageSeedConfigFromEnv,
+} from "../domains/packages/index.js";
 import { createInMemoryWorkbenchPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createDrizzleProjectRepository,
@@ -31,6 +36,11 @@ import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/dri
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
 import { createThreadRuntimeService } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import {
+  createDrizzleUserRepository,
+  createDrizzleWorkbenchRepository,
+  createDrizzleWorkRepository as createDrizzleWorkbenchWorkRepository,
+} from "../domains/workbenches/index.js";
 import {
   type AppServices,
   composeAppServices,
@@ -60,7 +70,18 @@ async function createAppServices(): Promise<AppServices> {
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
   const tools = createRuntimeToolRegistry({ db, contextPorts });
   const packageRepository = createDrizzlePackageStore({ db });
+  const marsPackageFetcher = createGitHubMarsPackageFetcher({
+    githubToken: process.env.GITHUB_TOKEN,
+  });
+  const defaultPackageSeeder = createDefaultPackageSeeder({
+    repository: packageRepository,
+    fetcher: marsPackageFetcher,
+    config: defaultPackageSeedConfigFromEnv(process.env),
+  });
   const preferences = createInMemoryWorkbenchPreferencesRepository();
+  const workbenchRepo = createDrizzleWorkbenchRepository({ db });
+  const users = createDrizzleUserRepository({ db });
+  const workRepo = createDrizzleWorkbenchWorkRepository({ db });
   const creditLedger = createDrizzleCreditLedger(db);
   const checkpointRegistry = createCheckpointRegistry();
   const toolRegistry = createToolRegistry();
@@ -109,8 +130,10 @@ async function createAppServices(): Promise<AppServices> {
       ...inMemory,
       gateway,
       threadRepos,
+      repos: threadRepos,
       journalReader,
       journalWriter,
+      hub: threadEventHub,
       threadEventHub,
       eventSink,
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
@@ -118,9 +141,17 @@ async function createAppServices(): Promise<AppServices> {
       contextPorts,
       projects: createDrizzleProjectRepository(db),
       works: createDrizzleWorkRepository(db),
+      workbenchRepo,
+      users,
+      workRepo,
       creditLedger,
       checkpointRegistry,
       packageRepository,
+      marsPackageFetcher,
+      defaultPackageSeeder,
+      async seedDefaultPackagesForWorkbench(workbenchId: string) {
+        await defaultPackageSeeder.seedWorkbench(workbenchId);
+      },
       preferences,
       orchestrator,
       runner,

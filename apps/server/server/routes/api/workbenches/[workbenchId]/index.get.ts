@@ -1,0 +1,20 @@
+/** GET /api/workbenches/[workbenchId]: returns a single owned workbench. Depends on the auth gate, workbench ownership, and workbench repository. */
+import { serializeTransport } from "@meridian/contracts/protocol";
+import { defineEventHandler, getRouterParam } from "nitro/h3";
+import { requireWorkbenchOwner } from "../../../../domains/workbenches/index.js";
+import { requireAppUser } from "../../../../lib/auth-gate.js";
+
+export default defineEventHandler(async (event) => {
+  const { app, user } = await requireAppUser(event);
+  const { workbenchRepo } = app;
+  const { userId } = user;
+  const workbenchId = getRouterParam(event, "workbenchId") ?? "";
+
+  const workbench = await requireWorkbenchOwner(
+    { workbenches: workbenchRepo },
+    workbenchId,
+    userId,
+  );
+  await app.seedDefaultPackagesForWorkbench(workbench.id);
+  return serializeTransport(workbench);
+});
