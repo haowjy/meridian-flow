@@ -59,6 +59,7 @@
 
 ### Chore
 
+- Remove stale execution-provider preview wording from checkpoint comments.
 - Remove copied upstream provenance wording from dev tooling comments.
 - Add upstream-derived Nx graph and negative-space checks to keep rejected auth adapter, editor-transport shortcut, and removed execution runtime out of v3.
 - Add [DEVELOPMENT.md](DEVELOPMENT.md) (setup, `lefthook install --reset-hooks-path` for worktrees, commit discipline).

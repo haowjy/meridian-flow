@@ -31,8 +31,8 @@ export type ArtifactRef =
       mimeType?: string;
     }
   | {
-      // DEFERRED(live-viewer): build the iframe overlay iff the Daytona preview-WS
-      // probe is green (work item audit/probe-daytona-preview-ws.md)
+      // DEFERRED(live-viewer): build the iframe overlay iff the live-preview
+      // probe is green.
       type: "liveView";
       url: string;
       expiresAt?: string;

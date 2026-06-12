@@ -13,7 +13,7 @@
  *    enlarge in a dialog); `object` arms as labeled refs (a download chip);
  *    `liveView` arms as a isolated `<iframe>` slot. Nothing produces
  *    `liveView` today — the slot is reserved per execution-model §8.4 so
- *    when the Daytona preview-WS probe goes green the overlay drops in
+ *    when the live-preview probe goes green the overlay drops in
  *    without a contract or card change.
  *  - Form generated from `answerSchema` via `checkpointFieldsFromSchema`,
  *    which owns the supported JSON-Schema subset. Required-field validation
@@ -338,8 +338,8 @@ function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "obje
 }
 
 function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "liveView" }> }) {
-  // Isolated iframe per execution-model §8.4: the URL is a Daytona preview
-  // link to a kernel-served viewer (e.g. trame-vtklocal). `allow-scripts`
+  // Isolated iframe per execution-model §8.4: the URL is a live-preview
+  // link to a viewer. `allow-scripts`
   // is required for the viewer JS; `allow-same-origin` keeps the preview
   // proxy's auth cookie usable. Nothing produces liveView arms today —
   // this slot is the contract landing zone.
