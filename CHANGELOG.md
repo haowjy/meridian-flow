@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added a Meridian Supabase/Postgres workbench-domain smoke script for repository runtime checks.
 
 - **server/context:** port Meridian-adapted workbench context trees, uploads, figures, object-store reads, results rail repositories, and no-provider context factories with Supabase/Drizzle storage.
 - **v3 parity:** port upstream collab/context/preference adapter conformance coverage, app proto routes, results-rail tests, and the marketing/waitlist app into Meridian names.
