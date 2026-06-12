@@ -14,8 +14,8 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as DevLoginRouteImport } from './routes/dev-login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProtoIndexRouteImport } from './routes/proto.index'
+import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
 import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
@@ -51,15 +51,15 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProtoIndexRoute = ProtoIndexRouteImport.update({
   id: '/proto/',
   path: '/proto/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const ProtoSpikeLayoutRoute = ProtoSpikeLayoutRouteImport.update({
   id: '/proto/spike-layout',
@@ -118,7 +118,7 @@ const AuthenticatedProjectsProjectIdAgentRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AuthenticatedIndexRoute
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -136,7 +136,6 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -144,6 +143,7 @@ export interface FileRoutesByTo {
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
+  '/': typeof AuthenticatedIndexRoute
   '/proto': typeof ProtoIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/workbench/$workbenchId': typeof AuthenticatedWorkbenchWorkbenchIdRoute
@@ -155,7 +155,6 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
@@ -164,6 +163,7 @@ export interface FileRoutesById {
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
+  '/_authenticated/': typeof AuthenticatedIndexRoute
   '/proto/': typeof ProtoIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/workbench/$workbenchId': typeof AuthenticatedWorkbenchWorkbenchIdRoute
@@ -194,7 +194,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/dev-login'
     | '/healthz'
     | '/login'
@@ -202,6 +201,7 @@ export interface FileRouteTypes {
     | '/auth-check'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
+    | '/'
     | '/proto'
     | '/chat/$threadId'
     | '/workbench/$workbenchId'
@@ -212,7 +212,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
   id:
     | '__root__'
-    | '/'
     | '/_authenticated'
     | '/dev-login'
     | '/healthz'
@@ -221,6 +220,7 @@ export interface FileRouteTypes {
     | '/_authenticated/auth-check'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
+    | '/_authenticated/'
     | '/proto/'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/workbench/$workbenchId'
@@ -232,7 +232,6 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   DevLoginRoute: typeof DevLoginRoute
   HealthzRoute: typeof HealthzRoute
@@ -282,19 +281,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/proto/': {
       id: '/proto/'
       path: '/proto'
       fullPath: '/proto/'
       preLoaderRoute: typeof ProtoIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/proto/spike-layout': {
       id: '/proto/spike-layout'
@@ -371,6 +370,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
+  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
   AuthenticatedWorkbenchWorkbenchIdRoute: typeof AuthenticatedWorkbenchWorkbenchIdRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
@@ -380,6 +380,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
+  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
   AuthenticatedWorkbenchWorkbenchIdRoute:
     AuthenticatedWorkbenchWorkbenchIdRoute,
@@ -395,7 +396,6 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   DevLoginRoute: DevLoginRoute,
   HealthzRoute: HealthzRoute,

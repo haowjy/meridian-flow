@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added the authenticated Home route parity file under the pathless auth layout.
 - Added collab DocumentSyncService parity coverage for markdown/code mirrors, persistence rollback, checkpoint restore, and transport updates.
 - Added opt-in Drizzle collab document-store conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
 - Added opt-in Drizzle thread repository conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
@@ -62,6 +63,7 @@
 - **dev:** Collab Supabase (`54422`), `.env.example`, bootstrap pipeline (`db:migrate` → `db:apply-functions` → Drizzle seed).
 
 ### Changed
+- **app/routes:** replace the placeholder public app index with the authenticated Home index route to avoid duplicate root route generation.
 
 - **app:** wrap authenticated routes in the workbench query/store/transport providers so `/workbench/:id` and `/chat/:id` run the ported workspace shell.
 - **docs:** record exact-path parity mappings for the marketing app and the intentionally excluded Python/runtime-provider tooling.
