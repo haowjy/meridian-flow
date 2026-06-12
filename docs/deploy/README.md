@@ -50,6 +50,7 @@ Required baseline:
 | `SUPABASE_URL` | Supabase Auth API |
 | `SUPABASE_ANON_KEY` | Browser/server auth verification |
 | `SUPABASE_SERVICE_ROLE_KEY` | Dev/bootstrap/admin-only operations |
+| `MERIDIAN_API_ORIGIN` | Public server/API origin used by app SSR when the app and server are not same-process |
 | `APP_ENV` | Set to `production` for production deploys |
 
 Provider-conditioned model variables:
