@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added collab DocumentSyncService parity coverage for markdown/code mirrors, persistence rollback, checkpoint restore, and transport updates.
 - Added opt-in Drizzle collab document-store conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
 - Added opt-in Drizzle thread repository conformance coverage gated by `RUN_DB_TESTS` and `DATABASE_URL`.
 - **server/threads:** add pre-bake current-agent rebinding to repository adapters for upstream parity.
