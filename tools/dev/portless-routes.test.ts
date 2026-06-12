@@ -41,7 +41,7 @@ describe("parsePortlessListOutput", () => {
 });
 
 describe("formatDevRouteLines", () => {
-  it("prints full localhost URLs with app before api", () => {
+  it("prints full localhost URLs with app before server", () => {
     const output = `
       https://server.meridian.localhost  ->  localhost:4090  (pid 1111)
       https://app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -49,25 +49,25 @@ describe("formatDevRouteLines", () => {
 
     expect(formatDevRouteLines(output, "local")).toEqual([
       "app  local  https://app.meridian.localhost",
-      "api  local  https://server.meridian.localhost",
+      "server  local  https://server.meridian.localhost",
     ]);
   });
 
   it("uses the worktree-prefixed routes when a worktree prefix is provided", () => {
     expect(formatDevRouteLines(WORKTREE_AND_MAIN_ROUTES, "local", "zustand-migration")).toEqual([
       "app  local  https://zustand-migration.app.meridian.localhost",
-      "api  local  https://zustand-migration.server.meridian.localhost",
+      "server  local  https://zustand-migration.server.meridian.localhost",
     ]);
   });
 
   it("uses bare routes for the main checkout and excludes worktree-prefixed routes", () => {
     expect(formatDevRouteLines(WORKTREE_AND_MAIN_ROUTES, "local")).toEqual([
       "app  local  https://app.meridian.localhost",
-      "api  local  https://server.meridian.localhost",
+      "server  local  https://server.meridian.localhost",
     ]);
   });
 
-  it("prints local and tailscale URLs with app and www first (api localhost-only)", () => {
+  it("prints local and tailscale URLs with app and www first (server localhost-only)", () => {
     const output = `
       https://thread-first-chat.server.meridian.localhost  ->  localhost:4090  (pid 1111)
       https://thread-first-chat.app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -81,13 +81,13 @@ describe("formatDevRouteLines", () => {
       "app  ts     https://pop-os.tail852a76.ts.net:8453",
       "www  local  https://thread-first-chat.web.meridian.localhost",
       "www  ts     https://pop-os.tail852a76.ts.net:8454",
-      "api  local  https://thread-first-chat.server.meridian.localhost",
+      "server  local  https://thread-first-chat.server.meridian.localhost",
     ]);
   });
 });
 
 describe("validateExpectedRoutes", () => {
-  it("accepts worktree-prefixed app+api routes in local mode", () => {
+  it("accepts worktree-prefixed app+server routes in local mode", () => {
     const output = `
       https://thread-first-chat.server.meridian.localhost  ->  localhost:4627  (pid 1111)
       https://thread-first-chat.app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -99,7 +99,7 @@ describe("validateExpectedRoutes", () => {
       worktreePrefix: "thread-first-chat",
     });
     expect(result.ok).toBe(true);
-    expect(result.servicePids).toEqual({ api: 1111, app: 2222 });
+    expect(result.servicePids).toEqual({ server: 1111, app: 2222 });
   });
 
   it("does not accept main checkout routes for a linked worktree", () => {
@@ -115,11 +115,11 @@ describe("validateExpectedRoutes", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.errors.join(" ")).toContain("missing route for api");
+    expect(result.errors.join(" ")).toContain("missing route for server");
     expect(result.errors.join(" ")).toContain("missing route for app");
   });
 
-  it("requires app+api by default but not www", () => {
+  it("requires app+server by default but not www", () => {
     const output = `
       https://server.meridian.localhost  ->  localhost:4627  (pid 1111)
       https://app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -129,7 +129,7 @@ describe("validateExpectedRoutes", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("does not let an optional www route satisfy a missing app/api health gate", () => {
+  it("does not let an optional www route satisfy a missing app/server health gate", () => {
     const output = `
       https://server.meridian.localhost  ->  localhost:4627  (pid 1111)
       https://web.meridian.localhost  ->  localhost:4688  (pid 3333)
@@ -150,10 +150,10 @@ describe("validateExpectedRoutes", () => {
     const result = validateExpectedRoutes({ output, mode: "local" });
 
     expect(result.ok).toBe(false);
-    expect(result.errors.join(" ")).toContain("missing route pid for api");
+    expect(result.errors.join(" ")).toContain("missing route pid for server");
   });
 
-  it("accepts api with localhost-only evidence in tailscale mode", () => {
+  it("accepts server with localhost-only evidence in tailscale mode", () => {
     const output = `
       https://server.meridian.localhost  ->  localhost:4627  (pid 1111)
       https://app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -164,7 +164,7 @@ describe("validateExpectedRoutes", () => {
 
     const result = validateExpectedRoutes({ output, mode: "tailscale" });
     expect(result.ok).toBe(true);
-    expect(result.servicePids).toEqual({ api: 1111, app: 2222, www: 3333 });
+    expect(result.servicePids).toEqual({ server: 1111, app: 2222, www: 3333 });
   });
 
   it("requires tailscale share lines for shared services in tailscale mode", () => {
@@ -178,7 +178,7 @@ describe("validateExpectedRoutes", () => {
     expect(result.ok).toBe(false);
     expect(result.errors.join(" ")).toContain("missing tailscale share for app");
     expect(result.errors.join(" ")).toContain("missing tailscale share for www");
-    expect(result.errors.join(" ")).not.toContain("missing tailscale share for api");
+    expect(result.errors.join(" ")).not.toContain("missing tailscale share for server");
   });
 
   it("requires www in tailscale mode because dev-tmux starts @meridian/www", () => {
@@ -195,22 +195,22 @@ describe("validateExpectedRoutes", () => {
 
   it("getExpectedServicesForMode includes www for tailscale and funnel only", () => {
     expect(getExpectedServicesForMode("local").map((service) => service.name)).toEqual([
-      "api",
+      "server",
       "app",
     ]);
     expect(getExpectedServicesForMode("tailscale").map((service) => service.name)).toEqual([
-      "api",
+      "server",
       "app",
       "www",
     ]);
 
     const tailscale = getExpectedServicesForMode("tailscale");
-    expect(tailscale.find((service) => service.name === "api")?.shared).toBe(false);
+    expect(tailscale.find((service) => service.name === "server")?.shared).toBe(false);
     expect(tailscale.find((service) => service.name === "app")?.shared).toBe(true);
     expect(tailscale.find((service) => service.name === "www")?.shared).toBe(true);
   });
 
-  it("accepts api with localhost-only evidence in funnel mode", () => {
+  it("accepts server with localhost-only evidence in funnel mode", () => {
     const output = `
       https://server.meridian.localhost  ->  localhost:4627  (pid 1111)
       https://app.meridian.localhost  ->  localhost:4523  (pid 2222)
@@ -235,7 +235,7 @@ describe("validateExpectedRoutes", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors.join(" ")).toContain("missing funnel share for www");
-    expect(result.errors.join(" ")).not.toContain("missing funnel share for api");
+    expect(result.errors.join(" ")).not.toContain("missing funnel share for server");
   });
 
   it("does not accept tailscale-only sharing evidence in funnel mode", () => {

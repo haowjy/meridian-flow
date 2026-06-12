@@ -2,13 +2,13 @@ import type { DevMode } from "./dev-mode";
 
 /** Host suffixes (`portless run --name …` applies worktree prefix in linked worktrees). */
 const SERVICE_HOST_SUFFIXES = {
-  api: "server.meridian.localhost",
+  server: "server.meridian.localhost",
   app: "app.meridian.localhost",
   www: "web.meridian.localhost",
 } as const;
 
 const DEFAULT_EXPECTED_SERVICE_HOSTS = {
-  api: SERVICE_HOST_SUFFIXES.api,
+  server: SERVICE_HOST_SUFFIXES.server,
   app: SERVICE_HOST_SUFFIXES.app,
   www: SERVICE_HOST_SUFFIXES.www,
 } as const;
@@ -16,7 +16,7 @@ const DEFAULT_EXPECTED_SERVICE_HOSTS = {
 export type ExpectedServiceName = keyof typeof DEFAULT_EXPECTED_SERVICE_HOSTS;
 
 function isExpectedServiceName(name: string): name is ExpectedServiceName {
-  return name === "api" || name === "app" || name === "www";
+  return name === "server" || name === "app" || name === "www";
 }
 
 export type ExpectedServiceDescriptor = {
@@ -27,7 +27,7 @@ export type ExpectedServiceDescriptor = {
 };
 
 export const DEFAULT_EXPECTED_SERVICES: ReadonlyArray<ExpectedServiceDescriptor> = [
-  { name: "api", host: DEFAULT_EXPECTED_SERVICE_HOSTS.api, shared: false },
+  { name: "server", host: DEFAULT_EXPECTED_SERVICE_HOSTS.server, shared: false },
   { name: "app", host: DEFAULT_EXPECTED_SERVICE_HOSTS.app, shared: true },
 ];
 
@@ -37,7 +37,7 @@ const WWW_EXPECTED_SERVICE: ExpectedServiceDescriptor = {
   shared: true,
 };
 
-/** Core app+api always; www when dev-tmux explicitly starts @meridian/www (tailscale/funnel). */
+/** Core app+server always; www when dev-tmux explicitly starts @meridian/www (tailscale/funnel). */
 export function getExpectedServicesForMode(
   mode: DevMode,
 ): ReadonlyArray<ExpectedServiceDescriptor> {
@@ -115,7 +115,7 @@ export interface RouteValidation {
 }
 
 /** app/www first — matches how people scan startup output. */
-const SERVICE_DISPLAY_ORDER: ExpectedServiceName[] = ["app", "www", "api"];
+const SERVICE_DISPLAY_ORDER: ExpectedServiceName[] = ["app", "www", "server"];
 
 const ROUTE_KIND_WIDTH = 6;
 
