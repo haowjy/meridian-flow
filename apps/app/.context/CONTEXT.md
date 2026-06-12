@@ -3,6 +3,36 @@
 How the frontend is structured, why the seams exist, and what conventions
 govern visual and interaction work.
 
+## Server config and auth surface
+
+`src/server/config.ts` is the app server's config seam. It parses the
+upstream-shaped runtime variables `APP_ENV` and `LOG_LEVEL` through
+`src/server/runtime-config.ts`, then adds Meridian/Supabase settings:
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_AUTH_REDIRECT_URI`,
+`TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, `SUPABASE_DEV_AUTOLOGIN`, and
+`MERIDIAN_API_ORIGIN`. The parsed config is server-only; isomorphic client-path
+helpers such as `src/client/api/ssr-api-request.ts` must keep their guarded env
+reads local instead of importing `getAppServerConfig()`.
+
+Auth remains Supabase cookie auth in `src/server/auth.ts`. `/logout` clears the
+Meridian Supabase session cookies and redirects to `/login`. `/api/auth/callback`
+is present as the callback route surface for OAuth or magic-link flows, but it
+currently redirects to `/auth-check`.
+
+`resolveAuthRedirectUri(request)` uses the configured
+`SUPABASE_AUTH_REDIRECT_URI` outside dev. In dev it may derive the callback from
+the request origin for the real portless/Tailscale host (`*.localhost` or
+`*.ts.net`) when the protocol is compatible. Supabase dev-login does not use the
+callback path.
+
+There are two dev-auth predicates with different scopes:
+
+- `devLoginEnabled()` (`src/server/auth.ts`) gates the visible/manual dev-login
+  route and still checks the Supabase/test-user env directly.
+- `isDevAutologinEnabled()` (`src/server/dev-auth.ts`) is the config-backed
+  autologin predicate; it is false in production and requires
+  `SUPABASE_DEV_AUTOLOGIN` plus test-user credentials.
+
 ## State + transport seams
 
 Two interfaces are the only paths between the visual layer and the substrate:
@@ -254,7 +284,7 @@ geometry) or it's a token that wants promoting.
 ## Dev limitations (pilot)
 
 - Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
-- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` (auth-kit session middleware must run in-process).
+- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` so TanStack Start route handlers can own Supabase cookie auth in-process.
 
 ## Seeded from
 
@@ -265,8 +295,8 @@ toolchain (prettier config removed), `tsconfig.base.json` extension.
 
 ## Cross-module links
 
-→ [../../.context/CONTEXT.md](../../.context/CONTEXT.md) — harness composition, app layer architecture, DI wiring pattern
-→ [../server/AGENTS.md](../server/AGENTS.md) — the Nitro API service (`apps/server`) this app proxies
+→ [../../../.context/CONTEXT.md](../../../.context/CONTEXT.md) — harness composition, app layer architecture, DI wiring pattern
+→ [../../server/AGENTS.md](../../server/AGENTS.md) — the Nitro API service (`apps/server`) this app proxies
 
 ## KB links
 
