@@ -291,7 +291,7 @@ export function EditorView({
   useEffect(() => {
     const interval = window.setInterval(() => {
       const scroller = scrollContainerRef.current;
-      if (!scroller || scroller.scrollTop !== 0) return;
+      if (scroller?.scrollTop !== 0) return;
       const savedTop = Number(scroller.dataset.stableLayoutScrollTop ?? 0);
       if (savedTop > 0) scroller.scrollTop = savedTop;
     }, 250);

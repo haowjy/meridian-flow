@@ -37,7 +37,7 @@ describe("multiplexed Yjs websocket framing", () => {
     expect(readMessageType(step1)).toBe(YJS_WS_MESSAGE_SYNC);
 
     const serverDecoder = decodeYjsWsMessage(step1);
-    if (!serverDecoder || serverDecoder.type !== "sync") throw new Error("expected sync frame");
+    if (serverDecoder?.type !== "sync") throw new Error("expected sync frame");
 
     const responseEncoder = encoding.createEncoder();
     encoding.writeVarUint(responseEncoder, YJS_WS_MESSAGE_SYNC);
@@ -45,7 +45,7 @@ describe("multiplexed Yjs websocket framing", () => {
 
     const response = encoding.toUint8Array(responseEncoder);
     const clientDecoder = decodeYjsWsMessage(response);
-    if (!clientDecoder || clientDecoder.type !== "sync") throw new Error("expected sync frame");
+    if (clientDecoder?.type !== "sync") throw new Error("expected sync frame");
 
     const ackEncoder = encoding.createEncoder();
     encoding.writeVarUint(ackEncoder, YJS_WS_MESSAGE_SYNC);
@@ -63,7 +63,7 @@ describe("multiplexed Yjs websocket framing", () => {
     const frame = encodeSyncUpdateMessage(update);
 
     const decoded = decodeYjsWsMessage(frame);
-    if (!decoded || decoded.type !== "sync") throw new Error("expected sync frame");
+    if (decoded?.type !== "sync") throw new Error("expected sync frame");
     const responseEncoder = encoding.createEncoder();
     encoding.writeVarUint(responseEncoder, YJS_WS_MESSAGE_SYNC);
     syncProtocol.readSyncMessage(decoded.decoder, responseEncoder, serverDoc, "server");
@@ -78,7 +78,7 @@ describe("multiplexed Yjs websocket framing", () => {
 
     const frame = encodeAwarenessMessage(clientAwareness, [clientDoc.clientID]);
     const decoded = decodeYjsWsMessage(frame);
-    if (!decoded || decoded.type !== "awareness") throw new Error("expected awareness frame");
+    if (decoded?.type !== "awareness") throw new Error("expected awareness frame");
 
     const serverAwareness = new Awareness(new Y.Doc());
     applyAwarenessUpdate(serverAwareness, decoded.update, "server");

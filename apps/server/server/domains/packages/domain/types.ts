@@ -55,6 +55,8 @@ export interface PackageInstallRecord {
   id: string;
   workbenchId: string;
   sourcePath?: string;
+  /** Git ref persisted for GitHub installs — reused on update fetch. */
+  sourceRef?: string | null;
   sourceCommitSha?: string | null;
   packageName: string;
   version?: string;
@@ -143,6 +145,9 @@ export interface PackageUpdateResult {
   updatedSkills: string[];
   removedAgents: string[];
   removedSkills: string[];
+  /** Soft-retired on upstream prune — disabled with `meta.removedFromSource`, history kept. */
+  retiredAgents: string[];
+  retiredSkills: string[];
   skippedAgents: string[];
   skippedSkills: string[];
 }

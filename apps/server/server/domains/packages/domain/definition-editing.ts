@@ -10,9 +10,9 @@
 import type {
   AgentDefinitionDetail,
   AgentDefinitionResponse,
-  AgentSkillLinkInput,
   DefinitionRevisionListResponse,
   DefinitionRevisionSummary,
+  PatchAgentSkillLinkRequest,
   SkillDefinitionDetail,
   SkillDefinitionResponse,
   UpdateAgentDefinitionRequest,
@@ -20,20 +20,38 @@ import type {
 } from "@meridian/contracts/agents";
 import type { PackageWriteTransaction } from "../ports/package-store.js";
 import { agentSourceFromRecord, packageNameForDefinition } from "./agent-catalog.js";
-import { definitionContentChecksum, normalizeAgentMeta } from "./mars-source.js";
+import { skillLinksFromMetaSkills } from "./agent-skill-links.js";
+import {
+  agentDefinitionContentChecksum,
+  definitionContentChecksum,
+  normalizeAgentMeta,
+} from "./mars-source.js";
 import type {
   AgentDefinitionRecord,
   AgentDefinitionRevisionRecord,
-  AgentSkillLinkRecord,
   SkillDefinitionRevisionRecord,
   SkillRecord,
 } from "./types.js";
 
 export function isDefinitionEdited(
-  record: { body: string; meta: Record<string, unknown>; files?: SkillRecord["files"] },
+  record: {
+    body: string;
+    meta: Record<string, unknown>;
+    files?: SkillRecord["files"];
+    config?: AgentDefinitionRecord["config"];
+  },
   originalContentChecksum: string | null,
 ): boolean {
   if (!originalContentChecksum) return false;
+  if (record.config !== undefined) {
+    return (
+      agentDefinitionContentChecksum({
+        body: record.body,
+        meta: record.meta,
+        config: record.config,
+      }) !== originalContentChecksum
+    );
+  }
   return definitionContentChecksum(record) !== originalContentChecksum;
 }
 
@@ -50,7 +68,7 @@ export async function saveAgentDefinition(
 
   const revision = await tx.appendAgentDefinitionRevision({
     agentDefinitionId: agent.id,
-    contentChecksum: definitionContentChecksum({ body, meta }),
+    contentChecksum: agentDefinitionContentChecksum({ body, meta, config }),
     body,
     meta,
     config,
@@ -63,12 +81,7 @@ export async function saveAgentDefinition(
     originalContentChecksum: agent.originalContentChecksum,
   });
 
-  if (input.skillLinks) {
-    await tx.replaceAgentSkillLinks(
-      agent.id,
-      await resolveSkillLinks(tx, workbenchId, agent.id, input.skillLinks),
-    );
-  }
+  await reconcileAgentSkillLinks(tx, workbenchId, agent.id, meta);
 
   const packageInstalls = await tx.listPackageInstalls(workbenchId);
   const packageName = packageNameForDefinition(agent, packageInstalls);
@@ -118,6 +131,48 @@ export async function saveSkillDefinition(
     skill: toSkillDefinitionDetail(skill, { body, meta, files: skill.files, packageName }),
     revisionId: revision.id,
   };
+}
+
+export async function getAgentDefinition(
+  tx: PackageWriteTransaction,
+  workbenchId: string,
+  slug: string,
+): Promise<AgentDefinitionDetail> {
+  const agent =
+    (await tx.findAgentDefinition(workbenchId, slug)) ?? (await tx.findAgentDefinition(null, slug));
+  if (!agent) {
+    throw new DefinitionEditError(`Agent not found: ${slug}`);
+  }
+  const packageInstalls = await tx.listPackageInstalls(workbenchId);
+  const packageName = packageNameForDefinition(agent, packageInstalls);
+  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
+  return toAgentDefinitionDetail(agent, {
+    body: agent.body,
+    meta: agent.meta,
+    config: agent.config,
+    packageName,
+    skillLinks,
+  });
+}
+
+export async function getSkillDefinition(
+  tx: PackageWriteTransaction,
+  workbenchId: string,
+  slug: string,
+): Promise<SkillDefinitionDetail> {
+  const skill =
+    (await tx.findSkillDefinition(workbenchId, slug)) ?? (await tx.findSkillDefinition(null, slug));
+  if (!skill) {
+    throw new DefinitionEditError(`Skill not found: ${slug}`);
+  }
+  const packageInstalls = await tx.listPackageInstalls(workbenchId);
+  const packageName = packageNameForDefinition(skill, packageInstalls);
+  return toSkillDefinitionDetail(skill, {
+    body: skill.body,
+    meta: skill.meta,
+    files: skill.files,
+    packageName,
+  });
 }
 
 export async function listAgentDefinitionRevisions(
@@ -181,6 +236,42 @@ export async function restoreSkillDefinitionRevision(
   return restoreSkillFromRevisionContent(tx, workbenchId, skill, revision);
 }
 
+/** Immediate operational mutation — does not append a definition revision. */
+export async function patchAgentSkillLink(
+  tx: PackageWriteTransaction,
+  workbenchId: string,
+  agentSlug: string,
+  skillSlug: string,
+  input: PatchAgentSkillLinkRequest,
+): Promise<AgentDefinitionDetail> {
+  const agent = await requireWorkbenchAgent(tx, workbenchId, agentSlug);
+  const skill =
+    (await tx.findSkillDefinition(workbenchId, skillSlug)) ??
+    (await tx.findSkillDefinition(null, skillSlug));
+  if (!skill) {
+    throw new DefinitionEditError(`Unknown skill slug: ${skillSlug}`);
+  }
+
+  const links = await tx.listAgentSkillLinks(agent.id);
+  const link = links.find((row) => row.skillId === skill.id);
+  if (!link) {
+    throw new DefinitionEditError(`Skill is not linked to this agent: ${skillSlug}`);
+  }
+
+  await tx.updateAgentSkillLinkModelInvocable(agent.id, skill.id, input.modelInvocable);
+
+  const packageInstalls = await tx.listPackageInstalls(workbenchId);
+  const packageName = packageNameForDefinition(agent, packageInstalls);
+  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
+  return toAgentDefinitionDetail(agent, {
+    body: agent.body,
+    meta: agent.meta,
+    config: agent.config,
+    packageName,
+    skillLinks,
+  });
+}
+
 export async function restoreSkillDefinitionOriginal(
   tx: PackageWriteTransaction,
   workbenchId: string,
@@ -207,7 +298,11 @@ export async function seedInitialAgentRevision(
 ): Promise<void> {
   await tx.appendAgentDefinitionRevision({
     agentDefinitionId: agent.id,
-    contentChecksum: definitionContentChecksum({ body: agent.body, meta: agent.meta }),
+    contentChecksum: agentDefinitionContentChecksum({
+      body: agent.body,
+      meta: agent.meta,
+      config: agent.config,
+    }),
     body: agent.body,
     meta: agent.meta,
     config: agent.config,
@@ -257,6 +352,7 @@ async function restoreAgentFromRevisionContent(
     config: revision.config,
     originalContentChecksum: agent.originalContentChecksum,
   });
+  await reconcileAgentSkillLinks(tx, workbenchId, agent.id, revision.meta);
   const packageInstalls = await tx.listPackageInstalls(workbenchId);
   const packageName = packageNameForDefinition(agent, packageInstalls);
   const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
@@ -352,29 +448,21 @@ async function requireSkillRevision(
   return revision;
 }
 
-async function resolveSkillLinks(
+async function reconcileAgentSkillLinks(
   tx: PackageWriteTransaction,
   workbenchId: string,
   agentDefinitionId: string,
-  links: AgentSkillLinkInput[],
-): Promise<AgentSkillLinkRecord[]> {
-  const resolved: AgentSkillLinkRecord[] = [];
-  for (const link of links) {
-    const skill =
-      (await tx.findSkillDefinition(workbenchId, link.skillSlug)) ??
-      (await tx.findSkillDefinition(null, link.skillSlug));
-    if (!skill) {
-      throw new DefinitionEditError(`Unknown skill slug: ${link.skillSlug}`);
-    }
-    resolved.push({
-      agentDefinitionId,
-      skillId: skill.id,
-      ordinal: link.ordinal,
-      modelInvocable: link.modelInvocable,
-      userInvocable: link.userInvocable,
-    });
-  }
-  return resolved;
+  meta: AgentDefinitionRecord["meta"],
+): Promise<void> {
+  const existingLinks = await tx.listAgentSkillLinks(agentDefinitionId);
+  const nextLinks = await skillLinksFromMetaSkills(
+    tx,
+    workbenchId,
+    agentDefinitionId,
+    meta,
+    existingLinks,
+  );
+  await tx.replaceAgentSkillLinks(agentDefinitionId, nextLinks);
 }
 
 async function buildAgentSkillLinkDetails(
@@ -406,7 +494,11 @@ function toAgentDefinitionDetail(
     skillLinks: AgentDefinitionDetail["skillLinks"];
   },
 ): AgentDefinitionDetail {
-  const contentChecksum = definitionContentChecksum({ body: current.body, meta: current.meta });
+  const contentChecksum = agentDefinitionContentChecksum({
+    body: current.body,
+    meta: current.meta,
+    config: current.config,
+  });
   return {
     slug: agent.slug,
     body: current.body,
@@ -417,7 +509,7 @@ function toAgentDefinitionDetail(
     originalContentChecksum: agent.originalContentChecksum,
     contentChecksum,
     isEdited: isDefinitionEdited(
-      { body: current.body, meta: current.meta },
+      { body: current.body, meta: current.meta, config: current.config },
       agent.originalContentChecksum,
     ),
     skillLinks: current.skillLinks,

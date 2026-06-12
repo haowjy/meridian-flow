@@ -73,7 +73,6 @@ export function SpikeEditorSurface({
 
   // One-shot mount counter (gate #6). Fires after mount, not during render,
   // so it doesn't setState in a parent during a child's render phase.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Gate #6 counts first mount only; onMount identity changes are not remounts.
   useEffect(() => {
     onMount?.();
   }, []);

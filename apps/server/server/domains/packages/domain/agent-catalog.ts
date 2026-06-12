@@ -9,6 +9,16 @@ import type { PackageWriteTransaction } from "../ports/package-store.js";
 import { stringAt } from "./helpers.js";
 import type { AgentDefinitionRecord, PackageInstallRecord } from "./types.js";
 
+export async function listBuiltinCatalogAgents(
+  tx: PackageWriteTransaction,
+): Promise<WorkbenchAgentSummary[]> {
+  const builtins = await tx.listSelectableAgents(null);
+  return builtins
+    .filter((agent) => agent.sourceType === "builtin")
+    .map((agent) => toWorkbenchAgentSummary(agent, new Map()))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export async function listWorkbenchCatalogAgents(
   tx: PackageWriteTransaction,
   workbenchId: string,

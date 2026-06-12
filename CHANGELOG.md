@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server/packages:** port upstream package-domain install/update/preview/library helpers, zip export, skill-link reconciliation, and conformance/unit coverage with Meridian naming.
 - **app:** port upstream API route ownership and structured Meridian API error tests.
 - **server:** port upstream observability and storage adapter tests for JSONL/in-memory event sinks and object-store adapters.
 - **server/docs:** add adapted server architecture context, domain README, and deploy documentation for `MERIDIAN_API_ORIGIN`.

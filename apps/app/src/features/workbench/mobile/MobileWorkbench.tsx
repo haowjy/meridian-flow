@@ -41,7 +41,6 @@ export function MobileWorkbench(props: ProjectViewProps) {
   // Any navigation (screen switch, drill in/out, opening a file, Results)
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: contextLocation is the deliberate composite dependency
   useEffect(() => setCreating(null), [contextLocation]);
   const { threadById } = useWorkbenchThreadGroups(props.workbenchId);
   const activeThread = props.activeThreadId ? (threadById.get(props.activeThreadId) ?? null) : null;

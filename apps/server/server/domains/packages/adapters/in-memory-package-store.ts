@@ -2,6 +2,7 @@
 // In-memory PackageRepository adapter: hermetic package persistence for tests and local composition.
 import { randomUUID } from "node:crypto";
 
+import { agentModeFromMeta } from "../domain/mars-source.js";
 import { resolveAgentSkills } from "../domain/resolution.js";
 import type {
   AgentDefinitionRecord,
@@ -97,13 +98,21 @@ function createTransaction(state: Required<InMemoryPackageStoreSeed>): PackageWr
       );
     },
     async findAgentDefinition(workbenchId, slug) {
+      return this.findAgentDefinitionAnyState(workbenchId, slug);
+    },
+    async findAgentDefinitionAnyState(workbenchId, slug) {
       return state.agents.find((agent) => agent.workbenchId === workbenchId && agent.slug === slug);
     },
     async listSelectableAgents(workbenchId) {
       return state.agents.filter(
         (agent) =>
-          agent.workbenchId === workbenchId && agent.enabled && agentMode(agent) === "primary",
+          agent.workbenchId === workbenchId &&
+          agent.enabled &&
+          agentModeFromMeta(agent.meta) === "primary",
       );
+    },
+    async listWorkbenchAgentDefinitions(workbenchId) {
+      return state.agents.filter((agent) => agent.workbenchId === workbenchId);
     },
     async listPackageInstalls(workbenchId) {
       return state.packages.filter((pkg) => pkg.workbenchId === workbenchId);
@@ -135,6 +144,9 @@ function createTransaction(state: Required<InMemoryPackageStoreSeed>): PackageWr
       );
     },
     async findSkillDefinition(workbenchId, slug) {
+      return this.findSkillDefinitionAnyState(workbenchId, slug);
+    },
+    async findSkillDefinitionAnyState(workbenchId, slug) {
       return state.skills.find((skill) => skill.workbenchId === workbenchId && skill.slug === slug);
     },
     async appendAgentDefinitionRevision(input) {
@@ -181,6 +193,9 @@ function createTransaction(state: Required<InMemoryPackageStoreSeed>): PackageWr
     async listWorkbenchSkills(workbenchId) {
       return state.skills.filter((skill) => skill.workbenchId === workbenchId && skill.enabled);
     },
+    async listWorkbenchSkillDefinitions(workbenchId) {
+      return state.skills.filter((skill) => skill.workbenchId === workbenchId);
+    },
     async listUserInstalledSkills(userId) {
       return state.userSkills.filter((skill) => skill.userId === userId && skill.enabled);
     },
@@ -218,17 +233,21 @@ function createTransaction(state: Required<InMemoryPackageStoreSeed>): PackageWr
       );
       state.agentSkills.push(...uniqueAgentSkillLinks(links));
     },
+    async updateAgentSkillLinkModelInvocable(agentDefinitionId, skillId, modelInvocable) {
+      const link = state.agentSkills.find(
+        (row) => row.agentDefinitionId === agentDefinitionId && row.skillId === skillId,
+      );
+      if (!link) {
+        throw new Error(`Agent skill link not found: ${agentDefinitionId}/${skillId}`);
+      }
+      link.modelInvocable = modelInvocable;
+    },
     async listAgentSkillLinks(agentDefinitionId) {
       return state.agentSkills
         .filter((link) => link.agentDefinitionId === agentDefinitionId)
         .sort(compareAgentSkillLinks);
     },
   };
-}
-
-function agentMode(agent: AgentDefinitionRecord): "primary" | "subagent" {
-  const mode = agent.meta.mode;
-  return mode === "subagent" ? "subagent" : "primary";
 }
 
 function compareAgentSkillLinks(a: AgentSkillLinkRecord, b: AgentSkillLinkRecord): number {

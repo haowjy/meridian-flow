@@ -120,6 +120,57 @@ export function parseMarkdownDefinition(raw: string): { meta: JsonObject; body: 
   return { meta, body };
 }
 
+/** Canonical JSON object for checksum stability — keys sorted recursively. */
+export function canonicalizeJsonObject(value: JsonObject): JsonObject {
+  const sorted: JsonObject = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = canonicalizeJsonValue(value[key]);
+  }
+  return sorted;
+}
+
+/**
+ * Recursively canonicalize any JSON value — objects get sorted keys, arrays
+ * keep their order but canonicalize their elements. Arrays must be descended
+ * into because Postgres jsonb scrambles key order of objects nested inside
+ * them just like top-level objects.
+ */
+function canonicalizeJsonValue(entry: JsonObject[string]): JsonObject[string] {
+  if (Array.isArray(entry)) {
+    return entry.map((item) => canonicalizeJsonValue(item)) as JsonObject[string];
+  }
+  if (entry && typeof entry === "object") {
+    return canonicalizeJsonObject(entry as JsonObject);
+  }
+  return entry;
+}
+
+/*
+ * Checksum inputs MUST be canonicalized (sorted keys, deep) before the YAML
+ * serialization below. The serialized markdown is key-order-sensitive, and
+ * Postgres jsonb does not preserve object key order — so a checksum computed
+ * over freshly-parsed meta at import time would never match one recomputed
+ * over the same meta read back from the database, and every imported
+ * definition would permanently read as "Edited". (The in-memory store
+ * preserves JS insertion order, which is why tests can't catch this without
+ * a Drizzle-backed case.)
+ */
+export function agentDefinitionContentChecksum(definition: {
+  body: string;
+  meta: JsonObject;
+  config?: JsonObject;
+}): string {
+  return sha256(
+    JSON.stringify({
+      markdown: serializeMarkdownDefinition(
+        canonicalizeJsonObject(definition.meta),
+        definition.body,
+      ),
+      config: canonicalizeJsonObject(definition.config ?? {}),
+    }),
+  );
+}
+
 export function definitionContentChecksum(definition: {
   body: string;
   meta: JsonObject;
@@ -128,7 +179,10 @@ export function definitionContentChecksum(definition: {
   const files = normalizeSkillFilesForChecksum(definition.files ?? {});
   return sha256(
     JSON.stringify({
-      markdown: serializeMarkdownDefinition(definition.meta, definition.body),
+      markdown: serializeMarkdownDefinition(
+        canonicalizeJsonObject(definition.meta),
+        definition.body,
+      ),
       files,
     }),
   );
@@ -183,8 +237,16 @@ export function normalizeAgentMeta(meta: JsonObject): JsonObject {
     ...meta,
     skills: stringsAt(meta.skills),
     subagents: stringsAt(meta.subagents),
-    mode: stringAt(meta.mode) ?? "primary",
+    mode: agentModeFromMeta(meta),
   });
+}
+
+/** Canonical agent mode derived from normalized meta — also persisted to `agent_definitions.mode`. */
+export function agentModeFromMeta(meta: JsonObject): "primary" | "subagent" {
+  const mode = stringAt(meta.mode);
+  if (mode === "subagent") return "subagent";
+  if (mode === "primary") return "primary";
+  return "primary";
 }
 
 /**

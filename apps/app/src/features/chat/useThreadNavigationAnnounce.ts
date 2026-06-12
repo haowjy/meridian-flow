@@ -11,7 +11,6 @@ export function useThreadNavigationAnnounce(
   pageTitle: string,
   composerRef: RefObject<ComposerHandle | null>,
 ): void {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-announce and focus when navigating between threads
   useEffect(() => {
     announce(pageTitle);
     composerRef.current?.focus();

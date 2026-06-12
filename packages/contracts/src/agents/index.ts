@@ -50,6 +50,7 @@ export type {
   DefinitionMeta,
   DefinitionRevisionListResponse,
   DefinitionRevisionSummary,
+  PatchAgentSkillLinkRequest,
   SkillDefinitionDetail,
   SkillDefinitionResponse,
   SkillFilePayload,

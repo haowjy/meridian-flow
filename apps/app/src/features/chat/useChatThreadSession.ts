@@ -29,7 +29,6 @@ export function useChatThreadSession({
   const controllerRef = useRef(controller);
   controllerRef.current = controller;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tear down active transport subscription when route thread changes
   useEffect(() => {
     return () => {
       controllerRef.current.teardown();

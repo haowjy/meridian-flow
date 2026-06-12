@@ -13,6 +13,11 @@ import type { AgentSource } from "./index.js";
 /** Open YAML-frontmatter object; unknown keys pass through on save. */
 export type DefinitionMeta = Record<string, unknown>;
 
+/** Operational link override — not versioned definition content. */
+export interface PatchAgentSkillLinkRequest {
+  modelInvocable: boolean;
+}
+
 /** Per-agent skill wiring submitted with an agent save. */
 export interface AgentSkillLinkInput {
   skillSlug: string;

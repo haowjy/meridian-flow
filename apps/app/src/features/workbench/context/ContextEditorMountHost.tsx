@@ -104,7 +104,6 @@ export function ContextEditorMountHost({
   // parent render (the array identity is fresh each time).
   const trackedIds = trackedTabs.map((t) => t.documentId);
   const trackedIdsKey = trackedIds.join("|");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: stable key replaces array identity.
   useEffect(() => {
     const known = new Set(trackedIds);
     lruRef.current = lruRef.current.filter((id) => known.has(id));
@@ -114,7 +113,6 @@ export function ContextEditorMountHost({
   // Sessions outlive view mounts (so leaving Context / warm-set eviction no
   // longer tears down Yjs); they are reclaimed when their document closes
   // (drops out of `trackedTabs`) or when this host unmounts entirely.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: stable key replaces array identity.
   useEffect(() => {
     getDocumentSessionRegistry().retain(DESKTOP_CONTEXT_EDITOR_OWNER, trackedIds);
   }, [trackedIdsKey]);

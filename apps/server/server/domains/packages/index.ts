@@ -11,7 +11,10 @@ export type {
   InMemoryPackageStoreSeed,
 } from "./adapters/in-memory-package-store.js";
 export { createInMemoryPackageStore } from "./adapters/in-memory-package-store.js";
-export { listWorkbenchCatalogAgents } from "./domain/agent-catalog.js";
+export {
+  listBuiltinCatalogAgents,
+  listWorkbenchCatalogAgents,
+} from "./domain/agent-catalog.js";
 export {
   type AgentEffort,
   type AgentEffortLevel,
@@ -31,6 +34,7 @@ export {
   DefinitionEditError,
   listAgentDefinitionRevisions,
   listSkillDefinitionRevisions,
+  patchAgentSkillLink,
   restoreAgentDefinitionOriginal,
   restoreAgentDefinitionRevision,
   restoreSkillDefinitionOriginal,
@@ -41,6 +45,14 @@ export {
   seedInitialSkillRevision,
 } from "./domain/definition-editing.js";
 export {
+  FIRST_PARTY_CATALOG,
+  listFirstPartyCatalog,
+  resolveCatalogSource,
+} from "./domain/first-party-catalog.js";
+export {
+  agentDefinitionContentChecksum,
+  agentModeFromMeta,
+  canonicalizeJsonObject,
   definitionContentChecksum,
   loadAgentDefinitions,
   loadSkillDefinitions,
@@ -58,8 +70,22 @@ export {
   PackageImportError,
   packageDependencyUnresolved,
 } from "./domain/package-import-error.js";
+export {
+  applyPackageInstall,
+  applyPackageUpdate,
+  checkPackageUpdate,
+  findOwnedPackageInstall,
+  previewPackageInstall,
+  resolvePackageInstallSource,
+} from "./domain/package-install-ops.js";
 export type { ImportMarsPackageInput } from "./domain/package-sync.js";
-export { importLocalMarsPackage, updateLocalMarsPackage } from "./domain/package-sync.js";
+export {
+  importLocalMarsPackage,
+  previewLocalMarsPackageImport,
+  previewLocalMarsPackageUpdate,
+  updateLocalMarsPackage,
+} from "./domain/package-sync.js";
+export { buildMarsPackageZip } from "./domain/package-zip.js";
 export { resolveAgentSkills } from "./domain/resolution.js";
 export {
   type SkillExecutionDescriptor,
@@ -94,6 +120,7 @@ export type {
   SkillRecord,
   UserInstalledSkillRecord,
 } from "./domain/types.js";
+export { listWorkbenchLibraryInventory } from "./domain/workbench-library.js";
 export type {
   FetchedMarsSource,
   MarsPackageFetcher,

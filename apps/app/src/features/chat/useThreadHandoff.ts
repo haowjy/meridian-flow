@@ -65,7 +65,6 @@ export function useThreadHandoff(
   const snapshotEvaluatedRef = useRef(false);
   const queryClient = useQueryClient();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset handoff guard when route thread changes
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;

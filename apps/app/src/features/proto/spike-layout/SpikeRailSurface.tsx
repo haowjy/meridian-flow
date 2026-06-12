@@ -29,7 +29,6 @@ import {
 type GroupBy = "work" | "date" | "flat";
 
 export function SpikeRailSurface({ onMount }: { onMount?: () => void }) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Gate #6 counts first mount only; onMount identity changes are not remounts.
   useEffect(() => {
     onMount?.();
   }, []);

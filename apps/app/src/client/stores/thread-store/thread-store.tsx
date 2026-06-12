@@ -251,7 +251,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             const turns = state.turnsByThread[threadId] ?? [];
             const optimisticTurn = turns.find((turn) => turn.id === optimisticTurnId);
-            if (!optimisticTurn || optimisticTurn.role !== "user") return state;
+            if (optimisticTurn?.role !== "user") return state;
 
             const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
 

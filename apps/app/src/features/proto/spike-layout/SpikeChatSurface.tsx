@@ -42,7 +42,6 @@ const SEED_TURNS = [
 ];
 
 export function SpikeChatSurface({ onMount }: { onMount?: () => void }) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Gate #6 counts first mount only; onMount identity changes are not remounts.
   useEffect(() => {
     onMount?.();
   }, []);

@@ -101,7 +101,6 @@ export function TurnList({
   // turn's identity AND its block count so Virtuoso autoscrolls on every
   // streamed block change.
   const tailBlockCount = tailTurn?.blocks.length ?? 0;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tail liveness + block count drives bottom-follow for streamed height changes.
   useEffect(() => {
     if (!isTailLive) return;
     if (!atBottomRef.current) return;

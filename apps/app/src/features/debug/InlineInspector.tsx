@@ -230,7 +230,7 @@ export function InlineInspector() {
   }, [hit]);
 
   useEffect(() => {
-    if (!hit || hit.kind !== "next-turn" || !hit.threadId) return;
+    if (hit?.kind !== "next-turn" || !hit.threadId) return;
     if (turnContextPreview.status !== "idle") return;
 
     const { threadId } = hit;

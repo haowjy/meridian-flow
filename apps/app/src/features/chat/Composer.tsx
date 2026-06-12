@@ -88,7 +88,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   // Resize after React commits `text` — including post-submit clear. Synchronous
   // resize in submit() measured stale DOM content (controlled value not flushed yet).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `text` is the trigger — rerun after controlled value commits.
   useEffect(() => {
     const el = textareaRef.current;
     if (el) resizeComposerTextarea(el);

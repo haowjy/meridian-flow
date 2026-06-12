@@ -10,11 +10,24 @@
 
 import { access } from "node:fs/promises";
 import path from "node:path";
+
+import type {
+  PackagePreviewAgent,
+  PackagePreviewCollision,
+  PackagePreviewSkill,
+  PackageUpdateWillKeepItem,
+  PackageUpdateWillRetireItem,
+  PackageUpdateWillUpdateItem,
+} from "@meridian/contracts/agents";
 import type { MarsPackageFetcher } from "../ports/mars-package-fetcher.js";
 import type { PackageRepository, PackageWriteTransaction } from "../ports/package-store.js";
 import { seedInitialAgentRevision, seedInitialSkillRevision } from "./definition-editing.js";
-import { isNodeError, stringsAt } from "./helpers.js";
-import { definitionContentChecksum, parseMarsPackageSource } from "./mars-source.js";
+import { isNodeError, stringAt, stringsAt } from "./helpers.js";
+import {
+  agentDefinitionContentChecksum,
+  definitionContentChecksum,
+  parseMarsPackageSource,
+} from "./mars-source.js";
 import {
   isPackageImportError,
   packageDependencyUnresolved,
@@ -30,6 +43,7 @@ import type {
   PackageVisibility,
   ParsedAgentDefinition,
   ParsedMarsPackageSource,
+  ParsedSkillDefinition,
   SkillRecord,
 } from "./types.js";
 
@@ -45,11 +59,57 @@ interface LinkLookup {
   blockedSkillSlugs: Set<string>;
 }
 
+/**
+ * Install/update slug occupancy includes disabled (retired) definitions. A retired
+ * row still holds the workbench unique `(workbenchId, slug)` slot — preview reports
+ * `keep_existing` and apply skips rather than silently re-enabling the definition.
+ */
+async function definitionSlugOccupied(
+  tx: PackageWriteTransaction,
+  workbenchId: string,
+  kind: "agent" | "skill",
+  slug: string,
+): Promise<boolean> {
+  if (kind === "agent") {
+    return (await tx.findAgentDefinitionAnyState(workbenchId, slug)) != null;
+  }
+  return (await tx.findSkillDefinitionAnyState(workbenchId, slug)) != null;
+}
+
 export interface ImportMarsPackageInput {
   workbenchId: string;
   sourceDir: string;
   repository: PackageRepository;
   fetcher: MarsPackageFetcher;
+  /** Commit SHA for the root fetched source — persisted on the install row. */
+  sourceCommitSha?: string | null;
+  /** When set, stored on the root package install's `sourcePath` (e.g. GitHub URL). */
+  sourcePathOverride?: string;
+  /** When set, stored on the root package install's `sourceRef` (GitHub branch/tag/SHA). */
+  sourceRef?: string | null;
+}
+
+export interface PackageImportPreview {
+  packageName: string;
+  version: string | null;
+  description: string | null;
+  agents: PackagePreviewAgent[];
+  skills: PackagePreviewSkill[];
+  collisions: PackagePreviewCollision[];
+  includesSetupInstructions: boolean;
+  skippedPackages: string[];
+}
+
+export interface PackageUpdatePreview {
+  packageName: string;
+  currentVersion: string | null;
+  upstreamVersion: string | null;
+  upstreamCommitSha: string | null;
+  willUpdate: PackageUpdateWillUpdateItem[];
+  willKeep: PackageUpdateWillKeepItem[];
+  willRemove: PackageUpdateWillUpdateItem[];
+  willRetire: PackageUpdateWillRetireItem[];
+  updateAvailable: boolean;
 }
 
 /**
@@ -71,9 +131,20 @@ export async function importLocalMarsPackage(
       workbenchId: input.workbenchId,
       fetcher: input.fetcher,
       cleanups,
+      sourceCommitSha: input.sourceCommitSha ?? null,
     });
+    const rootPackageName = graph.at(-1)?.source.manifest.package.name;
     return await input.repository.transaction(async (tx) =>
-      writePackageGraph(tx, input.workbenchId, graph),
+      writePackageGraph(tx, input.workbenchId, graph, {
+        sourcePathOverrides:
+          input.sourcePathOverride && rootPackageName
+            ? new Map([[rootPackageName, input.sourcePathOverride]])
+            : undefined,
+        sourceRefOverrides:
+          input.sourceRef && rootPackageName
+            ? new Map([[rootPackageName, input.sourceRef]])
+            : undefined,
+      }),
     );
   } catch (error) {
     if (isPackageImportError(error)) throw error;
@@ -81,6 +152,161 @@ export async function importLocalMarsPackage(
   } finally {
     await Promise.all(cleanups.map((cleanup) => cleanup()));
   }
+}
+
+export async function previewLocalMarsPackageImport(input: {
+  workbenchId: string;
+  sourceDir: string;
+  repository: PackageRepository;
+  fetcher: MarsPackageFetcher;
+  sourceCommitSha?: string | null;
+}): Promise<PackageImportPreview> {
+  const cleanups: Array<() => Promise<void>> = [];
+  try {
+    const graph = await resolvePackageGraph({
+      sourceDir: input.sourceDir,
+      repository: input.repository,
+      workbenchId: input.workbenchId,
+      fetcher: input.fetcher,
+      cleanups,
+      sourceCommitSha: input.sourceCommitSha ?? null,
+    });
+    const root = graph.at(-1);
+    if (!root) {
+      throw packageImportError("Package source resolved to an empty graph");
+    }
+    const includesSetupInstructions = await bootstrapMdExists(root.source.sourceDir);
+    return await input.repository.transaction(async (tx) =>
+      simulateImportPlan(tx, input.workbenchId, graph, includesSetupInstructions),
+    );
+  } catch (error) {
+    if (isPackageImportError(error)) throw error;
+    throw packageImportError(error instanceof Error ? error.message : "Package preview failed");
+  } finally {
+    await Promise.all(cleanups.map((cleanup) => cleanup()));
+  }
+}
+
+export async function previewLocalMarsPackageUpdate(input: {
+  workbenchId: string;
+  sourceDir: string;
+  repository: PackageRepository;
+  packageInstallId: string;
+  upstreamCommitSha?: string | null;
+}): Promise<PackageUpdatePreview> {
+  const source = await parseMarsPackageSource(input.sourceDir);
+  return input.repository.transaction(async (tx) => {
+    const installs = await tx.listPackageInstalls(input.workbenchId);
+    const packageInstall = installs.find((row) => row.id === input.packageInstallId);
+    if (!packageInstall) {
+      throw packageImportError(`Package install not found: ${input.packageInstallId}`);
+    }
+    if (packageInstall.packageName !== source.manifest.package.name) {
+      throw packageImportError(
+        `Package name mismatch: install is "${packageInstall.packageName}", source is "${source.manifest.package.name}"`,
+      );
+    }
+
+    const existingAgents = new Map(
+      (await tx.listPackageAgents(packageInstall.id)).map((agent) => [agent.slug, agent]),
+    );
+    const existingSkills = new Map(
+      (await tx.listPackageSkills(packageInstall.id)).map((skill) => [skill.slug, skill]),
+    );
+    const skippedLocalAgents = [...existingAgents.values()].filter((agent) => !isPristine(agent));
+    const preservedAgents = preservedAgentGraph(source, existingAgents, skippedLocalAgents);
+
+    const preview: PackageUpdatePreview = {
+      packageName: packageInstall.packageName,
+      currentVersion: packageInstall.version ?? null,
+      upstreamVersion: source.manifest.package.version ?? null,
+      upstreamCommitSha: input.upstreamCommitSha ?? packageInstall.sourceCommitSha ?? null,
+      willUpdate: [],
+      willKeep: [],
+      willRemove: [],
+      willRetire: [],
+      updateAvailable: false,
+    };
+
+    for (const skill of source.skills) {
+      const existing = existingSkills.get(skill.slug);
+      if (existing) {
+        if (isPristine(existing)) {
+          preview.willUpdate.push({ slug: skill.slug, kind: "skill" });
+        } else {
+          preview.willKeep.push({ slug: skill.slug, kind: "skill" });
+        }
+        continue;
+      }
+      if (await definitionSlugOccupied(tx, input.workbenchId, "skill", skill.slug)) {
+        preview.willKeep.push({ slug: skill.slug, kind: "skill" });
+        continue;
+      }
+      preview.willUpdate.push({ slug: skill.slug, kind: "skill" });
+    }
+
+    for (const agent of source.agents) {
+      const existing = existingAgents.get(agent.slug);
+      if (existing) {
+        if (isPristine(existing)) {
+          preview.willUpdate.push({ slug: agent.slug, kind: "agent" });
+        } else {
+          preview.willKeep.push({ slug: agent.slug, kind: "agent" });
+        }
+        continue;
+      }
+      if (await definitionSlugOccupied(tx, input.workbenchId, "agent", agent.slug)) {
+        preview.willKeep.push({ slug: agent.slug, kind: "agent" });
+        continue;
+      }
+      preview.willUpdate.push({ slug: agent.slug, kind: "agent" });
+    }
+
+    const incomingSkills = new Set(source.skills.map((skill) => skill.slug));
+    for (const [slug, skill] of existingSkills) {
+      if (incomingSkills.has(slug)) continue;
+      if (preservedAgents.some((agent) => agentReferencesSkill(agent, slug))) {
+        preview.willKeep.push({ slug, kind: "skill" });
+        continue;
+      }
+      if (isPristine(skill)) {
+        if (await hasRevisionHistoryBeyondPristine(tx, "skill", skill.id)) {
+          preview.willRetire.push({ slug, kind: "skill" });
+        } else {
+          preview.willRemove.push({ slug, kind: "skill" });
+        }
+      } else {
+        preview.willKeep.push({ slug, kind: "skill" });
+      }
+    }
+
+    const incomingAgents = new Set(source.agents.map((agent) => agent.slug));
+    const preservedAgentSlugs = new Set(preservedAgents.map((agent) => agent.slug));
+    for (const [slug, agent] of existingAgents) {
+      if (incomingAgents.has(slug)) continue;
+      if (preservedAgentSlugs.has(slug)) {
+        preview.willKeep.push({ slug, kind: "agent" });
+        continue;
+      }
+      if (isPristine(agent)) {
+        if (await hasRevisionHistoryBeyondPristine(tx, "agent", agent.id)) {
+          preview.willRetire.push({ slug, kind: "agent" });
+        } else {
+          preview.willRemove.push({ slug, kind: "agent" });
+        }
+      } else {
+        preview.willKeep.push({ slug, kind: "agent" });
+      }
+    }
+
+    preview.updateAvailable =
+      preview.currentVersion !== preview.upstreamVersion ||
+      preview.willUpdate.length > 0 ||
+      preview.willRemove.length > 0 ||
+      preview.willRetire.length > 0;
+
+    return preview;
+  });
 }
 
 export async function updateLocalMarsPackage(input: {
@@ -198,7 +424,7 @@ async function reconcileSkills(
       continue;
     }
 
-    if (await tx.findSkillBySlug(workbenchId, skill.slug)) {
+    if (await definitionSlugOccupied(tx, workbenchId, "skill", skill.slug)) {
       lookup.blockedSkillSlugs.add(skill.slug);
       result.skippedSkills.push(skill.slug);
       continue;
@@ -241,7 +467,11 @@ async function reconcileAgents(
           body: agent.body,
           meta: agent.meta,
           config: source.manifest.agentOverlays[agent.slug] ?? {},
-          originalContentChecksum: definitionContentChecksum(agent),
+          originalContentChecksum: agentDefinitionContentChecksum({
+            body: agent.body,
+            meta: agent.meta,
+            config: source.manifest.agentOverlays[agent.slug] ?? {},
+          }),
         };
         await tx.updateAgentDefinition(existing.id, agentUpdate(agent, source));
         await seedInitialAgentRevision(tx, updated);
@@ -254,7 +484,7 @@ async function reconcileAgents(
       continue;
     }
 
-    if (await tx.findAgentBySlug(workbenchId, agent.slug)) {
+    if (await definitionSlugOccupied(tx, workbenchId, "agent", agent.slug)) {
       lookup.blockedAgentSlugs.add(agent.slug);
       result.skippedAgents.push(agent.slug);
       continue;
@@ -267,7 +497,11 @@ async function reconcileAgents(
       meta: agent.meta,
       config: source.manifest.agentOverlays[agent.slug] ?? {},
       packageInstallId,
-      originalContentChecksum: definitionContentChecksum(agent),
+      originalContentChecksum: agentDefinitionContentChecksum({
+        body: agent.body,
+        meta: agent.meta,
+        config: source.manifest.agentOverlays[agent.slug] ?? {},
+      }),
       sourceType: "package",
       enabled: true,
     });
@@ -295,9 +529,15 @@ async function pruneRemovedSkills(
       continue;
     }
     if (forceReset || isPristine(skill)) {
-      await tx.deleteSkill(skill.id);
-      lookup.skillsBySlug.delete(slug);
-      result.removedSkills.push(slug);
+      if (await hasRevisionHistoryBeyondPristine(tx, "skill", skill.id)) {
+        await retireSkillRemovedFromSource(tx, skill);
+        lookup.skillsBySlug.delete(slug);
+        result.retiredSkills.push(slug);
+      } else {
+        await tx.deleteSkill(skill.id);
+        lookup.skillsBySlug.delete(slug);
+        result.removedSkills.push(slug);
+      }
     } else {
       result.skippedSkills.push(slug);
     }
@@ -326,9 +566,15 @@ async function pruneRemovedAgents(
       continue;
     }
     if (forceReset || isPristine(agent)) {
-      await tx.deleteAgentDefinition(agent.id);
-      lookup.agentsBySlug.delete(slug);
-      result.removedAgents.push(slug);
+      if (await hasRevisionHistoryBeyondPristine(tx, "agent", agent.id)) {
+        await retireAgentRemovedFromSource(tx, agent);
+        lookup.agentsBySlug.delete(slug);
+        result.retiredAgents.push(slug);
+      } else {
+        await tx.deleteAgentDefinition(agent.id);
+        lookup.agentsBySlug.delete(slug);
+        result.removedAgents.push(slug);
+      }
     } else {
       result.skippedAgents.push(slug);
     }
@@ -464,10 +710,71 @@ async function resolveDependencyNode(input: {
   );
 }
 
+async function simulateImportPlan(
+  tx: PackageWriteTransaction,
+  workbenchId: string,
+  graph: PackageGraphNode[],
+  includesSetupInstructions: boolean,
+): Promise<PackageImportPreview> {
+  const root = graph.at(-1);
+  if (!root) {
+    throw packageImportError("Package source resolved to an empty graph");
+  }
+  const manifest = root.source.manifest.package;
+  const preview: PackageImportPreview = {
+    packageName: manifest.name,
+    version: manifest.version ?? null,
+    description: manifest.description ?? null,
+    agents: [],
+    skills: [],
+    collisions: [],
+    includesSetupInstructions,
+    skippedPackages: [],
+  };
+  const seenAgentSlugs = new Set<string>();
+  const seenSkillSlugs = new Set<string>();
+
+  for (const node of graph) {
+    const nodeManifest = node.source.manifest;
+    if (await tx.findPackageInstall(workbenchId, nodeManifest.package.name)) {
+      preview.skippedPackages.push(nodeManifest.package.name);
+      continue;
+    }
+
+    for (const skill of node.source.skills) {
+      if (seenSkillSlugs.has(skill.slug)) continue;
+      seenSkillSlugs.add(skill.slug);
+      const summary = previewSkillSummary(skill);
+      if (await definitionSlugOccupied(tx, workbenchId, "skill", skill.slug)) {
+        preview.collisions.push({ slug: skill.slug, kind: "skill", action: "keep_existing" });
+        continue;
+      }
+      preview.skills.push(summary);
+    }
+
+    for (const agent of node.source.agents) {
+      if (seenAgentSlugs.has(agent.slug)) continue;
+      seenAgentSlugs.add(agent.slug);
+      const summary = previewAgentSummary(agent);
+      if (await definitionSlugOccupied(tx, workbenchId, "agent", agent.slug)) {
+        preview.collisions.push({ slug: agent.slug, kind: "agent", action: "keep_existing" });
+        continue;
+      }
+      preview.agents.push(summary);
+    }
+  }
+
+  return preview;
+}
+
 async function writePackageGraph(
   tx: PackageWriteTransaction,
   workbenchId: string,
   graph: PackageGraphNode[],
+  options: {
+    sourcePathOverrides?: Map<string, string>;
+    sourceRefOverrides?: Map<string, string>;
+  } = {},
 ): Promise<PackageImportResult> {
   const result: PackageImportResult = {
     installedPackages: [],
@@ -487,8 +794,11 @@ async function writePackageGraph(
 
     const packageInstall = await tx.createPackageInstall({
       workbenchId,
-      ...localPackageInstallUpdate(node.source),
+      ...localPackageInstallUpdate(node.source, {
+        sourcePathOverride: options.sourcePathOverrides?.get(manifest.package.name),
+      }),
       packageName: manifest.package.name,
+      sourceRef: options.sourceRefOverrides?.get(manifest.package.name) ?? null,
       sourceCommitSha: node.sourceCommitSha,
       visibility: packageVisibility(manifest),
     });
@@ -502,7 +812,7 @@ async function writePackageGraph(
     };
 
     for (const skill of node.source.skills) {
-      if (await tx.findSkillBySlug(workbenchId, skill.slug)) {
+      if (await definitionSlugOccupied(tx, workbenchId, "skill", skill.slug)) {
         lookup.blockedSkillSlugs.add(skill.slug);
         result.skippedSkills.push(skill.slug);
         continue;
@@ -524,7 +834,7 @@ async function writePackageGraph(
     }
 
     for (const agent of node.source.agents) {
-      if (await tx.findAgentBySlug(workbenchId, agent.slug)) {
+      if (await definitionSlugOccupied(tx, workbenchId, "agent", agent.slug)) {
         lookup.blockedAgentSlugs.add(agent.slug);
         result.skippedAgents.push(agent.slug);
         continue;
@@ -536,7 +846,11 @@ async function writePackageGraph(
         meta: agent.meta,
         config: manifest.agentOverlays[agent.slug] ?? {},
         packageInstallId: packageInstall.id,
-        originalContentChecksum: definitionContentChecksum(agent),
+        originalContentChecksum: agentDefinitionContentChecksum({
+          body: agent.body,
+          meta: agent.meta,
+          config: manifest.agentOverlays[agent.slug] ?? {},
+        }),
         sourceType: "package",
         enabled: true,
       });
@@ -607,11 +921,41 @@ async function desiredSkillLinks(
   return links;
 }
 
+function previewAgentSummary(agent: ParsedAgentDefinition): PackagePreviewAgent {
+  return {
+    slug: agent.slug,
+    name: stringAt(agent.meta.name) ?? agent.slug,
+    description: stringAt(agent.meta.description) ?? "",
+  };
+}
+
+function previewSkillSummary(skill: ParsedSkillDefinition): PackagePreviewSkill {
+  return {
+    slug: skill.slug,
+    name: stringAt(skill.meta.name) ?? skill.slug,
+    description: stringAt(skill.meta.description) ?? "",
+  };
+}
+
+async function bootstrapMdExists(sourceDir: string): Promise<boolean> {
+  try {
+    await access(path.join(sourceDir, "BOOTSTRAP.md"));
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 function localPackageInstallUpdate(
   source: ParsedMarsPackageSource,
-): Omit<PackageInstallRecord, "id" | "workbenchId" | "packageName" | "sourceCommitSha"> {
+  options: { sourcePathOverride?: string } = {},
+): Omit<
+  PackageInstallRecord,
+  "id" | "workbenchId" | "packageName" | "sourceCommitSha" | "sourceRef"
+> {
   return {
-    sourcePath: source.sourceDir,
+    sourcePath: options.sourcePathOverride ?? source.sourceDir,
     version: source.manifest.package.version,
     description: source.manifest.package.description,
     visibility: packageVisibility(source.manifest),
@@ -632,16 +976,70 @@ function skillUpdate(skill: ParsedMarsPackageSource["skills"][number]) {
 }
 
 function agentUpdate(agent: ParsedAgentDefinition, source: ParsedMarsPackageSource) {
+  const config = source.manifest.agentOverlays[agent.slug] ?? {};
   return {
     body: agent.body,
     meta: agent.meta,
-    config: source.manifest.agentOverlays[agent.slug] ?? {},
-    originalContentChecksum: definitionContentChecksum(agent),
+    config,
+    originalContentChecksum: agentDefinitionContentChecksum({
+      body: agent.body,
+      meta: agent.meta,
+      config,
+    }),
   };
 }
 
 function isPristine(record: AgentDefinitionRecord | SkillRecord): boolean {
+  if ("config" in record) {
+    return (
+      record.originalContentChecksum ===
+      agentDefinitionContentChecksum({
+        body: record.body,
+        meta: record.meta,
+        config: record.config,
+      })
+    );
+  }
   return record.originalContentChecksum === definitionContentChecksum(record);
+}
+
+/** Append-only invariant: never hard-delete rows that accumulated revision history. */
+async function hasRevisionHistoryBeyondPristine(
+  tx: PackageWriteTransaction,
+  kind: "agent" | "skill",
+  recordId: string,
+): Promise<boolean> {
+  const revisions =
+    kind === "agent"
+      ? await tx.listAgentDefinitionRevisions(recordId)
+      : await tx.listSkillDefinitionRevisions(recordId);
+  return revisions.length > 1;
+}
+
+async function retireAgentRemovedFromSource(
+  tx: PackageWriteTransaction,
+  agent: AgentDefinitionRecord,
+): Promise<void> {
+  await tx.updateAgentDefinition(agent.id, {
+    body: agent.body,
+    meta: { ...agent.meta, removedFromSource: true },
+    config: agent.config,
+    originalContentChecksum: agent.originalContentChecksum,
+    enabled: false,
+  });
+}
+
+async function retireSkillRemovedFromSource(
+  tx: PackageWriteTransaction,
+  skill: SkillRecord,
+): Promise<void> {
+  await tx.updateSkill(skill.id, {
+    body: skill.body,
+    meta: { ...skill.meta, removedFromSource: true },
+    files: skill.files,
+    originalContentChecksum: skill.originalContentChecksum,
+    enabled: false,
+  });
 }
 
 function emptyUpdateResult(packageInstall?: PackageInstallRecord): PackageUpdateResult {
@@ -651,6 +1049,8 @@ function emptyUpdateResult(packageInstall?: PackageInstallRecord): PackageUpdate
     updatedSkills: [],
     removedAgents: [],
     removedSkills: [],
+    retiredAgents: [],
+    retiredSkills: [],
     skippedAgents: [],
     skippedSkills: [],
   };

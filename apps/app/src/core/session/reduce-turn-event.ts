@@ -96,7 +96,7 @@ function lastBlockById(turn: Turn, blockId: string): Block | null {
 function lastPartialBlock(turn: Turn, blockType?: BlockType): Block | null {
   for (let index = turn.blocks.length - 1; index >= 0; index -= 1) {
     const block = turn.blocks[index];
-    if (!block || block.status !== "partial") continue;
+    if (block?.status !== "partial") continue;
     if (blockType && block.blockType !== blockType) continue;
     return block;
   }
@@ -963,7 +963,7 @@ export function applyAguiEventToStore(
         // append into we drop quietly — TOOL_CALL_START will create a fresh
         // block and the next delta (or the final RESULT) lands correctly.
         const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
-        if (!existingTool || existingTool.blockType !== "tool_use") return;
+        if (existingTool?.blockType !== "tool_use") return;
         const content = blockContentRecord(existingTool);
         const prior = typeof content.streamedOutput === "string" ? content.streamedOutput : "";
         // Single interleaved buffer (stdout + stderr in arrival order). This
@@ -993,7 +993,7 @@ export function applyAguiEventToStore(
         const turn = activeAssistantTurn(store, threadId);
         if (!turn) return;
         const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
-        if (!existingTool || existingTool.blockType !== "tool_use") return;
+        if (existingTool?.blockType !== "tool_use") return;
         const content = blockContentRecord(existingTool);
         store.upsertAssistantBlock(
           threadId,
