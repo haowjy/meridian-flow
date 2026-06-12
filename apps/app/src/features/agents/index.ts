@@ -6,7 +6,7 @@
 export { AgentChip, type AgentChipProps, type AgentChipVariant } from "./AgentChip";
 export { AgentPicker } from "./AgentPicker";
 export { ComposerAgentControl } from "./ComposerAgentControl";
-export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_SLUG } from "./constants";
+export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_SLUG, wireAgentSlug } from "./constants";
 export { initialsFromAgentName } from "./initials-mark";
 export {
   type ResolvedAgentDisplay,
