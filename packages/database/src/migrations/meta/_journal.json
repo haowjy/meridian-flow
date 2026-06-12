@@ -50,6 +50,13 @@
       "when": 1781210000000,
       "tag": "0007_context_results_and_filetypes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781281000000,
+      "tag": "0008_workbench_user_preferences",
+      "breakpoints": true
     }
   ]
 }

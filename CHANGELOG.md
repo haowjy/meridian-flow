@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Added portless Playwright workbench-route smoke configs for mobile shell selection, chat virtualization, and ProcessDisclosure verification.
+- Added persisted Drizzle workbench preferences with Supabase-backed conformance coverage.
 - Added a Meridian Supabase/Postgres workbench-domain smoke script for repository runtime checks.
 
 - **server/context:** port Meridian-adapted workbench context trees, uploads, figures, object-store reads, results rail repositories, and no-provider context factories with Supabase/Drizzle storage.
@@ -54,6 +56,7 @@
 
 ### Changed
 
+- **app:** wrap authenticated routes in the workbench query/store/transport providers so `/workbench/:id` and `/chat/:id` run the ported workspace shell.
 - **docs:** record exact-path parity mappings for the marketing app and the intentionally excluded Python/runtime-provider tooling.
 - **docs:** align product-facing brand references on Meridian Flow.
 - **dev:** `AGENTS.md` documents `db:migrate`, `db:apply-functions`, `db:studio`, and bootstrap flow.

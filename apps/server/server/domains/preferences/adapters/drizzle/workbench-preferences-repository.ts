@@ -60,7 +60,7 @@ export function createDrizzleWorkbenchPreferencesRepository(
     ): Promise<WorkbenchPreferences> {
       const defaultsForInsert = mergeWorkbenchPreferences(null, input);
       const set: Partial<typeof workbenchUserPreferences.$inferInsert> = {
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date(),
       };
       if (input.threadGroupBy !== undefined) set.threadGroupBy = input.threadGroupBy;
       if (input.pinnedThreadIds !== undefined) set.pinnedThreadIds = [...input.pinnedThreadIds];

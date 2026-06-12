@@ -47,10 +47,12 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `markPendingCreation`, `clearPendingCreation`, and
   `removeOptimisticUserTurn`; the last one is only rollback for a locally
   appended user turn that failed before server acknowledgement.
-- **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
-  `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`). The
-  `_authenticated` loader seeds the project list + `now`; the `$projectId`
-  loader seeds per-project threads + works before the workspace renders.
+- **Server workbench/thread lists + HTTP snapshots:** React Query (`client/query/` —
+  `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
+  Direct `/workbench/*` and `/chat/*` authenticated routes mount the workbench
+  provider stack and seed the workbench list + `now`; the workbench route loader
+  seeds per-workbench threads, works, and preference data before
+  the workspace renders.
 - **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
   `streamingThreadId`, pending stream metadata. `applyThreadSnapshot` writes
   turns only. Soft-delete undo lives in the **project-store**, not here.
@@ -115,12 +117,14 @@ Authoritative turn history enters the store through exactly two paths:
 
 Do not call `applyThreadSnapshot` from `ChatView` or other view effects. Snapshot application stays in data-sync hooks and transport recovery, and uses identity-based block reconciliation.
 
-## Project workspace screen routing
+## Workbench screen routing
 
-`src/routes/_authenticated/project/$projectId.tsx` owns the workspace search
-params (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?ext=`) and is
-the single source of screen/thread ownership. `ProjectView` and its children are
-controlled — they never set the URL directly, only call the route's handlers.
+`src/routes/_authenticated/workbench/$workbenchId.tsx` owns the workspace search
+params (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
+is the single source of screen/thread/context ownership. `WorkbenchView` and its
+children are controlled — they never set the URL directly, only call the route's
+handlers. Direct `/chat/$threadId` renders the independent chat view inside the
+same provider stack.
 
 Ownership rules:
 

@@ -22,6 +22,8 @@ import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authentica
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as AuthenticatedWorkbenchWorkbenchIdRouteImport } from './routes/_authenticated/workbench/$workbenchId'
+import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat/$threadId'
 import { Route as AuthenticatedProjectsProjectIdIndexRouteImport } from './routes/_authenticated/projects/$projectId/index'
 import { Route as AuthenticatedProjectsProjectIdAgentRouteImport } from './routes/_authenticated/projects/$projectId/agent'
 
@@ -90,6 +92,18 @@ const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
   path: '/api/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedWorkbenchWorkbenchIdRoute =
+  AuthenticatedWorkbenchWorkbenchIdRouteImport.update({
+    id: '/workbench/$workbenchId',
+    path: '/workbench/$workbenchId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedChatThreadIdRoute =
+  AuthenticatedChatThreadIdRouteImport.update({
+    id: '/chat/$threadId',
+    path: '/chat/$threadId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdIndexRoute =
   AuthenticatedProjectsProjectIdIndexRouteImport.update({
     id: '/projects/$projectId/',
@@ -113,6 +127,8 @@ export interface FileRoutesByFullPath {
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/proto/': typeof ProtoIndexRoute
+  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
+  '/workbench/$workbenchId': typeof AuthenticatedWorkbenchWorkbenchIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -129,6 +145,8 @@ export interface FileRoutesByTo {
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/proto': typeof ProtoIndexRoute
+  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
+  '/workbench/$workbenchId': typeof AuthenticatedWorkbenchWorkbenchIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
@@ -147,6 +165,8 @@ export interface FileRoutesById {
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/proto/': typeof ProtoIndexRoute
+  '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
+  '/_authenticated/workbench/$workbenchId': typeof AuthenticatedWorkbenchWorkbenchIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -165,6 +185,8 @@ export interface FileRouteTypes {
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/proto/'
+    | '/chat/$threadId'
+    | '/workbench/$workbenchId'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects/'
@@ -181,6 +203,8 @@ export interface FileRouteTypes {
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/proto'
+    | '/chat/$threadId'
+    | '/workbench/$workbenchId'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects'
@@ -198,6 +222,8 @@ export interface FileRouteTypes {
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/proto/'
+    | '/_authenticated/chat/$threadId'
+    | '/_authenticated/workbench/$workbenchId'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/_authenticated/projects/'
@@ -312,6 +338,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/workbench/$workbenchId': {
+      id: '/_authenticated/workbench/$workbenchId'
+      path: '/workbench/$workbenchId'
+      fullPath: '/workbench/$workbenchId'
+      preLoaderRoute: typeof AuthenticatedWorkbenchWorkbenchIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/chat/$threadId': {
+      id: '/_authenticated/chat/$threadId'
+      path: '/chat/$threadId'
+      fullPath: '/chat/$threadId'
+      preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/projects/$projectId/': {
       id: '/_authenticated/projects/$projectId/'
       path: '/projects/$projectId'
@@ -331,6 +371,8 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
+  AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
+  AuthenticatedWorkbenchWorkbenchIdRoute: typeof AuthenticatedWorkbenchWorkbenchIdRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedProjectsProjectIdAgentRoute: typeof AuthenticatedProjectsProjectIdAgentRoute
   AuthenticatedProjectsProjectIdIndexRoute: typeof AuthenticatedProjectsProjectIdIndexRoute
@@ -338,6 +380,9 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
+  AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
+  AuthenticatedWorkbenchWorkbenchIdRoute:
+    AuthenticatedWorkbenchWorkbenchIdRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedProjectsProjectIdAgentRoute:
     AuthenticatedProjectsProjectIdAgentRoute,

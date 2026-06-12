@@ -22,25 +22,17 @@ Drizzle adapters behaviorally identical.
 
 ## Adapters
 
-- **In-memory** (production) — `Map`-backed store. Exported as the production
-  surface.
-- **Drizzle** (reference, not exported) — persists to a `workbench_preferences`
-  table. Kept in-tree as upstream parity reference code but intentionally not
-  re-exported from the barrel (`index.ts`) because the required table does not
-  exist in the Meridian Flow schema.
+- **Drizzle** (production) — persists to `workbench_user_preferences` and is
+  wired in the server composition root.
+- **In-memory** (test/local reference) — `Map`-backed store used by fast
+  conformance coverage and isolated callers.
 
-## Decision: in-memory only in production
+## Decision: persisted production preferences
 
-Meridian Flow does not currently persist copied upstream workbench preferences in
-the app schema. The production surface (`createInMemoryWorkbenchPreferencesRepository`)
-uses an in-memory `Map`. The Drizzle adapter (`createDrizzleWorkbenchPreferencesRepository`)
-remains in-tree at `adapters/drizzle/` as upstream parity reference code but is
-not re-exported — importing it would fail at runtime because the
-`workbench_preferences` table does not exist.
-
-Preferences are therefore ephemeral (lost on server restart). This is acceptable
-for the current dev phase; persistence can be added later by either adopting the
-table or mapping preferences into an existing table.
+Workbench preferences are durable in the app schema via
+`workbench_user_preferences`. The production surface uses
+`createDrizzleWorkbenchPreferencesRepository`; the in-memory adapter remains for
+hermetic tests and local reference behavior.
 
 ## Invariants
 
@@ -48,7 +40,7 @@ table or mapping preferences into an existing table.
   default arrays (`pinnedThreadIds`) are copied, not shared.
 - **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
   via `UpdateWorkbenchPreferencesRequest`.
-- **No persistence.** Not durable across server restarts.
+- **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
 
 ## Cross-domain dependencies
 

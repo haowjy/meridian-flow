@@ -17,7 +17,7 @@ import {
   createGitHubMarsPackageFetcher,
   defaultPackageSeedConfigFromEnv,
 } from "../domains/packages/index.js";
-import { createInMemoryWorkbenchPreferencesRepository } from "../domains/preferences/index.js";
+import { createDrizzleWorkbenchPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createDrizzleProjectRepository,
   createDrizzleWorkRepository,
@@ -98,7 +98,7 @@ async function createAppServices(): Promise<AppServices> {
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(process.env),
   });
-  const preferences = createInMemoryWorkbenchPreferencesRepository();
+  const preferences = createDrizzleWorkbenchPreferencesRepository({ db });
   const workbenchRepo = createDrizzleWorkbenchRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const workRepo = createDrizzleWorkbenchWorkRepository({ db });
