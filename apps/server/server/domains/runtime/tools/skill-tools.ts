@@ -18,7 +18,7 @@ export const SKILLS_CATALOG_PROMPT_MARKER = "Available skills (call invoke with 
 export interface InvokeToolDeps {
   packageRepository: PackageRepository;
   findThreadById(threadId: string): Promise<{
-    projectId: string;
+    workbenchId: string;
     userId: string;
     currentAgent: string | null;
     bakedSkillSlugs: string[] | null;
@@ -66,7 +66,7 @@ export function createInvokeToolRegistration(deps: InvokeToolDeps): ToolRegistra
     }
 
     const packageContext = await deps.packageRepository.getAgentWithLinkedSkills(
-      thread.projectId,
+      thread.workbenchId,
       thread.userId,
       thread.currentAgent,
     );

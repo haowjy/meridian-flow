@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added Meridian-safe backend policy/startup guard parity files and wired executable core tool registrations into production app composition.
 - Added exact-path parity coverage for workbench results, thread WebSocket checkpoint control, and Yjs WebSocket multiplexing/persistence behavior.
 - Added no-execution ContextFS factory, input-ingest, promotion, and checkpoint flush parity coverage with source-path terminology.
 - Added exact-path parity coverage for HTTP interrupt envelopes, context reads, figure assets, thread-upload DB documents, billing ledger DB invariants, and package repository DB conformance.

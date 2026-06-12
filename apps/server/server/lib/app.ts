@@ -11,7 +11,6 @@ import {
   createPromotionService,
   createThreadUploadImportService,
 } from "../domains/context/index.js";
-import { createNoopEventSink } from "../domains/observability/index.js";
 import {
   createDefaultPackageSeeder,
   createDrizzlePackageStore,
@@ -27,9 +26,11 @@ import {
   computeEffectivePermissions,
   createChildRunCoordinator,
   createGatewayFromEnv,
+  createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
   createPermissionGate,
+  createSpawnToolRegistrations,
   createToolExecutor,
   createToolRegistry,
   createTurnRunner,
@@ -57,7 +58,9 @@ import {
 } from "./compose.js";
 import { getDb } from "./db.js";
 import { createDrizzleDocumentAccess } from "./document-access.js";
+import { createEventSinkFromEnv } from "./event-sink-factory.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
 const APP_SINGLETON_KEY = Symbol.for("meridian.app.v1");
 
@@ -74,7 +77,7 @@ async function createAppServices(): Promise<AppServices> {
   const threadRepos = createDrizzleRepositories(db);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
-  const eventSink = createNoopEventSink();
+  const eventSink = createEventSinkFromEnv();
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter, eventSink });
   const documentSync = createDocumentSyncService({ db });
@@ -113,6 +116,26 @@ async function createAppServices(): Promise<AppServices> {
   const creditLedger = createDrizzleCreditLedger(db);
   const checkpointRegistry = createCheckpointRegistry();
   const toolRegistry = createToolRegistry();
+  for (const registration of createWiredCoreToolRegistrations({
+    threads: threadRepos.threads,
+    contextPorts,
+    documentTouches: threadRepos.documentTouches,
+    eventSink,
+  })) {
+    toolRegistry.register(registration);
+  }
+  toolRegistry.register(
+    createInvokeToolRegistration({
+      packageRepository,
+      async findThreadById(threadId: string) {
+        const thread = await threadRepos.threads.findById(threadId);
+        return thread ? { ...thread, workbenchId: thread.workbenchId } : null;
+      },
+    }),
+  );
+  for (const registration of createSpawnToolRegistrations()) {
+    toolRegistry.register(registration);
+  }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   const runner = createTurnRunner({
