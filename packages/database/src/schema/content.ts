@@ -218,7 +218,7 @@ export const documents = pgTable(
     ),
     check(
       "documents_file_type_valid",
-      sql`${table.fileType} IN ('markdown', 'docx', 'image', 'pdf', 'text')`,
+      sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
   ],
 );

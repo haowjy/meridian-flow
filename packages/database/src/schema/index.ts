@@ -4,6 +4,7 @@ export { authSchema, authUsers } from "./auth";
 export * from "./billing";
 export * from "./content";
 export * from "./provenance";
+export * from "./results";
 export * from "./user";
 export * from "./waitlist";
 export * from "./yjs";
@@ -14,6 +15,7 @@ import { authUsers } from "./auth";
 import * as billing from "./billing";
 import * as content from "./content";
 import * as provenance from "./provenance";
+import * as results from "./results";
 import * as user from "./user";
 import * as waitlist from "./waitlist";
 import * as yjs from "./yjs";
@@ -26,6 +28,7 @@ export const schema = {
   ...agentThreads,
   ...agentPackages,
   ...provenance,
+  ...results,
   ...user,
   ...waitlist,
   ...yjs,

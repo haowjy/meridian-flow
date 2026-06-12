@@ -11,6 +11,10 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { DocumentSyncService } from "../collab/index.js";
+import {
+  createInMemoryWorkbenchContextPortFactory,
+  createProductionWorkbenchContextPortFactory,
+} from "./context-port-factory.js";
 
 const WORK_SCHEME = "work:";
 const MANUSCRIPT_SOURCE = "manuscript";
@@ -38,6 +42,7 @@ export type ContextPort = {
 
 export type ContextPortFactory = {
   forThread(input: { threadId: ThreadId; userId: UserId }): ContextPort;
+  forWorkbench(workbenchId: string, userId: string): import("./ports/context-port.js").ContextPort;
 };
 
 function parseWorkUri(uri: string): { source: string; path: string } {
@@ -64,7 +69,9 @@ function parseWorkUri(uri: string): { source: string; path: string } {
 }
 
 export function createInMemoryContextPortFactory(): ContextPortFactory {
+  const workbenchPorts = createInMemoryWorkbenchContextPortFactory();
   return {
+    forWorkbench: workbenchPorts.forWorkbench,
     forThread() {
       return {
         async readDocument() {
@@ -85,6 +92,7 @@ export function createProductionContextPortFactory(deps: {
   db: Database;
   documentSync: DocumentSyncService;
 }): ContextPortFactory {
+  const workbenchPorts = createProductionWorkbenchContextPortFactory(deps);
   async function resolveThreadScope(
     threadId: ThreadId,
     userId: UserId,
@@ -140,6 +148,7 @@ export function createProductionContextPortFactory(deps: {
   }
 
   return {
+    forWorkbench: workbenchPorts.forWorkbench,
     forThread(input) {
       return {
         async readDocument(uri) {
@@ -185,11 +194,22 @@ export function createProductionContextPortFactory(deps: {
 }
 
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
+export {
+  DrizzleContextDocumentStore,
+  updateDocumentProjectionById,
+} from "./adapters/context-fs/drizzle-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { firstLineMatch } from "./adapters/context-fs/match.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export { parseContextUri, toCanonical } from "./context/uri.js";
+export {
+  createInMemoryWorkbenchContextPortFactory,
+  createProductionWorkbenchContextPortFactory,
+} from "./context-port-factory.js";
+export * from "./figures/index.js";
+export * from "./input-ingest/input-ingest-service.js";
+export * from "./input-ingest/run-input-paths.js";
 export type {
   AdapterFault,
   AdapterFileEntry,
@@ -224,3 +244,10 @@ export type {
   TrackedFileRef,
   WriteProvenance,
 } from "./ports/context-port.js";
+export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
+export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
+export type {
+  ResultRepository,
+  WorkbenchResultRecord,
+} from "./promotion/ports/result-repository.js";
+export * from "./uploads/index.js";

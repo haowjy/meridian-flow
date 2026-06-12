@@ -1,14 +1,8 @@
 // @ts-nocheck
-/**
- * Drizzle/Postgres implementation of the WorkbenchRepository port. Owns the SQL
- * for the `workbenches` table (slug derivation, soft-delete filtering, search);
- * depends inward on the port and shares title/slug helpers via shared.ts.
- */
-
 import type { UserId, WorkbenchId } from "@meridian/contracts/runtime";
 import type { Workbench } from "@meridian/contracts/workbenches";
 import type { Database } from "@meridian/database";
-import { workbenches } from "@meridian/database/schema";
+import { projects } from "@meridian/database/schema";
 import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import type {
   CreateWorkbenchInput,
@@ -18,132 +12,117 @@ import type {
 } from "../../ports/workbench-repository.js";
 import { DEFAULT_WORKBENCH_TITLE, deriveSlug } from "./shared.js";
 
-type WorkbenchRow = typeof workbenches.$inferSelect;
-
-function mapWorkbench(row: WorkbenchRow): Workbench {
+type ProjectRow = typeof projects.$inferSelect;
+function mapWorkbench(row: ProjectRow): Workbench {
   return {
     id: row.id,
-    userId: row.createdBy,
-    title: row.title,
-    description: row.description,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    deletedAt: row.deletedAt,
+    userId: row.userId,
+    title: row.name,
+    name: row.name,
+    slug: row.slug,
+    description: row.systemPrompt,
+    systemPrompt: row.systemPrompt,
+    isPersonal: row.isPersonal,
+    settings: row.settings,
+    lastActivityAt: row.lastActivityAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
-
 export interface DrizzleWorkbenchRepositoryDeps {
   db: Database;
 }
-
-/** Drizzle-backed {@link WorkbenchRepository} over the `schema` workbenches table. */
 export function createDrizzleWorkbenchRepository(
   deps: DrizzleWorkbenchRepositoryDeps,
 ): WorkbenchRepository {
   const { db } = deps;
-
   return {
     async create(input: CreateWorkbenchInput): Promise<Workbench> {
       const id = input.id ?? crypto.randomUUID();
       const title = input.title?.trim() || DEFAULT_WORKBENCH_TITLE;
       const [row] = await db
-        .insert(workbenches)
+        .insert(projects)
         .values({
           id,
-          title,
+          userId: input.userId,
+          name: title,
           slug: deriveSlug(title, id),
-          description: input.description ?? null,
-          createdBy: input.userId,
+          isPersonal: false,
+          systemPrompt: input.description ?? null,
         })
         .returning();
       if (!row) throw new Error("Failed to create workbench");
       return mapWorkbench(row);
     },
-
     async findById(id: WorkbenchId): Promise<Workbench | null> {
-      const [row] = await db.select().from(workbenches).where(eq(workbenches.id, id)).limit(1);
+      const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       return row ? mapWorkbench(row) : null;
     },
-
     async listByUser(userId: UserId, opts?: ListWorkbenchesOptions): Promise<Workbench[]> {
       const where = opts?.includeDeleted
-        ? eq(workbenches.createdBy, userId)
-        : and(eq(workbenches.createdBy, userId), isNull(workbenches.deletedAt));
+        ? eq(projects.userId, userId)
+        : and(eq(projects.userId, userId), isNull(projects.deletedAt));
       const rows = await db
         .select()
-        .from(workbenches)
+        .from(projects)
         .where(where)
-        .orderBy(desc(workbenches.lastActivityAt));
+        .orderBy(desc(projects.lastActivityAt));
       return rows.map(mapWorkbench);
     },
-
     async search(userId: UserId, query: string): Promise<Workbench[]> {
       const pattern = `%${query}%`;
       const rows = await db
         .select()
-        .from(workbenches)
+        .from(projects)
         .where(
           and(
-            eq(workbenches.createdBy, userId),
-            isNull(workbenches.deletedAt),
-            or(ilike(workbenches.title, pattern), ilike(workbenches.description, pattern)),
+            eq(projects.userId, userId),
+            isNull(projects.deletedAt),
+            or(ilike(projects.name, pattern), ilike(projects.systemPrompt, pattern)),
           ),
         )
-        .orderBy(desc(workbenches.lastActivityAt));
+        .orderBy(desc(projects.lastActivityAt));
       return rows.map(mapWorkbench);
     },
-
     async update(id: WorkbenchId, input: UpdateWorkbenchInput): Promise<Workbench> {
-      const patch: Partial<typeof workbenches.$inferInsert> = {
-        updatedAt: new Date().toISOString(),
-      };
-      if (input.title !== undefined) patch.title = input.title;
-      if (input.description !== undefined) patch.description = input.description;
-      const [row] = await db
-        .update(workbenches)
-        .set(patch)
-        .where(eq(workbenches.id, id))
-        .returning();
+      const patch: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
+      if (input.title !== undefined) patch.name = input.title;
+      if (input.description !== undefined) patch.systemPrompt = input.description;
+      const [row] = await db.update(projects).set(patch).where(eq(projects.id, id)).returning();
       if (!row) throw new Error(`Workbench not found: ${id}`);
       return mapWorkbench(row);
     },
-
     async softDelete(id: WorkbenchId): Promise<Workbench> {
-      const [existing] = await db.select().from(workbenches).where(eq(workbenches.id, id)).limit(1);
+      const [existing] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       if (!existing) throw new Error(`Workbench not found: ${id}`);
       if (existing.deletedAt) return mapWorkbench(existing);
-      const now = new Date().toISOString();
+      const now = new Date();
       const [row] = await db
-        .update(workbenches)
+        .update(projects)
         .set({ deletedAt: now, updatedAt: now, lastActivityAt: now })
-        .where(eq(workbenches.id, id))
+        .where(eq(projects.id, id))
         .returning();
       if (!row) throw new Error(`Workbench not found: ${id}`);
       return mapWorkbench(row);
     },
-
     async restore(id: WorkbenchId): Promise<Workbench> {
       const [row] = await db
-        .update(workbenches)
-        .set({ deletedAt: null, updatedAt: new Date().toISOString() })
-        .where(eq(workbenches.id, id))
+        .update(projects)
+        .set({ deletedAt: null, updatedAt: new Date() })
+        .where(eq(projects.id, id))
         .returning();
       if (!row) throw new Error(`Workbench not found: ${id}`);
       return mapWorkbench(row);
     },
-
     async touch(id: WorkbenchId): Promise<void> {
-      const [workbench] = await db
-        .select()
-        .from(workbenches)
-        .where(eq(workbenches.id, id))
-        .limit(1);
+      const [workbench] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       if (!workbench || workbench.deletedAt) return;
-      const now = new Date().toISOString();
+      const now = new Date();
       await db
-        .update(workbenches)
+        .update(projects)
         .set({ updatedAt: now, lastActivityAt: now })
-        .where(eq(workbenches.id, id));
+        .where(eq(projects.id, id));
     },
   };
 }

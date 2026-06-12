@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server/context:** port Meridian-adapted workbench context trees, uploads, figures, object-store reads, results rail repositories, and no-provider context factories with Supabase/Drizzle storage.
 - **v3 parity:** port upstream collab/context/preference adapter conformance coverage, app proto routes, results-rail tests, and the marketing/waitlist app into Meridian names.
 - **app/server:** add Meridian/Supabase runtime config, auth redirect, logout, and callback route surfaces matching the upstream app-server structure.
 - **server/routes:** port upstream workbench, thread, package catalog, agent catalog, preferences, package install/update/export, model-debug, and readiness route surfaces with Meridian/Supabase composition wiring.

@@ -1,7 +1,13 @@
 // @ts-nocheck
 import { createDrizzleCreditLedger } from "../domains/billing/index.js";
 import { createDocumentSyncService } from "../domains/collab/index.js";
-import { createProductionContextPortFactory } from "../domains/context/index.js";
+import {
+  createDrizzleFigureDocumentRepository,
+  createDrizzleResultRepository,
+  createDrizzleThreadUploadDocumentStore,
+  createFigureAssetService,
+  createProductionContextPortFactory,
+} from "../domains/context/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import {
   createDefaultPackageSeeder,
@@ -48,6 +54,8 @@ import {
   createProductionAppPorts,
 } from "./compose.js";
 import { getDb } from "./db.js";
+import { createDrizzleDocumentAccess } from "./document-access.js";
+import { createObjectStoreFromEnv } from "./object-store-factory.js";
 
 const APP_SINGLETON_KEY = Symbol.for("meridian.app.v1");
 
@@ -65,8 +73,18 @@ async function createAppServices(): Promise<AppServices> {
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const eventSink = createNoopEventSink();
+  const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter, eventSink });
   const documentSync = createDocumentSyncService({ db });
+  const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
+  const figureAssets = createFigureAssetService({
+    objectStore,
+    documents: createDrizzleFigureDocumentRepository({ db }),
+    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    eventSink,
+  });
+  const results = createDrizzleResultRepository(db);
+  const documentAccess = createDrizzleDocumentAccess(db);
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
   const tools = createRuntimeToolRegistry({ db, contextPorts });
   const packageRepository = createDrizzlePackageStore({ db });
@@ -158,6 +176,12 @@ async function createAppServices(): Promise<AppServices> {
       toolRegistry,
       toolExecutor,
       modelRequestDebug,
+      objectStore,
+      localObjectStore,
+      uploadDocuments,
+      figureAssets,
+      results,
+      documentAccess,
     }),
   );
 }

@@ -2,7 +2,12 @@
 import type { AgentPackageStore } from "../domains/agents/index.js";
 import type { CreditLedger } from "../domains/billing/index.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
-import type { ContextPortFactory } from "../domains/context/index.js";
+import type {
+  ContextPortFactory,
+  FigureAssetService,
+  ResultRepository,
+  ThreadUploadDocumentStore,
+} from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
 import type {
   DefaultPackageSeeder,
@@ -23,6 +28,7 @@ import {
   createCheckpointRegistry,
 } from "../domains/runtime/loop/checkpoints.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
+import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
@@ -35,6 +41,7 @@ import type {
   WorkbenchRepository,
   WorkRepository as WorkbenchWorkRepository,
 } from "../domains/workbenches/index.js";
+import type { DocumentAccessPort } from "./document-access.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -68,6 +75,12 @@ export type AppServices = {
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
+  objectStore: ObjectStorePort;
+  localObjectStore: LocalObjectStoreAdapter | null;
+  uploadDocuments: ThreadUploadDocumentStore;
+  figureAssets: FigureAssetService;
+  results: ResultRepository;
+  documentAccess: DocumentAccessPort;
 };
 
 export type ProductionAppPorts = Omit<AppServices, never>;
@@ -341,6 +354,68 @@ export function createInMemoryAppServices(): AppServices {
     toolExecutor: {
       async executeTool() {
         throw new Error("in-memory tool executor is not implemented");
+      },
+    },
+    objectStore: {
+      async put() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async get() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async list() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async getSignedUrl() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async delete() {
+        throw new Error("in-memory object store is not implemented");
+      },
+    },
+    localObjectStore: null,
+    uploadDocuments: {
+      async transaction(operation) {
+        return operation();
+      },
+      async createUploadDocument() {
+        throw new Error("in-memory upload documents are not implemented");
+      },
+      async updateMarkdownProjection() {
+        throw new Error("in-memory upload documents are not implemented");
+      },
+      async getDocument() {
+        return null;
+      },
+      async getUpload() {
+        return null;
+      },
+      async listUploads() {
+        return [];
+      },
+      async listRecent() {
+        return [];
+      },
+    },
+    figureAssets: {
+      async uploadFigure() {
+        throw new Error("in-memory figure assets are not implemented");
+      },
+      async getSignedFigureUrl() {
+        throw new Error("in-memory figure assets are not implemented");
+      },
+    },
+    results: {
+      async create() {
+        throw new Error("in-memory results are not implemented");
+      },
+      async listByWorkbench() {
+        return [];
+      },
+    },
+    documentAccess: {
+      async canAccessDocument() {
+        return true;
       },
     },
     modelRequestDebug: {
