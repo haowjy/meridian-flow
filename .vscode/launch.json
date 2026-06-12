@@ -2,80 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Backend: Run Server",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/backend/cmd/server/main.go",
-      "cwd": "${workspaceFolder}/backend",
-      "envFile": "${workspaceFolder}/backend/.env",
-      "showLog": true
-    },
-    {
-      "name": "Backend: Run Server (Local Workspace)",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/backend/cmd/server/main.go",
-      "cwd": "${workspaceFolder}/backend",
-      "envFile": "${workspaceFolder}/backend/.env",
-      "env": {
-        "GOWORK": "${workspaceFolder}/go.work"
-      },
-      "showLog": true
-    },
-    {
-      "name": "Backend: Run LLM Interactive CLI",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/backend/scripts/llm_cli.go",
-      "cwd": "${workspaceFolder}/backend",
-      "envFile": "${workspaceFolder}/backend/.env",
-      "showLog": true,
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Backend: Run Seed",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/backend/cmd/seed/main.go",
-      "cwd": "${workspaceFolder}/backend",
-      "envFile": "${workspaceFolder}/backend/.env",
-      "showLog": true
-    },
-    {
-      "name": "Frontend: debug Vite dev server",
+      "name": "Meridian: dev stack",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm run dev",
-      "cwd": "${workspaceFolder}/frontend",
-      "serverReadyAction": {
-        "pattern": "- Local:.+(https?://.+)",
-        "uriFormat": "%s",
-        "action": "debugWithChrome"
-      }
+      "command": "pnpm dev",
+      "cwd": "${workspaceFolder}"
     },
     {
-      "name": "Frontend: debug client-side",
-      "type": "chrome",
-      "request": "launch",
-      "url": "http://localhost:3000",
-      "webRoot": "${workspaceFolder}/frontend"
-    },
-    {
-      "name": "Frontend: debug full stack",
+      "name": "Meridian: server smoke",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm run dev",
-      "cwd": "${workspaceFolder}/frontend",
-      "console": "integratedTerminal",
-      "serverReadyAction": {
-        "pattern": "- Local:.+(https?://.+)",
-        "uriFormat": "%s",
-        "action": "debugWithChrome"
-      }
+      "command": "MODEL_PROVIDER=mock pnpm --filter @meridian/server smoke:thread-runtime",
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

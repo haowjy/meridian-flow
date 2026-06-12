@@ -33,17 +33,19 @@
     "check:negative-space": "bash tools/ci/check-negative-space.sh",
     "dev:db:ensure": "tsx tools/dev/ensure-db.ts",
     "dev:db:prepare": "tsx tools/dev/prepare-db.ts",
-    "dev:db:drop": "tsx tools/dev/drop-db.ts"
+    "dev:db:drop": "tsx tools/dev/drop-db.ts",
+    "db:migration-lint": "tsx tools/dev/migration-lint.ts --all"
   },
   "devDependencies": {
-    "@meridian/database": "workspace:*",
     "@biomejs/biome": "^2.4.15",
-    "drizzle-orm": "catalog:",
+    "@meridian/database": "workspace:*",
+    "@playwright/test": "^1.60.0",
     "@types/node": "catalog:",
-    "postgres": "catalog:",
+    "drizzle-orm": "catalog:",
     "lefthook": "^2.1.8",
     "nx": "^22.7.3",
     "portless": "^0.13.0",
+    "postgres": "catalog:",
     "tsx": "^4.22.3",
     "typescript": "catalog:",
     "vitest": "catalog:"
