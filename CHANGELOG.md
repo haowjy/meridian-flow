@@ -38,6 +38,7 @@
 
 ### Fixed
 
+- **www:** use the exported Meridian design-token stylesheet so the marketing app production build resolves package exports.
 - **server:** activate the copied upstream turn orchestrator on the production message route, adapt its Drizzle repositories to Meridian Flow's current Supabase/Postgres schema, and restore live WS/cold replay smoke coverage.
 - **dev:** ignore generated portless dev logs.
 - **server:** serialize Yjs document commits with markdown projection/activity updates and preserve agent attribution for persisted editor updates.

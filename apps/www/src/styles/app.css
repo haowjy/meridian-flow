@@ -4,7 +4,7 @@
  * tokens directly and does not define workbench-only utilities.
  */
 @import 'tailwindcss' source('../');
-@import '@meridian/design-tokens/warm-organic.css';
+@import '@meridian/design-tokens/warm-paper.css';
 
 @layer base {
   :root {
