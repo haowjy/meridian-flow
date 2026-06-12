@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && tsc --noEmit -p tsconfig.json",
-    "start": "NODE_ENV=production node .output/server/index.mjs",
+    "start": "NODE_ENV=production node scripts/validate-start-env.mjs && NODE_ENV=production node .output/server/index.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

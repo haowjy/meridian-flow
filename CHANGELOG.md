@@ -4,6 +4,7 @@
 
 ### Added
 
+- **app:** copy upstream app context docs, app manifest/icons/screenshots, components config, and Supabase-adapted production start-env validation.
 - **app/dev:** port upstream app Vite dev-control plane, Lingui config, global CSS bridge, SSR externalization seam, and portless API proxy with Meridian/Supabase naming.
 - **runtime:** port upstream gateway, tool-registry, tool-executor, serialization, and model-request-debug tests with Meridian/Supabase naming and no rejected execution runtime.
 - **dev:** add repo-level context docs, GitHub CI/deploy stubs, direnv/node-version files, deploy runbooks, and a Meridian-adapted model-gateway smoke harness from the upstream repo shape.

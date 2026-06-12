@@ -1,0 +1,19 @@
+node_modules/
+package-lock.json
+yarn.lock
+
+.DS_Store
+.cache
+.tanstack
+.env
+.vercel
+.output
+.nitro
+
+/build/
+/api/
+/server/build
+/public/build
+
+# Playwright auth storageState (sealed session — never commit)
+/.auth/
