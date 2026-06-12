@@ -63,9 +63,10 @@ workbench id and calls the current Postgres FIFO/debt-lot functions.
 
 ### preferences
 
-The copied preferences port is wired to an in-memory adapter in production until
-Meridian adopts a preferences table. The copied Drizzle adapter remains as
-reference code but is not exported from the domain barrel.
+Workbench preferences are persisted in `workbench_user_preferences` via the
+Drizzle adapter, which is wired as the production surface at the composition
+root. The in-memory adapter remains for hermetic tests and local reference
+behavior. Both adapters are exported from the domain barrel.
 
 ## No external package-execution runtime
 
