@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server/workbenches:** port upstream workbench/work repository domain structure, thread-creation work touch coverage, and additional runtime loop/core-handler regression tests.
 - **runtime:** split Meridian-owned permission gates into upstream-style modules and port gateway adapter/integration coverage with Meridian reasoning metadata.
 - **server/packages:** port upstream package-domain install/update/preview/library helpers, zip export, skill-link reconciliation, and conformance/unit coverage with Meridian naming.
 - **app:** port upstream API route ownership and structured Meridian API error tests.
