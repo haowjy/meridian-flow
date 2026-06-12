@@ -64,12 +64,12 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   and started tool calls to emit correct start/end bracketing for AG-UI.
   Finalizes run on `turn.completed`, `turn.cancelled`, or `turn.error`.
 
-## Schema adaptation (Voluma → Meridian Flow)
+## Schema adaptation (Upstream → Meridian Flow)
 
-The Drizzle adapters were copied from an upstream Voluma codebase and adapted to
+The Drizzle adapters were copied from the upstream codebase and adapted to
 Meridian Flow's Supabase/Postgres schema. Key column mappings:
 
-| Upstream Voluma | Meridian Flow | Notes |
+| Upstream | Meridian Flow | Notes |
 |---|---|---|
 | `threads.workbenchId` | `threads.projectId` | Meridian uses `projects`, not `workbenches` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |

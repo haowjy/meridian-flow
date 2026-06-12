@@ -31,7 +31,7 @@ Drizzle adapters behaviorally identical.
 
 ## Decision: in-memory only in production
 
-Meridian Flow does not currently persist copied Voluma workbench preferences in
+Meridian Flow does not currently persist copied upstream workbench preferences in
 the app schema. The production surface (`createInMemoryWorkbenchPreferencesRepository`)
 uses an in-memory `Map`. The Drizzle adapter (`createDrizzleWorkbenchPreferencesRepository`)
 remains in-tree at `adapters/drizzle/` as upstream parity reference code but is

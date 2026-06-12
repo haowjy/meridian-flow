@@ -26,9 +26,9 @@ consume this domain.
   tables plus the `consume_credit_lots_fifo` PL/pgSQL function.
 - **In-memory** — test/dev adapter.
 
-## Schema adaptation (Voluma → Meridian Flow)
+## Schema adaptation (Upstream → Meridian Flow)
 
-The copied Voluma credit ledger domain port still carries `workbenchId` in its
+The copied upstream credit ledger domain port still carries `workbenchId` in its
 input types (`CreditGrantInput`, `CreditDebitInput`, balance queries). The
 Meridian Flow Drizzle adapter ignores `workbenchId` because:
 

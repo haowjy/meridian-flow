@@ -1,0 +1,30 @@
+---
+description: Use the Meridian Flow git worktree that owns the files you edit — not the main checkout by default
+alwaysApply: true
+---
+
+# Active worktree (Meridian Flow)
+
+Meridian Flow feature work usually runs in a **linked git worktree**, not the main checkout at `~/gitrepos/meridian-collab`.
+
+| Checkout | Typical use |
+|----------|-------------|
+| `~/gitrepos/meridian-collab.worktrees/<name>/` | Feature branches (`feat/*`, experiments) — **default for product edits** |
+| `~/gitrepos/meridian-collab/` | `main` / `platform` / shared integration — only when the user or task says so |
+
+Worktrees do **not** share gitignored files (e.g. `.env`). Run `pnpm dev` in the same tree you commit from.
+
+## Before edits or `git commit`
+
+1. **Follow the file path** — if you change `…/meridian-collab.worktrees/foo/apps/app/…`, all git commands run in `…/meridian-collab.worktrees/foo`.
+2. **Confirm top-level** — in that directory: `git rev-parse --show-toplevel` and `git branch --show-current`.
+3. **User override wins** — if the user names a path or branch, use that checkout even if it differs from the last turn.
+4. **Do not assume** `~/gitrepos/meridian-collab` because the multi-root workspace includes it; the active tree is whichever root owns the files in scope.
+
+## Multi-root workspace
+
+`~/gitrepos/meridian-collab/meridian-flow-workspace.code-workspace` lists main repo, `meridian-collab.worktrees/`, and docs. Opening it does **not** mean every change goes to main — match the folder you are actually editing.
+
+## When unsure
+
+Ask which worktree, or report: top-level path + branch before committing.
