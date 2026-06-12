@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added structural Checkpoint renderer parity coverage for artifacts, live preview slots, forms, and resolved summaries.
 - Added Meridian-adapted app context docs, e2e pg typings, and database schema compatibility paths for upstream exact-path parity.
 - Added portless Playwright workbench-route smoke configs for mobile shell selection, chat virtualization, and ProcessDisclosure verification.
 - Added persisted Drizzle workbench preferences with Supabase-backed conformance coverage.
