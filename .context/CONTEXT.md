@@ -104,3 +104,10 @@ Agents should read `.context/` before raw source files when entering an area.
 - The upstream warm-organic token surface is represented by `@meridian/design-tokens/warm-paper.css`; the token values match, with only the Meridian theme name and `apps/www` wording changed.
 - Current app e2e parity now lives under `apps/app/e2e`: auth, vertical slice, mobile shell, chat virtualization, and ProcessDisclosure verification all use Supabase dev-login plus portless routes. Database-backed specs seed throwaway project/work/thread fixtures and clean them by project id.
 - Remaining exact-path audit findings should classify old branded filenames as renamed, old auth adapter files as rejected, raw Python/toolchain files as superseded, and old provider runtime files as rejected unless a Meridian-owned TypeScript runtime equivalent is explicitly missing.
+
+### Remaining exact-path parity categories (June 2026 pass)
+
+- **Rejected provider/runtime leftovers:** `backend-policy`, `wired-core-tools`, old runtime loop/tool prompt-freeze and skill-tool tests, and old startup guard surfaces depended on the removed external execution-provider subsystem. Meridian uses in-process, no-external-execution runtime tools plus model-gateway/provider config instead.
+- **Superseded auth/startup surfaces:** old startup plugin/auth guard paths are superseded by Supabase request auth, app/server env validation, `process-crash-policy`, and existing composition wiring.
+- **Applicable but still TODO:** context read/factory/input/figure/promotion conformance, billing/package Drizzle conformance, websocket route handler tests, and server smoke harnesses should be ported in later passes against current Supabase/Postgres and portless assumptions.
+- **Route exact-path gaps:** thread upload POST remains implemented through the workbench-scoped upload route; adding the old non-workbench route needs an ownership decision rather than a blind copy.
