@@ -13,7 +13,7 @@ export interface DevDatabase {
 }
 
 /**
- * Meridian keeps Voluma's single-registry dev-tool contract, but the adapter is
+ * Meridian Flow keeps a single-registry dev-tool contract, but the adapter is
  * Supabase local Postgres. Supabase owns database creation/port allocation, so
  * worktrees do not rewrite DATABASE_URL to sibling DB names here.
  */
