@@ -25,7 +25,10 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "portless:trust": "portless trust",
     "portless:list": "portless list",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "dev:tmux": "tsx tools/dev/dev-tmux.ts",
+    "dev:tailscale": "tsx tools/dev/dev-tmux.ts --tailscale",
+    "dev:funnel": "tsx tools/dev/dev-tmux.ts --funnel"
   },
   "devDependencies": {
     "@meridian/database": "workspace:*",

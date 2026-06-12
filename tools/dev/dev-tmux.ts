@@ -1,99 +1,388 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, realpathSync } from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
+import { printFailure, printSessionInfo } from "./dev-output";
+import {
+  formatDevRouteLines,
+  getExpectedServicesForMode,
+  validateExpectedRoutes,
+} from "./portless-routes";
+import { resolveSessionIdentity } from "./session-identity";
+import { TmuxSessionStore } from "./tmux-session-store";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const logsDir = path.join(repoRoot, "logs");
-const restart = process.argv.includes("--restart");
+const repoRootRealpath = fs.realpathSync(repoRoot);
+const metadataPath = path.join(repoRoot, ".meridian", "dev-session.json");
+const logPath = "logs/portless.log";
 
-function run(command: string, args: string[]): string {
-  return execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }).trim();
+/**
+ * Slim record of the running dev session, written to `.meridian/dev-session.json`
+ * after a fresh launch. Read only to report the current mode on reuse and to let
+ * `pnpm dev:restart` (`--preserve-mode`) recreate the mode that was running.
+ */
+interface DevSessionMetadata {
+  sessionName: string;
+  mode: DevMode;
+  branch: string;
+  command: string;
+  createdAt: string;
 }
 
-function tmux(args: string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync("tmux", args, { cwd: repoRoot, encoding: "utf8" });
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
+interface PortlessState {
+  lines: string[];
+  servicePids: Record<string, number>;
+  healthy: boolean;
+  errors: string[];
 }
 
-function sessionName(): string {
-  const branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]).replace(/[^a-zA-Z0-9_-]/g, "-");
-  const checkout = path.basename(realpathSync(repoRoot)).replace(/[^a-zA-Z0-9_-]/g, "-");
-  return `meridian-${checkout}-${branch}`.slice(0, 80);
+function runGit(args: string[]): string {
+  const tmuxStore = new TmuxSessionStore(repoRoot);
+  const result = tmuxStore.run("git", args);
+  if (result.status !== 0) {
+    return "";
+  }
+  return result.stdout.trim();
 }
 
-function hasSession(name: string): boolean {
-  return tmux(["has-session", "-t", name]).status === 0;
+/**
+ * Detect the portless hostname prefix for linked worktrees. Portless uses the
+ * worktree directory basename as the prefix (for example
+ * `v3-voluma-parity-copy.app.meridian.localhost`).
+ */
+function detectWorktreePrefix(): string | undefined {
+  const gitDir = runGit(["rev-parse", "--git-dir"]);
+  const commonDir = runGit(["rev-parse", "--git-common-dir"]);
+  if (!gitDir || !commonDir) return undefined;
+
+  const resolvedGitDir = path.resolve(repoRoot, gitDir);
+  const resolvedCommonDir = path.resolve(repoRoot, commonDir);
+  if (resolvedGitDir === resolvedCommonDir) return undefined;
+
+  return path.basename(repoRootRealpath);
 }
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function launchCommand(): string {
-  const app = "pnpm exec portless run --name app.meridian pnpm --filter @meridian/app dev";
-  const server = "pnpm exec portless run --name server.meridian pnpm --filter @meridian/server dev";
-  return [
-    "set -euo pipefail",
-    `cd ${shellQuote(repoRoot)}`,
-    "mkdir -p logs",
-    `((${app}) & (${server}) & wait) 2>&1 | tee logs/dev.log`,
-  ].join("; ");
+function isDevMode(value: string | null | undefined): value is DevMode {
+  return value === "local" || value === "tailscale" || value === "funnel";
 }
 
 function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function portlessList(): string {
-  const result = spawnSync("pnpm", ["portless:list"], { cwd: repoRoot, encoding: "utf8" });
-  if (result.status !== 0) return `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-  return result.stdout.trim();
+function portlessEnvPrefix(shared: boolean): string {
+  const shareKeys = ["PORTLESS_TAILSCALE", "PORTLESS_FUNNEL"];
+  const commonKeys = [
+    "PORTLESS_LAN",
+    "PORTLESS_HTTPS",
+    "PORTLESS_TLD",
+    "PORTLESS_WILDCARD",
+    "PORTLESS_SYNC_HOSTS",
+    "PORTLESS_STATE_DIR",
+  ];
+
+  const passThroughKeys = shared ? [...shareKeys, ...commonKeys] : commonKeys;
+  const assignments = passThroughKeys
+    .filter((key) => process.env[key] !== undefined)
+    .map((key) => `${key}=${shellQuote(process.env[key] ?? "")}`);
+
+  return assignments.length > 0 ? `env ${assignments.join(" ")} ` : "";
 }
 
-function waitForRoutes(timeoutMs: number): string {
+function portlessShareFlag(mode: DevMode): string {
+  if (mode === "funnel") return "--funnel";
+  if (mode === "tailscale") return "--tailscale";
+  return "";
+}
+
+function envSourcePreamble(): string {
+  return "set -a; [ -f .env ] && . ./.env; set +a";
+}
+
+function portlessCommandBody(mode: DevMode): string {
+  const shareFlag = portlessShareFlag(mode);
+  const services: Array<{ name: string; pkg: string; shared: boolean; sharedModeOnly?: boolean }> =
+    [
+      { name: "app.meridian", pkg: "@meridian/app", shared: true },
+      { name: "server.meridian", pkg: "@meridian/server", shared: false },
+      { name: "web.meridian", pkg: "@meridian/www", shared: true, sharedModeOnly: true },
+    ];
+
+  const commands = services
+    .filter((service) => mode !== "local" || !service.sharedModeOnly)
+    .map(({ name, pkg, shared }) => {
+      const flag = shared && shareFlag ? ` ${shareFlag}` : "";
+      return `${portlessEnvPrefix(shared)}pnpm exec portless run --name ${name}${flag} pnpm --filter ${pkg} dev`;
+    });
+
+  return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
+}
+
+function createPortlessCommand(mode: DevMode): string {
+  return `mkdir -p logs && ${envSourcePreamble()} && ${portlessCommandBody(mode)} 2>&1 | tee ${logPath}`;
+}
+
+function readPortlessState(
+  tmuxStore: TmuxSessionStore,
+  mode: DevMode,
+  worktreePrefix?: string,
+): PortlessState {
+  const result = tmuxStore.run("pnpm", ["portless:list"]);
+  if (result.status !== 0) {
+    return {
+      lines: [],
+      servicePids: {},
+      healthy: false,
+      errors: [result.stderr.trim() || "pnpm portless:list failed"],
+    };
+  }
+
+  const validation = validateExpectedRoutes({ output: result.stdout, mode, worktreePrefix });
+  return {
+    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix),
+    servicePids: validation.servicePids,
+    healthy: validation.ok,
+    errors: validation.errors,
+  };
+}
+
+function waitForPortlessState(
+  tmuxStore: TmuxSessionStore,
+  mode: DevMode,
+  timeoutMs: number,
+  worktreePrefix?: string,
+): PortlessState {
   const deadline = Date.now() + timeoutMs;
-  let output = portlessList();
-  while (Date.now() < deadline) {
-    if (output.includes("app.meridian") && output.includes("server.meridian")) return output;
+  let state = readPortlessState(tmuxStore, mode, worktreePrefix);
+
+  while (!state.healthy && Date.now() < deadline) {
     sleep(500);
-    output = portlessList();
+    state = readPortlessState(tmuxStore, mode, worktreePrefix);
   }
-  return output;
+
+  return state;
 }
 
-const name = sessionName();
-mkdirSync(logsDir, { recursive: true });
-
-if (restart && hasSession(name)) {
-  tmux(["kill-session", "-t", name]);
-}
-
-if (!hasSession(name)) {
-  const created = tmux([
-    "new-session",
-    "-d",
-    "-s",
-    name,
-    "-c",
-    repoRoot,
-    "bash",
-    "-lc",
-    launchCommand(),
-  ]);
-  if (created.status !== 0) {
-    console.error(created.stderr || created.stdout || "failed to start tmux dev session");
-    process.exit(created.status);
+function readJsonMetadata(): DevSessionMetadata | null {
+  try {
+    const data = fs.readFileSync(metadataPath, "utf8");
+    return JSON.parse(data) as DevSessionMetadata;
+  } catch {
+    return null;
   }
-  console.log(`Started tmux session ${name}`);
-} else {
-  console.log(`Reusing tmux session ${name}`);
 }
 
-const routes = waitForRoutes(20_000);
-console.log(routes || "portless routes not ready yet; inspect logs/dev.log");
-console.log(`Attach with: tmux attach -t ${name}`);
+function writeJsonMetadata(metadata: DevSessionMetadata): void {
+  fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
+  fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+}
+
+function buildMetadata({
+  branch,
+  sessionName,
+  mode,
+  command,
+}: {
+  branch: string;
+  sessionName: string;
+  mode: DevMode;
+  command: string;
+}): DevSessionMetadata {
+  return {
+    sessionName,
+    mode,
+    branch: branch || "detached",
+    command,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function resolveRequestedMode({
+  explicitMode,
+  requestedMode,
+  restart,
+  preserveModeOnRestart,
+}: {
+  explicitMode: boolean;
+  requestedMode: DevMode;
+  restart: boolean;
+  preserveModeOnRestart: boolean;
+}): DevMode {
+  if (!restart || !preserveModeOnRestart || explicitMode) {
+    return requestedMode;
+  }
+
+  const previous = readJsonMetadata();
+  return isDevMode(previous?.mode) ? previous.mode : requestedMode;
+}
+
+function printDryRun({
+  sessionName,
+  mode,
+  branch,
+  worktreeHash,
+  portlessCommand,
+}: {
+  sessionName: string;
+  mode: DevMode;
+  branch: string;
+  worktreeHash: string;
+  portlessCommand: string;
+}): void {
+  console.log("[dry-run] dev session plan");
+  console.log(`session: ${sessionName}`);
+  console.log(`mode: ${mode}`);
+  console.log(`repo root: ${repoRootRealpath}`);
+  console.log(`branch: ${branch || "HEAD"}`);
+  console.log(`worktree hash: ${worktreeHash}`);
+  console.log(`metadata: ${metadataPath}`);
+  console.log(
+    `expected services: ${getExpectedServicesForMode(mode)
+      .map((service) => service.name)
+      .join(", ")}`,
+  );
+
+  console.log("[dry-run] tmux commands:");
+  console.log(`tmux has-session -t ${sessionName}`);
+  console.log(`tmux new-session -d -s ${sessionName} -c ${repoRoot}`);
+  console.log(`tmux send-keys -t ${sessionName}:0 '${portlessCommand}' C-m`);
+}
+
+function failAndExit(
+  message: string,
+  remediation: string,
+  sessionName: string,
+  routeLines: string[] = [],
+): never {
+  printFailure({
+    sessionName,
+    message,
+    remediation,
+    logPath,
+    routeLines,
+  });
+  process.exit(1);
+}
+
+function teardownExistingSession(tmuxStore: TmuxSessionStore, sessionName: string): void {
+  if (tmuxStore.sessionExists(sessionName)) {
+    const killResult = tmuxStore.killSession(sessionName);
+    if (killResult.status !== 0) {
+      console.error(killResult.stderr.trim() || `failed to kill tmux session '${sessionName}'`);
+      process.exit(killResult.status ?? 1);
+    }
+  }
+
+  const pruneResult = tmuxStore.run("pnpm", ["exec", "portless", "prune"]);
+  if (pruneResult.status !== 0) {
+    const stderr = pruneResult.stderr.trim();
+    if (stderr) {
+      console.warn(`portless prune warning: ${stderr}`);
+    }
+  }
+}
+
+async function main(): Promise<void> {
+  const tmuxStore = new TmuxSessionStore(repoRoot);
+  const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
+
+  const branchName = runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+  const detachedHeadRef = runGit(["rev-parse", "--short", "HEAD"]);
+  const identity = resolveSessionIdentity({
+    branchName,
+    detachedHeadRef,
+    repoRootRealpath,
+  });
+
+  const mode = resolveRequestedMode({
+    explicitMode: cliOptions.explicitModeFlag,
+    requestedMode: cliOptions.mode,
+    restart: cliOptions.restart,
+    preserveModeOnRestart: cliOptions.preserveModeOnRestart,
+  });
+
+  applyModeEnv(mode);
+
+  const worktreePrefix = detectWorktreePrefix();
+  const portlessCommand = createPortlessCommand(mode);
+
+  if (cliOptions.print) {
+    printDryRun({
+      sessionName: identity.sessionName,
+      mode,
+      branch: branchName,
+      worktreeHash: identity.worktreeHash,
+      portlessCommand,
+    });
+    process.exit(0);
+  }
+
+  if (!tmuxStore.hasCommandOnPath("tmux")) {
+    console.error("tmux is required but was not found on PATH. Install tmux and retry.");
+    process.exit(1);
+  }
+
+  if (cliOptions.restart) {
+    teardownExistingSession(tmuxStore, identity.sessionName);
+  } else if (tmuxStore.sessionExists(identity.sessionName)) {
+    const previous = readJsonMetadata();
+    const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
+    const routeState = waitForPortlessState(tmuxStore, runningMode, 5_000, worktreePrefix);
+    printSessionInfo({
+      headline: "already running",
+      sessionName: identity.sessionName,
+      mode: runningMode,
+      routeLines: routeState.lines,
+    });
+    return;
+  }
+
+  const createResult = tmuxStore.createSession(identity.sessionName);
+  if (createResult.status !== 0) {
+    console.error(
+      createResult.stderr.trim() || `failed to create tmux session '${identity.sessionName}'`,
+    );
+    process.exit(createResult.status ?? 1);
+  }
+
+  const runResult = tmuxStore.sendKeys(identity.sessionName, portlessCommand);
+  if (runResult.status !== 0) {
+    console.error(runResult.stderr.trim() || "failed to start portless in tmux");
+    process.exit(runResult.status ?? 1);
+  }
+
+  const routeState = waitForPortlessState(tmuxStore, mode, 20_000, worktreePrefix);
+  if (!routeState.healthy) {
+    failAndExit(
+      `dev session started but health checks failed: ${routeState.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      identity.sessionName,
+      routeState.lines,
+    );
+  }
+
+  writeJsonMetadata(
+    buildMetadata({
+      branch: branchName,
+      sessionName: identity.sessionName,
+      mode,
+      command: portlessCommand,
+    }),
+  );
+
+  printSessionInfo({
+    headline: "started",
+    sessionName: identity.sessionName,
+    mode,
+    routeLines: routeState.lines,
+  });
+}
+
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
