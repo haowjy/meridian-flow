@@ -3,6 +3,10 @@
 Persistence and ownership for the two foundational data containers a thread
 hangs off of. Split out of the former `domains/content` grab-bag.
 
+This domain intentionally keeps the upstream **workbench** service/API name.
+Meridian product language can present the concept as a project workspace, but
+the server route surface stays `/api/workbenches/*` for Voluma parity.
+
 ## What it owns
 
 - **Workbenches** — the top-level research-effort container (CRUD, soft-delete).
@@ -53,3 +57,7 @@ because auth owns the source profile shape.
 Constructed in `lib/compose.ts` (`workbenchRepo`, `users`, `workRepo`); the
 default-work attachment policy lives in `lib/work-attachment.ts` +
 `lib/thread-creation.ts`.
+
+`domains/projects` is separate and narrower: it bootstraps the first personal
+project/work/thread/document bundle for the app shell. Do not move workbench
+CRUD or owner-gating into that bootstrap domain.

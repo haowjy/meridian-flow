@@ -9,6 +9,7 @@ the Meridian KB.
 ```mermaid
 flowchart TD
   Projects[Projects + works]
+  Workbenches[Workbench route surface]
   Auth[Supabase Auth + users]
   Packages[Agent packages]
   Runtime[Runtime orchestrator]
@@ -18,6 +19,9 @@ flowchart TD
   Collab[Yjs collab]
 
   Auth --> Projects
+  Auth --> Workbenches
+  Workbenches --> Threads
+  Workbenches --> Packages
   Projects --> Threads
   Runtime --> Threads
   Runtime --> Packages
@@ -29,7 +33,7 @@ flowchart TD
 
 Acyclic at the domain level. `apps/server/server/lib/app.ts` is the composition
 root that wires the runtime, thread repositories, gateway, event hub, package
-repository, preferences, billing, projects, and collab services.
+repository, preferences, billing, projects/workbenches, and collab services.
 
 ## Harness composition
 
@@ -46,6 +50,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/runtime/tools` | Tool registry/executor for Meridian-owned tools; no external execution runtime |
 | `domains/packages` | Agent/package catalog and future package install surface |
 | `domains/projects` | Project/work ownership and default bootstrap |
+| `domains/workbenches` | Voluma-parity workbench CRUD, work lists, and owner gates for workbench-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
 | `domains/collab` | Yjs document sync and markdown projection |
 

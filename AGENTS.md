@@ -10,7 +10,7 @@ See `$MERIDIAN_CONTEXT_KB_DIR/wiki/product/high-level/1-overview.md` for product
 
 Ground-up rebuild. TypeScript throughout. Design package lives in the active work item directory (`meridian work current`).
 
-Key decisions: TypeScript backend (canonical Yjs, no hashline port), Milkdown (ProseMirror), Y.XmlFragment, agent definitions replace skills, credits-only billing gate, linear turns, Drizzle ORM.
+Key decisions: TypeScript backend (canonical Yjs, Voluma edit pipeline), TipTap (ProseMirror) + y-prosemirror, Y.XmlFragment, agent definitions replace skills, credits-only billing gate, linear turns, Drizzle ORM.
 
 ## Where to Find Things
 
@@ -65,8 +65,8 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 
 | App | Purpose |
 |-----|---------|
-| `app` | TanStack Start authenticated project workspace (React, Vite) |
-| `server` | Nitro HTTP + WebSocket server |
+| `app` | TanStack Start authenticated workbench (React, Vite) |
+| `server` | Nitro HTTP + WebSocket server. Domains live in `apps/server/server/domains/<domain>/{domain,ports,adapters}/` |
 | `www` | Landing / marketing site |
 
 ## Implementation constraints
@@ -78,10 +78,11 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 - Adapter/provider choice is **configuration-driven** (DI at composition root), not hardcoded.
 - Keep provider-specific types out of core business logic.
 - Each domain package follows: `src/domain/` (logic), `src/ports/` (interfaces), `src/adapters/` (implementations).
+- Server domains follow the same ports-and-adapters structure inside `apps/server/server/domains/<domain>/{domain,ports,adapters}/`.
 
 ### General
 
-- Apps are thin shells — business logic lives in packages, not in route handlers.
+- Apps are thin shells — business logic lives in packages or server domains, not in route handlers.
 - Follow existing project structure; avoid cross-package direct imports that bypass exports.
 - No raw hex/color values outside token files.
 - `pnpm` (not npm). Biome for lint + format. Nx for task orchestration.
@@ -114,6 +115,7 @@ pnpm bootstrap      # dev auth user (after supabase:start + .env)
 pnpm db:migrate     # Drizzle → local Postgres (DATABASE_URL port 54422)
 pnpm db:apply-functions  # after migrate when editing src/functions/*.sql
 pnpm db:studio
+pnpm --filter @meridian/app exec playwright test -c e2e/playwright.auth.config.ts  # e2e (requires NODE_EXTRA_CA_CERTS=~/.portless/ca.pem)
 ```
 
 ## Git Conventions

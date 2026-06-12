@@ -5,29 +5,60 @@ and the conventions for extending the server without bypassing domain seams.
 
 ## Composition root
 
-`server/lib/app.ts` owns the production singleton and delegates the DI graph to
-`server/lib/compose.ts`.
+`server/lib/app.ts` owns the production singleton and assembles the production
+DI graph. `server/lib/compose.ts` defines the `AppServices` aggregate, keeps
+test/in-memory service stubs, and returns the assembled graph unchanged.
 
 The production graph is intentionally assembled at the edge:
 
 ```
 getDb() / Drizzle repositories / event journal
-getModelGateway()
-createProductionAppPorts({ db, gateway, ... })
+createGatewayFromEnv()
+createProductionAppPorts({ gateway, repos, hub, ... })
 composeAppServices(ports)
 ```
 
-`compose.ts` has two distinct responsibilities:
+`app.ts` wires the concrete production graph:
 
-- **Concrete adapter construction**: Drizzle repositories, context/collab stores,
-  object store, package store, preferences, results, credit ledger, and provider
-  gateways.
-- **Pure service wiring**: event hub, checkpoint registry, tool registry/executor,
-  late-bound turn runner, child-run coordination, orchestrator, upload/import
-  services, and returned `AppServices` aggregate.
+- **Concrete adapters**: Drizzle repositories, context/collab stores, package
+  store, workbench repositories, credit ledger, package fetcher/seeder, and
+  provider gateway.
+- **Pure service wiring**: event hub, checkpoint registry, tool
+  registry/executor, late-bound turn runner, child-run coordination,
+  orchestrator, and returned `AppServices` aggregate.
+
+`AppServices` carries both Meridian names and upstream-compatible aliases where
+copied route/lib code expects them: `threadRepos` and `threadEventHub` are the
+canonical names; `repos` and `hub` are aliases. Keep these aliases explicit
+instead of mechanically rewriting copied code one reference at a time.
 
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
+
+## Workbench route surface
+
+Voluma-parity routes under `server/routes/api/workbenches/` keep the upstream
+`workbench` URL and service vocabulary at the API boundary. Meridian product UI
+can call the concept "project workspace"; server code preserves the copied route
+shape for parity and lower merge risk.
+
+The shipped route surface covers:
+
+- Workbench CRUD, stats, preferences, library, works list, work threads, and
+  workbench thread list/create.
+- Agent and skill definition reads, saves, revision lists, revision restores,
+  restore-original, and agent skill-link patching.
+- Package preview/apply, update check/apply, and export.
+- Global thread list/create, snapshot, delete, turn cancel, model-request debug,
+  and turn-context preview.
+- First-party package catalog, builtin agent catalog, readiness, and unknown
+  route handling.
+
+Workbench-scoped handlers gate through `requireWorkbenchOwner` from
+`server/domains/workbenches` before reading or mutating workbench-owned data.
+Supabase remains the auth boundary; WorkOS/AuthKit route code is not part of
+Meridian Flow. The sandbox/runtime-execution provider route surface is also out
+of scope for Meridian; do not port it back while filling route parity gaps.
 
 ## Supabase auth boundary
 
@@ -54,6 +85,8 @@ through it; WebSocket subscribers read from it.
 
 Hot cache is process-local. Journal rows persist through Drizzle/in-memory
 journal adapters selected by composition.
+
+`hub` is an upstream-compatible alias for `threadEventHub` on `AppServices`.
 
 ## Event projection pipeline
 
@@ -102,7 +135,26 @@ primitives in `server/lib/`:
 (`MODEL_CALL_TIMEOUT_MS`, default 120_000ms). Timeout aborts the in-flight stream
 and surfaces as a retryable provider error when no output has been emitted.
 
+## Observability event sink
+
+`server/lib/event-sink-factory.ts` keeps the upstream composition seam but only
+selects Meridian-local sinks: `EVENT_PROVIDER=local` writes JSONL, while
+`none`/`noop` returns the no-op sink. External provider policy is deliberately
+not wired into production composition yet; inject another `EventSink` later
+without changing route or domain code.
+
 ## Route conventions
+
+### Route-core handlers
+
+Heavier routes keep testable route-core functions in `server/lib/*-route.ts`.
+The Nitro file under `server/routes/api/...` should authenticate, extract params
+and body, delegate to the route-core, then serialize the response.
+
+Route-core functions take a `Deps` interface and plain-data input. They should
+not depend on Nitro event objects. This keeps owner gates, validation, package
+install/update logic, model-request debug projection, and definition editing
+testable with Vitest without booting Nitro.
 
 ### Adding a command route
 
@@ -111,6 +163,9 @@ and surfaces as a retryable provider error when no output has been emitted.
 3. Destructure needed services from the composed app aggregate.
 4. Run the domain gate for the resource: project/thread/document access.
 5. Call the domain API and return `@meridian/contracts/*` wire shapes only.
+
+When validation or orchestration is more than a thin route wrapper, extract it
+to `server/lib/*-route.ts` and unit-test that route-core directly.
 
 ## Testing strategy
 
@@ -123,5 +178,5 @@ and surfaces as a retryable provider error when no output has been emitted.
 
 ## Cross-module links
 
-→ [../app/.context/CONTEXT.md](../app/.context/CONTEXT.md) — frontend state/transport seams
-→ [`server/domains/`](../server/domains/) — projects, threads, context, runtime, packages, collab, storage, billing, observability, preferences
+→ [../../app/.context/CONTEXT.md](../../app/.context/CONTEXT.md) — frontend state/transport seams
+→ [`server/domains/`](../server/domains/) — projects, workbenches, threads, context, runtime, packages, collab, storage, billing, observability, preferences
