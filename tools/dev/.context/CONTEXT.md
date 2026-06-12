@@ -1,107 +1,83 @@
 # tools/dev — Dev tooling
 
-Local-dev-only utilities. Nothing here is loaded by the application runtime; everything here is invoked by `pnpm` scripts, `.envrc`, or by the developer's shell.
+Local-dev-only utilities. Nothing here is loaded by the application runtime; tools are invoked by `pnpm` scripts, `.envrc`, or a developer shell.
 
 ## What this module owns
 
-- **Dev environment resolution** — reading the main checkout's `.env` and applying per-worktree rewrites of every registered DB URL plus the `S3_BUCKET` (object storage)
-- **Per-worktree database + bucket administration** — idempotent create (DB + S3 bucket), guarded drop, reserved-name protection
-- **`pnpm dev` orchestration** — tmux session management, portless routing, dev-mode selection (local/tailscale/funnel)
-- **Bootstrap** — idempotent first-run setup (env file, infra, ensure + migrate schema, seed, portless aliases)
-- **Seed + extensions** — dev-data seeding, Postgres extension application
+- **Environment loading** — `load-env.ts` reads root `.env` and reports missing required keys with setup guidance.
+- **Supabase bootstrap support** — auth-user creation/sign-in helpers and Supabase env printing for the local CLI stack.
+- **Database readiness** — thin CLIs for ensuring, preparing, and dropping the active Postgres database URL used by this worktree.
+- **Drizzle schema application** — bootstrap runs migrations and applies PL/pgSQL functions from `@meridian/database`.
+- **Seed data** — `seed-dev-project.ts` creates a sample writing project and context sources for the dev user; `seed.ts` exposes that seeding as a standalone command when `TEST_USER_ID` is set.
+- **Dev orchestration** — `dev-tmux.ts` starts the worktree-scoped tmux stack and portless routes; `dev-mode.ts` selects local/tailscale/funnel exposure modes.
+- **Portless route helpers** — `portless-routes.ts` and app e2e helpers discover the HTTPS `*.meridian.localhost` routes used in development.
 
 ## Directory layout
 
 ```
 tools/dev/
-├── lib/                       deep modules: shared logic; no side effects at import
-│   ├── dev-env.ts             DEV_DATABASES registry + per-worktree URL rewrite (uses session-identity)
-│   └── dev-db.ts              Postgres admin: parse/validate/ensure/drop/extensions, error mapping
-├── __tests__/                 vitest units covering lib/ contracts
-│   ├── dev-env.test.ts
-│   └── dev-db.test.ts
-│
-├── prepare-db.ts              pnpm dev:db:prepare → ensure + extensions + migrate, all registered DBs
-├── ensure-db.ts               thin CLI: pnpm dev:db:ensure  →  lib/dev-db#ensureDatabaseForUrl (all DBs)
-├── drop-db.ts                 thin CLI: pnpm dev:db:drop    →  lib/dev-db#dropDatabaseForUrl (all DBs)
-├── print-worktree-env.ts      tsx helper eval'd by .envrc; emits `export VAR=...` for every registered DB
-│
-├── bootstrap.ts               pnpm bootstrap; uses lib/dev-env + prepare-db
-├── seed.ts                    dev-data seed; uses lib/dev-env
-│
-├── dev-tmux.ts                pnpm dev entrypoint; runs prepare-db before launching tmux
+├── lib/
+│   └── dev-env.ts             active env helpers + database URL resolution
+├── __tests__/                 vitest units for dev-mode, portless routes, session identity, etc.
+├── bootstrap.ts               pnpm bootstrap: auth user, sign-in check, migrate, functions, seed project
+├── seed-dev-project.ts        idempotent sample project/context-source seed helper
+├── seed.ts                    pnpm seed: standalone wrapper around seed-dev-project
+├── supabase-admin.ts          local Supabase auth admin/password sign-in helper
+├── supabase-env.ts            prints Supabase CLI values for .env population
+├── ensure-db.ts               validates/ensures active DATABASE_URL target
+├── prepare-db.ts              prepares active database before dev stack startup
+├── drop-db.ts                 guarded drop helper for active dev database
+├── load-env.ts                root .env loader + requireEnv helper
+├── print-worktree-env.ts      helper eval'd by .envrc to expose DATABASE_URL
+├── dev-tmux.ts                pnpm dev entrypoint; starts app/server/www through tmux
 ├── dev-mode.ts                local/tailscale/funnel mode selection
-├── dev-output.ts              progress logging
-├── dev-health.ts              health probes
-├── portless-routes.ts         portless route lookup
-├── session-identity.ts        worktree slug + session name derivation (used by dev-tmux + lib/dev-env)
-├── session-identity.test.ts   ... and many more dev-tool tests
-├── tmux-session-store.ts      tmux metadata
-└── docker-compose.yml         dev infra (Postgres, MinIO, mailpit)
+├── portless-routes.ts         portless route definitions and lookup
+├── session-identity.ts        worktree slug + tmux session naming
+└── tmux-session-store.ts      tmux metadata
 ```
 
-## Per-worktree DB isolation — contracts
+## Local database/auth contract
 
-The dev tooling guarantees these invariants:
+Meridian v3 uses Supabase CLI for local Postgres and `auth.users`.
 
-1. **One registry is the source of truth.** `lib/dev-env#DEV_DATABASES` lists every dev database (`DATABASE_URL` → product, `WEB_DATABASE_URL` → web). Env rewrite, ensure, drop, reserved-guard, extensions, and migrate all iterate it — `"web"` is never special-cased elsewhere.
-2. **Main checkout sees the bare base names** (`meridian`, `meridian_web`). Determined by `isMainCheckout()` comparing repo root to `git rev-parse --git-common-dir/..`.
-3. **Every linked worktree sees `<baseDbName>_<slug>`** per database — slug from `session-identity#resolveSessionIdentity` (branch label + 8-char path hash). Distinct base names (`meridian` vs `meridian_web`) and distinct worktrees can never collide. The rewrite is idempotent.
-4. **Product and web are physically separate databases.** The marketing app holds no credential that can reach product data.
-5. **Failure to derive a worktree DB is loud, never silent.** `.envrc` aborts when `print-worktree-env.ts` exits non-zero; tools via `applyDevEnvToProcess()` throw.
+- Start infra with `pnpm supabase:start`.
+- Populate `.env` from `.env.example` and `pnpm supabase:env`.
+- App schema is Drizzle-owned in `packages/database`, not Supabase migration files.
+- `pnpm bootstrap` creates/verifies a dev auth user, runs `pnpm db:migrate`, applies database functions, and seeds a sample project.
+- `pnpm seed` assumes `DATABASE_URL` and `TEST_USER_ID` already exist; use bootstrap first when setting up a fresh checkout.
 
-Consequences:
+## Dev server contract
 
-- The same `pnpm` script from two worktrees touches different databases — no cross-worktree blast radius.
-- `bootstrap.ts`, `seed.ts`, `prepare-db.ts`, `ensure-db.ts`, `drop-db.ts` all go through `applyDevEnvToProcess()`; direct `process.loadEnvFile` is forbidden in this module.
+Development is portless-first.
 
-## DB admin — contracts
+- `pnpm dev` runs the stack through a worktree-scoped tmux session.
+- `pnpm portless:list` is the source of truth for live HTTPS app/server/www URLs.
+- Tests and smoke scripts should go through portless/TLS routes unless they intentionally start an isolated in-process smoke server.
+- Do not add raw localhost port assumptions to new dev tools.
 
-`lib/dev-db.ts` is the only place this module talks SQL admin commands. Contracts:
+## Migration tooling
 
-- `validateDbName` accepts only `^[a-z_][a-z0-9_-]*$` and ≤63 bytes.
-- `ensureDatabase` issues `CREATE DATABASE` and treats SQLSTATE `42P04` as success (no SELECT-then-CREATE race).
-- `dropDatabase` issues `DROP DATABASE IF EXISTS ... WITH (FORCE)` (Postgres 13+) — kicks live connections; safe during active dev.
-- `ensureExtensionsForUrl` creates `CREATE EXTENSION IF NOT EXISTS` for a validated allowlist, connecting to the target DB. Run before migrate (trgm GIN indexes depend on `pg_trgm`).
-- `executeSqlForUrl` runs a raw multi-statement SQL script (simple-query protocol, handles plpgsql `$$` bodies) for post-migrate custom SQL (functions/views/triggers in `schema/sql/`); scripts must be idempotent.
-- `isReservedDatabase(name, mainDbNames)` returns `true` for `postgres`, `template0`, `template1`, and any main-checkout DB name (resolved from main `.env` via `dev-env#resolveMainDatabaseNames`).
-- `formatPgError` maps `ECONNREFUSED`, `ETIMEDOUT`, `ENOTFOUND`, `28P01`, `42501`, `3D000` to actionable hints.
+`migration-lint.ts` is a warning-first SQL scanner for generated Drizzle migrations. It flags risky deployed-Postgres patterns such as column renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, blocking index creation, and unconstrained deletes.
 
-Schema is applied via `drizzle-kit migrate` (committed SQL), not `push`. `drop-db.ts` requires `--yes-i-mean-it` for any reserved DB — the regular `--yes` only bypasses the interactive prompt.
+Run:
 
-## Composition
-
+```bash
+pnpm db:migration-lint
 ```
-.envrc
-  ├─ dotenv_if_exists <main>/.env             # base DATABASE_URL + WEB_DATABASE_URL
-  └─ eval "$(tsx tools/dev/print-worktree-env.ts)"   # rewrite every registered DB via lib/dev-env
 
-pnpm dev (dev-tmux.ts)
-  ├─ tsx tools/dev/prepare-db.ts              # ensure + extensions + migrate, all DBs
-  └─ tmux orchestration (existing)
-
-pnpm dev:db:prepare (prepare-db.ts)           → ensure + extensions + migrate + post-migrate custom SQL
-pnpm dev:db:ensure  (ensure-db.ts)            → lib/dev-db#ensureDatabaseForUrl (all DBs)
-pnpm dev:db:drop    (drop-db.ts)              → lib/dev-db#dropDatabaseForUrl (all DBs, reserved-guarded)
-
-pnpm bootstrap (bootstrap.ts)
-  ├─ applyDevEnvToProcess()                   # rewrites all registered DB URLs
-  ├─ tsx tools/dev/prepare-db.ts              # ensure + extensions + migrate
-  └─ ... rest of bootstrap
-
-tsx tools/dev/seed.ts                         # also calls applyDevEnvToProcess()
-```
+Warnings do not currently block the pipeline; errors do.
 
 ## Conventions
 
-- **Deep modules over shallow.** `lib/dev-env.ts` and `lib/dev-db.ts` are the canonical homes; scripts at the top level are thin CLI wrappers. New DB/env concerns go in `lib/`, not as new top-level scripts.
-- **Side effects loud.** Silent fallback to the shared `meridian` DB in a worktree would defeat the isolation guarantee. Helper failures must throw or print and exit non-zero.
-- **No direct `.env` parsing outside `lib/dev-env.ts`.** Other tools call `applyDevEnvToProcess()` or `loadMainEnvFile()`.
-- **No regex URL surgery.** URL transformations use `new URL()`.
-- **Tests guard the contracts.** Slug derivation, URL rewrite edge cases, name validation, and reserved-name guards have vitest coverage in `__tests__/`.
+- Keep top-level scripts thin; put reusable logic in helpers.
+- Keep local infrastructure provider assumptions in dev tooling and composition roots, not domain code.
+- Use `new URL()` for URL transformations.
+- Prefer explicit setup errors over silent fallback.
+- Keep dev tooling aligned with Supabase CLI + Drizzle + portless.
 
 ## Related documentation
 
-- [`DEVELOPMENT.md` § Worktree `.env` resolution](../../DEVELOPMENT.md#worktree-env-resolution)
-- [`DEVELOPMENT.md` § Per-worktree dev databases](../../DEVELOPMENT.md#per-worktree-dev-databases)
-- `session-identity.ts` is the source of truth for worktree slug shape
+- [`DEVELOPMENT.md`](../../DEVELOPMENT.md)
+- [`supabase/README.md`](../../supabase/README.md)
+- [`packages/database/README.md`](../../packages/database/README.md)
+- [`tests/smoke/README.md`](../../tests/smoke/README.md)
