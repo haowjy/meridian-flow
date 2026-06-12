@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added no-execution ContextFS factory, input-ingest, promotion, and checkpoint flush parity coverage with source-path terminology.
 - Added exact-path parity coverage for HTTP interrupt envelopes, context reads, figure assets, thread-upload DB documents, billing ledger DB invariants, and package repository DB conformance.
 - Added thread agent rebind route-core parity tests for agent switching, unknown agents, baked threads, and owner gating.
 - Added Mars package version-constraint parsing, library definition source-line labels, thread upload import route wiring, and pre-turn thread agent rebind route parity.
@@ -78,6 +79,7 @@
 - **dev:** Collab Supabase (`54422`), `.env.example`, bootstrap pipeline (`db:migrate` → `db:apply-functions` → Drizzle seed).
 
 ### Changed
+- **server/context:** align artifact promotion policy with upstream output suffix coverage, including NIfTI and TIFF artifacts.
 - **app/routes:** replace the placeholder public app index with the authenticated Home index route to avoid duplicate root route generation.
 
 - **app:** wrap authenticated routes in the workbench query/store/transport providers so `/workbench/:id` and `/chat/:id` run the ported workspace shell.

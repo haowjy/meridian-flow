@@ -247,9 +247,23 @@ export type {
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
 export { createCheckpointArtifactFlush } from "./promotion/checkpoint-artifact-flush.js";
+export {
+  type CheckpointFlushManifest,
+  type CheckpointFlushManifestEntry,
+  type CheckpointFlushService,
+  createCheckpointFlushService,
+  sourcePathsFromArtifactRefs,
+} from "./promotion/checkpoint-flush.js";
 export type {
+  CreateWorkbenchResultInput,
   ResultRepository,
   WorkbenchResultRecord,
 } from "./promotion/ports/result-repository.js";
-export { createPromotionService, type PromotionService } from "./promotion/promotion-service.js";
+export { evaluatePromotionPolicy, PROMOTION_POLICY_TABLE } from "./promotion/promotion-policy.js";
+export {
+  createPromotionService,
+  type PromotedArtifact,
+  type PromotionService,
+} from "./promotion/promotion-service.js";
+export type { ResultProvenance } from "./promotion/result-provenance.js";
 export * from "./uploads/index.js";
