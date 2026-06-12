@@ -15,6 +15,9 @@ import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as DevLoginRouteImport } from './routes/dev-login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProtoIndexRouteImport } from './routes/proto.index'
+import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
+import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
@@ -49,6 +52,21 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProtoIndexRoute = ProtoIndexRouteImport.update({
+  id: '/proto/',
+  path: '/proto/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProtoSpikeLayoutRoute = ProtoSpikeLayoutRouteImport.update({
+  id: '/proto/spike-layout',
+  path: '/proto/spike-layout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProtoPersistentSurfacesRoute = ProtoPersistentSurfacesRouteImport.update({
+  id: '/proto/persistent-surfaces',
+  path: '/proto/persistent-surfaces',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
@@ -92,6 +110,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
+  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
+  '/proto/': typeof ProtoIndexRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -105,6 +126,9 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
+  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
+  '/proto': typeof ProtoIndexRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
@@ -120,6 +144,9 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
+  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
+  '/proto/': typeof ProtoIndexRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -135,6 +162,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/auth-check'
+    | '/proto/persistent-surfaces'
+    | '/proto/spike-layout'
+    | '/proto/'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects/'
@@ -148,6 +178,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/auth-check'
+    | '/proto/persistent-surfaces'
+    | '/proto/spike-layout'
+    | '/proto'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects'
@@ -162,6 +195,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/_authenticated/auth-check'
+    | '/proto/persistent-surfaces'
+    | '/proto/spike-layout'
+    | '/proto/'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/_authenticated/projects/'
@@ -176,6 +212,9 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
+  ProtoPersistentSurfacesRoute: typeof ProtoPersistentSurfacesRoute
+  ProtoSpikeLayoutRoute: typeof ProtoSpikeLayoutRoute
+  ProtoIndexRoute: typeof ProtoIndexRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
 }
@@ -222,6 +261,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/proto/': {
+      id: '/proto/'
+      path: '/proto'
+      fullPath: '/proto/'
+      preLoaderRoute: typeof ProtoIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/proto/spike-layout': {
+      id: '/proto/spike-layout'
+      path: '/proto/spike-layout'
+      fullPath: '/proto/spike-layout'
+      preLoaderRoute: typeof ProtoSpikeLayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/proto/persistent-surfaces': {
+      id: '/proto/persistent-surfaces'
+      path: '/proto/persistent-surfaces'
+      fullPath: '/proto/persistent-surfaces'
+      preLoaderRoute: typeof ProtoPersistentSurfacesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/auth-check': {
@@ -296,6 +356,9 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
+  ProtoPersistentSurfacesRoute: ProtoPersistentSurfacesRoute,
+  ProtoSpikeLayoutRoute: ProtoSpikeLayoutRoute,
+  ProtoIndexRoute: ProtoIndexRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
 }

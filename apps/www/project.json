@@ -4,15 +4,6 @@
   "projectType": "application",
   "sourceRoot": "apps/www/src",
   "targets": {
-    "build": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm --filter @meridian/www build"
-      },
-      "inputs": ["production", "^production"],
-      "outputs": ["{projectRoot}/dist"],
-      "cache": true
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {
