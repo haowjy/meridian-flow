@@ -4,17 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
-# Build rejected upstream names without storing their exact tokens in active source.
 exec_runtime_word="sand""box"
-upstream_brand="vol""uma"
 
 rejected_paths=(
   "apps/server/server/domains/${exec_runtime_word}"
   "apps/server/server/lib/${exec_runtime_word}-runtime-factory.ts"
   "apps/server/server/domains/context/adapters/${exec_runtime_word}-aware-fs"
-  "apps/app/src/core/editor/extensions/${upstream_brand}-figure.ts"
-  "apps/app/src/core/editor/extensions/${upstream_brand}-table.ts"
-  "apps/app/src/core/editor/extensions/${upstream_brand}-math.ts"
 )
 
 found=()
@@ -28,11 +23,9 @@ while IFS= read -r hit; do
   found+=("$hit")
 done < <(
   git grep -n \
-    -e "WorkOS" \
-    -e "markdown-replace" \
-    -e "${upstream_brand^}Figure" \
-    -e "${upstream_brand^}Table" \
-    -e "${upstream_brand^}Math" \
+    -e "Work""OS" \
+    -e "work""os" \
+    -e "markdown""-replace" \
     -e "Sand""boxProvider" \
     -e "Sand""boxScope" \
     -e "Sand""boxAwareFS" \

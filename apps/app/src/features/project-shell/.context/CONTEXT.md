@@ -46,7 +46,7 @@ There is **no `files` grid track**. The Context file explorer renders *inside*
 ### Slot paints the material; surfaces must not
 
 Slot chrome — background, rounded inside corner, inward shadow — is owned
-**entirely by the slot's `className`** (`DESKTOP_WORKBENCH_SLOTS`):
+**entirely by the slot's `className`** (`DESKTOP_PROJECT_SLOTS`):
 
 | Slot     | Material |
 |----------|----------|

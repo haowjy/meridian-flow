@@ -32,7 +32,7 @@
 
 ### Chore
 
-- Add upstream-derived Nx graph and negative-space checks to keep rejected auth, editor-transport, and execution-runtime surfaces out of v3.
+- Add upstream-derived Nx graph and negative-space checks to keep rejected auth adapter, editor-transport shortcut, and removed execution runtime out of v3.
 - Add [DEVELOPMENT.md](DEVELOPMENT.md) (setup, `lefthook install --reset-hooks-path` for worktrees, commit discipline).
 - Ignore `.nx/` cache; wire lefthook pre-commit (biome + typecheck) and pre-push (database tests).
 - Add `.cursor/rules/commit-phase-discipline.mdc`; fix root `vitest.config.mts` project list.
