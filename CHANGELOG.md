@@ -29,6 +29,7 @@
 
 ### Changed
 
+- **docs:** align product-facing brand references on Meridian Flow.
 - **dev:** `AGENTS.md` documents `db:migrate`, `db:apply-functions`, `db:studio`, and bootstrap flow.
 
 ### Chore

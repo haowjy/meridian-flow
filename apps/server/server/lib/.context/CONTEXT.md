@@ -67,7 +67,7 @@ non-skill tools are not rebound and emit `skill_tool.name_collision`.
 
 | File | Role |
 |---|---|
-| `auth.ts` | Supabase authentication seam. `resolveUser(request)` validates the session cookie; `requireUser(request, deps)` provisions/loads the Meridian user row. |
+| `auth.ts` | Supabase authentication seam. `resolveUser(request)` validates the session cookie; `requireUser(request, deps)` provisions/loads the Meridian Flow user row. |
 | `auth-gate.ts` | Single seam combining app composition with auth. `requireAppUser(event)` returns `{ app, user }`; `resolveAppUserFromRequest` is nullable for WS upgrade paths. |
 | `ws-upgrade-auth.ts` | Shared WS upgrade auth returning authenticated or deferred-close contexts. |
 

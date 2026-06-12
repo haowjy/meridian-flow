@@ -1,7 +1,7 @@
 # collab — document spine
 
 DocumentSyncService is the live document spine: the Yjs CRDT substrate plus the
-markdown bijection that every Meridian rich document round-trips through.
+markdown bijection that every Meridian Flow rich document round-trips through.
 
 ## Canonical-representation invariant
 

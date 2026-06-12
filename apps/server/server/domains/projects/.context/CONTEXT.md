@@ -10,7 +10,7 @@ hangs off of. Split out of the former `domains/content` grab-bag.
   project workspace (`Thread.workId` is a nullable FK; `null` = ungrouped).
 - **Access checks** — `requireProject workspaceOwner` gates every project workspace-scoped route.
 - **User provisioning** — idempotent external credential upsert into `users`
-  before any FK-backed user write; returns Meridian's internal user id.
+  before any FK-backed user write; returns Meridian Flow's internal user id.
 
 ## Contracts (ports)
 

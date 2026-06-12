@@ -1,6 +1,6 @@
-# Meridian
+# Meridian Flow
 
-Agentic writing platform for fiction writers managing 100+ chapter web serials. No real users or user data. No backwards compatibility needed. Schema can change freely.
+Meridian Flow is an agentic writing platform for fiction writers managing 100+ chapter web serials. No real users or user data. No backwards compatibility needed. Schema can change freely.
 
 **Target user:** Fiction writers managing 100+ chapter web serials (xianxia, LitRPG, progression fantasy). Power users who write 5,000-10,000+ words per day across multiple ongoing serials. They need an editor that handles scale (hundreds of chapters, complex continuity) with AI assistance that understands narrative structure. Think Scrivener's power without its complexity cliff, plus AI that actually helps with writing craft.
 
