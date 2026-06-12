@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added exact-path parity coverage for workbench results, thread WebSocket checkpoint control, and Yjs WebSocket multiplexing/persistence behavior.
 - Added no-execution ContextFS factory, input-ingest, promotion, and checkpoint flush parity coverage with source-path terminology.
 - Added exact-path parity coverage for HTTP interrupt envelopes, context reads, figure assets, thread-upload DB documents, billing ledger DB invariants, and package repository DB conformance.
 - Added thread agent rebind route-core parity tests for agent switching, unknown agents, baked threads, and owner gating.
