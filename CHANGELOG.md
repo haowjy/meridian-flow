@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added Meridian-adapted app context docs, e2e pg typings, and database schema compatibility paths for upstream exact-path parity.
 - Added portless Playwright workbench-route smoke configs for mobile shell selection, chat virtualization, and ProcessDisclosure verification.
 - Added persisted Drizzle workbench preferences with Supabase-backed conformance coverage.
 - Added a Meridian Supabase/Postgres workbench-domain smoke script for repository runtime checks.
