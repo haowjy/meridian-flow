@@ -232,7 +232,7 @@ export function createDrizzleProjectRepository(db: Database): ProjectRepository 
         createdByUserId: input.userId,
         title: "Chapter 1",
         kind: "primary",
-        currentAgentId: input.agentDefinitionId,
+        currentAgentId: "writer",
       })
       .returning({ id: threads.id });
     if (!thread) throw new Error("Failed to create primary thread");

@@ -142,6 +142,7 @@ export function createDrizzleThreadRepository(
           kind: thread.kind,
           title: thread.title ?? "",
           composedSystemPrompt: thread.composedSystemPrompt,
+          bakedSkillSlugs: thread.bakedSkillSlugs,
           systemPromptHash: "baked",
           currentAgentId: thread.currentAgent,
           parentThreadId: thread.parentThreadId,
@@ -250,7 +251,7 @@ export function createDrizzleThreadRepository(
         .where(
           and(
             eq(schema.threads.id, id),
-            isNull(schema.threads.systemPromptHash),
+            isNull(schema.threads.bakedSkillSlugs),
             eq(schema.threads.turnCount, 0),
           ),
         )
@@ -262,10 +263,11 @@ export function createDrizzleThreadRepository(
         .update(schema.threads)
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
+          bakedSkillSlugs: input.bakedSkillSlugs,
           systemPromptHash: "baked",
           updatedAt: new Date(),
         })
-        .where(eq(schema.threads.id, id))
+        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
         .returning();
       if (row) return mapThread(row);
       const existing = await this.findById(id);

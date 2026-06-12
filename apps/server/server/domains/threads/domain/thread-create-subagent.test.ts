@@ -1,7 +1,7 @@
 /**
  * Subagent thread row builder and frozen prompt-field parity across adapters.
- * Meridian's current Drizzle schema keeps composed prompt freeze state but not
- * the upstream baked-skill slug list, so mapper parity expects that field null.
+ * Meridian persists the composed prompt plus baked-skill slug list so runtime
+ * prompt-freeze state survives reload.
  */
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkbenchRepository } from "../../workbenches/index.js";
@@ -50,6 +50,7 @@ function drizzleRowFromBuilt(built: ReturnType<typeof buildSubagentThreadRow>) {
     kind: built.kind,
     status: built.status,
     composedSystemPrompt: built.composedSystemPrompt ?? null,
+    bakedSkillSlugs: built.bakedSkillSlugs,
     systemPromptHash: "baked",
     workingState: built.workingState,
     currentAgentId: built.currentAgent,
@@ -94,7 +95,7 @@ describe("frozen subagent adapter parity", () => {
     };
     expect(promptFields(built)).toEqual(expected);
     expect(promptFields(inMemory)).toEqual(expected);
-    expect(promptFields(fromDrizzle)).toEqual({ ...expected, bakedSkillSlugs: null });
+    expect(promptFields(fromDrizzle)).toEqual(expected);
   });
 
   it("empty baked set still freezes with systemPrompt null", async () => {
@@ -117,6 +118,6 @@ describe("frozen subagent adapter parity", () => {
     };
     expect(promptFields(built)).toEqual(expected);
     expect(promptFields(inMemory)).toEqual(expected);
-    expect(promptFields(fromDrizzle)).toEqual({ ...expected, bakedSkillSlugs: null });
+    expect(promptFields(fromDrizzle)).toEqual(expected);
   });
 });

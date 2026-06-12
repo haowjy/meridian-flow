@@ -215,7 +215,6 @@ export function createRuntimeToolRegistry(deps: {
           id: childTurnId,
           threadId: childThreadId,
           parentTurnId: null,
-          agentDefinitionId: parent.currentAgentId,
           role: "user",
           status: "complete",
           finishReason: "spawn_prompt",

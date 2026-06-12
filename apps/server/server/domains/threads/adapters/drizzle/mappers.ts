@@ -26,7 +26,7 @@ export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsa
 }
 
 export function mapThread(row: typeof schema.threads.$inferSelect): Thread {
-  const isFrozen = Boolean(row.systemPromptHash);
+  const isFrozen = row.bakedSkillSlugs !== null;
   return {
     id: row.id,
     workbenchId: row.projectId,
@@ -36,7 +36,7 @@ export function mapThread(row: typeof schema.threads.$inferSelect): Thread {
     status: row.status === "archived" ? "archived" : "idle",
     title: row.title,
     composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
-    bakedSkillSlugs: null,
+    bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
     currentAgent: row.currentAgentId,

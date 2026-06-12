@@ -50,13 +50,10 @@ export const threads = pgTable(
     title: text("title").notNull().default(""),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("active"),
-    currentAgentId: uuid("current_agent_id")
-      .$type<AgentDefinitionId>()
-      .references(() => agentDefinitions.id, {
-        onDelete: "set null",
-      }),
+    currentAgentId: text("current_agent_id"),
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
+    bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),

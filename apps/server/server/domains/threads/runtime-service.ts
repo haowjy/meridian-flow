@@ -2,7 +2,6 @@
 import { randomUUID } from "node:crypto";
 import type { SendMessageResponse, ThreadLiveState } from "@meridian/contracts/protocol";
 import type {
-  AgentDefinitionId,
   ProjectId,
   ThreadId,
   TurnBlockId,
@@ -31,7 +30,7 @@ type OwnedThread = {
   id: ThreadId;
   projectId: ProjectId;
   workId: WorkId;
-  currentAgentId: AgentDefinitionId | null;
+  currentAgentId: string | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
   status: string;
@@ -230,7 +229,6 @@ export function createThreadRuntimeService(deps: {
             id: userTurnId,
             threadId: input.threadId,
             parentTurnId: thread.activeLeafTurnId,
-            agentDefinitionId: thread.currentAgentId,
             role: "user",
             status: "complete",
             finishReason: "end_turn",
@@ -244,7 +242,6 @@ export function createThreadRuntimeService(deps: {
             id: assistantTurnId,
             threadId: input.threadId,
             parentTurnId: userTurnId,
-            agentDefinitionId: thread.currentAgentId,
             role: "assistant",
             status: "streaming",
           })

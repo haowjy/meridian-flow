@@ -57,6 +57,13 @@
       "when": 1781281000000,
       "tag": "0008_workbench_user_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781282000000,
+      "tag": "0009_thread_agent_slug_and_baked_skills",
+      "breakpoints": true
     }
   ]
 }
