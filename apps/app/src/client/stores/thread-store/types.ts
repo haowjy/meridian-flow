@@ -100,6 +100,7 @@ export type ThreadStoreActions = {
   markHandoffPending(threadId: string): void;
   appendUserTurn(threadId: string, text: string): Turn;
   acknowledgeUserTurn(threadId: string, optimisticTurnId: string, serverTurnId: string): void;
+  removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   patchTurnStatus(
@@ -124,6 +125,6 @@ export type ThreadStoreActions = {
    * Consumed by data hooks (`useWorkbenchThreads`, `useWorks`,
    * `useThreadSnapshotSync`) to gate fetches that would otherwise 404.
    */
-  markPendingCreation(args: { workbenchId: string; threadId: string }): void;
+  markPendingCreation(args: { workbenchId?: string; threadId: string }): void;
   clearPendingCreation(args: { workbenchId?: string; threadId?: string }): void;
 };

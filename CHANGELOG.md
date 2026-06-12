@@ -4,6 +4,8 @@
 
 ### Added
 
+- **app/tests:** port upstream thread-store, session reducer, editor schema, chat rendering, workbench lifecycle, and deferred-chat regression coverage.
+- **prosemirror-schema:** align the shared server schema with the richer TipTap editor nodes for figures, images, math, and tables.
 - **app/library:** port upstream Library/package install UI, agent package APIs, related query hooks, and agent-mode helpers with Meridian naming.
 - **server/workbenches:** port upstream workbench/work repository domain structure, thread-creation work touch coverage, and additional runtime loop/core-handler regression tests.
 - **runtime:** split Meridian-owned permission gates into upstream-style modules and port gateway adapter/integration coverage with Meridian reasoning metadata.

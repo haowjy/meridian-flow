@@ -313,6 +313,14 @@ const RENDERERS: Record<string, ToolRenderer> = {
     },
     expand: resultRowsOrNothing,
   },
+  bash: {
+    Icon: Wrench,
+    title: (tool) => {
+      const command = asString(inputObject(tool).command);
+      return command ? <PathTitle verb={t`Ran`} path={command} /> : t`Ran command`;
+    },
+    expand: streamOrOutput,
+  },
   invoke: {
     Icon: Sparkles,
     title: (tool) => <InvokeSkillTitle tool={tool} />,

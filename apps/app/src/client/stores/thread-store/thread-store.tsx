@@ -166,6 +166,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
+    removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
     patchTurnStatus: state.patchTurnStatus,
@@ -279,6 +280,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 return turn;
               });
 
+            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+          });
+        },
+
+        removeOptimisticUserTurn(threadId, optimisticTurnId) {
+          set((state) => {
+            const turns = state.turnsByThread[threadId] ?? [];
+            const nextTurns = turns.filter((turn) => turn.id !== optimisticTurnId);
+            if (nextTurns.length === turns.length) return state;
             return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
           });
         },
@@ -531,7 +541,9 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         markPendingCreation({ workbenchId, threadId }) {
           set((state) => ({
             pendingCreation: {
-              workbenchIds: { ...state.pendingCreation.workbenchIds, [workbenchId]: true },
+              workbenchIds: workbenchId
+                ? { ...state.pendingCreation.workbenchIds, [workbenchId]: true }
+                : state.pendingCreation.workbenchIds,
               threadIds: { ...state.pendingCreation.threadIds, [threadId]: true },
             },
           }));
