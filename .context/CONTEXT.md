@@ -95,3 +95,9 @@ KB                   ← cross-cutting decisions, vocabulary, durable product do
 ```
 
 Agents should read `.context/` before raw source files when entering an area.
+
+## Upstream parity mapping notes
+
+- Upstream `apps/web` is intentionally represented as `apps/www` in this repo, so exact-path audits should classify those paths as ported under the Meridian marketing app name rather than missing.
+- The upstream root/Python SDK and `uv` files are intentionally not ported into tracked source for v3. Meridian Flow's runtime and dev tooling are TypeScript/pnpm/Nx; reintroducing a separate Python SDK/toolchain would be a new product/API decision, not parity work.
+- Files from the rejected external execution-provider subsystem remain excluded by policy. Runtime tools operate through Meridian-owned context/project surfaces instead.

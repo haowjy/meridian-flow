@@ -48,6 +48,7 @@
 
 ### Changed
 
+- **docs:** record exact-path parity mappings for the marketing app and the intentionally excluded Python/runtime-provider tooling.
 - **docs:** align product-facing brand references on Meridian Flow.
 - **dev:** `AGENTS.md` documents `db:migrate`, `db:apply-functions`, `db:studio`, and bootstrap flow.
 
