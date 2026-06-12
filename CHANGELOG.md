@@ -4,6 +4,7 @@
 
 ### Added
 
+- **runtime:** split Meridian-owned permission gates into upstream-style modules and port gateway adapter/integration coverage with Meridian reasoning metadata.
 - **server/packages:** port upstream package-domain install/update/preview/library helpers, zip export, skill-link reconciliation, and conformance/unit coverage with Meridian naming.
 - **app:** port upstream API route ownership and structured Meridian API error tests.
 - **server:** port upstream observability and storage adapter tests for JSONL/in-memory event sinks and object-store adapters.
