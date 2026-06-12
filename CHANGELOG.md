@@ -4,6 +4,7 @@
 
 ### Added
 
+- **server:** port upstream observability and storage adapter tests for JSONL/in-memory event sinks and object-store adapters.
 - **server/docs:** add adapted server architecture context, domain README, and deploy documentation for `MERIDIAN_API_ORIGIN`.
 - **app:** copy upstream app context docs, app manifest/icons/screenshots, components config, and Supabase-adapted production start-env validation.
 - **app/dev:** port upstream app Vite dev-control plane, Lingui config, global CSS bridge, SSR externalization seam, and portless API proxy with Meridian/Supabase naming.
