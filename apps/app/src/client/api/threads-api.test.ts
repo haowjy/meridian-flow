@@ -116,12 +116,12 @@ describe("threads-api listThreads", () => {
 
     await listThreads({
       origin: "https://app.meridian.localhost",
-      headers: { cookie: "workos_session=abc" },
+      headers: { cookie: "sb-access-token=abc" },
     });
 
     expect(fetchMock).toHaveBeenCalledWith("https://app.meridian.localhost/api/threads", {
       method: "GET",
-      headers: { cookie: "workos_session=abc" },
+      headers: { cookie: "sb-access-token=abc" },
     });
   });
 });

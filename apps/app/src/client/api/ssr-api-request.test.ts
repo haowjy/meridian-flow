@@ -76,13 +76,13 @@ describe("resolveSsrApiOrigin", () => {
     expect(
       ssrApiRequestInitFromRequest(
         request({
-          cookie: "workos_session=abc",
+          cookie: "sb-access-token=abc",
           "x-forwarded-host": "experiment.app.meridian.localhost",
         }),
       ),
     ).toEqual({
       origin: "https://experiment.server.meridian.localhost",
-      headers: { cookie: "workos_session=abc" },
+      headers: { cookie: "sb-access-token=abc" },
     });
   });
 });
