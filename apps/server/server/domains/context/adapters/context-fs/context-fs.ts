@@ -69,7 +69,7 @@ function toUpdateOrigin(provenance: WriteProvenance | undefined): UpdateOrigin {
  * store, but read/write content flows through DocumentSyncService. The store's
  * markdown is only a seed/search projection cache.
  *
- * v1 semantics are last-write-wins (context-system.md open questions #1/#5):
+ * v1 semantics are last-write-wins:
  * `ensureFolderId` find-then-create and the store's find-then-upsert are not
  * atomic, so two concurrent writers to the same new path can race into a
  * unique-constraint violation. The router converts that rejection into an

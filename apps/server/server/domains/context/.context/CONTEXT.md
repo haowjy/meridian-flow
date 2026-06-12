@@ -1,82 +1,77 @@
-# domains/context — ContextPort
+# domains/context — context filesystem primitives
 
-Agent-readable/writable project workspace context addressed by `context://` URIs. Split
-out of the former `domains/content` grab-bag.
+Agent-readable/writable project workspace context addressed by context URIs. The
+current slice ports the upstream filesystem-shaped primitives while leaving the
+older runtime-facing thread document factory in place.
 
 ## What it owns
 
-- **`ContextPort`** — the read/write/list/search surface tools use to reach
-  project workspace context.
-- **URI routing** — `parseContextUri` / `toCanonical` + `createContextPortRouter`
-  dispatch a URI to the adapter for its scheme.
-- **Schemes:** `fs1 | kb | work | user` (the `package` scheme was removed in the
-  phase-1 cleanup; reintroduce only when `domains/packages` backs it for real).
-- **ContextFS document stores & Yjs mirrors** — public context trees/projections live in stores;
-  fs1/kb/work/user content is read/written through `DocumentSyncService`.
-- **Figure assets** — figure upload/signing orchestration for context documents
-  with bytes stored through `domains/storage`'s object-store primitive.
-- **Internal thread-upload backing docs** — system-only upload documents live in
-  an internal `thread_uploads` context source, outside public `kb://`, `work://`,
-  and `user://` trees. `uploads/` owns the chat upload/recent rails projection
-  and the import pipeline (object bytes → backing document → Yjs mirror → thread
-  attachment).
+- **Legacy runtime `ContextPortFactory`** in `index.ts` — `forThread({ threadId, userId })`
+  still exposes `readDocument` / `writeDocument` / `editDocument` for the turn
+  tool registry. Production support is intentionally narrow: it resolves only
+  `work://manuscript/chapter-1.md`, verifies thread/work/user ownership through
+  Drizzle, and delegates writes/edits to `DocumentSyncService`.
+- **Context URI primitives** — `parseContextUri` / `toCanonical` normalize the
+  four registered schemes: `fs1`, `kb`, `work`, and `user`.
+- **ContextPort router** — `createContextPortRouter` parses a URI, dispatches to
+  a scheme adapter, and converts adapter faults or thrown backend errors into
+  `ContextError` results with the canonical URI attached.
+- **Scheme/storage ports** — `ContextPort`, `ContextSchemeAdapter`, and
+  `ContextDocumentStore` define the filesystem contract independently of any
+  Drizzle or object-storage adapter.
+- **ContextFS reference adapter** — `ContextFS` maps a slash-delimited file tree
+  onto `ContextDocumentStore` rows and `DocumentSyncPort` Yjs mirrors; the
+  in-memory store is the reference/test backing implementation.
 
-## Contracts (ports)
+## Contracts
 
-| Port | Shape |
+| Contract | Shape |
 |---|---|
-| `ContextPort` | `stat / read / write / list / search` — all return `Result<…, ContextError>`; `stat` is the narrow single-file resolver for tracked-vs-binary refs; `write` accepts optional context-local WriteProvenance (mapped to collab's update origin at the ContextFS boundary) |
-| `ContextSchemeAdapter` | per-scheme adapter the router dispatches to (`SchemeCapabilities`) |
-| `ContextDocumentStore` | `UpsertDocumentInput` → durable doc rows + search |
+| Legacy `ContextPortFactory` (`index.ts`) | Thread-scoped `readDocument` / `writeDocument` / `editDocument` over `work://manuscript/chapter-1.md`; throws `HTTPError` at the route/runtime boundary. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `writeBinary`, `mkdir`, `list`, `search`. No errors should cross this boundary as throws. |
+| `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. |
+| `ContextDocumentStore` | Primitive folder/document backing store for one context source. Path resolution and folder creation live in `ContextFS`, not in the store. |
 
-Fallible operations return `Result<T, ContextError>` (not throws). Search
-scoped to a scheme root (e.g. `kb://`) stays in-scheme; an unscoped search fans
-out across writable schemes.
+The two `ContextPort` names are temporary: `index.ts` keeps the old thread-tool
+port, while `ports/context-port.ts` defines the upstream-style filesystem port.
+When wiring moves fully to the router/adapter path, resolve that naming overlap
+instead of adding another alias.
 
-## Adapters
+## URI and router invariants
 
-- `ContextFS` over `ContextDocumentStore` for folder/projection plus
-  `DocumentSyncPort` for canonical markdown content.
-- Figure asset service under `figures/`, `FigureDocumentRepository` port under
-  `ports/`, and Drizzle/in-memory repository adapters under `adapters/figures/`.
+- Canonical context URIs are `scheme://path`; a scheme root is `scheme://`.
+- Bare paths default to `fs1://` for copied upstream tool parity.
+- Leading/trailing slashes and repeated slashes are normalized away; `.` segments
+  are dropped; `..` is rejected.
+- Strings that look scheme-prefixed but omit `//` (`kb:notes.md`) are invalid,
+  not bare `fs1` paths.
+- Router methods attach the canonical URI to every `ContextError`.
+- Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
+  `context_unavailable`, and `io_error` stay generic context/backing-store
+  faults. Unexpected adapter rejections become `io_error`.
+- Unscoped `search(query)` fans out across searchable adapters best-effort: one
+  failed backend is skipped rather than failing the whole search.
 
-## Invariants & known gaps
+## ContextFS invariants
 
-- **Yjs-canonical content for fs1/kb/work/user.** Reads resolve the document row,
-  seed/get the mirror by `ContextDocument.id`, then return `readAsMarkdown`.
-  Writes create/resolve the row, write to Yjs with attribution, then persist
-  the Yjs read-back to `documents.markdown_projection` as a derived cache/search
-  index. See [collab/.context/CONTEXT.md](../../collab/.context/CONTEXT.md) for the canonical-representation invariant (markdown = semantic/interchange, Yjs = merge/provenance).
-- **Thread uploads use an internal source, not `work://.uploads`.** The route calls
-  `ThreadUploadImportService`, which owns object put → upload document row →
-  Yjs mirror seed → thread attach. The context-owned internal upload store
-  provisions a project workspace-scoped `thread_uploads` source that is not registered in
-  the public ContextPort router, so dotfiles like `.env`/`.gitignore` remain
-  valid user-visible paths while upload backing docs stay hidden. Binary object
-  writes are cleaned up best-effort on downstream failure; tracked mirror cache is
-  evicted when the import transaction rolls back after mirror seeding.
-- **Figure upload is two-phase and partially-failure-safe** (`figures/figure-assets.ts`, with persistence behind `ports/figure-document-repository.ts`).
-  Object write → DB `attachDocumentFile` is not atomic, so on attach throw or a
-  missing-document result the freshly-written object is deleted best-effort
-  (`deleteObjectBestEffort`); on a successful replace the *old* object is likewise
-  cleaned up best-effort. Signed-URL generation for the response is best-effort
-  (2 attempts) — a sign failure still returns the persisted reference with an
-  empty `signedUrl` / epoch `signedUrlExpiresAt` rather than failing the upload.
-  All cleanup failures are logged, never thrown.
-- **Production tree/projection wiring is durable.** `context-port-factory.ts`'s
-  `createProductionContextPortFactory()` builds Drizzle-backed context stores
-  over lazily provisioned per-project workspace `context_sources` rows for `fs1`, `kb`,
-  `work`, and `user`. It shares the production `DocumentSyncService`, so content
-  writes hit the Yjs update log while `documents.markdown_projection` remains
-  the derived search/listing cache.
+- `ContextFS` owns normalized path ↔ folder/document resolution and creates
+  missing folders on writes and `mkdir`.
+- Text documents are Yjs-canonical. Reads seed/get the mirror from the store's
+  markdown projection, then return `DocumentSyncPort.readAsMarkdown`. Writes
+  write through `DocumentSyncPort.writeFromMarkdown`, read back from Yjs, and
+  persist that projection into the store for listing/search.
+- `WriteProvenance` is mapped at the adapter boundary to collab update origins:
+  agent provenance uses `turnId`, human provenance uses `userId`, and omitted
+  provenance is system-originated.
+- Binary documents are storage-backed metadata rows. `read` rejects them as
+  `io_error`; `stat`/`list` return binary refs with storage URL and MIME data.
+- The current adapter is last-write-wins. Folder creation and document upsert are
+  find-then-create/find-then-upsert; concurrent writers to the same new path can
+  race into a backing-store error that the router reports as `io_error`.
 
-## Wiring
+## Negative space
 
-`compose.ts` exposes `contextPorts: ContextPortFactory`; the orchestrator's core
-tools read/write context through it with `forProject workspace(project workspaceId, userId)`.
-
-`context-port-factory.ts` lives in this domain and owns production/in-memory
-ContextPortFactory construction. `uploads/` owns thread upload import/backing
-documents. `promotion/` owns result promotion and the
-`createOrchestratorCheckpointArtifactFlush()` factory used by runtime checkpoint
-boundaries.
+This slice intentionally uses generic context vocabulary. Do not reintroduce
+WorkOS/AuthKit auth seams, Voluma naming, sandbox-aware filesystems, scientific
+schemes, or executable package-runtime assumptions while extending these
+primitives.

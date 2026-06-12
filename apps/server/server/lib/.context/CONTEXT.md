@@ -84,26 +84,26 @@ represented as a fully-typed slot:
 
 ## Tool wiring
 
-`wired-core-tools.ts` supplies concrete handlers to the runtime domain's core
-tool catalogue and returns runnable core registrations. Core tool algorithms
-live in `domains/runtime/tools/core-handlers/`; `lib/` only closes over adapters
-and domain services.
+`app.ts` constructs the runtime tool registry with `{ db, contextPorts }` and
+passes it into the orchestrator stack. The concrete registry currently lives in
+`domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool
+algorithms.
 
-Context-backed handlers resolve a **ContextPort** per thread via
-`ContextPortFactory.forProject workspace(thread.project workspaceId, thread.userId)`.
+Context-backed handlers resolve the legacy thread-scoped context port with
+`contextPorts.forThread(ctx)`. The factory consumes `threadId` and `userId`;
+the caller also carries `assistantTurnId` for agent attribution. That port still
+only supports the bootstrap manuscript URI, `work://manuscript/chapter-1.md`;
+the richer router/`ContextFS` primitives exported from `domains/context` are
+available for future wiring but are not yet the production tool path.
 
 | Tool | Backend |
 |---|---|
-| `read` | `ContextPort.read(uri)` → content with line numbers + truncation marker. |
-| `edit` | `ContextPort.read` → edit ranges → `ContextPort.write` with agent provenance. |
-| `write` | `ContextPort.write(uri, content)` with agent provenance. |
-| `list` | `ContextPort.list(uri)`. |
-| `search` | `ContextPort.search(query, uri?)`. |
-| `ask_user` | Checkpoint component block + same-turn suspend/resume. |
-
-Tool registrations carry `source` and at most one privileged `capability`; the
-runtime registry throws on duplicate names. Skill slugs that collide with
-non-skill tools are not rebound and emit `skill_tool.name_collision`.
+| `read` | `ContextPortFactory.forThread(ctx).readDocument(uri)` → markdown + document id. |
+| `edit` | `editDocument({ uri, transform, origin: { type: "agent", actorTurnId } })`; current edit actions append text. |
+| `write` | `writeDocument({ uri, markdown, origin: { type: "agent", actorTurnId } })`. |
+| `list` | Returns the single required manuscript URI for the current vertical slice. |
+| `search` | Reads the manuscript document and performs a case-insensitive substring search. |
+| `ask_user` | Creates a checkpoint component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership
 
@@ -141,9 +141,9 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 | `interrupt-boundary.ts` / `interrupt-error-handler.ts` | HTTP-facing interrupt/error mapping. |
 | `startup-guards.ts` / `process-crash-policy.ts` | Boot-time guardrails and process-level crash policy. |
 
-Uploads, context-port factories, promotion flush factories, and core tool
-algorithms live in their owning domains (`domains/context/*` and
-`domains/runtime/tools/core-handlers/*`), not in `lib/`.
+Context ports and runtime tool algorithms live in their owning domains
+(`domains/context/*` and `domains/runtime/*`), not in `lib/`. `lib` composes
+those pieces into `AppServices` and route/WebSocket entry points.
 
 ## Request flow (HTTP)
 
