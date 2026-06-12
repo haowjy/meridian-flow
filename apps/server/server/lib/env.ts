@@ -10,3 +10,7 @@ export const env = createEnv({
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
 });
+
+export const modelRequestDebugCaptureEnabled =
+  process.env.MODEL_REQUEST_DEBUG_CAPTURE === "1" ||
+  process.env.MODEL_REQUEST_DEBUG_CAPTURE === "true";

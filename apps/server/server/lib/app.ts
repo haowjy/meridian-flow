@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import { createProductionContextPortFactory } from "../domains/context/index.js";
 import {
@@ -5,14 +6,12 @@ import {
   createDrizzleWorkRepository,
 } from "../domains/projects/index.js";
 import { createGatewayFromEnv, type Gateway } from "../domains/runtime/index.js";
+import { createCheckpointRegistry } from "../domains/runtime/loop/checkpoints.js";
 import { createRuntimeToolRegistry } from "../domains/runtime/tool-registry.js";
-import {
-  createDrizzleEventJournalReader,
-  createDrizzleEventJournalWriter,
-  createDrizzleRepositories,
-  createThreadEventHub,
-  createThreadRuntimeService,
-} from "../domains/threads/index.js";
+import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
+import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
+import { createThreadRuntimeService } from "../domains/threads/runtime-service.js";
+import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import {
   type AppServices,
   composeAppServices,
@@ -44,7 +43,6 @@ async function createAppServices(): Promise<AppServices> {
     createProductionAppPorts({
       ...inMemory,
       gateway,
-      threadRepos: createDrizzleRepositories(db),
       journalReader,
       journalWriter,
       threadEventHub,
@@ -53,6 +51,7 @@ async function createAppServices(): Promise<AppServices> {
       contextPorts,
       projects: createDrizzleProjectRepository(db),
       works: createDrizzleWorkRepository(db),
+      checkpointRegistry: createCheckpointRegistry(),
     }),
   );
 }

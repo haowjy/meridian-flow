@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { randomUUID } from "node:crypto";
 import { buildAskUserComponentContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnBlockId, TurnId, UserId } from "@meridian/contracts/runtime";

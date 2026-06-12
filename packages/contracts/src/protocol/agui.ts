@@ -1,2 +1,45 @@
-export type { AGUIEvent, AGUIEventByType, AGUIEventOf } from "@ag-ui/core";
+/**
+ * Purpose: Re-exports AG-UI event types and schemas used as Meridian's streaming event wire vocabulary.
+ * Why independent: AG-UI is the shared protocol primitive consumed by server projectors and clients, so the contract package owns the dependency boundary.
+ * Barrel: re-exports AG-UI types, EventSchemas, and EventType.
+ */
+export type {
+  ActivityDeltaEvent,
+  ActivitySnapshotEvent,
+  AGUIEvent,
+  AGUIEventByType,
+  AGUIEventOf,
+  CustomEvent,
+  Message,
+  MessagesSnapshotEvent,
+  RawEvent,
+  ReasoningEncryptedValueEvent,
+  ReasoningEndEvent,
+  ReasoningMessageChunkEvent,
+  ReasoningMessageContentEvent,
+  ReasoningMessageEndEvent,
+  ReasoningMessageStartEvent,
+  ReasoningStartEvent,
+  RunErrorEvent,
+  RunFinishedEvent,
+  RunStartedEvent,
+  StateDeltaEvent,
+  StateSnapshotEvent,
+  StepFinishedEvent,
+  StepStartedEvent,
+  TextMessageChunkEvent,
+  TextMessageContentEvent,
+  TextMessageEndEvent,
+  TextMessageStartEvent,
+  ThinkingEndEvent,
+  ThinkingStartEvent,
+  ThinkingTextMessageContentEvent,
+  ThinkingTextMessageEndEvent,
+  ThinkingTextMessageStartEvent,
+  ToolCallArgsEvent,
+  ToolCallChunkEvent,
+  ToolCallEndEvent,
+  ToolCallResultEvent,
+  ToolCallStartEvent,
+} from "@ag-ui/core";
 export { EventSchemas, EventType } from "@ag-ui/core";

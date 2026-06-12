@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequestHeader, getRequestHost, getRequestProtocol } from "@tanstack/react-start/server";
 

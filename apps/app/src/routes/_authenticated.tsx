@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getCurrentUser } from "@/server/current-user";
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 

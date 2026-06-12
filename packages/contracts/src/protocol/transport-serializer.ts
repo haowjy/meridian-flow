@@ -1,3 +1,7 @@
+/**
+ * Purpose: Wraps values in a Meridian transport envelope and unwraps them after crossing client/server boundaries.
+ * Why independent: The envelope shape is a shared protocol primitive used by transport adapters, not domain runtime behavior.
+ */
 export type TransportEnvelope<T> = {
   __meridianTransport: true;
   value: T;

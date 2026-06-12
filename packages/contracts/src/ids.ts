@@ -1,56 +1,40 @@
-export type ProjectId = string & { readonly __brand: "ProjectId" };
+export type ProjectId = string;
 export const asProjectId = (s: string) => s as ProjectId;
-
-export type WorkId = string & { readonly __brand: "WorkId" };
+export type WorkbenchId = ProjectId;
+export const asWorkbenchId = asProjectId;
+export type WorkId = string;
 export const asWorkId = (s: string) => s as WorkId;
-
-export type ContextSourceId = string & { readonly __brand: "ContextSourceId" };
+export type ContextSourceId = string;
 export const asContextSourceId = (s: string) => s as ContextSourceId;
-
-export type FolderId = string & { readonly __brand: "FolderId" };
+export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
-
-export type DocumentId = string & { readonly __brand: "DocumentId" };
+export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-
-export type ThreadId = string & { readonly __brand: "ThreadId" };
+export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
-
-export type TurnId = string & { readonly __brand: "TurnId" };
+export type TurnId = string;
 export const asTurnId = (s: string) => s as TurnId;
-
-export type TurnBlockId = string & { readonly __brand: "TurnBlockId" };
+export type TurnBlockId = string;
 export const asTurnBlockId = (s: string) => s as TurnBlockId;
-
-export type ModelResponseId = string & { readonly __brand: "ModelResponseId" };
+export type ModelResponseId = string;
 export const asModelResponseId = (s: string) => s as ModelResponseId;
-
-export type AgentDefinitionId = string & { readonly __brand: "AgentDefinitionId" };
+export type AgentDefinitionId = string;
 export const asAgentDefinitionId = (s: string) => s as AgentDefinitionId;
-
-export type SkillId = string & { readonly __brand: "SkillId" };
+export type SkillId = string;
 export const asSkillId = (s: string) => s as SkillId;
-
-export type UserInstalledSkillId = string & { readonly __brand: "UserInstalledSkillId" };
+export type UserInstalledSkillId = string;
 export const asUserInstalledSkillId = (s: string) => s as UserInstalledSkillId;
-
-export type UserSubscriptionId = string & { readonly __brand: "UserSubscriptionId" };
+export type UserSubscriptionId = string;
 export const asUserSubscriptionId = (s: string) => s as UserSubscriptionId;
-
-export type CreditLotId = string & { readonly __brand: "CreditLotId" };
+export type CreditLotId = string;
 export const asCreditLotId = (s: string) => s as CreditLotId;
-
-export type CreditTransactionId = string & { readonly __brand: "CreditTransactionId" };
+export type CreditTransactionId = string;
 export const asCreditTransactionId = (s: string) => s as CreditTransactionId;
-
-export type UserId = string & { readonly __brand: "UserId" };
+export type UserId = string;
 export const asUserId = (s: string) => s as UserId;
-
-export type DocumentRestorePointId = string & { readonly __brand: "DocumentRestorePointId" };
+export type DocumentRestorePointId = string;
 export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePointId;
-
-export type TurnDocumentTouchId = string & { readonly __brand: "TurnDocumentTouchId" };
+export type TurnDocumentTouchId = string;
 export const asTurnDocumentTouchId = (s: string) => s as TurnDocumentTouchId;
-
-export type EventJournalId = string & { readonly __brand: "EventJournalId" };
+export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;

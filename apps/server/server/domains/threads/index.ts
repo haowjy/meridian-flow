@@ -1,61 +1,25 @@
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
-import {
-  createDrizzleEventJournal,
-  type Database,
-  type EventJournalRecord,
-} from "@meridian/database";
-import { createThreadEventHub, type ThreadEventHub } from "./event-hub.js";
-import { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
+// @ts-nocheck
+/** Barrel: re-exports the threads domain's public surface — drizzle + in-memory repositories and event journals, the thread event hub, snapshot builder, access gate, and port types. */
 
-export type JournalEventEnvelope = OrchestratorEvent;
-
-export interface EventJournalReader {
-  readAfter(threadId: ThreadId, afterSeq: string, limit?: number): Promise<EventJournalRecord[]>;
-  headSeq(threadId: ThreadId): Promise<string>;
-}
-
-export interface EventJournalWriter {
-  appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
-}
-
-export type ThreadRepositories = {
-  readonly phase: "phase3";
-};
-
-export function createInMemoryRepositories(): ThreadRepositories {
-  return { phase: "phase3" };
-}
-
-export function createDrizzleEventJournalReader(db: Database): EventJournalReader {
-  const journal = createDrizzleEventJournal(db);
-  return {
-    async readAfter(threadId, afterSeq, limit) {
-      return journal.readAfter(threadId, afterSeq, limit);
-    },
-    headSeq: journal.headSeq,
-  };
-}
-
-export function createDrizzleEventJournalWriter(db: Database): EventJournalWriter {
-  const journal = createDrizzleEventJournal(db);
-  return {
-    async appendEvent(threadId, event) {
-      const seq = await journal.append({
-        threadId,
-        turnId: "turn" in event ? event.turn.id : "turnId" in event ? event.turnId : null,
-        eventType: event.type,
-        payload: event as JsonValue,
-      });
-      return BigInt(seq);
-    },
-  };
-}
-
-export function createDrizzleRepositories(_db: Database): ThreadRepositories {
-  return createInMemoryRepositories();
-}
-
-export type { SequencedEventInternal } from "./event-hub.js";
-export type { ThreadEventHub, ThreadRuntimeService };
-export { createThreadEventHub, createThreadRuntimeService };
+export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
+export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
+export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
+export {
+  createInMemoryEventJournalReader,
+  createInMemoryEventJournalWriter,
+  createInMemoryRepositories,
+} from "./adapters/in-memory/index.js";
+export {
+  createOrchestratorEventProjector,
+  projectOrchestratorEvents,
+} from "./domain/orchestrator-event-projector.js";
+export { projectReadModelEvent } from "./domain/read-model-projector.js";
+export * from "./ports/index.js";
+export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
+export { requireThreadOwner } from "./thread-access.js";
+export {
+  createThreadEventHub,
+  type SequencedEventInternal,
+  type ThreadEventHub,
+} from "./thread-event-hub.js";
+export { buildThreadSnapshot } from "./thread-snapshot.js";

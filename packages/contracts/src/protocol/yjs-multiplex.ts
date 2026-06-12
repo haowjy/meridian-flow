@@ -1,6 +1,15 @@
+/**
+ * Purpose: Defines the multiplexed Yjs WebSocket control frames and binary channel envelope.
+ * Why independent: The document collaboration socket is shared by frontend and server, so channel negotiation and framing are protocol contracts.
+ */
 import { z } from "zod";
 
 export type YjsTrackedSchemaType = "document" | "code";
+
+/** @deprecated Use {@link schemaTypeForFiletype} from ./filetype.js instead. */
+export function schemaTypeForLanguage(language: string): YjsTrackedSchemaType {
+  return language === "markdown" ? "document" : "code";
+}
 
 const documentIdSchema = z.string().min(1);
 const channelIndexSchema = z.number().int().nonnegative().safe();

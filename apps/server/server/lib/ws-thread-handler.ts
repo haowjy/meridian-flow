@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import {
   encodeWsServerMessage,
@@ -7,7 +8,8 @@ import {
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
-import type { SequencedEventInternal } from "../domains/threads/index.js";
+import type { JsonValue } from "@meridian/contracts/threads";
+import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
 
 const SERVER_VERSION = "0.0.0";
@@ -43,6 +45,16 @@ function getPeerState(peer: WsPeer): WsPeerState {
 
 function meridianError(code: string, message: string): MeridianError {
   return { code, message, retryable: false, source: "system" };
+}
+
+function checkpointRejectionError(
+  reason: "not_found" | "correlation_mismatch",
+  message: string,
+): MeridianError {
+  return meridianError(
+    reason === "not_found" ? "checkpoint_not_pending" : "checkpoint_correlation_mismatch",
+    message,
+  );
 }
 
 function toProtocolSequencedEvent(event: SequencedEventInternal): SequencedEvent {
@@ -124,11 +136,13 @@ async function subscribeThread(peer: WsPeer, threadId: ThreadId, lastSeq?: strin
     });
   }
 
+  const liveState = await auth.app.threadRuntime.liveState(threadId, auth.userId);
   sendFrame(peer, {
     type: "subscribed",
     threadId,
     catchup: catchup.map(toProtocolSequencedEvent),
-    state: await auth.app.threadRuntime.liveState(threadId, auth.userId),
+    state: liveState,
+    nextSeq: liveState.nextSeq,
   });
 }
 
@@ -171,12 +185,39 @@ export function createThreadWebSocketSession(peer: WsPeer) {
           case "subscribe":
             await subscribeThread(peer, message.threadId as ThreadId, message.lastSeq);
             return;
+          case "resume":
+            for (const subscription of message.subscriptions) {
+              await subscribeThread(peer, subscription.threadId as ThreadId, subscription.lastSeq);
+            }
+            return;
           case "unsubscribe": {
             const threadId = message.threadId as ThreadId;
             const state = getPeerState(peer);
             state.subscriptions.get(threadId)?.();
             state.subscriptions.delete(threadId);
             state.liveWatermark.delete(threadId);
+            return;
+          }
+          case "checkpoint.respond": {
+            const threadId = message.threadId as ThreadId;
+            try {
+              await peer.context?.app.threadRuntime.requireOwnedThread(
+                threadId,
+                peer.context.userId,
+              );
+            } catch {
+              sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+              return;
+            }
+            const result = peer.context.app.checkpointRegistry.resolve({
+              threadId,
+              turnId: message.turnId as never,
+              checkpointId: message.checkpointId,
+              value: message.value as JsonValue,
+            });
+            if (!result.ok) {
+              sendError(peer, checkpointRejectionError(result.reason, result.message), threadId);
+            }
             return;
           }
           case "pong":

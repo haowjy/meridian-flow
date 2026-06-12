@@ -43,7 +43,7 @@ skeleton and delegates the moving parts.
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 
 `OrchestratorDeps` is fully required: gateway, repos, package repository, tool
-registry/executor, project workspace preferences, permission gate, credit ledger,
+registry/executor, workbench preferences, permission gate, credit ledger,
 checkpoint artifact flush, child-run coordinator, checkpoint registry, and
 `EventSink` are all explicit dependencies. Disabled behavior is represented by
 explicit adapters (for example no-op sinks), not by omitted deps.
@@ -56,6 +56,7 @@ explicit adapters (for example no-op sinks), not by omitted deps.
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, and a single `capability?: "checkpoint" | "spawn" | "return_result"`. |
 | Core handlers | Algorithms live under `tools/core-handlers/`; composition wires them through `lib/wired-core-tools.ts`. |
+| Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 The core-tool publication boundary lives in `tools/core-tools.ts`: definitions,

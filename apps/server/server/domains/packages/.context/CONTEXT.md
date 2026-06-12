@@ -1,7 +1,7 @@
 # domains/packages — Installed package → agent/skill catalog
 
 Parses Mars-format package directories on disk, syncs them into a
-project workspace-scoped repository, and resolves agent skills across merge layers. A
+workbench-scoped repository, and resolves agent skills across merge layers. A
 "package" is a directory with a `mars.toml` manifest plus
 markdown-frontmatter agent/skill definitions. Runtime consumes the resolved
 catalog through scoped skill registrations: an agent thread resolves skills from
@@ -14,12 +14,13 @@ catalog through scoped skill registrations: an agent thread resolves skills from
 
 | Type | What it is |
 |---|---|
-| `PackageInstallRecord` | A row tracking that a Mars package has been installed into a project workspace. Keyed by `(project workspaceId, packageName)`. |
-| `AgentDefinitionRecord` | A persisted agent — slug, body, YAML-frontmatter meta, config overlays, `sourceType` (`builtin`/`package`/`user`), optional `packageInstallId` FK. `project workspaceId` is nullable for builtins. `enabled` gates visibility. |
+| `PackageInstallRecord` | A row tracking that a Mars package has been installed into a workbench. Keyed by `(workbenchId, packageName)`. |
+| `AgentDefinitionRecord` | A persisted agent — slug, body, YAML-frontmatter meta, config overlays, `sourceType` (`builtin`/`package`/`user`), optional `packageInstallId` FK. `workbenchId` is nullable for builtins. `enabled` gates visibility. |
 | `SkillRecord` | A persisted skill — same shape as agent, plus bundled `files`; invocation flags are read from meta and resolution output. |
-| `UserInstalledSkillRecord` | User-scoped skill (no project workspace/package FK). |
-| `AgentSkillLinkRecord` | Join link between agent and skill: `loadingMode` (`preloaded`/`available`), ordinal, invocability override flags. |
-| `ResolvedPackageContext` | Output of `resolveAgentSkills()`: matched agent + ordered `ResolvedSkill[]` with layer, loading mode, and invocability flags. |
+| `UserInstalledSkillRecord` | User-scoped skill (no workbench/package FK). |
+| `AgentSkillLinkRecord` | Join link between agent and skill: ordinal, invocability override flags. |
+| `ResolvedPackageContext` | Output of `resolveAgentSkills()`: matched agent + ordered `ResolvedSkill[]` with layer and invocability flags. |
+| `AgentDefinitionRevisionRecord` / `SkillDefinitionRevisionRecord` | Append-only definition history rows; every save or restore appends, never mutates prior revisions. |
 
 **Modules** (all in `domain/`):
 
@@ -28,14 +29,14 @@ catalog through scoped skill registrations: an agent thread resolves skills from
 | `mars-source.ts` | Format owner. Parses `mars.toml` via `smol-toml`, loads `agents/*.md` and `skills/*/SKILL.md` with YAML frontmatter into `ParsedMarsPackageSource`. Normalizes kebab-case keys. Computes `definitionContentChecksum` (sha256 of markdown body + files). Serializes back via `serializeMarkdownDefinition`. |
 | `package-sync.ts` | Import/update pipeline. `importLocalMarsPackage()` resolves a local-path dependency graph (recursive, cycle-safe via `seen` set), then writes everything in one transaction: `PackageInstallRecord`, skill/agent rows, agent-skill links. `updateLocalMarsPackage()` reconciles upstream changes — auto-updates pristine items (checksum match), skips locally edited unless `forceReset`, preserves subagent DAGs pruned upstream. |
 | `package-export.ts` | Inverse of sync. Reads installed package from repository → `ExportedMarsDirectory` (file map). `writeExportedMarsDirectory()` writes to disk. |
-| `resolution.ts` | Skill merge algorithm. `resolveAgentSkills()` merges builtins, user-installed skills, project workspace/global skills, and agent-linked skills. Last writer wins by slug. Sorts by meta type ordinal: principle (0) → guardrail (1) → reference (2). |
+| `resolution.ts` | Skill merge algorithm. `resolveAgentSkills()` merges builtins, user-installed skills, workbench/global skills, and agent-linked skills. Last writer wins by slug. Sorts by meta type ordinal: principle (0) → guardrail (1) → reference (2). |
 | `helpers.ts` | Defensive JSON-shape accessors, `sha256`, `sortedEntries`, `isNodeError`. |
 
 ## Contracts (ports)
 
 | Port | Verbs |
 |---|---|
-| `PackageRepository` | `findPackageInstall(project workspaceId, name)` / `transaction<T>(fn)` / `getAgentWithLinkedSkills(project workspaceId, userId, slug)` |
+| `PackageRepository` | `findPackageInstall(workbenchId, name)` / `transaction<T>(fn)` / `getAgentWithLinkedSkills(workbenchId, userId, slug)` |
 | `PackageWriteTransaction` | CRUD methods for packages, agents, skills, user-installed skills, plus `linkAgentSkill`, `replaceAgentSkillLinks`, `listAgentSkillLinks` |
 
 `PackageRepository.getAgentWithLinkedSkills` delegates to
@@ -59,7 +60,7 @@ in-memory. Unlike the storage domain, there is no `PACKAGE_STORE_PROVIDER`.
 - `createEnsureSkillToolRegistration()` in `domains/runtime/tools/skill-tool-factory.ts`
 - `createChildRunCoordinator()` for spawn authorization against caller agent metadata
 - core tool wiring that needs package-aware skill execution
-- the default package seeder (`seedDefaultPackagesForProject workspace`)
+- the default package seeder (`seedDefaultPackagesForWorkbench`)
 
 Skill tool registrations are scoped and lazy: `context-builder.ts` resolves the
 current agent's skills, ensures each skill tool is registered, and advertises
@@ -71,11 +72,11 @@ non-skill tools are blocked by the runtime registry policy and recorded as a
 
 - **Agents declare their own resources.** An agent definition carries an explicit
   skill list (via `agent_skills` links) and subagent references. If installed
-  independently into a fresh project workspace, it gets exactly the skills and subagents
+  independently into a fresh workbench, it gets exactly the skills and subagents
   it declared — plus the shared builtin/global layer. It never implicitly
-  inherits arbitrary project workspace skills.
-- **`(project workspaceId, slug)` is unique for agents and skills.** Builtins use
-  `project workspaceId IS NULL` uniqueness. Slug collision during import causes a skip
+  inherits arbitrary workbench skills.
+- **`(workbenchId, slug)` is unique for agents and skills.** Builtins use
+  `workbenchId IS NULL` uniqueness. Slug collision during import causes a skip
   (recorded in `skippedAgents`/`skippedSkills`), not an overwrite.
 - **Pristine detection via checksum.** `originalContentChecksum` vs.
   recomputed `definitionContentChecksum`. Locally edited records (mismatch) are

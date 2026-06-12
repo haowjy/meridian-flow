@@ -1,6 +1,6 @@
-# features/debug — Project workspace Debug Pill
+# features/debug — Workbench Debug Pill
 
-Read-only, dev-only observability surface for the authenticated project workspace.
+Read-only, dev-only observability surface for the authenticated workbench.
 A small floating **pill** (bottom-right) that expands to a compact panel.
 
 **Deliberately thin.** Only state with no better home lives here: WS/transport

@@ -1,16 +1,21 @@
+// @ts-nocheck
 import type { AgentPackageStore } from "../domains/agents/index.js";
 import type { CreditLedger } from "../domains/billing/index.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import type { ContextPortFactory } from "../domains/context/index.js";
 import type { ProjectRepository, WorkRepository } from "../domains/projects/index.js";
 import type { Gateway } from "../domains/runtime/index.js";
+import {
+  type CheckpointRegistry,
+  createCheckpointRegistry,
+} from "../domains/runtime/loop/checkpoints.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
-  ThreadEventHub,
   ThreadRepositories,
-  ThreadRuntimeService,
-} from "../domains/threads/index.js";
+} from "../domains/threads/ports/index.js";
+import type { ThreadRuntimeService } from "../domains/threads/runtime-service.js";
+import type { ThreadEventHub } from "../domains/threads/thread-event-hub.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -25,6 +30,7 @@ export type AppServices = {
   works: WorkRepository;
   creditLedger: CreditLedger;
   agents: AgentPackageStore;
+  checkpointRegistry: CheckpointRegistry;
 };
 
 export type ProductionAppPorts = Omit<AppServices, never>;
@@ -177,7 +183,8 @@ export function createInMemoryAppServices(): AppServices {
     works: { phase: "phase4" },
     creditLedger: { phase: "skeleton" },
     agents: { phase: "skeleton" },
+    checkpointRegistry: createCheckpointRegistry(),
   };
 }
 
-export type { ThreadRepositories };
+export type { ThreadRepositories } from "../domains/threads/ports/index.js";

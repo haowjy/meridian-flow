@@ -27,14 +27,14 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 - **Thread lifecycle validation** — `normalizeThreadCreate` enforces Phase 1
   constraints (primary root threads only; spawn/fork fields rejected).
 - **Access control** — `requireThreadOwner` gates thread operations behind
-  ownership + project workspace ownership, returning 404 on any mismatch to avoid
+  ownership + workbench ownership, returning 404 on any mismatch to avoid
   existence leaks.
 
 ## Contracts (ports)
 
 | Port | Surface |
 |---|---|
-| `ThreadRepository` | `create / findById / listByUser / listByProject workspace / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
+| `ThreadRepository` | `create / findById / listByUser / listByWorkbench / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
@@ -86,7 +86,7 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   persistence and event fan-out.
 - **Consumed by `lib/` routes** — HTTP/WS handlers use `requireThreadOwner`,
   `buildThreadSnapshot`, and `ThreadEventHub.catchupAndSubscribe`.
-- **Depends on `domains/projects`** — `requireThreadOwner` reads the parent
-  project workspace to enforce ownership.
+- **Depends on `domains/workbenches`** — `requireThreadOwner` reads the parent
+  workbench to enforce ownership.
 - **Depends on `@meridian/contracts`** — entity types, `OrchestratorEvent`,
   AG-UI event schemas.

@@ -12,7 +12,10 @@
     "./interrupt": "./src/interrupt/index.ts",
     "./spawn": "./src/spawn/index.ts",
     "./protocol": "./src/protocol/index.ts",
-    "./runtime": "./src/runtime/index.ts"
+    "./runtime": "./src/runtime/index.ts",
+    "./agents": "./src/agents/index.ts",
+    "./preferences": "./src/preferences/index.ts",
+    "./workbenches": "./src/workbenches/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

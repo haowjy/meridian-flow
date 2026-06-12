@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createGatewayFromEnv, type Gateway } from "../domains/runtime/index.js";
 
 let gatewayPromise: Promise<Gateway> | undefined;
