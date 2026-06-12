@@ -5,7 +5,7 @@
 import type { JsonObject, JsonValue } from "../threads/index.js";
 import type { ErrorInterrupt, MeridianError, MeridianErrorSource } from "./index.js";
 
-const VOLUMA_ERROR_SOURCES = new Set<MeridianErrorSource>([
+const MERIDIAN_ERROR_SOURCES = new Set<MeridianErrorSource>([
   "gateway",
   "tool",
   "child-agent",
@@ -21,7 +21,7 @@ export function isMeridianError(value: unknown): value is MeridianError {
     typeof record.message === "string" &&
     typeof record.retryable === "boolean" &&
     typeof record.source === "string" &&
-    VOLUMA_ERROR_SOURCES.has(record.source as MeridianErrorSource)
+    MERIDIAN_ERROR_SOURCES.has(record.source as MeridianErrorSource)
   );
 }
 

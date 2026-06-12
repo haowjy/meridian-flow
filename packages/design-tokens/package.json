@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./warm-paper.css": "./src/warm-paper.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -12,5 +13,8 @@
   },
   "devDependencies": {
     "typescript": "catalog:"
-  }
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
 }

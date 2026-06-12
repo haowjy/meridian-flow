@@ -56,3 +56,7 @@ export type {
   UpdateAgentDefinitionRequest,
   UpdateSkillDefinitionRequest,
 } from "./definitions.js";
+
+export * from "./install.js";
+
+export * from "./library.js";

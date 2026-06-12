@@ -6,7 +6,7 @@
  * Key decision: under portless, Nitro's internal `request.url` can point at the
  * private upstream (`https://127.0.0.1:*`). The public app host is preserved on
  * forwarded headers, so SSR API fetches resolve from configured
- * `VOLUMA_API_ORIGIN` first, then in dev only the forwarded app host mapped
+ * `MERIDIAN_API_ORIGIN` first, then in dev only the forwarded app host mapped
  * to its paired API host, while preserving the incoming auth cookie for the
  * API auth gate. Production must configure an explicit API origin instead of
  * silently falling back to localhost.
@@ -52,7 +52,7 @@ function firstHeaderValue(value: string | null): string | undefined {
 function configuredApiOrigin(): string | undefined {
   if (typeof process === "undefined") return undefined;
   // See isDevRuntime — cannot use getAppServerConfig() from this isomorphic module.
-  const value = process.env.VOLUMA_API_ORIGIN?.trim();
+  const value = process.env.MERIDIAN_API_ORIGIN?.trim();
   return value || undefined;
 }
 
@@ -78,7 +78,7 @@ export function resolveSsrApiOrigin(request: Request): string | undefined {
 
   if (!isDevRuntime()) {
     console.error(
-      "VOLUMA_API_ORIGIN is required for SSR API requests outside local development; skipping SSR API seeding.",
+      "MERIDIAN_API_ORIGIN is required for SSR API requests outside local development; skipping SSR API seeding.",
     );
     return undefined;
   }

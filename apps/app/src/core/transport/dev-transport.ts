@@ -61,7 +61,7 @@ const THREADS_WS_PATH = "/api/threads/ws";
  *
  * Portless assigns dynamic ts.net ports per worktree/mode; the browser must not
  * hardcode an API port. Vite `server.proxy` upgrades `/api/threads/ws` to the
- * paired server origin (`resolveApiDevOriginForAppHost` / `VOLUMA_API_ORIGIN`).
+ * paired server origin (`resolveApiDevOriginForAppHost` / `MERIDIAN_API_ORIGIN`).
  */
 export function buildThreadsWsUrl(location: BrowserLocationLike = window.location): string {
   return buildSameOriginWsUrl(THREADS_WS_PATH, location);

@@ -12,6 +12,7 @@
       "!**/.codex-local",
       "!**/routeTree.gen.ts",
       "!apps/**/src/styles",
+      "!packages/design-tokens/src/*.css",
       "!apps/app/.auth",
       "!apps/app/test-results",
       "!apps/app/playwright-report",
