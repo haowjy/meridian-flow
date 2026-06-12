@@ -4,6 +4,7 @@
 
 ### Added
 
+- **dev:** add Supabase-adapted env/database helper modules and `dev:db:*` wrappers matching the upstream dev control-plane shape.
 - **v3 parity:** add upstream-structure skeletons and colocated context guidance for dev tools, server domains, and app project/chat surfaces while preserving Supabase/Postgres and removing the rejected execution runtime surface.
 - **dev:** port upstream-style dev control plane with worktree-scoped tmux identity, local/tailscale/funnel modes, route validation, dry-run output, and preserved-mode restarts.
 - **app/server:** replace placeholder editor transport with TipTap/y-prosemirror bound to persisted Yjs documents, binary `/ws/yjs` sync, and cold-replay smoke coverage.

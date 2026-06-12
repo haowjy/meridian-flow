@@ -30,7 +30,10 @@
     "dev:tailscale": "tsx tools/dev/dev-tmux.ts --tailscale",
     "dev:funnel": "tsx tools/dev/dev-tmux.ts --funnel",
     "check:graph": "node tools/ci/check-graph.mjs",
-    "check:negative-space": "bash tools/ci/check-negative-space.sh"
+    "check:negative-space": "bash tools/ci/check-negative-space.sh",
+    "dev:db:ensure": "tsx tools/dev/ensure-db.ts",
+    "dev:db:prepare": "tsx tools/dev/prepare-db.ts",
+    "dev:db:drop": "tsx tools/dev/drop-db.ts"
   },
   "devDependencies": {
     "@meridian/database": "workspace:*",
