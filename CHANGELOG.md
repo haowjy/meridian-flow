@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added thread agent rebind route-core parity tests for agent switching, unknown agents, baked threads, and owner gating.
 - Added Mars package version-constraint parsing, library definition source-line labels, thread upload import route wiring, and pre-turn thread agent rebind route parity.
 - Added Nitro global typings and documented remaining exact-path parity categories.
 - Added server DB/smoke Vitest project configs adapted to Meridian package aliases and opt-in DB gates.
