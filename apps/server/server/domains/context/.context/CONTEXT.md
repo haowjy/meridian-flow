@@ -72,6 +72,6 @@ instead of adding another alias.
 ## Negative space
 
 This slice intentionally uses generic context vocabulary. Do not reintroduce
-WorkOS/AuthKit auth seams, Voluma naming, sandbox-aware filesystems, scientific
+alternate auth adapter seams, upstream product naming, removed execution-provider filesystems, scientific
 schemes, or executable package-runtime assumptions while extending these
 primitives.

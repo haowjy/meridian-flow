@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as DevLoginRouteImport } from './routes/dev-login'
@@ -17,9 +18,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
+import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
 import { Route as AuthenticatedProjectsProjectIdIndexRouteImport } from './routes/_authenticated/projects/$projectId/index'
 import { Route as AuthenticatedProjectsProjectIdAgentRouteImport } from './routes/_authenticated/projects/$projectId/agent'
 
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -60,6 +67,11 @@ const ApiAuthDevLoginRoute = ApiAuthDevLoginRouteImport.update({
   path: '/api/auth/dev-login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
+  id: '/api/auth/callback',
+  path: '/api/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedProjectsProjectIdIndexRoute =
   AuthenticatedProjectsProjectIdIndexRouteImport.update({
     id: '/projects/$projectId/',
@@ -78,7 +90,9 @@ export interface FileRoutesByFullPath {
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
@@ -89,7 +103,9 @@ export interface FileRoutesByTo {
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
@@ -102,7 +118,9 @@ export interface FileRoutesById {
   '/dev-login': typeof DevLoginRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/projects/$projectId/agent': typeof AuthenticatedProjectsProjectIdAgentRoute
@@ -115,7 +133,9 @@ export interface FileRouteTypes {
     | '/dev-login'
     | '/healthz'
     | '/login'
+    | '/logout'
     | '/auth-check'
+    | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects/'
     | '/projects/$projectId/agent'
@@ -126,7 +146,9 @@ export interface FileRouteTypes {
     | '/dev-login'
     | '/healthz'
     | '/login'
+    | '/logout'
     | '/auth-check'
+    | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects'
     | '/projects/$projectId/agent'
@@ -138,7 +160,9 @@ export interface FileRouteTypes {
     | '/dev-login'
     | '/healthz'
     | '/login'
+    | '/logout'
     | '/_authenticated/auth-check'
+    | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/_authenticated/projects/'
     | '/_authenticated/projects/$projectId/agent'
@@ -151,11 +175,20 @@ export interface RootRouteChildren {
   DevLoginRoute: typeof DevLoginRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
+  LogoutRoute: typeof LogoutRoute
+  ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -212,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthDevLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/callback': {
+      id: '/api/auth/callback'
+      path: '/api/auth/callback'
+      fullPath: '/api/auth/callback'
+      preLoaderRoute: typeof ApiAuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/projects/$projectId/': {
       id: '/_authenticated/projects/$projectId/'
       path: '/projects/$projectId'
@@ -255,6 +295,8 @@ const rootRouteChildren: RootRouteChildren = {
   DevLoginRoute: DevLoginRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
+  LogoutRoute: LogoutRoute,
+  ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
 }
 export const routeTree = rootRouteImport

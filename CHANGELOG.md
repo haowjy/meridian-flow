@@ -4,6 +4,7 @@
 
 ### Added
 
+- **app/server:** add Meridian/Supabase runtime config, auth redirect, logout, and callback route surfaces matching the upstream app-server structure.
 - **server/routes:** port upstream workbench, thread, package catalog, agent catalog, preferences, package install/update/export, model-debug, and readiness route surfaces with Meridian/Supabase composition wiring.
 - **server/context:** port upstream context URI/router and ContextFS primitives with a generic no-execution backing-store fault vocabulary.
 - **app/tests:** port upstream thread-store, session reducer, editor schema, chat rendering, workbench lifecycle, and deferred-chat regression coverage.
