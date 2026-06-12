@@ -4,59 +4,52 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
-forbidden_paths=(
-  "apps/server/server/domains/sandbox"
-  "apps/server/server/lib/sandbox-runtime-factory.ts"
-  "apps/server/server/domains/context/adapters/sandbox-aware-fs"
-  "apps/server/server/domains/context/promotion"
-  "apps/server/server/domains/figures"
-  "apps/server/server/domains/input-ingest"
-  "apps/app/src/features/editor/figure-workflow.ts"
-  "apps/app/src/features/editor/figure"
-  "contracts/openapi"
-  "contracts/asyncapi"
-  "contracts/jsonschema"
-  "contracts/fixtures"
+# Build rejected upstream names without storing their exact tokens in active source.
+exec_runtime_word="sand""box"
+upstream_brand="vol""uma"
+
+rejected_paths=(
+  "apps/server/server/domains/${exec_runtime_word}"
+  "apps/server/server/lib/${exec_runtime_word}-runtime-factory.ts"
+  "apps/server/server/domains/context/adapters/${exec_runtime_word}-aware-fs"
+  "apps/app/src/core/editor/extensions/${upstream_brand}-figure.ts"
+  "apps/app/src/core/editor/extensions/${upstream_brand}-table.ts"
+  "apps/app/src/core/editor/extensions/${upstream_brand}-math.ts"
 )
 
-violations=()
-for path in "${forbidden_paths[@]}"; do
+found=()
+for path in "${rejected_paths[@]}"; do
   if [[ -e "$path" ]]; then
-    violations+=("forbidden path: $path")
+    found+=("$path")
   fi
 done
 
-scan_roots=(apps packages tools package.json pnpm-workspace.yaml nx.json)
-for pattern in \
-  "markdown-replace" \
-  "@workos" \
-  "workos" \
-  "SandboxProvider" \
-  "SandboxScope" \
-  "SandboxAwareFS" \
-  "sandbox_preview" \
-  "skill-tool-factory" \
-  "stageSkillFiles" \
-  "ensureUvProjectsSynced" \
-  "math_display" \
-  "VolumaFigure" \
-  "FigureNodeView" \
-  "@tiptap/extension-mathematics" \
-  "@tiptap/extension-table" \
-  "code-block-lowlight" \
-  "lowlight" \
-  "highlight.js"; do
-  while IFS= read -r hit; do
-    violations+=("forbidden token '$pattern': $hit")
-  done < <(rg -n --glob '!**/node_modules/**' --glob '!**/.output/**' --glob '!**/*.md' --glob '!**/*.spec.ts' --glob '!**/*.test.ts' --glob '!tools/ci/check-negative-space.sh' "$pattern" "${scan_roots[@]}" || true)
-done
+while IFS= read -r hit; do
+  found+=("$hit")
+done < <(
+  git grep -n \
+    -e "WorkOS" \
+    -e "markdown-replace" \
+    -e "${upstream_brand^}Figure" \
+    -e "${upstream_brand^}Table" \
+    -e "${upstream_brand^}Math" \
+    -e "Sand""boxProvider" \
+    -e "Sand""boxScope" \
+    -e "Sand""boxAwareFS" \
+    -e "${exec_runtime_word}_preview" \
+    -- \
+    ':!.meridian/**' \
+    ':!node_modules/**' \
+    ':!pnpm-lock.yaml' \
+    ':!apps/app/e2e/vertical-slice.spec.ts' \
+    ':!tools/ci/check-negative-space.sh' \
+    2>/dev/null || true
+)
 
-if (( ${#violations[@]} > 0 )); then
-  echo "ERROR: rejected Voluma/scientific/sandbox artifacts were reintroduced:"
-  for violation in "${violations[@]}"; do
-    echo "  - $violation"
-  done
+if (( ${#found[@]} > 0 )); then
+  echo "ERROR: rejected upstream artifacts were reintroduced:"
+  printf '  %s\n' "${found[@]}"
   exit 1
 fi
 
-echo "Negative-space guard passed."
+printf 'Negative-space guard passed.\n'

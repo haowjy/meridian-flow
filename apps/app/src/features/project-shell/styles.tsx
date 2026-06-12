@@ -70,7 +70,7 @@ export function ProjectShellStyles() {
         white-space: nowrap;
       }
 
-      .workbench-grid {
+      .project-grid {
         display: grid;
         gap: 1rem;
         grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr);
@@ -232,7 +232,7 @@ export function ProjectShellStyles() {
 
       @media (max-width: 860px) {
         .shell-topbar,
-        .workbench-grid {
+        .project-grid {
           display: block;
         }
 

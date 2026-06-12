@@ -15,7 +15,7 @@ export function ProjectShell({ projectId, workId, threadId, documentId, uri }: P
       <header className="shell-topbar">
         <div>
           <p className="eyebrow">Meridian v3 Phase 5</p>
-          <h1>Project workbench</h1>
+          <h1>Project workspace</h1>
         </div>
         <dl className="debug-grid" aria-label="Phase 5 bootstrap identifiers">
           <div>
@@ -36,7 +36,7 @@ export function ProjectShell({ projectId, workId, threadId, documentId, uri }: P
           </div>
         </dl>
       </header>
-      <div className="workbench-grid">
+      <div className="project-grid">
         <ChatPane threadId={threadId} />
         <EditorPane threadId={threadId} uri={uri} />
       </div>

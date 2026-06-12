@@ -48,8 +48,6 @@ agent = "product-lead"
 # autocompact = 65
 # Effort level for the primary agent.
 # effort = ""
-# Sandbox policy for the primary agent.
-# sandbox = ""
 # Approval mode for the primary agent.
 # approval = ""
 # Timeout for the primary agent (minutes).

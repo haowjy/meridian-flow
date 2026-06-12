@@ -50,7 +50,7 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 |---|---|---|
 | **Domain noun** | First-class domain concept; state, types, persistence | `projects`, `sessions`, `collab` |
 | **`*-system`** | Foundational machinery other modules consume | `package-system` |
-| **`*-runtime`** | Executes things against a substrate (FS, sandbox, network) | `tool-runtime` |
+| **`*-runtime`** | Executes things against a substrate (FS, network, external services) | `tool-runtime` |
 | **`*-gateway`** | Brokers to external systems with provider abstraction | `model-gateway` |
 
 ### Current packages
@@ -65,7 +65,7 @@ Every package must fit one of these categories. If it doesn't, the name is wrong
 
 | App | Purpose |
 |-----|---------|
-| `app` | TanStack Start authenticated workbench (React, Vite) |
+| `app` | TanStack Start authenticated project workspace (React, Vite) |
 | `server` | Nitro HTTP + WebSocket server |
 | `www` | Landing / marketing site |
 
