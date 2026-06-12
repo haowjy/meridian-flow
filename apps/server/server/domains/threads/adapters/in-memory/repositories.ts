@@ -261,6 +261,20 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return updated;
     },
+    async updateCurrentAgent(id, currentAgent) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      if (
+        thread.composedSystemPrompt !== null ||
+        thread.bakedSkillSlugs !== null ||
+        thread.turnCount > 0
+      ) {
+        return null;
+      }
+      const updated = { ...thread, currentAgent, updatedAt: toIsoString(new Date()) };
+      threads.set(id, updated);
+      return updated;
+    },
     async bakeComposedSystemPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);

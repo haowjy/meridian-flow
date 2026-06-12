@@ -239,6 +239,23 @@ export function createDrizzleThreadRepository(
       if (!row) throw new Error(`Thread not found: ${id}`);
       return mapThread(row);
     },
+    async updateCurrentAgent(id, currentAgent) {
+      const [row] = await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({
+          currentAgentId: currentAgent,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.threads.id, id),
+            isNull(schema.threads.composedSystemPrompt),
+            eq(schema.threads.turnCount, 0),
+          ),
+        )
+        .returning();
+      return row ? mapThread(row) : null;
+    },
     async bakeComposedSystemPrompt(id, input) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)

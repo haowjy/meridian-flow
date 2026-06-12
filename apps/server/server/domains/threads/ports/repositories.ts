@@ -128,6 +128,8 @@ export interface ThreadRepository {
   /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
   listByWork(workbenchId: WorkbenchId, workId: WorkId): Promise<ThreadListItem[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
+  /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
+  updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
   /**
    * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
    * null. Returns the authoritative thread row (winner's bake on CAS loss).
