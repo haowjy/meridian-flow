@@ -1,0 +1,40 @@
+{
+  "name": "@meridian/server",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/server/server",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/server build"
+      },
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/.output"],
+      "cache": true
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/server start"
+      },
+      "cache": false
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/server typecheck"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/server test"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

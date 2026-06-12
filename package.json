@@ -34,7 +34,8 @@
     "dev:db:ensure": "tsx tools/dev/ensure-db.ts",
     "dev:db:prepare": "tsx tools/dev/prepare-db.ts",
     "dev:db:drop": "tsx tools/dev/drop-db.ts",
-    "db:migration-lint": "tsx tools/dev/migration-lint.ts --all"
+    "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
+    "seed": "tsx tools/dev/seed.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
