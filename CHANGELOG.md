@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- **dev:** ignore generated portless dev logs.
 - **server:** serialize Yjs document commits with markdown projection/activity updates and preserve agent attribution for persisted editor updates.
 - **database:** enforce conversation roots, active leaf, session context thread scope, and purchase subscription gates in DB triggers/indexes.
 - **database (p113):** `usage_event_id` required for consumption; Drizzle `usage_breakdown` default `'{}'` matches DB.
