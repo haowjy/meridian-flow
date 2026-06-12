@@ -56,6 +56,7 @@
 - **database:** v3 Drizzle schema (26 tables + `credit_balances` view), single fresh `0001_initial` migration, `consume_credit_lots_fifo` with debt-lot overspend, integrity triggers, `pg_trgm` indexes, `db:apply-functions`, integration tests.
 
 ### Fixed
+- **server/runtime:** bound first-turn bake/rebind retries and re-resolve context when stale agent rows win the prompt freeze race.
 - **server/threads:** persist baked skill slugs and agent slugs in Drizzle thread rows, including migration backfill.
 - **database:** expose schema compatibility modules through package subpath exports.
 - **server/threads:** distinguish Drizzle raw system prompts from baked prompt freeze state for pre-turn agent rebinding.

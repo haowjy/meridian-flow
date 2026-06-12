@@ -25,6 +25,8 @@ import { modelInvocableSkillSlugs } from "../tools/skill-tools.js";
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 
+const MAX_REBIND_BAKE_ATTEMPTS = 3;
+
 export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
@@ -59,83 +61,91 @@ function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] 
 export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
 ): Promise<AssembledNextTurnContext> {
-  const agentContext = await resolveAgentThreadTurnContext({
-    thread: input.thread,
-    packageRepository: input.packageRepository,
-    toolRegistry: input.toolRegistry,
-    baseTools: input.baseTools,
-  });
-
   let thread = input.thread;
-  let tools = agentContext.tools;
-  let skillsSystemPromptSection: string | undefined;
-  let systemPrompt: string;
-  const baked = input.thread.bakedSkillSlugs != null;
+  let attempt = 0;
 
-  if (isThreadPromptFrozen(thread)) {
-    tools = applyBakedInvokeAdvertisement({
-      tools,
-      bakedSkillSlugs: thread.bakedSkillSlugs,
+  while (true) {
+    const agentContext = await resolveAgentThreadTurnContext({
+      thread,
+      packageRepository: input.packageRepository,
       toolRegistry: input.toolRegistry,
-    });
-    systemPrompt = thread.composedSystemPrompt ?? "";
-  } else {
-    const bakedPrompt = rebakeComposedSystemPrompt({
-      basePrompt: thread.systemPrompt ?? agentContext.agentBody ?? null,
-      skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
+      baseTools: input.baseTools,
     });
 
-    if (input.persistBake && input.bakeComposedSystemPrompt) {
-      const expectedCurrentAgent = thread.currentAgent;
-      const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
-      thread = await input.bakeComposedSystemPrompt(input.thread.id as ThreadId, {
-        composedSystemPrompt: bakedPrompt,
-        bakedSkillSlugs,
-        expectedCurrentAgent,
-      });
-      if (
-        !isThreadPromptFrozen(thread) ||
-        thread.currentAgent !== expectedCurrentAgent ||
-        thread.composedSystemPrompt !== bakedPrompt ||
-        JSON.stringify(thread.bakedSkillSlugs ?? null) !== JSON.stringify(bakedSkillSlugs)
-      ) {
-        return assembleNextTurnContext({ ...input, thread });
-      }
+    let tools = agentContext.tools;
+    let skillsSystemPromptSection: string | undefined;
+    let systemPrompt: string;
+    const baked = thread.bakedSkillSlugs != null;
+
+    if (isThreadPromptFrozen(thread)) {
       tools = applyBakedInvokeAdvertisement({
-        tools: agentContext.tools,
+        tools,
         bakedSkillSlugs: thread.bakedSkillSlugs,
         toolRegistry: input.toolRegistry,
       });
-      systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
+      systemPrompt = thread.composedSystemPrompt ?? "";
     } else {
-      systemPrompt = bakedPrompt;
-      thread = { ...thread, composedSystemPrompt: bakedPrompt };
-      skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
+      const bakedPrompt = rebakeComposedSystemPrompt({
+        basePrompt: thread.systemPrompt ?? agentContext.agentBody ?? null,
+        skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
+      });
+
+      if (input.persistBake && input.bakeComposedSystemPrompt) {
+        const expectedCurrentAgent = thread.currentAgent;
+        const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
+        thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
+          composedSystemPrompt: bakedPrompt,
+          bakedSkillSlugs,
+          expectedCurrentAgent,
+        });
+        if (
+          !isThreadPromptFrozen(thread) ||
+          thread.currentAgent !== expectedCurrentAgent ||
+          thread.composedSystemPrompt !== bakedPrompt ||
+          JSON.stringify(thread.bakedSkillSlugs ?? null) !== JSON.stringify(bakedSkillSlugs)
+        ) {
+          attempt += 1;
+          if (attempt >= MAX_REBIND_BAKE_ATTEMPTS) {
+            throw new Error("Failed to freeze thread prompt after concurrent agent rebinds");
+          }
+          continue;
+        }
+        tools = applyBakedInvokeAdvertisement({
+          tools: agentContext.tools,
+          bakedSkillSlugs: thread.bakedSkillSlugs,
+          toolRegistry: input.toolRegistry,
+        });
+        systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
+      } else {
+        systemPrompt = bakedPrompt;
+        thread = { ...thread, composedSystemPrompt: bakedPrompt };
+        skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
+      }
     }
+
+    const { messages, tools: contextTools } = buildContext({
+      thread,
+      turns: input.turns,
+      blocks: input.blocks,
+      tools,
+      skillsSystemPromptSection,
+    });
+
+    const gatewayParams = agentContext.gatewayParams;
+
+    return {
+      thread,
+      agentSlug: thread.currentAgent,
+      resolvedSkills: agentContext.resolvedSkills,
+      systemPrompt,
+      tools: functionToolsFromAdvertised(contextTools),
+      gatewayParams,
+      baked,
+      generateRequest: {
+        messages,
+        tools: contextTools,
+        ...gatewayParams,
+      },
+    };
   }
-
-  const { messages, tools: contextTools } = buildContext({
-    thread,
-    turns: input.turns,
-    blocks: input.blocks,
-    tools,
-    skillsSystemPromptSection,
-  });
-
-  const gatewayParams = agentContext.gatewayParams;
-
-  return {
-    thread,
-    agentSlug: thread.currentAgent,
-    resolvedSkills: agentContext.resolvedSkills,
-    systemPrompt,
-    tools: functionToolsFromAdvertised(contextTools),
-    gatewayParams,
-    baked,
-    generateRequest: {
-      messages,
-      tools: contextTools,
-      ...gatewayParams,
-    },
-  };
 }

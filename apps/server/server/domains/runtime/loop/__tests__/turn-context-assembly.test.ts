@@ -91,4 +91,35 @@ describe("assembleNextTurnContext", () => {
     expect(assembled.systemPrompt).toContain("Prompt for agent-b");
     expect(assembled.systemPrompt).not.toContain("Prompt for agent-a");
   });
+
+  it("retries the bake when an agent rebind wins before the prompt is frozen", async () => {
+    const bakeAttempts: string[] = [];
+
+    const assembled = await assembleNextTurnContext({
+      thread: thread({ currentAgent: "agent-a" }),
+      turns: [],
+      blocks: [],
+      packageRepository: packageRepository() as never,
+      toolRegistry: { getRegistration: () => undefined } as never,
+      persistBake: true,
+      async bakeComposedSystemPrompt(_threadId, input) {
+        bakeAttempts.push(input.expectedCurrentAgent ?? "none");
+        if (input.expectedCurrentAgent === "agent-a") {
+          return thread({ currentAgent: "agent-b" });
+        }
+        return thread({
+          currentAgent: "agent-b",
+          composedSystemPrompt: input.composedSystemPrompt,
+          bakedSkillSlugs: input.bakedSkillSlugs,
+          systemPrompt: null,
+        });
+      },
+    });
+
+    expect(bakeAttempts).toEqual(["agent-a", "agent-b"]);
+    expect(assembled.agentSlug).toBe("agent-b");
+    expect(assembled.generateRequest.model).toBe("model-agent-b");
+    expect(assembled.systemPrompt).toContain("Prompt for agent-b");
+    expect(assembled.systemPrompt).not.toContain("Prompt for agent-a");
+  });
 });
