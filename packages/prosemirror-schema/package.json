@@ -1,0 +1,19 @@
+{
+  "name": "@meridian/prosemirror-schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "prosemirror-model": "^1.25.3",
+    "prosemirror-schema-basic": "^1.2.4"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

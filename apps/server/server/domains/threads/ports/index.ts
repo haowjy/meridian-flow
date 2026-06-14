@@ -1,0 +1,30 @@
+// @ts-nocheck
+/** Barrel: re-exports the threads domain port types — the event-journal ports and the thread/turn/block/model-response repository ports. */
+export type {
+  EventJournalReader,
+  EventJournalWriter,
+  JournalEntry,
+  JournalEventEnvelope,
+  ListJournalEventsOptions,
+} from "./event-journal.js";
+export type {
+  BlockRepository,
+  CreateBlockInput,
+  CreateModelResponseInput,
+  CreateThreadInput,
+  CreateTurnInput,
+  InternalThreadRepositories,
+  ModelResponseRepository,
+  RecordModelResponseUsageInput,
+  RecordModelResponseUsageResult,
+  SubagentThreadFactory,
+  ThreadDocument,
+  ThreadDocumentRepository,
+  ThreadRepositories,
+  ThreadRepository,
+  TurnDocumentTouch,
+  TurnDocumentTouchRepository,
+  TurnRepository,
+  UpdateTurnStatusInput,
+  UsageRecorder,
+} from "./repositories.js";

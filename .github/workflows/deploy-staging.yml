@@ -1,0 +1,44 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: ci
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy:
+    name: deploy
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL || 'https://staging.meridianflow.app' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build release artifacts
+        run: pnpm nx run-many -t build -p @meridian/app,@meridian/server,@meridian/www
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bash tools/deploy/run-migrations.sh
+      - name: Deploy to staging
+        run: bash tools/deploy/deploy-staging.sh
+      - name: Smoke check
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+        run: bash tools/deploy/smoke-check.sh

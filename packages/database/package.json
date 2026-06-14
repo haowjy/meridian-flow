@@ -1,0 +1,31 @@
+{
+  "name": "@meridian/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./schema/*": "./src/schema/*.ts",
+    "./schema/sql/*": "./src/schema/sql/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:apply-functions": "tsx scripts/apply-functions.ts"
+  },
+  "dependencies": {
+    "@meridian/contracts": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "drizzle-kit": "catalog:",
+    "tsx": "^4.22.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

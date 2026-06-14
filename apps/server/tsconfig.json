@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "paths": {
+      "@meridian/contracts/components": ["../../packages/contracts/src/components/index.ts"],
+      "@meridian/contracts/protocol": ["../../packages/contracts/src/protocol/index.ts"],
+      "@meridian/contracts/protocol/*": ["../../packages/contracts/src/protocol/*"],
+      "@meridian/contracts/runtime": ["../../packages/contracts/src/runtime/index.ts"],
+      "@meridian/contracts/runtime/*": ["../../packages/contracts/src/runtime/*"],
+      "@meridian/contracts/threads": ["../../packages/contracts/src/threads/index.ts"],
+      "@meridian/contracts/projects": ["../../packages/contracts/src/projects/index.ts"],
+      "@meridian/prosemirror-schema": ["../../packages/prosemirror-schema/src/index.ts"]
+    }
+  },
+  "include": ["server/**/*", "nitro.config.ts"]
+}

@@ -1,0 +1,20 @@
+# Ignore everything by default
+*
+
+# Track .gitignore itself
+!.gitignore
+
+# Track shared install manifest and lock
+
+# Track shared repo state
+!fs/
+!fs/**
+!work/
+!work/**
+!work-archive/
+!work-archive/**
+# Added by Meridian to keep required project state tracked
+!config.toml
+!models.toml
+# Added by Meridian to keep required project state tracked
+!id

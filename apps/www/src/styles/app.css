@@ -1,0 +1,73 @@
+/**
+ * Marketing app stylesheet — imports Tailwind plus the shared Warm Organic
+ * theme and applies the public-site base chrome. This surface consumes shared
+ * tokens directly and does not define project-only utilities.
+ */
+@import 'tailwindcss' source('../');
+@import '@meridian/design-tokens/warm-paper.css';
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  body {
+    margin: 0;
+    height: 100dvh;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    color: var(--color-foreground);
+    background-color: var(--color-background);
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--color-mark-to) 8%, transparent) 0 1px,
+      transparent 1.2px
+    );
+    background-size: 22px 22px;
+  }
+}
+
+@layer components {
+  .mesh-blob-primary {
+    animation: drift-main 32s ease-in-out infinite alternate;
+  }
+
+  .mesh-blob-secondary {
+    animation: drift-secondary 38s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes drift-main {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  to {
+    transform: translate3d(-44px, -34px, 0) rotate(-3deg);
+  }
+}
+
+@keyframes drift-secondary {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  to {
+    transform: translate3d(34px, 28px, 0) rotate(2.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-blob-primary,
+  .mesh-blob-secondary {
+    animation: none;
+  }
+}

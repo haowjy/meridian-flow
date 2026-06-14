@@ -1,0 +1,83 @@
+# tools/dev — Dev tooling
+
+Local-dev-only utilities. Nothing here is loaded by the application runtime; tools are invoked by `pnpm` scripts, `.envrc`, or a developer shell.
+
+## What this module owns
+
+- **Environment loading** — `load-env.ts` reads root `.env` and reports missing required keys with setup guidance.
+- **Supabase bootstrap support** — auth-user creation/sign-in helpers and Supabase env printing for the local CLI stack.
+- **Database readiness** — thin CLIs for ensuring, preparing, and dropping the active Postgres database URL used by this worktree.
+- **Drizzle schema application** — bootstrap runs migrations and applies PL/pgSQL functions from `@meridian/database`.
+- **Seed data** — `seed-dev-project.ts` creates a sample writing project and context sources for the dev user; `seed.ts` exposes that seeding as a standalone command when `TEST_USER_ID` is set.
+- **Dev orchestration** — `dev-tmux.ts` starts the worktree-scoped tmux stack and portless routes; `dev-mode.ts` selects local/tailscale/funnel exposure modes.
+- **Portless route helpers** — `portless-routes.ts` and app e2e helpers discover the HTTPS `*.meridian.localhost` routes used in development.
+
+## Directory layout
+
+```
+tools/dev/
+├── lib/
+│   └── dev-env.ts             active env helpers + database URL resolution
+├── __tests__/                 vitest units for dev-mode, portless routes, session identity, etc.
+├── bootstrap.ts               pnpm bootstrap: auth user, sign-in check, migrate, functions, seed project
+├── seed-dev-project.ts        idempotent sample project/context-source seed helper
+├── seed.ts                    pnpm seed: standalone wrapper around seed-dev-project
+├── supabase-admin.ts          local Supabase auth admin/password sign-in helper
+├── supabase-env.ts            prints Supabase CLI values for .env population
+├── ensure-db.ts               validates/ensures active DATABASE_URL target
+├── prepare-db.ts              prepares active database before dev stack startup
+├── drop-db.ts                 guarded drop helper for active dev database
+├── load-env.ts                root .env loader + requireEnv helper
+├── print-worktree-env.ts      helper eval'd by .envrc to expose DATABASE_URL
+├── dev-tmux.ts                pnpm dev entrypoint; starts app/server/www through tmux
+├── dev-mode.ts                local/tailscale/funnel mode selection
+├── portless-routes.ts         portless route definitions and lookup
+├── session-identity.ts        worktree slug + tmux session naming
+└── tmux-session-store.ts      tmux metadata
+```
+
+## Local database/auth contract
+
+Meridian v3 uses Supabase CLI for local Postgres and `auth.users`.
+
+- Start infra with `pnpm supabase:start`.
+- Populate `.env` from `.env.example` and `pnpm supabase:env`.
+- App schema is Drizzle-owned in `packages/database`, not Supabase migration files.
+- `pnpm bootstrap` creates/verifies a dev auth user, runs `pnpm db:migrate`, applies database functions, and seeds a sample project.
+- `pnpm seed` assumes `DATABASE_URL` and `TEST_USER_ID` already exist; use bootstrap first when setting up a fresh checkout.
+
+## Dev server contract
+
+Development is portless-first.
+
+- `pnpm dev` runs the stack through a worktree-scoped tmux session.
+- `pnpm portless:list` is the source of truth for live HTTPS app/server/www URLs.
+- Tests and smoke scripts should go through portless/TLS routes unless they intentionally start an isolated in-process smoke server.
+- Do not add raw localhost port assumptions to new dev tools.
+
+## Migration tooling
+
+`migration-lint.ts` is a warning-first SQL scanner for generated Drizzle migrations. It flags risky deployed-Postgres patterns such as column renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, blocking index creation, and unconstrained deletes.
+
+Run:
+
+```bash
+pnpm db:migration-lint
+```
+
+Warnings do not currently block the pipeline; errors do.
+
+## Conventions
+
+- Keep top-level scripts thin; put reusable logic in helpers.
+- Keep local infrastructure provider assumptions in dev tooling and composition roots, not domain code.
+- Use `new URL()` for URL transformations.
+- Prefer explicit setup errors over silent fallback.
+- Keep dev tooling aligned with Supabase CLI + Drizzle + portless.
+
+## Related documentation
+
+- [`DEVELOPMENT.md`](../../DEVELOPMENT.md)
+- [`supabase/README.md`](../../supabase/README.md)
+- [`packages/database/README.md`](../../packages/database/README.md)
+- [`tests/smoke/README.md`](../../tests/smoke/README.md)

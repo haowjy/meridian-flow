@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Meridian: dev stack",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Meridian: server smoke",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "MODEL_PROVIDER=mock pnpm --filter @meridian/server smoke:thread-runtime",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

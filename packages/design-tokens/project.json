@@ -1,0 +1,15 @@
+{
+  "name": "@meridian/design-tokens",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/design-tokens/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/design-tokens",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    }
+  }
+}

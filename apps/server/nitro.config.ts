@@ -1,0 +1,28 @@
+import path from "node:path";
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
+
+import { defineConfig } from "nitro/config";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+try {
+  loadEnvFile(path.join(repoRoot, ".env"));
+} catch (error) {
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+    throw error;
+  }
+}
+
+export default defineConfig({
+  scanDirs: ["server"],
+  serverAssets: [
+    {
+      baseName: "builtin",
+      dir: path.join(repoRoot, "apps/server/server/domains/packages/builtin"),
+    },
+  ],
+  features: {
+    websocket: true,
+  },
+});

@@ -1,0 +1,1331 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-05-25 14:12-0500\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "(fetched)"
+msgstr "(fetched)"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "(untitled)"
+msgstr "(untitled)"
+
+#: src/lib/date-groups.ts
+msgid "{days}d"
+msgstr "{days}d"
+
+#: src/lib/date-groups.ts
+msgid "{hours}h"
+msgstr "{hours}h"
+
+#: src/lib/date-groups.ts
+msgid "{minutes}m"
+msgstr "{minutes}m"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "/figure…"
+msgstr "/figure…"
+
+#: src/features/editor/EditorView.tsx
+msgid "A project is required before figures can be uploaded."
+msgstr "A project is required before figures can be uploaded."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Account"
+msgstr "Account"
+
+#: src/features/account/PhoneSettings.tsx
+#: src/features/account/SettingsDialog.tsx
+msgid "Account and project settings."
+msgstr "Account and project settings."
+
+#: src/features/account/AccountMenu.tsx
+msgid "Account menu"
+msgstr "Account menu"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Add a caption for this figure."
+msgstr "Add a caption for this figure."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Agent behavior"
+msgstr "Agent behavior"
+
+#: src/features/home/PackageShowcase.tsx
+msgid "Agent Packages"
+msgstr "Agent Packages"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "All"
+msgstr "All"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Alt text"
+msgstr "Alt text"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Alt: {altSummary}"
+msgstr "Alt: {altSummary}"
+
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "Answer the question"
+msgstr "Answer the question"
+
+#: src/features/home/HomeHero.tsx
+msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
+msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
+
+#: src/features/chat/Composer.tsx
+msgid "Ask anything…"
+msgstr "Ask anything…"
+
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Assistant is thinking"
+msgstr "Assistant is thinking"
+
+#: src/features/chat/Composer.tsx
+msgid "Attach scans or reference files"
+msgstr "Attach scans or reference files"
+
+#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "auto-selected"
+msgstr "auto-selected"
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Back to chat"
+msgstr "Back to chat"
+
+#: src/features/chat/IndependentChatView.tsx
+msgid "Back to home"
+msgstr "Back to home"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Bold"
+msgstr "Bold"
+
+#: src/features/project/mobile/MobileBreadcrumb.tsx
+msgid "Breadcrumb"
+msgstr "Breadcrumb"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Bullet list"
+msgstr "Bullet list"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Caption"
+msgstr "Caption"
+
+#: src/features/home/first-party-packages.ts
+msgid "Capture experiments, methods, and observations in a structured log."
+msgstr "Capture experiments, methods, and observations in a structured log."
+
+#: src/features/project/chat/ChatSurface.tsx
+#: src/features/project/ChatPaneController.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileTopBar.tsx
+msgid "Chat"
+msgstr "Chat"
+
+#: src/features/project/chat/ThreadPanel.tsx
+#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/LeftSidebar.tsx
+msgid "Chats"
+msgstr "Chats"
+
+#: src/features/chat/Checkpoint.tsx
+#: src/features/project/lifecycle.ts
+msgid "Checkpoint"
+msgstr "Checkpoint"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Checkpoint auto-resume"
+msgstr "Checkpoint auto-resume"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Checkpoint payload is malformed."
+msgstr "Checkpoint payload is malformed."
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Checkpoint resolved"
+msgstr "Checkpoint resolved"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Checkpoint timeout in milliseconds"
+msgstr "Checkpoint timeout in milliseconds"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Choose a listed option"
+msgstr "Choose a listed option"
+
+#: src/features/chat/ChoiceCheckpoint.tsx
+msgid "Choose an option"
+msgstr "Choose an option"
+
+#: src/features/project/mobile/MobileResultViewerOverlay.tsx
+#: src/features/project/shell/ResultViewerOverlay.tsx
+msgid "Close"
+msgstr "Close"
+
+#. placeholder {0}: tab.name
+#: src/features/project/context/ContextTabBar.tsx
+msgid "Close {0}"
+msgstr "Close {0}"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Close artifact preview"
+msgstr "Close artifact preview"
+
+#: src/features/account/PhoneSettings.tsx
+msgid "Close settings"
+msgstr "Close settings"
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Closed"
+msgstr "Closed"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Code"
+msgstr "Code"
+
+#: src/features/project/chat/ChatSurface.tsx
+msgid "Collapse chat  ]"
+msgstr "Collapse chat  ]"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Collapse context  ]"
+msgstr "Collapse context  ]"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Collapse files"
+msgstr "Collapse files"
+
+#: src/features/project/shell/LeftSidebar.tsx
+msgid "Collapse sidebar  ["
+msgstr "Collapse sidebar  ["
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Collapse thread list"
+msgstr "Collapse thread list"
+
+#: src/features/project/lifecycle.ts
+msgid "Completed"
+msgstr "Completed"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "Completed."
+msgstr "Completed."
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Confirm"
+msgstr "Confirm"
+
+#. placeholder {0}: state.attempt
+#: src/components/app/ConnectionBanner.tsx
+msgid "Connection lost. Retrying… attempt {0}"
+msgstr "Connection lost. Retrying… attempt {0}"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Context"
+msgstr "Context"
+
+#: src/features/chat/ChatView.tsx
+msgid "Conversation"
+msgstr "Conversation"
+
+#: src/components/app/SidebarUndoPill.tsx
+msgid "Could not delete project. It was restored."
+msgstr "Could not delete project. It was restored."
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "Could not load files."
+msgstr "Could not load files."
+
+#: src/components/app/QueryErrorRow.tsx
+msgid "Could not load. Check your connection and try again."
+msgstr "Could not load. Check your connection and try again."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Couldn't load recent documents."
+msgstr "Couldn't load recent documents."
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Couldn't load results."
+msgstr "Couldn't load results."
+
+#: src/features/project/context/ContextViewerHost.tsx
+msgid "Couldn't load this file."
+msgstr "Couldn't load this file."
+
+#: src/features/project/shell/ResultViewerOverlay.tsx
+msgid "Couldn't load this result."
+msgstr "Couldn't load this result."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Couldn't load uploads."
+msgstr "Couldn't load uploads."
+
+#: src/features/project/mobile/MobileDocumentHost.tsx
+msgid "Couldn't open this document."
+msgstr "Couldn't open this document."
+
+#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "Create file or folder"
+msgstr "Create file or folder"
+
+#: src/features/chat/IndependentChatView.tsx
+msgid "Create project"
+msgstr "Create project"
+
+#: src/features/home/first-party-packages.ts
+msgid "Data Analysis"
+msgstr "Data Analysis"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Date"
+msgstr "Date"
+
+#: src/components/app/ProjectRow.tsx
+msgid "Delete project"
+msgstr "Delete project"
+
+#: src/components/app/SidebarUndoPill.tsx
+msgid "Deletion undone"
+msgstr "Deletion undone"
+
+#: src/rich-content/ImageBlock.tsx
+msgid "Demo image"
+msgstr "Demo image"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Describe the image for accessibility"
+msgstr "Describe the image for accessibility"
+
+#: src/routes/dev-login.tsx
+msgid "Dev login"
+msgstr "Dev login"
+
+#: src/routes/dev-login.tsx
+msgid "Dev-login failed"
+msgstr "Dev-login failed"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Documents the AI reads in this chat appear here."
+msgstr "Documents the AI reads in this chat appear here."
+
+#: src/features/project/context/viewers/DownloadCard.tsx
+msgid "Download {name}"
+msgstr "Download {name}"
+
+#: src/features/home/first-party-packages.ts
+msgid "Draft and iterate on lab protocols with reagent + step suggestions."
+msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
+
+#: src/features/editor/EditorView.tsx
+msgid "Drop an image file to insert a figure."
+msgstr "Drop an image file to insert a figure."
+
+#: src/features/editor/EditorView.tsx
+msgid "Drop image to upload a figure"
+msgstr "Drop image to upload a figure"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Earlier"
+msgstr "Earlier"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Edited"
+msgstr "Edited"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Edited file"
+msgstr "Edited file"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Editor formatting toolbar"
+msgstr "Editor formatting toolbar"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Email"
+msgstr "Email"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Enable auto-resume"
+msgstr "Enable auto-resume"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Enable checkpoint auto-resume"
+msgstr "Enable checkpoint auto-resume"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Enabled"
+msgstr "Enabled"
+
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/lifecycle.ts
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Errored"
+msgstr "Errored"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Every chat across your work"
+msgstr "Every chat across your work"
+
+#: src/features/project/ProjectView.tsx
+msgid "Expand chat"
+msgstr "Expand chat"
+
+#: src/features/project/ProjectView.tsx
+msgid "Expand context"
+msgstr "Expand context"
+
+#: src/features/project/ProjectView.tsx
+msgid "Expand sidebar"
+msgstr "Expand sidebar"
+
+#. placeholder {0}: artifact.expiresAt
+#: src/features/chat/Checkpoint.tsx
+msgid "expires {0}"
+msgstr "expires {0}"
+
+#: src/rich-content/ImageBlock.tsx
+msgid "Failed to load image"
+msgstr "Failed to load image"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "fig:result"
+msgstr "fig:result"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Figure could not be loaded."
+msgstr "Figure could not be loaded."
+
+#: src/features/editor/EditorView.tsx
+msgid "Figure upload failed."
+msgstr "Figure upload failed."
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "File name"
+msgstr "File name"
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Files"
+msgstr "Files"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Filter"
+msgstr "Filter"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "First name"
+msgstr "First name"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Flat"
+msgstr "Flat"
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "Folder name"
+msgstr "Folder name"
+
+#: src/features/project/lifecycle.ts
+msgid "Grilling"
+msgstr "Grilling"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Group by"
+msgstr "Group by"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Heading"
+msgstr "Heading"
+
+#: src/components/app/AppSidebar.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/HomePaneController.tsx
+#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/LeftSidebar.tsx
+msgid "Home"
+msgstr "Home"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "How Meridian Flow looks and reads for you, on every device."
+msgstr "How Meridian Flow looks and reads for you, on every device."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Id"
+msgstr "Id"
+
+#: src/routes/dev-login.tsx
+msgid "Identity"
+msgstr "Identity"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/lifecycle.ts
+msgid "Idle"
+msgstr "Idle"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Image artifact"
+msgstr "Image artifact"
+
+#. placeholder {0}: state.filename
+#: src/features/editor/EditorView.tsx
+msgid "Inserted {0} as a figure."
+msgstr "Inserted {0} as a figure."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Interface language"
+msgstr "Interface language"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Italic"
+msgstr "Italic"
+
+#: src/features/project/context/context-schemes.ts
+msgid "Knowledge Base"
+msgstr "Knowledge Base"
+
+#: src/features/home/first-party-packages.ts
+msgid "Lab Notebook"
+msgstr "Lab Notebook"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Label"
+msgstr "Label"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Language"
+msgstr "Language"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Last name"
+msgstr "Last name"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Let the agent continue after a waiting question times out when it has a safe recommended answer."
+msgstr "Let the agent continue after a waiting question times out when it has a safe recommended answer."
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Link"
+msgstr "Link"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Listed"
+msgstr "Listed"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Listed directory"
+msgstr "Listed directory"
+
+#: src/features/home/first-party-packages.ts
+msgid "Literature Review"
+msgstr "Literature Review"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Live artifact view"
+msgstr "Live artifact view"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Live view"
+msgstr "Live view"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileHomeScreen.tsx
+msgid "Loading chats…"
+msgstr "Loading chats…"
+
+#: src/features/project/context/ContextViewerHost.tsx
+msgid "Loading file…"
+msgstr "Loading file…"
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "Loading files…"
+msgstr "Loading files…"
+
+#: src/rich-content/ImageBlock.tsx
+msgid "Loading image"
+msgstr "Loading image"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Loading recent documents…"
+msgstr "Loading recent documents…"
+
+#: src/features/project/shell/ResultViewerOverlay.tsx
+msgid "Loading result…"
+msgstr "Loading result…"
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Loading results…"
+msgstr "Loading results…"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Loading signed image URL…"
+msgstr "Loading signed image URL…"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Loading uploads…"
+msgstr "Loading uploads…"
+
+#: src/features/account/AccountMenu.tsx
+msgid "Log out"
+msgstr "Log out"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Math block"
+msgstr "Math block"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Milliseconds before auto-resume or expiry."
+msgstr "Milliseconds before auto-resume or expiry."
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Missing figure source"
+msgstr "Missing figure source"
+
+#: src/features/chat/CustomBlockRenderer.tsx
+msgid "missing kind"
+msgstr "missing kind"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Must be a number"
+msgstr "Must be a number"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Must be a whole number"
+msgstr "Must be a whole number"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Must be at least {value}"
+msgstr "Must be at least {value}"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Must be at most {value}"
+msgstr "Must be at most {value}"
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot contain '/'"
+msgstr "Names cannot contain '/'"
+
+#: src/features/chat/IndependentChatView.tsx
+#: src/features/project/chat/ThreadPanel.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileHomeScreen.tsx
+#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/LeftSidebar.tsx
+#: src/lib/thread-title.ts
+msgid "New chat"
+msgstr "New chat"
+
+#: src/features/chat/ChatView.tsx
+msgid "New conversation"
+msgstr "New conversation"
+
+#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "New file"
+msgstr "New file"
+
+#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "New folder"
+msgstr "New folder"
+
+#: src/components/app/ProjectListSection.tsx
+msgid "New project"
+msgstr "New project"
+
+#: src/features/chat/useComposerNewProject.ts
+msgid "New project started"
+msgstr "New project started"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "No alt text yet"
+msgstr "No alt text yet"
+
+#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "No answer"
+msgstr "No answer"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileHomeScreen.tsx
+msgid "No chats yet — start one to get going."
+msgstr "No chats yet — start one to get going."
+
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "No context files yet."
+msgstr "No context files yet."
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "No conversations yet"
+msgstr "No conversations yet"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "No fields required; confirm to continue."
+msgstr "No fields required; confirm to continue."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "No files uploaded yet."
+msgstr "No files uploaded yet."
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "No matching conversations"
+msgstr "No matching conversations"
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "No results yet."
+msgstr "No results yet."
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "No work"
+msgstr "No work"
+
+#: src/components/app/ProjectListSection.tsx
+msgid "No projects yet — start one from the Home screen."
+msgstr "No projects yet — start one from the Home screen."
+
+#: src/features/home/RecentProjects.tsx
+msgid "No projects yet."
+msgstr "No projects yet."
+
+#: src/routes/__root.tsx
+msgid "Not Found"
+msgstr "Not Found"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileHomeScreen.tsx
+msgid "Nothing matches this filter."
+msgstr "Nothing matches this filter."
+
+#: src/lib/date-groups.ts
+msgid "now"
+msgstr "now"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Object"
+msgstr "Object"
+
+#: src/lib/date-groups.ts
+msgid "Older"
+msgstr "Older"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "One surface for every chat in this project. Jump into any conversation, or start a new one."
+msgstr "One surface for every chat in this project. Jump into any conversation, or start a new one."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Open a chat to see its uploads."
+msgstr "Open a chat to see its uploads."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Open a chat to see what the AI referenced."
+msgstr "Open a chat to see what the AI referenced."
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open a project to see its results."
+msgstr "Open a project to see its results."
+
+#: src/features/project/context/ContextTabBar.tsx
+msgid "Open context files"
+msgstr "Open context files"
+
+#: src/features/project/mobile/MobileTopBar.tsx
+msgid "Open navigation"
+msgstr "Open navigation"
+
+#: src/features/project/context/viewers/ImageViewer.tsx
+msgid "Open original"
+msgstr "Open original"
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open producing turn"
+msgstr "Open producing turn"
+
+#. placeholder {0}: result.agentSlug
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open producing turn in {0}"
+msgstr "Open producing turn in {0}"
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open result {name}"
+msgstr "Open result {name}"
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Open results"
+msgstr "Open results"
+
+#: src/features/project/mobile/MobileDocumentHost.tsx
+msgid "Opening document…"
+msgstr "Opening document…"
+
+#: src/features/project/chat/SubagentBanner.tsx
+msgid "Parent unknown"
+msgstr "Parent unknown"
+
+#: src/features/project/chat/SubagentBanner.tsx
+msgid "Parent:"
+msgstr "Parent:"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Pin chat"
+msgstr "Pin chat"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Pinned"
+msgstr "Pinned"
+
+#: src/features/home/first-party-packages.ts
+msgid "Plot, transform, and reason over tabular data with code-generating tools."
+msgstr "Plot, transform, and reason over tabular data with code-generating tools."
+
+#: src/features/home/PackageShowcase.tsx
+msgid "Popular"
+msgstr "Popular"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Preferences"
+msgstr "Preferences"
+
+#: src/features/project/context/viewers/DownloadCard.tsx
+msgid "Preview not available"
+msgstr "Preview not available"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Previous 7 days"
+msgstr "Previous 7 days"
+
+#: src/features/account/AccountMenu.tsx
+#: src/features/account/SettingsDialog.tsx
+msgid "Profile"
+msgstr "Profile"
+
+#: src/features/home/first-party-packages.ts
+msgid "Protocol Designer"
+msgstr "Protocol Designer"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Ran command"
+msgstr "Ran command"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Read"
+msgstr "Read"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Read file"
+msgstr "Read file"
+
+#: src/features/project/mobile/MobileDocumentHost.tsx
+msgid "Read-only live document"
+msgstr "Read-only live document"
+
+#: src/features/project/context/viewers/ImageViewer.tsx
+msgid "Read-only preview"
+msgstr "Read-only preview"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Recent"
+msgstr "Recent"
+
+#: src/features/home/RecentProjects.tsx
+msgid "Recent projects"
+msgstr "Recent projects"
+
+#: src/features/chat/ChoiceCheckpoint.tsx
+msgid "Recommended"
+msgstr "Recommended"
+
+#: src/features/chat/ChoiceCheckpoint.tsx
+msgid "Recommended option is highlighted."
+msgstr "Recommended option is highlighted."
+
+#: src/components/app/ConnectionBanner.tsx
+msgid "Reconnect now"
+msgstr "Reconnect now"
+
+#: src/components/app/ConnectionBanner.tsx
+msgid "Reconnected"
+msgstr "Reconnected"
+
+#. placeholder {0}: state.attempt
+#: src/components/app/ConnectionBanner.tsx
+msgid "Reconnecting… attempt {0}"
+msgstr "Reconnecting… attempt {0}"
+
+#: src/components/app/ConnectionBanner.tsx
+msgid "Refresh"
+msgstr "Refresh"
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Rename"
+msgstr "Rename"
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Rename thread"
+msgstr "Rename thread"
+
+#: src/components/app/ProjectRow.tsx
+msgid "Rename project"
+msgstr "Rename project"
+
+#: src/components/app/ProjectRow.tsx
+msgid "Renamed to {resolved}"
+msgstr "Renamed to {resolved}"
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Renamed to {trimmed}"
+msgstr "Renamed to {trimmed}"
+
+#: src/features/chat/ChatView.tsx
+msgid "Reply to the agent, or steer the analysis…"
+msgstr "Reply to the agent, or steer the analysis…"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Required"
+msgstr "Required"
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Resize files"
+msgstr "Resize files"
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Resize right rail"
+msgstr "Resize right rail"
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Resize sidebar"
+msgstr "Resize sidebar"
+
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Response complete"
+msgstr "Response complete"
+
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Results"
+msgstr "Results"
+
+#: src/components/app/QueryErrorRow.tsx
+#: src/core/editor/FigureNodeView.tsx
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Retry"
+msgstr "Retry"
+
+#: src/routes/dev-login.tsx
+msgid "Retry sign-in"
+msgstr "Retry sign-in"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Running"
+msgstr "Running"
+
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Running {toolName}"
+msgstr "Running {toolName}"
+
+#: src/features/project/context/context-schemes.ts
+msgid "Project Workspace Files"
+msgstr "Project Workspace Files"
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Saved locally · offline"
+msgstr "Saved locally · offline"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Search chats"
+msgstr "Search chats"
+
+#: src/features/home/first-party-packages.ts
+msgid "Search papers, extract findings, and synthesize a summary across sources."
+msgstr "Search papers, extract findings, and synthesize a summary across sources."
+
+#. placeholder {0}: truncate(query, 60)
+#: src/features/chat/tool-renderers.tsx
+msgid "Searched \"{0}\""
+msgstr "Searched \"{0}\""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Searched context"
+msgstr "Searched context"
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Select a document to begin."
+msgstr "Select a document to begin."
+
+#: src/features/project/mobile/MobileDocumentHost.tsx
+msgid "Select a document."
+msgstr "Select a document."
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Select…"
+msgstr "Select…"
+
+#: src/features/chat/Composer.tsx
+msgid "Send message"
+msgstr "Send message"
+
+#: src/components/app/ConnectionBanner.tsx
+msgid "Session expired. Please refresh."
+msgstr "Session expired. Please refresh."
+
+#: src/features/account/AccountMenu.tsx
+#: src/features/account/PhoneSettings.tsx
+#: src/features/account/SettingsDialog.tsx
+msgid "Settings"
+msgstr "Settings"
+
+#: src/features/account/PhoneSettings.tsx
+#: src/features/account/SettingsDialog.tsx
+msgid "Settings sections"
+msgstr "Settings sections"
+
+#: src/features/project/context/document-toolbar.tsx
+msgid "Show files"
+msgstr "Show files"
+
+#: src/routes/dev-login.tsx
+msgid "Sign in as dev user"
+msgstr "Sign in as dev user"
+
+#: src/routes/dev-login.tsx
+msgid "Sign in as the development user"
+msgstr "Sign in as the development user"
+
+#: src/features/account/AccountMenu.tsx
+msgid "Signed in"
+msgstr "Signed in"
+
+#: src/routes/dev-login.tsx
+msgid "Signing in…"
+msgstr "Signing in…"
+
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Something went wrong generating a response."
+msgstr "Something went wrong generating a response."
+
+#. placeholder {0}: direction === "asc" ? "ascending" : "descending"
+#: src/features/project/home/HomeScreen.tsx
+msgid "Sorted {0}"
+msgstr "Sorted {0}"
+
+#: src/features/home/HomeView.tsx
+msgid "Start a quick chat without a project"
+msgstr "Start a quick chat without a project"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Status"
+msgstr "Status"
+
+#: src/features/chat/Composer.tsx
+msgid "Stop"
+msgstr "Stop"
+
+#: src/features/chat/Checkpoint.tsx
+msgid "Stop run"
+msgstr "Stop run"
+
+#: src/components/app/ProjectRow.tsx
+#: src/features/home/RecentProjects.tsx
+msgid "Streaming"
+msgstr "Streaming"
+
+#: src/features/project/chat/SubagentBanner.tsx
+msgid "Subagent:"
+msgstr "Subagent:"
+
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "Submit"
+msgstr "Submit"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Subtask"
+msgstr "Subtask"
+
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "Suggested text is prefilled; edit it before submitting if needed."
+msgstr "Suggested text is prefilled; edit it before submitting if needed."
+
+#. placeholder {0}: String(field.defaultValue)
+#: src/features/chat/Checkpoint.tsx
+msgid "Suggested: {0}"
+msgstr "Suggested: {0}"
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "Summarize what this figure shows"
+msgstr "Summarize what this figure shows"
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Switch chat"
+msgstr "Switch chat"
+
+#: src/features/project/mobile/NavigationDrawer.tsx
+msgid "Switch screens, open chats, or manage your account."
+msgstr "Switch screens, open chats, or manage your account."
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Table"
+msgstr "Table"
+
+#: src/features/project/chat/SubagentTaskCard.tsx
+msgid "Task Assignment"
+msgstr "Task Assignment"
+
+#: src/routes/dev-login.tsx
+msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+
+#: src/features/editor/EditorView.tsx
+msgid "The figure uploaded, but the editor could not insert it."
+msgstr "The figure uploaded, but the editor could not insert it."
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "Thinking"
+msgstr "Thinking"
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "Thinking pt{segmentNumber}"
+msgstr "Thinking pt{segmentNumber}"
+
+#: src/features/project/context/viewers/PdfViewer.tsx
+msgid "This browser cannot display the PDF inline."
+msgstr "This browser cannot display the PDF inline."
+
+#: src/features/project/context/ContextViewerHost.tsx
+msgid "This file should be opened in the collaborative editor."
+msgstr "This file should be opened in the collaborative editor."
+
+#. placeholder {0}: mimeType || "application/octet-stream"
+#: src/features/project/context/viewers/BinaryFallbackViewer.tsx
+msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
+msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
+
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "This folder is empty."
+msgstr "This folder is empty."
+
+#: src/features/project/mobile/MobileContextBrowser.tsx
+msgid "This folder no longer exists."
+msgstr "This folder no longer exists."
+
+#: src/routes/dev-login.tsx
+msgid "This page exists only when SUPABASE_DEV_LOGIN is enabled. Clicking the button below performs a real Supabase password authentication and mints the same session cookie as the production sign-in flow."
+msgstr "This page exists only when SUPABASE_DEV_LOGIN is enabled. Clicking the button below performs a real Supabase password authentication and mints the same session cookie as the production sign-in flow."
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "This stored figure needs a project and document before it can be rendered."
+msgstr "This stored figure needs a project and document before it can be rendered."
+
+#: src/lib/date-groups.ts
+msgid "This week"
+msgstr "This week"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "This project"
+msgstr "This project"
+
+#: src/features/project/chat/ChatScreen.tsx
+msgid "This project has no conversations yet."
+msgstr "This project has no conversations yet."
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Thread context"
+msgstr "Thread context"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Timeout"
+msgstr "Timeout"
+
+#: src/features/project/chat/ThreadPanel.tsx
+#: src/lib/date-groups.ts
+msgid "Today"
+msgstr "Today"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Toggle {label}"
+msgstr "Toggle {label}"
+
+#. placeholder {0}: dir.name
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Toggle folder {0}"
+msgstr "Toggle folder {0}"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Toggle subagents"
+msgstr "Toggle subagents"
+
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Turn cancelled"
+msgstr "Turn cancelled"
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "Turn cancelled."
+msgstr "Turn cancelled."
+
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "Type your answer…"
+msgstr "Type your answer…"
+
+#: src/components/app/SidebarUndoPill.tsx
+msgid "Undo"
+msgstr "Undo"
+
+#: src/components/app/SidebarUndoPill.tsx
+msgid "Undo deletion of {title}"
+msgstr "Undo deletion of {title}"
+
+#: src/features/chat/CustomBlockRenderer.tsx
+msgid "Unknown component: {kindLabel}"
+msgstr "Unknown component: {kindLabel}"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "Unpin chat"
+msgstr "Unpin chat"
+
+#: src/lib/project-title.ts
+msgid "Untitled project"
+msgstr "Untitled project"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Updated"
+msgstr "Updated"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Upload figure"
+msgstr "Upload figure"
+
+#. placeholder {0}: state.filename
+#. placeholder {1}: state.percent
+#: src/features/editor/EditorView.tsx
+msgid "Uploading {0} — {1}%"
+msgstr "Uploading {0} — {1}%"
+
+#. placeholder {0}: state.filename
+#: src/features/editor/EditorView.tsx
+msgid "Uploading {0}…"
+msgstr "Uploading {0}…"
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Uploads"
+msgstr "Uploads"
+
+#: src/features/project/context/context-schemes.ts
+msgid "User Files"
+msgstr "User Files"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Uses the checkpoint recommendation unless the model requires a human."
+msgstr "Uses the checkpoint recommendation unless the model requires a human."
+
+#. placeholder {0}: GROUP_LABELS[groupBy]
+#. placeholder {1}: FILTER_LABELS[filter]
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "View: group by {0}, filter {1}"
+msgstr "View: group by {0}, filter {1}"
+
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Waiting"
+msgstr "Waiting"
+
+#: src/features/project/lifecycle.ts
+msgid "Waiting for you"
+msgstr "Waiting for you"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Waiting on you"
+msgstr "Waiting on you"
+
+#: src/features/home/HomeHero.tsx
+msgid "What are you working on?"
+msgstr "What are you working on?"
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/shell/ThreadListControls.tsx
+msgid "Work"
+msgstr "Work"
+
+#: src/features/project/context/context-schemes.ts
+msgid "Work Memory"
+msgstr "Work Memory"
+
+#: src/features/project/mobile/MobileTopBar.tsx
+msgid "Project"
+msgstr "Project"
+
+#: src/components/app/SidebarUndoPill.tsx
+msgid "Project deleted"
+msgstr "Project deleted"
+
+#: src/components/app/ProjectRow.tsx
+msgid "Project deleted. Press undo to restore."
+msgstr "Project deleted. Press undo to restore."
+
+#: src/components/app/ProjectListSection.tsx
+msgid "Projects"
+msgstr "Projects"
+
+#: src/features/chat/LiveTurnStatusBar.tsx
+msgid "Working"
+msgstr "Working"
+
+#: src/features/project/lifecycle.ts
+msgid "Working…"
+msgstr "Working…"
+
+#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/LeftSidebar.tsx
+msgid "Workspace navigation"
+msgstr "Workspace navigation"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Wrote"
+msgstr "Wrote"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Wrote file"
+msgstr "Wrote file"
+
+#: src/features/project/chat/ThreadPanel.tsx
+#: src/lib/date-groups.ts
+msgid "Yesterday"
+msgstr "Yesterday"
+
+#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/FreeTextCheckpoint.tsx
+msgid "you answered"
+msgstr "you answered"
+
+#: src/features/chat/UserTurn.tsx
+msgid "Your message"
+msgstr "Your message"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Your Supabase profile, as seen by Meridian Flow."
+msgstr "Your Supabase profile, as seen by Meridian Flow."

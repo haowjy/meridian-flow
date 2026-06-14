@@ -1,0 +1,314 @@
+/**
+ * Editor stylesheet — tokenized ProseMirror chrome for collaborative context
+ * documents. Geometry and color are expressed through Warm Organic variables so
+ * the editor follows the app theme without embedding component logic.
+ */
+.meridian-editor-shell {
+  --editor-cursor-label-offset: 0.25rem;
+}
+
+.meridian-editor .ProseMirror {
+  min-height: 100%;
+  outline: none;
+}
+
+.meridian-editor .ProseMirror > * + * {
+  margin-top: 0.9em;
+}
+
+.meridian-editor .ProseMirror h1,
+.meridian-editor .ProseMirror h2,
+.meridian-editor .ProseMirror h3,
+.meridian-editor .ProseMirror h4,
+.meridian-editor .ProseMirror h5,
+.meridian-editor .ProseMirror h6 {
+  color: var(--color-foreground);
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.meridian-editor .ProseMirror h1 {
+  font-size: 1.875rem;
+}
+
+.meridian-editor .ProseMirror h2 {
+  font-size: 1.5rem;
+}
+
+.meridian-editor .ProseMirror p,
+.meridian-editor .ProseMirror li,
+.meridian-editor .ProseMirror blockquote,
+.meridian-editor .ProseMirror table {
+  color: var(--color-foreground);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.meridian-editor .ProseMirror blockquote {
+  border-left: 0.1875rem solid var(--color-border-focus);
+  color: var(--color-muted-foreground);
+  padding-left: 1rem;
+}
+
+.meridian-editor .ProseMirror pre {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-warm);
+  padding: 0.875rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.meridian-editor .ProseMirror code {
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-warm);
+  padding: 0.1rem 0.25rem;
+  font-size: 0.875em;
+}
+
+.meridian-editor .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.meridian-editor .ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.meridian-editor .ProseMirror th,
+.meridian-editor .ProseMirror td {
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.5rem 0.625rem;
+  vertical-align: top;
+}
+
+.meridian-editor .ProseMirror th {
+  background: var(--color-surface-subtle);
+  font-weight: 650;
+}
+
+.meridian-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.meridian-editor .ProseMirror figure {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-warm);
+  padding: 0.75rem;
+}
+
+.meridian-editor .ProseMirror figcaption {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.meridian-editor .ProseMirror-selectednode {
+  outline: 0.125rem solid var(--color-border-focus);
+}
+
+.meridian-collab-cursor {
+  position: relative;
+  border-left: 0.125rem solid var(--color-primary);
+  margin-left: -0.0625rem;
+  pointer-events: none;
+}
+
+.meridian-collab-cursor__label {
+  position: absolute;
+  top: -1.4rem;
+  left: calc(-1 * var(--editor-cursor-label-offset));
+  border-radius: var(--radius-sm);
+  color: var(--color-primary-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  white-space: nowrap;
+}
+
+.meridian-collab-selection {
+  opacity: 0.2;
+}
+
+.meridian-editor--drag-active .ProseMirror {
+  background: color-mix(in srgb, var(--color-surface-warm) 65%, transparent);
+}
+
+.meridian-editor-drop-overlay {
+  position: absolute;
+  inset: 0.75rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.75rem;
+  border: 0.125rem dashed var(--color-border-focus);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.meridian-figure-upload-status {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 3;
+  display: inline-flex;
+  max-width: min(24rem, calc(100% - 2rem));
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  color: var(--color-foreground);
+  font-size: 0.8125rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.meridian-figure-upload-status--error {
+  border-color: var(--color-destructive);
+  color: var(--color-destructive);
+}
+
+.meridian-figure-upload-status--success {
+  border-color: var(--color-border-focus);
+  color: var(--color-primary);
+}
+
+.meridian-editor .ProseMirror .meridian-figure-node {
+  display: grid;
+  gap: 0.625rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-warm);
+  padding: 0.75rem;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.meridian-figure-node__media {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+}
+
+.meridian-editor .ProseMirror .meridian-figure-node__media img {
+  display: block;
+  width: 100%;
+  max-height: 28rem;
+  object-fit: contain;
+  background: var(--color-card);
+}
+
+.meridian-figure-node__placeholder {
+  display: grid;
+  min-height: 14rem;
+  place-items: center;
+  color: var(--color-muted-foreground);
+}
+
+.meridian-figure-node__status {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  display: inline-flex;
+  max-width: calc(100% - 1.5rem);
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.meridian-figure-node__status--error {
+  color: var(--color-destructive);
+}
+
+.meridian-figure-node__caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: baseline;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.meridian-figure-node__label {
+  border-radius: var(--radius-sm);
+  background: var(--color-chip-primary-bg);
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 650;
+  padding: 0.125rem 0.375rem;
+}
+
+.meridian-figure-node__meta {
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.meridian-figure-node__editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 0.625rem;
+}
+
+.meridian-figure-node__editor label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.meridian-figure-node__editor input,
+.meridian-figure-node__editor textarea {
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.4;
+  padding: 0.5rem 0.625rem;
+}
+
+.meridian-figure-node__editor input:focus,
+.meridian-figure-node__editor textarea:focus {
+  border-color: var(--color-border-focus);
+  outline: none;
+  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-border-focus) 24%, transparent);
+}
+
+.meridian-figure-node__caption-input {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 48rem) {
+  .meridian-figure-node__editor {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,5 @@
+[package]
+name = "meridian-launch-agents"
+version = "0.1.0"
+description = "Launch fiction-writing agent lineup."
+visibility = "private"

@@ -1,0 +1,369 @@
+/**
+ * App global stylesheet — imports the shared Warm Paper Tailwind theme,
+ * declares project-only theme variables, and defines the app's reusable
+ * utility primitives. Shared palette/type values live in design-tokens; layout
+ * utilities stay here because only the project uses them.
+ */
+@import "tailwindcss";
+@import "@meridian/design-tokens/warm-paper.css";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --container-chat-column: 48rem;
+  --container-home: 45rem;
+  --shadow-rail-left: 6px 0 18px -6px rgba(16, 33, 28, 0.1);
+  --shadow-rail-right: -6px 0 18px -6px rgba(16, 33, 28, 0.1);
+}
+
+/* Project-only tokens (not shared with marketing surfaces). */
+:root {
+  --answer-max-width: 100%;
+  /* Visual fade on the chat scrollport (masks message text, not an overlay). */
+  --chat-scroll-fade-size: 4rem;
+  /* Dual-mask gutter: classic scrollbar width + gap before fade. Overlay scrollbars
+     may still float over content; `scrollbar-gutter: stable` on the scrollport helps. */
+  --chat-scroll-scrollbar-width: 8px;
+  --chat-scroll-scrollbar-gap: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    overflow: hidden;
+    height: 100svh;
+    max-height: 100svh;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* iOS Safari paints a translucent gray overlay on every tap by default.
+       Pressed feedback comes from our own `active:` states instead. */
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100svh;
+    max-height: 100svh;
+  }
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+}
+
+@utility surface-card {
+  @apply border border-border bg-card;
+}
+
+@utility status-pill {
+  @apply inline-flex items-center gap-1.5 rounded-full px-[7px] py-[3px] pr-[9px] text-meta font-semibold tracking-wide;
+}
+
+@utility icon-chip {
+  @apply focus-ring grid size-9 shrink-0 cursor-pointer place-items-center rounded-[10px] border border-border text-muted-foreground transition-all active:scale-[0.98] hover:border-border-focus hover:bg-surface-subtle hover:text-foreground;
+}
+
+/* Calm "this thread is live" pulse. Uses --motion-pulse-duration for the
+   cycle and --status-streaming-ring(-strong) for the halo so the dot,
+   its glow, and its cadence are all token-driven. */
+@utility streaming-dot {
+  @apply size-1.5 shrink-0 rounded-full bg-status-streaming;
+  box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .streaming-dot {
+    animation: streaming-pulse var(--motion-pulse-duration) ease-in-out infinite;
+  }
+}
+
+@keyframes streaming-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 5px var(--color-status-streaming-ring-strong);
+  }
+}
+
+/* Compact icon-only button used inside dense rows (sidebar pencil/trash).
+   Smaller than `icon-chip` so row height stays calm; same focus contract. */
+@utility inline-icon-button {
+  @apply focus-ring grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-all active:scale-[0.98] hover:bg-sidebar-accent hover:text-foreground;
+}
+
+/* Undo-pill countdown bar — drains from full to empty over the undo window.
+   The duration is set inline at the call site (per-instance), but the
+   visual treatment (track color, easing) lives here. */
+@keyframes countdown-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@utility soft-hover-card {
+  @apply transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-border-focus hover:shadow-card;
+}
+
+/* Flex/grid shrink contract: apply on pane boundaries (shell inset, chat surface,
+   scroll region, column utilities). Do not sprinkle on turn leaves — prose-tokens
+   and user-turn handle content overflow. Exception: flex rows that truncate
+   (disclosure-trigger, activity summary) keep min-w-0 on the truncating child.
+
+   Viewport shell: `app-frame` locks the outer shell to one screen; `app-scroll`
+   is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). */
+@utility app-frame {
+  @apply h-svh max-h-svh w-full min-h-0 overflow-hidden overscroll-none;
+}
+
+@utility app-scroll {
+  @apply min-h-0 flex-1 overflow-y-auto overscroll-y-contain;
+}
+
+@utility main-pane {
+  @apply min-w-0 max-w-full overflow-x-hidden;
+}
+
+@utility chat-column {
+  @apply main-pane mx-auto box-border w-full max-w-chat-column px-8;
+}
+
+@utility home-column {
+  @apply main-pane mx-auto box-border flex min-h-0 w-full max-w-home flex-col px-8 py-16;
+
+  & li {
+    @apply min-w-0;
+  }
+}
+
+@utility chat-scroll-fade-bottom {
+  /* Reserve gutter so dual-mask scrollbar width matches layout (see PQINA pattern). */
+  scrollbar-gutter: stable;
+  /* Content fade stops before the scrollbar strip. */
+  --chat-scroll-mask-content: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - var(--chat-scroll-fade-size)),
+    transparent 100%
+  );
+  --chat-scroll-mask-scrollbar: linear-gradient(#000, #000);
+  --chat-scroll-mask-size-content: calc(
+      100% - var(--chat-scroll-scrollbar-width) - var(--chat-scroll-scrollbar-gap)
+    )
+    100%;
+  --chat-scroll-mask-size-scrollbar: var(--chat-scroll-scrollbar-width) 100%;
+  -webkit-mask-image: var(--chat-scroll-mask-content), var(--chat-scroll-mask-scrollbar);
+  mask-image: var(--chat-scroll-mask-content), var(--chat-scroll-mask-scrollbar);
+  -webkit-mask-size: var(--chat-scroll-mask-size-content), var(--chat-scroll-mask-size-scrollbar);
+  mask-size: var(--chat-scroll-mask-size-content), var(--chat-scroll-mask-size-scrollbar);
+  -webkit-mask-position: 0 0, 100% 0;
+  mask-position: 0 0, 100% 0;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  mask-repeat: no-repeat, no-repeat;
+}
+
+/* Composer textarea typography. 16px on mobile keeps iOS Safari from
+   auto-zooming the viewport on focus; tightens to 15px on desktop where
+   zoom isn't a concern. Any focusable composer input must use this. */
+@utility composer-input {
+  @apply text-base leading-relaxed md:text-[15px];
+}
+
+@utility user-turn {
+  @apply mb-8 ml-auto w-fit max-w-[95%];
+}
+
+@utility user-message-bubble {
+  @apply overflow-hidden rounded-[14px_4px_14px_14px] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
+}
+
+@utility answer-body {
+  max-width: var(--answer-max-width);
+  @apply text-answer text-answer-foreground whitespace-pre-wrap;
+}
+
+/* Editorial prose treatment for rendered markdown. Same body typography as
+   `answer-body` (size, leading, color) but WITHOUT `whitespace-pre-wrap` —
+   the markdown parser owns its own whitespace. Use this as the wrapper for
+   any `<Markdown>` so size/color stay consistent with the plain-text
+   streaming caret variant. */
+@utility prose-tokens {
+  max-width: var(--answer-max-width);
+  @apply min-w-0 w-full text-answer text-answer-foreground break-words;
+
+  & h1 {
+    @apply font-heading mt-6 mb-3 text-[1.5rem] leading-[1.18] font-semibold tracking-prose-heading text-foreground first:mt-0;
+  }
+  & h2 {
+    @apply font-heading mt-6 mb-2.5 text-[1.25rem] leading-[1.25] font-semibold tracking-prose-subheading text-foreground first:mt-0;
+  }
+  & h3 {
+    @apply font-heading mt-5 mb-2 text-[1.05rem] leading-[1.3] font-semibold text-foreground first:mt-0;
+  }
+  & h4 {
+    @apply font-heading mt-4 mb-2 text-[0.95rem] leading-[1.35] font-semibold text-foreground first:mt-0;
+  }
+  & p {
+    @apply my-2 first:mt-0 last:mb-0;
+  }
+  & ul {
+    @apply my-2 list-disc space-y-1 pl-6 marker:text-muted-foreground;
+  }
+  & ol {
+    @apply my-2 list-decimal space-y-1 pl-6 marker:text-muted-foreground;
+  }
+  & li {
+    @apply pl-1;
+  }
+  & strong {
+    @apply font-semibold text-foreground;
+  }
+  & blockquote {
+    @apply my-3 border-l-4 border-primary/30 pl-4 text-muted-foreground italic;
+  }
+  & hr {
+    @apply my-5 border-0 border-t border-border-subtle;
+  }
+  & a {
+    @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
+  }
+
+  & pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  & code {
+    overflow-wrap: anywhere;
+  }
+
+  & pre code {
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  & [data-streamdown="table-wrapper"] {
+    @apply my-3 max-w-full overflow-x-auto rounded-md border border-border-subtle;
+  }
+  & table {
+    @apply w-full border-collapse text-[0.9em];
+  }
+  & thead {
+    @apply bg-surface-subtle text-left text-foreground;
+  }
+  & tbody tr:nth-child(even) {
+    @apply bg-surface-warm/60;
+  }
+  & tr {
+    @apply border-b border-border-subtle last:border-0;
+  }
+  & th {
+    @apply border-b border-border-subtle px-3 py-2 text-[0.78rem] font-semibold tracking-table-heading uppercase;
+  }
+  & td {
+    @apply px-3 py-2 align-top text-foreground;
+  }
+}
+
+/* Single source of truth for the green-tinted focus ring.
+   Every interactive element opts in via `focus-ring` instead of re-deriving
+   focus styles. Consumes --border-focus + --ring tokens. */
+@utility focus-ring {
+  @apply outline-none;
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-border-focus), 0 0 0 4px rgba(29, 107, 87, 0.12);
+  }
+}
+
+/** Project pane header title — Home, Chat, Settings, thread switcher label. */
+@utility pane-title {
+  @apply text-sm font-medium text-foreground;
+}
+
+/** Link-style control — always reads as clickable (not hover-only). */
+@utility text-button {
+  @apply focus-ring cursor-pointer text-sm font-medium text-primary underline-offset-2 hover:underline;
+}
+
+/** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
+@utility disclosure-trigger {
+  @apply focus-ring flex w-full min-w-0 cursor-pointer items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
+}
+
+/*
+ * Left-truncate text — single-line text that ellipsizes from the *start*
+ * instead of the end. Use for paths where the leaf (filename, leaf directory)
+ * is the informative tail and the prefix is scaffolding that can drop.
+ *
+ *   `apps/server/server/domains/runtime/foo.ts` → `…/runtime/foo.ts`
+ *
+ * Trick: `direction: rtl` flips the overflow side so ellipsis lands at the
+ * visual left. `unicode-bidi: plaintext` keeps the actual character order
+ * resolved by the content (LTR for ASCII paths), so the text reads forward
+ * even though the container is rtl.
+ */
+.truncate-start {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
+/** Small bordered action (Retry, secondary actions in chat). */
+@utility soft-button {
+  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-surface-subtle;
+}
+
+/* Standard screen-reader-only pattern: visually hidden but exposed to
+   assistive technology. Replaces ad-hoc sr-only patterns. */
+@utility visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+/* Calm typing caret used by the streaming-text zone of the live assistant turn. */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (max-width: 767px) {
+  .chat-column {
+    @apply px-4;
+  }
+}
+
+[data-phone-shell="true"] .chat-column {
+  padding-left: calc(1rem + env(safe-area-inset-left));
+  padding-right: calc(1rem + env(safe-area-inset-right));
+}
+
+@media (hover: none), (pointer: coarse) {
+  .thread-row-pin {
+    opacity: 1;
+  }
+}
+
+@media (display-mode: standalone) {
+  .mobile-top-bar {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+

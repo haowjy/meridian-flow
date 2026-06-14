@@ -1,0 +1,13 @@
+# See .cursor/rules/commit-phase-discipline.mdc
+pre-commit:
+  commands:
+    biome:
+      glob: "*.{js,ts,jsx,tsx,json}"
+      run: pnpm biome check --staged --no-errors-on-unmatched
+    typecheck:
+      run: pnpm typecheck
+
+pre-push:
+  commands:
+    test:
+      run: pnpm --filter @meridian/database test

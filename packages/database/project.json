@@ -1,0 +1,22 @@
+{
+  "name": "@meridian/database",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/database/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/database",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/database",
+        "command": "vitest run"
+      }
+    }
+  }
+}

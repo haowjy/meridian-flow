@@ -1,0 +1,62 @@
+// @ts-nocheck
+/**
+ * Env-driven gateway construction: reads provider env vars, builds provider
+ * configs, optionally spins up the mock server, and returns a ready Gateway.
+ * The environment->gateway wiring seam used by the composition root.
+ *
+ * This is the convenience factory for local dev and tests. The production
+ * composition root may bypass this and call createGateway() directly with
+ * secrets from a secret store.
+ */
+import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
+import { createGateway } from "../create-gateway.js";
+import type { Gateway } from "../ports/gateway.js";
+import {
+  buildProviderConfigs,
+  defaultGatewayOptions,
+  type GatewayEnvInput,
+  mockProviderConfig,
+} from "./providers.js";
+
+export interface GatewayFromEnv {
+  gateway: Gateway;
+  /** Closes the in-process mock server when one was started for this instance. */
+  cleanup?: () => Promise<void>;
+}
+
+/**
+ * Build a gateway from environment inputs.
+ *
+ * When no real provider keys are configured (or MODEL_PROVIDER is "mock"),
+ * starts an in-process OpenAI-compatible mock server that echoes deterministic
+ * responses. Returns a cleanup function so the caller can shut down the mock
+ * server when the gateway is no longer needed.
+ *
+ * The `mockBaseUrl` option lets tests provide a pre-existing mock server URL
+ * instead of spawning a new one.
+ */
+export async function createGatewayFromEnv(
+  env: GatewayEnvInput,
+  options?: { mockBaseUrl?: string },
+): Promise<GatewayFromEnv> {
+  let cleanup: (() => Promise<void>) | undefined;
+  const providers = buildProviderConfigs(env);
+
+  if (providers.length === 0) {
+    let baseUrl = options?.mockBaseUrl;
+    if (!baseUrl) {
+      const mock = await createMockOpenAICompatibleServer();
+      baseUrl = mock.baseUrl;
+      cleanup = mock.close;
+    }
+    providers.push(mockProviderConfig(baseUrl));
+  }
+
+  const gateway = createGateway({
+    providers,
+    ...defaultGatewayOptions(providers),
+    attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
+  });
+
+  return { gateway, cleanup };
+}

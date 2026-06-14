@@ -1,0 +1,400 @@
+// @ts-nocheck
+/**
+ * EditorView — the collaborative document editor surface.
+ *
+ * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
+ * TipTap/ProseMirror editor and renders the surrounding chrome (toolbar,
+ * sync-status indicator, figure-upload drag/drop + inline-command flow).
+ * Used by the Context screen to open any document. Filename chrome is the
+ * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
+ * renders no title header of its own.
+ */
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
+import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Editor, Extensions, JSONContent } from "@tiptap/core";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+
+import { uploadFigure } from "@/client/api/figures-api";
+import { createEditorConfig, type EditorUser } from "@/core/editor/config";
+import type { DocumentSession } from "@/core/editor/document-session";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import {
+  type FigureNodeAttrs,
+  figureUploadDefaults,
+  isImageFile,
+  uploadResponseToFigureNodeAttrs,
+} from "@/core/editor/figure-workflow";
+import { cn } from "@/lib/utils";
+
+import { EditorToolbar } from "./EditorToolbar";
+import { SyncStatus } from "./SyncStatus";
+import "./editor.css";
+
+/**
+ * Minimal valid schema used for the pre-session render.
+ *
+ * The real collaboration extensions (`Collaboration`, `CollaborationCursor`)
+ * require the session's `Y.Doc` + awareness, which only exist after the mount
+ * effect constructs the `DocumentSession`. `useEditor` runs its init effect in
+ * hook-definition order — i.e. BEFORE that mount effect — so on the very first
+ * render `session` is still `null`. Passing `extensions: []` here would build a
+ * ProseMirror schema with no top `doc` node and throw "Schema is missing its
+ * top node type ('doc')", permanently tripping the error boundary.
+ *
+ * `StarterKit` is already a transitive dependency (see `core/editor/config.ts`)
+ * and supplies `doc`/`paragraph`/`text`, which is all this throwaway,
+ * non-editable placeholder needs. Once the session arrives, `useEditor` is
+ * re-keyed by `sessionVersion` and rebuilt with the real collab config.
+ */
+const PLACEHOLDER_EXTENSIONS: Extensions = [StarterKit];
+
+export type EditorViewProps = {
+  documentId: string;
+  projectId?: string;
+  schemaType?: YjsTrackedSchemaType;
+  className?: string;
+  user?: EditorUser;
+  /**
+   * Optional leading slot forwarded to the formatting toolbar. Callers can
+   * inject controls (e.g. the context layer's per-variant `FilesToggle`)
+   * without this view knowing what they are.
+   */
+  toolbarLeading?: ReactNode;
+  /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
+  editable?: boolean;
+  /** Formatting chrome is hidden for mobile read-only viewing. */
+  showToolbar?: boolean;
+  /** Accessible label override when the surface is read-only. */
+  ariaLabel?: string;
+  /** Remote cursor/selection decorations; mobile read-only documents hide them. */
+  showCollaborationDecorations?: boolean;
+};
+
+type FigureUploadState =
+  | { kind: "idle" }
+  | { kind: "uploading"; filename: string; percent: number | null }
+  | { kind: "success"; filename: string }
+  | { kind: "error"; message: string };
+
+function droppedImageFile(event: DragEvent): File | null {
+  const files = Array.from(event.dataTransfer?.files ?? []);
+  return files.find(isImageFile) ?? null;
+}
+
+function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: number): boolean {
+  if (!editor || editor.isDestroyed) return false;
+  const content = { type: "figure", attrs } satisfies JSONContent;
+  const chain = editor.chain().focus();
+  return typeof pos === "number"
+    ? chain.insertContentAt(pos, content).run()
+    : chain.insertContent(content).run();
+}
+
+export function EditorView({
+  documentId,
+  projectId,
+  schemaType = "document",
+  className,
+  user,
+  toolbarLeading,
+  editable = true,
+  showToolbar = true,
+  ariaLabel,
+  showCollaborationDecorations = true,
+}: EditorViewProps) {
+  const sessionRef = useRef<DocumentSession | null>(null);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const figureInputRef = useRef<HTMLInputElement | null>(null);
+  const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
+  const [dragActive, setDragActive] = useState(false);
+  const session = sessionRef.current;
+
+  const clearUploadLater = useCallback(() => {
+    if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
+    clearUploadTimerRef.current = setTimeout(() => {
+      setFigureUploadState({ kind: "idle" });
+      clearUploadTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  const handleFigureFile = useCallback(
+    async (file: File, insertPos?: number) => {
+      if (!projectId) {
+        setFigureUploadState({
+          kind: "error",
+          message: t`A project is required before figures can be uploaded.`,
+        });
+        return;
+      }
+
+      if (!isImageFile(file)) {
+        setFigureUploadState({ kind: "error", message: t`Drop an image file to insert a figure.` });
+        return;
+      }
+
+      const defaults = figureUploadDefaults(file);
+      setFigureUploadState({ kind: "uploading", filename: file.name, percent: null });
+
+      try {
+        const reference = await uploadFigure({
+          projectId,
+          documentId,
+          file,
+          alt: defaults.alt,
+          caption: defaults.caption,
+          onProgress: ({ percent }) => {
+            setFigureUploadState({ kind: "uploading", filename: file.name, percent });
+          },
+        });
+        const inserted = insertFigureNode(
+          editorRef.current,
+          uploadResponseToFigureNodeAttrs(reference),
+          insertPos,
+        );
+        setFigureUploadState(
+          inserted
+            ? { kind: "success", filename: file.name }
+            : {
+                kind: "error",
+                message: t`The figure uploaded, but the editor could not insert it.`,
+              },
+        );
+        clearUploadLater();
+      } catch (error) {
+        setFigureUploadState({
+          kind: "error",
+          message: error instanceof Error ? error.message : t`Figure upload failed.`,
+        });
+      }
+    },
+    [clearUploadLater, documentId, projectId],
+  );
+
+  const editor = useEditor(
+    {
+      ...(session
+        ? createEditorConfig({
+            document: session.document,
+            awareness: session.awareness,
+            schemaType,
+            cursorProvider: session.cursorProvider,
+            user,
+            editable,
+            autofocus: false,
+            figureRenderContext: { projectId, documentId },
+            showCollaborationDecorations,
+            editorProps: {
+              attributes: {
+                class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
+                "aria-label": ariaLabel ?? "Collaborative document editor",
+              },
+              handleTextInput(view, from, _to, text) {
+                if (!editable || text !== " ") return false;
+                const commandText = "/figure";
+                const textBefore = view.state.selection.$from.parent.textBetween(
+                  0,
+                  view.state.selection.$from.parentOffset,
+                  "\n",
+                  "\n",
+                );
+                if (!textBefore.endsWith(commandText)) return false;
+                view.dispatch(view.state.tr.delete(from - commandText.length, from));
+                figureInputRef.current?.click();
+                return true;
+              },
+              handleDrop(view, event) {
+                if (!editable) return false;
+                const file = droppedImageFile(event);
+                if (!file) return false;
+                event.preventDefault();
+                setDragActive(false);
+                const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+                void handleFigureFile(file, pos);
+                return true;
+              },
+              handleDOMEvents: {
+                dragenter(_view, event) {
+                  if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
+                  return false;
+                },
+                dragover(_view, event) {
+                  if (!editable || !droppedImageFile(event as DragEvent)) return false;
+                  event.preventDefault();
+                  setDragActive(true);
+                  return true;
+                },
+                dragleave(_view, event) {
+                  if (
+                    !(event.currentTarget as HTMLElement | null)?.contains(
+                      event.relatedTarget as Node,
+                    )
+                  ) {
+                    setDragActive(false);
+                  }
+                  return false;
+                },
+              },
+            },
+          })
+        : { editable: false, extensions: PLACEHOLDER_EXTENSIONS }),
+      immediatelyRender: false,
+      shouldRerenderOnTransaction: false,
+    },
+    [
+      documentId,
+      handleFigureFile,
+      projectId,
+      schemaType,
+      sessionVersion,
+      user,
+      editable,
+      ariaLabel,
+      showCollaborationDecorations,
+    ],
+  );
+
+  useEffect(() => {
+    // The session is owned by the app-level registry (lifecycle driven by the
+    // open-documents set), NOT by this view. We only *bind* to it here. This is
+    // what lets the session — and its Yjs sync + transport subscription —
+    // survive this view unmounting when the user leaves the Context destination
+    // or this editor is evicted from the warm set; returning re-binds instantly.
+    const session = getDocumentSessionRegistry().get(documentId);
+    sessionRef.current = session;
+    setSessionVersion((version) => version + 1);
+
+    return () => {
+      const currentEditor = editorRef.current;
+      if (currentEditor && !currentEditor.isDestroyed) currentEditor.destroy();
+      // Do NOT destroy the session — the registry owns it.
+      if (sessionRef.current === session) sessionRef.current = null;
+    };
+  }, [documentId]);
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  useEffect(() => {
+    return () => {
+      if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const scroller = scrollContainerRef.current;
+      if (scroller?.scrollTop !== 0) return;
+      const savedTop = Number(scroller.dataset.stableLayoutScrollTop ?? 0);
+      if (savedTop > 0) scroller.scrollTop = savedTop;
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <section
+      className={cn(
+        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
+        className,
+      )}
+    >
+      {showToolbar ? (
+        <div className="flex shrink-0 items-center border-b border-border bg-background px-2 py-1.5">
+          <EditorToolbar
+            editor={editor}
+            onFigureButtonClick={() => figureInputRef.current?.click()}
+            figureUploadBusy={figureUploadState.kind === "uploading"}
+            figureUploadDisabled={!projectId}
+            leading={toolbarLeading}
+          />
+        </div>
+      ) : null}
+      {/* Sync is assumed-healthy, so it floats quietly and only appears when
+          there is something to act on (offline / closed) — see SyncStatus. */}
+      {session ? (
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10">
+          <SyncStatus session={session} />
+        </div>
+      ) : null}
+      <input
+        ref={figureInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        aria-hidden
+        tabIndex={-1}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) void handleFigureFile(file);
+        }}
+      />
+      <div
+        ref={scrollContainerRef}
+        className={cn(
+          "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
+          dragActive && "meridian-editor--drag-active",
+        )}
+        data-stable-layout-scroll
+        onScroll={(event) => {
+          event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
+          event.currentTarget.dataset.stableLayoutScrollLeft = String(
+            event.currentTarget.scrollLeft,
+          );
+        }}
+      >
+        <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+          <EditorContent editor={editor} className="min-h-full" />
+        </div>
+        {editable && dragActive ? (
+          <div className="meridian-editor-drop-overlay" aria-hidden>
+            <UploadCloud className="size-8" />
+            <span>
+              <Trans>Drop image to upload a figure</Trans>
+            </span>
+          </div>
+        ) : null}
+        <FigureUploadStatus state={figureUploadState} />
+      </div>
+    </section>
+  );
+}
+
+function FigureUploadStatus({ state }: { state: FigureUploadState }) {
+  if (state.kind === "idle") return null;
+
+  return (
+    <div
+      className={cn(
+        "meridian-figure-upload-status",
+        state.kind === "error" && "meridian-figure-upload-status--error",
+        state.kind === "success" && "meridian-figure-upload-status--success",
+      )}
+      role={state.kind === "error" ? "alert" : "status"}
+    >
+      {state.kind === "uploading" ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+      {state.kind === "success" ? <CheckCircle2 className="size-4" aria-hidden /> : null}
+      {state.kind === "error" ? <AlertCircle className="size-4" aria-hidden /> : null}
+      <span>
+        {state.kind === "uploading" ? (
+          state.percent === null ? (
+            <Trans>Uploading {state.filename}…</Trans>
+          ) : (
+            <Trans>
+              Uploading {state.filename} — {state.percent}%
+            </Trans>
+          )
+        ) : null}
+        {state.kind === "success" ? <Trans>Inserted {state.filename} as a figure.</Trans> : null}
+        {state.kind === "error" ? state.message : null}
+      </span>
+    </div>
+  );
+}
