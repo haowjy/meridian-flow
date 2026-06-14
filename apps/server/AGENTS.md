@@ -8,5 +8,5 @@ Nitro API/WebSocket service. Domains live under `server/domains/<domain>/{domain
 - Supabase owns local auth/Postgres infrastructure; app schema and functions live in `@meridian/database`.
 - Do not reintroduce external package-execution runtime paths.
 - Thread orchestration emits/persists through the copied event/journal/read-model pipeline.
-- Workbench-scoped API routes keep the upstream `/api/workbenches` surface for parity and owner-gate through `domains/workbenches.requireWorkbenchOwner`.
+- Project-scoped API routes live under `/api/projects` and owner-gate through `requireProjectOwner` (`domains/projects/project-access.ts`).
 - `AppServices.repos` and `AppServices.hub` are upstream-compatible aliases for `threadRepos` and `threadEventHub`; keep the compatibility seam explicit.
