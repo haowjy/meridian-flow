@@ -1,0 +1,15 @@
+[[sources]]
+name = "meridian-base"
+kind = "git"
+url = "https://github.com/haowjy/meridian-base.git"
+ref = "main"
+
+[[sources]]
+name = "meridian-dev-workflow"
+kind = "git"
+url = "https://github.com/haowjy/meridian-dev-workflow.git"
+
+[[sources]]
+name = "superdesign-skill"
+kind = "git"
+url = "https://github.com/superdesigndev/superdesign-skill.git"

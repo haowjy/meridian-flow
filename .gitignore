@@ -1,0 +1,59 @@
+.DS_Store
+node_modules/
+dist/
+.output/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Temp / scratch
+logs/
+tmp/
+temp/
+.runs/
+.data/
+
+# Build artifacts
+__debug_bin*
+
+# Package manager
+.pnpm-store
+pnpm-lock.yaml
+
+# Tool caches
+.nx/
+.playwright-mcp/
+.playwright-cli
+__pycache__/
+*.py[cod]
+
+# Editor/IDE config (local)
+.vscode/settings.json
+.claude/*
+!.claude/settings.json
+.cursor
+.pi
+.codex
+.codex-local/
+.opencode
+
+# Meridian / Mars
+mars.local.toml
+mars.lock
+.mars/
+
+# Stray screenshots
+/*.png
+
+# Dev scripts with secrets
+scripts/get-token.sh
+apps/app/.auth/
+apps/app/test-results/
+apps/app/playwright-report/
+
+# stale design/research docs — recorded in the docs repo
+.meridian/fs/
+
+*.code-workspace
