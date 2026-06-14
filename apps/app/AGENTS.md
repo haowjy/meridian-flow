@@ -1,6 +1,6 @@
 # @meridian/app
 
-Authenticated writing workbench. Keep it a thin React/TanStack Start shell over contracts, client API helpers, stores, and server-owned runtime behavior.
+Authenticated writing workspace. Keep it a thin React/TanStack Start shell over contracts, client API helpers, stores, and server-owned runtime behavior.
 
 - Use portless URLs for browser/e2e work; do not hard-code raw dev ports.
 - Keep product language writer-facing: projects, works, chapters, context, threads, agents, turns.

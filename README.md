@@ -1,6 +1,6 @@
 # Meridian Flow
 
-Meridian Flow is a TypeScript-first writing workbench for fiction writers managing long-running web serials. The v3 rebuild keeps the full-stack monorepo shape: thin deployable apps, domain packages for shared contracts and persistence, explicit server domains, and repo-level tooling for local dev, CI, smoke checks, and deployment scaffolding.
+Meridian Flow is a TypeScript-first writing platform for fiction writers managing long-running web serials. The v3 rebuild keeps the full-stack monorepo shape: thin deployable apps, domain packages for shared contracts and persistence, explicit server domains, and repo-level tooling for local dev, CI, smoke checks, and deployment scaffolding.
 
 For setup, see [DEVELOPMENT.md](DEVELOPMENT.md). For product context, see [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), and the project knowledge base.
 
@@ -17,7 +17,7 @@ Domain runtime lives in `apps/server/server/domains/`, not in package route hand
 
 ## Workspace layout
 
-- `apps/app/` — authenticated writing workbench (TanStack Start + React + TipTap)
+- `apps/app/` — authenticated writing workspace (TanStack Start + React + TipTap)
 - `apps/server/` — Nitro API/WebSocket service: auth boundary, thread endpoints, orchestration, collaboration, packages, billing, storage, and server domains
 - `apps/www/` — public marketing site
 - `packages/` — shared TypeScript libraries
