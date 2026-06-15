@@ -89,6 +89,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
         provider: response.provider,
         model: response.model,
         usage: response.usage,
+        providerData: response.providerData,
       });
 
       if (BigInt(computedCost.millicredits) > 0n) {

@@ -19,8 +19,8 @@
  *   reasoning from `completion_tokens_details.reasoning_tokens`.
  *
  * Optional fields: only set when the provider reports a positive (>0) value.
- * `estimatedCostUsd` is legacy test-only input; real adapters do not set it.
- * The orchestrator computes authoritative cost from the billing pricing table.
+ * Billing ignores Usage for provider-reported cost — OpenRouter carries
+ * `reportedCostUsd` on GenerateResult.providerData instead.
  */
 export interface Usage {
   inputTokens: number;
@@ -28,5 +28,4 @@ export interface Usage {
   reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
-  estimatedCostUsd?: number;
 }

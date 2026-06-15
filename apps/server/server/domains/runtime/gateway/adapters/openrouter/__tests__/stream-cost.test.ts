@@ -3,15 +3,15 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  buildGenerateResult,
-  createStreamAccumulator,
-  eventsFromOpenAIChunk,
-} from "../../openai-compatible/stream-collect.js";
+  buildOpenRouterGenerateResult,
+  createOpenRouterStreamAccumulator,
+  eventsFromOpenRouterChunk,
+} from "../stream-collect.js";
 
-describe("OpenAI-compatible stream-collect OpenRouter fields", () => {
-  it("captures usage.cost as estimatedCostUsd on the final GenerateResult", () => {
-    const acc = createStreamAccumulator("openai/gpt-4o", "openrouter");
-    for (const _event of eventsFromOpenAIChunk(
+describe("OpenRouter stream-collect", () => {
+  it("captures usage.cost as reportedCostUsd on providerData", () => {
+    const acc = createOpenRouterStreamAccumulator("openai/gpt-4o", "openrouter");
+    for (const _event of eventsFromOpenRouterChunk(
       {
         id: "gen-stream-1",
         choices: [{ delta: { content: "hi" }, finish_reason: "stop" }],
@@ -26,8 +26,12 @@ describe("OpenAI-compatible stream-collect OpenRouter fields", () => {
       // drain generator
     }
 
-    const result = buildGenerateResult(acc);
-    expect(result.usage.estimatedCostUsd).toBe(0.00125);
-    expect(result.providerData).toEqual({ generationId: "gen-stream-1" });
+    const result = buildOpenRouterGenerateResult(acc);
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+    expect(result.providerData).toMatchObject({
+      generationId: "gen-stream-1",
+      reportedCostUsd: 0.00125,
+      enrichmentSource: "stream_usage",
+    });
   });
 });

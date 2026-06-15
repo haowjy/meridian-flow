@@ -7,7 +7,7 @@
  */
 
 import type { Usage } from "@meridian/contracts/runtime";
-import type { JsonObject } from "@meridian/contracts/threads";
+import type { JsonObject, PriceSource } from "@meridian/contracts/threads";
 import {
   extractPinnedRates,
   MODEL_REGISTRY,
@@ -61,6 +61,7 @@ export interface LayeredTokenRateSourceDeps {
 export interface ComputedModelCost {
   costUsd: string;
   millicredits: string;
+  priceSource: PriceSource;
   pricingSnapshot: JsonObject;
 }
 
@@ -212,14 +213,64 @@ function computeFromProviderReportedCost(input: {
   return {
     costUsd: formatUsdFromMicros(usdMicros),
     millicredits: millicreditsFromUsdMicros(usdMicros).toString(),
+    priceSource: "provider_reported",
     pricingSnapshot: {
       provider: input.provider,
       model: input.model,
       reportedCostUsd: formatUsdFromNumber(input.reportedCostUsd),
       source: "provider_reported",
       sourceLayer: "provider_reported",
-      sourceDetail: "gateway.usage.estimatedCostUsd",
+      sourceDetail: "openrouter.providerData.reportedCostUsd",
       unit: "provider_reported_usd",
+    },
+  };
+}
+
+function readOpenRouterProviderData(providerData: unknown): {
+  reportedCostUsd?: number;
+  meteringStatus?: string;
+} {
+  if (!providerData || typeof providerData !== "object") {
+    return {};
+  }
+  const record = providerData as Record<string, unknown>;
+  const reportedCostUsd = record.reportedCostUsd;
+  const meteringStatus = record.meteringStatus;
+  return {
+    ...(typeof reportedCostUsd === "number" && reportedCostUsd >= 0 ? { reportedCostUsd } : {}),
+    ...(typeof meteringStatus === "string" ? { meteringStatus } : {}),
+  };
+}
+
+function readOpenRouterReportedCostUsd(
+  provider: string,
+  providerData: unknown,
+): number | undefined {
+  if (provider !== "openrouter") return undefined;
+  return readOpenRouterProviderData(providerData).reportedCostUsd;
+}
+
+function hasBillableTokenUsage(usage: Usage): boolean {
+  return usage.inputTokens > 0 || usage.outputTokens > 0;
+}
+
+function computeMissingUsageCost(input: {
+  provider: string;
+  model: string;
+  providerData: unknown;
+}): ComputedModelCost {
+  return {
+    costUsd: "0.000000",
+    millicredits: "0",
+    priceSource: "unknown",
+    pricingSnapshot: {
+      provider: input.provider,
+      model: input.model,
+      source: "unknown",
+      sourceLayer: "provider_reported",
+      sourceDetail: "openrouter.meteringStatus.missing_usage",
+      usageMeteringStatus: "missing_usage",
+      unit: "unmetered",
     },
   };
 }
@@ -240,14 +291,34 @@ export function computeModelCost(input: {
   provider: string;
   model: string;
   usage: Usage;
+  providerData?: unknown;
   rateSource?: ModelTokenRateSource;
 }): ComputedModelCost {
-  const reportedCostUsd = input.usage.estimatedCostUsd;
-  if (reportedCostUsd !== undefined && reportedCostUsd >= 0) {
+  const openRouterData =
+    input.provider === "openrouter" ? readOpenRouterProviderData(input.providerData) : {};
+
+  if (openRouterData.meteringStatus === "missing_usage") {
+    return computeMissingUsageCost({
+      provider: input.provider,
+      model: input.model,
+      providerData: input.providerData,
+    });
+  }
+
+  const reportedCostUsd = readOpenRouterReportedCostUsd(input.provider, input.providerData);
+  if (reportedCostUsd !== undefined) {
     return computeFromProviderReportedCost({
       provider: input.provider,
       model: input.model,
       reportedCostUsd,
+    });
+  }
+
+  if (input.provider === "openrouter" && !hasBillableTokenUsage(input.usage)) {
+    return computeMissingUsageCost({
+      provider: input.provider,
+      model: input.model,
+      providerData: input.providerData,
     });
   }
 
@@ -270,6 +341,7 @@ export function computeModelCost(input: {
   return {
     costUsd: formatUsdFromMicros(usdMicros),
     millicredits: millicreditsFromUsdMicros(usdMicros).toString(),
+    priceSource: "computed",
     pricingSnapshot: {
       provider: rate.provider,
       model: rate.model,

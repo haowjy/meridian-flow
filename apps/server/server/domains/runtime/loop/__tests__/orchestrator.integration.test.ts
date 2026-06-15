@@ -460,7 +460,6 @@ describe("runtime loop integration", () => {
           inputTokens: 12,
           outputTokens: 8,
           reasoningTokens: 3,
-          estimatedCostUsd: 0.001,
         },
         model: "stub-model",
         provider: "stub",
@@ -476,7 +475,6 @@ describe("runtime loop integration", () => {
           inputTokens: 14,
           outputTokens: 7,
           reasoningTokens: 2,
-          estimatedCostUsd: 0.002,
         },
         model: "stub-model",
         provider: "stub",
@@ -1542,15 +1540,14 @@ describe("runtime loop integration", () => {
     expect(afterDoubleReplay).toEqual(afterSingleReplay);
     expect(threadAfterDoubleReplay).toEqual(threadAfterSingleReplay);
     expect(threadAfterDoubleReplay.updatedAt).toBe(threadAfterSingleReplay.updatedAt);
-    // representativeToolGateway reports provider cost (estimatedCostUsd 0.001 + 0.002);
-    // B3 bills provider-reported cost when present, so the two model responses total $0.003.
-    expect(threadAfterDoubleReplay.totalCostUsd).toBe("0.003000");
+    // representativeToolGateway uses stub zero rates — replay totals stay at $0.
+    expect(threadAfterDoubleReplay.totalCostUsd).toBe("0.000000");
     const assistantTurn = afterDoubleReplay.turns.find((turn) => turn.role === "assistant");
     expect(assistantTurn).toMatchObject({
       inputTokens: 26,
       outputTokens: 15,
       reasoningTokens: 5,
-      totalCostUsd: "0.003000",
+      totalCostUsd: "0.000000",
       responseCount: 2,
     });
     expect(afterDoubleReplay.modelResponses).toHaveLength(2);
@@ -1677,9 +1674,10 @@ describe("runtime loop integration", () => {
             content: [{ type: "text", text: "expensive reply" }],
             toolCalls: [],
             finishReason: "end_turn",
-            usage: { inputTokens: 10, outputTokens: 20, estimatedCostUsd: 1.5 },
-            model: "stub-model",
-            provider: "stub",
+            usage: { inputTokens: 10, outputTokens: 20 },
+            model: "openai/gpt-4o",
+            provider: "openrouter",
+            providerData: { reportedCostUsd: 1.5, generationId: "gen-expensive" },
           },
         };
       },
