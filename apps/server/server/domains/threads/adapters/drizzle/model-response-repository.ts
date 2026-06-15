@@ -25,6 +25,9 @@ export async function writeModelResponse(
       sequence: input.sequence,
       provider: input.provider,
       model: input.model,
+      providerRequestId: input.providerRequestId ?? null,
+      priceSource: input.priceSource,
+      pricingSnapshot: input.pricingSnapshot ?? null,
       inputTokens: input.inputTokens ?? 0,
       outputTokens: input.outputTokens ?? 0,
       usageBreakdown: input.rawUsage ?? null,
@@ -32,7 +35,7 @@ export async function writeModelResponse(
       millicredits: input.millicredits != null ? Number(input.millicredits) : null,
       stopReason: input.finishReason ?? null,
       requestParams: null,
-      responseMetadata: input.pricingSnapshot ?? null,
+      responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
     })
     .onConflictDoNothing({ target: schema.modelResponses.id })
