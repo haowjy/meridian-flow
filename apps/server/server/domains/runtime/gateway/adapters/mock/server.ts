@@ -176,6 +176,75 @@ function writeSlowAfterFirstChunk(
   timer.unref();
 }
 
+/** Streams partial output + usage, then stalls until the client aborts the request. */
+function writeCancelBillingStream(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  id: string,
+  model: string,
+): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.write(
+    sseLine({
+      id,
+      object: "chat.completion.chunk",
+      model,
+      choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }],
+    }),
+  );
+  res.write(
+    sseLine({
+      id,
+      object: "chat.completion.chunk",
+      model,
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+      usage: {
+        prompt_tokens: 500_000,
+        completion_tokens: 500_000,
+        total_tokens: 1_000_000,
+      },
+    }),
+  );
+  const finish = () => {
+    if (res.destroyed || res.writableEnded) return;
+    res.end();
+  };
+  req.on("aborted", finish);
+  req.on("close", finish);
+}
+
+/** OpenRouter hard-cancel: partial stream with generation id but no usage chunk before abort. */
+function writeOpenRouterHardCancelStream(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  model: string,
+): void {
+  const generationId = "gen-hard-cancel";
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.write(
+    sseLine({
+      id: generationId,
+      object: "chat.completion.chunk",
+      model,
+      choices: [{ index: 0, delta: { content: "x" }, finish_reason: null }],
+    }),
+  );
+  const finish = () => {
+    if (res.destroyed || res.writableEnded) return;
+    res.end();
+  };
+  req.on("aborted", finish);
+  req.on("close", finish);
+}
+
 function buildTextStreamChunks(id: string, model: string, text: string): string[] {
   const chunks: string[] = [];
   const words = text.split(" ");
@@ -581,6 +650,16 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
               usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
             }),
           );
+          return;
+        }
+
+        if (messageText(body.messages).includes("openrouter hard cancel")) {
+          writeOpenRouterHardCancelStream(req, res, model);
+          return;
+        }
+
+        if (messageText(body.messages).includes("cancel billing")) {
+          writeCancelBillingStream(req, res, id, model);
           return;
         }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import {
   encodeWsServerMessage,
@@ -27,6 +28,7 @@ export type WsPeer = {
 
 type WsPeerState = {
   closed: boolean;
+  connectionToken: string;
   subscriptions: Map<ThreadId, () => void>;
   liveWatermark: Map<ThreadId, bigint>;
 };
@@ -36,7 +38,12 @@ const peerStates = new WeakMap<WsPeer, WsPeerState>();
 function getPeerState(peer: WsPeer): WsPeerState {
   let state = peerStates.get(peer);
   if (!state) {
-    state = { closed: false, subscriptions: new Map(), liveWatermark: new Map() };
+    state = {
+      closed: false,
+      connectionToken: randomUUID(),
+      subscriptions: new Map(),
+      liveWatermark: new Map(),
+    };
     peerStates.set(peer, state);
   }
   return state;
@@ -158,11 +165,13 @@ function cancelRunningTurnsForPeer(peer: WsPeer): void {
   const auth = peer.context;
   if (!auth) return;
   const state = getPeerState(peer);
+  const peerToken = state.connectionToken;
   for (const threadId of state.subscriptions.keys()) {
     const turnId = auth.app.runner.getRunningTurnId(threadId);
-    if (turnId) {
-      void auth.app.runner.cancel(threadId, turnId);
-    }
+    if (!turnId) continue;
+    const ownerToken = auth.app.runner.getRunningConnectionToken?.(threadId);
+    if (ownerToken !== undefined && ownerToken !== peerToken) continue;
+    void auth.app.runner.cancel(threadId, turnId);
   }
 }
 
@@ -181,6 +190,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
         userId: auth.userId,
         scope: { type: "standalone" },
         serverVersion: SERVER_VERSION,
+        connectionToken: getPeerState(peer).connectionToken,
       });
     },
 

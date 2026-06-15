@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMockOpenAICompatibleServer, type MockOpenAIServer } from "./adapters/mock/server.js";
 import { mockProviderConfig } from "./config/providers.js";
 import { createGateway } from "./create-gateway.js";
+import type { StreamEvent } from "./domain/index.js";
 import { assistant, toolResult, user } from "./helpers/messages.js";
 
 describe("model-gateway openai-compatible pipeline", () => {
@@ -344,5 +345,36 @@ describe("model-gateway openai-compatible pipeline", () => {
       retryable: true,
     });
     expect(mock.requestCount() - before).toBe(1);
+  });
+
+  it("drains user cancel to a partial end with usage through createGateway", async () => {
+    const gw = gateway();
+    const controller = new AbortController();
+    const events: StreamEvent[] = [];
+    const consume = (async () => {
+      for await (const event of gw.stream({
+        messages: [user("cancel billing")],
+        signal: controller.signal,
+      })) {
+        events.push(event);
+      }
+    })();
+
+    const deadline = Date.now() + 2_000;
+    while (!events.some((event) => event.type === "text.delta") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(events.some((event) => event.type === "text.delta")).toBe(true);
+
+    controller.abort();
+    await consume;
+
+    const end = events.at(-1);
+    expect(end?.type).toBe("end");
+    if (end?.type === "end") {
+      expect(end.result.usage.inputTokens).toBeGreaterThan(0);
+      expect(end.result.usage.outputTokens).toBeGreaterThan(0);
+    }
+    expect(events.some((event) => event.type === "error")).toBe(false);
   });
 });

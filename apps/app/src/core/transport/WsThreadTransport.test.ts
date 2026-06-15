@@ -73,13 +73,14 @@ class FakeWebSocket {
   }
 
   /** Simulate server proactively confirming the upgraded socket. */
-  emitConnected(): void {
+  emitConnected(connectionToken = "conn-test"): void {
     this.emitMessage(
       encodeWsServerMessage({
         type: "connected",
         userId: "test-user",
         scope: { type: "standalone" },
         serverVersion: "0.0.0",
+        connectionToken,
       }),
     );
   }

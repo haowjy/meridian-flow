@@ -24,6 +24,7 @@ import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapAnthropicError } from "./errors.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 import {
+  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromAnthropicStreamEvent,
@@ -74,6 +75,10 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           const timeout = modelAttemptTimeoutEvent(request.signal);
           if (timeout) {
             yield timeout;
+            return;
+          }
+          if (accumulatorHasPartialResult(acc)) {
+            yield { type: "end", result: buildGenerateResult(acc) };
             return;
           }
           yield {

@@ -94,6 +94,7 @@ import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   buildReconciliationStub,
+  createReconcileSignal,
   type OpenRouterReconcileConfig,
   reconcileInterruptedModelResult,
   shouldPersistCancelledModelCall,
@@ -550,10 +551,11 @@ async function* settleAndFinalizeCancelled(input: {
   }
 
   if (settleResult && shouldPersistCancelledModelCall(settleResult)) {
+    const reconcileSignal = createReconcileSignal();
     settleResult = await reconcileInterruptedModelResult(
       input.deps.openRouterReconcile,
       settleResult,
-      input.runInput.signal,
+      reconcileSignal,
     );
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
