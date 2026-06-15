@@ -27,11 +27,12 @@ Extract `projectId` from the URL and query Postgres:
 ```bash
 psql "$DATABASE_URL" -c "select id, name, slug from projects where id = '{projectId}';"
 psql "$DATABASE_URL" -c "select id, title from works where project_id = '{projectId}';"
-psql "$DATABASE_URL" -c "select id, title, status, project_id, work_id from threads where project_id = '{projectId}';"
+psql "$DATABASE_URL" -c "select id, title, status, project_id from threads where project_id = '{projectId}';"
+psql "$DATABASE_URL" -c "select tw.thread_id, tw.work_id, tw.is_primary from thread_works tw join threads t on t.id = tw.thread_id where t.project_id = '{projectId}' and tw.is_primary = true;"
 ```
 
 **Pass:** one project exists, at least one work exists, and a primary thread is
-attached to both `project_id` and `work_id`.
+attached to the project with a primary `thread_works` row linking it to a work.
 
 **Fail:** redirect does not happen, shell does not render, no thread row exists,
-or the thread is detached from project/work.
+or no primary `thread_works` membership exists for the thread.

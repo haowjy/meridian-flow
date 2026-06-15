@@ -649,6 +649,64 @@ export function describeThreadRepositoriesConformance(
       });
     });
 
+    it("rejects cross-project thread-work membership", async () => {
+      const { repos, projects, works } = await makeFixture();
+      const project = await projects.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        title: "Project",
+      });
+      const otherProject = await projects.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        title: "Other Project",
+      });
+      const work = await works.create({
+        projectId: project.id,
+        title: "Primary Work",
+      });
+      const crossProjectWork = await works.create({
+        projectId: otherProject.id,
+        title: "Cross Project Work",
+      });
+      const thread = await repos.threads.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        projectId: project.id,
+      });
+      await repos.threadWorks.addMembership(thread.id, work.id, true);
+
+      await expect(
+        repos.threadWorks.addMembership(thread.id, crossProjectWork.id, true),
+      ).rejects.toThrow("Work is not available in this project");
+      await expect(repos.threadWorks.findPrimary(thread.id)).resolves.toEqual({ workId: work.id });
+    });
+
+    it("preserves the existing primary when primary promotion fails", async () => {
+      const { repos, projects, works } = await makeFixture();
+      const project = await projects.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        title: "Project",
+      });
+      const primaryWork = await works.create({
+        projectId: project.id,
+        title: "Primary Work",
+      });
+      const thread = await repos.threads.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        projectId: project.id,
+      });
+      await repos.threadWorks.addMembership(thread.id, primaryWork.id, true);
+
+      await expect(
+        repos.threadWorks.addMembership(
+          thread.id,
+          crypto.randomUUID() as typeof primaryWork.id,
+          true,
+        ),
+      ).rejects.toThrow("Work is not available in this project");
+      await expect(repos.threadWorks.findPrimary(thread.id)).resolves.toEqual({
+        workId: primaryWork.id,
+      });
+    });
+
     it("updateCurrentAgent rebinds only while un-baked and turnCount is zero", async () => {
       const { repos, projects } = await makeFixture();
       const project = await projects.create({

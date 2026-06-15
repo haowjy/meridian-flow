@@ -136,7 +136,9 @@ interface ProjectVisibilityRepository {
 }
 
 interface WorkProjectionRepository {
-  findById(id: string): Promise<{ id: string; title: string; deletedAt: string | null } | null>;
+  findById(
+    id: string,
+  ): Promise<{ id: string; title: string; projectId: string; deletedAt: string | null } | null>;
 }
 
 export interface InMemoryRepositoriesOptions {
@@ -381,15 +383,25 @@ export function createInMemoryRepositories(
         if (!work || work.deletedAt || work.id !== workId) {
           throw new Error("Work is not available in this project");
         }
-      }
-      if (isPrimary) {
-        for (const [key, row] of threadWorks) {
-          if (row.threadId === threadId && row.isPrimary) {
-            threadWorks.set(key, { ...row, isPrimary: false });
-          }
+        if (work.projectId !== thread.projectId) {
+          throw new Error("Work is not available in this project");
         }
       }
-      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary });
+      const snapshot = new Map(threadWorks);
+      try {
+        if (isPrimary) {
+          for (const [key, row] of threadWorks) {
+            if (row.threadId === threadId && row.isPrimary) {
+              threadWorks.set(key, { ...row, isPrimary: false });
+            }
+          }
+        }
+        threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary });
+      } catch (error) {
+        threadWorks.clear();
+        for (const entry of snapshot) threadWorks.set(...entry);
+        throw error;
+      }
     },
     async findPrimary(threadId) {
       const workId = primaryWorkIdForThread(threadId);

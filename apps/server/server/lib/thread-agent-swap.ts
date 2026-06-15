@@ -1,6 +1,6 @@
 /** Route-core helpers for explicit agent handoff/fork into a new primary thread. */
 import type { Thread } from "@meridian/contracts/protocol";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { PackageRepository } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 import type { EventJournalWriter, InternalThreadRepositories } from "../domains/threads/index.js";
@@ -12,6 +12,7 @@ export interface ThreadAgentSwapDeps {
   turns: InternalThreadRepositories["turns"];
   blocks: InternalThreadRepositories["blocks"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
+  transaction: InternalThreadRepositories["transaction"];
   projects: ProjectRepository;
   packageRepository: PackageRepository;
   eventWriter: EventJournalWriter;
@@ -24,19 +25,20 @@ export async function handoffThreadAgent(
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   await requireAgent(deps, source, input.targetAgent);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
-  const target = await deps.threads.createDerivedPrimary({
-    userId: source.userId,
-    projectId: source.projectId,
-    workId: source.workId as string,
-    parentThreadId: source.id as ThreadId,
-    originType: "handoff",
-    originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
-    currentAgent: input.targetAgent,
-    title: `Handoff from ${source.title ?? "thread"}`,
-  });
-  if (source.workId) {
-    await deps.threadWorks.addMembership(target.id as ThreadId, source.workId, true);
-  }
+  const target = await createDerivedPrimaryWithMembership(
+    deps,
+    {
+      userId: source.userId,
+      projectId: source.projectId,
+      workId: source.workId as WorkId,
+      parentThreadId: source.id as ThreadId,
+      originType: "handoff",
+      originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
+      currentAgent: input.targetAgent,
+      title: `Handoff from ${source.title ?? "thread"}`,
+    },
+    source.workId as WorkId | null,
+  );
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
   await deps.eventWriter.appendEvent(source.id as ThreadId, {
@@ -66,19 +68,20 @@ export async function forkThreadAgent(
   if (!originTurn || originTurn.threadId !== source.id) {
     throw new Error("Fork origin turn must belong to the source thread");
   }
-  const target = await deps.threads.createDerivedPrimary({
-    userId: source.userId,
-    projectId: source.projectId,
-    workId: source.workId as string,
-    parentThreadId: source.id as ThreadId,
-    originType: "fork",
-    originTurnId: originTurnId as TurnId,
-    currentAgent: input.targetAgent,
-    title: `Fork from ${source.title ?? "thread"}`,
-  });
-  if (source.workId) {
-    await deps.threadWorks.addMembership(target.id as ThreadId, source.workId, true);
-  }
+  const target = await createDerivedPrimaryWithMembership(
+    deps,
+    {
+      userId: source.userId,
+      projectId: source.projectId,
+      workId: source.workId as WorkId,
+      parentThreadId: source.id as ThreadId,
+      originType: "fork",
+      originTurnId: originTurnId as TurnId,
+      currentAgent: input.targetAgent,
+      title: `Fork from ${source.title ?? "thread"}`,
+    },
+    source.workId as WorkId | null,
+  );
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
   await deps.eventWriter.appendEvent(source.id as ThreadId, {
@@ -89,6 +92,21 @@ export async function forkThreadAgent(
     originTurnId,
   });
   return target;
+}
+
+async function createDerivedPrimaryWithMembership(
+  deps: ThreadAgentSwapDeps,
+  input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
+  membershipWorkId: WorkId | null,
+): Promise<Thread> {
+  if (!membershipWorkId) {
+    return deps.threads.createDerivedPrimary(input);
+  }
+  return deps.transaction(async () => {
+    const target = await deps.threads.createDerivedPrimary(input);
+    await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
+    return { ...target, workId: membershipWorkId };
+  });
 }
 
 async function requireOwnedSourceThread(
