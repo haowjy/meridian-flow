@@ -51,6 +51,10 @@ interface StreamAccumulator {
   // sometimes across different chunks.
   toolCalls: Map<number, { id?: string; name: string; arguments: string; pendingDeltas: string[] }>;
   usage: Usage;
+  /** OpenRouter and other compatible providers may report actual USD cost on usage. */
+  reportedCostUsd?: number;
+  /** OpenRouter generation id from chunk `id` — used for /generation enrichment. */
+  generationId?: string;
   finishReason: FinishReason;
   model: string;
   provider: string;
@@ -110,13 +114,19 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
     toolCalls.push({ id, name: entry.name, arguments: parsed });
   }
 
+  const usage =
+    acc.reportedCostUsd !== undefined
+      ? { ...acc.usage, estimatedCostUsd: acc.reportedCostUsd }
+      : acc.usage;
+
   return {
     content: [...acc.contentParts],
     toolCalls,
     finishReason: acc.finishReason,
-    usage: acc.usage,
+    usage,
     model: acc.model,
     provider: acc.provider,
+    ...(acc.generationId ? { providerData: { generationId: acc.generationId } } : {}),
   };
 }
 
@@ -147,6 +157,7 @@ export function mapFinishReason(
 
 export function* eventsFromOpenAIChunk(
   chunk: {
+    id?: string;
     choices?: Array<{
       index?: number;
       delta?: {
@@ -164,10 +175,17 @@ export function* eventsFromOpenAIChunk(
       completion_tokens?: number;
       total_tokens?: number;
       completion_tokens_details?: { reasoning_tokens?: number };
+      /** OpenRouter reports actual generation cost (USD) on the final usage chunk. */
+      cost?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
     } | null;
   },
   acc: StreamAccumulator,
 ): Generator<StreamEvent> {
+  if (chunk.id && !acc.generationId) {
+    acc.generationId = chunk.id;
+  }
+
   // This adapter consumes only the first streamed choice. The gateway API models
   // one assistant continuation per request, and request mapping never asks for
   // multiple choices.
@@ -252,11 +270,16 @@ export function* eventsFromOpenAIChunk(
     // Meridian Usage. The SDK docs warn: interrupted streams may never deliver
     // this chunk.
     const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
+    const cacheReadTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
     const usage: Usage = {
       inputTokens: chunk.usage.prompt_tokens ?? 0,
       outputTokens: chunk.usage.completion_tokens ?? 0,
       ...(reasoningTokens ? { reasoningTokens } : {}),
+      ...(cacheReadTokens ? { cacheReadTokens } : {}),
     };
+    if (typeof chunk.usage.cost === "number") {
+      acc.reportedCostUsd = chunk.usage.cost;
+    }
     applyUsage(acc, usage);
     yield { type: "usage", usage };
   }

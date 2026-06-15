@@ -1542,13 +1542,15 @@ describe("runtime loop integration", () => {
     expect(afterDoubleReplay).toEqual(afterSingleReplay);
     expect(threadAfterDoubleReplay).toEqual(threadAfterSingleReplay);
     expect(threadAfterDoubleReplay.updatedAt).toBe(threadAfterSingleReplay.updatedAt);
-    expect(threadAfterDoubleReplay.totalCostUsd).toBe("0.000000");
+    // representativeToolGateway reports provider cost (estimatedCostUsd 0.001 + 0.002);
+    // B3 bills provider-reported cost when present, so the two model responses total $0.003.
+    expect(threadAfterDoubleReplay.totalCostUsd).toBe("0.003000");
     const assistantTurn = afterDoubleReplay.turns.find((turn) => turn.role === "assistant");
     expect(assistantTurn).toMatchObject({
       inputTokens: 26,
       outputTokens: 15,
       reasoningTokens: 5,
-      totalCostUsd: "0.000000",
+      totalCostUsd: "0.003000",
       responseCount: 2,
     });
     expect(afterDoubleReplay.modelResponses).toHaveLength(2);

@@ -28,7 +28,7 @@ export interface ModelTokenRate {
   source: string;
 }
 
-export type ModelTokenRateLayer = "pinned" | "override" | "models.dev";
+export type ModelTokenRateLayer = "pinned" | "override" | "models.dev" | "provider_reported";
 
 export interface ResolvedModelTokenRate extends ModelTokenRate {
   /** Layer that supplied the rate; persisted in pricingSnapshot for audits. */
@@ -191,7 +191,37 @@ function millicreditsFromUsdMicros(usdMicros: bigint): bigint {
 function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
   if (rate.sourceLayer === "override") return `override: ${rate.source}`;
   if (rate.sourceLayer === "models.dev") return "models.dev";
+  if (rate.sourceLayer === "provider_reported") return "provider_reported";
   return `pinned: ${rate.source}`;
+}
+
+function formatUsdFromNumber(usd: number): string {
+  return usd.toFixed(6);
+}
+
+function usdMicrosFromNumber(usd: number): bigint {
+  return parseUsdPerMillion(formatUsdFromNumber(usd));
+}
+
+function computeFromProviderReportedCost(input: {
+  provider: string;
+  model: string;
+  reportedCostUsd: number;
+}): ComputedModelCost {
+  const usdMicros = usdMicrosFromNumber(input.reportedCostUsd);
+  return {
+    costUsd: formatUsdFromMicros(usdMicros),
+    millicredits: millicreditsFromUsdMicros(usdMicros).toString(),
+    pricingSnapshot: {
+      provider: input.provider,
+      model: input.model,
+      reportedCostUsd: formatUsdFromNumber(input.reportedCostUsd),
+      source: "provider_reported",
+      sourceLayer: "provider_reported",
+      sourceDetail: "gateway.usage.estimatedCostUsd",
+      unit: "provider_reported_usd",
+    },
+  };
 }
 
 export function findModelTokenRate(
@@ -212,6 +242,15 @@ export function computeModelCost(input: {
   usage: Usage;
   rateSource?: ModelTokenRateSource;
 }): ComputedModelCost {
+  const reportedCostUsd = input.usage.estimatedCostUsd;
+  if (reportedCostUsd !== undefined && reportedCostUsd >= 0) {
+    return computeFromProviderReportedCost({
+      provider: input.provider,
+      model: input.model,
+      reportedCostUsd,
+    });
+  }
+
   const rate = findModelTokenRate(input.provider, input.model, input.rateSource);
   const cacheReadTokens = input.usage.cacheReadTokens ?? 0;
   const cacheWriteTokens = input.usage.cacheWriteTokens ?? 0;

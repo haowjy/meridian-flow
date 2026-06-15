@@ -320,8 +320,8 @@ export interface GenerateResult {
 
 /**
  * Known adapter identifiers. String literals for the built-in adapters plus
- * a catch-all for custom adapter strings. `openrouter` is reserved but not yet
- * implemented — createAdapter throws if you try to construct it.
+ * a catch-all for custom adapter strings. `openrouter` reuses the openai-compatible
+ * wire format against OpenRouter's API with provider-reported cost enrichment.
  */
 export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "openrouter";
 

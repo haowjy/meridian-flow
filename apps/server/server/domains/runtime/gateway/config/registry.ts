@@ -74,6 +74,7 @@ const ANTHROPIC_PRICING_SOURCE =
   "https://platform.claude.com/docs/en/about-claude/pricing (pinned 2026-06-10)";
 const DEEPSEEK_PRICING_SOURCE =
   "https://api-docs.deepseek.com/quick_start/pricing (pinned 2026-06-10)";
+const OPENROUTER_PRICING_SOURCE = "https://openrouter.ai/docs/pricing (pinned fallback 2026-06-15)";
 
 const CLAUDE_SONNET_4_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
@@ -276,6 +277,65 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   pricing: DEEPSEEK_FLASH_PRICING,
 } satisfies RegisteredModel;
 
+const OPENROUTER_CLAUDE_SONNET_4_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "3.00",
+  outputUsdPerMillionTokens: "15.00",
+  source: OPENROUTER_PRICING_SOURCE,
+};
+
+const OPENROUTER_GPT_4O_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "2.50",
+  outputUsdPerMillionTokens: "10.00",
+  source: OPENROUTER_PRICING_SOURCE,
+};
+
+const OPENROUTER_GEMINI_FLASH_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "0.15",
+  outputUsdPerMillionTokens: "0.60",
+  source: OPENROUTER_PRICING_SOURCE,
+};
+
+const OPENROUTER_CLAUDE_SONNET_4_MODEL = {
+  id: "anthropic/claude-sonnet-4",
+  displayName: "Claude Sonnet 4 (OpenRouter)",
+  contextWindow: 200_000,
+  maxOutputTokens: 16_384,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "image_input",
+    "structured_output",
+    "reasoning",
+    "caching",
+  ],
+  pricing: OPENROUTER_CLAUDE_SONNET_4_PRICING,
+} satisfies RegisteredModel;
+
+const OPENROUTER_GPT_4O_MODEL = {
+  id: "openai/gpt-4o",
+  displayName: "GPT-4o (OpenRouter)",
+  contextWindow: 128_000,
+  maxOutputTokens: 16_384,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "parallel_tool_calls",
+    "image_input",
+    "structured_output",
+    "reasoning",
+  ],
+  pricing: OPENROUTER_GPT_4O_PRICING,
+} satisfies RegisteredModel;
+
+const OPENROUTER_GEMINI_FLASH_MODEL = {
+  id: "google/gemini-2.5-flash",
+  displayName: "Gemini 2.5 Flash (OpenRouter)",
+  contextWindow: 1_048_576,
+  maxOutputTokens: 65_536,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
+  pricing: OPENROUTER_GEMINI_FLASH_PRICING,
+} satisfies RegisteredModel;
+
 export const MODEL_REGISTRY = {
   defaultModel: "claude-sonnet-4-20250514",
   providers: [
@@ -302,6 +362,17 @@ export const MODEL_REGISTRY = {
       apiKeyEnv: "DEEPSEEK_API_KEY",
       baseUrl: "https://api.deepseek.com/anthropic",
       models: [DEEPSEEK_V4_FLASH_MODEL],
+    },
+    {
+      id: "openrouter",
+      adapter: "openrouter",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+      baseUrl: "https://openrouter.ai/api/v1",
+      models: [
+        OPENROUTER_CLAUDE_SONNET_4_MODEL,
+        OPENROUTER_GPT_4O_MODEL,
+        OPENROUTER_GEMINI_FLASH_MODEL,
+      ],
     },
   ],
 } as const satisfies ModelRegistry;
