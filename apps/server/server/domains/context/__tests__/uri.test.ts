@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseContextUri } from "../context/uri.js";
+import { parseContextUri, parseUnifiedContextUri } from "../context/uri.js";
 
 describe("parseContextUri", () => {
   it("defaults bare paths to fs1://", () => {
@@ -67,5 +67,30 @@ describe("parseContextUri", () => {
       expect(result.value.path).toBe("");
       expect(result.value.canonical).toBe("user://");
     }
+  });
+});
+
+describe("parseUnifiedContextUri", () => {
+  it("defaults bare paths to manuscript://", () => {
+    const result = parseUnifiedContextUri("chapter-1.md");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.scheme).toBe("manuscript");
+    expect(result.value.canonical).toBe("manuscript://chapter-1.md");
+  });
+
+  it("parses work authority for uploads://", () => {
+    const workId = "00000000-0000-4000-8000-0000000000ab";
+    const result = parseUnifiedContextUri(`uploads://${workId}/file.txt`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.authority).toBe(workId);
+    expect(result.value.canonical).toBe(`uploads://${workId}/file.txt`);
+  });
+
+  it("rejects authority on manuscript://", () => {
+    const workId = "00000000-0000-4000-8000-0000000000ab";
+    const result = parseUnifiedContextUri(`manuscript://${workId}/chapter-1.md`);
+    expect(result.ok).toBe(false);
   });
 });

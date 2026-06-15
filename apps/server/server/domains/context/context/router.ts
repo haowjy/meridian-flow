@@ -1,8 +1,7 @@
 /**
  * Context-port router: builds a ContextPort that parses a URI, dispatches to the
- * scheme adapter that owns it, and lifts adapter faults into boundary
- * ContextErrors enriched with the canonical URI. Owns scheme->adapter dispatch
- * only; it holds no project/thread scope (adapters carry their own).
+ * scheme adapter that owns it, enforces optional Work-authority gates, and lifts
+ * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -23,21 +22,32 @@ import type {
   FileRef,
   SearchResult,
 } from "../ports/context-port.js";
-import { parseContextUri } from "./uri.js";
+import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** Work IDs this port may address through `scheme://<workId>/...` authority URIs. */
+  allowedAuthorities?: ReadonlySet<string>;
+  /** Primary Work for bare Work-scoped URIs in this router. */
+  primaryWorkId?: string;
+  /** Lazily builds Work-scoped adapters for an authority-addressed target Work. */
+  resolveWorkAdapters?: (workId: string) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** URI parse options — unified port passes manuscript default + extended schemes. */
+  parseOptions?: ParseContextUriOptions;
 }
 
-/** A parsed URI paired with the adapter that owns its scheme. */
 interface Dispatch {
   adapter: ContextSchemeAdapter;
   scheme: ContextScheme;
+  authority: string | null;
   path: string;
   canonical: string;
 }
 
-/** Attach the canonical URI to an adapter fault, producing a {@link ContextError}. */
+function uriFor(scheme: ContextScheme, path: string, authority: string | null): string {
+  return toCanonical(scheme, path, authority);
+}
+
 function toContextError(fault: AdapterFault, uri: string): ContextError {
   switch (fault.code) {
     case "permission_denied":
@@ -49,13 +59,27 @@ function toContextError(fault: AdapterFault, uri: string): ContextError {
   }
 }
 
-function toSearchResult(scheme: ContextScheme, hit: AdapterSearchHit): SearchResult {
-  return { uri: `${scheme}://${hit.path}`, excerpt: hit.excerpt, line: hit.line, score: hit.score };
+function toSearchResult(
+  scheme: ContextScheme,
+  authority: string | null,
+  hit: AdapterSearchHit,
+): SearchResult {
+  return {
+    uri: uriFor(scheme, hit.path, authority),
+    excerpt: hit.excerpt,
+    line: hit.line,
+    score: hit.score,
+  };
 }
 
-function toFileRef(scheme: ContextScheme, ref: AdapterFileRef, readonly: boolean): FileRef {
+function toFileRef(
+  scheme: ContextScheme,
+  authority: string | null,
+  ref: AdapterFileRef,
+  readonly: boolean,
+): FileRef {
   const base = {
-    uri: `${scheme}://${ref.path}`,
+    uri: uriFor(scheme, ref.path, authority),
     documentId: ref.documentId,
     sizeBytes: ref.sizeBytes,
     updatedAt: ref.updatedAt,
@@ -78,20 +102,51 @@ function toFileRef(scheme: ContextScheme, ref: AdapterFileRef, readonly: boolean
   };
 }
 
-/**
- * Build a {@link ContextPort} that dispatches by URI scheme to the registered
- * adapters. The router is a pure dispatch layer — it holds no project/thread
- * scope; adapters carry their own scope.
- */
-export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
-  const { adapters } = deps;
+async function callAdapter<T>(
+  uri: string,
+  op: () => Promise<Result<T, AdapterFault>>,
+): Promise<Result<T, ContextError>> {
+  let result: Result<T, AdapterFault>;
+  try {
+    result = await op();
+  } catch (error) {
+    return Err({
+      code: "io_error",
+      uri,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (!result.ok) return Err(toContextError(result.error, uri));
+  return Ok(result.value);
+}
 
-  /** Parse a URI and look up its adapter, or return the boundary error. */
-  function resolve(uri: string): Result<Dispatch, ContextError> {
-    const parsed = parseContextUri(uri);
+export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
+  const { adapters, parseOptions } = deps;
+
+  function authorityAllowed(workId: string): boolean {
+    return deps.allowedAuthorities?.has(workId) ?? false;
+  }
+
+  async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
+    const parsed = parseContextUri(uri, parseOptions);
     if (!parsed.ok) return parsed;
-    const { scheme, path, canonical } = parsed.value;
-    const adapter = adapters.get(scheme);
+    const { scheme, authority, path, canonical } = parsed.value;
+
+    let adapterMap = adapters;
+    if (authority) {
+      if (!authorityAllowed(authority)) return Err({ code: "permission_denied", uri: canonical });
+      try {
+        adapterMap = deps.resolveWorkAdapters?.(authority) ?? adapters;
+      } catch (error) {
+        return Err({
+          code: "io_error",
+          uri: canonical,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const adapter = adapterMap.get(scheme);
     if (!adapter) {
       return Err({
         code: "invalid_uri",
@@ -99,47 +154,23 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         reason: `No adapter registered for scheme "${scheme}"`,
       });
     }
-    return Ok({ adapter, scheme, path, canonical });
-  }
-
-  /**
-   * Invoke an adapter operation, upholding the ContextPort contract that no
-   * errors are thrown across the boundary: adapter `AdapterFault`s and any
-   * unexpected promise rejection (DB error, constraint violation) both become
-   * a {@link ContextError}.
-   */
-  async function callAdapter<T>(
-    uri: string,
-    op: () => Promise<Result<T, AdapterFault>>,
-  ): Promise<Result<T, ContextError>> {
-    let result: Result<T, AdapterFault>;
-    try {
-      result = await op();
-    } catch (error) {
-      return Err({
-        code: "io_error",
-        uri,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-    if (!result.ok) return Err(toContextError(result.error, uri));
-    return Ok(result.value);
+    return Ok({ adapter, scheme, authority, path, canonical });
   }
 
   return {
     async stat(uri: string): Promise<Result<FileRef, ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
-      const { adapter, scheme, path, canonical } = r.value;
+      const { adapter, scheme, authority, path, canonical } = r.value;
 
       const result = await callAdapter(canonical, () => adapter.stat(path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
-      return Ok(toFileRef(scheme, result.value, !adapter.capabilities.writable));
+      return Ok(toFileRef(scheme, authority, result.value, !adapter.capabilities.writable));
     },
 
     async read(uri: string): Promise<Result<ContextReadResult, ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
 
@@ -154,7 +185,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -167,7 +198,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options: ContextWriteBinaryOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -177,7 +208,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -187,9 +218,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async list(uri: string): Promise<Result<FileEntry[], ContextError>> {
-      const r = resolve(uri);
+      const r = await resolve(uri);
       if (!r.ok) return r;
-      const { adapter, scheme, path, canonical } = r.value;
+      const { adapter, scheme, authority, path, canonical } = r.value;
 
       const result = await callAdapter(canonical, () => adapter.list(path));
       if (!result.ok) return result;
@@ -198,7 +229,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Ok(
         result.value.map((e) => {
           const base = {
-            uri: `${scheme}://${e.path}`,
+            uri: uriFor(scheme, e.path, authority),
             documentId: e.documentId,
             sizeBytes: e.sizeBytes,
             updatedAt: e.updatedAt,
@@ -227,24 +258,22 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
     async search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>> {
       if (uri) {
-        const r = resolve(uri);
+        const r = await resolve(uri);
         if (!r.ok) return r;
-        const { adapter, scheme, path, canonical } = r.value;
+        const { adapter, scheme, authority, path, canonical } = r.value;
         if (!adapter.capabilities.searchable) return Ok([]);
 
         const result = await callAdapter(canonical, () => adapter.search(query, path));
         if (!result.ok) return result;
-        return Ok(result.value.map((hit) => toSearchResult(scheme, hit)));
+        return Ok(result.value.map((hit) => toSearchResult(scheme, authority, hit)));
       }
 
-      // Cross-scheme search: fan out to searchable adapters. Best-effort — a single backend failing (Err or throw)
-      // must not fail the whole search, so failures are skipped, not raised.
       const hits: SearchResult[] = [];
       for (const [scheme, adapter] of adapters) {
         if (!adapter.capabilities.searchable) continue;
         const result = await callAdapter(`${scheme}://`, () => adapter.search(query));
         if (!result.ok) continue;
-        for (const hit of result.value) hits.push(toSearchResult(scheme, hit));
+        for (const hit of result.value) hits.push(toSearchResult(scheme, null, hit));
       }
       hits.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       return Ok(hits);

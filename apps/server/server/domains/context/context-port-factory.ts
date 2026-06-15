@@ -19,7 +19,7 @@ import type { ContextPort, ContextScheme } from "./ports/context-port.js";
 
 const CONTEXT_SCHEMES = ["kb", "work", "user", "fs1"] as const satisfies readonly ContextScheme[];
 
-const CONTEXT_SOURCE_NAMES: Record<ContextScheme, string> = {
+const CONTEXT_SOURCE_NAMES: Record<(typeof CONTEXT_SCHEMES)[number], string> = {
   kb: "Knowledge Base",
   work: "Work Memory",
   user: "User Files",
@@ -58,7 +58,7 @@ async function ensureUserContextProject(db: Database, userId: string): Promise<s
 async function findProjectContextSource(
   db: Database,
   projectId: string,
-  scheme: ContextScheme,
+  scheme: (typeof CONTEXT_SCHEMES)[number],
   userId: string,
 ): Promise<string | null> {
   const sourceProjectId =
@@ -81,7 +81,7 @@ async function findProjectContextSource(
 async function ensureProjectContextSource(
   db: Database,
   projectId: string,
-  scheme: ContextScheme,
+  scheme: (typeof CONTEXT_SCHEMES)[number],
   userId: string,
 ): Promise<string> {
   const sourceProjectId =
@@ -116,7 +116,7 @@ class ProjectContextDocumentStore implements ContextDocumentStore {
   constructor(
     private readonly db: Database,
     private readonly projectId: string,
-    private readonly scheme: ContextScheme,
+    private readonly scheme: (typeof CONTEXT_SCHEMES)[number],
     private readonly userId: string,
   ) {}
 
@@ -152,7 +152,7 @@ class ProjectContextDocumentStore implements ContextDocumentStore {
 }
 
 function buildPort(
-  storeFor: (scheme: ContextScheme) => ContextDocumentStore,
+  storeFor: (scheme: (typeof CONTEXT_SCHEMES)[number]) => ContextDocumentStore,
   documentSync: DocumentSyncPort,
 ): ContextPort {
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
