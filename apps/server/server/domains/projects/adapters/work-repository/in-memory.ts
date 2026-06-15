@@ -24,8 +24,6 @@ export function createInMemoryWorkRepository(): WorkRepository {
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       title: input.title?.trim() || DEFAULT_WORK_TITLE,
-      description: null,
-      status: "active",
       visibility: "private",
       lastActivityAt: timestamp,
       createdAt: timestamp,

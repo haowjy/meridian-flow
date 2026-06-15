@@ -19,13 +19,10 @@ export function describeWorkRepositoryConformance(
       const work = await repo.create({
         projectId: project,
         title: "Auth Implementation",
-        description: "desc",
       });
       expect(work).toMatchObject({
         projectId: project,
         title: "Auth Implementation",
-        description: null,
-        status: "active",
         visibility: "private",
         deletedAt: null,
       });
@@ -36,7 +33,6 @@ export function describeWorkRepositoryConformance(
       const repo = await makeRepo();
       const work = await repo.create({ projectId: project });
       expect(work.title).toBe("Untitled Work");
-      expect(work.description).toBeNull();
     });
 
     it("honors a client-provided id", async () => {

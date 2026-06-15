@@ -17,8 +17,6 @@ function mapWork(row: WorkRow): Work {
     projectId: row.projectId,
     createdByUserId: row.createdByUserId,
     title: row.title,
-    description: null,
-    status: row.deletedAt ? "archived" : "active",
     visibility: row.visibility,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
