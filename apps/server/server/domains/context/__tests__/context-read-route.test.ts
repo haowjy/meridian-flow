@@ -10,19 +10,17 @@ import {
   createObjectStorageUrl,
   type ObjectStorePort,
 } from "../../storage/index.js";
-import type { ContextPortFactory } from "../index.js";
 import type { ContextPort, FileRef } from "../ports/context-port.js";
+import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 
 function ok<T>(value: T): { ok: true; value: T } {
   return { ok: true, value };
 }
 
-function contextFactoryFor(port: ContextPort): ContextPortFactory {
+function contextFactoryFor(port: ContextPort): UnifiedContextPortFactory {
   return {
     forProject: (_projectId: string, _userId: string) => port,
-    forThread() {
-      throw new Error("thread document context is unused by context-read route tests");
-    },
+    forWork: () => port,
   };
 }
 

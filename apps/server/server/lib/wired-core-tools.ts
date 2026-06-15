@@ -11,17 +11,14 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { HTTPError } from "nitro/h3";
-import { UNIFIED_CONTEXT_SCHEMES } from "../domains/context/context/uri.js";
 import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
-import type { ContextPortFactory } from "../domains/context/index.js";
+import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
 import type {
   ContextError,
   ContextPort,
-  ContextScheme,
   WriteProvenance,
 } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
@@ -33,7 +30,6 @@ import {
 import {
   type CheckpointToolHandlerContext,
   createCoreToolRegistrations,
-  REQUIRED_MANUSCRIPT_URI,
   type ToolHandlerContext,
   type ToolRegistration,
 } from "../domains/runtime/index.js";
@@ -48,23 +44,18 @@ import type {
   ThreadWorksRepository,
   TurnDocumentTouchRepository,
 } from "../domains/threads/index.js";
-import { Err, Ok } from "../shared/result.js";
 
-export const UNIFIED_MANUSCRIPT_URI = "manuscript://chapter-1.md";
-
-const UNIFIED_SCHEME_SET = new Set<ContextScheme>(UNIFIED_CONTEXT_SCHEMES);
+export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
 export interface ToolWiringDeps {
   threads: ThreadRepository;
-  contextPorts: ContextPortFactory;
-  unifiedContextPorts?: UnifiedContextPortFactory;
-  threadWorks?: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
+  contextPorts: UnifiedContextPortFactory;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
-type LegacyThreadContextPort = ReturnType<ContextPortFactory["forThread"]>;
 
 function toolError(error: ContextError | { message: string }): ToolErrorOutput {
   if ("code" in error && typeof error.code === "string") {
@@ -73,135 +64,16 @@ function toolError(error: ContextError | { message: string }): ToolErrorOutput {
   return { isError: true, output: meridianErrorFromTool(error.message) };
 }
 
-function legacyErrorToContextError(uri: string, error: unknown): ContextError {
-  if (HTTPError.isError(error)) {
-    if (error.status === 404) return { code: "not_found", uri };
-    if (error.status === 400) return { code: "invalid_uri", uri, reason: error.message };
-    return { code: "io_error", uri, message: error.message };
-  }
-  if (error instanceof Error) return { code: "io_error", uri, message: error.message };
-  return { code: "io_error", uri, message: "Unknown error" };
-}
-
-function manuscriptContextPort(legacyPort: LegacyThreadContextPort, turnId: string): ContextPort {
-  return {
-    stat: async (uri) => {
-      try {
-        const doc = await legacyPort.readDocument(uri);
-        return Ok({
-          kind: "tracked" as const,
-          uri,
-          documentId: doc.documentId,
-          filetype: "markdown" as const,
-          schemaType: "document" as const,
-        });
-      } catch (error) {
-        return Err(legacyErrorToContextError(uri, error));
-      }
-    },
-    async read(uri) {
-      try {
-        const doc = await legacyPort.readDocument(uri);
-        return Ok({ content: doc.markdown, documentId: doc.documentId });
-      } catch (error) {
-        return Err(legacyErrorToContextError(uri, error));
-      }
-    },
-    async write(uri, content) {
-      try {
-        const doc = await legacyPort.writeDocument({
-          uri,
-          markdown: content,
-          origin: { type: "agent", actorTurnId: turnId },
-        });
-        return Ok({ documentId: doc.documentId });
-      } catch (error) {
-        return Err(legacyErrorToContextError(uri, error));
-      }
-    },
-    list: async (uri) => Err({ code: "io_error", uri, message: "list is not supported" }),
-    mkdir: async (uri) => Err({ code: "io_error", uri, message: "mkdir is not supported" }),
-    search: async (_query, uri) =>
-      Err({
-        code: "io_error",
-        uri: uri ?? REQUIRED_MANUSCRIPT_URI,
-        message: "search is not supported",
-      }),
-    writeBinary: async (uri) =>
-      Err({ code: "io_error", uri, message: "writeBinary is not supported" }),
-  };
-}
-
-async function resolveProjectContextPort(
+async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
 ): Promise<ContextPort | ToolErrorOutput> {
-  const thread = await deps.threads.findById(threadId);
-  if (!thread) return toolError({ message: `Thread not found: ${threadId}` });
-  return deps.contextPorts.forProject(thread.projectId, thread.userId);
-}
-
-function usesUnifiedContextPort(uri: string): boolean {
-  const trimmed = uri.trim();
-  if (trimmed === REQUIRED_MANUSCRIPT_URI) return false;
-
-  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/{2}/);
-  if (schemeMatch) {
-    return UNIFIED_SCHEME_SET.has(schemeMatch[1] as ContextScheme);
-  }
-  if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) return false;
-  return true;
-}
-
-async function resolveBrowseContextPort(
-  deps: ToolWiringDeps,
-  threadId: string,
-  uri: string | undefined,
-  turnId: string,
-): Promise<ContextPort | ToolErrorOutput> {
-  if (uri) {
-    return resolveContextPort(deps, threadId, uri, turnId);
-  }
-  if (deps.unifiedContextPorts && deps.threadWorks) {
-    return resolveUnifiedContextPort(deps, threadId);
-  }
-  return resolveProjectContextPort(deps, threadId);
-}
-
-async function resolveUnifiedContextPort(
-  deps: ToolWiringDeps,
-  threadId: string,
-): Promise<ContextPort | ToolErrorOutput> {
-  if (!deps.unifiedContextPorts || !deps.threadWorks) {
-    return toolError({ message: "Unified context port is not configured" });
-  }
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
-  return contextPortForThread(deps.unifiedContextPorts, resolution);
-}
-
-async function resolveContextPort(
-  deps: ToolWiringDeps,
-  threadId: string,
-  uri: string,
-  turnId: string,
-): Promise<ContextPort | ToolErrorOutput> {
-  if (usesUnifiedContextPort(uri)) {
-    return resolveUnifiedContextPort(deps, threadId);
-  }
-
-  const thread = await deps.threads.findById(threadId);
-  if (!thread) return toolError({ message: `Thread not found: ${threadId}` });
-  if (uri === REQUIRED_MANUSCRIPT_URI) {
-    return manuscriptContextPort(
-      deps.contextPorts.forThread({ threadId, userId: thread.userId }),
-      turnId,
-    );
-  }
-  return deps.contextPorts.forProject(thread.projectId, thread.userId);
+  return contextPortForThread(deps.contextPorts, resolution);
 }
 
 function recordTouchInBackground(
@@ -278,7 +150,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     read: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };
       if (!path) return toolError({ message: "path is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId, path, ctx.turnId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const port = withTouchRecording(portOrError, deps, ctx);
       const result = await port.read(path);
@@ -292,7 +164,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       };
       if (!path) return toolError({ message: "path is required" });
       if (!edits?.length) return toolError({ message: "edits is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId, path, ctx.turnId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const port = withTouchRecording(portOrError, deps, ctx);
       const readResult = await port.read(path);
@@ -308,7 +180,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const { path, content } = input as { path?: string; content?: string };
       if (!path) return toolError({ message: "path is required" });
       if (content === undefined) return toolError({ message: "content is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId, path, ctx.turnId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const port = withTouchRecording(portOrError, deps, ctx);
       const result = await port.write(path, content, { origin: agentOrigin(ctx) });
@@ -318,7 +190,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };
       if (!path) return toolError({ message: "path is required" });
-      const portOrError = await resolveBrowseContextPort(deps, ctx.threadId, path, ctx.turnId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.list(path);
       if (!result.ok) return toolError(result.error);
@@ -327,7 +199,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { query, uri } = input as { query?: string; uri?: string };
       if (!query) return toolError({ message: "query is required" });
-      const portOrError = await resolveBrowseContextPort(deps, ctx.threadId, uri, ctx.turnId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.search(query, uri);
       if (!result.ok) return toolError(result.error);

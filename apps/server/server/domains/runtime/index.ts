@@ -1,5 +1,6 @@
 /** Barrel: re-exports the runtime domain's public surface — the gateway, the orchestrator loop, the permission model, the turn runner, and the tool registry/executor. */
 export type { OrchestratorEvent } from "@meridian/contracts/threads";
+export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export * from "./gateway/index.js";
 export {
   type CheckpointArtifactFlushPort,
@@ -33,8 +34,6 @@ export {
   type HelperResultDelivery,
 } from "./spawn/helper-result-delivery.js";
 export * from "./tools/index.js";
-
-export const REQUIRED_MANUSCRIPT_URI = "work://manuscript/chapter-1.md";
 export type RuntimeToolAction =
   | { tool: "edit"; uri: string; mode: "append"; text: string }
   | { tool: "write"; uri: string; markdown: string };

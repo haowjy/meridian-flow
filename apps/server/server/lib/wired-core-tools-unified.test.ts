@@ -2,17 +2,11 @@
  * Wired core tools: unified manuscript:// routing through contextPortForThread.
  */
 import { describe, expect, it } from "vitest";
-import {
-  createInMemoryContextPortFactory,
-  createInMemoryUnifiedContextPortFactory,
-} from "../domains/context/index.js";
+import { createInMemoryUnifiedContextPortFactory } from "../domains/context/index.js";
+import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
 import { createInMemoryWorkRepository } from "../domains/projects/index.js";
-import {
-  createToolExecutor,
-  createToolRegistry,
-  REQUIRED_MANUSCRIPT_URI,
-} from "../domains/runtime/index.js";
+import { createToolExecutor, createToolRegistry } from "../domains/runtime/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { createWiredCoreToolRegistrations, UNIFIED_MANUSCRIPT_URI } from "./wired-core-tools.js";
 
@@ -34,8 +28,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
-          contextPorts: createInMemoryContextPortFactory(),
-          unifiedContextPorts: unifiedFactory,
+          contextPorts: unifiedFactory,
           threadWorks: repos.threadWorks,
           eventSink: createInMemoryEventSink(),
         }),
@@ -68,65 +61,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
     const read = await port.read(UNIFIED_MANUSCRIPT_URI);
     expect(read.ok).toBe(true);
     if (read.ok) expect(read.value.content).toBe("unified chapter");
-  });
-
-  it("keeps legacy work://manuscript/ on the thread-scoped legacy port", async () => {
-    const repos = createInMemoryRepositories();
-    const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
-    const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
-    let legacyWriteCalled = false;
-
-    const portFactory = {
-      forProject: createInMemoryContextPortFactory().forProject,
-      forThread() {
-        return {
-          async readDocument(uri: string) {
-            return { documentId: "doc-1", uri, markdown: "" };
-          },
-          async writeDocument() {
-            legacyWriteCalled = true;
-            return {
-              documentId: "doc-1",
-              uri: REQUIRED_MANUSCRIPT_URI,
-              markdown: "legacy",
-              updateSeq: 1,
-            };
-          },
-          async editDocument() {
-            throw new Error("not expected");
-          },
-        };
-      },
-    };
-
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: portFactory,
-          unifiedContextPorts: createInMemoryUnifiedContextPortFactory(),
-          threadWorks: repos.threadWorks,
-          eventSink: createInMemoryEventSink(),
-        }),
-      }),
-    );
-
-    await executor.executeTool(
-      {
-        id: "call-write-legacy",
-        name: "write",
-        arguments: { path: REQUIRED_MANUSCRIPT_URI, content: "legacy chapter" },
-      },
-      {
-        signal: new AbortController().signal,
-        threadId: thread.id,
-        turnId: turn.id,
-        agentSlug: "writer",
-      },
-    );
-
-    expect(legacyWriteCalled).toBe(true);
-    expect(UNIFIED_MANUSCRIPT_URI).toBe("manuscript://chapter-1.md");
+    expect(UNIFIED_MANUSCRIPT_URI).toBe(MANUSCRIPT_URI);
   });
 
   it("routes list and search through the unified port for unified vocabulary URIs", async () => {
@@ -153,8 +88,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
-          contextPorts: createInMemoryContextPortFactory(),
-          unifiedContextPorts: unifiedFactory,
+          contextPorts: unifiedFactory,
           threadWorks: repos.threadWorks,
           eventSink: createInMemoryEventSink(),
         }),

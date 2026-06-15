@@ -19,7 +19,7 @@ import { eq } from "drizzle-orm";
 import WebSocket from "ws";
 import * as Y from "yjs";
 import { createDocumentSyncService } from "../server/domains/collab/index.js";
-import { createProductionContextPortFactory } from "../server/domains/context/index.js";
+import { createProductionUnifiedContextPortFactory } from "../server/domains/context/index.js";
 import { createRuntimeToolRegistry } from "../server/domains/runtime/tool-registry.js";
 import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
 
@@ -190,7 +190,7 @@ if (!syncedState.markdown.includes(expectedSnippet)) {
 if (agentUpdate.originType !== "agent") throw new Error("Yjs update origin_type mismatch");
 
 const documentSync = createDocumentSyncService({ db });
-const contextPorts = createProductionContextPortFactory({ db, documentSync });
+const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
 const registry = createRuntimeToolRegistry({ db, contextPorts });
 const spawnToolContext = {
   threadId: bootstrap.threadId,

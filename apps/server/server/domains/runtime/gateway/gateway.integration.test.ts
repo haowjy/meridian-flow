@@ -125,7 +125,7 @@ describe("model-gateway openai-compatible pipeline", () => {
       expect(end.result.toolCalls).toHaveLength(1);
       expect(end.result.toolCalls[0]?.name).toBe("write");
       expect(end.result.toolCalls[0]?.arguments).toEqual({
-        path: "work://manuscript/chapter-1.md",
+        path: "manuscript://chapter-1.md",
         content: `# Chapter 1\n\nAcknowledged: ${triggerMessage}`,
       });
     }
@@ -214,7 +214,7 @@ describe("model-gateway openai-compatible pipeline", () => {
             toolCallId: "call_mock_write_1",
             toolName: "write",
             input: {
-              path: "work://manuscript/chapter-1.md",
+              path: "manuscript://chapter-1.md",
               content: `# Chapter 1\n\nAcknowledged: ${triggerMessage}`,
             },
           },

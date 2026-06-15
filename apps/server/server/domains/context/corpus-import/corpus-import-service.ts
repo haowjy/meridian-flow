@@ -1,5 +1,5 @@
-import type { ProjectContextPortFactory } from "../context-port-factory.js";
 import type { ContextError } from "../ports/context-port.js";
+import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { ConvertedDocument, DocumentConverterPort } from "./ports/document-converter.js";
 import type { DriveImportSourcePort } from "./ports/drive-import-source.js";
 
@@ -65,7 +65,7 @@ export interface DriveCorpusImportPort {
 }
 
 export type CorpusImportServiceDeps = {
-  contextPorts: Pick<ProjectContextPortFactory, "forProject">;
+  contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
   converter: DocumentConverterPort;
 };
 

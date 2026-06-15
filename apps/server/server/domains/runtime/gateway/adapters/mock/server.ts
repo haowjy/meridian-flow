@@ -41,7 +41,7 @@ function sseLine(payload: unknown): string {
 }
 
 const VERTICAL_SLICE_TRIGGER = "Phase 7 final gate";
-const VERTICAL_SLICE_WRITE_PATH = "work://manuscript/chapter-1.md";
+const VERTICAL_SLICE_WRITE_PATH = "manuscript://chapter-1.md";
 
 function messageContentText(message: { role?: string; content?: unknown } | undefined): string {
   const content = message?.content;

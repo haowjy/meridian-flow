@@ -18,6 +18,15 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   user: "User Files",
   fs1: "Project Files",
 };
+
+function browseRootUri(scheme: ProjectContextTreeScheme): string {
+  return scheme === "fs1" ? "manuscript://" : `${scheme}://`;
+}
+
+function browseSchemeLabel(scheme: ProjectContextTreeScheme): string {
+  if (scheme === "fs1") return "Manuscript";
+  return ROOT_NAMES[scheme];
+}
 function parseScheme(value: string): ProjectContextTreeScheme {
   if (value === "kb" || value === "work" || value === "user" || value === "fs1") return value;
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
@@ -36,8 +45,11 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 502, message: error.message });
   }
 }
+function storageUriPrefix(scheme: ProjectContextTreeScheme): string {
+  return scheme === "fs1" ? "manuscript://" : `${scheme}://`;
+}
 function pathFromUri(scheme: ProjectContextTreeScheme, uri: string): string {
-  const prefix = `${scheme}://`;
+  const prefix = storageUriPrefix(scheme);
   if (!uri.startsWith(prefix))
     throw createError({ statusCode: 502, message: `Unexpected context URI: ${uri}` });
   const path = uri.slice(prefix.length).replace(/^\/+|\/+$/g, "");
@@ -107,11 +119,12 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
+  const rootUri = browseRootUri(scheme);
   const tree = await buildDirectory(
     app.contextPorts.forProject(projectId, user.userId),
     scheme,
-    `${scheme}://`,
-    ROOT_NAMES[scheme],
+    rootUri,
+    browseSchemeLabel(scheme),
   );
   return serializeTransport({ projectId, scheme, tree } satisfies ProjectContextTreeResponse);
 });

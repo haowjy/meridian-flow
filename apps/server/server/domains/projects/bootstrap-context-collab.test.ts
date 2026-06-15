@@ -16,8 +16,9 @@ import { desc, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDocumentSyncService } from "../collab/index.js";
-import { createProductionContextPortFactory } from "../context/index.js";
-import { createDrizzleProjectBootstrapRepository, DEFAULT_BOOTSTRAP_URI } from "./index.js";
+import { createProductionUnifiedContextPortFactory } from "../context/index.js";
+import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import { createDrizzleProjectBootstrapRepository } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
@@ -160,16 +161,40 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
       .where(eq(threads.id, bootstrap.threadId));
 
     const documentSync = createDocumentSyncService({ db });
-    const contextPorts = createProductionContextPortFactory({ db, documentSync });
+    const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
     const markdown = `# Chapter 1\n\nPhase 4 context write ${randomUUID()}\n`;
 
-    const result = await contextPorts
-      .forThread({ threadId: bootstrap.threadId, userId })
-      .writeDocument({
-        uri: DEFAULT_BOOTSTRAP_URI,
-        markdown,
-        origin: { type: "agent", actorTurnId },
-      });
+    const resolution = await (async () => {
+      const { resolveThreadContext, contextPortForThread } = await import(
+        "../context/context-port-resolution.js"
+      );
+      const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
+      const repos = createDrizzleRepositories(db);
+      const resolved = await resolveThreadContext(
+        { threads: repos.threads, threadWorks: repos.threadWorks },
+        bootstrap.threadId,
+      );
+      if (!resolved) throw new Error("thread not found");
+      return contextPortForThread(contextPorts, resolved);
+    })();
+
+    const result = await resolution.write(MANUSCRIPT_URI, markdown, {
+      origin: {
+        type: "agent",
+        agentSlug: "writer",
+        threadId: bootstrap.threadId,
+        turnId: actorTurnId,
+      },
+    });
+    if (!result.ok) {
+      const message =
+        result.error.code === "io_error"
+          ? result.error.message
+          : result.error.code === "invalid_uri"
+            ? result.error.reason
+            : "write failed";
+      throw new Error(message);
+    }
 
     const [document] = await db
       .select()
@@ -178,7 +203,9 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
     const [update] = await db
       .select()
       .from(documentYjsUpdates)
-      .where(eq(documentYjsUpdates.id, result.updateSeq));
+      .where(eq(documentYjsUpdates.documentId, bootstrap.documentId))
+      .orderBy(desc(documentYjsUpdates.id))
+      .limit(1);
 
     expect(document?.markdownProjection).toBe(markdown.trimEnd());
     expect(update?.documentId).toBe(bootstrap.documentId);

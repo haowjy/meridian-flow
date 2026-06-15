@@ -72,7 +72,7 @@ function serviceHarness(initialState: OnboardingState = {}, projectCount = 0) {
           documentId: "00000000-0000-4000-8000-000000000104",
           contextSourceId: "00000000-0000-4000-8000-000000000105",
           agentDefinitionId: "00000000-0000-4000-8000-000000000106",
-          uri: "work://manuscript/chapter-1.md",
+          uri: "manuscript://chapter-1.md",
         };
       },
     },

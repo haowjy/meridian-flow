@@ -1,13 +1,13 @@
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
-import type { ContextError, ContextPortFactory } from "../domains/context/index.js";
+import type { ContextError, UnifiedContextPortFactory } from "../domains/context/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
 
 export interface ContextReadRouteDeps {
   projectRepo: ProjectRepository;
-  contextPorts: ContextPortFactory;
+  contextPorts: UnifiedContextPortFactory;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }
@@ -37,7 +37,14 @@ function contextErrorToHttp(error: ContextError): never {
   }
 }
 
+function routeSchemeToContextScheme(
+  scheme: ProjectContextTreeScheme,
+): ProjectContextTreeScheme | "manuscript" {
+  return scheme === "fs1" ? "manuscript" : scheme;
+}
+
 function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): string {
+  const contextScheme = routeSchemeToContextScheme(scheme);
   const segments = path
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
@@ -45,7 +52,7 @@ function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): st
     .filter((segment) => segment !== "" && segment !== ".");
   if (segments.includes(".."))
     throw createError({ statusCode: 400, message: '`path` may not contain ".."' });
-  return segments.length > 0 ? `${scheme}://${segments.join("/")}` : `${scheme}://`;
+  return segments.length > 0 ? `${contextScheme}://${segments.join("/")}` : `${contextScheme}://`;
 }
 
 export function resolveContextReadPath(
@@ -60,7 +67,11 @@ export function resolveContextReadPath(
   const explicitScheme = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/);
   let uri: string;
   if (explicitScheme) {
-    if (explicitScheme[1] !== scheme)
+    const expectedScheme = routeSchemeToContextScheme(scheme);
+    if (
+      explicitScheme[1] !== expectedScheme &&
+      !(scheme === "fs1" && explicitScheme[1] === "manuscript")
+    )
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
     uri = normalizeSchemePath(scheme, explicitScheme[2]);
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {

@@ -16,7 +16,6 @@ import {
   createFigureAssetService,
   createFixtureDriveImportSource,
   createMammothDocumentConverter,
-  createProductionContextPortFactory,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
@@ -117,8 +116,7 @@ async function createAppServices(): Promise<AppServices> {
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
   const documentAccess = createDrizzleDocumentAccess(db);
-  const contextPorts = createProductionContextPortFactory({ db, documentSync });
-  const unifiedContextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
+  const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
   const corpusImports = createCorpusImportService({
     contextPorts,
     converter: createMammothDocumentConverter(),
@@ -127,7 +125,12 @@ async function createAppServices(): Promise<AppServices> {
     source: createFixtureDriveImportSource(),
     imports: corpusImports,
   });
-  const tools = createRuntimeToolRegistry({ db, contextPorts });
+  const tools = createRuntimeToolRegistry({
+    db,
+    contextPorts,
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+  });
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: process.env.GITHUB_TOKEN,
@@ -155,7 +158,6 @@ async function createAppServices(): Promise<AppServices> {
   for (const registration of createWiredCoreToolRegistrations({
     threads: threadRepos.threads,
     contextPorts,
-    unifiedContextPorts,
     threadWorks: threadRepos.threadWorks,
     documentTouches: threadRepos.documentTouches,
     eventSink,

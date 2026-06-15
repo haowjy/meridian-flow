@@ -85,7 +85,7 @@ export function EditorPane({ threadId, uri }: EditorPaneProps) {
       <header className="pane-header">
         <div>
           <p className="eyebrow">Editor surface</p>
-          <h2>work://manuscript/chapter-1.md</h2>
+          <h2>manuscript://chapter-1.md</h2>
         </div>
         <div className="debug-stack">
           <span className="debug-pill" data-testid="context-load-status">
