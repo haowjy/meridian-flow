@@ -10,8 +10,7 @@
 
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
-import { createInMemoryDocumentStore } from "../collab/adapters/in-memory/index.js";
-import { createDocumentSyncService as createInnerDocumentSyncService } from "../collab/domain/document-sync-service.js";
+import { createInMemoryDocumentSyncFacade } from "../collab/adapters/in-memory/index.js";
 import type { DocumentSyncFacade } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
 import type { ContextCollabDocumentSync } from "./context/collab-document-sync.js";
@@ -31,6 +30,7 @@ import type {
 } from "./ports/context-port.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
+  findInMemoryDocumentProjection,
   getInMemoryProjectContextStore,
   getInMemoryWorkContextStore,
   type InMemoryUnifiedContextStoreRegistry,
@@ -229,10 +229,14 @@ export function createInMemoryUnifiedContextPortFactory(
     storeRegistry?: InMemoryUnifiedContextStoreRegistry;
   } = {},
 ): UnifiedContextPortFactory {
-  const documentSync =
-    options.documentSync ?? createInnerDocumentSyncService(createInMemoryDocumentStore());
-  const entries = new Map<string, ContextPort>();
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
+  const documentSync =
+    options.documentSync ??
+    createInMemoryDocumentSyncFacade({
+      resolveDocumentProjection: (documentId) =>
+        findInMemoryDocumentProjection(registry, documentId),
+    });
+  const entries = new Map<string, ContextPort>();
   const storeResolvers = createInMemoryStoreResolvers(registry);
 
   function portForProject(projectId: string, userId: string): ContextPort {
