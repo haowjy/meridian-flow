@@ -8,8 +8,10 @@ import { createInMemoryCreditLedger } from "../domains/billing/index.js";
 import {
   type ContextPortFactory,
   createInMemoryContextPortFactory,
+  createInMemoryUnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
+import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import { gatewayStubDefaults } from "../domains/runtime/gateway/test-gateway.js";
 import {
   CORE_TOOL_NAMES,
@@ -171,15 +173,15 @@ describe("createWiredCoreToolRegistrations", () => {
     }
   });
 
-  it("executes search through the tool executor", async () => {
+  it("executes search through the legacy project port when unified is not configured", async () => {
     const repos = createInMemoryRepositories();
     const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
     const portFactory = createInMemoryContextPortFactory();
     const port = portFactory.forProject(thread.projectId, thread.userId);
-    await port.write("kb://protocols/blot.md", "western blot needle\nwash membrane", {
+    await port.write("fs1://protocols/blot.md", "western blot needle\nwash membrane", {
       origin: { type: "system" },
     });
-    await port.write("work://notes.md", "needle outside the knowledge base", {
+    await port.write("fs1://notes.md", "outside the protocols folder", {
       origin: { type: "system" },
     });
 
@@ -195,7 +197,7 @@ describe("createWiredCoreToolRegistrations", () => {
     );
 
     const result = await executor.executeTool(
-      { id: "call-search", name: "search", arguments: { query: "needle", uri: "kb://" } },
+      { id: "call-search", name: "search", arguments: { query: "needle", uri: "fs1://" } },
       {
         signal: new AbortController().signal,
         threadId: thread.id,
@@ -208,7 +210,7 @@ describe("createWiredCoreToolRegistrations", () => {
       toolCallId: "call-search",
       output: [
         expect.objectContaining({
-          uri: "kb://protocols/blot.md",
+          uri: "fs1://protocols/blot.md",
           excerpt: expect.stringContaining("needle"),
         }),
       ],
@@ -306,9 +308,16 @@ describe("createWiredCoreToolRegistrations", () => {
     });
   });
 
-  it("routes non-manuscript work writes through the project port", async () => {
-    const repos = createInMemoryRepositories();
+  it("routes work:// writes through the unified thread port", async () => {
+    const works = createInMemoryWorkRepository();
+    const repos = createInMemoryRepositories({ works });
     const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
+    const work = await works.create({
+      projectId: "project_1",
+      createdByUserId: "user_1",
+      title: "Book 1",
+    });
+    await repos.threadWorks.addMembership(thread.id, work.id, true);
     const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
     let threadWriteCalled = false;
     let projectWriteCalled = false;
@@ -341,12 +350,14 @@ describe("createWiredCoreToolRegistrations", () => {
       },
     };
 
+    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
     const executor = createToolExecutor(
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: portFactory,
-          documentTouches: repos.documentTouches,
+          unifiedContextPorts: unifiedFactory,
+          threadWorks: repos.threadWorks,
           eventSink: createInMemoryEventSink(),
         }),
       }),
@@ -367,12 +378,24 @@ describe("createWiredCoreToolRegistrations", () => {
     );
 
     expect(threadWriteCalled).toBe(false);
-    expect(projectWriteCalled).toBe(true);
+    expect(projectWriteCalled).toBe(false);
+
+    const workPort = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
+    const read = await workPort.read("work://notes.md");
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.value.content).toBe("scratchpad");
   });
 
-  it("records document touches after reads and writes", async () => {
-    const repos = createInMemoryRepositories();
+  it("records document touches after reads and writes via unified kb://", async () => {
+    const works = createInMemoryWorkRepository();
+    const repos = createInMemoryRepositories({ works });
     const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
+    const work = await works.create({
+      projectId: "project_1",
+      createdByUserId: "user_1",
+      title: "Book 1",
+    });
+    await repos.threadWorks.addMembership(thread.id, work.id, true);
     const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
     const portFactory = createInMemoryContextPortFactory();
     const executor = createToolExecutor(
@@ -380,6 +403,8 @@ describe("createWiredCoreToolRegistrations", () => {
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: portFactory,
+          unifiedContextPorts: createInMemoryUnifiedContextPortFactory(),
+          threadWorks: repos.threadWorks,
           documentTouches: repos.documentTouches,
           eventSink: createInMemoryEventSink(),
         }),

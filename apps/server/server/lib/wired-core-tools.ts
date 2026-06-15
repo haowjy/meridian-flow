@@ -12,6 +12,7 @@ import {
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HTTPError } from "nitro/h3";
+import { UNIFIED_CONTEXT_SCHEMES } from "../domains/context/context/uri.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -20,6 +21,7 @@ import type { ContextPortFactory } from "../domains/context/index.js";
 import type {
   ContextError,
   ContextPort,
+  ContextScheme,
   WriteProvenance,
 } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
@@ -49,6 +51,8 @@ import type {
 import { Err, Ok } from "../shared/result.js";
 
 export const UNIFIED_MANUSCRIPT_URI = "manuscript://chapter-1.md";
+
+const UNIFIED_SCHEME_SET = new Set<ContextScheme>(UNIFIED_CONTEXT_SCHEMES);
 
 export interface ToolWiringDeps {
   threads: ThreadRepository;
@@ -137,12 +141,31 @@ async function resolveProjectContextPort(
   return deps.contextPorts.forProject(thread.projectId, thread.userId);
 }
 
-function usesUnifiedManuscriptPort(uri: string): boolean {
+function usesUnifiedContextPort(uri: string): boolean {
   const trimmed = uri.trim();
-  if (trimmed.startsWith("manuscript://")) return true;
-  if (trimmed.includes("://")) return false;
+  if (trimmed === REQUIRED_MANUSCRIPT_URI) return false;
+
+  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/{2}/);
+  if (schemeMatch) {
+    return UNIFIED_SCHEME_SET.has(schemeMatch[1] as ContextScheme);
+  }
   if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) return false;
   return true;
+}
+
+async function resolveBrowseContextPort(
+  deps: ToolWiringDeps,
+  threadId: string,
+  uri: string | undefined,
+  turnId: string,
+): Promise<ContextPort | ToolErrorOutput> {
+  if (uri) {
+    return resolveContextPort(deps, threadId, uri, turnId);
+  }
+  if (deps.unifiedContextPorts && deps.threadWorks) {
+    return resolveUnifiedContextPort(deps, threadId);
+  }
+  return resolveProjectContextPort(deps, threadId);
 }
 
 async function resolveUnifiedContextPort(
@@ -166,7 +189,7 @@ async function resolveContextPort(
   uri: string,
   turnId: string,
 ): Promise<ContextPort | ToolErrorOutput> {
-  if (usesUnifiedManuscriptPort(uri)) {
+  if (usesUnifiedContextPort(uri)) {
     return resolveUnifiedContextPort(deps, threadId);
   }
 
@@ -295,7 +318,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };
       if (!path) return toolError({ message: "path is required" });
-      const portOrError = await resolveProjectContextPort(deps, ctx.threadId);
+      const portOrError = await resolveBrowseContextPort(deps, ctx.threadId, path, ctx.turnId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.list(path);
       if (!result.ok) return toolError(result.error);
@@ -304,7 +327,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { query, uri } = input as { query?: string; uri?: string };
       if (!query) return toolError({ message: "query is required" });
-      const portOrError = await resolveProjectContextPort(deps, ctx.threadId);
+      const portOrError = await resolveBrowseContextPort(deps, ctx.threadId, uri, ctx.turnId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.search(query, uri);
       if (!result.ok) return toolError(result.error);

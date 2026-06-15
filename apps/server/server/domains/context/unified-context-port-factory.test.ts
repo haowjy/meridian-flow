@@ -49,6 +49,40 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     });
   });
 
+  it("shares manuscript and kb stores across users in the same project", async () => {
+    const factory = createInMemoryUnifiedContextPortFactory();
+    const userA = factory.forProject("project_1", "user_a");
+    const userB = factory.forProject("project_1", "user_b");
+
+    await userA.write("manuscript://shared.md", "project manuscript", {
+      origin: { type: "system" },
+    });
+    await userA.write("kb://refs.md", "project kb", { origin: { type: "system" } });
+
+    await expect(userB.read("manuscript://shared.md")).resolves.toMatchObject({
+      ok: true,
+      value: expect.objectContaining({ content: "project manuscript" }),
+    });
+    await expect(userB.read("kb://refs.md")).resolves.toMatchObject({
+      ok: true,
+      value: expect.objectContaining({ content: "project kb" }),
+    });
+  });
+
+  it("shares user:// stores across projects for the same user", async () => {
+    const factory = createInMemoryUnifiedContextPortFactory();
+    const projectA = factory.forProject("project_1", "user_1");
+    const projectB = factory.forProject("project_2", "user_1");
+
+    await projectA.write("user://profile.md", "cross-project profile", {
+      origin: { type: "system" },
+    });
+    await expect(projectB.read("user://profile.md")).resolves.toMatchObject({
+      ok: true,
+      value: expect.objectContaining({ content: "cross-project profile" }),
+    });
+  });
+
   it("routes work-scoped URIs through forWork with primary Work default", async () => {
     const workId = "00000000-0000-4000-8000-0000000000aa";
     const factory = createInMemoryUnifiedContextPortFactory();

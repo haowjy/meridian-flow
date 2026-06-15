@@ -14,7 +14,6 @@ import { createInMemoryDocumentStore } from "../collab/adapters/in-memory/index.
 import { createDocumentSyncService } from "../collab/domain/document-sync-service.js";
 import type { DocumentSyncPort } from "../collab/ports/document-sync.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
-import { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
@@ -29,6 +28,12 @@ import type {
   ProjectContextFsScheme,
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
+import {
+  createInMemoryUnifiedContextStoreRegistry,
+  getInMemoryProjectContextStore,
+  getInMemoryWorkContextStore,
+  type InMemoryUnifiedContextStoreRegistry,
+} from "./support/in-memory-unified-context-stores.js";
 
 const PROJECT_CONTEXTFS_SCHEMES = [
   "manuscript",
@@ -186,65 +191,15 @@ function buildUnifiedContextPort(input: {
   });
 }
 
-export interface InMemoryUnifiedContextStoreRegistry {
-  projectStores: Map<string, InMemoryContextDocumentStore>;
-  workStores: Map<string, InMemoryContextDocumentStore>;
-}
-
-export function createInMemoryUnifiedContextStoreRegistry(): InMemoryUnifiedContextStoreRegistry {
-  return { projectStores: new Map(), workStores: new Map() };
-}
-
-function projectStoreKey(
-  projectId: string,
-  userId: string,
-  scheme: ProjectContextFsScheme,
-): string {
-  return `${userId}:${projectId}:${scheme}`;
-}
-
-function workStoreKey(workId: string, scheme: WorkScopedContextFsScheme): string {
-  return `work:${workId}:${scheme}`;
-}
-
-function getInMemoryProjectStore(
-  registry: InMemoryUnifiedContextStoreRegistry,
-  projectId: string,
-  userId: string,
-  scheme: ProjectContextFsScheme,
-): InMemoryContextDocumentStore {
-  const key = projectStoreKey(projectId, userId, scheme);
-  let store = registry.projectStores.get(key);
-  if (!store) {
-    store = new InMemoryContextDocumentStore();
-    registry.projectStores.set(key, store);
-  }
-  return store;
-}
-
-function getInMemoryWorkStore(
-  registry: InMemoryUnifiedContextStoreRegistry,
-  workId: string,
-  scheme: WorkScopedContextFsScheme,
-): InMemoryContextDocumentStore {
-  const key = workStoreKey(workId, scheme);
-  let store = registry.workStores.get(key);
-  if (!store) {
-    store = new InMemoryContextDocumentStore();
-    registry.workStores.set(key, store);
-  }
-  return store;
-}
-
 function createInMemoryStoreResolvers(
   registry: InMemoryUnifiedContextStoreRegistry,
 ): ContextStoreResolvers {
   return {
     resolveProjectStore(projectId, userId, scheme) {
-      return getInMemoryProjectStore(registry, projectId, userId, scheme);
+      return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
     resolveWorkStore(workId, scheme) {
-      return getInMemoryWorkStore(registry, workId, scheme);
+      return getInMemoryWorkContextStore(registry, workId, scheme);
     },
   };
 }
