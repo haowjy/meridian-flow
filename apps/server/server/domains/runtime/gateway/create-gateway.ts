@@ -164,6 +164,10 @@ async function* yieldDrainedCancelEvents(
   return undefined;
 }
 
+type InFlightNextResult =
+  | { kind: "next"; result: IteratorResult<StreamEvent> }
+  | { kind: "drain_budget_exhausted" };
+
 /**
  * Read the next adapter event. Parent cancel after partial output races the
  * in-flight iterator.next() against a drain deadline so providers that ignore
@@ -174,16 +178,16 @@ async function boundedInFlightNext(
   waitForNext: Promise<IteratorResult<StreamEvent>>,
   iterator: AsyncIterator<StreamEvent>,
   deadlineMs = CANCEL_DRAIN_TIMEOUT_MS,
-): Promise<IteratorResult<StreamEvent>> {
+): Promise<InFlightNextResult> {
   const raced = await Promise.race([
     waitForNext.then((result) => ({ kind: "next" as const, result })),
     sleep(deadlineMs).then(() => ({ kind: "timeout" as const })),
   ]);
   if (raced.kind === "timeout") {
     await iterator.return?.().catch(() => undefined);
-    return { done: true, value: undefined };
+    return { kind: "drain_budget_exhausted" };
   }
-  return raced.result;
+  return { kind: "next", result: raced.result };
 }
 
 function attemptTimeoutRace(attemptSignal: AbortSignal): Promise<IteratorResult<StreamEvent>> {
@@ -197,12 +201,16 @@ function attemptTimeoutRace(attemptSignal: AbortSignal): Promise<IteratorResult<
   });
 }
 
+type NextStreamEventResult =
+  | { kind: "next"; result: IteratorResult<StreamEvent> }
+  | { kind: "drain_budget_exhausted" };
+
 async function nextStreamEvent(
   iterator: AsyncIterator<StreamEvent>,
   attemptSignal: AbortSignal,
   parentSignal: AbortSignal | undefined,
   emittedOutput: boolean,
-): Promise<IteratorResult<StreamEvent>> {
+): Promise<NextStreamEventResult> {
   if (parentSignal?.aborted && !emittedOutput) {
     throw parentSignal.reason ?? new Error("Request aborted");
   }
@@ -215,9 +223,9 @@ async function nextStreamEvent(
     }
 
     return await Promise.race([
-      waitForNext,
-      attemptTimeoutRace(attemptSignal),
-      new Promise<IteratorResult<StreamEvent>>((resolve) => {
+      waitForNext.then((result) => ({ kind: "next" as const, result })),
+      attemptTimeoutRace(attemptSignal).then((result) => ({ kind: "next" as const, result })),
+      new Promise<NextStreamEventResult>((resolve) => {
         parentSignal.addEventListener(
           "abort",
           () => {
@@ -229,7 +237,8 @@ async function nextStreamEvent(
     ]);
   }
 
-  return await Promise.race([waitForNext, attemptTimeoutRace(attemptSignal)]);
+  const result = await Promise.race([waitForNext, attemptTimeoutRace(attemptSignal)]);
+  return { kind: "next", result };
 }
 
 /**
@@ -272,12 +281,16 @@ async function* streamWithRetry(
       [Symbol.asyncIterator]();
     try {
       while (true) {
-        const next = await nextStreamEvent(
+        const nextResult = await nextStreamEvent(
           iterator,
           attemptSignal.signal,
           request.signal,
           emittedOutput,
         );
+        if (nextResult.kind === "drain_budget_exhausted") {
+          break;
+        }
+        const next = nextResult.result;
         if (next.done) {
           if (shouldDrainUserCancel(request, attemptSignal.signal, emittedOutput)) {
             const terminal = yield* yieldDrainedCancelEvents(iterator);

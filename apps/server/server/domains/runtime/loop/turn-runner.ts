@@ -67,6 +67,13 @@ type ChildRun = {
   background: boolean;
 };
 
+export class StaleConnectionTokenError extends Error {
+  constructor() {
+    super("connection_token_not_live");
+    this.name = "StaleConnectionTokenError";
+  }
+}
+
 export function createTurnRunner(deps: {
   orchestrator: RunTurnPort;
   hub: ThreadEventHub;
@@ -78,7 +85,16 @@ export function createTurnRunner(deps: {
   const running = new Map<ThreadId, RunningTurn>();
   /** connectionToken → threads with in-flight turns owned by that peer. */
   const threadsByConnectionToken = new Map<string, Set<ThreadId>>();
+  /** WS peers currently connected; a token not in this set cannot own a new turn. */
+  const liveConnectionTokens = new Set<string>();
   const childRuns = new Map<ThreadId, ChildRun>();
+
+  function assertConnectionTokenLive(connectionToken: string | undefined): void {
+    if (!connectionToken) return;
+    if (!liveConnectionTokens.has(connectionToken)) {
+      throw new StaleConnectionTokenError();
+    }
+  }
 
   function registerConnectionOwnership(
     connectionToken: string | undefined,
@@ -131,6 +147,14 @@ export function createTurnRunner(deps: {
   return {
     childRunRegistry,
 
+    registerLiveConnectionToken(connectionToken: string): void {
+      liveConnectionTokens.add(connectionToken);
+    },
+
+    unregisterLiveConnectionToken(connectionToken: string): void {
+      liveConnectionTokens.delete(connectionToken);
+    },
+
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
@@ -163,6 +187,8 @@ export function createTurnRunner(deps: {
         throw new Error(`Turn already running for thread: ${input.threadId}`);
       }
 
+      assertConnectionTokenLive(input.connectionToken);
+
       const controller = new AbortController();
       running.set(input.threadId, {
         controller,
@@ -171,6 +197,8 @@ export function createTurnRunner(deps: {
       registerConnectionOwnership(input.connectionToken, input.threadId);
 
       try {
+        assertConnectionTokenLive(input.connectionToken);
+
         const streamCursorBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
 
         const handle = await deps.orchestrator.runTurn({
