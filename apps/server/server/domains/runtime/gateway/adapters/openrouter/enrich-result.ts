@@ -4,24 +4,23 @@
  * Failures never reject a completed stream — the original result is returned.
  */
 import type { GenerateResult } from "../../domain/index.js";
+import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import { fetchOpenRouterGeneration } from "./generation.js";
 import { type OpenRouterProviderData, readOpenRouterProviderData } from "./provider-data.js";
 
-function hasBillableTokenUsage(usage: GenerateResult["usage"]): boolean {
-  return usage.inputTokens > 0 || usage.outputTokens > 0;
-}
-
-function withMissingUsageMetering(
+function withMissingUsageMeteringForOpenRouter(
   result: GenerateResult,
   providerData: OpenRouterProviderData,
 ): GenerateResult {
-  return {
+  return withMissingUsageMetering({
     ...result,
     providerData: {
       ...providerData,
-      meteringStatus: "missing_usage",
+      ...((result.providerData && typeof result.providerData === "object"
+        ? result.providerData
+        : {}) as OpenRouterProviderData),
     },
-  };
+  });
 }
 
 export async function enrichOpenRouterResult(
@@ -45,7 +44,7 @@ export async function enrichOpenRouterResult(
   const generationId = providerData.generationId;
   if (!generationId || !apiKey) {
     if (!hasBillableTokenUsage(result.usage)) {
-      return withMissingUsageMetering(result, providerData);
+      return withMissingUsageMeteringForOpenRouter(result, providerData);
     }
     return result;
   }
@@ -54,7 +53,7 @@ export async function enrichOpenRouterResult(
     const generation = await fetchOpenRouterGeneration(generationId, apiKey, baseUrl, signal);
     if (!generation) {
       if (!hasBillableTokenUsage(result.usage)) {
-        return withMissingUsageMetering(result, providerData);
+        return withMissingUsageMeteringForOpenRouter(result, providerData);
       }
       return result;
     }
@@ -72,7 +71,7 @@ export async function enrichOpenRouterResult(
     };
 
     if (!hasBillableTokenUsage(enrichedUsage) && generation.total_cost <= 0) {
-      return withMissingUsageMetering(result, {
+      return withMissingUsageMeteringForOpenRouter(result, {
         ...providerData,
         generationId,
         generation,
@@ -93,7 +92,7 @@ export async function enrichOpenRouterResult(
     };
   } catch {
     if (!hasBillableTokenUsage(result.usage)) {
-      return withMissingUsageMetering(result, providerData);
+      return withMissingUsageMeteringForOpenRouter(result, providerData);
     }
     return result;
   }

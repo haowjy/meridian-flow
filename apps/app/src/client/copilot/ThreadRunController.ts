@@ -97,6 +97,7 @@ export class ThreadRunController {
         data: {
           threadId,
           text,
+          connectionToken: this.transport.getConnectionToken(),
         },
       });
       if (options.optimisticUserTurnId && result.userTurnId) {

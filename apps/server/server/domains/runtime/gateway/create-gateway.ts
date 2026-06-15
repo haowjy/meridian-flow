@@ -58,6 +58,8 @@ import {
 } from "./routing.js";
 
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 120_000;
+/** Wall-clock bound for post-output cancel drain — providers that ignore abort must not hang forever. */
+const CANCEL_DRAIN_TIMEOUT_MS = 5_000;
 
 /** Abort-aware sleep used for exponential backoff between retry attempts. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -114,11 +116,27 @@ function shouldDrainUserCancel(
 
 async function drainCancelledAdapterEvents(
   iterator: AsyncIterator<StreamEvent>,
+  deadlineMs = CANCEL_DRAIN_TIMEOUT_MS,
 ): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
+  const deadline = Date.now() + deadlineMs;
+  let timedOut = false;
   try {
-    while (true) {
-      const drained = await iterator.next();
+    while (Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+
+      const raced = await Promise.race([
+        iterator.next().then((result) => ({ kind: "next" as const, result })),
+        sleep(remaining).then(() => ({ kind: "timeout" as const })),
+      ]);
+
+      if (raced.kind === "timeout") {
+        timedOut = true;
+        break;
+      }
+
+      const drained = raced.result;
       if (drained.done) break;
       events.push(drained.value);
       if (drained.value.type === "end" || drained.value.type === "error") break;
@@ -126,6 +144,11 @@ async function drainCancelledAdapterEvents(
   } catch {
     // Adapter already closed.
   }
+
+  if (timedOut) {
+    await iterator.return?.().catch(() => undefined);
+  }
+
   return events;
 }
 

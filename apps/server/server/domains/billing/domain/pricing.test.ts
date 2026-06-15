@@ -139,6 +139,22 @@ describe("model pricing", () => {
     expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
   });
 
+  it("surfaces missing_usage for aborted OpenAI partial streams without usage", () => {
+    const cost = computeModelCost({
+      provider: "openai",
+      model: "gpt-4o",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      providerData: { meteringStatus: "missing_usage" },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("0.000000");
+    expect(cost.millicredits).toBe("0");
+    expect(cost.priceSource).toBe("unknown");
+    expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
+    expect(cost.pricingSnapshot.sourceDetail).toBe("openai.meteringStatus.missing_usage");
+  });
+
   it("falls back to pinned rates when provider-reported cost is absent", () => {
     const cost = computeModelCost({
       provider: "openrouter",

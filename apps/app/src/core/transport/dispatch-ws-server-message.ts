@@ -22,7 +22,7 @@ export type WsServerMessageDispatchDeps = {
   ) => void;
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void | Promise<void>;
   send: (payload: unknown) => void;
-  onConnected: () => void;
+  onConnected: (connectionToken: string) => void;
   onThreadError: (threadId: string, error: Error) => void;
   onGlobalError: (error: Error) => void;
 };
@@ -59,7 +59,7 @@ export function dispatchWsServerMessage(
 ): void {
   switch (message.type) {
     case "connected":
-      deps.onConnected();
+      deps.onConnected(message.connectionToken);
       return;
 
     case "subscribed": {

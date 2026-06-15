@@ -377,4 +377,33 @@ describe("model-gateway openai-compatible pipeline", () => {
     }
     expect(events.some((event) => event.type === "error")).toBe(false);
   });
+
+  it("completes post-output parent cancel when the provider ignores abort during drain", async () => {
+    const gw = gateway();
+    const controller = new AbortController();
+    const events: StreamEvent[] = [];
+    const consume = (async () => {
+      for await (const event of gw.stream({
+        messages: [user("hang cancel drain")],
+        signal: controller.signal,
+      })) {
+        events.push(event);
+      }
+    })();
+
+    const deadline = Date.now() + 2_000;
+    while (!events.some((event) => event.type === "text.delta") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(events.some((event) => event.type === "text.delta")).toBe(true);
+
+    controller.abort();
+
+    const hangGuard = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("cancel drain hung past bound")), 10_000);
+    });
+    await Promise.race([consume, hangGuard]);
+
+    expect(events.some((event) => event.type === "text.delta")).toBe(true);
+  });
 });

@@ -82,4 +82,10 @@ export interface ThreadTransport {
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;
+
+  /**
+   * Token from the latest server `connected` frame on this transport's socket.
+   * Sent with message POSTs so disconnect-cancel only affects the owning peer.
+   */
+  getConnectionToken(): string | undefined;
 }

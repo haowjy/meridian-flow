@@ -242,6 +242,12 @@ function readOpenRouterProviderData(providerData: unknown): {
   };
 }
 
+function readMeteringStatusFromProviderData(providerData: unknown): string | undefined {
+  if (!providerData || typeof providerData !== "object") return undefined;
+  const meteringStatus = (providerData as Record<string, unknown>).meteringStatus;
+  return typeof meteringStatus === "string" ? meteringStatus : undefined;
+}
+
 function readOpenRouterReportedCostUsd(
   provider: string,
   providerData: unknown,
@@ -268,7 +274,7 @@ function computeMissingUsageCost(input: {
       model: input.model,
       source: "unknown",
       sourceLayer: "provider_reported",
-      sourceDetail: "openrouter.meteringStatus.missing_usage",
+      sourceDetail: `${input.provider}.meteringStatus.missing_usage`,
       usageMeteringStatus: "missing_usage",
       unit: "unmetered",
     },
@@ -294,6 +300,14 @@ export function computeModelCost(input: {
   providerData?: unknown;
   rateSource?: ModelTokenRateSource;
 }): ComputedModelCost {
+  if (readMeteringStatusFromProviderData(input.providerData) === "missing_usage") {
+    return computeMissingUsageCost({
+      provider: input.provider,
+      model: input.model,
+      providerData: input.providerData,
+    });
+  }
+
   const openRouterData =
     input.provider === "openrouter" ? readOpenRouterProviderData(input.providerData) : {};
 

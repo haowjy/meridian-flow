@@ -1,7 +1,11 @@
 import type { AGUIEvent } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
-import { useEffect, useMemo, useState } from "react";
-import { sendThreadMessage, subscribeThreadEvents } from "@/client/phase5-api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  sendThreadMessage,
+  subscribeThreadEvents,
+  type ThreadEventSubscription,
+} from "@/client/phase5-api";
 
 type ChatMessage = {
   id: string;
@@ -20,6 +24,7 @@ export function ChatPane({ threadId }: ChatPaneProps) {
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const subscriptionRef = useRef<ThreadEventSubscription | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -27,7 +32,7 @@ export function ChatPane({ threadId }: ChatPaneProps) {
     setStatus("connecting");
     setError(null);
 
-    const unsubscribe = subscribeThreadEvents(threadId, {
+    const subscription = subscribeThreadEvents(threadId, {
       onStatus: (nextStatus) => {
         if (active) setStatus(nextStatus);
       },
@@ -38,10 +43,12 @@ export function ChatPane({ threadId }: ChatPaneProps) {
         if (active) setMessages((current) => applyAssistantEvent(current, event));
       },
     });
+    subscriptionRef.current = subscription;
 
     return () => {
       active = false;
-      unsubscribe();
+      subscription.close();
+      subscriptionRef.current = null;
     };
   }, [threadId]);
 
@@ -58,7 +65,9 @@ export function ChatPane({ threadId }: ChatPaneProps) {
     setMessages((current) => [...current, { id: `user-${Date.now()}`, role: "user", text }]);
 
     try {
-      await sendThreadMessage(threadId, text);
+      await sendThreadMessage(threadId, text, {
+        connectionToken: subscriptionRef.current?.getConnectionToken(),
+      });
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : String(sendError));
     } finally {

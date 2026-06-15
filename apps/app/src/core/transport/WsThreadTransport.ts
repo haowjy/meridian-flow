@@ -42,6 +42,7 @@ export class WsThreadTransport implements ThreadTransport {
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
   private wantsConnection = false;
   private serverConnected = false;
+  private connectionToken: string | undefined;
 
   constructor(options: WsThreadTransportOptions = {}) {
     this.socket = new SocketLifecycleController(
@@ -50,10 +51,12 @@ export class WsThreadTransport implements ThreadTransport {
         wantsConnection: () => this.wantsConnection,
         onOpen: () => {
           this.serverConnected = false;
+          this.connectionToken = undefined;
         },
         onMessage: (data) => this.handleMessage(data),
         onClose: (event) => {
           this.serverConnected = false;
+          this.connectionToken = undefined;
           for (const subscription of this.subscriptions.values()) {
             subscription.serverSubscribed = false;
             for (const handler of subscription.handlers) {
@@ -77,6 +80,7 @@ export class WsThreadTransport implements ThreadTransport {
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
     this.serverConnected = false;
+    this.connectionToken = undefined;
     this.socket.teardown();
     this.subscriptions.clearServerSubscribed();
   }
@@ -132,6 +136,10 @@ export class WsThreadTransport implements ThreadTransport {
     return cancelTurn({ data: { threadId, turnId } });
   }
 
+  getConnectionToken(): string | undefined {
+    return this.connectionToken;
+  }
+
   private ensureConnected(): void {
     this.wantsConnection = true;
     this.socket.ensureConnected();
@@ -149,7 +157,8 @@ export class WsThreadTransport implements ThreadTransport {
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
       handleGap: (gap) => this.handleGap(gap),
       send: (payload) => this.send(payload),
-      onConnected: () => {
+      onConnected: (connectionToken) => {
+        this.connectionToken = connectionToken;
         this.socket.resetBackoff();
         this.serverConnected = true;
         this.publishConnectionState({ kind: "connected" });

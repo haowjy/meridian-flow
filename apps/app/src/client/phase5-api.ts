@@ -49,6 +49,7 @@ export async function readThreadContext(
 export async function sendThreadMessage(
   threadId: string,
   text: string,
+  options?: { connectionToken?: string },
 ): Promise<SendMessageResponse> {
   const response = await fetch(
     `${serverOrigin()}/api/threads/${encodeURIComponent(threadId)}/messages`,
@@ -56,7 +57,10 @@ export async function sendThreadMessage(
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        ...(options?.connectionToken ? { connectionToken: options.connectionToken } : {}),
+      }),
     },
   );
   return readJson<SendMessageResponse>(response);
@@ -68,8 +72,17 @@ export type ThreadEventHandlers = {
   onError(error: string): void;
 };
 
-export function subscribeThreadEvents(threadId: string, handlers: ThreadEventHandlers): () => void {
+export type ThreadEventSubscription = {
+  close: () => void;
+  getConnectionToken: () => string | undefined;
+};
+
+export function subscribeThreadEvents(
+  threadId: string,
+  handlers: ThreadEventHandlers,
+): ThreadEventSubscription {
   const socket = new WebSocket(serverWebSocketUrl("/api/threads/ws"));
+  let connectionToken: string | undefined;
 
   socket.addEventListener("open", () => {
     handlers.onStatus("connected");
@@ -79,13 +92,19 @@ export function subscribeThreadEvents(threadId: string, handlers: ThreadEventHan
   socket.addEventListener("message", (message) => {
     const parsed = parseWsServerMessage(String(message.data));
     if (!parsed) return;
+    if (parsed.type === "connected") {
+      connectionToken = parsed.connectionToken;
+    }
     handleThreadFrame(socket, parsed, handlers);
   });
 
   socket.addEventListener("close", () => handlers.onStatus("closed"));
   socket.addEventListener("error", () => handlers.onError("thread websocket error"));
 
-  return () => socket.close();
+  return {
+    close: () => socket.close(),
+    getConnectionToken: () => connectionToken,
+  };
 }
 
 function handleThreadFrame(

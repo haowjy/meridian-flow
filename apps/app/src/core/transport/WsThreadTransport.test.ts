@@ -657,4 +657,19 @@ describe("WsThreadTransport", () => {
       data: { threadId: "thread_1", turnId: "turn_1" },
     });
   });
+
+  it("captures connectionToken from the server connected frame", () => {
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
+
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpen();
+    expect(transport.getConnectionToken()).toBeUndefined();
+
+    socket.emitConnected("conn-owner-abc");
+    expect(transport.getConnectionToken()).toBe("conn-owner-abc");
+
+    socket.emitClose(1006, "network down");
+    expect(transport.getConnectionToken()).toBeUndefined();
+  });
 });
