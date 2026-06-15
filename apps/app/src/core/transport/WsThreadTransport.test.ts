@@ -672,4 +672,16 @@ describe("WsThreadTransport", () => {
     socket.emitClose(1006, "network down");
     expect(transport.getConnectionToken()).toBeUndefined();
   });
+
+  it("resolves awaitConnectionToken after the connected frame arrives", async () => {
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
+
+    const tokenPromise = transport.awaitConnectionToken();
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpen();
+    socket.emitConnected("conn-await-test");
+
+    await expect(tokenPromise).resolves.toBe("conn-await-test");
+  });
 });

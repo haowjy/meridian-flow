@@ -240,7 +240,7 @@ describe("cancel billing", () => {
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
-  it("cancels the in-flight turn when the owning WebSocket disconnects", async () => {
+  it("cancels the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
     const gateway = createMockGateway(mock);
     const { thread, creditLedger, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
@@ -306,9 +306,6 @@ describe("cancel billing", () => {
     const turnId = runner.getRunningTurnId(thread.id);
     expect(turnId).not.toBeNull();
 
-    await ownerSession.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: thread.id, lastSeq: "0" }),
-    );
     ownerSession.onClose();
     await startPromise;
     const deadline = Date.now() + 5_000;
@@ -400,6 +397,73 @@ describe("cancel billing", () => {
       JSON.stringify({ type: "subscribe", threadId: thread.id, lastSeq: "0" }),
     );
     spectatorSession.onClose();
+
+    expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
+
+    await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
+    await startPromise;
+  });
+
+  it("does not disconnect-cancel tokenless runs from a subscribed peer", async () => {
+    const gateway = createMockGateway(mock);
+    const { thread, runner, hub, repos } = await setup(gateway);
+    const app = createInMemoryAppServices();
+    app.gateway = gateway;
+    app.threadRepos = repos;
+    app.repos = repos;
+    app.threadEventHub = hub;
+    app.hub = hub;
+    app.runner = runner;
+    app.threadRuntime = {
+      async requireOwnedThread(threadId, userId) {
+        if (threadId !== thread.id || userId !== "user-1") throw new Error("not found");
+        return {
+          ...thread,
+          workId: "work-1",
+          currentAgentId: null,
+          activeLeafTurnId: null,
+          nextSeq: 0n,
+          status: "active",
+        };
+      },
+      async liveState() {
+        return {
+          threadId: thread.id,
+          status: "idle",
+          runningTurnId: runner.getRunningTurnId(thread.id),
+          currentAgent: null,
+          nextSeq: "1",
+          resumeAfterSeq: "0",
+        };
+      },
+      async sendMessage() {
+        throw new Error("not used");
+      },
+      async journalEvents() {
+        return [];
+      },
+    };
+
+    const startPromise = runner.startTurn({
+      threadId: thread.id,
+      userText: "cancel billing",
+    });
+    await waitForStreamStart();
+    const turnId = runner.getRunningTurnId(thread.id);
+    expect(turnId).not.toBeNull();
+
+    const peer: WsPeer = {
+      request: new Request("https://app.localhost/ws-unrelated"),
+      context: { app, userId: "user-1" },
+      send: () => {},
+      close: () => {},
+    };
+    const session = createThreadWebSocketSession(peer);
+    session.open();
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", threadId: thread.id, lastSeq: "0" }),
+    );
+    session.onClose();
 
     expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
 

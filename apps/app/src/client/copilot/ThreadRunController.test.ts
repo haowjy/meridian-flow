@@ -34,10 +34,24 @@ class FakeThreadTransport implements ThreadTransport {
     turnId: "turn_1",
     status: "cancelled",
   });
-  connectionToken: string | undefined = undefined;
+  connectionToken: string | undefined = "conn-test";
+  private connectionTokenWaiters = new Set<(token: string) => void>();
 
   getConnectionToken(): string | undefined {
     return this.connectionToken;
+  }
+
+  awaitConnectionToken(): Promise<string> {
+    if (this.connectionToken) return Promise.resolve(this.connectionToken);
+    return new Promise((resolve) => {
+      this.connectionTokenWaiters.add(resolve);
+    });
+  }
+
+  setConnectionToken(token: string): void {
+    this.connectionToken = token;
+    for (const resolve of this.connectionTokenWaiters) resolve(token);
+    this.connectionTokenWaiters.clear();
   }
 
   connect(): void {}
@@ -253,9 +267,35 @@ function deferred<T>() {
 }
 
 describe("ThreadRunController", () => {
+  it("awaits the server connection token before submit", async () => {
+    const transport = new FakeThreadTransport();
+    transport.connectionToken = undefined;
+    const actions = makeActions();
+    const appendUserMessageFn = vi.fn().mockResolvedValue({
+      assistantTurnId: "turn_1",
+      streamCursor: "42",
+    });
+    const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
+
+    const submitPromise = controller.submit("thread_1", "Hello");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(appendUserMessageFn).not.toHaveBeenCalled();
+
+    transport.setConnectionToken("conn-late");
+    await submitPromise;
+
+    expect(appendUserMessageFn).toHaveBeenCalledWith({
+      data: {
+        threadId: "thread_1",
+        text: "Hello",
+        connectionToken: "conn-late",
+      },
+    });
+  });
+
   it("appends the user message, subscribes from streamCursor, applies events, and tears down on RUN_FINISHED", async () => {
     const transport = new FakeThreadTransport();
-    transport.connectionToken = "conn-test";
+    transport.setConnectionToken("conn-test");
     const actions = makeActions();
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",

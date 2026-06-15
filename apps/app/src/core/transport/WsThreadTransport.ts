@@ -140,6 +140,46 @@ export class WsThreadTransport implements ThreadTransport {
     return this.connectionToken;
   }
 
+  awaitConnectionToken(): Promise<string> {
+    const existing = this.connectionToken;
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise((resolve, reject) => {
+      const timeoutMs = 30_000;
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out waiting for WebSocket connection token"));
+      }, timeoutMs);
+
+      const onState = (state: ConnectionState) => {
+        const token = this.connectionToken;
+        if (token && state.kind === "connected") {
+          cleanup();
+          resolve(token);
+          return;
+        }
+        if (state.kind === "terminal") {
+          cleanup();
+          reject(new Error(state.reason || "WebSocket connection failed"));
+        }
+      };
+
+      const removeListener = this.onConnectionState(onState);
+      this.ensureConnected();
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        removeListener();
+      };
+
+      const token = this.connectionToken;
+      if (token && this.serverConnected) {
+        cleanup();
+        resolve(token);
+      }
+    });
+  }
+
   private ensureConnected(): void {
     this.wantsConnection = true;
     this.socket.ensureConnected();

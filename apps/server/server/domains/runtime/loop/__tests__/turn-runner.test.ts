@@ -84,4 +84,46 @@ describe("createTurnRunner", () => {
     expect(foreground.signal.aborted).toBe(true);
     expect(background.signal.aborted).toBe(false);
   });
+
+  it("cancels only turns owned by the disconnecting connection token", async () => {
+    let runSignal: AbortSignal | undefined;
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn({ signal }) {
+          runSignal = signal;
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: (async function* hangForever() {
+              await new Promise(() => {});
+            })(),
+          };
+        },
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: {
+        headSeq: async () => 0n,
+      } as never,
+      repos: {
+        turns: {
+          findById: async () => null,
+        } as never,
+      },
+    });
+
+    void runner.startTurn({
+      threadId: "thread-owned",
+      userText: "owned",
+      connectionToken: "token-a",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runner.getRunningTurnId("thread-owned")).toBe("turn-assistant");
+
+    runner.cancelTurnsOwnedByConnectionToken("token-b");
+    expect(runSignal?.aborted).toBe(false);
+
+    runner.cancelTurnsOwnedByConnectionToken("token-a");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runSignal?.aborted).toBe(true);
+  });
 });

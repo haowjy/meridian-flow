@@ -76,7 +76,33 @@ export function createTurnRunner(deps: {
 }) {
   const eventSink = deps.eventSink;
   const running = new Map<ThreadId, RunningTurn>();
+  /** connectionToken → threads with in-flight turns owned by that peer. */
+  const threadsByConnectionToken = new Map<string, Set<ThreadId>>();
   const childRuns = new Map<ThreadId, ChildRun>();
+
+  function registerConnectionOwnership(
+    connectionToken: string | undefined,
+    threadId: ThreadId,
+  ): void {
+    if (!connectionToken) return;
+    let owned = threadsByConnectionToken.get(connectionToken);
+    if (!owned) {
+      owned = new Set();
+      threadsByConnectionToken.set(connectionToken, owned);
+    }
+    owned.add(threadId);
+  }
+
+  function unregisterConnectionOwnership(
+    connectionToken: string | undefined,
+    threadId: ThreadId,
+  ): void {
+    if (!connectionToken) return;
+    const owned = threadsByConnectionToken.get(connectionToken);
+    if (!owned) return;
+    owned.delete(threadId);
+    if (owned.size === 0) threadsByConnectionToken.delete(connectionToken);
+  }
 
   const childRunRegistry: ChildRunRegistry = {
     registerChild(parentThreadId, childThreadId, controller) {
@@ -113,6 +139,21 @@ export function createTurnRunner(deps: {
       return running.get(threadId)?.connectionToken;
     },
 
+    cancelTurnsOwnedByConnectionToken(connectionToken: string): void {
+      const ownedThreads = threadsByConnectionToken.get(connectionToken);
+      if (!ownedThreads) return;
+      for (const threadId of [...ownedThreads]) {
+        const active = running.get(threadId);
+        if (!active || active.connectionToken !== connectionToken) continue;
+        if (active.assistantTurnId) {
+          void this.cancel(threadId, active.assistantTurnId);
+        } else {
+          childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
+          active.controller.abort();
+        }
+      }
+    },
+
     async startTurn(input: {
       threadId: ThreadId;
       userText: string;
@@ -127,6 +168,7 @@ export function createTurnRunner(deps: {
         controller,
         connectionToken: input.connectionToken,
       });
+      registerConnectionOwnership(input.connectionToken, input.threadId);
 
       try {
         const streamCursorBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
@@ -161,6 +203,7 @@ export function createTurnRunner(deps: {
               },
             });
           } finally {
+            unregisterConnectionOwnership(input.connectionToken, input.threadId);
             running.delete(input.threadId);
             await deps.helperResultDelivery?.flush(input.threadId);
             childRunRegistry.abortChildrenOf(input.threadId);
@@ -173,6 +216,7 @@ export function createTurnRunner(deps: {
           streamCursor: streamCursorBeforeStart,
         };
       } catch (error) {
+        unregisterConnectionOwnership(input.connectionToken, input.threadId);
         running.delete(input.threadId);
         throw error;
       }

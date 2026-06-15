@@ -165,11 +165,38 @@ async function* yieldDrainedCancelEvents(
 }
 
 /**
- * Read the next adapter event. Parent cancel after partial output waits for the
- * adapter's terminal partial `end` without abort-racing (that orphans in-flight
- * iterator.next() calls). Attempt timeouts still hard-interrupt via a narrow
+ * Read the next adapter event. Parent cancel after partial output races the
+ * in-flight iterator.next() against a drain deadline so providers that ignore
+ * abort cannot hang forever. Attempt timeouts still hard-interrupt via a narrow
  * race that only rejects on ModelAttemptTimeoutError.
  */
+async function boundedInFlightNext(
+  waitForNext: Promise<IteratorResult<StreamEvent>>,
+  iterator: AsyncIterator<StreamEvent>,
+  deadlineMs = CANCEL_DRAIN_TIMEOUT_MS,
+): Promise<IteratorResult<StreamEvent>> {
+  const raced = await Promise.race([
+    waitForNext.then((result) => ({ kind: "next" as const, result })),
+    sleep(deadlineMs).then(() => ({ kind: "timeout" as const })),
+  ]);
+  if (raced.kind === "timeout") {
+    await iterator.return?.().catch(() => undefined);
+    return { done: true, value: undefined };
+  }
+  return raced.result;
+}
+
+function attemptTimeoutRace(attemptSignal: AbortSignal): Promise<IteratorResult<StreamEvent>> {
+  return new Promise<IteratorResult<StreamEvent>>((_, reject) => {
+    const onAttemptAbort = () => {
+      const timeout = getModelAttemptTimeout(attemptSignal);
+      if (timeout) reject(timeout);
+    };
+    if (attemptSignal.aborted) onAttemptAbort();
+    else attemptSignal.addEventListener("abort", onAttemptAbort, { once: true });
+  });
+}
+
 async function nextStreamEvent(
   iterator: AsyncIterator<StreamEvent>,
   attemptSignal: AbortSignal,
@@ -182,17 +209,27 @@ async function nextStreamEvent(
 
   const waitForNext = iterator.next();
 
-  return await Promise.race([
-    waitForNext,
-    new Promise<IteratorResult<StreamEvent>>((_, reject) => {
-      const onAttemptAbort = () => {
-        const timeout = getModelAttemptTimeout(attemptSignal);
-        if (timeout) reject(timeout);
-      };
-      if (attemptSignal.aborted) onAttemptAbort();
-      else attemptSignal.addEventListener("abort", onAttemptAbort, { once: true });
-    }),
-  ]);
+  if (emittedOutput && parentSignal) {
+    if (parentSignal.aborted) {
+      return boundedInFlightNext(waitForNext, iterator);
+    }
+
+    return await Promise.race([
+      waitForNext,
+      attemptTimeoutRace(attemptSignal),
+      new Promise<IteratorResult<StreamEvent>>((resolve) => {
+        parentSignal.addEventListener(
+          "abort",
+          () => {
+            void boundedInFlightNext(waitForNext, iterator).then(resolve);
+          },
+          { once: true },
+        );
+      }),
+    ]);
+  }
+
+  return await Promise.race([waitForNext, attemptTimeoutRace(attemptSignal)]);
 }
 
 /**

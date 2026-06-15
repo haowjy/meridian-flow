@@ -93,11 +93,12 @@ export class ThreadRunController {
     const token = this.startRun(threadId, { pruneAbandonedTurn: true });
 
     try {
+      const connectionToken = await this.transport.awaitConnectionToken();
       const result = await this.appendUserMessageFn({
         data: {
           threadId,
           text,
-          connectionToken: this.transport.getConnectionToken(),
+          connectionToken,
         },
       });
       if (options.optimisticUserTurnId && result.userTurnId) {
