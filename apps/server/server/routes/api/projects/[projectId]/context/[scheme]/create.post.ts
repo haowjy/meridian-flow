@@ -1,5 +1,6 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
 import type { ContextError } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
@@ -46,8 +47,7 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 502, message: error.message });
   }
 }
-const toUri = (scheme: ProjectContextTreeScheme, path: string) =>
-  `${scheme}://${path.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+const toUri = projectBrowseContextUri;
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";

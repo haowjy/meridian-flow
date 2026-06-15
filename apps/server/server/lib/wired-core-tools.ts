@@ -115,6 +115,11 @@ function withTouchRecording(
       if (result.ok) recordTouchInBackground(deps, result.value.documentId, ctx);
       return result;
     },
+    async edit(uri, transform, options) {
+      const result = await port.edit(uri, transform, options);
+      if (result.ok) recordTouchInBackground(deps, result.value.documentId, ctx);
+      return result;
+    },
     list: (uri) => port.list(uri),
     mkdir: (uri, options) => port.mkdir(uri, options),
     search: (query, uri) => port.search(query, uri),
@@ -167,13 +172,21 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const port = withTouchRecording(portOrError, deps, ctx);
-      const readResult = await port.read(path);
-      if (!readResult.ok) return toolError(readResult.error);
-      const rangesOrError = resolveEditRanges(readResult.value.content, edits);
-      if ("message" in rangesOrError) return toolError(rangesOrError);
-      const content = applyEditRanges(readResult.value.content, rangesOrError);
-      const writeResult = await port.write(path, content, { origin: agentOrigin(ctx) });
-      if (!writeResult.ok) return toolError(writeResult.error);
+      let rangeError: { message: string } | null = null;
+      const editResult = await port.edit(
+        path,
+        (content) => {
+          const rangesOrError = resolveEditRanges(content, edits);
+          if ("message" in rangesOrError) {
+            rangeError = rangesOrError;
+            return content;
+          }
+          return applyEditRanges(content, rangesOrError);
+        },
+        { origin: agentOrigin(ctx) },
+      );
+      if (rangeError) return toolError(rangeError);
+      if (!editResult.ok) return toolError(editResult.error);
       return { path, appliedEdits: edits.length };
     },
     write: async (input: unknown, ctx: ToolHandlerContext) => {

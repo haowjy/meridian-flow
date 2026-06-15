@@ -1,5 +1,6 @@
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
+import { browseLayerContextScheme } from "../domains/context/browse-layer-scheme.js";
 import type { ContextError, UnifiedContextPortFactory } from "../domains/context/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
@@ -37,14 +38,8 @@ function contextErrorToHttp(error: ContextError): never {
   }
 }
 
-function routeSchemeToContextScheme(
-  scheme: ProjectContextTreeScheme,
-): ProjectContextTreeScheme | "manuscript" {
-  return scheme === "fs1" ? "manuscript" : scheme;
-}
-
 function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): string {
-  const contextScheme = routeSchemeToContextScheme(scheme);
+  const contextScheme = browseLayerContextScheme(scheme);
   const segments = path
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
@@ -67,7 +62,7 @@ export function resolveContextReadPath(
   const explicitScheme = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/);
   let uri: string;
   if (explicitScheme) {
-    const expectedScheme = routeSchemeToContextScheme(scheme);
+    const expectedScheme = browseLayerContextScheme(scheme);
     if (
       explicitScheme[1] !== expectedScheme &&
       !(scheme === "fs1" && explicitScheme[1] === "manuscript")
@@ -79,7 +74,8 @@ export function resolveContextReadPath(
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
-  const normalizedPath = uri.slice(`${scheme}://`.length);
+  const contextScheme = browseLayerContextScheme(scheme);
+  const normalizedPath = uri.slice(`${contextScheme}://`.length);
   const segments = normalizedPath.split("/").filter(Boolean);
   if (!segments.at(-1))
     throw createError({ statusCode: 400, message: "`path` must name a non-root file" });

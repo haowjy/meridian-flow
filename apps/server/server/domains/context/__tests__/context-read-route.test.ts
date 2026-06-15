@@ -55,6 +55,10 @@ class TestContextPort implements ContextPort {
     return ok({});
   }
 
+  async edit() {
+    return ok({});
+  }
+
   async writeBinary() {
     return ok({});
   }
@@ -93,6 +97,10 @@ describe("context read route core", () => {
     expect(resolveContextReadPath("work", "/drafts/a.py")).toMatchObject({
       uri: "work://drafts/a.py",
       path: "/drafts/a.py",
+    });
+    expect(resolveContextReadPath("fs1", "/chapter-1.md")).toMatchObject({
+      uri: "manuscript://chapter-1.md",
+      path: "/chapter-1.md",
     });
   });
 

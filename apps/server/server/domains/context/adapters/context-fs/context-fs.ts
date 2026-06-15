@@ -11,6 +11,7 @@ import { Ok, type Result } from "../../../../shared/result.js";
 import type { SyncError } from "../../../collab/ports/document-sync.js";
 import {
   type ContextCollabDocumentSync,
+  editCollabMarkdown,
   ensureCollabMirror,
   writeCollabMarkdown,
 } from "../../context/collab-document-sync.js";
@@ -220,7 +221,62 @@ export class ContextFS implements ContextSchemeAdapter {
       markdown: write.markdown,
       filetype,
     });
-    return Ok({ documentId: persisted.id });
+    return Ok({
+      documentId: persisted.id,
+      markdown: write.markdown,
+      updateSeq: write.updateSeq,
+    });
+  }
+
+  async edit(
+    path: string,
+    transform: (content: string) => string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
+    const { dir, filename } = splitPath(path);
+    if (!filename) {
+      return { ok: false, error: { code: "io_error", message: "Cannot edit source root" } };
+    }
+    const folderId = await this.findFolderId(dir);
+    if (folderId === MISSING) {
+      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
+    }
+
+    const { name, extension } = parseFilename(filename);
+    const doc = await this.store.findDocument(folderId, name, extension);
+    if (!doc) {
+      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
+    }
+    if (doc.fileType !== null) {
+      return {
+        ok: false,
+        error: { code: "io_error", message: `Cannot edit binary file as markdown: ${path}` },
+      };
+    }
+
+    const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
+    const edited = await editCollabMarkdown({
+      documentSync: this.documentSync,
+      documentId: doc.id,
+      seedMarkdown: doc.markdown,
+      filetype,
+      transform,
+      provenance: options?.origin,
+    });
+    if (!edited.ok) return edited;
+
+    const persisted = await this.store.upsertDocument({
+      folderId,
+      name,
+      extension,
+      markdown: edited.markdown,
+      filetype,
+    });
+    return Ok({
+      documentId: persisted.id,
+      markdown: edited.markdown,
+      updateSeq: edited.updateSeq,
+    });
   }
 
   async writeBinary(

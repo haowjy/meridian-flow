@@ -194,6 +194,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.write(path, content, options));
     },
 
+    async edit(
+      uri: string,
+      transform: (content: string) => string,
+      options?: ContextWriteOptions,
+    ): Promise<Result<ContextWriteResult, ContextError>> {
+      const r = await resolve(uri);
+      if (!r.ok) return r;
+      const { adapter, path, canonical } = r.value;
+      if (!adapter.capabilities.writable) {
+        return Err({ code: "permission_denied", uri: canonical });
+      }
+      return callAdapter(canonical, () => adapter.edit(path, transform, options));
+    },
+
     async writeBinary(
       uri: string,
       options: ContextWriteBinaryOptions,
