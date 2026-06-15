@@ -7,6 +7,7 @@ import {
   readBody,
   setResponseStatus,
 } from "nitro/h3";
+import { StaleConnectionTokenError } from "../../../../domains/runtime/loop/turn-runner.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event): Promise<SendMessageResponse> => {
@@ -18,17 +19,24 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
   }
 
   await app.threadRuntime.requireOwnedThread(threadId, user.userId);
-  const result = await app.runner.startTurn({
-    threadId,
-    userText: body.text,
-    connectionToken: body.connectionToken,
-  });
-  setResponseStatus(event, 202);
-  return {
-    threadId,
-    userTurnId: result.userTurnId,
-    assistantTurnId: result.assistantTurnId,
-    streamCursor: result.streamCursor,
-    status: "accepted",
-  };
+  try {
+    const result = await app.runner.startTurn({
+      threadId,
+      userText: body.text,
+      connectionToken: body.connectionToken,
+    });
+    setResponseStatus(event, 202);
+    return {
+      threadId,
+      userTurnId: result.userTurnId,
+      assistantTurnId: result.assistantTurnId,
+      streamCursor: result.streamCursor,
+      status: "accepted",
+    };
+  } catch (error) {
+    if (error instanceof StaleConnectionTokenError) {
+      throw createError({ statusCode: 409, message: error.message });
+    }
+    throw error;
+  }
 });

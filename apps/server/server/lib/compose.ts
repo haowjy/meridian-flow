@@ -454,6 +454,8 @@ export function createInMemoryAppServices(): AppServices {
       getRunningConnectionToken() {
         return undefined;
       },
+      registerLiveConnectionToken() {},
+      unregisterLiveConnectionToken() {},
       cancelTurnsOwnedByConnectionToken() {},
       async startTurn() {
         throw new Error("in-memory turn runner is not implemented");

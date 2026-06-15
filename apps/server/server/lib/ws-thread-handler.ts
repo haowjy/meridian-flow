@@ -155,10 +155,17 @@ async function subscribeThread(peer: WsPeer, threadId: ThreadId, lastSeq?: strin
 function disposeSubscriptions(peer: WsPeer): void {
   const state = getPeerState(peer);
   state.closed = true;
+  unregisterPeerConnectionToken(peer);
   cancelRunningTurnsForPeer(peer);
   for (const unsubscribe of state.subscriptions.values()) unsubscribe();
   state.subscriptions.clear();
   state.liveWatermark.clear();
+}
+
+function unregisterPeerConnectionToken(peer: WsPeer): void {
+  const auth = peer.context;
+  if (!auth) return;
+  auth.app.runner.unregisterLiveConnectionToken?.(getPeerState(peer).connectionToken);
 }
 
 function cancelRunningTurnsForPeer(peer: WsPeer): void {
@@ -178,13 +185,18 @@ export function createThreadWebSocketSession(peer: WsPeer) {
         return false;
       }
 
-      return sendFrame(peer, {
+      const connectionToken = getPeerState(peer).connectionToken;
+      const sent = sendFrame(peer, {
         type: "connected",
         userId: auth.userId,
         scope: { type: "standalone" },
         serverVersion: SERVER_VERSION,
-        connectionToken: getPeerState(peer).connectionToken,
+        connectionToken,
       });
+      if (sent) {
+        auth.app.runner.registerLiveConnectionToken?.(connectionToken);
+      }
+      return sent;
     },
 
     async onMessage(raw: string | ArrayBuffer) {

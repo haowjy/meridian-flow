@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 
-import { createTurnRunner } from "../turn-runner.js";
+import { createTurnRunner, StaleConnectionTokenError } from "../turn-runner.js";
 
 async function* emptyEvents() {
   // Empty async generator for turn-runner tests.
@@ -111,6 +111,7 @@ describe("createTurnRunner", () => {
       },
     });
 
+    runner.registerLiveConnectionToken("token-a");
     void runner.startTurn({
       threadId: "thread-owned",
       userText: "owned",
@@ -125,5 +126,43 @@ describe("createTurnRunner", () => {
     runner.cancelTurnsOwnedByConnectionToken("token-a");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(runSignal?.aborted).toBe(true);
+  });
+
+  it("refuses to start a turn when the connection token closed before startTurn", async () => {
+    let runTurnCalled = false;
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn() {
+          runTurnCalled = true;
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: emptyEvents(),
+          };
+        },
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: {
+        headSeq: async () => 0n,
+      } as never,
+      repos: {
+        turns: {
+          findById: async () => null,
+        } as never,
+      },
+    });
+
+    runner.registerLiveConnectionToken("token-stale");
+    runner.unregisterLiveConnectionToken("token-stale");
+
+    await expect(
+      runner.startTurn({
+        threadId: "thread-stale",
+        userText: "late",
+        connectionToken: "token-stale",
+      }),
+    ).rejects.toBeInstanceOf(StaleConnectionTokenError);
+    expect(runTurnCalled).toBe(false);
+    expect(runner.getRunningTurnId("thread-stale")).toBeNull();
   });
 });

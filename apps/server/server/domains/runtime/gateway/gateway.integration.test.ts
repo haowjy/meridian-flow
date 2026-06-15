@@ -405,12 +405,14 @@ describe("model-gateway openai-compatible pipeline", () => {
     const hangGuard = new Promise<never>((_, reject) => {
       setTimeout(
         () => reject(new Error("cancel drain hung past bound")),
-        CANCEL_DRAIN_TIMEOUT_MS + 1_500,
+        CANCEL_DRAIN_TIMEOUT_MS + 500,
       );
     });
     await Promise.race([consume, hangGuard]);
 
-    expect(Date.now() - cancelStartedAt).toBeLessThan(CANCEL_DRAIN_TIMEOUT_MS + 1_500);
+    const cancelElapsedMs = Date.now() - cancelStartedAt;
+    expect(cancelElapsedMs).toBeLessThan(CANCEL_DRAIN_TIMEOUT_MS + 500);
+    expect(cancelElapsedMs).toBeLessThan(CANCEL_DRAIN_TIMEOUT_MS * 2 - 500);
     expect(events.some((event) => event.type === "text.delta")).toBe(true);
   });
 });
