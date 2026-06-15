@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * meridian-extensions — the project's customized TipTap node/mark extensions.
  *

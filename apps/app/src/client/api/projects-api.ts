@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * projects-api — HTTP client for project, project-thread, works, preferences,
  * and context tree/entry endpoints.

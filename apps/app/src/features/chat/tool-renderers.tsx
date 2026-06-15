@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * tool-renderers — the per-tool presentation registry that drives the activity
  * timeline's tier-2 rows.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectContextRead — read-route projection for non-tracked context files.
  *

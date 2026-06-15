@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";

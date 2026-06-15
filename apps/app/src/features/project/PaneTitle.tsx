@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PaneTitle — shared title styling for project workspace pane headers.
  *

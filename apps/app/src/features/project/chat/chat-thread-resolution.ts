@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * chat-thread-resolution — resolves which thread the project chat screen should
  * show from the available sources.

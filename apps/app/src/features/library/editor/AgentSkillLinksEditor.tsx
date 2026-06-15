@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AgentSkillLinksEditor — per-agent skill wiring rows.
  *

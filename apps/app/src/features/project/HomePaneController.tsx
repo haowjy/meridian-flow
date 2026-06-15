@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * HomePaneController — desktop controller for the project Home destination.
  *

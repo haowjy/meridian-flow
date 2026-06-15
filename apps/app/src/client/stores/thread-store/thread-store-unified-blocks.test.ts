@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * thread-store unified-block action tests — covers live assistant turn/block
  * store mutations plus their project-thread-list lifecycle cache patches.

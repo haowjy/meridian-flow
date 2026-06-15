@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * context-location — pure helpers describing the phone shell's drilled-in
  * context location (Files › scheme › folders › file) for the top-bar

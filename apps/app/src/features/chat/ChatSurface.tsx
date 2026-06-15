@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatSurface — the viewport-locked frame shared by every chat view.
  *

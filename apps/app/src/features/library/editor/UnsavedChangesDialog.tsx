@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UnsavedChangesDialog — blocks list selection changes while a draft is dirty.
  */

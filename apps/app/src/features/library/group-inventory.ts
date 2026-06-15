@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * group-inventory — source grouping for Library list sections.
  *

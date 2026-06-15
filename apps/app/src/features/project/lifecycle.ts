@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * lifecycle — maps a thread's row projection (status + waitingForUser +
  * runningTurnId) to the presentation-layer lifecycle state used across the

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-store types — the project store's state/action contracts plus the
  * pending soft-delete shape. Read surface (`ProjectStoreState`) vs write surface

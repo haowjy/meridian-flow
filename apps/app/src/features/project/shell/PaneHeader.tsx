@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * build-optimistic-user-turn — constructs an optimistic domain `Turn` for a
  * just-submitted user message (client UUID, timestamp from store `now`). Pure

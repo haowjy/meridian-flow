@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileCreateEntryMenu — phone `+` top-bar action for creating a context
  * file or folder where you are (current scheme + folder).

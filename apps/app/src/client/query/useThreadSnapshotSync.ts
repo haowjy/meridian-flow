@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useThreadSnapshotSync — applies the authoritative native thread snapshot.
  *

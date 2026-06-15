@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * group-delivery-segments.test — verifies delivery segmentation normalizes raw
  * tool protocol blocks before rendering.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectLibrary — full capability inventory for the Library screen.
  *

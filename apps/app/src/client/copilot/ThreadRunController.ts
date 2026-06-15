@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadRunController — direct run controller for Meridian thread streams.
  *

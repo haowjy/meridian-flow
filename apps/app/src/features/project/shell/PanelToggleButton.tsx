@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PanelToggleButton — the one collapse/expand control for every project rail
  * and panel (app sidebar, files column, chat dock, context rail).

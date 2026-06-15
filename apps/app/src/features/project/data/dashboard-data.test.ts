@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ThreadListItem, Work } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
@@ -36,6 +35,7 @@ function work(id: string): Work {
   return {
     id,
     projectId,
+    createdByUserId: "user_1",
     title: id,
     description: null,
     status: "active",

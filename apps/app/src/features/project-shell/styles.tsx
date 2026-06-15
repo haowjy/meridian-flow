@@ -1,4 +1,3 @@
-// @ts-nocheck
 export function ProjectShellStyles() {
   return (
     <style>{`

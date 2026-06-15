@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DownloadCard — the shared "Preview not available — Download original" card
  * used by the binary fallback viewer and the PDF viewer's inline-render

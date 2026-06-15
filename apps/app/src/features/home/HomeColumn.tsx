@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * HomeColumn — thin layout wrapper that pins the `home-column` Tier-2 utility
  * (max width + vertical padding) around Home content. No layout logic of its

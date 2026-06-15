@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileResultsView — full-screen Results surface for the phone shell.
  *

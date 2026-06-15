@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Spike project state — which logical surface lives in which grid slot, and
  * the project "mode" (context vs. chat) that switches the assignment table.

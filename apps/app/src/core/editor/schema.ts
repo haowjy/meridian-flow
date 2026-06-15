@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * editor schema — the canonical ProseMirror document schema for the editor.
  *

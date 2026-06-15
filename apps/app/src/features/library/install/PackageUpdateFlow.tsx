@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PackageUpdateFlow — in-pane update reconciliation with per-item Restore original (design 2F).
  */

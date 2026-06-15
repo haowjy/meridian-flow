@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatThreadHeader — desktop chat header and thread switcher chrome. The route
  * owns thread selection; this file keeps title display, dropdown grouping, and

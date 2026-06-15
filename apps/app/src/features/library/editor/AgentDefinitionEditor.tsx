@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AgentDefinitionEditor — structured editor for agent meta, instructions, and skill links.
  */

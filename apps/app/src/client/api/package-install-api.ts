@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * package-install-api — typed HTTP client for Mars package install preview/apply
  * and the first-party install gallery catalog.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Pure utility for parsing image block content from domain block payloads.
  *

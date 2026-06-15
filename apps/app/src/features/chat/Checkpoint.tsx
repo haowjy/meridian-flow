@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Checkpoint — the generic checkpoint card (execution-model §8.1).
  *

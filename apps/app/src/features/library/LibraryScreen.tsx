@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LibraryScreen — master-detail inventory for agents, skills, and packages.
  *

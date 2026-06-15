@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * library-selection — discriminated union for the Library master-detail list.
  *

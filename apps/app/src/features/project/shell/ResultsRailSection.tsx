@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ResultsRailSection — collapsible section in the Context rail that lists
  * promoted artifacts ("Results") for the active project, with type icon,

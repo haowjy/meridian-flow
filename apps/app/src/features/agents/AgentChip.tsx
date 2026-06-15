@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AgentChip — shared agent identity primitive for composer, thread header, and
  * results provenance. Variants control density and interactivity; anatomy is

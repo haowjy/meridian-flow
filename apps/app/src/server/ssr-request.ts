@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getRequestHeader, getRequestHost, getRequestProtocol } from "@tanstack/react-start/server";
 
 /**

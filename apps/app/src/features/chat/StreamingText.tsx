@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * StreamingText — Zone 3 of the live turn: renders the streaming answer text
  * with a trailing animated caret via `Markdown`.

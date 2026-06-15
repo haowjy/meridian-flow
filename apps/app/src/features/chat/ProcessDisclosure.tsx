@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProcessDisclosure — default-collapsed shell for Thinking process history.
  *

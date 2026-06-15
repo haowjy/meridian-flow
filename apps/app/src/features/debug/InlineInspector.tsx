@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * InlineInspector — alt+click any rendered turn/block to inspect its record.
  *

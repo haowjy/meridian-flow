@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * document-session-transport — multiplexed Yjs sync/awareness over ONE socket.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * socket-lifecycle — the boring, shared WebSocket control plane for the WS
  * transports.

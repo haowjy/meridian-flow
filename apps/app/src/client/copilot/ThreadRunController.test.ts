@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadRunController tests — protects direct transport run orchestration.
  *

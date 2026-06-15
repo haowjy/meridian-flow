@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChoiceCheckpoint — inline ask_user checkpoint for discrete options.
  *

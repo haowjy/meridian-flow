@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ws-thread-subscription — the per-thread subscription registry for
  * `WsThreadTransport`.

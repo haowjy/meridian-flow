@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * RestoreOriginalButton — shared "Restore original" affordance for definition editors
  * and package update reconciliation (one vocabulary per design 2C / 2F).

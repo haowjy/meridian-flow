@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SlotGrid renders the desktop project as one flat CSS grid.
  *

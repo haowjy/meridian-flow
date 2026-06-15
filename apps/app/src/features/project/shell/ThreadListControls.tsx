@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadListControls — sidebar controls for thread grouping, filtering, and
  * search.

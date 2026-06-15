@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Desktop project slot topology and grid structure for stable surfaces.
  *

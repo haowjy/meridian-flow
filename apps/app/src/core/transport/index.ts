@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the transport layer's public surface — `ThreadTransport`
  * contract + connection/gap types, `WsThreadTransport`, and the multiplexed

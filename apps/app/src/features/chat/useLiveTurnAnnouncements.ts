@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useLiveTurnAnnouncements — routes live assistant turn transitions to a11y.
  *

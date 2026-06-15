@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectResultSignedUrl — mints a short-lived read URL for a Results
  * row, used by the rail's viewer overlay.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Trans } from "@lingui/react/macro";
 import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";

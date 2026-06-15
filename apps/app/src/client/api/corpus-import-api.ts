@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type CorpusImportResponse, deserializeTransport } from "@meridian/contracts/protocol";
 
 import { errorMessageFromPayload, postJson } from "./http-client";

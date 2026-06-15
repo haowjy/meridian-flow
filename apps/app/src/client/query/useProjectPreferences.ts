@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectPreferences — React Query hooks for per-project sidebar
  * preferences.

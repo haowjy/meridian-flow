@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * QueryErrorRow — compact inline error + Retry row for a failed React Query
  * fetch in a list/section. Pure presentational leaf; the parent supplies the

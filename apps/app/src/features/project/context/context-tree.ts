@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * context-tree — type aliases and lookup helpers for a project's context
  * document tree.

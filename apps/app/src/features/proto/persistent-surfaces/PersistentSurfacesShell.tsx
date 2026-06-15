@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Proto shell demonstrating lifted persistent surfaces — session registry above
  * destination switch, Motion layout chat, reverse-portal document reparenting.

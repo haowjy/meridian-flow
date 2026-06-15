@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Select — shadcn/Radix select primitive (trigger, content, item, etc.).
  * Upstream-managed wrapper; customize via `cn()` + tokens at call sites.

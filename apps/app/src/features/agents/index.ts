@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * features/agents — shared agent identity primitives and catalog hooks for
  * composer, thread provenance, and results attribution surfaces.
@@ -14,3 +13,5 @@ export {
   sourceBadgeLabel,
 } from "./resolve-agent";
 export { ThreadAgentProvenance } from "./ThreadAgentProvenance";
+
+export { type UseTestAgentArgs, useTestAgent } from "./use-test-agent";

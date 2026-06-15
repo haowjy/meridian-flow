@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileTopBar — status-bar-aware project header for the phone shell.
  *

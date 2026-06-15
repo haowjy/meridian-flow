@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * reduce-turn-event tests — regression coverage for mapping AG-UI events into
  * canonical ThreadStore turns. These protect live block identity, terminal

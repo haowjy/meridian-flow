@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DefinitionFormLayout — shared label/control rows for Library definition editors.
  *

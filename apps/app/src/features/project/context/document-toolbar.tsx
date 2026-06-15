@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * document-toolbar — single source of truth for the Context destination's
  * per-document-type toolbar taxonomy.

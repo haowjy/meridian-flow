@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { OnboardingState } from "@meridian/contracts";
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { Block, Turn } from "@meridian/contracts/protocol";
@@ -305,7 +303,9 @@ function nextStep(state: OnboardingState): FlowStep | null {
 }
 
 function answerRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : { value };
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : { value };
 }
 
 function resolvedLabel(answers: Record<string, unknown>, stepId: string): string {

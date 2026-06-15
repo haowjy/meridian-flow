@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dashboard-data — derives the project workspace's dashboard datasets from a
  * single threads + works read.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dev-transport — resolves the server origin and WebSocket URLs for the dev
  * portless environment.

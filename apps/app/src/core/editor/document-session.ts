@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * document-session — owns the lifecycle of one collaborative document's CRDT.
  *

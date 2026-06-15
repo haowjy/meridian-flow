@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Types for the persistent-surfaces prototype — lifted chat + document sessions
  * that survive destination switches without remounting.

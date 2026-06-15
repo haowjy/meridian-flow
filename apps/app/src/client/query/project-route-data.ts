@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-route-data — server-side loader helper that fetches a project's
  * threads + works + preferences (forwarding cookies) and seeds them into the

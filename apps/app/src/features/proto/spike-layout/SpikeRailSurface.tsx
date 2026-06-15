@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SpikeRailSurface — a "cheap" rail surface containing a REAL Radix dropdown
  * (DropdownMenu / DropdownMenuRadioGroup / DropdownMenuRadioItem), used by

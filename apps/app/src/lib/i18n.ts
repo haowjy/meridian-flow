@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { i18n } from "@lingui/core";
 
 import { messages as enMessages } from "@/locales/en/messages";

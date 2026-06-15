@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the project store (provider/hooks), its API-merge and
  * suppression helpers, the SSR list loader, and the store state/action types.

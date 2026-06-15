@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * context-tab-from-file — adapter from context-tree file metadata to ContextTab.
  *

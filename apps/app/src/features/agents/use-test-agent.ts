@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useTestAgent — Library "Test this agent" action: fresh bound thread in the dock.
  *

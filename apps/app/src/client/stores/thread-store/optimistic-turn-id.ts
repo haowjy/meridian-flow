@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * optimistic-turn-id — shared identifier convention for client-only turns.
  *

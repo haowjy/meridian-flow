@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileContextBrowser — drill-in phone Files surface.
  *

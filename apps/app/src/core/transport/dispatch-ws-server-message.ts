@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dispatch-ws-server-message — routes a parsed `WsServerMessage` to the right
  * transport callback (sequenced event, gap, connected, error).

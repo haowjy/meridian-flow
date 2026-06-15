@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-definitions-api — typed HTTP client for Library agent/skill editing.
  *

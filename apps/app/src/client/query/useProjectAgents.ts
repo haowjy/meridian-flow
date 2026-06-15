@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectAgents — selectable agent catalog for a project.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PackageInstallFlow — in-pane install gallery, URL preview, and apply (design 2D / 2E).
  */

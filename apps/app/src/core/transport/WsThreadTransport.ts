@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * WsThreadTransport — the production `ThreadTransport` over `/api/threads/ws`.
  *

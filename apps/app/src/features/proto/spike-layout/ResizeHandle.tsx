@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ResizeHandle — pointer-drag resize that mutates `grid-template-columns` on a
  * target container imperatively (no React re-render per pointermove).

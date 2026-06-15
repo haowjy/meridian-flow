@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * eventemitter3 shim — a minimal local `EventEmitter` implementation matching the
  * `eventemitter3` API surface the app depends on, avoiding the third-party dep.

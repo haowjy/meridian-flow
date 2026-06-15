@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * thread-store append/snapshot tests — protects optimistic turn insertion,
  * pending stream handoff, and HTTP/WS snapshot reconciliation into the

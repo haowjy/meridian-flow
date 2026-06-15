@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Cheap remountable placeholders — labeled so it's obvious they are NOT lifted.
  */

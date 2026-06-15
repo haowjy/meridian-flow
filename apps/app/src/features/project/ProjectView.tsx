@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProjectView — the controlled project workspace shell.
  *

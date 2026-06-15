@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PhoneIconButton — shared 44px touch icon button for phone chrome.
  *

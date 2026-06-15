@@ -68,7 +68,11 @@ export default defineConfig(({ mode }) => {
       apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
       linguiMacroBabelPlugin(),
       tailwindcss(),
-      tanstackStart(),
+      tanstackStart({
+        router: {
+          routeTreeFileHeader: ["/* eslint-disable */", "// noinspection JSUnusedGlobalSymbols"],
+        },
+      }),
       viteReact(),
       lingui(),
       ...(process.env.VITEST ? [] : [nitro()]),

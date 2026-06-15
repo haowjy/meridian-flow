@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context scheme presentation contract: lists the server-supported context tree
  * schemes in sidebar display order and maps wire values to localized labels

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * package-install-helpers — pure formatters for install preview and update reconciliation.
  *

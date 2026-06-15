@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ConnectionBanner — transient banner reflecting the thread transport's
  * connection state (reconnecting / degraded / terminal, plus a brief

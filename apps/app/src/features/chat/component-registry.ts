@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * component-registry — custom chat block registry and prop contract.
  *

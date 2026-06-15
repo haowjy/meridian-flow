@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * screens — canonical project destinations for sidebar/drawer navigation.
  *

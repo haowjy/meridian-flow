@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { getSchema } from "@tiptap/core";
 import { describe, expect, it } from "vitest";

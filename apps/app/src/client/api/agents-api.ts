@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * agents-api — typed HTTP client for the global builtin agent catalog.
  *

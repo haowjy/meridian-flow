@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { t } from "@lingui/core/macro";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";

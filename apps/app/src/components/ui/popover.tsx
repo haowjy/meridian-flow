@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Popover as PopoverPrimitive } from "radix-ui";
 import type * as React from "react";
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Client-only module singleton for screen-reader live regions. Announcements are
  * not SSR-rendered (see {@link AnnouncementRegion} in `__root.tsx`), so this

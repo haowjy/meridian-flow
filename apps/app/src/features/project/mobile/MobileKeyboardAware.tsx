@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileKeyboardAware — phone-shell visualViewport bridge for keyboard clearance.
  *

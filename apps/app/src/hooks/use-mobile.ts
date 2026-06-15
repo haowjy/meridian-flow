@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * use-mobile — `useIsMobile()` hook tracking the <768px viewport via
  * matchMedia. Used by the shadcn Sidebar primitive's mobile/desktop branch.

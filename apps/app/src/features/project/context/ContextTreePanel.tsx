@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextTreePanel — desktop context tree for navigating schemes, folders, and
  * files, rendered as a collapsible panel inside ContextViewer. Body owns tree

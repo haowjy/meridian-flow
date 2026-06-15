@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Markdown renderer wrapper around Streamdown with Meridian's prose tokens and streaming block collapse behavior.
  */

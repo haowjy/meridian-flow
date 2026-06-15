@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * http-client — shared fetch helpers for the app's API calls.
  *
@@ -104,6 +103,27 @@ export async function putJson<T>(
 ): Promise<T> {
   const response = await fetch(url, {
     method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await readResponsePayload(response);
+  const accepted = response.ok || (options?.acceptStatuses?.includes(response.status) ?? false);
+
+  if (!accepted) {
+    throw errorFromResponse(payload, response.status);
+  }
+
+  return deserializeTransport<T>(payload as T);
+}
+
+export async function patchJson<T>(
+  url: string,
+  body: unknown,
+  options?: PostJsonOptions,
+): Promise<T> {
+  const response = await fetch(url, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
   });

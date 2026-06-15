@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * RestoreOriginalDialog — confirm restoring the pristine package revision.
  */

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadTransport — the subscribe/cancel contract between the UI/Copilot adapter
  * and the live agent event stream, plus `ConnectionState` and `ThreadGapEvent`.

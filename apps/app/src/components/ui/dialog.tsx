@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Dialog — shadcn/Radix modal primitive. Upstream-managed wrapper; customize at
  * call sites. Added for proto command palette; promote via shadcn CLI for prod.

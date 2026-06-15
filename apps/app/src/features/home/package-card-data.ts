@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { MessageDescriptor } from "@lingui/core";
 import type { LucideIcon } from "lucide-react";
 

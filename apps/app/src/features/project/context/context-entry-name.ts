@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared naming logic for inline context-entry create rows.
  *

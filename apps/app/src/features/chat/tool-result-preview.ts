@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * tool-result-preview — formats raw tool output into compact preview rows and
  * summaries for the activity-timeline tool renderers (`tool-renderers.tsx`).

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * meridian-error — frontend representation of the canonical `MeridianError` envelope.
  *

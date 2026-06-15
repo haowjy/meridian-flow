@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextPaneController — desktop SURFACE controller for the route-owned
  * Context destination.

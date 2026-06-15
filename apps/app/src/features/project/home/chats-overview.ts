@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * chats-overview — the data model behind the Home destination's Chats table.
  *

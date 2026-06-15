@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Avatar-initials derivation for the account chrome (AccountMenu). Single
  * source so the fallback chain — name initials → email initial → "·"

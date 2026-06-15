@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { UseQueryResult } from "@tanstack/react-query";
 
 /**

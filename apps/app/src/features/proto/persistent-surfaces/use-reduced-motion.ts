@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Subscribes to prefers-reduced-motion for Motion transition overrides.
  */

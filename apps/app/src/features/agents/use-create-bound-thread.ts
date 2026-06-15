@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useCreateBoundProjectThread — creates a server thread bound to an agent slug.
  *

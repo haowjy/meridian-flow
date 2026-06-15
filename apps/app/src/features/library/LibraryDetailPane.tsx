@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LibraryDetailPane — detail slot for the Library master-detail shell.
  *

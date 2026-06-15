@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useChatThreadSession — binds chat surface lifecycle to the run controller.
  *

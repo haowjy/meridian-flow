@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * deferred-project-chat — optimistic "new chat" inside an existing project.
  *

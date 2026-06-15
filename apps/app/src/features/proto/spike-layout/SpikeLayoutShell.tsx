@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SpikeLayoutShell — the stable-identity project proto root.
  *

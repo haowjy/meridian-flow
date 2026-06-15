@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Lifted session registry — owns proof-of-life state for chat + document
  * surfaces. Destinations bind to entries; they never create or destroy sessions.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Verifies shared golden AG-UI streams reduce into canonical store
  * turns. This catches drift between server projector fixtures and the frontend

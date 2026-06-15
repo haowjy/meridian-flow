@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * checkpoint-form-schema — small JSON-Schema-ish parser for the generic
  * checkpoint card's form generator.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * document-session tests — status derivation from local persistence + live
  * transport state.

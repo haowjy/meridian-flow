@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { getDevLoginEnabled } from "@/server/dev-login";
 

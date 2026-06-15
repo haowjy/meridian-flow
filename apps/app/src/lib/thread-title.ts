@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * thread-title — localized thread-title helpers (default "New chat" fallback,
  * display normalization, and deriving a title from the first message). Single

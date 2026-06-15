@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent mark initials — same visual family as AccountMenu avatars. Derives at
  * most two letters from a display name so agent chips stay consistent with

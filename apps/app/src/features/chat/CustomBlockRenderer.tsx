@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CustomBlockRenderer — inline renderer for `blockType: "custom"` chat blocks.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SkillDefinitionEditor — structured editor for skill meta and markdown body.
  */

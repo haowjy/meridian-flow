@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ssr-api-request — builds the API request options used by TanStack Start SSR
  * loaders when they fetch through the server process instead of the browser.

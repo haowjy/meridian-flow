@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** HelperResultBlock — compact inline result card for background helper agents. */
 import type { HelperResultProps } from "@meridian/contracts/components";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";

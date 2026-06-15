@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * figures-api — HTTP client for figure asset upload and signed-URL retrieval.
  *

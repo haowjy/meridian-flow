@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-route-data tests — cover the SSR loader's project-scoped query
  * seeding contract: successful resources seed independently, failed resources
@@ -63,6 +62,7 @@ function work(id: string): Work {
   return {
     id,
     projectId,
+    createdByUserId: "user_1",
     title: id,
     description: null,
     status: "active",

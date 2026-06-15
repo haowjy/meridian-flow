@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DefinitionHistoryPanel — quiet revision list with restore-as-new-revision actions.
  */

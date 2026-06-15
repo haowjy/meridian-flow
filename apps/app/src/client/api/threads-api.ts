@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
  *

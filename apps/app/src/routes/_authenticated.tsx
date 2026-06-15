@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";

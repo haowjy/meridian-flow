@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Skeleton — shadcn loading-placeholder primitive (animated muted block).
  * Upstream-managed wrapper; customize via `cn()` + tokens at call sites.

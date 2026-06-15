@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatPaneController — desktop controller for the centered Chat destination.
  *

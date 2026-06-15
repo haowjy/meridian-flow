@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Public exports for the flat-grid project layout primitive.
  *
