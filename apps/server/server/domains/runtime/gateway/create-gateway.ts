@@ -45,7 +45,9 @@ import {
   buildProviderRegistry,
   fallbackProviderIds,
   type ProviderRegistry,
+  type ResolvedRoute,
   resolveRoute,
+  resolveRouteForProvider,
 } from "./routing.js";
 
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 120_000;
@@ -241,29 +243,20 @@ async function* streamForProvider(
     return;
   }
 
-  const entry = registry.modelsById.get(modelId);
-  if (!entry || entry.providerId !== providerId) {
+  let route: ResolvedRoute;
+  try {
+    route = resolveRouteForProvider(registry, providerId, modelId);
+  } catch (err) {
     yield {
       type: "error",
       code: "invalid_request",
-      message: `Provider ${providerId} does not serve model ${modelId}`,
+      message: err instanceof Error ? err.message : String(err),
       retryable: false,
     };
     return;
   }
 
-  const adapter = registry.adapters.get(providerId);
-  if (!adapter) {
-    yield {
-      type: "error",
-      code: "invalid_request",
-      message: `No adapter for provider ${providerId}`,
-      retryable: false,
-    };
-    return;
-  }
-
-  yield* streamWithRetry(adapter, request, entry.model, retry, attemptTimeoutMs);
+  yield* streamWithRetry(route.adapter, request, route.model, retry, attemptTimeoutMs);
 }
 
 export function createGateway(config: GatewayConfig): Gateway {
@@ -272,7 +265,7 @@ export function createGateway(config: GatewayConfig): Gateway {
     adapters.set(provider.id, createAdapter(provider));
   }
   const registry = buildProviderRegistry(config.providers, adapters, {
-    onWarning: config.onTrace,
+    onWarning: config.onWarning,
   });
 
   const gateway: Gateway = {

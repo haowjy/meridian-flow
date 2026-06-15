@@ -9,6 +9,7 @@
  */
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { createGateway } from "../create-gateway.js";
+import type { TraceSpan } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
 import {
   buildProviderConfigs,
@@ -36,7 +37,7 @@ export interface GatewayFromEnv {
  */
 export async function createGatewayFromEnv(
   env: GatewayEnvInput,
-  options?: { mockBaseUrl?: string },
+  options?: { mockBaseUrl?: string; onWarning?: (span: TraceSpan) => void },
 ): Promise<GatewayFromEnv> {
   let cleanup: (() => Promise<void>) | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
@@ -55,6 +56,7 @@ export async function createGatewayFromEnv(
     providers,
     ...defaultGatewayOptions(providers, registryDefaultModel),
     attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
+    onWarning: options?.onWarning,
   });
 
   return { gateway, cleanup };

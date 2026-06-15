@@ -20,5 +20,20 @@ export {
   FREE_MONTHLY_MILLICREDITS,
   monthlyGrantReason,
 } from "./domain/free-grants.js";
-export type { ComputedModelCost, ModelTokenRate } from "./domain/pricing.js";
-export { computeModelCost, findModelTokenRate, MODEL_TOKEN_RATES } from "./domain/pricing.js";
+export type {
+  ComputedModelCost,
+  LayeredTokenRateSourceDeps,
+  ModelCatalogPricingRecord,
+  ModelTokenRate,
+  ModelTokenRateSource,
+  ResolvedModelTokenRate,
+} from "./domain/pricing.js";
+export {
+  computeModelCost,
+  configureModelTokenRateSource,
+  createDefaultModelTokenRateSource,
+  createLayeredTokenRateSource,
+  findModelTokenRate,
+  MOCK_FIXTURE_TOKEN_RATES,
+  modelTokenRateSource,
+} from "./domain/pricing.js";

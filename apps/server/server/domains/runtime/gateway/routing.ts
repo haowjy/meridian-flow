@@ -126,6 +126,39 @@ export function resolveRoute(
 }
 
 /**
+ * Resolve a model inside a specific provider's own catalog.
+ *
+ * Used by the fallback loop's streamForProvider path so duplicate bare model IDs
+ * route to the requested provider instead of the first-wins modelsById entry.
+ */
+export function resolveRouteForProvider(
+  registry: ProviderRegistry,
+  providerId: string,
+  modelId: string,
+): ResolvedRoute {
+  const providerConfig = registry.providers.find((p) => p.id === providerId);
+  if (!providerConfig) {
+    throw new Error(`Provider config not found: ${providerId}`);
+  }
+
+  const providerModel = providerConfig.models.find((model) => model.id === modelId);
+  if (!providerModel) {
+    throw new Error(`Provider ${providerId} does not serve model ${modelId}`);
+  }
+
+  const adapter = registry.adapters.get(providerId);
+  if (!adapter) {
+    throw new Error(`No adapter registered for provider: ${providerId}`);
+  }
+
+  return {
+    adapter,
+    model: { ...providerModel, provider: providerConfig.id },
+    providerConfig,
+  };
+}
+
+/**
  * Build the ordered fallback provider list.
  *
  * Always puts the primary provider (resolved from the request) first. If

@@ -83,6 +83,43 @@ const CLAUDE_SONNET_4_PRICING: ModelPricing = {
   source: ANTHROPIC_PRICING_SOURCE,
 };
 
+const CLAUDE_HAIKU_4_5_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "1.00",
+  cachedInputUsdPerMillionTokens: "0.10",
+  cacheWriteUsdPerMillionTokens: "1.25",
+  outputUsdPerMillionTokens: "5.00",
+  source: ANTHROPIC_PRICING_SOURCE,
+};
+
+const CLAUDE_3_5_HAIKU_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "0.80",
+  cachedInputUsdPerMillionTokens: "0.08",
+  cacheWriteUsdPerMillionTokens: "1.00",
+  outputUsdPerMillionTokens: "4.00",
+  source: ANTHROPIC_PRICING_SOURCE,
+};
+
+const GPT_4_1_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "2.00",
+  cachedInputUsdPerMillionTokens: "0.50",
+  outputUsdPerMillionTokens: "8.00",
+  source: OPENAI_PRICING_SOURCE,
+};
+
+const GPT_4_1_MINI_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "0.40",
+  cachedInputUsdPerMillionTokens: "0.10",
+  outputUsdPerMillionTokens: "1.60",
+  source: OPENAI_PRICING_SOURCE,
+};
+
+const GPT_4O_MINI_PRICING: ModelPricing = {
+  inputUsdPerMillionTokens: "0.15",
+  cachedInputUsdPerMillionTokens: "0.075",
+  outputUsdPerMillionTokens: "0.60",
+  source: OPENAI_PRICING_SOURCE,
+};
+
 const GPT_4O_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "2.50",
   cachedInputUsdPerMillionTokens: "1.25",
@@ -112,6 +149,105 @@ const CLAUDE_SONNET_4_MODEL = {
   ],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_SONNET_4_PRICING,
+} satisfies RegisteredModel;
+
+const CLAUDE_SONNET_4_6_MODEL = {
+  id: "claude-sonnet-4-6",
+  displayName: "Claude Sonnet 4.6",
+  contextWindow: 1_000_000,
+  maxOutputTokens: 64_000,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "image_input",
+    "structured_output",
+    "reasoning",
+    "caching",
+  ],
+  hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
+  pricing: CLAUDE_SONNET_4_PRICING,
+} satisfies RegisteredModel;
+
+const CLAUDE_HAIKU_4_5_MODEL = {
+  id: "claude-haiku-4-5-20251001",
+  displayName: "Claude Haiku 4.5",
+  contextWindow: 200_000,
+  maxOutputTokens: 64_000,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "image_input",
+    "structured_output",
+    "reasoning",
+    "caching",
+  ],
+  hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
+  pricing: CLAUDE_HAIKU_4_5_PRICING,
+} satisfies RegisteredModel;
+
+const CLAUDE_3_5_HAIKU_MODEL = {
+  id: "claude-3-5-haiku-latest",
+  displayName: "Claude 3.5 Haiku",
+  contextWindow: 200_000,
+  maxOutputTokens: 8_192,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "image_input",
+    "structured_output",
+    "reasoning",
+    "caching",
+  ],
+  hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
+  pricing: CLAUDE_3_5_HAIKU_PRICING,
+} satisfies RegisteredModel;
+
+const GPT_4_1_MODEL = {
+  id: "gpt-4.1",
+  displayName: "GPT-4.1",
+  contextWindow: 1_047_576,
+  maxOutputTokens: 32_768,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "parallel_tool_calls",
+    "image_input",
+    "structured_output",
+  ],
+  hostedTools: ["web_search", "code_execution", "file_search"],
+  pricing: GPT_4_1_PRICING,
+} satisfies RegisteredModel;
+
+const GPT_4_1_MINI_MODEL = {
+  id: "gpt-4.1-mini",
+  displayName: "GPT-4.1 mini",
+  contextWindow: 1_047_576,
+  maxOutputTokens: 32_768,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "parallel_tool_calls",
+    "image_input",
+    "structured_output",
+  ],
+  hostedTools: ["web_search", "code_execution", "file_search"],
+  pricing: GPT_4_1_MINI_PRICING,
+} satisfies RegisteredModel;
+
+const GPT_4O_MINI_MODEL = {
+  id: "gpt-4o-mini",
+  displayName: "GPT-4o mini",
+  contextWindow: 128_000,
+  maxOutputTokens: 16_384,
+  capabilities: [
+    "streaming",
+    "tool_calling",
+    "parallel_tool_calls",
+    "image_input",
+    "structured_output",
+  ],
+  hostedTools: ["web_search", "code_execution", "file_search"],
+  pricing: GPT_4O_MINI_PRICING,
 } satisfies RegisteredModel;
 
 const GPT_4O_MODEL = {
@@ -147,13 +283,18 @@ export const MODEL_REGISTRY = {
       id: "anthropic",
       adapter: "anthropic",
       apiKeyEnv: "ANTHROPIC_API_KEY",
-      models: [CLAUDE_SONNET_4_MODEL],
+      models: [
+        CLAUDE_SONNET_4_MODEL,
+        CLAUDE_SONNET_4_6_MODEL,
+        CLAUDE_HAIKU_4_5_MODEL,
+        CLAUDE_3_5_HAIKU_MODEL,
+      ],
     },
     {
       id: "openai",
       adapter: "openai",
       apiKeyEnv: "OPENAI_API_KEY",
-      models: [GPT_4O_MODEL],
+      models: [GPT_4O_MODEL, GPT_4_1_MODEL, GPT_4_1_MINI_MODEL, GPT_4O_MINI_MODEL],
     },
     {
       id: "deepseek",

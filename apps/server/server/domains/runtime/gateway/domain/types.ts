@@ -368,6 +368,8 @@ export interface GatewayConfig {
   attemptTimeoutMs?: number;
   retry?: { maxAttempts: number; initialDelayMs: number; maxDelayMs: number };
   fallback?: { enabled: boolean; order?: string[] };
+  /** Registry build warnings (e.g. duplicate model IDs skipped). */
+  onWarning?: (span: TraceSpan) => void;
   onTrace?: (span: TraceSpan) => void;
   onError?: (error: GatewayError) => void;
 }
