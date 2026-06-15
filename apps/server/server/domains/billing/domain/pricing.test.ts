@@ -13,7 +13,7 @@ import {
 
 const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
 
-/** Pre-B2 pinned values for all nine production registry models — parity guard. */
+/** Pre-B2 pinned values for production registry models — parity guard. */
 const PRODUCTION_RATE_PARITY = {
   "anthropic::claude-sonnet-4-20250514": {
     inputUsdPerMillionTokens: "3.00",
@@ -64,6 +64,18 @@ const PRODUCTION_RATE_PARITY = {
     cachedInputUsdPerMillionTokens: "0.0028",
     outputUsdPerMillionTokens: "0.28",
   },
+  "openrouter::anthropic/claude-sonnet-4": {
+    inputUsdPerMillionTokens: "3.00",
+    outputUsdPerMillionTokens: "15.00",
+  },
+  "openrouter::openai/gpt-4o": {
+    inputUsdPerMillionTokens: "2.50",
+    outputUsdPerMillionTokens: "10.00",
+  },
+  "openrouter::google/gemini-2.5-flash": {
+    inputUsdPerMillionTokens: "0.15",
+    outputUsdPerMillionTokens: "0.60",
+  },
 } as const;
 
 describe("model pricing", () => {
@@ -80,6 +92,32 @@ describe("model pricing", () => {
     expect(cost.costUsd).toBe("0.420000");
     expect(cost.millicredits).toBe("42000");
     expect(cost.pricingSnapshot.source).toContain("pinned:");
+    expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
+  });
+
+  it("uses provider-reported cost when usage.estimatedCostUsd is present", () => {
+    const cost = computeModelCost({
+      provider: "openrouter",
+      model: "anthropic/claude-sonnet-4",
+      usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0.0042 },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("0.004200");
+    expect(cost.millicredits).toBe("420");
+    expect(cost.pricingSnapshot.sourceLayer).toBe("provider_reported");
+    expect(cost.pricingSnapshot.source).toBe("provider_reported");
+  });
+
+  it("falls back to pinned rates when provider-reported cost is absent", () => {
+    const cost = computeModelCost({
+      provider: "openrouter",
+      model: "anthropic/claude-sonnet-4",
+      usage: { inputTokens: 1_000_000, outputTokens: 0 },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("3.000000");
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
 
@@ -102,12 +140,14 @@ describe("model pricing", () => {
     }
   });
 
-  it("matches previous pinned values for all nine production models", () => {
+  it("matches previous pinned values for all production registry models", () => {
     for (const [key, expected] of Object.entries(PRODUCTION_RATE_PARITY)) {
       const [provider, model] = key.split("::");
       const rate = findModelTokenRate(provider, model, rateSource);
       expect(rate.inputUsdPerMillionTokens).toBe(expected.inputUsdPerMillionTokens);
-      expect(rate.cachedInputUsdPerMillionTokens).toBe(expected.cachedInputUsdPerMillionTokens);
+      if ("cachedInputUsdPerMillionTokens" in expected) {
+        expect(rate.cachedInputUsdPerMillionTokens).toBe(expected.cachedInputUsdPerMillionTokens);
+      }
       if ("cacheWriteUsdPerMillionTokens" in expected) {
         expect(rate.cacheWriteUsdPerMillionTokens).toBe(expected.cacheWriteUsdPerMillionTokens);
       }

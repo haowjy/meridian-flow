@@ -30,6 +30,7 @@
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
 import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
+import { createOpenRouterAdapter } from "./adapters/openrouter/adapter.js";
 import { consumeStream } from "./consume-stream.js";
 import { createModelAttemptSignal, modelAttemptTimeoutEvent } from "./deadline.js";
 import type {
@@ -68,20 +69,17 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * Maps a ProviderConfig.adapter string to its concrete ProviderAdapter factory.
- * `openrouter` is reserved in BuiltinAdapter but throws — no implementation exists yet.
- */
+/** Maps a ProviderConfig.adapter string to its concrete ProviderAdapter factory. */
 function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdapter {
   switch (config.adapter) {
     case "openai-compatible":
       return createOpenAICompatibleAdapter(config);
+    case "openrouter":
+      return createOpenRouterAdapter(config);
     case "anthropic":
       return createAnthropicAdapter(config);
     case "openai":
       return createOpenAIResponsesAdapter(config);
-    case "openrouter":
-      throw new Error(`Adapter "${config.adapter}" is not implemented yet`);
     default:
       throw new Error(`Unknown adapter: ${config.adapter}`);
   }

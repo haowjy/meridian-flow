@@ -12,6 +12,7 @@ export interface GatewayEnvInput {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 }
 
 const MOCK_MODEL: ModelInfo = {
@@ -43,6 +44,7 @@ export function buildProviderConfigs(
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
+    OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   });
 }
 
@@ -55,6 +57,7 @@ export function selectModelStub(providers: ProviderConfig[]): string | undefined
     providers.find((p) => p.id === "anthropic")?.models[0]?.id ??
     providers.find((p) => p.id === "openai")?.models[0]?.id ??
     providers.find((p) => p.id === "deepseek")?.models[0]?.id ??
+    providers.find((p) => p.id === "openrouter")?.models[0]?.id ??
     providers.find((p) => p.id === "mock")?.models[0]?.id ??
     providers[0]?.models[0]?.id
   );
