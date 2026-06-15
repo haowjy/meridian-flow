@@ -23,6 +23,7 @@ import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapOpenAIResponsesError } from "./errors.js";
 import { toOpenAIResponsesParams } from "./request-map.js";
 import {
+  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromResponseStreamEvent,
@@ -68,6 +69,10 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
           const timeout = modelAttemptTimeoutEvent(request.signal);
           if (timeout) {
             yield timeout;
+            return;
+          }
+          if (accumulatorHasPartialResult(acc)) {
+            yield { type: "end", result: buildGenerateResult(acc) };
             return;
           }
           yield {

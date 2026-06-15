@@ -16,6 +16,19 @@ export type OpenRouterReconcileConfig = {
   baseUrl?: string;
 };
 
+const RECONCILE_TIMEOUT_MS = 5_000;
+
+/** Fresh bounded signal for post-cancel /generation fetches — never the user-cancel signal. */
+export function createReconcileSignal(timeoutMs = RECONCILE_TIMEOUT_MS): AbortSignal {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  return controller.signal;
+}
+
 function hasBillableTokenUsage(usage: GenerateResult["usage"]): boolean {
   return usage.inputTokens > 0 || usage.outputTokens > 0;
 }

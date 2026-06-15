@@ -58,6 +58,7 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
+  connectionToken?: string;
 };
 
 type ChildRun = {
@@ -108,16 +109,24 @@ export function createTurnRunner(deps: {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
 
+    getRunningConnectionToken(threadId: ThreadId): string | undefined {
+      return running.get(threadId)?.connectionToken;
+    },
+
     async startTurn(input: {
       threadId: ThreadId;
       userText: string;
+      connectionToken?: string;
     }): Promise<{ userTurnId: string; assistantTurnId: string; streamCursor: string }> {
       if (running.has(input.threadId)) {
         throw new Error(`Turn already running for thread: ${input.threadId}`);
       }
 
       const controller = new AbortController();
-      running.set(input.threadId, { controller });
+      running.set(input.threadId, {
+        controller,
+        connectionToken: input.connectionToken,
+      });
 
       try {
         const streamCursorBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
@@ -131,6 +140,7 @@ export function createTurnRunner(deps: {
         running.set(input.threadId, {
           controller,
           assistantTurnId: handle.assistantTurnId,
+          connectionToken: input.connectionToken,
         });
 
         void (async () => {

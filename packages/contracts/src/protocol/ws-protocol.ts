@@ -111,6 +111,7 @@ export type WsServerMessage =
       userId: string;
       scope: { type: "standalone" } | { type: "project"; projectId: string };
       serverVersion: string;
+      connectionToken: string;
     }
   | {
       type: "subscribed";
@@ -153,6 +154,7 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
       z.object({ type: z.literal("project"), projectId: z.string().min(1) }),
     ]),
     serverVersion: z.string().min(1),
+    connectionToken: z.string().min(1),
   }),
   z.object({
     type: z.literal("subscribed"),

@@ -24,11 +24,37 @@ import {
 
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
+function createReconcileSignal(timeoutMs = 5_000): AbortSignal {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  return controller.signal;
+}
+
 function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
   if (!auth?.apiKey) return undefined;
   return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
 }
 
+function enrichSignal(request: GenerateRequest): AbortSignal | undefined {
+  return request.signal?.aborted ? createReconcileSignal() : request.signal;
+}
+
+async function enrichResult(
+  result: Awaited<ReturnType<typeof buildOpenRouterGenerateResult>>,
+  apiKey: string | undefined,
+  baseUrl: string,
+  request: GenerateRequest,
+) {
+  try {
+    return await enrichOpenRouterResult(result, apiKey, baseUrl, enrichSignal(request));
+  } catch {
+    return result;
+  }
+}
 function openRouterHeaders(config: ProviderConfig): Record<string, string> {
   return {
     ...config.auth?.headers,
@@ -65,12 +91,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
         }
 
         const result = buildOpenRouterGenerateResult(acc);
-        let enriched = result;
-        try {
-          enriched = await enrichOpenRouterResult(result, apiKey, baseUrl, request.signal);
-        } catch {
-          enriched = result;
-        }
+        const enriched = await enrichResult(result, apiKey, baseUrl, request);
         yield { type: "end", result: enriched };
       } catch (err) {
         if (request.signal?.aborted) {
@@ -81,12 +102,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
           }
           if (accumulatorHasPartialResult(acc) || acc.generationId) {
             const partial = buildOpenRouterGenerateResult(acc);
-            let enriched = partial;
-            try {
-              enriched = await enrichOpenRouterResult(partial, apiKey, baseUrl, request.signal);
-            } catch {
-              enriched = partial;
-            }
+            const enriched = await enrichResult(partial, apiKey, baseUrl, request);
             yield { type: "end", result: enriched };
             return;
           }

@@ -22,8 +22,10 @@
  * ── abort/cleanup contract ──
  * - Every attempt creates a derived AbortSignal from createModelAttemptSignal
  *   (deadline.ts) that combines the parent signal with a per-attempt timeout.
- * - nextStreamEvent() races the iterator against the abort signal so an
- *   in-flight provider stream is interrupted on timeout or cancellation.
+ * - nextStreamEvent() races the iterator against the attempt signal for
+ *   deadline timeouts and pre-output parent aborts.
+ * - After partial output, user/disconnect cancel drains the adapter to a
+ *   terminal partial `end` instead of synthesizing an immediate error.
  * - The finally block calls iterator.return() to release provider stream
  *   resources, then cleanup() to clear the timeout timer.
  */
@@ -32,7 +34,11 @@ import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
 import { createOpenRouterAdapter } from "./adapters/openrouter/adapter.js";
 import { consumeStream } from "./consume-stream.js";
-import { createModelAttemptSignal, modelAttemptTimeoutEvent } from "./deadline.js";
+import {
+  createModelAttemptSignal,
+  getModelAttemptTimeout,
+  modelAttemptTimeoutEvent,
+} from "./deadline.js";
 import type {
   GatewayConfig,
   GenerateRequest,
@@ -96,33 +102,74 @@ function isPartialOutputEvent(event: StreamEvent): boolean {
   return event.type !== "start" && event.type !== "error";
 }
 
+function shouldDrainUserCancel(
+  request: GenerateRequest,
+  attemptSignal: AbortSignal,
+  emittedOutput: boolean,
+): boolean {
+  return Boolean(
+    emittedOutput && request.signal?.aborted && getModelAttemptTimeout(attemptSignal) === null,
+  );
+}
+
+async function drainCancelledAdapterEvents(
+  iterator: AsyncIterator<StreamEvent>,
+): Promise<StreamEvent[]> {
+  const events: StreamEvent[] = [];
+  try {
+    while (true) {
+      const drained = await iterator.next();
+      if (drained.done) break;
+      events.push(drained.value);
+      if (drained.value.type === "end" || drained.value.type === "error") break;
+    }
+  } catch {
+    // Adapter already closed.
+  }
+  return events;
+}
+
+async function* yieldDrainedCancelEvents(
+  iterator: AsyncIterator<StreamEvent>,
+): AsyncGenerator<StreamEvent, StreamEvent | undefined> {
+  for (const event of await drainCancelledAdapterEvents(iterator)) {
+    yield event;
+    if (event.type === "end" || event.type === "error") {
+      return event;
+    }
+  }
+  return undefined;
+}
+
 /**
- * Race the next iterator value against an abort signal. This is the low-level
- * mechanism that makes timeouts and cancellations interrupt a mid-flight
- * provider stream. Without this race, the gateway would block on the
- * provider's HTTP response body until it self-terminates.
- *
- * Uses Promise.race with an abort-triggered rejection. The event listener is
- * cleaned up in the finally block so the AbortSignal doesn't accumulate
- * dangling listeners across many streamed events.
+ * Read the next adapter event. Parent cancel after partial output waits for the
+ * adapter's terminal partial `end` without abort-racing (that orphans in-flight
+ * iterator.next() calls). Attempt timeouts still hard-interrupt via a narrow
+ * race that only rejects on ModelAttemptTimeoutError.
  */
 async function nextStreamEvent(
   iterator: AsyncIterator<StreamEvent>,
-  signal: AbortSignal,
+  attemptSignal: AbortSignal,
+  parentSignal: AbortSignal | undefined,
+  emittedOutput: boolean,
 ): Promise<IteratorResult<StreamEvent>> {
-  if (signal.aborted) throw signal.reason ?? new Error("Request aborted");
-
-  let onAbort: (() => void) | undefined;
-  const aborted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason ?? new Error("Request aborted"));
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-
-  try {
-    return await Promise.race([iterator.next(), aborted]);
-  } finally {
-    if (onAbort) signal.removeEventListener("abort", onAbort);
+  if (parentSignal?.aborted && !emittedOutput) {
+    throw parentSignal.reason ?? new Error("Request aborted");
   }
+
+  const waitForNext = iterator.next();
+
+  return await Promise.race([
+    waitForNext,
+    new Promise<IteratorResult<StreamEvent>>((_, reject) => {
+      const onAttemptAbort = () => {
+        const timeout = getModelAttemptTimeout(attemptSignal);
+        if (timeout) reject(timeout);
+      };
+      if (attemptSignal.aborted) onAttemptAbort();
+      else attemptSignal.addEventListener("abort", onAttemptAbort, { once: true });
+    }),
+  ]);
 }
 
 /**
@@ -165,8 +212,20 @@ async function* streamWithRetry(
       [Symbol.asyncIterator]();
     try {
       while (true) {
-        const next = await nextStreamEvent(iterator, attemptSignal.signal);
-        if (next.done) break;
+        const next = await nextStreamEvent(
+          iterator,
+          attemptSignal.signal,
+          request.signal,
+          emittedOutput,
+        );
+        if (next.done) {
+          if (shouldDrainUserCancel(request, attemptSignal.signal, emittedOutput)) {
+            const terminal = yield* yieldDrainedCancelEvents(iterator);
+            if (terminal?.type === "end") return;
+            if (terminal?.type === "error") return;
+          }
+          break;
+        }
         const event = next.value;
         if (event.type === "error") {
           // If the attempt was killed by the deadline timer, surface that
@@ -183,15 +242,25 @@ async function* streamWithRetry(
         if (event.type === "end") return;
       }
     } catch (error) {
-      // Exceptions from nextStreamEvent — network drops, SDK errors, parent
-      // aborts. Timeout errors are classified as retryable; parent aborts
-      // (user cancellation) are not retryable.
-      sawError = modelAttemptTimeoutEvent(attemptSignal.signal) ?? {
-        type: "error",
-        code: request.signal?.aborted ? "invalid_request" : "provider_error",
-        message: error instanceof Error ? error.message : String(error),
-        retryable: false,
-      };
+      const timeoutEvent = modelAttemptTimeoutEvent(attemptSignal.signal);
+      if (timeoutEvent) {
+        sawError = timeoutEvent;
+      } else if (emittedOutput && request.signal?.aborted) {
+        const terminal = yield* yieldDrainedCancelEvents(iterator);
+        if (terminal?.type === "end") return;
+        if (terminal?.type === "error") {
+          sawError = terminal;
+        } else {
+          return;
+        }
+      } else {
+        sawError = {
+          type: "error",
+          code: request.signal?.aborted ? "invalid_request" : "provider_error",
+          message: error instanceof Error ? error.message : String(error),
+          retryable: false,
+        };
+      }
       if (emittedOutput || !sawError.retryable || attempt >= maxAttempts) {
         yield sawError;
         return;

@@ -335,6 +335,17 @@ export function* eventsFromAnthropicStreamEvent(
 
 // ── Build final result ────────────────────────────────────────────
 
+export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
+  return (
+    acc.usage.inputTokens > 0 ||
+    acc.usage.outputTokens > 0 ||
+    acc.contentParts.length > 0 ||
+    acc.textBlocks.size > 0 ||
+    acc.reasoningBlocks.size > 0 ||
+    acc.toolCalls.size > 0
+  );
+}
+
 export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   // Assemble content by provider block index. This is the ordering fix: without
   // this source-order collection, final content would naturally group by map

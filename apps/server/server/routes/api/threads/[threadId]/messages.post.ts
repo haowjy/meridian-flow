@@ -18,7 +18,11 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
   }
 
   await app.threadRuntime.requireOwnedThread(threadId, user.userId);
-  const result = await app.runner.startTurn({ threadId, userText: body.text });
+  const result = await app.runner.startTurn({
+    threadId,
+    userText: body.text,
+    connectionToken: body.connectionToken,
+  });
   setResponseStatus(event, 202);
   return {
     threadId,

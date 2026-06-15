@@ -519,6 +519,17 @@ export function* eventsFromResponseStreamEvent(
 
 // ── Build final result ────────────────────────────────────────────
 
+export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
+  return (
+    acc.usage.inputTokens > 0 ||
+    acc.usage.outputTokens > 0 ||
+    acc.contentParts.length > 0 ||
+    acc.textPartsByOutputIndex.size > 0 ||
+    acc.reasoningItemsByOutputIndex.size > 0 ||
+    acc.toolCalls.size > 0
+  );
+}
+
 export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   // Build the final assistant content in source order. Each accumulated
   // reasoning/text/tool_use part is tagged with provider `output_index` (the

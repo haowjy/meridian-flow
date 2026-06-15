@@ -1,10 +1,11 @@
 /**
- * Cancel billing integration tests: soft-cancel drain debits consumed usage,
- * WS disconnect cancels in-flight turns, and replayed settlement stays idempotent.
+ * Cancel billing integration tests: soft-cancel drain debits consumed usage through
+ * the real createGateway path, WS disconnect cancels only peer-owned turns, and
+ * replayed settlement stays idempotent.
  */
 
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createInMemoryAppServices } from "../../../../lib/compose.js";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -15,9 +16,13 @@ import {
   createInMemoryRepositories,
   createThreadEventHub,
 } from "../../../threads/index.js";
+import {
+  createMockOpenAICompatibleServer,
+  type MockOpenAIServer,
+} from "../../gateway/adapters/mock/server.js";
 import { fetchOpenRouterGeneration } from "../../gateway/adapters/openrouter/generation.js";
-import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
-import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
+import { createGateway } from "../../gateway/create-gateway.js";
+import type { Gateway } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createCheckpointRegistry } from "../checkpoints.js";
 import { createOrchestrator } from "../orchestrator.js";
@@ -34,19 +39,53 @@ async function collectEvents(handle: { events: AsyncIterable<OrchestratorEvent> 
   return events;
 }
 
-function abortAwarePartialStream(
-  result: GenerateResult,
-  options?: { waitForStart?: () => void },
-): Gateway["stream"] {
-  return async function* stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
-    yield { type: "start", model: result.model, provider: result.provider };
-    yield { type: "text.delta", text: "partial" };
-    options?.waitForStart?.();
-    while (!request.signal?.aborted) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    yield { type: "end", result };
-  };
+function createMockGateway(mock: MockOpenAIServer): Gateway {
+  return createGateway({
+    providers: [
+      {
+        id: "openai",
+        adapter: "openai-compatible",
+        baseUrl: mock.baseUrl,
+        models: [
+          {
+            id: "gpt-4.1-mini",
+            provider: "openai",
+            displayName: "GPT-4.1 Mini",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+            capabilities: new Set(["streaming"]),
+          },
+        ],
+      },
+    ],
+    defaultModel: "gpt-4.1-mini",
+    retry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
+  });
+}
+
+function createOpenRouterGateway(mock: MockOpenAIServer): Gateway {
+  return createGateway({
+    providers: [
+      {
+        id: "openrouter",
+        adapter: "openrouter",
+        baseUrl: mock.baseUrl,
+        auth: { apiKey: "test-openrouter-key" },
+        models: [
+          {
+            id: "openai/gpt-4o",
+            provider: "openrouter",
+            displayName: "GPT-4o",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+            capabilities: new Set(["streaming"]),
+          },
+        ],
+      },
+    ],
+    defaultModel: "openai/gpt-4o",
+    retry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
+  });
 }
 
 async function setup(gateway: Gateway, openRouterReconcile?: { apiKey: string; baseUrl?: string }) {
@@ -90,33 +129,31 @@ async function setup(gateway: Gateway, openRouterReconcile?: { apiKey: string; b
   return { repos, thread, creditLedger, orchestrator, runner, hub, project };
 }
 
-describe("cancel billing", () => {
-  it("debits partial usage when cancelled mid-stream (not zero, not full grant)", async () => {
-    const partialResult: GenerateResult = {
-      content: [{ type: "text", text: "partial" }],
-      toolCalls: [],
-      finishReason: "end_turn",
-      usage: { inputTokens: 500_000, outputTokens: 500_000 },
-      model: "gpt-4.1-mini",
-      provider: "openai",
-    };
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      stream: abortAwarePartialStream(partialResult),
-      async generate() {
-        throw new Error("not used");
-      },
-    };
+async function waitForStreamStart() {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
 
-    const { thread, creditLedger, orchestrator } = await setup(gateway);
+describe("cancel billing", () => {
+  let mock: MockOpenAIServer;
+
+  beforeAll(async () => {
+    mock = await createMockOpenAICompatibleServer();
+  });
+
+  afterAll(async () => {
+    await mock.close();
+  });
+
+  it("debits partial usage when cancelled mid-stream through createGateway", async () => {
+    const { thread, creditLedger, orchestrator } = await setup(createMockGateway(mock));
     const controller = new AbortController();
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
-      userText: "cancel mid stream",
+      userText: "cancel billing",
       signal: controller.signal,
     });
     const eventsPromise = collectEvents(handle);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForStreamStart();
     controller.abort();
     const events = await eventsPromise;
 
@@ -130,7 +167,7 @@ describe("cancel billing", () => {
     expect(balance).not.toBe("0");
   });
 
-  it("reconciles OpenRouter hard-cancel via providerRequestId when stream had no usage", async () => {
+  it("reconciles OpenRouter hard-cancel via providerRequestId with a live reconcile signal", async () => {
     vi.mocked(fetchOpenRouterGeneration).mockResolvedValue({
       id: "gen-hard-cancel",
       total_cost: 0.25,
@@ -138,43 +175,32 @@ describe("cancel billing", () => {
       native_tokens_completion: 500,
     });
 
-    const partialResult: GenerateResult = {
-      content: [{ type: "text", text: "x" }],
-      toolCalls: [],
-      finishReason: "end_turn",
-      usage: { inputTokens: 0, outputTokens: 0 },
-      model: "openai/gpt-4o",
-      provider: "openrouter",
-      providerData: { generationId: "gen-hard-cancel" },
-    };
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      stream: abortAwarePartialStream(partialResult),
-      async generate() {
-        throw new Error("not used");
-      },
-    };
-
-    const { thread, creditLedger, orchestrator } = await setup(gateway, {
+    const { thread, creditLedger, orchestrator } = await setup(createOpenRouterGateway(mock), {
       apiKey: "test-openrouter-key",
     });
     const controller = new AbortController();
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
-      userText: "openrouter cancel",
+      userText: "openrouter hard cancel",
       signal: controller.signal,
     });
     const eventsPromise = collectEvents(handle);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForStreamStart();
     controller.abort();
     const events = await eventsPromise;
 
     expect(fetchOpenRouterGeneration).toHaveBeenCalledWith(
       "gen-hard-cancel",
       "test-openrouter-key",
-      "https://openrouter.ai/api/v1",
-      controller.signal,
+      mock.baseUrl,
+      expect.any(AbortSignal),
     );
+    const calls = vi.mocked(fetchOpenRouterGeneration).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const reconcileSignal = calls.find(([, , , signal]) => !signal?.aborted)?.[3];
+    expect(reconcileSignal).toBeDefined();
+    expect(reconcileSignal?.aborted).toBe(false);
+
     const response = events.find((event) => event.type === "model.response_received");
     expect(response?.type).toBe("model.response_received");
     if (response?.type === "model.response_received") {
@@ -190,31 +216,15 @@ describe("cancel billing", () => {
   });
 
   it("does not double-debit when cancel settlement replays the same usage event", async () => {
-    const partialResult: GenerateResult = {
-      content: [{ type: "text", text: "once" }],
-      toolCalls: [],
-      finishReason: "end_turn",
-      usage: { inputTokens: 250_000, outputTokens: 250_000 },
-      model: "gpt-4.1-mini",
-      provider: "openai",
-    };
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      stream: abortAwarePartialStream(partialResult),
-      async generate() {
-        throw new Error("not used");
-      },
-    };
-
-    const { thread, creditLedger, orchestrator } = await setup(gateway);
+    const { thread, creditLedger, orchestrator } = await setup(createMockGateway(mock));
     const controller = new AbortController();
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
-      userText: "idempotent cancel",
+      userText: "cancel billing",
       signal: controller.signal,
     });
     const eventsPromise = collectEvents(handle);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForStreamStart();
     controller.abort();
     await eventsPromise;
     const balanceAfterCancel = await creditLedger.getBalance({
@@ -230,27 +240,8 @@ describe("cancel billing", () => {
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
-  it("cancels the in-flight turn when the WebSocket disconnects", async () => {
-    let streamReleased!: () => void;
-    const streamStarted = new Promise<void>((resolve) => {
-      streamReleased = resolve;
-    });
-    const partialResult: GenerateResult = {
-      content: [{ type: "text", text: "streaming" }],
-      toolCalls: [],
-      finishReason: "end_turn",
-      usage: { inputTokens: 100_000, outputTokens: 100_000 },
-      model: "gpt-4.1-mini",
-      provider: "openai",
-    };
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      stream: abortAwarePartialStream(partialResult, { waitForStart: streamReleased }),
-      async generate() {
-        throw new Error("not used");
-      },
-    };
-
+  it("cancels the in-flight turn when the owning WebSocket disconnects", async () => {
+    const gateway = createMockGateway(mock);
     const { thread, creditLedger, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
     app.gateway = gateway;
@@ -290,22 +281,35 @@ describe("cancel billing", () => {
       },
     };
 
-    const startPromise = runner.startTurn({ threadId: thread.id, userText: "ws disconnect" });
-    await streamStarted;
+    let ownerConnectionToken = "";
+    const ownerPeer: WsPeer = {
+      request: new Request("https://app.localhost/ws"),
+      context: { app, userId: "user-1" },
+      send: (data) => {
+        const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
+        if (frame.type === "connected" && frame.connectionToken) {
+          ownerConnectionToken = frame.connectionToken;
+        }
+      },
+      close: () => {},
+    };
+    const ownerSession = createThreadWebSocketSession(ownerPeer);
+    ownerSession.open();
+    expect(ownerConnectionToken.length).toBeGreaterThan(0);
+
+    const startPromise = runner.startTurn({
+      threadId: thread.id,
+      userText: "cancel billing",
+      connectionToken: ownerConnectionToken,
+    });
+    await waitForStreamStart();
     const turnId = runner.getRunningTurnId(thread.id);
     expect(turnId).not.toBeNull();
 
-    const peer: WsPeer = {
-      request: new Request("https://app.localhost/ws"),
-      context: { app, userId: "user-1" },
-      send: () => {},
-      close: () => {},
-    };
-    const session = createThreadWebSocketSession(peer);
-    await session.onMessage(
+    await ownerSession.onMessage(
       JSON.stringify({ type: "subscribe", threadId: thread.id, lastSeq: "0" }),
     );
-    session.onClose();
+    ownerSession.onClose();
     await startPromise;
     const deadline = Date.now() + 5_000;
     while (runner.getRunningTurnId(thread.id) && Date.now() < deadline) {
@@ -319,5 +323,87 @@ describe("cancel billing", () => {
     expect(BigInt(balance)).toBeLessThan(1_000_000n);
     const assistantTurn = turnId ? await app.repos.turns.findById(turnId) : null;
     expect(assistantTurn?.status).toBe("cancelled");
+  });
+
+  it("does not disconnect-cancel turns started by another connection", async () => {
+    const gateway = createMockGateway(mock);
+    const { thread, runner, hub, repos } = await setup(gateway);
+    const app = createInMemoryAppServices();
+    app.gateway = gateway;
+    app.threadRepos = repos;
+    app.repos = repos;
+    app.threadEventHub = hub;
+    app.hub = hub;
+    app.runner = runner;
+    app.threadRuntime = {
+      async requireOwnedThread(threadId, userId) {
+        if (threadId !== thread.id || userId !== "user-1") throw new Error("not found");
+        return {
+          ...thread,
+          workId: "work-1",
+          currentAgentId: null,
+          activeLeafTurnId: null,
+          nextSeq: 0n,
+          status: "active",
+        };
+      },
+      async liveState() {
+        return {
+          threadId: thread.id,
+          status: "idle",
+          runningTurnId: runner.getRunningTurnId(thread.id),
+          currentAgent: null,
+          nextSeq: "1",
+          resumeAfterSeq: "0",
+        };
+      },
+      async sendMessage() {
+        throw new Error("not used");
+      },
+      async journalEvents() {
+        return [];
+      },
+    };
+
+    let ownerConnectionToken = "";
+    const ownerPeer: WsPeer = {
+      request: new Request("https://app.localhost/ws-owner"),
+      context: { app, userId: "user-1" },
+      send: (data) => {
+        const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
+        if (frame.type === "connected" && frame.connectionToken) {
+          ownerConnectionToken = frame.connectionToken;
+        }
+      },
+      close: () => {},
+    };
+    createThreadWebSocketSession(ownerPeer).open();
+
+    const startPromise = runner.startTurn({
+      threadId: thread.id,
+      userText: "cancel billing",
+      connectionToken: ownerConnectionToken,
+    });
+    await waitForStreamStart();
+    const turnId = runner.getRunningTurnId(thread.id);
+    expect(turnId).not.toBeNull();
+
+    const spectatorPeer: WsPeer = {
+      request: new Request("https://app.localhost/ws-spectator"),
+      context: { app, userId: "user-1" },
+      send: () => {},
+      close: () => {},
+    };
+    const spectatorSession = createThreadWebSocketSession(spectatorPeer);
+    spectatorSession.open();
+    await spectatorSession.onMessage(
+      JSON.stringify({ type: "subscribe", threadId: thread.id, lastSeq: "0" }),
+    );
+    spectatorSession.onClose();
+
+    expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
+
+    await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
+    await startPromise;
   });
 });
