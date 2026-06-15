@@ -176,6 +176,27 @@ function writeSlowAfterFirstChunk(
   timer.unref();
 }
 
+/** Streams partial output then ignores abort — gateway drain must time out. */
+function writeHangCancelDrainStream(
+  res: import("node:http").ServerResponse,
+  id: string,
+  model: string,
+): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.write(
+    sseLine({
+      id,
+      object: "chat.completion.chunk",
+      model,
+      choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }],
+    }),
+  );
+}
+
 /** Streams partial output + usage, then stalls until the client aborts the request. */
 function writeCancelBillingStream(
   req: import("node:http").IncomingMessage,
@@ -655,6 +676,11 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
 
         if (messageText(body.messages).includes("openrouter hard cancel")) {
           writeOpenRouterHardCancelStream(req, res, model);
+          return;
+        }
+
+        if (messageText(body.messages).includes("hang cancel drain")) {
+          writeHangCancelDrainStream(res, id, model);
           return;
         }
 

@@ -34,6 +34,11 @@ class FakeThreadTransport implements ThreadTransport {
     turnId: "turn_1",
     status: "cancelled",
   });
+  connectionToken: string | undefined = undefined;
+
+  getConnectionToken(): string | undefined {
+    return this.connectionToken;
+  }
 
   connect(): void {}
 
@@ -250,6 +255,7 @@ function deferred<T>() {
 describe("ThreadRunController", () => {
   it("appends the user message, subscribes from streamCursor, applies events, and tears down on RUN_FINISHED", async () => {
     const transport = new FakeThreadTransport();
+    transport.connectionToken = "conn-test";
     const actions = makeActions();
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",
@@ -263,6 +269,7 @@ describe("ThreadRunController", () => {
       data: {
         threadId: "thread_1",
         text: "Hello",
+        connectionToken: "conn-test",
       },
     });
     expect(transport.subscribeThreadId).toBe("thread_1");

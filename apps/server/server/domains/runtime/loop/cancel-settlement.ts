@@ -9,6 +9,7 @@ import {
   readOpenRouterGenerationId,
   readOpenRouterProviderData,
 } from "../gateway/adapters/openrouter/provider-data.js";
+import { readMeteringStatus } from "../gateway/domain/metering.js";
 import type { GenerateResult } from "../gateway/index.js";
 
 export type OpenRouterReconcileConfig = {
@@ -41,6 +42,9 @@ function hasProviderReportedCost(result: GenerateResult): boolean {
 /** Whether a cancelled model call produced billable usage worth persisting. */
 export function shouldPersistCancelledModelCall(result: GenerateResult): boolean {
   if (hasBillableTokenUsage(result.usage) || hasProviderReportedCost(result)) {
+    return true;
+  }
+  if (readMeteringStatus(result.providerData) === "missing_usage") {
     return true;
   }
   if (result.provider === "openrouter" && readOpenRouterGenerationId(result.providerData)) {

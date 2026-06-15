@@ -41,6 +41,7 @@ type CreateThreadInput = {
 export type AppendUserMessageInput = {
   threadId: string;
   text: string;
+  connectionToken?: string;
 };
 
 type CancelTurnInput = {
