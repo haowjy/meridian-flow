@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ConversationSection — which thread the project currently treats as active,
  * and how that was resolved. Nothing else.

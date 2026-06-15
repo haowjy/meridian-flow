@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * group-delivery-segments — converts delivery blocks into render segments.
  *

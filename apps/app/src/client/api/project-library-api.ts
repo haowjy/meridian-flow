@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-library-api — typed HTTP client for the project Library inventory.
  *

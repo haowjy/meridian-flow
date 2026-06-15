@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * use-debug-enabled — gating hook for the dev-only debug overlay.
  *

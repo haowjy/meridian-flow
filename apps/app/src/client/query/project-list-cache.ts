@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-list-cache — direct read/write helpers for the cached project list in
  * the React Query client (read list, optimistic upsert). Keeps cache mutation

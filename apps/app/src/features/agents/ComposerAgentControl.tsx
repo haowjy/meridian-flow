@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ComposerAgentControl — wires AgentChip + AgentPicker for the composer footer.
  * Interactive only when the next send creates or binds a new thread; readonly

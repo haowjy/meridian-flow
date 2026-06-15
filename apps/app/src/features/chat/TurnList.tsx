@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * TurnList — single Virtuoso list keyed by `turn.id` that renders BOTH live
  * and settled assistant turns through the same row position.

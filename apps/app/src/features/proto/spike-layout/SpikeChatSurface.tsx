@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SpikeChatSurface — minimal chat-shaped surface for Gate #3 (center ↔ dock
  * move) and Gate #1 (state survival across portal move). Holds:

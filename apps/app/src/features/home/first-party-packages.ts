@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { msg } from "@lingui/core/macro";
 import { BookOpen, FlaskConical, LineChart, Microscope } from "lucide-react";
 

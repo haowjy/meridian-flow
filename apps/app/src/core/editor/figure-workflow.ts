@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * figure-workflow — pure helpers for the editor's figure upload/insert flow.
  *

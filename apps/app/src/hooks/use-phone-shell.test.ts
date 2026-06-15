@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * use-phone-shell tests — executable coverage for the device predicate that
  * decides whether ProjectView mounts the phone or desktop shell.

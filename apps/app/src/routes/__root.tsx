@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * __root route — Meridian app document shell.
  *

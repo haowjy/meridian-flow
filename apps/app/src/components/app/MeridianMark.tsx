@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { cn } from "@/lib/utils";
 
 /** Meridian wordmark mark — gradient hexagon used in the sidebar header. */

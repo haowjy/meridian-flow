@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useSkillDefinition — React Query hooks for Library skill definition editing.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Types for the stable-identity layout spike — surfaces are mounted ONCE
  * (react-reverse-portal InPortal) and OutPortal'd into CSS-grid named slots.

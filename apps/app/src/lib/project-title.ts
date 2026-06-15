@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-title — localized project-title display helpers (default "Untitled
  * project" fallback + display normalization). Single source for how a project's

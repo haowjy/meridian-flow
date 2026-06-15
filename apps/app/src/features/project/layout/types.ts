@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Flat-grid layout contracts for the project project.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LibraryPaneController — desktop controller for the Library destination.
  *

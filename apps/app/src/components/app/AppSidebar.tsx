@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AppSidebar — the persistent desktop app-level navigation sidebar.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * composer-agent-mode — freeze-gate for the composer agent picker.
  *

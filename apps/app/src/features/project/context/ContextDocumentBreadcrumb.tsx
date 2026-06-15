@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared path-breadcrumb for a context document — used by the live editor
  * header (TRACKED tabs) and the viewer chrome. Drops the leaf because the

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatColumn — thin layout wrapper that pins the `chat-column` Tier-2 utility
  * (max width + horizontal padding) around chat content. No layout logic of its

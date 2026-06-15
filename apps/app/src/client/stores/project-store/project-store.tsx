@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project-level coordination state (Zustand vanilla store + React context).
  *

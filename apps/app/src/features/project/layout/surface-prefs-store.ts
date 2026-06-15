@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Device-local project surface preference store.
  *

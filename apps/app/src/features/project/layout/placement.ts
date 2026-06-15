@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Pure screen-to-surface placement for the project project.
  *

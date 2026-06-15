@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Input — shadcn text input primitive. Upstream-managed wrapper; customize via
  * `cn()` + tokens at call sites, not by editing here.

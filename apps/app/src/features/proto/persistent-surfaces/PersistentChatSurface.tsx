@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Lifted chat surface — one motion.div instance that glides between dock
  * (Home/Context) and center (Chat) geometries. Never unmounted by destination.

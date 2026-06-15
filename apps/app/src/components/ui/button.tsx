@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Button — shadcn button primitive with `cva` variant/size styles and `asChild`
  * slot support. Upstream-managed; customize via `cn()` + tokens at call sites.

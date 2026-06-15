@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * usePhoneShell — device-capability predicate for selecting the phone project shell.
  *

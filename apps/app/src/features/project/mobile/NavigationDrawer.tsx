@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * NavigationDrawer — phone project drawer for screens, chats, and account.
  *

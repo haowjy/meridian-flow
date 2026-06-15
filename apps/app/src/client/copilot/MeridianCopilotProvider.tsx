@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MeridianCopilotProvider — exposes Meridian's shared thread run controller.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ReadOnlyViewerFrame — shared chrome for non-tracked file viewers.
  *

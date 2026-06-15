@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * tool-renderers.test — guards invoke skill-run failure classification against
  * the server-side gate strings in skill-tools.ts.

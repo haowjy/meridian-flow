@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LeftSidebar — desktop project workspace navigation rail combining screen
  * destinations, thread access, and project creation. Mobile navigation uses

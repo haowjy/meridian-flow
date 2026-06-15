@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SubagentTaskCard — warm summary strip for a subagent thread nested under the
  * active project conversation. The card is presentational and receives thread

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shell UI state for the persistent-surfaces prototype — destination switch
  * and whether the document is peeking beside chat (reverse-portal slot).

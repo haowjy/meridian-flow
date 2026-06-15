@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextEditorMountHost — hosts the *active* TRACKED context document with
  * a bounded "keep-warm" set of recently-viewed editors.

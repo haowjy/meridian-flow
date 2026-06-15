@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * builtin-agents-fallback — client-side builtin catalog when GET /api/agents is
  * unavailable (route not deployed yet, offline, or error). Keeps the Home hero

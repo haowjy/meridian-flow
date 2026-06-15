@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProjectListSection — desktop project-list sidebar section.
  *

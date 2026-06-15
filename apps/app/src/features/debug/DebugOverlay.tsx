@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DebugOverlay — the single mount point for the dev-only debug surface.
  *

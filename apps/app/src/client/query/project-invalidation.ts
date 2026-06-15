@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-invalidation — invalidates a project's thread + works React Query
  * caches together so dependent views refetch after a mutation. One small

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Independent-chat registry — client-side convention for "project-less" chats.
  *

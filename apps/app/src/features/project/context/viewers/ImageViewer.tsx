@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ImageViewer — read-only body for `image/*` context/result files.
  *

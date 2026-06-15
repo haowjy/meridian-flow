@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatSurface — the single, persistent chat instance for the desktop project.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProjectRow — editable project row for the desktop app sidebar.
  *

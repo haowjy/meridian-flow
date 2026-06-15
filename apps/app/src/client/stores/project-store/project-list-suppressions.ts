@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Project ids hidden from list merges until undo or server delete completes. */
 const suppressed = new Set<string>();
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectList — React Query hook for the sidebar project list, merged with
  * optimistic and independent-project state and with soft-delete suppressions.

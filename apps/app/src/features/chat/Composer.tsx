@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Composer — shared chat input surface used by home and pinned chat footers.
  * It owns textarea growth, keyboard submit/stop behaviour, and attach/send

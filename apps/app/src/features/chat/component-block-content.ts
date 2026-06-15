@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * component-block-content — shared parser for custom component block payloads.
  *

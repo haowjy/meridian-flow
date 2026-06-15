@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * JsonTree — token-styled pretty-printed JSON renderer for the debug overlay.
  *

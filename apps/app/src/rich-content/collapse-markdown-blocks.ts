@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * collapse-markdown-blocks — normalizes Streamdown's streaming block tokens so
  * live markdown renders with the same paragraph spacing as static mode (collapse

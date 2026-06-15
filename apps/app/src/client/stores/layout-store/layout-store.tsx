@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Workspace layout UI store for thread-list work grouping.
  *

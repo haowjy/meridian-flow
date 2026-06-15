@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * thread-store types — the thread store's state/action contracts plus the
  * pending-stream / deferred-send handoff shape. The canonical thread store

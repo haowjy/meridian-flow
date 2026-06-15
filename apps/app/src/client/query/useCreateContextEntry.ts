@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 

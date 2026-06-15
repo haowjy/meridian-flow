@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AppShell — authenticated app frame with project navigation, account chrome,
  * and the viewport-locked main pane. Feature routes provide the main content;

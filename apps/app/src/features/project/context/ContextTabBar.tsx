@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextTabBar — the tab strip above the context main pane.
  *

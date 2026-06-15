@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * streaming-text-dev — DEV-ONLY playback throttling for streaming text.
  *

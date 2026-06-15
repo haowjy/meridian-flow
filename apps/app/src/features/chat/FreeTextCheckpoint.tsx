@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * FreeTextCheckpoint — inline ask_user checkpoint for open text answers.
  *

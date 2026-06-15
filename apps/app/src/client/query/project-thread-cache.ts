@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-thread-cache — direct read/write helpers for a project's cached thread
  * list in the React Query client (read, optimistic upsert/replace). Keeps thread

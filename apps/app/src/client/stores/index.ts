@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: the public store surface for features — re-exports the independent-
  * projects, layout, project, and thread stores plus announcements. Features

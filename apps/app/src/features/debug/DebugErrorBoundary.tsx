@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DebugErrorBoundary — shared error boundary used throughout the dev-only
  * debug overlay.

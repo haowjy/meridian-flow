@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * thread-query-keys — the canonical React Query key factory for thread-scoped
  * data (snapshot, uploads rail, recent-documents rail). Single source of key

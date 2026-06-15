@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 

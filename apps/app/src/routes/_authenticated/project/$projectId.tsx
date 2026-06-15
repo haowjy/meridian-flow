@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Authenticated project route. Owns workspace search params and passes the
  * normalized route state into the controlled ProjectView shell.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context files panel — dedicated device-local preference store.
  *

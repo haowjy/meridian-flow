@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ToggleGroup — shadcn/Radix toggle-group primitive (segmented control).
  * Upstream-managed wrapper; customize via `cn()` + tokens at call sites.

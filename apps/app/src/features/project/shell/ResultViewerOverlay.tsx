@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ResultViewerOverlay — desktop dialog viewer surface for one Results row.
  *

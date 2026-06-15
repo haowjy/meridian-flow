@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Sheet — shadcn/Radix dialog-based slide-over primitive (used for mobile
  * drawers via the Sidebar). Upstream-managed wrapper; customize at call sites.

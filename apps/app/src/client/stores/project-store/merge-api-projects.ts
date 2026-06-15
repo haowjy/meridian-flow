@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * merge-api-projects — merges an authoritative API project list with optimistic
  * rows not yet in the response (and excludes soft-deleted rows pending finalize).

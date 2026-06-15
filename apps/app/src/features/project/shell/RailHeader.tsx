@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * RailHeader — the shared header bar for a contextual overlay rail.
  *

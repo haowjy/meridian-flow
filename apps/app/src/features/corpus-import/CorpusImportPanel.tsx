@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { CorpusImportItemResponse, CorpusImportResponse } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileUp, FolderOpen, Loader2, TriangleAlert } from "lucide-react";

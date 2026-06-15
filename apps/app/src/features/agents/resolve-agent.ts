@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Catalog resolution helpers — map a thread-bound slug to display fields for
  * chips and pickers. Degrades to the slug when no catalog row exists.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ActivityRow — the visual primitive for one entry in an assistant turn's
  * activity timeline.

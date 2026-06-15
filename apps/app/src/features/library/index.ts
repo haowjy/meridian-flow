@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * features/library — project capability inventory and authoring shell.
  */

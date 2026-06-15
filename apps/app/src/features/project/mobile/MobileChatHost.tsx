@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileChatHost — phone chat wrapper that applies keyboard-aware composer clearance.
  *

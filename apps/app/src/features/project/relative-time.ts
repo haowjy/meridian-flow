@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * relative-time — one shared "Nm / Nh / Nd" formatter for the project
  * workspace. Single source so the thread list, chat dock, and Chats overview

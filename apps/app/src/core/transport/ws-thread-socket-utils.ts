@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ws-thread-socket-utils — small pure helpers for WebSocket close handling:
  * the default ping timeout, terminal-close detection (auth codes), and

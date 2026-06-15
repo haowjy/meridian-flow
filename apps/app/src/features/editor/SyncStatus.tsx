@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SyncStatus — collaboration sync indicator pill for the document editor.
  *

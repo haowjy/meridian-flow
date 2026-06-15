@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * TurnBlockStep — renders a reasoning / fallback block in the activity timeline.
  *

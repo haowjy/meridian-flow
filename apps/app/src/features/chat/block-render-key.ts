@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * block-render-key — single source of truth for React keys on assistant
  * blocks. Keys are positional `${turnId}::${sequence}` so the SAME identity

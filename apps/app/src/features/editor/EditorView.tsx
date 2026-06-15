@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EditorView — the collaborative document editor surface.
  *

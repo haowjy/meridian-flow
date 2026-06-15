@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Per-thread turn + coordination state (Zustand vanilla store + React context).
  *

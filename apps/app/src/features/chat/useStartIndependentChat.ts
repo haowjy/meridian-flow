@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 

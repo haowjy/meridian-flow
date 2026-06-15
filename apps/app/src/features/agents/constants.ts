@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared agent UX constants — builtin fallback slug and display labels used
  * before the project catalog loads or when the API is unavailable.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useCreateChat — the project workspace "new chat" action.
  *

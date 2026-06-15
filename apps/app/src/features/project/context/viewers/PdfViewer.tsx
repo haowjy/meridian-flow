@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PdfViewer — browser-native PDF body via `<object>` / `<iframe>`.
  *

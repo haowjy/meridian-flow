@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-agents-api — typed HTTP client for the project agent catalog.
  *

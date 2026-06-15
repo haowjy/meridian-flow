@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * HomeScreen — the Home destination: a Chats overview across every Work in the
  * project. Ports the P5 proto's overview table, wired to real data.

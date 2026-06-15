@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-results-api — typed HTTP client for the Results rail.
  *

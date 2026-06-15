@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * utils — the `cn()` className combiner (clsx + tailwind-merge). Shared by every
  * component for conditional/merged Tailwind classes. Barrel-thin utility module.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ResizeHandle provides imperative pointer resizing for stable slot grids.
  *

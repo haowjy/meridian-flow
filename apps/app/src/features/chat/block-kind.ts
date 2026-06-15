@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * block-kind — image sniffing for protocol `Block` values on the assistant turn
  * surface. Text and tool rendering use block types directly in delivery helpers.

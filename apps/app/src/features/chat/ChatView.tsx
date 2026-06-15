@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatView — the full conversation view for a thread (project chat and the
  * independent `/chat/:threadId` surface).

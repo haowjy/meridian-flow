@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SidebarSectionLabel — the canonical project section label.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-groups — groups projects into date buckets (today/yesterday/this
  * week/older) for the sidebar and recent lists. Thin wrapper over the shared

@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { Project } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";

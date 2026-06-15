@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Document editor placeholder rendered inside the reverse portal — ticker,
  * scrollable body, and textarea proof-of-life state bind to the lifted registry.

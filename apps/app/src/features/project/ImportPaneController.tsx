@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Trans } from "@lingui/react/macro";
 
 import { CorpusImportPanel } from "@/features/corpus-import/CorpusImportPanel";

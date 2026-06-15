@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context files store — upgrade-path and seed tests.
  *

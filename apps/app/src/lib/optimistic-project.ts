@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * optimistic-project — the template for client-led optimistic writes.
  *
@@ -45,8 +44,14 @@ function makeOptimisticProject(id: string, title: string, timestamp: string): Pr
   return {
     id,
     userId: OPTIMISTIC_OWNER_ID,
+    name: title,
     title,
+    slug: id,
+    isPersonal: false,
+    systemPrompt: null,
     description: null,
+    settings: {},
+    lastActivityAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp,
     deletedAt: null,

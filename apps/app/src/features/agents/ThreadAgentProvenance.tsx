@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadAgentProvenance — readonly compact chip for thread header rows. Positive
  * provenance framing ("Started with …"); click-through to Library is deferred.

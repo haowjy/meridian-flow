@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * IndependentChatView — standalone chat route for a thread outside the full
  * project workspace chrome, with promotion back into a project when needed.

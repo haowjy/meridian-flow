@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LiveTurnStatusBar — compact status row for the currently streaming assistant
  * turn. It keeps live-state labels and the tokenized streaming dot in one leaf

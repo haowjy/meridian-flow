@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * FigureNodeView — the React node view for the editor's custom `figure` node.
  *

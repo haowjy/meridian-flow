@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChatScreen — project workspace destination that renders the selected thread
  * as the primary pane. It coordinates desktop/mobile rail visibility without

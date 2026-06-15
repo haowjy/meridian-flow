@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileResultViewerOverlay — phone full-screen chrome for a single Result.
  *

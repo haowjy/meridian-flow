@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context tabs store — per-project open-file working set for the Context
  * destination.

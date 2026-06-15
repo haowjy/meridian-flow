@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * TransportProvider — creates and lifecycle-manages the singleton
  * `WsThreadTransport` and exposes it via context (`useThreadTransport`).

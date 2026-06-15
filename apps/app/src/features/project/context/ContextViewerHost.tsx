@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextViewerHost — read-only viewer surface for non-tracked context tabs.
  *

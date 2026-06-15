@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useThreadHandoff — starts the chat stream that belongs to this thread mount.
  *

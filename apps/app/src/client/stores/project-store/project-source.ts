@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * project-source — the single SSR/browser loader for the sidebar project list.
  *

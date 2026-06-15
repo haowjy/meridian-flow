@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ws-reconnect — reconnect backoff policy for the WebSocket transports.
  *

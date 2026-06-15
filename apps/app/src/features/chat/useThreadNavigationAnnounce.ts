@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type RefObject, useEffect } from "react";
 
 import { announce } from "@/client/stores";

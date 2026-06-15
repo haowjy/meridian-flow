@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { AGUIEvent, SendMessageResponse, WsServerMessage } from "@meridian/contracts/protocol";
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import { serverOrigin, serverWebSocketUrl } from "./server-origin";

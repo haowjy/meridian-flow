@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useAgentDefinition — React Query hooks for Library agent definition editing.
  *

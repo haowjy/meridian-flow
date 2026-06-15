@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileProject — phone-class project shell with one active view at a time.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ImageBlock — renders an inline/thumbnail image block in the chat surface with
  * loading skeleton and error fallback.

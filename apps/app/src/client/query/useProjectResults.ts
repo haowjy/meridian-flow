@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useProjectResults — list promoted artifacts ("Results") for a project.
  *

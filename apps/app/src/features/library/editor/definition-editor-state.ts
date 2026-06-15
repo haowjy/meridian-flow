@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * definition-editor-state — pure helpers for Library definition form drafts.
  *

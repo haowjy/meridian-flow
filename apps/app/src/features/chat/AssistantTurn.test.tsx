@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AssistantTurn.test — behavioral contracts for assistant turn rendering.
  *

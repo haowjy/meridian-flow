@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProjectShell — destination-agnostic desktop layout mechanics.
  *

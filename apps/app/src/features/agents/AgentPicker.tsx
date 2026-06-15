@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AgentPicker — Radix popover listing installed then built-in agents from the
  * project catalog. Quiet loading/empty/error states; no default-agent or

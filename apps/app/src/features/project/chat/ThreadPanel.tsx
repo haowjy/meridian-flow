@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ThreadPanel — project-scoped conversation list shared by shell navigation.
  *

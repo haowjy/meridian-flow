@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { Work } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 

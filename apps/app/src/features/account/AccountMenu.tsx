@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { User } from "@supabase/supabase-js";
 
 export function AccountMenu({ user }: { user?: Pick<User, "email"> | null }) {

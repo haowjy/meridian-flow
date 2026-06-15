@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SpikeEditorSurface — the REAL production TipTap editor mounted with the REAL
  * extension set (`createEditorConfig` from `@/core/editor/config`), but bound

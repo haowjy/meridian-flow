@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * TransportSection — surfaces the WS singleton's `ConnectionState` union.
  *

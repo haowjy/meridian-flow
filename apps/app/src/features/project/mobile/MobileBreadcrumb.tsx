@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileBreadcrumb — tappable location trail for the phone context screen
  * (a lone root crumb at the Files root, deeper trails when drilled in).

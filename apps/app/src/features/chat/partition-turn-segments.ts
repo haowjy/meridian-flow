@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * partition-turn-segments — structural Thinking/Activity segmentation for assistant turns.
  *

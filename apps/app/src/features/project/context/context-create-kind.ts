@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context creation type shared by desktop context chrome.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * editor config — assembles the TipTap editor option set for a document session.
  *

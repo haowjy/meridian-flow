@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EditorToolbar — formatting controls for the document editor.
  *

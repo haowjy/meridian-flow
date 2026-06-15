@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Telemetry stub for chat-level turn errors.
  *

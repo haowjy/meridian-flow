@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { bootstrapDefaultProject } from "@/client/phase5-api";

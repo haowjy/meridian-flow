@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DefinitionSaveBar — explicit save affordance and inline save-state feedback.
  */

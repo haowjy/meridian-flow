@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DocumentSessionRegistry — app-level owner of `DocumentSession` instances,
  * keyed by `documentId`.

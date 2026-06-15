@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * BinaryFallbackViewer — the "Preview not available — Download" body for
  * non-tracked files we don't have a dedicated viewer for yet.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Avatar — shadcn/Radix avatar primitive (Avatar / AvatarImage / AvatarFallback).
  * Upstream-managed wrapper; customize via `cn()` + tokens at call sites, not here.

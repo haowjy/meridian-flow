@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the independent-projects store (mark/promote/query hooks).
  */

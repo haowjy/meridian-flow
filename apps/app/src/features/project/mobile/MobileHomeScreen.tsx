@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileHomeScreen — phone presentation for the shared Home overview body.
  *

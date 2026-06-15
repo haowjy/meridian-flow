@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ContextSidebar — right-side project rail summarizing work context sections
  * and deferred artifact surfaces. It is visual chrome only; data ownership

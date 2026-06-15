@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MobileDocumentHost — read-only phone document/viewer host with registry retention.
  *

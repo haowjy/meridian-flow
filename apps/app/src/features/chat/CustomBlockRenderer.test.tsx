@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CustomBlockRenderer.test — verifies the custom-block registry seam.
  *

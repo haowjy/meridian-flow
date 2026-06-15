@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ToolRow — adapter from a normalized `ToolView` to one row in the activity
  * timeline.

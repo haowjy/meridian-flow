@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * usePackageInstall — React Query hooks for package catalog, install preview/apply,
  * and update check/apply. Mutations invalidate the project library inventory.
