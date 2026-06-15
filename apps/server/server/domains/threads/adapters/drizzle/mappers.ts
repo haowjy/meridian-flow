@@ -24,12 +24,14 @@ export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsa
   };
 }
 
-export function mapThread(row: typeof schema.threads.$inferSelect): Thread {
+export function mapThread(
+  row: typeof schema.threads.$inferSelect & { workId?: string | null },
+): Thread {
   const isFrozen = row.bakedSkillSlugs !== null;
   return {
     id: row.id,
     projectId: row.projectId,
-    workId: row.workId,
+    workId: row.workId ?? null,
     userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
     status: row.status === "archived" ? "archived" : "idle",

@@ -31,10 +31,10 @@ async function setup() {
   const source = await repos.threads.create({
     userId: "user-1",
     projectId: project.id,
-    workId: "work-1",
     currentAgent: "writer",
     title: "Chapter chat",
   });
+  await repos.threadWorks.addMembership(source.id, "work-1", true);
   const userTurn = await repos.turns.create({
     threadId: source.id,
     role: "user",
@@ -59,6 +59,7 @@ describe("thread agent swap", () => {
     const target = await handoffThreadAgent(
       {
         threads: env.repos.threads,
+        threadWorks: env.repos.threadWorks,
         turns: env.repos.turns,
         blocks: env.repos.blocks,
         threadDocuments: env.repos.threadDocuments,
@@ -97,6 +98,7 @@ describe("thread agent swap", () => {
     const target = await forkThreadAgent(
       {
         threads: env.repos.threads,
+        threadWorks: env.repos.threadWorks,
         turns: env.repos.turns,
         blocks: env.repos.blocks,
         threadDocuments: env.repos.threadDocuments,
@@ -131,8 +133,8 @@ describe("thread agent swap", () => {
     const other = await env.repos.threads.create({
       userId: "user-1",
       projectId: env.source.projectId,
-      workId: "work-1",
     });
+    await env.repos.threadWorks.addMembership(other.id, "work-1", true);
     const foreignTurn = await env.repos.turns.create({
       threadId: other.id,
       role: "user",
@@ -143,6 +145,7 @@ describe("thread agent swap", () => {
       forkThreadAgent(
         {
           threads: env.repos.threads,
+          threadWorks: env.repos.threadWorks,
           turns: env.repos.turns,
           blocks: env.repos.blocks,
           threadDocuments: env.repos.threadDocuments,

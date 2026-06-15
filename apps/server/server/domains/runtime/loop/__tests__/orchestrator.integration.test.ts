@@ -31,6 +31,7 @@ import {
   mockProviderConfig,
   type StreamEvent,
 } from "../../gateway/index.js";
+import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import type {
   CheckpointToolHandlerContext,
   ToolExecutor,
@@ -215,11 +216,13 @@ describe("runtime loop integration", () => {
       id: sourceThread.id,
       userId: sourceThread.userId,
       projectId: sourceThread.projectId,
-      workId: sourceThread.workId,
       title: sourceThread.title,
       systemPrompt: sourceThread.systemPrompt,
       workingState: sourceThread.workingState,
     });
+    if (sourceThread.workId) {
+      await repos.threadWorks.addMembership(sourceThread.id, sourceThread.workId, true);
+    }
     return repos;
   }
 
@@ -273,6 +276,7 @@ describe("runtime loop integration", () => {
   function gatewayFromResults(results: GenerateResult[]): Gateway {
     let index = 0;
     return {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         const result = results[index++];
         if (!result) throw new Error(`No stubbed result for model call ${index}`);
@@ -363,6 +367,7 @@ describe("runtime loop integration", () => {
   }): Gateway & { getCallCount(): number } {
     let call = 0;
     return {
+      ...gatewayStubDefaults,
       getCallCount: () => call,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         call += 1;
@@ -482,6 +487,7 @@ describe("runtime loop integration", () => {
   function positionalTextResumeGateway(): Gateway {
     let call = 0;
     return {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
@@ -543,6 +549,7 @@ describe("runtime loop integration", () => {
   function positionalReasoningGateway(): Gateway {
     let call = 0;
     return {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
@@ -1658,6 +1665,7 @@ describe("runtime loop integration", () => {
   it("cost cap blocks the next model call on a chat-only turn", async () => {
     let streamCalls = 0;
     const gateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         streamCalls += 1;
         yield { type: "text.delta", text: "expensive reply" };
@@ -1961,6 +1969,7 @@ describe("runtime loop integration", () => {
   it("finalizes error when tool-use loop exceeds the safety limit", async () => {
     let modelCalls = 0;
     const loopingGateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         modelCalls += 1;
         yield {
@@ -2031,6 +2040,7 @@ describe("runtime loop integration", () => {
 
   it("records gateway stream errors as MeridianError in turn.error", async () => {
     const failingGateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         yield {
           type: "error",
@@ -2064,6 +2074,7 @@ describe("runtime loop integration", () => {
 
   it("finalizes error on finishReason error from gateway", async () => {
     const errorGateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         yield {
           type: "end",

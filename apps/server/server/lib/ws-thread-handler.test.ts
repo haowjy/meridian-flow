@@ -6,6 +6,7 @@
 import { EventType, parseWsServerMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../domains/projects/index.js";
+import { createInertGateway } from "../domains/runtime/gateway/test-gateway.js";
 import type { Gateway, GenerateRequest } from "../domains/runtime/index.js";
 import {
   createInMemoryEventJournalReader,
@@ -18,6 +19,7 @@ import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.j
 
 function inertGateway(): Gateway {
   return {
+    ...createInertGateway(),
     async *stream(_request: GenerateRequest) {
       yield {
         type: "error",
@@ -25,9 +27,6 @@ function inertGateway(): Gateway {
         message: "not used in this test",
         retryable: false,
       };
-      throw new Error("not used in this test");
-    },
-    async generate(_request: GenerateRequest) {
       throw new Error("not used in this test");
     },
   };

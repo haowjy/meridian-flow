@@ -73,8 +73,12 @@ export async function seedProjectFixture(
       VALUES (${workId}, ${projectId}, ${input.userId}, 'Main Arc')
     `;
     await tx`
-      INSERT INTO threads (id, work_id, project_id, created_by_user_id, title, kind, status)
-      VALUES (${threadId}, ${workId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'active')
+      INSERT INTO threads (id, project_id, created_by_user_id, title, kind, status)
+      VALUES (${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'active')
+    `;
+    await tx`
+      INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
+      VALUES (${threadId}, ${workId}, ${projectId}, true)
     `;
     await tx`
       INSERT INTO context_sources (id, project_id, name, slug, scope, adapter_type, is_primary, sort_order)
@@ -109,6 +113,7 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
     await tx`DELETE FROM turn_document_touches WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM turns WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM threads WHERE id = ${fixture.threadId}`;
+    await tx`DELETE FROM works WHERE project_id = ${fixture.projectId}`;
     await tx`DELETE FROM projects WHERE id = ${fixture.projectId}`;
   });
 }

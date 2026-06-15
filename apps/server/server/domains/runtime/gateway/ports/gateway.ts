@@ -17,4 +17,5 @@ export interface Gateway {
   stream(request: GenerateRequest): AsyncIterable<StreamEvent>;
   generate(request: GenerateRequest): Promise<GenerateResult>;
   listModels?(): ModelInfo[];
+  getDefaultModel(): string | undefined;
 }

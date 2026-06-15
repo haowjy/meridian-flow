@@ -186,6 +186,9 @@ export function createInMemoryAppServices(): AppServices {
           provider: request.provider ?? "in-memory",
         };
       },
+      getDefaultModel() {
+        return undefined;
+      },
     },
     threadRepos,
     repos: threadRepos,

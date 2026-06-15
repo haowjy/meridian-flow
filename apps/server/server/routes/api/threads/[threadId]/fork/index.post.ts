@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
     const thread = await forkThreadAgent(
       {
         threads: app.repos.threads as ThreadAgentSwapDeps["threads"],
+        threadWorks: app.repos.threadWorks,
         turns: app.repos.turns,
         blocks: app.repos.blocks,
         threadDocuments: app.repos.threadDocuments,

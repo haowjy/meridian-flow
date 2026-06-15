@@ -3,7 +3,7 @@
  * and provider config from the registry. Owns request->provider selection;
  * depends inward on domain types and the provider-adapter port.
  */
-import type { GenerateRequest, ModelInfo, ProviderConfig } from "./domain/index.js";
+import type { GenerateRequest, ModelInfo, ProviderConfig, TraceSpan } from "./domain/index.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 
 /** The fully resolved output of resolveRoute() — everything needed to stream. */
@@ -24,6 +24,10 @@ export interface ProviderRegistry {
   modelsById: Map<string, { model: ModelInfo; providerId: string }>;
 }
 
+export interface ProviderRegistryBuildOptions {
+  onWarning?: (span: TraceSpan) => void;
+}
+
 /**
  * Build the registry from ProviderConfig[] and the adapter map.
  * For each model in each provider config, stamps the model's `provider` field
@@ -33,10 +37,23 @@ export interface ProviderRegistry {
 export function buildProviderRegistry(
   configs: ProviderConfig[],
   adapters: Map<string, ProviderAdapter>,
+  options: ProviderRegistryBuildOptions = {},
 ): ProviderRegistry {
   const modelsById = new Map<string, { model: ModelInfo; providerId: string }>();
   for (const config of configs) {
     for (const model of config.models) {
+      const existing = modelsById.get(model.id);
+      if (existing) {
+        options.onWarning?.({
+          name: "gateway.model_collision_skipped",
+          attributes: {
+            modelId: model.id,
+            keptProviderId: existing.providerId,
+            skippedProviderId: config.id,
+          },
+        });
+        continue;
+      }
       const withProvider: ModelInfo = { ...model, provider: config.id };
       modelsById.set(model.id, { model: withProvider, providerId: config.id });
     }
@@ -49,10 +66,11 @@ export function buildProviderRegistry(
  *
  * Resolution order:
  * 1. Use `request.model` if present, else `defaultModel`.
- * 2. Look up the model in modelsById to find its provider.
- * 3. If `request.provider` is set, verify it matches the model's provider.
- *    This prevents silently routing to the wrong provider.
- * 4. Look up the adapter for that provider ID.
+ * 2. If `request.provider` is set, resolve the model inside that provider's
+ *    own model list. This allows one model ID to be exposed through multiple
+ *    provider/API-format entries.
+ * 3. Otherwise, look up the model in modelsById to find its first provider.
+ * 4. Look up the adapter for the resolved provider ID.
  *
  * Throws on: missing model, model-provider mismatch, missing adapter,
  * missing provider config. These are caught by the gateway.stream() caller
@@ -73,13 +91,27 @@ export function resolveRoute(
     throw new Error(`Unknown model: ${modelId}`);
   }
 
-  if (request.provider && request.provider !== entry.providerId) {
-    throw new Error(
-      `Model ${modelId} belongs to provider ${entry.providerId}, not ${request.provider}`,
-    );
+  if (request.provider) {
+    const providerConfig = registry.providers.find((p) => p.id === request.provider);
+    if (!providerConfig) {
+      throw new Error(`Provider config not found: ${request.provider}`);
+    }
+    const providerModel = providerConfig.models.find((model) => model.id === modelId);
+    if (!providerModel) {
+      throw new Error(`Model ${modelId} is not configured for provider ${request.provider}`);
+    }
+    const adapter = registry.adapters.get(request.provider);
+    if (!adapter) {
+      throw new Error(`No adapter registered for provider: ${request.provider}`);
+    }
+    return {
+      adapter,
+      model: { ...providerModel, provider: providerConfig.id },
+      providerConfig,
+    };
   }
 
-  const providerId = request.provider ?? entry.providerId;
+  const providerId = entry.providerId;
   const adapter = registry.adapters.get(providerId);
   if (!adapter) {
     throw new Error(`No adapter registered for provider: ${providerId}`);

@@ -271,7 +271,9 @@ export function createGateway(config: GatewayConfig): Gateway {
   for (const provider of config.providers) {
     adapters.set(provider.id, createAdapter(provider));
   }
-  const registry = buildProviderRegistry(config.providers, adapters);
+  const registry = buildProviderRegistry(config.providers, adapters, {
+    onWarning: config.onTrace,
+  });
 
   const gateway: Gateway = {
     async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
@@ -350,6 +352,10 @@ export function createGateway(config: GatewayConfig): Gateway {
 
     listModels(): ModelInfo[] {
       return [...registry.modelsById.values()].map((e) => e.model);
+    },
+
+    getDefaultModel(): string | undefined {
+      return config.defaultModel;
     },
   };
 

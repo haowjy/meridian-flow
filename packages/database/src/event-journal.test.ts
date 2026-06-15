@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type Database } from "./connection";
 import { createDrizzleEventJournal } from "./event-journal";
-import { eventJournal, projects, threads, works } from "./schema";
+import { eventJournal, projects, threads, threadWorks, works } from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
@@ -108,9 +108,14 @@ describe.skipIf(!databaseUrl)("event journal", () => {
     await db.insert(threads).values({
       id: threadId,
       projectId,
-      workId,
       createdByUserId: userId,
       title: "Event journal test thread",
+    });
+    await db.insert(threadWorks).values({
+      threadId,
+      workId,
+      projectId,
+      isPrimary: true,
     });
   });
 
@@ -128,9 +133,14 @@ describe.skipIf(!databaseUrl)("event journal", () => {
     await db.insert(threads).values({
       id,
       projectId,
-      workId,
       createdByUserId: userId,
       title,
+    });
+    await db.insert(threadWorks).values({
+      threadId: id,
+      workId,
+      projectId,
+      isPrimary: true,
     });
     return id;
   }

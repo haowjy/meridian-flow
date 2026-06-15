@@ -11,6 +11,7 @@ import {
   createInMemoryRepositories,
 } from "../../../threads/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
+import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
   CORE_TOOL_NAMES,
   createCoreToolRegistrations,
@@ -26,6 +27,7 @@ import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 function gatewayFromResults(results: GenerateResult[]): Gateway {
   let index = 0;
   return {
+    ...gatewayStubDefaults,
     async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
       const result = results[index++];
       if (!result) throw new Error(`No stubbed result for model call ${index}`);
@@ -145,6 +147,7 @@ describe("runtime orchestrator behavior", () => {
   it("passes registry tool definitions to the gateway when run input omits tools", async () => {
     let requestTools: GenerateRequest["tools"];
     const gateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
         requestTools = request.tools;
         yield {

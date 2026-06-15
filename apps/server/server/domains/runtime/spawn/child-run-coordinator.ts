@@ -18,6 +18,7 @@ import type {
   BlockRepository,
   EventJournalWriter,
   SubagentThreadFactory,
+  ThreadRepositories,
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
@@ -45,7 +46,14 @@ export interface ChildRunCoordinatorDeps {
     subagentThreads: SubagentThreadFactory;
     turns: TurnRepository;
     blocks: BlockRepository;
+    transaction: ThreadRepositories["transaction"];
+    threadWorks: ThreadRepositories["threadWorks"];
   };
+  resolveWorkMembership(input: {
+    threadId: ThreadId;
+    projectId: string;
+    parentThreadId?: string | null;
+  }): Promise<string>;
   eventWriter: EventJournalWriter;
   packageRepository: PackageRepository;
   childRunRegistry: ChildRunRegistry;
@@ -164,23 +172,31 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         ),
       };
     }
+    const childAgent = childAgentContext.agent;
 
-    const child = await deps.repos.subagentThreads.createSubagent({
-      userId: input.parentThread.userId,
-      projectId: input.parentThread.projectId,
-      workId: input.parentThread.workId,
-      parentThreadId: input.parentThread.id as ThreadId,
-      rootThreadId: input.parentThread.rootThreadId as ThreadId,
-      originTurnId: input.parentTurnId,
-      spawnDepth: input.parentThread.spawnDepth + 1,
-      currentAgent: input.agentSlug,
-      composedSystemPrompt: assembleComposedSystemPrompt({
-        basePrompt: childAgentContext.agent.body,
-        skillsSystemPromptSection: renderSkillsSystemPromptSection(childAgentContext.skills),
-      }),
-      bakedSkillSlugs: modelInvocableSkillSlugs(childAgentContext.skills),
-      title: input.description ?? `${input.agentSlug} subagent`,
-      spawnStatus: "running",
+    const child = await deps.repos.transaction(async () => {
+      const created = await deps.repos.subagentThreads.createSubagent({
+        userId: input.parentThread.userId,
+        projectId: input.parentThread.projectId,
+        parentThreadId: input.parentThread.id as ThreadId,
+        rootThreadId: input.parentThread.rootThreadId as ThreadId,
+        originTurnId: input.parentTurnId,
+        spawnDepth: input.parentThread.spawnDepth + 1,
+        currentAgent: input.agentSlug,
+        composedSystemPrompt: assembleComposedSystemPrompt({
+          basePrompt: childAgent.body,
+          skillsSystemPromptSection: renderSkillsSystemPromptSection(childAgentContext.skills),
+        }),
+        bakedSkillSlugs: modelInvocableSkillSlugs(childAgentContext.skills),
+        title: input.description ?? `${input.agentSlug} subagent`,
+        spawnStatus: "running",
+      });
+      const workId = await deps.resolveWorkMembership({
+        threadId: created.id as ThreadId,
+        projectId: input.parentThread.projectId,
+        parentThreadId: input.parentThread.id as ThreadId,
+      });
+      return { ...created, workId };
     });
 
     await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {

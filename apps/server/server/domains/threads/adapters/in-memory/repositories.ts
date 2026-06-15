@@ -5,7 +5,7 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -25,6 +25,7 @@ import type {
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepository,
+  ThreadWorksRepository,
   TurnDocumentTouch,
   TurnDocumentTouchRepository,
   TurnRepository,
@@ -74,7 +75,7 @@ function defaultThread(input: CreateThreadInput): Thread {
   return {
     id,
     projectId: input.projectId,
-    workId: input.workId ?? null,
+    workId: null,
     userId: input.userId,
     kind: normalized.kind,
     status: "idle",
@@ -152,6 +153,22 @@ export function createInMemoryRepositories(
   const modelResponses = new Map<string, ModelResponse>();
   const threadDocuments = new Map<string, ThreadDocument>();
   const documentTouches = new Map<string, TurnDocumentTouch>();
+  const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
+
+  function membershipKey(threadId: ThreadId, workId: WorkId): string {
+    return `${threadId}:${workId}`;
+  }
+
+  function primaryWorkIdForThread(threadId: ThreadId): WorkId | null {
+    for (const row of threadWorks.values()) {
+      if (row.threadId === threadId && row.isPrimary) return row.workId;
+    }
+    return null;
+  }
+
+  function projectThread(thread: Thread): Thread {
+    return { ...thread, workId: primaryWorkIdForThread(thread.id as ThreadId) };
+  }
 
   async function threadInActiveProject(thread: Thread): Promise<boolean> {
     if (!options.projects) return true;
@@ -160,8 +177,9 @@ export function createInMemoryRepositories(
   }
 
   async function toListItem(thread: Thread) {
+    const projected = projectThread(thread);
     const work =
-      thread.workId && options.works ? await options.works.findById(thread.workId) : null;
+      projected.workId && options.works ? await options.works.findById(projected.workId) : null;
     const threadTurns = [...turns.values()]
       .filter((turn) => turn.threadId === thread.id)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -177,7 +195,7 @@ export function createInMemoryRepositories(
       );
 
     return toThreadListItem({
-      thread,
+      thread: projected,
       workTitle: work && !work.deletedAt ? work.title : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
@@ -189,17 +207,17 @@ export function createInMemoryRepositories(
     async create(input) {
       const thread = defaultThread(input);
       threads.set(thread.id, thread);
-      return thread;
+      return projectThread(thread);
     },
     async createSubagent(input) {
       const thread = buildSubagentThreadRow(input);
-      threads.set(thread.id, thread);
-      return thread;
+      threads.set(thread.id, { ...thread, workId: null });
+      return projectThread(thread);
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
-      threads.set(thread.id, thread);
-      return thread;
+      threads.set(thread.id, { ...thread, workId: null });
+      return projectThread(thread);
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const thread = threads.get(id);
@@ -211,12 +229,12 @@ export function createInMemoryRepositories(
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
     },
     async findById(id) {
       const thread = threads.get(id);
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
-      return thread;
+      return projectThread(thread);
     },
     async listByUser(userId) {
       const visible: Thread[] = [];
@@ -226,7 +244,7 @@ export function createInMemoryRepositories(
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
         ) {
-          visible.push(thread);
+          visible.push(projectThread(thread));
         }
       }
       return visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -239,7 +257,7 @@ export function createInMemoryRepositories(
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
         ) {
-          visible.push(thread);
+          visible.push(projectThread(thread));
         }
       }
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -250,11 +268,13 @@ export function createInMemoryRepositories(
       for (const thread of threads.values()) {
         if (
           thread.projectId === projectId &&
-          thread.workId === workId &&
+          [...threadWorks.values()].some(
+            (row) => row.threadId === thread.id && row.workId === workId,
+          ) &&
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
         ) {
-          visible.push(thread);
+          visible.push(projectThread(thread));
         }
       }
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -265,7 +285,7 @@ export function createInMemoryRepositories(
       if (!thread) throw new Error(`Thread not found: ${id}`);
       const updated = { ...thread, status, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
     },
     async updateCurrentAgent(id, currentAgent) {
       const thread = threads.get(id);
@@ -279,19 +299,19 @@ export function createInMemoryRepositories(
       }
       const updated = { ...thread, currentAgent, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
     },
     async bakeComposedSystemPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
       if (thread.bakedSkillSlugs !== null) {
-        return thread;
+        return projectThread(thread);
       }
       if (
         input.expectedCurrentAgent !== undefined &&
         thread.currentAgent !== input.expectedCurrentAgent
       ) {
-        return thread;
+        return projectThread(thread);
       }
       const updated = {
         ...thread,
@@ -301,7 +321,7 @@ export function createInMemoryRepositories(
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
     },
     async recomputeCostFromModelResponses(id) {
       const thread = threads.get(id);
@@ -332,7 +352,7 @@ export function createInMemoryRepositories(
     async softDelete(id) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (thread.deletedAt) return thread;
+      if (thread.deletedAt) return projectThread(thread);
       const now = toIsoString(new Date());
       const updated = {
         ...thread,
@@ -340,15 +360,45 @@ export function createInMemoryRepositories(
         updatedAt: now,
       };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
     },
     async restore(id) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (!thread.deletedAt) return thread;
+      if (!thread.deletedAt) return projectThread(thread);
       const updated = { ...thread, deletedAt: null, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
-      return updated;
+      return projectThread(updated);
+    },
+  };
+
+  const threadWorksRepo: ThreadWorksRepository = {
+    async addMembership(threadId, workId, isPrimary) {
+      const thread = threads.get(threadId);
+      if (!thread) throw new Error("Thread membership requires an existing thread");
+      if (options.works) {
+        const work = await options.works.findById(workId);
+        if (!work || work.deletedAt || work.id !== workId) {
+          throw new Error("Work is not available in this project");
+        }
+      }
+      if (isPrimary) {
+        for (const [key, row] of threadWorks) {
+          if (row.threadId === threadId && row.isPrimary) {
+            threadWorks.set(key, { ...row, isPrimary: false });
+          }
+        }
+      }
+      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary });
+    },
+    async findPrimary(threadId) {
+      const workId = primaryWorkIdForThread(threadId);
+      return workId ? { workId } : null;
+    },
+    async listByThread(threadId) {
+      return [...threadWorks.values()]
+        .filter((row) => row.threadId === threadId)
+        .map((row) => ({ workId: row.workId, isPrimary: row.isPrimary }));
     },
   };
 
@@ -615,6 +665,7 @@ export function createInMemoryRepositories(
 
   return {
     threads: threadRepo,
+    threadWorks: threadWorksRepo,
     turns: turnRepo,
     blocks: blockRepo,
     modelResponses: modelResponseRepo,
@@ -627,6 +678,7 @@ export function createInMemoryRepositories(
       const modelResponsesSnapshot = new Map(modelResponses);
       const threadDocumentsSnapshot = new Map(threadDocuments);
       const documentTouchesSnapshot = new Map(documentTouches);
+      const threadWorksSnapshot = new Map(threadWorks);
       try {
         return await operation();
       } catch (error) {
@@ -642,6 +694,8 @@ export function createInMemoryRepositories(
         for (const entry of threadDocumentsSnapshot) threadDocuments.set(...entry);
         documentTouches.clear();
         for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
+        threadWorks.clear();
+        for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
         throw error;
       }
     },

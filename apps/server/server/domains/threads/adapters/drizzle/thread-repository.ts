@@ -1,12 +1,13 @@
 /**
  * Drizzle ThreadRepository: SQL for the threads table (create with normalization,
- * list/get, soft-delete, and cost recomputation). Direct lifecycle writes stay
- * separate from projector-driven model-response cost aggregation.
+ * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
+ * the primary thread_works row, not stored on threads.
  */
-import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -48,6 +49,7 @@ const runningTurnId = sql<string | null>`(
 )`;
 
 type ThreadListRow = typeof schema.threads.$inferSelect & {
+  workId: string | null;
   workTitle: string | null;
   lastTurnRole: TurnRole | null;
   lastTurnStatus: TurnStatus | null;
@@ -67,11 +69,19 @@ function mapThreadListRow(row: ThreadListRow) {
 function threadListSelect() {
   return {
     ...getTableColumns(schema.threads),
+    workId: schema.threadWorks.workId,
     workTitle: schema.works.title,
     lastTurnRole,
     lastTurnStatus,
     runningTurnId,
   };
+}
+
+function primaryThreadWorksJoin() {
+  return and(
+    eq(schema.threadWorks.threadId, schema.threads.id),
+    eq(schema.threadWorks.isPrimary, true),
+  );
 }
 
 export async function writeThreadCostUpdate(
@@ -114,7 +124,6 @@ export function createDrizzleThreadRepository(
         .values({
           id: threadId,
           projectId: input.projectId as ProjectId,
-          workId: input.workId as WorkId,
           createdByUserId: input.userId as string,
           kind: normalized.kind,
           title: normalized.title,
@@ -128,7 +137,7 @@ export function createDrizzleThreadRepository(
         })
         .returning();
       if (!row) throw new Error("Failed to create thread");
-      return mapThread(row);
+      return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
       const thread = buildSubagentThreadRow(input);
@@ -137,7 +146,6 @@ export function createDrizzleThreadRepository(
         .values({
           id: thread.id,
           projectId: thread.projectId as ProjectId,
-          workId: thread.workId as WorkId,
           createdByUserId: thread.userId,
           kind: thread.kind,
           title: thread.title ?? "",
@@ -154,7 +162,7 @@ export function createDrizzleThreadRepository(
         })
         .returning();
       if (!row) throw new Error("Failed to create subagent thread");
-      return mapThread(row);
+      return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
@@ -163,7 +171,6 @@ export function createDrizzleThreadRepository(
         .values({
           id: thread.id,
           projectId: thread.projectId as ProjectId,
-          workId: thread.workId as WorkId,
           createdByUserId: thread.userId,
           kind: "primary",
           title: thread.title ?? "",
@@ -177,7 +184,7 @@ export function createDrizzleThreadRepository(
         })
         .returning();
       if (!row) throw new Error("Failed to create derived primary thread");
-      return mapThread(row);
+      return mapThread({ ...row, workId: thread.workId });
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const [row] = await currentDrizzleDb(db)
@@ -190,13 +197,19 @@ export function createDrizzleThreadRepository(
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);
-      return mapThread(row);
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async findById(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)
-        .select(getTableColumns(schema.threads))
+        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(
           and(
             eq(schema.threads.id, id),
@@ -208,9 +221,10 @@ export function createDrizzleThreadRepository(
     },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
-        .select(getTableColumns(schema.threads))
+        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(
           and(
             eq(schema.threads.createdByUserId, userId),
@@ -226,7 +240,8 @@ export function createDrizzleThreadRepository(
         .select(threadListSelect())
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
-        .leftJoin(schema.works, eq(schema.threads.workId, schema.works.id))
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
@@ -237,16 +252,39 @@ export function createDrizzleThreadRepository(
         .orderBy(desc(schema.threads.updatedAt));
       return rows.map(mapThreadListRow);
     },
-    async listByWork(projectId: ProjectId, workId: WorkId) {
+    async listByWork(projectId: ProjectId, workId: string) {
+      const matchedThreadWorks = alias(schema.threadWorks, "matched_thread_works");
+      const primaryThreadWorks = alias(schema.threadWorks, "primary_thread_works");
+      const primaryWorks = alias(schema.works, "primary_works");
       const rows = await currentDrizzleDb(db)
-        .select(threadListSelect())
+        .select({
+          ...getTableColumns(schema.threads),
+          workId: primaryThreadWorks.workId,
+          workTitle: primaryWorks.title,
+          lastTurnRole,
+          lastTurnStatus,
+          runningTurnId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
-        .leftJoin(schema.works, eq(schema.threads.workId, schema.works.id))
+        .innerJoin(
+          matchedThreadWorks,
+          and(
+            eq(matchedThreadWorks.threadId, schema.threads.id),
+            eq(matchedThreadWorks.workId, workId),
+          ),
+        )
+        .leftJoin(
+          primaryThreadWorks,
+          and(
+            eq(primaryThreadWorks.threadId, schema.threads.id),
+            eq(primaryThreadWorks.isPrimary, true),
+          ),
+        )
+        .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
-            eq(schema.threads.workId, workId),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
           ),
@@ -264,7 +302,12 @@ export function createDrizzleThreadRepository(
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);
-      return mapThread(row);
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async updateCurrentAgent(id, currentAgent) {
       const [row] = await currentDrizzleDb(db)
@@ -281,7 +324,13 @@ export function createDrizzleThreadRepository(
           ),
         )
         .returning();
-      return row ? mapThread(row) : null;
+      if (!row) return null;
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async bakeComposedSystemPrompt(id, input) {
       const [row] = await currentDrizzleDb(db)
@@ -304,7 +353,14 @@ export function createDrizzleThreadRepository(
           ),
         )
         .returning();
-      if (row) return mapThread(row);
+      if (row) {
+        const primary = await currentDrizzleDb(db)
+          .select({ workId: schema.threadWorks.workId })
+          .from(schema.threadWorks)
+          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+          .limit(1);
+        return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+      }
       const existing = await this.findById(id);
       if (!existing) throw new Error(`Thread not found: ${id}`);
       return existing;
@@ -321,7 +377,14 @@ export function createDrizzleThreadRepository(
         .from(schema.threads)
         .where(eq(schema.threads.id, id));
       if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (existingRow.deletedAt) return mapThread(existingRow);
+      if (existingRow.deletedAt) {
+        const primary = await currentDrizzleDb(db)
+          .select({ workId: schema.threadWorks.workId })
+          .from(schema.threadWorks)
+          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+          .limit(1);
+        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
+      }
       const now = new Date();
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
@@ -329,7 +392,12 @@ export function createDrizzleThreadRepository(
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);
-      return mapThread(row);
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async restore(id) {
       const [existingRow] = await currentDrizzleDb(db)
@@ -337,14 +405,26 @@ export function createDrizzleThreadRepository(
         .from(schema.threads)
         .where(eq(schema.threads.id, id));
       if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (!existingRow.deletedAt) return mapThread(existingRow);
+      if (!existingRow.deletedAt) {
+        const primary = await currentDrizzleDb(db)
+          .select({ workId: schema.threadWorks.workId })
+          .from(schema.threadWorks)
+          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+          .limit(1);
+        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
+      }
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
         .set({ deletedAt: null, updatedAt: new Date() })
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);
-      return mapThread(row);
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
   };
 }

@@ -11,13 +11,23 @@ export type { GatewayFromEnv } from "./config/create-from-env.js";
 export { createGatewayFromEnv } from "./config/create-from-env.js";
 export type { GatewayEnvInput } from "./config/providers.js";
 export {
-  anthropicProviderConfig,
   buildProviderConfigs,
-  deepseekProviderConfig,
   defaultGatewayOptions,
   mockProviderConfig,
-  openaiProviderConfig,
 } from "./config/providers.js";
+export type {
+  ModelPricing,
+  ModelRegistry,
+  PinnedModelRate,
+  RegisteredModel,
+  RegisteredProvider,
+} from "./config/registry.js";
+export {
+  buildFromRegistry,
+  extractPinnedRates,
+  hasRealApiKey,
+  MODEL_REGISTRY,
+} from "./config/registry.js";
 export { consumeStream, GatewayStreamError } from "./consume-stream.js";
 export { createGateway } from "./create-gateway.js";
 export * from "./domain/index.js";

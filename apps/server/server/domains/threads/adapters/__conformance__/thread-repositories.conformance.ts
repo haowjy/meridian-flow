@@ -91,9 +91,9 @@ export function describeThreadRepositoriesConformance(
       const waitingThread = await repos.threads.create({
         userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
         projectId: project.id,
-        workId: work.id,
         title: "Waiting",
       });
+      await repos.threadWorks.addMembership(waitingThread.id, work.id, true);
       const waitingUserTurn = await repos.turns.create({
         threadId: waitingThread.id,
         role: "user",
@@ -109,9 +109,9 @@ export function describeThreadRepositoriesConformance(
       const runningThread = await repos.threads.create({
         userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
         projectId: project.id,
-        workId: work.id,
         title: "Running",
       });
+      await repos.threadWorks.addMembership(runningThread.id, work.id, true);
       const runningAssistantTurn = await repos.turns.create({
         threadId: runningThread.id,
         role: "assistant",
@@ -122,15 +122,15 @@ export function describeThreadRepositoriesConformance(
       const otherWorkThread = await repos.threads.create({
         userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
         projectId: project.id,
-        workId: otherWork.id,
         title: "Other Work Thread",
       });
-      await repos.threads.create({
+      await repos.threadWorks.addMembership(otherWorkThread.id, otherWork.id, true);
+      const crossProjectThread = await repos.threads.create({
         userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
         projectId: otherProject.id,
-        workId: crossProjectWork.id,
         title: "Cross Project Thread",
       });
+      await repos.threadWorks.addMembership(crossProjectThread.id, crossProjectWork.id, true);
 
       const projectThreads = await repos.threads.listByProject(project.id);
       const waiting = projectThreads.find((thread) => thread.id === waitingThread.id);
