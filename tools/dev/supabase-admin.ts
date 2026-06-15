@@ -21,15 +21,25 @@ export class SupabaseAdminClient {
   }
 
   async getUserIdByEmail(email: string): Promise<string | null> {
-    const url = `${this.supabaseUrl}/auth/v1/admin/users`;
-    const res = await fetch(url, { headers: this.headers() });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`list users failed (${res.status}): ${body}`);
+    // GoTrue's admin list endpoint paginates (default ~50/page). Walk pages so a
+    // pre-existing dev user is found regardless of how many users accumulated;
+    // otherwise ensureUser falls through to createUser and hits the unique-email
+    // constraint, making bootstrap non-idempotent.
+    const target = email.toLowerCase();
+    for (let page = 1; page <= 100; page++) {
+      const url = `${this.supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`;
+      const res = await fetch(url, { headers: this.headers() });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`list users failed (${res.status}): ${body}`);
+      }
+      const data = (await res.json()) as ListUsersResponse;
+      const users = data.users ?? [];
+      const match = users.find((u) => u.email?.toLowerCase() === target);
+      if (match) return match.id;
+      if (users.length === 0) break;
     }
-    const data = (await res.json()) as ListUsersResponse;
-    const match = data.users?.find((u) => u.email === email);
-    return match?.id ?? null;
+    return null;
   }
 
   async createUser(email: string, password: string): Promise<string> {
@@ -45,6 +55,13 @@ export class SupabaseAdminClient {
     });
     const body = await res.text();
     if (!res.ok) {
+      // Idempotency safety net: if the user already exists (unique-email
+      // conflict from a prior bootstrap), recover by looking it up instead of
+      // failing the whole bootstrap.
+      if (res.status === 422 || res.status === 409 || /already|duplicate|exists/i.test(body)) {
+        const existing = await this.getUserIdByEmail(email);
+        if (existing) return existing;
+      }
       throw new Error(`create user failed (${res.status}): ${body}`);
     }
     const data = JSON.parse(body) as CreateUserResponse;
