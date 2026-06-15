@@ -6,6 +6,7 @@ import {
   readMultipartFormData,
   setResponseStatus,
 } from "nitro/h3";
+import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
 import { mapFigureFileType } from "../../../../../../domains/context/figures/figure-file-types.js";
 import type { ContextError } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
@@ -34,8 +35,7 @@ function sanitizePath(raw: string): string {
       throw createError({ statusCode: 400, message: "`path` may not contain '.' or '..'" });
   return path;
 }
-const toUri = (scheme: ProjectContextTreeScheme, path: string) =>
-  `${scheme}://${path.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+const toUri = projectBrowseContextUri;
 function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {
     case "invalid_uri":

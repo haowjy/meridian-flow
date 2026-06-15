@@ -69,6 +69,20 @@ describe("ContextPortRouter dispatch", () => {
     if (!read.ok) expect(read.error.code).toBe("not_found");
   });
 
+  it("routes tracked edits through the adapter under the collab mutex path", async () => {
+    const router = buildRouter();
+    await router.write("kb://notes.md", "hello");
+    const edited = await router.edit("kb://notes.md", (content) => `${content}!`, {
+      origin: { type: "system" },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) expect(edited.value.markdown).toBe("hello!");
+
+    const read = await router.read("kb://notes.md");
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.value.content).toBe("hello!");
+  });
+
   it("rejects writes to read-only schemes with permission_denied", async () => {
     const readOnlyKb: ContextSchemeAdapter = {
       name: "kb",
@@ -76,6 +90,7 @@ describe("ContextPortRouter dispatch", () => {
       stat: async () => ({ ok: true, value: null }),
       read: async () => ({ ok: true, value: null }),
       write: async () => ({ ok: false, error: { code: "permission_denied" } }),
+      edit: async () => ({ ok: false, error: { code: "permission_denied" } }),
       writeBinary: async () => ({
         ok: false,
         error: { code: "io_error", message: "not implemented" },
@@ -233,6 +248,7 @@ describe("ContextPortRouter dispatch", () => {
       stat: async () => ({ ok: true, value: null }),
       read: async () => ({ ok: true, value: null }),
       write: async () => ({ ok: false, error: { code: "permission_denied" } }),
+      edit: async () => ({ ok: false, error: { code: "permission_denied" } }),
       writeBinary: async () => ({
         ok: false,
         error: { code: "io_error", message: "not implemented" },
@@ -258,6 +274,9 @@ describe("ContextPortRouter dispatch", () => {
         throw new Error("db exploded");
       },
       write: async () => {
+        throw new Error("db exploded");
+      },
+      edit: async () => {
         throw new Error("db exploded");
       },
       writeBinary: async () => {

@@ -12,7 +12,7 @@ import {
   turns,
   works,
 } from "@meridian/database";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import { KeyedMutex } from "../../shared/keyed-mutex.js";
 import { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
@@ -112,11 +112,10 @@ async function touchDocumentActivity(
   const [scope] = await db
     .select({
       workId: contextSources.workId,
-      projectId: works.projectId,
+      projectId: contextSources.projectId,
     })
     .from(documents)
     .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .innerJoin(works, eq(works.id, contextSources.workId))
     .where(eq(documents.id, documentId))
     .limit(1);
 
@@ -280,17 +279,16 @@ export function createDocumentSyncService(deps: {
         .select({ id: documents.id })
         .from(documents)
         .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .innerJoin(works, eq(works.id, contextSources.workId))
-        .innerJoin(projects, eq(projects.id, works.projectId))
+        .leftJoin(projects, eq(contextSources.projectId, projects.id))
+        .leftJoin(works, eq(contextSources.workId, works.id))
         .where(
           and(
             eq(documents.id, documentId),
-            eq(projects.userId, userId),
-            eq(works.createdByUserId, userId),
+            or(eq(projects.userId, userId), eq(works.createdByUserId, userId)),
             isNull(documents.deletedAt),
             isNull(contextSources.deletedAt),
-            isNull(works.deletedAt),
-            isNull(projects.deletedAt),
+            or(isNull(works.id), isNull(works.deletedAt)),
+            or(isNull(projects.id), isNull(projects.deletedAt)),
           ),
         )
         .limit(1);

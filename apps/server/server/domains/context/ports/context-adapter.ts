@@ -75,6 +75,13 @@ export interface ContextSchemeAdapter {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
 
+  /** Atomically transform tracked text content. Only called when `capabilities.writable`. */
+  edit(
+    path: string,
+    transform: (content: string) => string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextWriteResult, AdapterFault>>;
+
   /** Write a binary file. Only called when `capabilities.writable`. */
   writeBinary(
     path: string,

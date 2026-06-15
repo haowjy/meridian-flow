@@ -64,13 +64,13 @@ export async function writeThreadContextDocument(
 ) {
   const port = await resolveThreadContextPort(deps, input.threadId, input.userId);
   const result = await port.write(input.uri, input.markdown, {
-    origin: { type: "human", userId: input.userId },
+    origin: { type: "human", userId: input.userId, threadId: input.threadId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
   return {
     documentId: result.value.documentId,
     uri: input.uri,
-    markdown: input.markdown,
-    updateSeq: 0,
+    markdown: result.value.markdown ?? input.markdown,
+    updateSeq: result.value.updateSeq ?? 0,
   };
 }

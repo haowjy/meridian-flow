@@ -35,6 +35,10 @@ export interface ContextReadResult {
 export interface ContextWriteResult {
   /** Persisted document row id for ContextFS-backed files (`fs1`, `kb`, `work`, `user`). */
   documentId?: string;
+  /** Canonical markdown after a tracked write or edit. */
+  markdown?: string;
+  /** Yjs update sequence after a tracked write or edit. */
+  updateSeq?: number;
 }
 
 interface BaseListEntry {
@@ -124,7 +128,7 @@ export type ContextError =
 
 export type WriteProvenance =
   | { type: "agent"; agentSlug: string; threadId: string; turnId: string }
-  | { type: "human"; userId: string }
+  | { type: "human"; userId: string; threadId?: string }
   | { type: "import"; userId: string; source: string; filename: string; sourceId?: string }
   | { type: "system" };
 
@@ -162,6 +166,16 @@ export interface ContextPort {
   write(
     uri: string,
     content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextWriteResult, ContextError>>;
+
+  /**
+   * Atomically read, transform, and write tracked text content under the
+   * document collab mutex. Only supported for editable tracked files.
+   */
+  edit(
+    uri: string,
+    transform: (content: string) => string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 

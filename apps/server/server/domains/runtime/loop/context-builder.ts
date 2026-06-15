@@ -26,7 +26,7 @@
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
- *   files while bare paths continue to resolve as `fs1://`.
+ *   files while bare paths continue to resolve as `manuscript://`.
  *
  * - **Working state injection**: if `thread.workingState` is set, it's
  *   injected as a separate system message containing JSON-serialized state.
@@ -50,7 +50,7 @@ import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.j
 import { isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export const RUNTIME_URI_SYSTEM_INSTRUCTION =
-  "Context file URI rules: bare file paths resolve as fs1:// project workspace files. Use explicit kb:// URIs for project knowledge-base files, including when using read, write, edit, list, or search.";
+  "Context file URI rules: bare file paths resolve as manuscript:// project workspace files. Use explicit kb:// URIs for project knowledge-base files, including when using read, write, edit, list, or search.";
 
 export interface BuildContextInput {
   thread: Thread;

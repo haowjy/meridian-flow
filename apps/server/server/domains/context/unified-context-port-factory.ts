@@ -77,6 +77,9 @@ const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   async write() {
     return Err({ code: "permission_denied" });
   },
+  async edit() {
+    return Err({ code: "permission_denied" });
+  },
   async writeBinary() {
     return Err({ code: "permission_denied" });
   },

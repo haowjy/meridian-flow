@@ -138,23 +138,25 @@ export function createRuntimeToolRegistry(deps: {
 
     async edit(ctx: ToolContext, action: Extract<RuntimeToolAction, { tool: "edit" }>) {
       const port = await resolvePort(ctx);
-      const current = await port.read(action.uri);
-      if (!current.ok) {
-        throw new HTTPError({ status: 404, message: contextErrorMessage(current.error) });
+      const edited = await port.edit(
+        action.uri,
+        (content) => (action.mode === "append" ? `${content}${action.text}` : content),
+        { origin: agentOrigin(ctx) },
+      );
+      if (!edited.ok) {
+        throw new HTTPError({ status: 400, message: contextErrorMessage(edited.error) });
       }
-      const next =
-        action.mode === "append" ? `${current.value.content}${action.text}` : current.value.content;
-      const written = await port.write(action.uri, next, { origin: agentOrigin(ctx) });
-      if (!written.ok) {
-        throw new HTTPError({ status: 400, message: contextErrorMessage(written.error) });
-      }
+      const beforeLength =
+        action.mode === "append" && edited.value.markdown
+          ? edited.value.markdown.length - action.text.length
+          : (edited.value.markdown?.length ?? 0);
       return {
         result: {
           tool: "edit",
           uri: action.uri,
-          documentId: written.value.documentId ?? null,
-          beforeLength: current.value.content.length,
-          afterLength: next.length,
+          documentId: edited.value.documentId ?? null,
+          beforeLength,
+          afterLength: edited.value.markdown?.length ?? beforeLength,
         },
       };
     },

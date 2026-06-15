@@ -106,7 +106,7 @@ function expectArrayContent(
 }
 
 describe("buildContext", () => {
-  it("adds kb:// knowledge-base guidance while preserving fs1:// as the bare-path default", () => {
+  it("adds kb:// knowledge-base guidance while preserving manuscript:// as the bare-path default", () => {
     const context = buildContext({
       thread: { ...thread(), systemPrompt: "You are a careful research agent." },
       turns: [],
@@ -118,7 +118,7 @@ describe("buildContext", () => {
       content: [{ type: "text", text: expect.stringContaining(RUNTIME_URI_SYSTEM_INSTRUCTION) }],
     });
     expect(context.messages[0]?.content[0]).toMatchObject({
-      text: expect.stringContaining("bare file paths resolve as fs1://"),
+      text: expect.stringContaining("bare file paths resolve as manuscript://"),
     });
     expect(context.messages[0]?.content[0]).toMatchObject({
       text: expect.stringContaining("Use explicit kb:// URIs"),
