@@ -63,6 +63,7 @@ describe("thread agent swap", () => {
         turns: env.repos.turns,
         blocks: env.repos.blocks,
         threadDocuments: env.repos.threadDocuments,
+        transaction: env.repos.transaction,
         projects: env.projects,
         packageRepository: env.packageRepository,
         eventWriter: env.eventWriter,
@@ -102,6 +103,7 @@ describe("thread agent swap", () => {
         turns: env.repos.turns,
         blocks: env.repos.blocks,
         threadDocuments: env.repos.threadDocuments,
+        transaction: env.repos.transaction,
         projects: env.projects,
         packageRepository: env.packageRepository,
         eventWriter: env.eventWriter,
@@ -149,6 +151,7 @@ describe("thread agent swap", () => {
           turns: env.repos.turns,
           blocks: env.repos.blocks,
           threadDocuments: env.repos.threadDocuments,
+          transaction: env.repos.transaction,
           projects: env.projects,
           packageRepository: env.packageRepository,
           eventWriter: env.eventWriter,
@@ -161,5 +164,41 @@ describe("thread agent swap", () => {
         },
       ),
     ).rejects.toThrow("Fork origin turn must belong to the source thread");
+  });
+
+  it("rolls back derived thread creation when primary membership fails", async () => {
+    const env = await setup();
+    const projectThreadsBefore = await env.repos.threads.listByProject(env.source.projectId);
+    const originalAddMembership = env.repos.threadWorks.addMembership.bind(env.repos.threadWorks);
+    env.repos.threadWorks.addMembership = async (threadId, workId, isPrimary) => {
+      if (isPrimary) throw new Error("membership failed");
+      return originalAddMembership(threadId, workId, isPrimary);
+    };
+
+    await expect(
+      handoffThreadAgent(
+        {
+          threads: env.repos.threads,
+          threadWorks: env.repos.threadWorks,
+          turns: env.repos.turns,
+          blocks: env.repos.blocks,
+          threadDocuments: env.repos.threadDocuments,
+          transaction: env.repos.transaction,
+          projects: env.projects,
+          packageRepository: env.packageRepository,
+          eventWriter: env.eventWriter,
+        },
+        {
+          threadId: env.source.id,
+          userId: "user-1",
+          targetAgent: "muse",
+          summary: "Should not persist.",
+        },
+      ),
+    ).rejects.toThrow("membership failed");
+
+    await expect(env.repos.threads.listByProject(env.source.projectId)).resolves.toHaveLength(
+      projectThreadsBefore.length,
+    );
   });
 });

@@ -21,6 +21,7 @@ export default defineEventHandler(async (event) => {
         turns: app.repos.turns,
         blocks: app.repos.blocks,
         threadDocuments: app.repos.threadDocuments,
+        transaction: app.repos.transaction,
         projects: app.projectRepo,
         packageRepository: app.packageRepository,
         eventWriter: app.journalWriter,
