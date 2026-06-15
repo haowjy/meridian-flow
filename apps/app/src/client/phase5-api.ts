@@ -75,6 +75,7 @@ export type ThreadEventHandlers = {
 export type ThreadEventSubscription = {
   close: () => void;
   getConnectionToken: () => string | undefined;
+  awaitConnectionToken: () => Promise<string>;
 };
 
 export function subscribeThreadEvents(
@@ -83,6 +84,16 @@ export function subscribeThreadEvents(
 ): ThreadEventSubscription {
   const socket = new WebSocket(serverWebSocketUrl("/api/threads/ws"));
   let connectionToken: string | undefined;
+  let resolveConnectionToken: ((token: string) => void) | undefined;
+  const connectionTokenReady = new Promise<string>((resolve) => {
+    resolveConnectionToken = resolve;
+  });
+
+  const noteConnectionToken = (token: string) => {
+    connectionToken = token;
+    resolveConnectionToken?.(token);
+    resolveConnectionToken = undefined;
+  };
 
   socket.addEventListener("open", () => {
     handlers.onStatus("connected");
@@ -93,7 +104,7 @@ export function subscribeThreadEvents(
     const parsed = parseWsServerMessage(String(message.data));
     if (!parsed) return;
     if (parsed.type === "connected") {
-      connectionToken = parsed.connectionToken;
+      noteConnectionToken(parsed.connectionToken);
     }
     handleThreadFrame(socket, parsed, handlers);
   });
@@ -104,6 +115,8 @@ export function subscribeThreadEvents(
   return {
     close: () => socket.close(),
     getConnectionToken: () => connectionToken,
+    awaitConnectionToken: () =>
+      connectionToken ? Promise.resolve(connectionToken) : connectionTokenReady,
   };
 }
 

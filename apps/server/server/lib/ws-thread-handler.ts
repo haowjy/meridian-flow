@@ -164,15 +164,8 @@ function disposeSubscriptions(peer: WsPeer): void {
 function cancelRunningTurnsForPeer(peer: WsPeer): void {
   const auth = peer.context;
   if (!auth) return;
-  const state = getPeerState(peer);
-  const peerToken = state.connectionToken;
-  for (const threadId of state.subscriptions.keys()) {
-    const turnId = auth.app.runner.getRunningTurnId(threadId);
-    if (!turnId) continue;
-    const ownerToken = auth.app.runner.getRunningConnectionToken?.(threadId);
-    if (ownerToken !== undefined && ownerToken !== peerToken) continue;
-    void auth.app.runner.cancel(threadId, turnId);
-  }
+  const peerToken = getPeerState(peer).connectionToken;
+  auth.app.runner.cancelTurnsOwnedByConnectionToken?.(peerToken);
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {

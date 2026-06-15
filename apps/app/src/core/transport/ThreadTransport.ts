@@ -88,4 +88,10 @@ export interface ThreadTransport {
    * Sent with message POSTs so disconnect-cancel only affects the owning peer.
    */
   getConnectionToken(): string | undefined;
+
+  /**
+   * Resolves once the transport has a connection token from the server
+   * `connected` frame. Submit paths await this so runs are always owned.
+   */
+  awaitConnectionToken(): Promise<string>;
 }

@@ -65,9 +65,12 @@ export function ChatPane({ threadId }: ChatPaneProps) {
     setMessages((current) => [...current, { id: `user-${Date.now()}`, role: "user", text }]);
 
     try {
-      await sendThreadMessage(threadId, text, {
-        connectionToken: subscriptionRef.current?.getConnectionToken(),
-      });
+      const subscription = subscriptionRef.current;
+      if (!subscription) {
+        throw new Error("Thread subscription is not ready");
+      }
+      const connectionToken = await subscription.awaitConnectionToken();
+      await sendThreadMessage(threadId, text, { connectionToken });
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : String(sendError));
     } finally {

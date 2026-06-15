@@ -6,6 +6,8 @@ import { createGateway } from "./create-gateway.js";
 import type { StreamEvent } from "./domain/index.js";
 import { assistant, toolResult, user } from "./helpers/messages.js";
 
+const CANCEL_DRAIN_TIMEOUT_MS = 5_000;
+
 describe("model-gateway openai-compatible pipeline", () => {
   let mock: MockOpenAIServer;
 
@@ -397,13 +399,18 @@ describe("model-gateway openai-compatible pipeline", () => {
     }
     expect(events.some((event) => event.type === "text.delta")).toBe(true);
 
+    const cancelStartedAt = Date.now();
     controller.abort();
 
     const hangGuard = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("cancel drain hung past bound")), 10_000);
+      setTimeout(
+        () => reject(new Error("cancel drain hung past bound")),
+        CANCEL_DRAIN_TIMEOUT_MS + 1_500,
+      );
     });
     await Promise.race([consume, hangGuard]);
 
+    expect(Date.now() - cancelStartedAt).toBeLessThan(CANCEL_DRAIN_TIMEOUT_MS + 1_500);
     expect(events.some((event) => event.type === "text.delta")).toBe(true);
   });
 });
