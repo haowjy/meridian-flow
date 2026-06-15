@@ -27,6 +27,7 @@ import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapOpenAIError } from "./errors.js";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
 import {
+  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromOpenAIChunk,
@@ -75,6 +76,10 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
           const timeout = modelAttemptTimeoutEvent(request.signal);
           if (timeout) {
             yield timeout;
+            return;
+          }
+          if (accumulatorHasPartialResult(acc)) {
+            yield { type: "end", result: buildGenerateResult(acc) };
             return;
           }
           yield {

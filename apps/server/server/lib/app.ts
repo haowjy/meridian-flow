@@ -245,6 +245,12 @@ async function createAppServices(): Promise<AppServices> {
     }),
     eventSink,
     modelRequestDebug,
+    openRouterReconcile: process.env.OPENROUTER_API_KEY
+      ? {
+          apiKey: process.env.OPENROUTER_API_KEY,
+          baseUrl: process.env.OPENROUTER_BASE_URL,
+        }
+      : undefined,
   });
   runTurnProxy.bind(orchestrator);
 
