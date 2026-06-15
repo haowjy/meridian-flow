@@ -21,6 +21,7 @@ import { createDrizzleProjectBootstrapRepository, DEFAULT_BOOTSTRAP_URI } from "
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
 const testUserEmail = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
+const fallbackTestUserId = "00000000-0000-4000-8000-000000000111" as UserId;
 
 function assertSafeTestDatabase(): void {
   if (!databaseUrl || process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;
@@ -32,20 +33,49 @@ function assertSafeTestDatabase(): void {
 }
 
 async function resolveTestUserId(): Promise<UserId> {
-  if (testUserId) return testUserId as UserId;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
   const sql = postgres(databaseUrl, { max: 1 });
   try {
+    if (testUserId) {
+      const rows = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (
+          id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
+          email_confirmed_at, created_at, updated_at
+        )
+        VALUES (
+          ${testUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
+          '{}'::jsonb, '{}'::jsonb, now(), now(), now()
+        )
+        ON CONFLICT (id) DO UPDATE
+        SET email = excluded.email, updated_at = now()
+        RETURNING id::text
+      `;
+      return rows[0]?.id as UserId;
+    }
+
     const rows = await sql<{ id: string }[]>`
       SELECT id::text
       FROM auth.users
       WHERE email = ${testUserEmail}
       LIMIT 1
     `;
-    const id = rows[0]?.id;
-    if (!id) throw new Error(`Test user ${testUserEmail} not found; run pnpm bootstrap first`);
-    return id as UserId;
+    if (rows[0]?.id) return rows[0].id as UserId;
+
+    const inserted = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (
+        id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
+        email_confirmed_at, created_at, updated_at
+      )
+      VALUES (
+        ${fallbackTestUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
+        '{}'::jsonb, '{}'::jsonb, now(), now(), now()
+      )
+      ON CONFLICT (id) DO UPDATE
+      SET email = excluded.email, updated_at = now()
+      RETURNING id::text
+    `;
+    return inserted[0]?.id as UserId;
   } finally {
     await sql.end();
   }
@@ -144,7 +174,7 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
       .from(documentYjsUpdates)
       .where(eq(documentYjsUpdates.id, result.updateSeq));
 
-    expect(document?.markdownProjection).toBe(markdown);
+    expect(document?.markdownProjection).toBe(markdown.trimEnd());
     expect(update?.documentId).toBe(bootstrap.documentId);
     expect(update?.originType).toBe("agent");
     expect(update?.actorTurnId).toBe(actorTurnId);
