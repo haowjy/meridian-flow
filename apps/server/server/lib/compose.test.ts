@@ -20,9 +20,7 @@ describe("composeAppServices", () => {
 describe("createInMemoryAppServices", () => {
   it("exposes upstream-compatible thread aliases", () => {
     const services = createInMemoryAppServices();
-    expect(services.repos).toMatchObject({
-      phase: (services.threadRepos as unknown as { phase: string }).phase,
-    });
+    expect(services.repos).toBe(services.threadRepos);
     expect(typeof services.hub.catchup).toBe(typeof services.threadEventHub.catchup);
     expect(typeof services.hub.appendEvent).toBe(typeof services.threadEventHub.appendEvent);
   });
@@ -48,7 +46,7 @@ describe("createInMemoryAppServices", () => {
   it("provides no-op debug and access seams for route tests", async () => {
     const services = createInMemoryAppServices();
 
-    expect((services.modelRequestDebug as unknown as { list(): unknown[] }).list()).toEqual([]);
+    expect(services.modelRequestDebug.listByThread("thread-1")).toEqual([]);
     expect(await services.documentAccess.canAccessDocument("user-1", "document-1")).toBe(true);
   });
 });

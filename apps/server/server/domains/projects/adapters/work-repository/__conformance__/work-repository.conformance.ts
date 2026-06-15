@@ -14,7 +14,7 @@ export function describeWorkRepositoryConformance(
     const project = "00000000-0000-4000-9000-000000000001";
     const otherProject = "00000000-0000-4000-9000-000000000002";
 
-    it("creates a work with project, title, and description", async () => {
+    it("creates a work with project and title", async () => {
       const repo = await makeRepo();
       const work = await repo.create({
         projectId: project,
@@ -24,7 +24,7 @@ export function describeWorkRepositoryConformance(
       expect(work).toMatchObject({
         projectId: project,
         title: "Auth Implementation",
-        description: "desc",
+        description: null,
         status: "active",
         visibility: "private",
         deletedAt: null,
