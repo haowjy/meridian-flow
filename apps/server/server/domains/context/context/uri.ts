@@ -11,13 +11,15 @@ const UNIFIED_SCHEMES: readonly ContextScheme[] = ["manuscript", "kb", "user", "
 const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["work", "uploads"]);
 const UUID_AUTHORITY_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
+// validity — used to tell a typo'd Work id from a legitimate short folder name.
+const UUID_SHAPE_PATTERN = /^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$/i;
 
 function looksLikeMalformedWorkAuthority(segment: string): boolean {
-  if (UUID_AUTHORITY_PATTERN.test(segment)) return false;
-  const dashIndex = segment.indexOf("-");
-  if (dashIndex === -1) return false;
-  const firstGroup = segment.slice(0, dashIndex);
-  return /^[0-9a-f]{4,}$/i.test(firstGroup);
+  // Reject only segments that have the full UUID shape but fail strict UUID
+  // validation (a real mistyped Work id). Legitimate short folder names like
+  // "dead-beef" or "2024-assets" are not UUID-shaped and parse as path segments.
+  return UUID_SHAPE_PATTERN.test(segment) && !UUID_AUTHORITY_PATTERN.test(segment);
 }
 
 export interface ParsedContextUri {

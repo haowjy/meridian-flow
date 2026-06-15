@@ -94,14 +94,24 @@ describe("parseUnifiedContextUri", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("rejects malformed work authority segments", () => {
-    const result = parseUnifiedContextUri("work://0000-not-a-uuid/notes.md");
+  it("rejects a UUID-shaped but invalid work authority (mistyped Work id)", () => {
+    // Full 8-4-4-4-12 shape, but non-hex chars in the last group → not a valid UUID.
+    const result = parseUnifiedContextUri("work://12345678-1234-1234-1234-1234567890zz/notes.md");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("invalid_uri");
       if (result.error.code === "invalid_uri") {
         expect(result.error.reason).toContain("Invalid Work authority");
       }
+    }
+  });
+
+  it("treats legitimate short hyphenated first segments as path, not authority", () => {
+    for (const uri of ["work://dead-beef/notes.md", "uploads://2024-assets/img.png"]) {
+      const result = parseUnifiedContextUri(uri);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.authority).toBeNull();
     }
   });
 
