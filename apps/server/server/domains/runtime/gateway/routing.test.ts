@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModelInfo, ProviderConfig, TraceSpan } from "./domain/index.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
-import { buildProviderRegistry, resolveRoute } from "./routing.js";
+import { buildProviderRegistry, resolveRoute, resolveRouteForProvider } from "./routing.js";
 
 function model(id: string, provider: string): ModelInfo {
   return {
@@ -77,6 +77,23 @@ it("routes duplicate model IDs through an explicitly requested provider", () => 
     messages: [],
   });
 
+  expect(route.providerConfig.id).toBe("deepseek-openai");
+  expect(route.model.provider).toBe("deepseek-openai");
+});
+
+it("resolveRouteForProvider resolves a model inside a specific provider catalog", () => {
+  const registry = buildProviderRegistry(
+    [
+      provider("deepseek", [model("deepseek-v4-flash", "deepseek")]),
+      provider("deepseek-openai", [model("deepseek-v4-flash", "deepseek-openai")]),
+    ],
+    new Map([
+      ["deepseek", adapter],
+      ["deepseek-openai", adapter],
+    ]),
+  );
+
+  const route = resolveRouteForProvider(registry, "deepseek-openai", "deepseek-v4-flash");
   expect(route.providerConfig.id).toBe("deepseek-openai");
   expect(route.model.provider).toBe("deepseek-openai");
 });
