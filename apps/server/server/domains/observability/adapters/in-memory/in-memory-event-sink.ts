@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * In-memory EventSink for tests: records every emitted event in insertion order
  * so behavioral tests can assert on sink output without touching the filesystem.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent-linked skill catalogue support.
  *

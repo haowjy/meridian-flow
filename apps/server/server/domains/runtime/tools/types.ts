@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Canonical tool-execution types: tool call inputs, handler/context shapes,
  * registry and executor interfaces. The vocabulary the registry, executor,

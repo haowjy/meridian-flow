@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenAI-compatible request mapper: converts canonical GenerateRequests into
  * Chat Completions request bodies (messages, tools, response_format). Owns the

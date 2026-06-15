@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Read-model projector: applies durable orchestrator events to thread read-model
  * tables. This is the in-transaction projection seam that makes event journal

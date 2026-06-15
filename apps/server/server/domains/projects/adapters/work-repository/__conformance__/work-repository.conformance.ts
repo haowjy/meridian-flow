@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared conformance suite for the WorkRepository port: every adapter runs this
  * same behavioral spec so drizzle and in-memory stay interchangeable. Imported

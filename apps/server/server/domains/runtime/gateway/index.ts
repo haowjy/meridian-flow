@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the model gateway's public surface — the gateway factory,
  * provider config builders, the mock server, and the canonical domain types.

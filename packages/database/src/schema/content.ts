@@ -3,8 +3,10 @@ import type {
   DocumentId,
   FolderId,
   ProjectId,
+  ProjectSettings,
   UserId,
   WorkId,
+  WorkVisibility,
 } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -35,7 +37,7 @@ export const projects = pgTable(
     slug: text("slug").notNull(),
     isPersonal: boolean("is_personal").notNull().default(false),
     systemPrompt: text("system_prompt"),
-    settings: jsonbDefault("settings"),
+    settings: jsonbDefault("settings").$type<ProjectSettings>(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -67,7 +69,7 @@ export const works = pgTable(
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
-    visibility: text("visibility").notNull().default("private"),
+    visibility: text("visibility").$type<WorkVisibility>().notNull().default("private"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),

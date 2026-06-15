@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent skill-resolution algorithm: merges builtin, user, global-project, and
  * agent-linked skills by slug and sorts them by type. Lives in the domain layer

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Fork thread context hydration: derived primary threads with `originType = fork`
  * inherit the parent conversation through `originTurnId` without copying rows.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Server-side contract coercion helpers: convert runtime/database values into
  * JSON-natural thread contract strings at repository/orchestrator boundaries.

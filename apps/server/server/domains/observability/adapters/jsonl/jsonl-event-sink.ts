@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * JSONL dev EventSink: appends one JSON object per line under a configurable
  * directory (`logs/YYYY-MM-DD.jsonl` by default). Safe under concurrent emits

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** In-memory event journal: append-only array of orchestrator events implementing both writer and reader ports, with per-thread sequencing. For tests/local dev; depends inward on the event-journal port. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 

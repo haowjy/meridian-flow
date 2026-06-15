@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle TurnRepository: SQL for the turns table (idempotent create/list,
  * status updates, and model-response-derived usage rollup recomputation). The
@@ -24,7 +23,7 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
       inputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.inputTokens}), 0)::int`,
       outputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.outputTokens}), 0)::int`,
       totalCostUsd: sql<string>`COALESCE(SUM(${schema.modelResponses.costUsd}), 0)::numeric(12,6)`,
-      totalMillicredits: sql<bigint | null>`SUM(${schema.modelResponses.millicredits})`,
+      totalMillicredits: sql<number | null>`SUM(${schema.modelResponses.millicredits})`,
     })
     .from(schema.modelResponses)
     .where(eq(schema.modelResponses.turnId, id));
@@ -57,7 +56,7 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCostUsd: "0",
-          createdAt: toDate(input.createdAt),
+          createdAt: input.createdAt === undefined ? undefined : toDate(input.createdAt),
         })
         .onConflictDoNothing({ target: schema.turns.id })
         .returning();
@@ -124,7 +123,7 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
       const patch: {
         status: Turn["status"];
         finishReason?: Turn["finishReason"];
-        completedAt?: string | null;
+        completedAt?: Date | null;
         error?: string | null;
       } = { status: input.status };
       if (input.finishReason !== undefined) patch.finishReason = input.finishReason;

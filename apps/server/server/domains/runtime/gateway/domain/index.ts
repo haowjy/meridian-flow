@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the gateway's canonical domain types.
  *

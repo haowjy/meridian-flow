@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Package install/update orchestration: resolves GitHub and catalog sources,
  * coordinates fetch cleanup, and maps domain results to contract shapes.

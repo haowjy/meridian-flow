@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Skill file payload encoding for JSON-natural persistence.
  *

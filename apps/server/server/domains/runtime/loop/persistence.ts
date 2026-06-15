@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Persistence helper: runs a unit of work in a thread-repository transaction,
  * appends the resulting orchestrator events to the journal, and projects

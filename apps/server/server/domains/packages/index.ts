@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Package domain public surface: exports only the active repository-backed Mars package runtime.
 export { createDrizzlePackageStore } from "./adapters/drizzle-package-store.js";
 export {

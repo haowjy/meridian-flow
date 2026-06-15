@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Provider routing: resolves a GenerateRequest to its provider adapter, model,
  * and provider config from the registry. Owns request->provider selection;

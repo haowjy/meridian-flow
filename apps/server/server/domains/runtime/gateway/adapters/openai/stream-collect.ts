@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenAI Responses stream accumulator: folds OpenAI streaming events into
  * canonical StreamEvents and a final GenerateResult. The Responses protocol

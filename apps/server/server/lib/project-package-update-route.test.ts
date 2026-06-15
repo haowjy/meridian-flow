@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for package update check/apply reconciliation. */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stateless tool dispatch step for the runtime loop.
  *

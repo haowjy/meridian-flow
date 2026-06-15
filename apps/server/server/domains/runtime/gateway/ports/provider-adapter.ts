@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Provider-adapter port: the one streaming primitive each provider adapter
  * (anthropic/openai/openai-compatible) implements.

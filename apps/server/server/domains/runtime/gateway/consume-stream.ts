@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stream consumption helper: drains a provider adapter's StreamEvent iterable
  * into a final GenerateResult and defines GatewayStreamError. Owns the

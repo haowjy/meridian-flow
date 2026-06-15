@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle ProjectPreferencesRepository: persists (userId, projectId) preferences in project_user_preferences with atomic partial upserts.
  * Key decision: the conflict update only sets fields present in the partial request, so concurrent independent group/pin writes do not need a read-modify-write round trip.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Skill execution descriptor: package-domain-owned normalization of Mars skill
  * metadata and files into the shape the runtime can execute without knowing

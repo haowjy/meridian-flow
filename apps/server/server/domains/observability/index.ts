@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Barrel: observability domain — EventSink port plus JSONL, in-memory, and no-op adapters. */
 
 export {

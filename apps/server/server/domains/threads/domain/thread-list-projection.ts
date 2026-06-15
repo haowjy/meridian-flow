@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread list projection helpers: derive UI-facing lifecycle fields from the
  * canonical thread row plus latest-turn/work joins. Shared by repository adapters.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for the first-party package catalog. */
 import { describe, expect, it } from "vitest";
 import { handleGetPackagesCatalogRequest } from "./packages-catalog-route.js";

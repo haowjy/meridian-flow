@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -8,9 +7,9 @@ if (!DATABASE_URL) {
 } else {
   describe("drizzle project repository (postgres)", async () => {
     const { afterAll, beforeEach } = await import("vitest");
-    const { openDatabase } = await import("@meridian/database");
+    const { createDb } = await import("@meridian/database");
     const {
-      users,
+      authUsers,
       projects,
       threads,
       turns,
@@ -28,8 +27,7 @@ if (!DATABASE_URL) {
       describeProjectRepositoryConformance,
     } = await import("./project-repository.conformance.js");
 
-    const handle = openDatabase(DATABASE_URL);
-    const db = handle.db;
+    const db = createDb(DATABASE_URL, { max: 1 });
 
     async function truncateAll(): Promise<void> {
       await truncateDrizzleTables(db, [
@@ -41,21 +39,17 @@ if (!DATABASE_URL) {
         turns,
         threads,
         projects,
-        users,
+        authUsers,
       ]);
     }
 
     async function seedUsers(): Promise<void> {
-      await db.insert(users).values([
+      await db.insert(authUsers).values([
         {
           id: PROJECT_REPOSITORY_CONFORMANCE_USER_1,
-          externalId: "project-conformance-user-1",
-          email: "project-conformance-1@example.test",
         },
         {
           id: PROJECT_REPOSITORY_CONFORMANCE_USER_2,
-          externalId: "project-conformance-user-2",
-          email: "project-conformance-2@example.test",
         },
       ]);
     }
@@ -66,7 +60,7 @@ if (!DATABASE_URL) {
     });
 
     afterAll(async () => {
-      await handle.close();
+      await db.close();
     });
 
     describeProjectRepositoryConformance("drizzle", () => createDrizzleProjectRepository({ db }));

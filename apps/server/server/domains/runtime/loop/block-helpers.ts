@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared block-shape helpers for the runtime loop.
  *

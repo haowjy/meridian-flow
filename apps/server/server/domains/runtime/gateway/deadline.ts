@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Per-attempt model-call timeout: defines ModelAttemptTimeoutError and the
  * AbortSignal helpers that surface a timeout as a stream event. Owns the

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle ThreadRepository: SQL for the threads table (create with normalization,
  * list/get, soft-delete, and cost recomputation). Direct lifecycle writes stay
@@ -115,7 +114,7 @@ export function createDrizzleThreadRepository(
         .values({
           id: threadId,
           projectId: input.projectId as ProjectId,
-          workId: input.workId,
+          workId: input.workId as WorkId,
           createdByUserId: input.userId as string,
           kind: normalized.kind,
           title: normalized.title,
@@ -138,7 +137,7 @@ export function createDrizzleThreadRepository(
         .values({
           id: thread.id,
           projectId: thread.projectId as ProjectId,
-          workId: thread.workId,
+          workId: thread.workId as WorkId,
           createdByUserId: thread.userId,
           kind: thread.kind,
           title: thread.title ?? "",
@@ -164,7 +163,7 @@ export function createDrizzleThreadRepository(
         .values({
           id: thread.id,
           projectId: thread.projectId as ProjectId,
-          workId: thread.workId,
+          workId: thread.workId as WorkId,
           createdByUserId: thread.userId,
           kind: "primary",
           title: thread.title ?? "",
@@ -341,7 +340,7 @@ export function createDrizzleThreadRepository(
       if (!existingRow.deletedAt) return mapThread(existingRow);
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
-        .set({ deletedAt: null, updatedAt: toIsoString(new Date()) })
+        .set({ deletedAt: null, updatedAt: new Date() })
         .where(eq(schema.threads.id, id))
         .returning();
       if (!row) throw new Error(`Thread not found: ${id}`);

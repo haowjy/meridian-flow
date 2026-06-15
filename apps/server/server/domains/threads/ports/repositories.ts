@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread repository ports: the persistence contracts for threads, turns, blocks,
  * model responses, and usage rollups, plus their input/result types and the

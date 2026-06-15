@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle UsageRecorder: records a model response and recomputes turn/thread
  * rollups from persisted response rows. Retained for direct callers while

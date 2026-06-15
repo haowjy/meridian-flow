@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Work persistence port: the CRUD contract for "works" (units of work within a
  * project) plus its input/option types. The boundary both the drizzle and
@@ -11,6 +10,7 @@ export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: WorkId;
   projectId: ProjectId;
+  createdByUserId?: import("@meridian/contracts/runtime").UserId;
   title?: string;
   description?: string | null;
 }

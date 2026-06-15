@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Env-driven gateway construction: reads provider env vars, builds provider
  * configs, optionally spins up the mock server, and returns a ready Gateway.

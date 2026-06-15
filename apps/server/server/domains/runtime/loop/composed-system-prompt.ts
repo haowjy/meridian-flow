@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Composed system prompt assembly and freeze detection.
  *

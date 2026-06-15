@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Event-journal ports: the append-only writer and the reader/replay contracts
  * for persisted orchestrator events (plus envelope/entry types). The boundary

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Object storage URL scheme: builds and parses the stable `object://meridian/<key>`
  * references persisted in DB rows and document text. Owns the single URL format

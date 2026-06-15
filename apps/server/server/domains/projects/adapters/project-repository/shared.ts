@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared project-repository helpers: the default title constant and slug
  * derivation used by both the drizzle and in-memory adapters so naming behavior

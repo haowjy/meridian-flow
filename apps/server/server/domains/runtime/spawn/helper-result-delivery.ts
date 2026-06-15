@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Background helper result delivery: queue while the parent thread is streaming,
  * then append a system turn chained from the active leaf (never mutating an
@@ -117,7 +116,7 @@ export function createHelperResultDelivery(deps: HelperResultDeliveryDeps): Help
         summary,
         childThreadId: input.childThreadId,
         parentTurnId: input.parentTurnId as string,
-        title: input.description,
+        ...(input.description !== undefined ? { title: input.description } : {}),
         ...(input.result.status === "completed" && input.result.report.payload !== undefined
           ? { payload: input.result.report.payload }
           : {}),

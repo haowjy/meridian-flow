@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Minimal ZIP builder for Mars package export — STORE method only, no extra deps.
  * Sufficient for text-heavy Mars directories; binary skill assets round-trip as-is.

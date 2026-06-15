@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle row->domain mappers: convert thread/turn/block/model-response DB rows
  * into their @meridian/contracts shapes (decimal/date/seq coercions). Shared by

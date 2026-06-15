@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * No-op ModelRequestDebugStore: satisfies the port when capture is disabled
  * (production default). Routes return 404 when captureEnabled is false.

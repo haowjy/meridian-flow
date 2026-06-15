@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for GET/PUT project preferences: verifies ownership gating, default reads, partial persistence, and body validation. */
 import { DEFAULT_PROJECT_PREFERENCES } from "@meridian/contracts/preferences";
 import { describe, expect, it } from "vitest";

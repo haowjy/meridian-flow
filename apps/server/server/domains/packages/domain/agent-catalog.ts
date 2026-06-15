@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project agent catalog: merges builtin and project-scoped agent definitions
  * into the selectable list the composer picker and Library consume. Project

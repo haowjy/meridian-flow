@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** In-memory UserRepository for tests: Map-backed idempotent user provisioning implementing the port. */
 import { randomUUID } from "node:crypto";
 import type { OnboardingState } from "@meridian/contracts";

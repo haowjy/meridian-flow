@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { OnboardingState, type OnboardingState as OnboardingStateType } from "@meridian/contracts";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

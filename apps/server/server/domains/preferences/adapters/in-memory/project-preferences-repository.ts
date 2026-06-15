@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * In-memory ProjectPreferencesRepository for tests/local composition. Map-backed by (userId, projectId), mirroring the Drizzle adapter's read-default and partial-upsert behavior.
  */

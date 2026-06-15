@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core helpers for explicit agent handoff/fork into a new primary thread. */
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -27,7 +26,7 @@ export async function handoffThreadAgent(
   const target = await deps.threads.createDerivedPrimary({
     userId: source.userId,
     projectId: source.projectId,
-    workId: source.workId,
+    workId: source.workId as string,
     parentThreadId: source.id as ThreadId,
     originType: "handoff",
     originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
@@ -66,7 +65,7 @@ export async function forkThreadAgent(
   const target = await deps.threads.createDerivedPrimary({
     userId: source.userId,
     projectId: source.projectId,
-    workId: source.workId,
+    workId: source.workId as string,
     parentThreadId: source.id as ThreadId,
     originType: "fork",
     originTurnId: originTurnId as TurnId,

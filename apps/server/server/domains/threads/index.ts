@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Barrel: re-exports the threads domain's public surface — drizzle + in-memory repositories and event journals, the thread event hub, snapshot builder, access gate, and port types. */
 
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";

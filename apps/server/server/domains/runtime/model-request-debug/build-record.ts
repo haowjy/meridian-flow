@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Assembles a ModelRequestDebugRecord from the orchestrator's pre-stream state.
  */

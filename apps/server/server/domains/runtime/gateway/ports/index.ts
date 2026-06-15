@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the gateway port (Gateway) and the provider-adapter port
  * (ProviderAdapter). These are the two interface seams that decouple the

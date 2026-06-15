@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
@@ -23,6 +22,7 @@ export function createInMemoryWorkRepository(): WorkRepository {
     return {
       id: input.id ?? crypto.randomUUID(),
       projectId: input.projectId,
+      createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       title: input.title?.trim() || DEFAULT_WORK_TITLE,
       description: input.description ?? null,
       status: "active",

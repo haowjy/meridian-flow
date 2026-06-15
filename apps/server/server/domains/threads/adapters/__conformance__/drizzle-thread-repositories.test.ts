@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle conformance tests for ThreadRepositories against local Postgres. */
 import { afterAll, beforeEach, describe, it } from "vitest";
 

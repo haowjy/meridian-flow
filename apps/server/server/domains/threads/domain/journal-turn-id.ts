@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Journal turn-id derivation: centralizes how persisted orchestrator events
  * expose their owning turn to JournalEntry metadata. Adapters must use this

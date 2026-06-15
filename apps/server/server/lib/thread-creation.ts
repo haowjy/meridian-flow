@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread-creation orchestration helper: creates a thread for a project after
  * asserting ownership and resolving its work attachment. App-layer glue tying

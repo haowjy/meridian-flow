@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Pure text-edit algorithms for the core `edit` tool. Keeps range resolution
  * and application independent from ContextPort wiring so the runtime behavior

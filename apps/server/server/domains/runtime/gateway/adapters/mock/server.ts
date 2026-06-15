@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Mock OpenAI-compatible HTTP server: a local Chat Completions endpoint (stream
  * + non-stream) for tests and offline dev so the gateway can run without a real

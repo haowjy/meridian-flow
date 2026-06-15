@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle BlockRepository: SQL for the thread blocks table (create/list), mapping rows via mappers.ts. Depends inward on the repository port; runs within the shared drizzle-db transaction context. */
 import * as schema from "@meridian/database/schema";
 import { asc, eq } from "drizzle-orm";

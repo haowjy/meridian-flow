@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Core tool catalogue: declares the builtin runnable tool names, model-visible
  * schemas, and per-tool execution constraints. This module is the publication

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Read-tool presentation policy: byte-safe truncation and line-number formatting.
  * The policy is pure so adapter-backed read handlers can stay as thin wiring.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Canonical first-party package catalog for the install gallery.
  *

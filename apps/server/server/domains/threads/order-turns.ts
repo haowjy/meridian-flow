@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Causal turn ordering for thread snapshots and read projections.
  *

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   decodeYjsBinaryEnvelope,
   encodeYjsBinaryEnvelope,
@@ -192,7 +191,7 @@ function createTestYjsWsHandler(
       commitEditorUpdate ??
       (async (documentId, update, origin) => {
         const result = await transport.applyUpdate(documentId, update, origin);
-        if (!result.ok) throw new Error(`${result.code}: ${documentId}`);
+        if (!result.ok) throw new Error(`${result.error.code}: ${documentId}`);
         await afterCommit?.(documentId);
       }),
     ...rest,
@@ -545,7 +544,7 @@ describe("createYjsWsHandler", () => {
     attachClient(peer, channel);
     await flushQueues();
 
-    const updates = await store.listUpdatesAfter(DOC, 0n);
+    const updates = await store.listUpdatesAfter(DOC, 0);
     expect(updates).toHaveLength(1);
     expect(updates[0].originType).toBe("system");
     expect(unwrap(await service.readAsMarkdown(DOC))).toBe("server body");
@@ -572,7 +571,7 @@ describe("createYjsWsHandler", () => {
     replaceClientMarkdown(client.doc, "server body edited by ws");
     await flushQueues();
 
-    const updates = await store.listUpdatesAfter(DOC, 0n);
+    const updates = await store.listUpdatesAfter(DOC, 0);
     expect(updates).toHaveLength(2);
     const edit = updates[1];
     expect(edit.originType).toBe("user");
@@ -672,7 +671,7 @@ describe("createYjsWsHandler", () => {
         afterPersistCalls += 1;
         const markdown = unwrap(await service.readAsMarkdown(documentId));
         const head = await store.getHead(documentId);
-        const persistedSeq = head?.latestUpdateSeq ?? 0n;
+        const persistedSeq = head?.latestUpdateSeq ?? 0;
 
         if (afterPersistCalls === 1) {
           firstProjectionRead.resolve();

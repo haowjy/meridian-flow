@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent skill link reconciliation from definition frontmatter.
  *

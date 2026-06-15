@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Rebind `currentAgent` on owned primary threads that have not started.
  */

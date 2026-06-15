@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Anthropic error mapping: maps Anthropic SDK errors to canonical gateway ErrorCode + retryable flags. Keeps provider error shapes out of the gateway core. */
 import Anthropic from "@anthropic-ai/sdk";
 import type { ErrorCode } from "../../domain/index.js";

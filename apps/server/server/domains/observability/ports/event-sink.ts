@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EventSink port: structured, JSON-natural observability records for logs, errors,
  * traces, and domain signals. Adapters (JSONL file, in-memory, future Postgres)

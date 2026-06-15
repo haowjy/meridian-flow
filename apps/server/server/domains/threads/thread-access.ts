@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread authorization helper: requireThreadOwner loads a thread and asserts the
  * caller owns it and its parent project is live, throwing 404 otherwise. Owns

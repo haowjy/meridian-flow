@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Anthropic provider adapter: implements the provider-adapter port by streaming
  * the Anthropic Messages SDK and translating to/from canonical gateway types.

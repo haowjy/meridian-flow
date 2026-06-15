@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Object-store port: the put/get/delete/signed-url contract (plus error and
  * result types) for binary object storage. The boundary the in-memory, local,

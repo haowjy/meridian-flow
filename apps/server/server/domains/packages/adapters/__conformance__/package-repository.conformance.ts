@@ -1,4 +1,3 @@
-// @ts-nocheck
 // PackageRepository conformance suite: shared behavioral contract for all package stores.
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

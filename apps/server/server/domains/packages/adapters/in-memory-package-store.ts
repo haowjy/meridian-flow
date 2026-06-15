@@ -1,4 +1,3 @@
-// @ts-nocheck
 // In-memory PackageRepository adapter: hermetic package persistence for tests and local composition.
 import { randomUUID } from "node:crypto";
 

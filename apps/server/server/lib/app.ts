@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { createDrizzleSubscriptionStore } from "../domains/billing/adapters/drizzle/subscription-store.js";
 import {
   createDrizzleCreditLedger,
@@ -155,7 +153,14 @@ async function createAppServices(): Promise<AppServices> {
       packageRepository,
       async findThreadById(threadId: string) {
         const thread = await threadRepos.threads.findById(threadId);
-        return thread ? { ...thread, projectId: thread.projectId } : null;
+        return thread
+          ? {
+              projectId: thread.projectId,
+              userId: thread.userId,
+              currentAgent: thread.currentAgent,
+              bakedSkillSlugs: thread.bakedSkillSlugs ?? null,
+            }
+          : null;
       },
     }),
   );

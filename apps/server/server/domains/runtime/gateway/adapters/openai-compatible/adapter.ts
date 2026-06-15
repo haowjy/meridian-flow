@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenAI-compatible (Chat Completions) provider adapter: implements the
  * provider-adapter port over any OpenAI-Chat-Completions-shaped endpoint

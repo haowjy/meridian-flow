@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Tree budget guards: pre-call checks for depth, turn count, and millicredit spend.
  * DEFERRED(parallel-spawns): reservation/hold semantics land with batched dispatch;

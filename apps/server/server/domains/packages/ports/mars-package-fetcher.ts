@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Mars package fetcher port: the package domain's narrow dependency for
  * materializing remote package sources before parsing. Concrete transports

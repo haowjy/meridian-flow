@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for GET project agents catalog: ownership gating and catalog merge rules. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryPackageStore } from "../domains/packages/index.js";

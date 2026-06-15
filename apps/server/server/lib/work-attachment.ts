@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Work-attachment resolution: determines which work a new thread belongs to
  * (explicit assignment, inherited parent work, or default). App-layer helper

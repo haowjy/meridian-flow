@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenAI Responses provider adapter: implements the provider-adapter port over
  * the OpenAI Responses API, translating to/from canonical gateway types. Owns

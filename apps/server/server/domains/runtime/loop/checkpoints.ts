@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Owns the in-memory checkpoint promise registry plus restart recovery for same-turn suspend/resume.
  * Key decisions: the registry is intentionally process-local for the MVP, while the journal remains the durable truth; restart recovery expires unresolved checkpoints because the awaiting orchestrator promise cannot survive process death.

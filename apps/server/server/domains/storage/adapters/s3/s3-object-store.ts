@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * S3 implementation of the object-store port: put/get/delete via the AWS S3 SDK
  * and presigned URLs for signed reads. Owns the S3-specific wiring (bucket,

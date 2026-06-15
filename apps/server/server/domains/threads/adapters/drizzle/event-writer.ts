@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle EventJournalWriter: append-only SQL writes of orchestrator events with per-thread sequence assignment. Depends inward on the event-journal port; owns the journal append query. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";

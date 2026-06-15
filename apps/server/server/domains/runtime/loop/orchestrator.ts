@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Orchestrator: the agentic turn loop — the runtime's core control loop.
  *
@@ -812,7 +811,7 @@ async function* generateEvents(
               threadId: input.threadId,
               turn: currentAssistantTurn,
               call,
-              decision,
+              decision: { ...decision, category: "tool_denied" },
               blockSeq,
             });
             blockSeq = persistedDenial.nextBlockSeq;

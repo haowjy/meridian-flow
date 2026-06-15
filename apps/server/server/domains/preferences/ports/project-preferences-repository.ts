@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project preferences persistence port: stores the authenticated user's UI defaults for one project.
  * The boundary is intentionally small: reads return the contract default when absent, and upserts merge partial updates into the current/default value.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * OpenAI-compatible stream accumulator: folds Chat Completions streaming chunks
  * into canonical StreamEvents and a final GenerateResult. This adapter targets

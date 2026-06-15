@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
  * events. Maintains a bounded hot cache, replays from the journal on

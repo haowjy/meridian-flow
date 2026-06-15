@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Truth table for the fail-safe model-request debug capture gate.
  */

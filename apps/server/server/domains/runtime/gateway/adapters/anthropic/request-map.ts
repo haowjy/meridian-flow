@@ -1,4 +1,3 @@
-// @ts-nocheck
 // biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.
 /**
  * Anthropic request mapper: converts canonical GenerateRequests into Anthropic
