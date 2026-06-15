@@ -12,7 +12,6 @@ export interface CreateWorkInput {
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   title?: string;
-  description?: string | null;
 }
 
 export interface ListWorksOptions {

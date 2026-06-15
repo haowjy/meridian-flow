@@ -60,7 +60,7 @@ describe("Checkpoint render", () => {
     expect(html).toContain("https://example.test/a.png");
     expect(html).toContain("seeds.json");
     expect(html).toContain("https://preview.test/iframe");
-    expect(html).toContain('workspace="allow-scripts allow-same-origin"');
+    expect(html).toContain('sandbox="allow-scripts allow-same-origin"');
     expect(html).toContain("bucket");
     expect(html).toContain("notes");
     expect(html).toContain("count");

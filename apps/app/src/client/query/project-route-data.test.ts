@@ -64,8 +64,6 @@ function work(id: string): Work {
     projectId,
     createdByUserId: "user_1",
     title: id,
-    description: null,
-    status: "active",
     visibility: "private",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

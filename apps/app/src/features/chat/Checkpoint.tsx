@@ -357,8 +357,7 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
       <iframe
         title={t`Live artifact view`}
         src={artifact.url}
-        project
-        workspace="allow-scripts allow-same-origin"
+        sandbox="allow-scripts allow-same-origin"
         className="block aspect-video w-full"
       />
     </div>
