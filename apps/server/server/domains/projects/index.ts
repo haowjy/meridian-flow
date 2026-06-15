@@ -20,8 +20,9 @@ import {
   works,
 } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 
-export const DEFAULT_BOOTSTRAP_URI = "work://manuscript/chapter-1.md";
+export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
 export type BootstrapProjectInput = {
   name?: string | null;

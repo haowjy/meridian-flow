@@ -14,8 +14,11 @@ import {
 } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
-import type { ContextPortFactory } from "../context/index.js";
-import { REQUIRED_MANUSCRIPT_URI, type RuntimeToolAction } from "./index.js";
+import { contextPortForThread, resolveThreadContext } from "../context/context-port-resolution.js";
+import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import type { UnifiedContextPortFactory } from "../context/unified-context-port-factory.js";
+import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
+import type { RuntimeToolAction } from "./index.js";
 
 export type RuntimeToolRegistry = ReturnType<typeof createRuntimeToolRegistry>;
 
@@ -53,10 +56,43 @@ async function requireParentThread(db: Database, ctx: ToolContext) {
   return thread as typeof thread & { workId: string };
 }
 
+function agentOrigin(ctx: ToolContext) {
+  return {
+    type: "agent" as const,
+    agentSlug: "runtime-tool",
+    threadId: ctx.threadId,
+    turnId: ctx.assistantTurnId,
+  };
+}
+
+function contextErrorMessage(
+  error: import("../context/ports/context-port.js").ContextError,
+): string {
+  switch (error.code) {
+    case "invalid_uri":
+      return error.reason;
+    case "io_error":
+      return error.message;
+    default:
+      return "Context operation failed";
+  }
+}
+
 export function createRuntimeToolRegistry(deps: {
   db: Database;
-  contextPorts: ContextPortFactory;
+  contextPorts: UnifiedContextPortFactory;
+  threads: Pick<ThreadRepository, "findById">;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
 }) {
+  async function resolvePort(ctx: ToolContext) {
+    const resolution = await resolveThreadContext(
+      { threads: deps.threads, threadWorks: deps.threadWorks },
+      ctx.threadId,
+    );
+    if (!resolution) throw new HTTPError({ status: 404, message: "Thread not found" });
+    return contextPortForThread(deps.contextPorts, resolution);
+  }
+
   const registry = {
     async executePlanActions(ctx: ToolContext, actions: RuntimeToolAction[]) {
       const results: JsonValue[] = [];
@@ -70,58 +106,78 @@ export function createRuntimeToolRegistry(deps: {
       return results;
     },
 
-    async read(ctx: ToolContext, uri = REQUIRED_MANUSCRIPT_URI) {
-      const document = await deps.contextPorts.forThread(ctx).readDocument(uri);
-      return { result: { uri, documentId: document.documentId, markdown: document.markdown } };
+    async read(ctx: ToolContext, uri = MANUSCRIPT_URI) {
+      const port = await resolvePort(ctx);
+      const document = await port.read(uri);
+      if (!document.ok) {
+        throw new HTTPError({ status: 404, message: contextErrorMessage(document.error) });
+      }
+      return {
+        result: {
+          uri,
+          documentId: document.value.documentId ?? null,
+          markdown: document.value.content,
+        },
+      };
     },
 
     async write(ctx: ToolContext, uri: string, markdown: string) {
-      const document = await deps.contextPorts.forThread(ctx).writeDocument({
-        uri,
-        markdown,
-        origin: { type: "agent", actorTurnId: ctx.assistantTurnId },
-      });
+      const port = await resolvePort(ctx);
+      const written = await port.write(uri, markdown, { origin: agentOrigin(ctx) });
+      if (!written.ok) {
+        throw new HTTPError({ status: 400, message: contextErrorMessage(written.error) });
+      }
       return {
         result: {
           tool: "write",
           uri,
-          documentId: document.documentId,
-          updateSeq: document.updateSeq,
+          documentId: written.value.documentId ?? null,
         },
       };
     },
 
     async edit(ctx: ToolContext, action: Extract<RuntimeToolAction, { tool: "edit" }>) {
-      const written = await deps.contextPorts.forThread(ctx).editDocument({
-        uri: action.uri,
-        transform: (current) => (action.mode === "append" ? `${current}${action.text}` : current),
-        origin: { type: "agent", actorTurnId: ctx.assistantTurnId },
-      });
+      const port = await resolvePort(ctx);
+      const current = await port.read(action.uri);
+      if (!current.ok) {
+        throw new HTTPError({ status: 404, message: contextErrorMessage(current.error) });
+      }
+      const next =
+        action.mode === "append" ? `${current.value.content}${action.text}` : current.value.content;
+      const written = await port.write(action.uri, next, { origin: agentOrigin(ctx) });
+      if (!written.ok) {
+        throw new HTTPError({ status: 400, message: contextErrorMessage(written.error) });
+      }
       return {
         result: {
           tool: "edit",
           uri: action.uri,
-          documentId: written.documentId,
-          updateSeq: written.updateSeq,
-          beforeLength: written.beforeMarkdown.length,
-          afterLength: written.markdown.length,
+          documentId: written.value.documentId ?? null,
+          beforeLength: current.value.content.length,
+          afterLength: next.length,
         },
       };
     },
 
     async list(_ctx: ToolContext) {
-      return { result: { uris: [REQUIRED_MANUSCRIPT_URI] } };
+      return { result: { uris: [MANUSCRIPT_URI] } };
     },
 
-    async search(ctx: ToolContext, query: string, uri = REQUIRED_MANUSCRIPT_URI) {
-      const document = await deps.contextPorts.forThread(ctx).readDocument(uri);
-      const index = document.markdown.toLowerCase().indexOf(query.toLowerCase());
+    async search(ctx: ToolContext, query: string, uri = MANUSCRIPT_URI) {
+      const port = await resolvePort(ctx);
+      const document = await port.read(uri);
+      if (!document.ok) {
+        throw new HTTPError({ status: 404, message: contextErrorMessage(document.error) });
+      }
+      const index = document.value.content.toLowerCase().indexOf(query.toLowerCase());
       return {
         result: {
           uri,
           query,
           matches:
-            index >= 0 ? [{ index, preview: document.markdown.slice(index, index + 160) }] : [],
+            index >= 0
+              ? [{ index, preview: document.value.content.slice(index, index + 160) }]
+              : [],
         },
       };
     },

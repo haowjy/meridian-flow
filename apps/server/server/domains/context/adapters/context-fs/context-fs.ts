@@ -8,11 +8,12 @@
 
 import { filetypeForPath } from "@meridian/contracts/protocol";
 import { Ok, type Result } from "../../../../shared/result.js";
-import type {
-  DocumentSyncPort,
-  SyncError,
-  UpdateOrigin,
-} from "../../../collab/ports/document-sync.js";
+import type { SyncError } from "../../../collab/ports/document-sync.js";
+import {
+  type ContextCollabDocumentSync,
+  ensureCollabMirror,
+  writeCollabMarkdown,
+} from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
   AdapterFault,
@@ -27,12 +28,11 @@ import type {
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
-  WriteProvenance,
 } from "../../ports/context-port.js";
 
 export interface ContextFSDeps {
   store: ContextDocumentStore;
-  documentSync: DocumentSyncPort;
+  documentSync: ContextCollabDocumentSync;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
 }
@@ -45,27 +45,6 @@ const DEFAULT_EDITABLE_FILETYPE = "markdown";
  *  reach this code path; unknown values default to `"code"`. */
 function schemaTypeForStr(filetype: string): "document" | "code" {
   return filetype === "markdown" ? "document" : "code";
-}
-
-function toUpdateOrigin(provenance: WriteProvenance | undefined): UpdateOrigin {
-  if (!provenance) return { type: "system" };
-  switch (provenance.type) {
-    case "agent":
-      // Collab's update log still keys agent attribution by turn id.
-      return { type: "agent", actorTurnId: provenance.turnId };
-    case "human":
-      return { type: "user", userId: provenance.userId };
-    case "import":
-      return {
-        type: "import",
-        userId: provenance.userId,
-        source: provenance.source,
-        filename: provenance.filename,
-        sourceId: provenance.sourceId,
-      };
-    case "system":
-      return { type: "system" };
-  }
 }
 
 /**
@@ -89,7 +68,7 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly capabilities: SchemeCapabilities = { writable: true, searchable: true };
 
   private readonly store: ContextDocumentStore;
-  private readonly documentSync: DocumentSyncPort;
+  private readonly documentSync: ContextCollabDocumentSync;
 
   constructor(deps: ContextFSDeps) {
     this.store = deps.store;
@@ -116,16 +95,6 @@ export class ContextFS implements ContextSchemeAdapter {
           message: `Edit text is ambiguous (${error.matchCount} matches): ${error.oldText}`,
         };
     }
-  }
-
-  private async getOrCreateMirror(
-    docId: string,
-    markdown: string,
-    filetype: string,
-  ): Promise<Result<void, AdapterFault>> {
-    const mirror = await this.documentSync.getOrCreateMirror(docId, markdown, filetype);
-    if (!mirror.ok) return { ok: false, error: this.syncFault(mirror.error) };
-    return Ok(undefined);
   }
 
   /** Resolve a folder chain without creating; `MISSING` if any segment is absent. */
@@ -210,7 +179,7 @@ export class ContextFS implements ContextSchemeAdapter {
     }
 
     const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
-    const mirror = await this.getOrCreateMirror(doc.id, doc.markdown, filetype);
+    const mirror = await ensureCollabMirror(this.documentSync, doc.id, doc.markdown, filetype);
     if (!mirror.ok) return mirror;
 
     const read = await this.documentSync.readAsMarkdown(doc.id);
@@ -235,23 +204,20 @@ export class ContextFS implements ContextSchemeAdapter {
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
 
-    const mirror = await this.getOrCreateMirror(doc.id, doc.markdown, doc.filetype ?? filetype);
-    if (!mirror.ok) return mirror;
-
-    const write = await this.documentSync.writeFromMarkdown(
-      doc.id,
+    const write = await writeCollabMarkdown({
+      documentSync: this.documentSync,
+      documentId: doc.id,
+      seedMarkdown: doc.markdown,
+      filetype: doc.filetype ?? filetype,
       content,
-      toUpdateOrigin(options?.origin),
-    );
-    if (!write.ok) return { ok: false, error: this.syncFault(write.error) };
-
-    const readBack = await this.documentSync.readAsMarkdown(doc.id);
-    if (!readBack.ok) return { ok: false, error: this.syncFault(readBack.error) };
+      provenance: options?.origin,
+    });
+    if (!write.ok) return write;
     const persisted = await this.store.upsertDocument({
       folderId,
       name,
       extension,
-      markdown: readBack.value,
+      markdown: write.markdown,
       filetype,
     });
     return Ok({ documentId: persisted.id });

@@ -2,7 +2,7 @@ import type { AGUIEvent, SendMessageResponse, WsServerMessage } from "@meridian/
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import { serverOrigin, serverWebSocketUrl } from "./server-origin";
 
-export const CHAPTER_URI = "work://manuscript/chapter-1.md";
+export const CHAPTER_URI = "manuscript://chapter-1.md";
 
 export type DefaultBootstrap = {
   projectId: string;

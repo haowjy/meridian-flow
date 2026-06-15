@@ -4,14 +4,15 @@ import { type CreditLedger, createInMemoryCreditLedger } from "../domains/billin
 import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
-import type {
-  ContextPortFactory,
-  CorpusImportPort,
-  DriveCorpusImportPort,
-  FigureAssetService,
-  ResultRepository,
-  ThreadUploadDocumentStore,
-  ThreadUploadImportService,
+import {
+  type CorpusImportPort,
+  createInMemoryUnifiedContextPortFactory,
+  type DriveCorpusImportPort,
+  type FigureAssetService,
+  type ResultRepository,
+  type ThreadUploadDocumentStore,
+  type ThreadUploadImportService,
+  type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
 import type { OnboardingService } from "../domains/onboarding/index.js";
@@ -65,7 +66,7 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
-  contextPorts: ContextPortFactory;
+  contextPorts: UnifiedContextPortFactory;
   corpusImports: CorpusImportPort;
   driveCorpusImports: DriveCorpusImportPort;
   onboarding: OnboardingService;
@@ -289,24 +290,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
-    contextPorts: {
-      forProject() {
-        throw new Error("in-memory project context port is not implemented");
-      },
-      forThread() {
-        return {
-          async readDocument() {
-            throw new Error("in-memory context port is not implemented");
-          },
-          async writeDocument() {
-            throw new Error("in-memory context port is not implemented");
-          },
-          async editDocument() {
-            throw new Error("in-memory context port is not implemented");
-          },
-        };
-      },
-    },
+    contextPorts: createInMemoryUnifiedContextPortFactory(),
     corpusImports: {
       async importFiles() {
         throw new Error("in-memory corpus imports are not implemented");

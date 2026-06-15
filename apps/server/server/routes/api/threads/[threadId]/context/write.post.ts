@@ -7,6 +7,7 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { writeThreadContextDocument } from "../../../../../lib/thread-context-route.js";
 
 type WriteBody = {
   uri?: unknown;
@@ -24,12 +25,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "markdown is required" });
   }
 
-  const context = app.contextPorts.forThread({ threadId, userId: user.userId });
-  const response = await context.writeDocument({
-    uri: body.uri,
-    markdown: body.markdown,
-    origin: { type: "user", actorUserId: user.userId },
-  });
+  const response = await writeThreadContextDocument(
+    {
+      contextPorts: app.contextPorts,
+      threads: app.threadRepos.threads,
+      threadWorks: app.threadRepos.threadWorks,
+    },
+    {
+      threadId,
+      userId: user.userId,
+      uri: body.uri,
+      markdown: body.markdown,
+    },
+  );
   setResponseStatus(event, 202);
   return response;
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryProjectContextPortFactory } from "../../context-port-factory.js";
+import { createInMemoryUnifiedContextPortFactory } from "../../unified-context-port-factory.js";
 import { createFixtureDriveImportSource } from "../adapters/fixture-drive-import-source.js";
 import { createMammothDocumentConverter } from "../adapters/mammoth-document-converter.js";
 import {
@@ -25,7 +25,7 @@ describe("corpus import", () => {
   });
 
   it("writes supported files into deterministic KB import paths and reports unsupported files", async () => {
-    const contextPorts = createInMemoryProjectContextPortFactory();
+    const contextPorts = createInMemoryUnifiedContextPortFactory();
     const imports = createCorpusImportService({
       contextPorts,
       converter: createMammothDocumentConverter(),
@@ -65,7 +65,7 @@ describe("corpus import", () => {
   });
 
   it("suffixes target paths instead of overwriting existing KB imports", async () => {
-    const contextPorts = createInMemoryProjectContextPortFactory();
+    const contextPorts = createInMemoryUnifiedContextPortFactory();
     const imports = createCorpusImportService({
       contextPorts,
       converter: createMammothDocumentConverter(),
@@ -100,7 +100,7 @@ describe("corpus import", () => {
   });
 
   it("imports fixture Drive files through the drive source port", async () => {
-    const contextPorts = createInMemoryProjectContextPortFactory();
+    const contextPorts = createInMemoryUnifiedContextPortFactory();
     const imports = createCorpusImportService({
       contextPorts,
       converter: createMammothDocumentConverter(),
