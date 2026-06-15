@@ -8,6 +8,7 @@ import { AgentBindingNotFoundError } from "./thread-creation.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
+  threadWorks: InternalThreadRepositories["threadWorks"];
   turns: InternalThreadRepositories["turns"];
   blocks: InternalThreadRepositories["blocks"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
@@ -33,6 +34,9 @@ export async function handoffThreadAgent(
     currentAgent: input.targetAgent,
     title: `Handoff from ${source.title ?? "thread"}`,
   });
+  if (source.workId) {
+    await deps.threadWorks.addMembership(target.id as ThreadId, source.workId, true);
+  }
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
   await deps.eventWriter.appendEvent(source.id as ThreadId, {
@@ -72,6 +76,9 @@ export async function forkThreadAgent(
     currentAgent: input.targetAgent,
     title: `Fork from ${source.title ?? "thread"}`,
   });
+  if (source.workId) {
+    await deps.threadWorks.addMembership(target.id as ThreadId, source.workId, true);
+  }
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
   await deps.eventWriter.appendEvent(source.id as ThreadId, {

@@ -17,7 +17,15 @@ import type {
   TurnStatus,
 } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { eventJournal, projects, threads, turnBlocks, turns, works } from "@meridian/database";
+import {
+  eventJournal,
+  projects,
+  threads,
+  threadWorks,
+  turnBlocks,
+  turns,
+  works,
+} from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { Gateway, RuntimeToolAction } from "../runtime/index.js";
@@ -156,7 +164,7 @@ export function createThreadRuntimeService(deps: {
       .select({
         id: threads.id,
         projectId: threads.projectId,
-        workId: threads.workId,
+        workId: threadWorks.workId,
         currentAgentId: threads.currentAgentId,
         activeLeafTurnId: threads.activeLeafTurnId,
         nextSeq: threads.nextSeq,
@@ -164,6 +172,10 @@ export function createThreadRuntimeService(deps: {
       })
       .from(threads)
       .innerJoin(projects, eq(projects.id, threads.projectId))
+      .leftJoin(
+        threadWorks,
+        and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
+      )
       .where(
         and(
           eq(threads.id, threadId),
@@ -174,8 +186,8 @@ export function createThreadRuntimeService(deps: {
       )
       .limit(1);
 
-    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-    return thread;
+    if (!thread?.workId) throw new HTTPError({ status: 404, message: "Thread not found" });
+    return thread as OwnedThread;
   }
 
   async function liveState(threadId: ThreadId, userId: UserId): Promise<ThreadLiveState> {
@@ -216,13 +228,17 @@ export function createThreadRuntimeService(deps: {
           .select({
             id: threads.id,
             projectId: threads.projectId,
-            workId: threads.workId,
+            workId: threadWorks.workId,
             currentAgentId: threads.currentAgentId,
             activeLeafTurnId: threads.activeLeafTurnId,
             status: threads.status,
           })
           .from(threads)
           .innerJoin(projects, eq(projects.id, threads.projectId))
+          .leftJoin(
+            threadWorks,
+            and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
+          )
           .where(
             and(
               eq(threads.id, input.threadId),
@@ -234,7 +250,7 @@ export function createThreadRuntimeService(deps: {
           .for("update", { of: threads })
           .limit(1);
 
-        if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
+        if (!thread?.workId) throw new HTTPError({ status: 404, message: "Thread not found" });
 
         if (thread.activeLeafTurnId) {
           await tx

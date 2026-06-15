@@ -78,9 +78,9 @@ describe("ChildRunCoordinator background spawn", () => {
     const parent = await repos.threads.create({
       userId: "user-1",
       projectId: "project-1",
-      workId: "work-1",
       currentAgent: "muse",
     });
+    await repos.threadWorks.addMembership(parent.id, "work-1", true);
     const parentTurn = await repos.turns.create({
       threadId: parent.id,
       role: "assistant",
@@ -119,6 +119,12 @@ describe("ChildRunCoordinator background spawn", () => {
         subagentThreads: repos.threads,
         turns: repos.turns,
         blocks: repos.blocks,
+        transaction: repos.transaction,
+        threadWorks: repos.threadWorks,
+      },
+      resolveWorkMembership: async ({ parentThreadId }) => {
+        const primary = parentThreadId ? await repos.threadWorks.findPrimary(parentThreadId) : null;
+        return primary?.workId ?? "work-1";
       },
       eventWriter,
       packageRepository,
@@ -195,9 +201,9 @@ describe("ChildRunCoordinator background spawn", () => {
     const parent = await repos.threads.create({
       userId: "user-1",
       projectId: "project-1",
-      workId: "work-1",
       currentAgent: "muse",
     });
+    await repos.threadWorks.addMembership(parent.id, "work-1", true);
     const parentTurn = await repos.turns.create({
       threadId: parent.id,
       role: "assistant",
@@ -245,6 +251,12 @@ describe("ChildRunCoordinator background spawn", () => {
         subagentThreads: repos.threads,
         turns: repos.turns,
         blocks: repos.blocks,
+        transaction: repos.transaction,
+        threadWorks: repos.threadWorks,
+      },
+      resolveWorkMembership: async ({ parentThreadId }) => {
+        const primary = parentThreadId ? await repos.threadWorks.findPrimary(parentThreadId) : null;
+        return primary?.workId ?? "work-1";
       },
       eventWriter,
       packageRepository,

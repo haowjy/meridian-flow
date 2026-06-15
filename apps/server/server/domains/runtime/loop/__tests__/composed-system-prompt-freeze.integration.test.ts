@@ -18,6 +18,7 @@ import {
   type InternalThreadRepositories,
 } from "../../../threads/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
+import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
   createCoreToolRegistrations,
   createInvokeToolRegistration,
@@ -54,6 +55,7 @@ function gatewayCapturingRequests(results: GenerateResult[]) {
   const systemTexts: string[] = [];
   const toolNames: string[][] = [];
   const gateway: Gateway = {
+    ...gatewayStubDefaults,
     async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
       const systemMessage = request.messages.find((message) => message.role === "system");
       const text =

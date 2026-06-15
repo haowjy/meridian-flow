@@ -8,6 +8,7 @@ import {
   eventJournal,
   projects,
   threads,
+  threadWorks,
   turnBlocks,
   turns,
   works,
@@ -133,9 +134,14 @@ await db
 await db.insert(threads).values({
   id: threadId,
   projectId,
-  workId,
   createdByUserId: userId,
   title: "Smoke thread",
+});
+await db.insert(threadWorks).values({
+  threadId,
+  workId,
+  projectId,
+  isPrimary: true,
 });
 const creditLotId = randomUUID();
 await db.insert(creditLots).values({

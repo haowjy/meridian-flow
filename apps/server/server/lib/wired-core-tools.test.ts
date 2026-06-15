@@ -10,6 +10,7 @@ import {
   createInMemoryContextPortFactory,
 } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
+import { gatewayStubDefaults } from "../domains/runtime/gateway/test-gateway.js";
 import {
   CORE_TOOL_NAMES,
   createCheckpointRegistry,
@@ -66,6 +67,7 @@ function askUserGateway(): Gateway & { getRequests(): GenerateRequest[] } {
   let call = 0;
   const requests: GenerateRequest[] = [];
   return {
+    ...gatewayStubDefaults,
     getRequests: () => requests,
     async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
       requests.push(request);

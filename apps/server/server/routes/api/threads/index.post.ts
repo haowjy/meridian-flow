@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
         projects: projectRepo,
         workRepo,
         threads: repos.threads,
+        threadWorks: repos.threadWorks,
+        transaction: repos.transaction,
         packageRepository: app.packageRepository,
         eventSink: app.eventSink,
       },

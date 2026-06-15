@@ -193,6 +193,15 @@ async function createAppServices(): Promise<AppServices> {
       subagentThreads: threadRepos.threads,
       turns: threadRepos.turns,
       blocks: threadRepos.blocks,
+      transaction: threadRepos.transaction,
+      threadWorks: threadRepos.threadWorks,
+    },
+    resolveWorkMembership: async (input) => {
+      const { resolveWorkMembership } = await import("./work-attachment.js");
+      return resolveWorkMembership(
+        { workRepo, threadWorks: threadRepos.threadWorks, threads: threadRepos.threads },
+        input,
+      );
     },
     eventWriter: threadEventHub,
     packageRepository,

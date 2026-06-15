@@ -24,7 +24,14 @@ describe("createThreadForProject work activity", () => {
     const project = await projects.create({ userId: "user-1", title: "Sample Project" });
 
     const thread = await createThreadForProject(
-      { projects, workRepo, threads: repos.threads, eventSink: createInMemoryEventSink() },
+      {
+        projects,
+        workRepo,
+        threads: repos.threads,
+        threadWorks: repos.threadWorks,
+        transaction: repos.transaction,
+        eventSink: createInMemoryEventSink(),
+      },
       { projectId: project.id, userId: "user-1", title: "Root thread" },
     );
 

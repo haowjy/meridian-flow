@@ -3,7 +3,15 @@ import { buildAskUserComponentContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnBlockId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type JsonValue, type TurnStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { projects, threadDocuments, threads, turnBlocks, turns, works } from "@meridian/database";
+import {
+  projects,
+  threadDocuments,
+  threads,
+  threadWorks,
+  turnBlocks,
+  turns,
+  works,
+} from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { ContextPortFactory } from "../context/index.js";
@@ -22,12 +30,16 @@ async function requireParentThread(db: Database, ctx: ToolContext) {
     .select({
       id: threads.id,
       projectId: threads.projectId,
-      workId: threads.workId,
+      workId: threadWorks.workId,
       currentAgentId: threads.currentAgentId,
       spawnDepth: threads.spawnDepth,
     })
     .from(threads)
     .innerJoin(projects, eq(projects.id, threads.projectId))
+    .leftJoin(
+      threadWorks,
+      and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
+    )
     .where(
       and(
         eq(threads.id, ctx.threadId),
@@ -37,8 +49,8 @@ async function requireParentThread(db: Database, ctx: ToolContext) {
       ),
     )
     .limit(1);
-  if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-  return thread;
+  if (!thread?.workId) throw new HTTPError({ status: 404, message: "Thread not found" });
+  return thread as typeof thread & { workId: string };
 }
 
 export function createRuntimeToolRegistry(deps: {
@@ -202,7 +214,6 @@ export function createRuntimeToolRegistry(deps: {
         await tx.insert(threads).values({
           id: childThreadId,
           projectId: parent.projectId,
-          workId: parent.workId,
           createdByUserId: ctx.userId,
           title: "Spawned assistant",
           kind: "subagent",
@@ -212,6 +223,12 @@ export function createRuntimeToolRegistry(deps: {
           originType: "spawn",
           spawnStatus: "running",
           spawnDepth: parent.spawnDepth + 1,
+        });
+        await tx.insert(threadWorks).values({
+          threadId: childThreadId,
+          workId: parent.workId,
+          projectId: parent.projectId,
+          isPrimary: true,
         });
         await tx.insert(turns).values({
           id: childTurnId,
@@ -273,16 +290,22 @@ export function createRuntimeToolRegistry(deps: {
           .returning({
             parentThreadId: threads.parentThreadId,
             projectId: threads.projectId,
-            workId: threads.workId,
           });
         if (!child) throw new HTTPError({ status: 404, message: "Child thread not found" });
+        const [childPrimary] = await tx
+          .select({ workId: threadWorks.workId })
+          .from(threadWorks)
+          .where(and(eq(threadWorks.threadId, childThreadId), eq(threadWorks.isPrimary, true)))
+          .limit(1);
         if (child.parentThreadId) {
           await tx
             .update(threads)
             .set({ updatedAt: now })
             .where(eq(threads.id, child.parentThreadId));
         }
-        await tx.update(works).set({ updatedAt: now }).where(eq(works.id, child.workId));
+        if (childPrimary?.workId) {
+          await tx.update(works).set({ updatedAt: now }).where(eq(works.id, childPrimary.workId));
+        }
         await tx
           .update(projects)
           .set({ updatedAt: now, lastActivityAt: now })

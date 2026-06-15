@@ -15,6 +15,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -23,6 +24,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -35,10 +37,6 @@ export const threads = pgTable(
   "threads",
   {
     id: idColumn<ThreadId>(),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .notNull()
-      .references(() => works.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .notNull()
@@ -69,9 +67,7 @@ export const threads = pgTable(
     deletedAt: softDeleteAt(),
   },
   (table) => [
-    index("threads_work_updated_active")
-      .on(table.workId, table.updatedAt.desc())
-      .where(sql`${table.deletedAt} IS NULL`),
+    unique("threads_project_id_unique").on(table.projectId, table.id),
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -122,6 +118,38 @@ export const threads = pgTable(
       "threads_spawn_status_valid",
       sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'succeeded', 'failed', 'cancelled')`,
     ),
+  ],
+);
+
+/** M:N thread↔work membership; primary Work is the default work-scoped authority. */
+export const threadWorks = pgTable(
+  "thread_works",
+  {
+    threadId: uuid("thread_id").$type<ThreadId>().notNull(),
+    workId: uuid("work_id").$type<WorkId>().notNull(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull(),
+    isPrimary: boolean("is_primary").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.workId], name: "thread_works_pk" }),
+    foreignKey({
+      columns: [table.projectId, table.threadId],
+      foreignColumns: [threads.projectId, threads.id],
+      name: "thread_works_project_thread_same_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.projectId, table.workId],
+      foreignColumns: [works.projectId, works.id],
+      name: "thread_works_project_work_same_project_fk",
+    }).onDelete("restrict"),
+    index("thread_works_thread_idx").on(table.threadId),
+    index("thread_works_work_idx").on(table.workId),
+    uniqueIndex("thread_works_primary_unique")
+      .on(table.threadId)
+      .where(sql`${table.isPrimary} = true`),
   ],
 );
 

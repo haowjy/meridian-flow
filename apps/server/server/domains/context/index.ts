@@ -1,4 +1,11 @@
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
@@ -6,6 +13,7 @@ import {
   projects,
   threadDocuments,
   threads,
+  threadWorks,
   works,
 } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
@@ -96,12 +104,19 @@ export function createProductionContextPortFactory(deps: {
   async function resolveThreadScope(
     threadId: ThreadId,
     userId: UserId,
-  ): Promise<{ workId: WorkId }> {
+  ): Promise<{ projectId: ProjectId; workId: WorkId }> {
     const [thread] = await deps.db
-      .select({ workId: threads.workId })
+      .select({
+        projectId: threads.projectId,
+        workId: threadWorks.workId,
+      })
       .from(threads)
       .innerJoin(projects, eq(projects.id, threads.projectId))
-      .innerJoin(works, eq(works.id, threads.workId))
+      .innerJoin(
+        threadWorks,
+        and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
+      )
+      .innerJoin(works, eq(works.id, threadWorks.workId))
       .where(
         and(
           eq(threads.id, threadId),
@@ -113,13 +128,13 @@ export function createProductionContextPortFactory(deps: {
         ),
       )
       .limit(1);
-    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
-    return thread;
+    if (!thread?.workId) throw new HTTPError({ status: 404, message: "Thread not found" });
+    return { projectId: thread.projectId, workId: thread.workId };
   }
 
   async function resolveDocument(threadId: ThreadId, userId: UserId, uri: string) {
     const parsed = parseWorkUri(uri);
-    const { workId } = await resolveThreadScope(threadId, userId);
+    const { projectId } = await resolveThreadScope(threadId, userId);
 
     const [document] = await deps.db
       .select({
@@ -131,7 +146,8 @@ export function createProductionContextPortFactory(deps: {
       .innerJoin(threadDocuments, eq(threadDocuments.documentId, documents.id))
       .where(
         and(
-          eq(contextSources.workId, workId),
+          eq(contextSources.projectId, projectId),
+          isNull(contextSources.workId),
           eq(contextSources.slug, parsed.source),
           eq(documents.name, "chapter-1"),
           eq(documents.extension, "md"),

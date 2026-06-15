@@ -16,7 +16,9 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import type { ThreadRepositories } from "./compose.js";
-import { resolveWorkIdForThread } from "./work-attachment.js";
+import { resolveWorkMembership } from "./work-attachment.js";
+
+export { InvalidWorkAttachmentError } from "./work-attachment.js";
 
 export class AgentBindingNotFoundError extends Error {
   constructor(public readonly agentSlug: string) {
@@ -29,6 +31,8 @@ export interface CreateThreadForProjectDeps {
   projects: ProjectRepository;
   workRepo: WorkRepository;
   threads: ThreadRepositories["threads"];
+  threadWorks: ThreadRepositories["threadWorks"];
+  transaction: ThreadRepositories["transaction"];
   packageRepository?: PackageRepository;
   eventSink: EventSink;
 }
@@ -51,9 +55,9 @@ export interface CreateThreadForProjectArgs {
 /**
  * Create a thread under a project — the single owner of thread-creation policy
  * shared by both the global (`/api/threads`) and project-scoped
- * (`/api/projects/:projectId/threads`) routes. Verifies ownership, resolves the
- * work the thread attaches to, then persists. Throws (404) if the caller does
- * not own the project.
+ * (`/api/projects/:projectId/threads`) routes. Verifies ownership, persists the
+ * thread row, then creates its primary Work membership. Throws (404) if the caller
+ * does not own the project.
  */
 export async function createThreadForProject(
   deps: CreateThreadForProjectDeps,
@@ -64,16 +68,6 @@ export async function createThreadForProject(
     { projects: deps.projects },
     args.projectId,
     args.userId,
-  );
-
-  const workId = await resolveWorkIdForThread(
-    { workRepo: deps.workRepo, threads: deps.threads },
-    {
-      projectId: args.projectId,
-      workId: args.workId,
-      parentThreadId: args.parentThreadId,
-      defaultTitle: project.title,
-    },
   );
 
   const agentSlug = args.currentAgent ?? null;
@@ -91,19 +85,33 @@ export async function createThreadForProject(
     }
   }
 
-  const thread = await deps.threads.create({
-    id: args.id ? args.id : undefined,
-    userId: args.userId,
-    projectId: args.projectId,
-    workId,
-    title: args.title ?? null,
-    systemPrompt: agentSlug ? null : (args.systemPrompt ?? null),
-    currentAgent: agentSlug,
+  let resolvedWorkId: string | null = null;
+  const thread = await deps.transaction(async () => {
+    const created = await deps.threads.create({
+      id: args.id ? args.id : undefined,
+      userId: args.userId,
+      projectId: args.projectId,
+      title: args.title ?? null,
+      systemPrompt: agentSlug ? null : (args.systemPrompt ?? null),
+      currentAgent: agentSlug,
+      parentThreadId: args.parentThreadId,
+    });
+    resolvedWorkId = await resolveWorkMembership(
+      { workRepo: deps.workRepo, threadWorks: deps.threadWorks, threads: deps.threads },
+      {
+        threadId: created.id,
+        projectId: args.projectId,
+        workId: args.workId,
+        parentThreadId: args.parentThreadId,
+        defaultTitle: project.title,
+      },
+    );
+    return { ...created, workId: resolvedWorkId };
   });
 
-  if (workId) {
+  if (resolvedWorkId) {
     try {
-      await deps.workRepo.touch(workId);
+      await deps.workRepo.touch(resolvedWorkId);
     } catch (error) {
       emitEvent(eventSink, {
         level: "warn",
@@ -112,7 +120,7 @@ export async function createThreadForProject(
         payload: {
           threadId: thread.id,
           projectId: args.projectId,
-          workId,
+          workId: resolvedWorkId,
           ...unknownToEventPayload(error),
         },
       });

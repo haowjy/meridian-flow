@@ -27,6 +27,7 @@ import {
   type MockOpenAIServer,
   type StreamEvent,
 } from "../../gateway/index.js";
+import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import { createChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createHelperResultDelivery } from "../../spawn/helper-result-delivery.js";
 import {
@@ -158,6 +159,12 @@ describe("nested spawn runtime (P2b gate)", () => {
         subagentThreads: repos.threads,
         turns: repos.turns,
         blocks: repos.blocks,
+        transaction: repos.transaction,
+        threadWorks: repos.threadWorks,
+      },
+      resolveWorkMembership: async ({ parentThreadId }) => {
+        const primary = parentThreadId ? await repos.threadWorks.findPrimary(parentThreadId) : null;
+        return primary?.workId ?? "work-1";
       },
       eventWriter,
       packageRepository,
@@ -221,6 +228,7 @@ describe("nested spawn runtime (P2b gate)", () => {
   function nestedRunGateway(): Gateway & { getCallCount(): number } {
     let call = 0;
     return {
+      ...gatewayStubDefaults,
       getCallCount: () => call,
       async *stream(_request: GenerateRequest): AsyncGenerator<StreamEvent> {
         call += 1;
@@ -351,6 +359,7 @@ describe("nested spawn runtime (P2b gate)", () => {
   it("debits nested model calls and rolls up by root thread and agent", async () => {
     let call = 0;
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
@@ -416,6 +425,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
   it("rejects spawn when maxDepth would be exceeded", async () => {
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         yield {
           type: "end",
@@ -464,6 +474,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
   it("rejects spawn when turn budget is exhausted", async () => {
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         yield {
           type: "end",
@@ -494,6 +505,7 @@ describe("nested spawn runtime (P2b gate)", () => {
   it("synthesizes incomplete report when child omits return_result", async () => {
     let call = 0;
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
@@ -547,6 +559,7 @@ describe("nested spawn runtime (P2b gate)", () => {
   it("maps child turn.error to an error SpawnResult", async () => {
     let call = 0;
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
@@ -608,6 +621,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
     let call = 0;
     const gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {

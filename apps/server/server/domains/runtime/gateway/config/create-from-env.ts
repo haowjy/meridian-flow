@@ -39,7 +39,7 @@ export async function createGatewayFromEnv(
   options?: { mockBaseUrl?: string },
 ): Promise<GatewayFromEnv> {
   let cleanup: (() => Promise<void>) | undefined;
-  const providers = buildProviderConfigs(env);
+  const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
 
   if (providers.length === 0) {
     let baseUrl = options?.mockBaseUrl;
@@ -53,7 +53,7 @@ export async function createGatewayFromEnv(
 
   const gateway = createGateway({
     providers,
-    ...defaultGatewayOptions(providers),
+    ...defaultGatewayOptions(providers, registryDefaultModel),
     attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
   });
 

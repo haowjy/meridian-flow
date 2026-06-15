@@ -228,6 +228,12 @@ export interface ThreadDocumentRepository {
   listByThread(threadId: ThreadId): Promise<ThreadDocument[]>;
 }
 
+export interface ThreadWorksRepository {
+  addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
+  findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
+  listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
+}
+
 export interface TurnDocumentTouch {
   id: string;
   turnId: TurnId;
@@ -243,6 +249,7 @@ export interface TurnDocumentTouchRepository {
 
 export type ThreadRepositories = {
   threads: ThreadRepository;
+  threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;

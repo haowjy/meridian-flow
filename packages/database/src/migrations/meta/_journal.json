@@ -71,6 +71,13 @@
       "when": 1781283000000,
       "tag": "0010_subscription_credit_lot_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781284000000,
+      "tag": "0011_thread_works_mn_membership",
+      "breakpoints": true
     }
   ]
 }

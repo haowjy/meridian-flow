@@ -6,7 +6,7 @@
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { toDate } from "../../domain/contract-serialization.js";
 import type {
   CreateTurnInput,
@@ -78,12 +78,19 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
       const [thread] = await currentDrizzleDb(db)
         .select({
           projectId: schema.threads.projectId,
-          workId: schema.threads.workId,
+          workId: schema.threadWorks.workId,
         })
         .from(schema.threads)
+        .leftJoin(
+          schema.threadWorks,
+          and(
+            eq(schema.threadWorks.threadId, schema.threads.id),
+            eq(schema.threadWorks.isPrimary, true),
+          ),
+        )
         .where(eq(schema.threads.id, row.threadId))
         .limit(1);
-      if (thread) {
+      if (thread?.workId) {
         await currentDrizzleDb(db)
           .update(schema.works)
           .set({ updatedAt: now })

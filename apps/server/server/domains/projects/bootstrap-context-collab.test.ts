@@ -8,6 +8,7 @@ import {
   projects,
   threadDocuments,
   threads,
+  threadWorks,
   turns,
   works,
 } from "@meridian/database";
@@ -106,6 +107,10 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
     const [project] = await db.select().from(projects).where(eq(projects.id, first.projectId));
     const [work] = await db.select().from(works).where(eq(works.id, first.workId));
     const [thread] = await db.select().from(threads).where(eq(threads.id, first.threadId));
+    const [membership] = await db
+      .select()
+      .from(threadWorks)
+      .where(eq(threadWorks.threadId, first.threadId));
     const [document] = await db.select().from(documents).where(eq(documents.id, first.documentId));
     const [threadDocument] = await db
       .select()
@@ -115,7 +120,8 @@ describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
     expect(project?.userId).toBe(userId);
     expect(work?.projectId).toBe(first.projectId);
     expect(work?.createdByUserId).toBe(userId);
-    expect(thread?.workId).toBe(first.workId);
+    expect(membership?.workId).toBe(first.workId);
+    expect(membership?.isPrimary).toBe(true);
     expect(thread?.projectId).toBe(first.projectId);
     expect(thread?.currentAgentId).toBe("writer");
     expect(document?.contextSourceId).toBe(first.contextSourceId);

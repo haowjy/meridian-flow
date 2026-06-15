@@ -15,6 +15,7 @@ import {
   createInMemoryRepositories,
 } from "../../../threads/index.js";
 import type { Gateway } from "../../gateway/index.js";
+import { createInertGateway } from "../../gateway/test-gateway.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolRegistry, type ToolExecutor } from "../../tools/index.js";
@@ -28,17 +29,7 @@ import {
 } from "../permissions/index.js";
 
 function inertGateway(): Gateway {
-  return {
-    stream() {
-      return (async function* () {
-        if (Math.random() < 0) yield undefined as never;
-        throw new Error("Test gateway not configured");
-      })();
-    },
-    async generate() {
-      throw new Error("not used in orchestrator tests");
-    },
-  };
+  return createInertGateway();
 }
 
 function inertToolExecutor(): ToolExecutor {

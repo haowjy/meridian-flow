@@ -11,6 +11,7 @@ import {
   createThreadEventHub,
 } from "../../../threads/index.js";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
+import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
   type CheckpointToolHandlerContext,
   createToolExecutor,
@@ -70,6 +71,7 @@ async function setup(gateway: Gateway) {
 describe("runtime credits", () => {
   it("allows one turn at exact zero balance before blocking negative balances", async () => {
     const gateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         yield { type: "end", result: pricedTextResult() };
       },
@@ -114,6 +116,7 @@ describe("runtime credits", () => {
   it("does not debit additional credits while parked on a checkpoint", async () => {
     let call = 0;
     const gateway: Gateway = {
+      ...gatewayStubDefaults,
       async *stream(): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {

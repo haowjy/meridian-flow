@@ -21,6 +21,7 @@ export type {
   ThreadDocumentRepository,
   ThreadRepositories,
   ThreadRepository,
+  ThreadWorksRepository,
   TurnDocumentTouch,
   TurnDocumentTouchRepository,
   TurnRepository,

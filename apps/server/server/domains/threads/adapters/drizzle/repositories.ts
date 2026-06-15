@@ -16,6 +16,7 @@ import { createDrizzleBlockRepository } from "./block-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
 import { createDrizzleThreadRepository } from "./thread-repository.js";
+import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
 import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository } from "./turn-repository.js";
 import { createDrizzleUsageRecorder } from "./usage-recorder.js";
@@ -26,6 +27,7 @@ export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRe
   const usageRecorder = createDrizzleUsageRecorder(db);
   return {
     threads: createDrizzleThreadRepository(db),
+    threadWorks: createDrizzleThreadWorksRepository(db),
     turns: createDrizzleTurnRepository(db),
     blocks: createDrizzleBlockRepository(db),
     modelResponses: createDrizzleModelResponseRepository(db),

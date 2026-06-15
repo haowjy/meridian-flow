@@ -72,12 +72,7 @@ function gatewayErrorBody(err: GatewayStreamError): ErrorBody {
 }
 
 function inferDefaultModel(gateway: Gateway): string | undefined {
-  const models = gateway.listModels?.() ?? [];
-  return (
-    models.find((m) => m.id === "deepseek-chat")?.id ??
-    models.find((m) => m.id === "mock-llm-v1")?.id ??
-    models[0]?.id
-  );
+  return gateway.getDefaultModel();
 }
 
 function providerIdsFromGateway(gateway: Gateway): string[] {

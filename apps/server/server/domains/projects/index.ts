@@ -16,6 +16,7 @@ import {
   projects,
   threadDocuments,
   threads,
+  threadWorks,
   works,
 } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -165,13 +166,16 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
     return work.id;
   }
 
-  async function ensureContextSource(tx: BootstrapDb, workId: WorkId): Promise<ContextSourceId> {
+  async function ensureContextSource(
+    tx: BootstrapDb,
+    projectId: ProjectId,
+  ): Promise<ContextSourceId> {
     const [existing] = await tx
       .select({ id: contextSources.id })
       .from(contextSources)
       .where(
         and(
-          eq(contextSources.workId, workId),
+          eq(contextSources.projectId, projectId),
           eq(contextSources.slug, "manuscript"),
           isNull(contextSources.deletedAt),
         ),
@@ -182,10 +186,10 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
     const [source] = await tx
       .insert(contextSources)
       .values({
-        workId,
+        projectId,
         name: "Manuscript",
         slug: "manuscript",
-        scope: "work",
+        scope: "project",
         adapterType: "local",
         isPrimary: true,
       })
@@ -242,11 +246,14 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
       .select({ id: threads.id })
       .from(threadDocuments)
       .innerJoin(threads, eq(threads.id, threadDocuments.threadId))
+      .innerJoin(
+        threadWorks,
+        and(eq(threadWorks.threadId, threads.id), eq(threadWorks.workId, input.workId)),
+      )
       .where(
         and(
           eq(threadDocuments.documentId, input.documentId),
           eq(threadDocuments.relationship, "editing"),
-          eq(threads.workId, input.workId),
           eq(threads.kind, "primary"),
           isNull(threads.deletedAt),
         ),
@@ -258,7 +265,6 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
       .insert(threads)
       .values({
         projectId: input.projectId,
-        workId: input.workId,
         createdByUserId: input.userId,
         title: "Chapter 1",
         kind: "primary",
@@ -266,6 +272,13 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
       })
       .returning({ id: threads.id });
     if (!thread) throw new Error("Failed to create primary thread");
+
+    await tx.insert(threadWorks).values({
+      threadId: thread.id,
+      workId: input.workId,
+      projectId: input.projectId,
+      isPrimary: true,
+    });
 
     await tx.insert(threadDocuments).values({
       threadId: thread.id,
@@ -283,7 +296,7 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
         const projectId = await ensureProject(tx, userId);
         const agentDefinitionId = await ensureAgent(tx, projectId);
         const workId = await ensureWork(tx, projectId, userId);
-        const contextSourceId = await ensureContextSource(tx, workId);
+        const contextSourceId = await ensureContextSource(tx, projectId);
         const documentId = await ensureDocument(tx, contextSourceId);
         const threadId = await ensureThread(tx, {
           projectId,
@@ -317,7 +330,7 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
           "Onboarding agent that gathers project context.",
         );
         const workId = await ensureWork(tx, projectId, userId);
-        const contextSourceId = await ensureContextSource(tx, workId);
+        const contextSourceId = await ensureContextSource(tx, projectId);
         const documentId = await ensureDocument(tx, contextSourceId);
         const threadId = await ensureThread(tx, {
           projectId,
