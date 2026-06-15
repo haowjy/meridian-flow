@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Verifies thread WebSocket control-message behavior that is not covered by route tests.
  * Key decision: checkpoint.respond is validated against the process-local pending checkpoint registry, so late responses must return a structured error instead of silently disappearing.
@@ -46,7 +45,13 @@ function createCheckpointTestApp() {
     async requireOwnedThread(threadId, userId) {
       const thread = await app.repos.threads.findById(threadId);
       if (!thread || thread.userId !== userId) throw new Error("Thread not found");
-      return thread;
+      return {
+        ...thread,
+        workId: thread.workId ?? "work-1",
+        currentAgentId: thread.currentAgent,
+        activeLeafTurnId: null,
+        nextSeq: BigInt(thread.nextSeq ?? "0"),
+      };
     },
     async liveState(threadId, userId) {
       await this.requireOwnedThread(threadId, userId);

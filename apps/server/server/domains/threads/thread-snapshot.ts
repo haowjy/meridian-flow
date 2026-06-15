@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread snapshot builder: assembles the full ThreadSnapshotResponse (thread,
  * turns, blocks, model responses, event cursor) for an initial client load.

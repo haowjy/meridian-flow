@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Package repository port: the active persistence boundary for Mars package installs.
 import type {
   AgentDefinitionRecord,

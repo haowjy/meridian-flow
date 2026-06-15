@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project authorization helper: requireProjectOwner loads a project and asserts
  * the caller owns it, throwing an h3 error otherwise. Owns the project ownership

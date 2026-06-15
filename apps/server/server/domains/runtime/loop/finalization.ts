@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Turn finalization: builds terminal turn events (cancelled/error) and
  * appends them through the persistence seam.

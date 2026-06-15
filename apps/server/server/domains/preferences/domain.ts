@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Preference domain helpers: copy and merge the locked ProjectPreferences contract without sharing mutable default arrays.
  * Key decision: merge semantics live outside adapters so in-memory and Drizzle implementations stay behaviorally identical.

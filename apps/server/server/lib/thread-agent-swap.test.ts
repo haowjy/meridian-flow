@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, expect, it } from "vitest";
 import { createInMemoryPackageStore } from "../domains/packages/index.js";
 import { createInMemoryProjectRepository } from "../domains/projects/index.js";

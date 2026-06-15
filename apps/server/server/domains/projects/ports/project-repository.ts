@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project persistence port: the CRUD contract (create/update/list/get/soft-delete)
  * for projects plus its input/option types. The boundary both the drizzle and

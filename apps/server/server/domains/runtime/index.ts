@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Barrel: re-exports the runtime domain's public surface — the gateway, the orchestrator loop, the permission model, the turn runner, and the tool registry/executor. */
 export type { OrchestratorEvent } from "@meridian/contracts/threads";
 export * from "./gateway/index.js";

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Tool executor: looks up a tool by name in the registry and runs its handler
  * with execution context, normalizing results/errors (incl. batch execution).

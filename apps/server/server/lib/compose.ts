@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { AgentPackageStore } from "../domains/agents/index.js";
 import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
 import { type CreditLedger, createInMemoryCreditLedger } from "../domains/billing/index.js";
@@ -16,11 +15,13 @@ import type {
 } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
 import type { OnboardingService } from "../domains/onboarding/index.js";
+import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import type {
   DefaultPackageSeeder,
   MarsPackageFetcher,
   PackageRepository,
 } from "../domains/packages/index.js";
+import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/index.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import type {
   ProjectBootstrapRepository,
@@ -40,7 +41,9 @@ import {
   createCheckpointRegistry,
 } from "../domains/runtime/loop/checkpoints.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
+import { createInMemoryModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
+import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
@@ -107,6 +110,11 @@ export function createProductionAppPorts(input: ProductionAppPorts): ProductionA
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const threadRepos = createInMemoryRepositories();
+  const packageRepository = createInMemoryPackageStore();
+  const preferences = createInMemoryProjectPreferencesRepository();
+  const modelRequestDebug = createInMemoryModelRequestDebugStore();
+
   const documentSync: DocumentSyncService = {
     async writeDocument() {
       throw new Error("in-memory document sync is not implemented");
@@ -163,24 +171,45 @@ export function createInMemoryAppServices(): AppServices {
 
   return {
     gateway: {
-      async generateAssistantText(input) {
-        return `Acknowledged: ${input.userText}`;
+      async *stream(request) {
+        const result = await this.generate(request);
+        yield { type: "start" as const, model: result.model, provider: result.provider };
+        yield { type: "end" as const, result };
       },
-      async generateTurnPlan(input) {
+      async generate(request) {
         return {
-          assistantText: `Acknowledged: ${input.userText}`,
-          actions: [],
+          content: [],
+          toolCalls: [],
+          finishReason: "end_turn" as const,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          model: request.model ?? "in-memory",
+          provider: request.provider ?? "in-memory",
         };
       },
     },
-    threadRepos: { phase: "phase3" },
-    repos: { phase: "phase3" },
+    threadRepos,
+    repos: threadRepos,
     journalReader: {
       async readAfter() {
         return [];
       },
       async headSeq() {
-        return "0";
+        return 0n;
+      },
+      async readModelProjectionWatermark() {
+        return 0n;
+      },
+      async listByThread() {
+        return [];
+      },
+      async listByType() {
+        return [];
+      },
+      async listSince() {
+        return [];
+      },
+      async listByTimeRange() {
+        return [];
       },
     },
     journalWriter: {
@@ -211,6 +240,9 @@ export function createInMemoryAppServices(): AppServices {
       async readModelProjectionWatermark() {
         return 0n;
       },
+      hasThreadState() {
+        return false;
+      },
     },
     hub: {
       publishPersistedEvent() {},
@@ -234,6 +266,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readModelProjectionWatermark() {
         return 0n;
+      },
+      hasThreadState() {
+        return false;
       },
     },
     threadRuntime: {
@@ -400,7 +435,7 @@ export function createInMemoryAppServices(): AppServices {
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),
-    packageRepository: { phase: "skeleton" },
+    packageRepository,
     marsPackageFetcher: {
       async fetch() {
         throw new Error("in-memory Mars package fetcher is not implemented");
@@ -412,7 +447,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     async seedDefaultPackagesForProject() {},
-    preferences: { phase: "skeleton" },
+    preferences,
     orchestrator: {
       async runTurn() {
         throw new Error("in-memory orchestrator is not implemented");
@@ -517,12 +552,7 @@ export function createInMemoryAppServices(): AppServices {
         return true;
       },
     },
-    modelRequestDebug: {
-      record() {},
-      list() {
-        return [];
-      },
-    },
+    modelRequestDebug,
   };
 }
 

@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { Project } from "@meridian/contracts/projects";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

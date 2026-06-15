@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Meridian-canonical gateway types (v1 public API): the provider-neutral request,
  * result, stream-event, message, tool, and capability shapes. The vocabulary

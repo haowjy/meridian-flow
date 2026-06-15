@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent gateway metadata: typed extraction of model/effort from Mars agent records.
  * Merges frontmatter (`meta`) with mars.toml overlays (`config`) so orchestrator

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle ModelResponseRepository: SQL for model response rows. Create is
  * replay-idempotent by producer-minted id: re-applying the same journal event
@@ -30,7 +29,7 @@ export async function writeModelResponse(
       outputTokens: input.outputTokens ?? 0,
       usageBreakdown: input.rawUsage ?? null,
       costUsd: input.costUsd ?? "0",
-      millicredits: input.millicredits != null ? BigInt(input.millicredits) : null,
+      millicredits: input.millicredits != null ? Number(input.millicredits) : null,
       stopReason: input.finishReason ?? null,
       requestParams: null,
       responseMetadata: input.pricingSnapshot ?? null,

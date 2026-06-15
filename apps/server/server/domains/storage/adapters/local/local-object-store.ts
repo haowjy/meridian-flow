@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Local-filesystem implementation of the object-store port: stores objects under
  * a base dir and mints HMAC-signed local read tokens for signed URLs. Owns the

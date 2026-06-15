@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared conformance suite for the ProjectRepository port: every adapter runs
  * this same behavioral spec so drizzle and in-memory stay interchangeable.

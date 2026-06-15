@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * The port through which consumers request a new turn on a thread.
  * Defined here (not in orchestrator.ts) to break the import cycle between

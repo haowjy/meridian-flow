@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Barrel: re-exports the storage domain's public surface — the object-store adapters (in-memory, local, s3) and the object-storage-url helpers. */
 export {
   createInMemoryObjectStore,

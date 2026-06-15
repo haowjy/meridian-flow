@@ -418,4 +418,10 @@ export function createInMemoryDocumentStore(): { phase: "phase4" } {
   return { phase: "phase4" };
 }
 
-export type { DocumentSyncServiceOptions, PersistedUpdate, SyncError, UpdateOrigin };
+export type {
+  DocumentSyncServiceOptions,
+  DocumentSyncTransport,
+  PersistedUpdate,
+  SyncError,
+  UpdateOrigin,
+};

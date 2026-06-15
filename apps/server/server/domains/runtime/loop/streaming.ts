@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Streaming helpers: map gateway StreamEvents to OrchestratorEvents and
  * ContentParts to block rows. Owns the stream-event → block projection

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Spawn primitive tools: spawn (parent-side) and return_result (child-side).
  * Handlers are thin — ChildRunCoordinator owns lifecycle; these only validate input.

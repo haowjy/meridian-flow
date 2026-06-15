@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Shared destructive reset helper for Drizzle/Postgres conformance suites.
  * Key decision: DB tests need TRUNCATE CASCADE to clear throwaway schemas independent of suite order; table names are derived from Drizzle schema objects so renames fail in TypeScript instead of leaving stale SQL literals.

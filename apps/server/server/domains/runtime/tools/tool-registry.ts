@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Tool registry: holds executable tool registrations and exposes lookup plus
  * the FunctionTool[] schema for the gateway. Owns the name->handler/schema

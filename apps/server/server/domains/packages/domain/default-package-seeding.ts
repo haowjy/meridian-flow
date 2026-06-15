@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Imports the configured default Mars packages into a project and
  * keeps already-installed package records reconciled with source changes.

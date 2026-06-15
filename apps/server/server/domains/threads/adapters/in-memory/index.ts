@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Barrel: re-exports the in-memory thread repositories and event-journal reader/writer factories plus their types. */
 export { createInMemoryEventJournalReader } from "./event-reader.js";
 export type { InMemoryEventJournalWriter, RecordedEvent } from "./event-writer.js";

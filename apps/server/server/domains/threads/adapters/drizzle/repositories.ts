@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle ThreadRepositories aggregate + transaction context. Composes the
  * thread/turn/block/model-response repositories and provides the AsyncLocalStorage

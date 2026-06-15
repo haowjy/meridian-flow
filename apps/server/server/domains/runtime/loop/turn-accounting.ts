@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Turn accounting for the runtime loop.
  *

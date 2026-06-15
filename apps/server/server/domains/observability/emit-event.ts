@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EventSink call-site helpers: timestamp stamping and JSON-natural error payloads
  * for observability records. Keeps emit shape consistent across domain migrations.

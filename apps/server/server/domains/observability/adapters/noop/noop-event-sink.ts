@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * No-op EventSink: satisfies the port without recording or persisting. Useful
  * when a code path requires an EventSink but emission is intentionally disabled.

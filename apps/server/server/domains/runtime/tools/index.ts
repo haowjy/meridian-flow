@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Barrel: re-exports the tool registry, executor, core tool catalogue, and
  * tool execution types.

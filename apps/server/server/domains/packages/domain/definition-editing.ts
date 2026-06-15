@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Definition save/restore: append-only revision rows plus live record updates.
  * Saves serialize canonical file form (YAML frontmatter + body) and recompute

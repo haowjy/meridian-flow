@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Runtime orchestrator behavior tests: verify turn setup, gateway handoff,
  * cancellation, and tool dispatch boundaries without involving real providers.
@@ -89,7 +88,6 @@ function runnableCoreRegistrations() {
     list: handler,
     search: handler,
     ask_user: handler,
-    bash: handler,
   });
 }
 

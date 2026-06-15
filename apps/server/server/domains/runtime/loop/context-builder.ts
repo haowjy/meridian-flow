@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Context builder: assembles a thread's turns and blocks into the canonical
  * Message[] sent to the gateway for the next model call. Owns the

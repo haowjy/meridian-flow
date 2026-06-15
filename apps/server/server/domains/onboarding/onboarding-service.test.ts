@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import type { OnboardingState } from "@meridian/contracts";
 import type { UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
@@ -31,7 +29,21 @@ function serviceHarness(initialState: OnboardingState = {}, projectCount = 0) {
         return null;
       },
       async listByUser() {
-        return Array.from({ length: projectCount }, (_, index) => ({ id: `project-${index}` }));
+        return Array.from({ length: projectCount }, (_, index) => ({
+          id: `project-${index}`,
+          userId,
+          name: `Project ${index}`,
+          title: `Project ${index}`,
+          slug: `project-${index}`,
+          isPersonal: false,
+          systemPrompt: null,
+          description: null,
+          settings: {},
+          lastActivityAt: "2025-01-01T00:00:00.000Z",
+          createdAt: "2025-01-01T00:00:00.000Z",
+          updatedAt: "2025-01-01T00:00:00.000Z",
+          deletedAt: null,
+        }));
       },
       async search() {
         return [];

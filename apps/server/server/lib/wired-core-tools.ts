@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Core-tool wiring: binds runtime core tool registrations to concrete handlers
  * backed by Meridian context and thread services.
@@ -13,12 +12,12 @@ import {
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HTTPError } from "nitro/h3";
+import type { ContextPortFactory } from "../domains/context/index.js";
 import type {
   ContextError,
   ContextPort,
-  ContextPortFactory,
   WriteProvenance,
-} from "../domains/context/index.js";
+} from "../domains/context/ports/context-port.js";
 import {
   type EventSink,
   emitEvent,
@@ -76,8 +75,8 @@ function manuscriptContextPort(legacyPort: LegacyThreadContextPort, turnId: stri
           kind: "tracked" as const,
           uri,
           documentId: doc.documentId,
-          filetype: "md" as const,
-          schemaType: "prose" as const,
+          filetype: "markdown" as const,
+          schemaType: "document" as const,
         });
       } catch (error) {
         return Err(legacyErrorToContextError(uri, error));

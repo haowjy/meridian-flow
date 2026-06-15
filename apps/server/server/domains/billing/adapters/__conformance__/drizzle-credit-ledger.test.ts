@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: DB conformance tests for the production credit ledger's money
  * invariants: FIFO lot consumption, user-scoped balances, and replay-safe

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Mars package export: reads an installed package's records from the repository
  * and renders them back into an in-memory Mars directory (mars.toml + definition

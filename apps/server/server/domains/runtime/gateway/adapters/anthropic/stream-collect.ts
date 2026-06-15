@@ -1,4 +1,3 @@
-// @ts-nocheck
 // biome-ignore-all lint/suspicious/noExplicitAny: Stream accumulator bridges canonical ↔ SDK types; casts are intentional.
 /**
  * Anthropic stream accumulator: folds Anthropic Messages streaming events into

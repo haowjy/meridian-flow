@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * In-memory ThreadRepositories: Map-backed thread/turn/block/model-response
  * repositories implementing the full repository ports (incl. the transaction

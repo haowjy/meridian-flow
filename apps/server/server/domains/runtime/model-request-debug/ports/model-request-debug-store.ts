@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ModelRequestDebugStore port: fire-and-forget capture of orchestrator model
  * requests for dev inspection. Not journal-backed — bounded in-memory only.

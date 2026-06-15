@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Mars package source parser/serializer: reads a Mars package directory and
  * parses mars.toml plus its markdown-fronted agent and skill definitions into

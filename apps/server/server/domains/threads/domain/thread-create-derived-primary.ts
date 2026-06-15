@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Internal primary-thread derivation for handoff and fork agent swaps. */
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";

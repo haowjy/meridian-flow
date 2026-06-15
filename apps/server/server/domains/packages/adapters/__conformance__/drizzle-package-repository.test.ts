@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Drizzle conformance tests for PackageRepository against real Postgres.
  * Runs against the canonical @meridian/database schema, adapted to Meridian's
@@ -20,15 +19,8 @@ if (!DATABASE_URL) {
 } else {
   describe("drizzle package repository (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const {
-      agentDefinitions,
-      agentSkills,
-      authUsers,
-      packageInstalls,
-      projects,
-      skills,
-      userInstalledSkills,
-    } = await import("@meridian/database/schema");
+    const { agentDefinitions, agentSkills, authUsers, projects, skills, userInstalledSkills } =
+      await import("@meridian/database/schema");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzlePackageStore } = await import("../drizzle-package-store.js");
     const { describePackageRepositoryConformance } = await import(
@@ -53,7 +45,6 @@ if (!DATABASE_URL) {
         userInstalledSkills,
         skills,
         agentDefinitions,
-        packageInstalls,
         projects,
         authUsers,
       ]);

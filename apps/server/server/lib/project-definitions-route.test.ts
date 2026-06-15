@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for definition save, revision list, and restore flows. */
 import { describe, expect, it } from "vitest";
 import {

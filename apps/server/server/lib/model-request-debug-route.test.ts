@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Route-core tests for model-request debug capture: owner gating and capture enablement. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../domains/projects/index.js";

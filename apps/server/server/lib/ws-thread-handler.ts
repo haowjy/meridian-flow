@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import {
   encodeWsServerMessage,
@@ -200,16 +199,15 @@ export function createThreadWebSocketSession(peer: WsPeer) {
           }
           case "checkpoint.respond": {
             const threadId = message.threadId as ThreadId;
+            const context = peer.context;
             try {
-              await peer.context?.app.threadRuntime.requireOwnedThread(
-                threadId,
-                peer.context.userId,
-              );
+              if (!context) throw new Error("Missing peer context");
+              await context.app.threadRuntime.requireOwnedThread(threadId, context.userId);
             } catch {
               sendError(peer, meridianError("not_found", "Thread not found"), threadId);
               return;
             }
-            const result = peer.context.app.checkpointRegistry.resolve({
+            const result = context.app.checkpointRegistry.resolve({
               threadId,
               turnId: message.turnId as never,
               checkpointId: message.checkpointId,

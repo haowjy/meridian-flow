@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Agent-bound thread context: resolves package-backed gateway params and the
  * per-thread advertised tool set. Skills catalogs are baked into the frozen

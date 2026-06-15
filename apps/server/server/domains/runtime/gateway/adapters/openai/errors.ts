@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** OpenAI Responses error mapping: maps OpenAI SDK errors to canonical gateway ErrorCode + retryable flags. Keeps provider error shapes out of the gateway core. */
 import type { ErrorCode } from "../../domain/index.js";
 

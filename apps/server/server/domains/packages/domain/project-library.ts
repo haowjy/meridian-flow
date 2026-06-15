@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Project Library inventory: full agent/skill/package summaries for the
  * Library screen. Distinct from the selectable catalog — includes disabled

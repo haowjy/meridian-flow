@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Thread-creation normalization: validates and defaults CreateThreadInput into a
  * NormalizedThreadCreate (kind, title, spawn metadata, ...). Domain logic shared

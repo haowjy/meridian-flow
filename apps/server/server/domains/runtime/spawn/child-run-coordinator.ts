@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ChildRunCoordinator: owns subagent thread lifecycle, drives child runTurn to
  * terminal state, captures return_result, and persists spawnStatus/spawnResult.
@@ -364,18 +363,25 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
       void driveChild(input, prepared)
         .then(async (result) => {
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: result.status === "completed" ? "background.completed" : "background.failed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            agentSlug: input.agentSlug,
-            ...(result.status === "completed"
-              ? { result }
-              : {
-                  error: result.status === "error" ? result.error.message : "Background run failed",
-                }),
-          });
+          if (result.status === "completed") {
+            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+              type: "background.completed",
+              parentThreadId: input.parentThread.id,
+              parentTurnId: input.parentTurnId as string,
+              childThreadId: prepared.child.id,
+              agentSlug: input.agentSlug,
+              result,
+            });
+          } else {
+            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+              type: "background.failed",
+              parentThreadId: input.parentThread.id,
+              parentTurnId: input.parentTurnId as string,
+              childThreadId: prepared.child.id,
+              agentSlug: input.agentSlug,
+              error: result.status === "error" ? result.error.message : "Background run failed",
+            });
+          }
           await deliverHelperResult(input, prepared.child, result);
         })
         .catch(async (error: unknown) => {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
@@ -107,6 +106,8 @@ describe("ChildRunCoordinator background spawn", () => {
         async runTurn(input) {
           await input.returnResultCompleter?.({ summary: "Draft A is stronger." });
           return {
+            userTurnId: `user-${input.threadId}`,
+            assistantTurnId: `assistant-${input.threadId}`,
             events: (async function* () {
               yield { type: "turn.completed", turn: completeTurn(input.threadId) };
             })(),
@@ -229,10 +230,12 @@ describe("ChildRunCoordinator background spawn", () => {
       orchestrator: {
         async runTurn(input) {
           await input.returnResultCompleter?.({ summary: "Done." });
-          expect(input.signal.aborted).toBe(true);
+          expect(input.signal?.aborted).toBe(true);
           return {
+            userTurnId: `user-${input.threadId}`,
+            assistantTurnId: `assistant-${input.threadId}`,
             events: (async function* () {
-              yield { type: "turn.cancelled", turnId: input.threadId };
+              yield { type: "turn.cancelled", turn: completeTurn(input.threadId) };
             })(),
           };
         },

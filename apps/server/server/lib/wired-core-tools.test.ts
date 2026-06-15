@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Wired core-tool tests: verify production tool registrations bind core tool
  * schemas to ContextPort-backed handlers and record document-touch side effects.

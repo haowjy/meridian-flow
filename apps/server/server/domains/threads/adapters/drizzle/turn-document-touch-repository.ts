@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle TurnDocumentTouchRepository: SQL for turn_document_touches record/list. */
 import * as schema from "@meridian/database/schema";
 import { desc, eq } from "drizzle-orm";
@@ -32,7 +31,7 @@ export function createDrizzleTurnDocumentTouchRepository(
       const now = new Date();
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnDocumentTouches)
-        .values({ turnId, documentId, touchedAt: now })
+        .values({ turnId, documentId, threadId: turn.threadId, touchedAt: now })
         .onConflictDoUpdate({
           target: [schema.turnDocumentTouches.turnId, schema.turnDocumentTouches.documentId],
           set: { touchedAt: now },

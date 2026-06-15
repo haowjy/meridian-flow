@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Mars package sync: imports package-authored agents, skills, and ordered links into repositories.
 //
 // Overview:

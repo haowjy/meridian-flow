@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Purpose: Owns the deterministic model token-price table and conversion from
  * provider token usage into Meridian millicredits.

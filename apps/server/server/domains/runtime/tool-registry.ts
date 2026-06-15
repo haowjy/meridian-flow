@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from "node:crypto";
 import { buildAskUserComponentContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnBlockId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -120,9 +119,12 @@ export function createRuntimeToolRegistry(deps: {
       const checkpointId = randomUUID();
       const content = {
         ...buildAskUserComponentContent({
+          checkpointId,
           question: prompt,
           kind: "free-text",
+          recommended: null,
           requiresHuman: true,
+          timeoutMs: 0,
         }),
         checkpoint: { id: checkpointId },
       } satisfies JsonValue;

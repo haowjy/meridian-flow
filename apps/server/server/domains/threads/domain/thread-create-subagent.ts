@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Internal subagent thread creation — the only path that may set spawn tree
  * fields. Public HTTP create uses normalizeThreadCreate, which rejects them.

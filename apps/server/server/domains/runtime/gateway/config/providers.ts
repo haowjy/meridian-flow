@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Provider/model catalog and config builders: declares the known models and
  * builds ProviderConfig lists (anthropic, openai, deepseek, mock) plus default

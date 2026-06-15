@@ -1,9 +1,8 @@
 /** Ambient Drizzle transaction context shared by adapters that must participate in one app-level DB transaction. */
 import { AsyncLocalStorage } from "node:async_hooks";
-import type * as schema from "@meridian/database/schema";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { Database } from "@meridian/database";
 
-export type DrizzleDatabase = PostgresJsDatabase<typeof schema>;
+export type DrizzleDatabase = Database;
 export type DrizzleTransaction = Parameters<Parameters<DrizzleDatabase["transaction"]>[0]>[0];
 export type DrizzleDb = DrizzleDatabase | DrizzleTransaction;
 

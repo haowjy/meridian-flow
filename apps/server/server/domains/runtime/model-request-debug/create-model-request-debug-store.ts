@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Composition helper: pick in-memory capture vs noop from the typed env gate
  * (`modelRequestDebugCaptureEnabled` in `lib/env.ts`).

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Gateway factory: assembles the provider registry from config, wires the
  * anthropic/openai/openai-compatible adapters, and returns a Gateway that routes

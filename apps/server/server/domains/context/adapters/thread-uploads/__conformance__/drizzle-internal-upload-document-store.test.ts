@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle conformance tests for thread-upload backing documents against the real documents table constraints. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 

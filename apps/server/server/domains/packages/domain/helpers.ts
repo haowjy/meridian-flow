@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared coercion/hashing utilities for the package domain: safe JSON-shape
  * accessors (objectAt, stringsAt, ...), sha256, and Node-error guards. Owns the

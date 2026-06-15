@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -8,8 +7,8 @@ if (!DATABASE_URL) {
 } else {
   describe("drizzle work repository (postgres)", async () => {
     const { afterAll, beforeEach } = await import("vitest");
-    const { openDatabase } = await import("@meridian/database");
-    const { users, projects, works } = await import("@meridian/database/schema");
+    const { createDb } = await import("@meridian/database");
+    const { authUsers, projects, works } = await import("@meridian/database/schema");
     const { truncateDrizzleTables } = await import("../../../../../test-support/drizzle-reset.js");
     const { createDrizzleWorkRepository } = await import("../drizzle.js");
     const { describeWorkRepositoryConformance } = await import("./work-repository.conformance.js");
@@ -20,27 +19,22 @@ if (!DATABASE_URL) {
       { id: "00000000-0000-4000-9000-000000000002", title: "Project Two", slug: "project-two" },
     ] as const;
 
-    const handle = openDatabase(DATABASE_URL);
-    const db = handle.db;
+    const db = createDb(DATABASE_URL, { max: 1 });
 
     async function ensureFixtures(): Promise<void> {
-      await db.insert(users).values({
-        id: USER_ID,
-        externalId: "work-repository-conformance-user",
-        email: "work-repository-conformance@example.test",
-      });
+      await db.insert(authUsers).values({ id: USER_ID });
       await db.insert(projects).values(
         PROJECT_FIXTURES.map((fixture) => ({
           id: fixture.id,
-          title: fixture.title,
+          name: fixture.title,
           slug: fixture.slug,
-          createdBy: USER_ID,
+          userId: USER_ID,
         })),
       );
     }
 
     async function truncateAll(): Promise<void> {
-      await truncateDrizzleTables(db, [works, projects, users]);
+      await truncateDrizzleTables(db, [works, projects, authUsers]);
     }
 
     beforeEach(async () => {
@@ -49,7 +43,7 @@ if (!DATABASE_URL) {
     });
 
     afterAll(async () => {
-      await handle.close();
+      await db.close();
     });
 
     describeWorkRepositoryConformance("drizzle", () => createDrizzleWorkRepository({ db }));

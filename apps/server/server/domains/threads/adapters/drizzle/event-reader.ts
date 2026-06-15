@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** Drizzle EventJournalReader: SQL replay of persisted orchestrator events for a thread (range/cursor reads). Depends inward on the event-journal port; owns the journal read queries. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
@@ -119,8 +118,8 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
         .where(
           and(
             eq(schema.eventJournal.threadId, threadId),
-            gte(schema.eventJournal.createdAt, from),
-            lte(schema.eventJournal.createdAt, to),
+            gte(schema.eventJournal.createdAt, new Date(from)),
+            lte(schema.eventJournal.createdAt, new Date(to)),
           ),
         )
         .orderBy(asc(schema.eventJournal.seq));

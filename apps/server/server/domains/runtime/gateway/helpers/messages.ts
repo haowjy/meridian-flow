@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Message-construction helpers: small builders (user/assistant/system/text/
  * toolResult) for canonical gateway Message values. Convenience over the

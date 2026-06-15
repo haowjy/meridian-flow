@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Package domain records: JSON-natural shapes shared by repository adapters and Mars sync.
 import type { SkillFileEntry, SkillFiles } from "./skill-files.js";
 

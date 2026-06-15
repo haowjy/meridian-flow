@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** In-memory ProjectRepository for tests: Map-backed project CRUD implementing the port. Shares default-title/slug behavior with the drizzle adapter via shared.ts. */
 
 import type { Project } from "@meridian/contracts/projects";
@@ -9,7 +8,7 @@ import type {
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, deriveSlug } from "./shared.js";
 
 /** In-memory {@link ProjectRepository} for tests. */
 export function createInMemoryProjectRepository(): ProjectRepository {
@@ -22,11 +21,20 @@ export function createInMemoryProjectRepository(): ProjectRepository {
   return {
     async create(input: CreateProjectInput): Promise<Project> {
       const timestamp = now();
+      const id = input.id ?? crypto.randomUUID();
+      const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
+      const description = input.description ?? null;
       const project: Project = {
-        id: input.id ?? crypto.randomUUID(),
+        id,
         userId: input.userId,
-        title: input.title?.trim() || DEFAULT_PROJECT_TITLE,
-        description: input.description ?? null,
+        name: title,
+        title,
+        slug: deriveSlug(title, id),
+        isPersonal: false,
+        systemPrompt: description,
+        description,
+        settings: {},
+        lastActivityAt: timestamp,
         createdAt: timestamp,
         updatedAt: timestamp,
         deletedAt: null,
@@ -64,16 +72,29 @@ export function createInMemoryProjectRepository(): ProjectRepository {
     async update(id: ProjectId, input: UpdateProjectInput): Promise<Project> {
       const row = rows.get(id);
       if (!row) throw new Error(`Project not found: ${id}`);
-      if (input.title !== undefined) row.title = input.title;
-      if (input.description !== undefined) row.description = input.description;
-      row.updatedAt = now();
+      if (input.title !== undefined) {
+        row.title = input.title;
+        row.name = input.title;
+      }
+      if (input.description !== undefined) {
+        row.description = input.description;
+        row.systemPrompt = input.description;
+      }
+      const timestamp = now();
+      row.updatedAt = timestamp;
+      row.lastActivityAt = timestamp;
       return { ...row };
     },
 
     async softDelete(id: ProjectId): Promise<Project> {
       const row = rows.get(id);
       if (!row) throw new Error(`Project not found: ${id}`);
-      if (row.deletedAt === null) row.deletedAt = now();
+      if (row.deletedAt === null) {
+        const timestamp = now();
+        row.deletedAt = timestamp;
+        row.updatedAt = timestamp;
+        row.lastActivityAt = timestamp;
+      }
       return { ...row };
     },
 
@@ -81,13 +102,16 @@ export function createInMemoryProjectRepository(): ProjectRepository {
       const row = rows.get(id);
       if (!row) throw new Error(`Project not found: ${id}`);
       row.deletedAt = null;
+      row.updatedAt = now();
       return { ...row };
     },
 
     async touch(id: ProjectId): Promise<void> {
       const row = rows.get(id);
       if (!row || row.deletedAt) return;
-      row.updatedAt = now();
+      const timestamp = now();
+      row.updatedAt = timestamp;
+      row.lastActivityAt = timestamp;
     },
   };
 }

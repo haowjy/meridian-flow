@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GitHub Mars package fetcher adapter: resolves GitHub repo refs, downloads
  * codeload tarballs, and extracts them to temp directories for the package

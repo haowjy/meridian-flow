@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * In-memory ring buffer for ModelRequestDebugRecord — bounded FIFO eviction
  * across the whole process (not per thread).

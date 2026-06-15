@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { randomUUID } from "node:crypto";
+import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import type { SendMessageResponse, ThreadLiveState } from "@meridian/contracts/protocol";
 import type {
   ProjectId,
@@ -12,7 +12,7 @@ import type {
 import type {
   JsonValue,
   OrchestratorEvent,
-  OrchestratorTurn,
+  Turn,
   TurnRole,
   TurnStatus,
 } from "@meridian/contracts/threads";
@@ -20,9 +20,9 @@ import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, turnBlocks, turns, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
-import type { Gateway } from "../runtime/index.js";
+import type { Gateway, RuntimeToolAction } from "../runtime/index.js";
 import type { RuntimeToolRegistry } from "../runtime/tool-registry.js";
-import type { ThreadEventHub } from "./event-hub.js";
+import type { ThreadEventHub } from "./thread-event-hub.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -41,17 +41,37 @@ type PersistedJournalEvent = {
   event: OrchestratorEvent;
 };
 
-function jsonClone<T extends JsonValue>(value: T): T {
+function jsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function toOrchestratorTurn(row: typeof turns.$inferSelect): OrchestratorTurn {
+function toOrchestratorTurn(row: typeof turns.$inferSelect): Turn {
   return {
     id: row.id,
     threadId: row.threadId,
+    prevTurnId: row.parentTurnId,
+    parentTurnId: row.parentTurnId,
     role: row.role as TurnRole,
     status: row.status as TurnStatus,
+    agentDefinitionId: row.agentDefinitionId,
+    finishReason: row.finishReason as Turn["finishReason"],
+    model: null,
+    provider: null,
+    inputTokens: row.totalInputTokens ?? 0,
+    outputTokens: row.totalOutputTokens ?? 0,
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    totalCostUsd: row.totalCostUsd ?? "0",
+    totalMillicredits: row.totalMillicredits?.toString(),
+    responseCount: 0,
+    usage: null,
+    error: row.error,
+    requestParams: null,
+    responseMetadata: null,
     blocks: [],
+    siblingIds: [],
+    responses: [],
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -64,11 +84,11 @@ function textBlockContent(text: string): JsonValue {
 async function generateTurnPlan(
   gateway: Gateway,
   input: { threadId: ThreadId; userText: string },
-): Promise<{ assistantText: string; actions: unknown[] }> {
+): Promise<{ assistantText: string; actions: RuntimeToolAction[] }> {
   const legacyGateway = gateway as Gateway & {
     generateTurnPlan?: (input: { threadId: ThreadId; userText: string }) => Promise<{
       assistantText: string;
-      actions?: unknown[];
+      actions?: RuntimeToolAction[];
     }>;
   };
 
@@ -297,8 +317,6 @@ export function createThreadRuntimeService(deps: {
         };
         const deltaEvent: OrchestratorEvent = {
           type: "stream.delta",
-          threadId: input.threadId,
-          turnId: assistantTurnId,
           kind: "text",
           text: plan.assistantText,
         };
@@ -338,7 +356,7 @@ export function createThreadRuntimeService(deps: {
           const event: OrchestratorEvent = {
             type: "turn.error",
             turn: toOrchestratorTurn(assistantTurn),
-            message,
+            error: meridianErrorFromTool(message),
           };
           return [await appendJournalEvent(tx, input.threadId, event)];
         });
@@ -375,6 +393,7 @@ export function createThreadRuntimeService(deps: {
         threadId: input.threadId,
         userTurnId,
         assistantTurnId,
+        streamCursor: completedEvents.at(-1)?.seq.toString() ?? "0",
         status: "accepted",
       };
     },
