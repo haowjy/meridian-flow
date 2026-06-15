@@ -36,6 +36,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return { ...folder };
   }
 
+  getDocumentById(id: string): ContextDocument | null {
+    const doc = this.documents.get(id);
+    return doc ? { ...doc } : null;
+  }
+
   async findDocument(
     folderId: string | null,
     name: string,

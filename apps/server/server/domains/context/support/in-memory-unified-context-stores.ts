@@ -4,6 +4,8 @@
  * per Work. Not part of the runtime export surface — tests import via test-support.
  */
 
+import type { Filetype } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { InMemoryContextDocumentStore } from "../adapters/context-fs/in-memory-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "../ports/context-port.js";
 
@@ -56,4 +58,29 @@ export function getInMemoryWorkContextStore(
     registry.workStores.set(key, store);
   }
   return store;
+}
+
+function projectionFromStore(
+  store: InMemoryContextDocumentStore,
+  documentId: DocumentId,
+): { markdown: string; filetype: Filetype } | null {
+  const doc = store.getDocumentById(documentId);
+  if (!doc) return null;
+  return { markdown: doc.markdown, filetype: doc.filetype ?? "markdown" };
+}
+
+/** Resolve markdown projection for a document id across all in-memory context stores. */
+export function findInMemoryDocumentProjection(
+  registry: InMemoryUnifiedContextStoreRegistry,
+  documentId: DocumentId,
+): { markdown: string; filetype: Filetype } | null {
+  for (const store of registry.projectStores.values()) {
+    const projection = projectionFromStore(store, documentId);
+    if (projection) return projection;
+  }
+  for (const store of registry.workStores.values()) {
+    const projection = projectionFromStore(store, documentId);
+    if (projection) return projection;
+  }
+  return null;
 }

@@ -1,12 +1,15 @@
 /**
  * Unified context-port factory tests: in-memory parity for project/work schemes,
- * manuscript bare-path default, and primary-Work authority routing.
+ * manuscript bare-path default, primary-Work authority routing, and atomic edits.
  */
+import type { UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "../projects/index.js";
 import { createInMemoryRepositories } from "../threads/adapters/in-memory/index.js";
 import { contextPortForThread, resolveThreadContext } from "./context-port-resolution.js";
 import { createInMemoryUnifiedContextPortFactory } from "./unified-context-port-factory.js";
+
+const USER = "00000000-0000-4000-8000-000000000303" as UserId;
 
 describe("createInMemoryUnifiedContextPortFactory", () => {
   it("routes manuscript reads and writes through project-scoped ContextFS", async () => {
@@ -147,5 +150,29 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
       ok: true,
       value: expect.objectContaining({ content: "thread scratch" }),
     });
+  });
+
+  it("applies parallel human edits through the facade editDocument path without clobbering", async () => {
+    const factory = createInMemoryUnifiedContextPortFactory();
+    const port = factory.forProject("project_1", USER);
+
+    await port.write("manuscript://chapter-1.md", "# Chapter", {
+      origin: { type: "human", userId: USER },
+    });
+
+    await Promise.all([
+      port.edit("manuscript://chapter-1.md", (content) => `${content}a`, {
+        origin: { type: "human", userId: USER },
+      }),
+      port.edit("manuscript://chapter-1.md", (content) => `${content}b`, {
+        origin: { type: "human", userId: USER },
+      }),
+    ]);
+
+    const read = await port.read("manuscript://chapter-1.md");
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value.content).toMatch(/^# Chapter(ab|ba)$/);
+    }
   });
 });
