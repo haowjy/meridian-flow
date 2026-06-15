@@ -218,11 +218,25 @@ export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-st
 export { firstLineMatch } from "./adapters/context-fs/match.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
-export { parseContextUri, toCanonical } from "./context/uri.js";
+export {
+  parseContextUri,
+  parseUnifiedContextUri,
+  toCanonical,
+  UNIFIED_CONTEXT_SCHEMES,
+} from "./context/uri.js";
 export {
   createInMemoryProjectContextPortFactory,
   createProductionProjectContextPortFactory,
 } from "./context-port-factory.js";
+export {
+  contextPortForProjectBrowse,
+  contextPortForThread,
+  resolveThreadContext,
+} from "./context-port-resolution.js";
+export {
+  createProjectContextDocumentStore,
+  createWorkContextDocumentStore,
+} from "./context-source-provisioning.js";
 export * from "./corpus-import/index.js";
 export * from "./figures/index.js";
 export * from "./input-ingest/input-ingest-service.js";
@@ -257,8 +271,10 @@ export type {
   EditableFileEntry,
   FileEntry,
   FileRef,
+  ProjectContextFsScheme,
   SearchResult,
   TrackedFileRef,
+  WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
@@ -283,4 +299,10 @@ export {
   type PromotionService,
 } from "./promotion/promotion-service.js";
 export type { ResultProvenance } from "./promotion/result-provenance.js";
+export {
+  createInMemoryUnifiedContextPortFactory,
+  createProductionUnifiedContextPortFactory,
+  type InMemoryUnifiedContextStoreRegistry,
+  type UnifiedContextPortFactory,
+} from "./unified-context-port-factory.js";
 export * from "./uploads/index.js";

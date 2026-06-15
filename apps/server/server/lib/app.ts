@@ -17,9 +17,11 @@ import {
   createFixtureDriveImportSource,
   createMammothDocumentConverter,
   createProductionContextPortFactory,
+  createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
 } from "../domains/context/index.js";
+import { emitEvent } from "../domains/observability/index.js";
 import { createOnboardingService } from "../domains/onboarding/index.js";
 import {
   createDefaultPackageSeeder,
@@ -80,12 +82,21 @@ let initPromise: Promise<AppServices> | undefined;
 
 async function createAppServices(): Promise<AppServices> {
   const inMemory = createInMemoryAppServices();
-  const { gateway } = await createGatewayFromEnv(process.env);
+  const eventSink = createEventSinkFromEnv();
+  const { gateway } = await createGatewayFromEnv(process.env, {
+    onWarning: (span) => {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "gateway",
+        name: span.name,
+        payload: span.attributes ?? {},
+      });
+    },
+  });
   const db = getDb();
   const threadRepos = createDrizzleRepositories(db);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
-  const eventSink = createEventSinkFromEnv();
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const threadEventHub = createThreadEventHub({ journalReader, journalWriter, eventSink });
   const documentSync = createDocumentSyncService({ db });
@@ -107,6 +118,7 @@ async function createAppServices(): Promise<AppServices> {
   const promotionService = createPromotionService({ objectStore, results });
   const documentAccess = createDrizzleDocumentAccess(db);
   const contextPorts = createProductionContextPortFactory({ db, documentSync });
+  const unifiedContextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
   const corpusImports = createCorpusImportService({
     contextPorts,
     converter: createMammothDocumentConverter(),
@@ -143,6 +155,8 @@ async function createAppServices(): Promise<AppServices> {
   for (const registration of createWiredCoreToolRegistrations({
     threads: threadRepos.threads,
     contextPorts,
+    unifiedContextPorts,
+    threadWorks: threadRepos.threadWorks,
     documentTouches: threadRepos.documentTouches,
     eventSink,
   })) {

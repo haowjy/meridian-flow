@@ -12,14 +12,19 @@ import type {
 import type { Result } from "../../../shared/result.js";
 
 /**
- * The four registered context URI schemes.
+ * Registered context URI schemes.
  *
- * - `fs1`     — project files (uploaded data, generated outputs). Bare paths default here.
- * - `kb`      — project knowledge base (agent-maintained).
- * - `work`    — per-work scratchpad / working memory.
- * - `user`    — user-scoped file tree, cross-project.
+ * Legacy port: `fs1`/`kb`/`work`/`user` (bare paths default to `fs1`).
+ * Unified port: `manuscript`/`kb`/`user` (project-scoped) + `work`/`uploads`
+ * (work-scoped; bare paths default to `manuscript`).
  */
-export type ContextScheme = "fs1" | "kb" | "work" | "user";
+export type ContextScheme = "fs1" | "manuscript" | "kb" | "work" | "uploads" | "user";
+
+/** Schemes provisioned at project scope in the unified context port. */
+export type ProjectContextFsScheme = "manuscript" | "kb" | "user";
+
+/** Schemes provisioned per Work in the unified context port. */
+export type WorkScopedContextFsScheme = "work" | "uploads";
 
 export interface ContextReadResult {
   content: string;

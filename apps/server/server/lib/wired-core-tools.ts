@@ -12,12 +12,17 @@ import {
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HTTPError } from "nitro/h3";
+import {
+  contextPortForThread,
+  resolveThreadContext,
+} from "../domains/context/context-port-resolution.js";
 import type { ContextPortFactory } from "../domains/context/index.js";
 import type {
   ContextError,
   ContextPort,
   WriteProvenance,
 } from "../domains/context/ports/context-port.js";
+import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
 import {
   type EventSink,
   emitEvent,
@@ -36,12 +41,20 @@ import {
   resolveEditRanges,
   truncateForRead,
 } from "../domains/runtime/tools/core-handlers/index.js";
-import type { ThreadRepository, TurnDocumentTouchRepository } from "../domains/threads/index.js";
+import type {
+  ThreadRepository,
+  ThreadWorksRepository,
+  TurnDocumentTouchRepository,
+} from "../domains/threads/index.js";
 import { Err, Ok } from "../shared/result.js";
+
+export const UNIFIED_MANUSCRIPT_URI = "manuscript://chapter-1.md";
 
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: ContextPortFactory;
+  unifiedContextPorts?: UnifiedContextPortFactory;
+  threadWorks?: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
 }
@@ -124,12 +137,39 @@ async function resolveProjectContextPort(
   return deps.contextPorts.forProject(thread.projectId, thread.userId);
 }
 
+function usesUnifiedManuscriptPort(uri: string): boolean {
+  const trimmed = uri.trim();
+  if (trimmed.startsWith("manuscript://")) return true;
+  if (trimmed.includes("://")) return false;
+  if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) return false;
+  return true;
+}
+
+async function resolveUnifiedContextPort(
+  deps: ToolWiringDeps,
+  threadId: string,
+): Promise<ContextPort | ToolErrorOutput> {
+  if (!deps.unifiedContextPorts || !deps.threadWorks) {
+    return toolError({ message: "Unified context port is not configured" });
+  }
+  const resolution = await resolveThreadContext(
+    { threads: deps.threads, threadWorks: deps.threadWorks },
+    threadId,
+  );
+  if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
+  return contextPortForThread(deps.unifiedContextPorts, resolution);
+}
+
 async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
   uri: string,
   turnId: string,
 ): Promise<ContextPort | ToolErrorOutput> {
+  if (usesUnifiedManuscriptPort(uri)) {
+    return resolveUnifiedContextPort(deps, threadId);
+  }
+
   const thread = await deps.threads.findById(threadId);
   if (!thread) return toolError({ message: `Thread not found: ${threadId}` });
   if (uri === REQUIRED_MANUSCRIPT_URI) {
