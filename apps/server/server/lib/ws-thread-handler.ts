@@ -148,9 +148,22 @@ async function subscribeThread(peer: WsPeer, threadId: ThreadId, lastSeq?: strin
 function disposeSubscriptions(peer: WsPeer): void {
   const state = getPeerState(peer);
   state.closed = true;
+  cancelRunningTurnsForPeer(peer);
   for (const unsubscribe of state.subscriptions.values()) unsubscribe();
   state.subscriptions.clear();
   state.liveWatermark.clear();
+}
+
+function cancelRunningTurnsForPeer(peer: WsPeer): void {
+  const auth = peer.context;
+  if (!auth) return;
+  const state = getPeerState(peer);
+  for (const threadId of state.subscriptions.keys()) {
+    const turnId = auth.app.runner.getRunningTurnId(threadId);
+    if (turnId) {
+      void auth.app.runner.cancel(threadId, turnId);
+    }
+  }
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {

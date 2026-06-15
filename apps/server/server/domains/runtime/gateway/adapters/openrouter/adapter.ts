@@ -14,6 +14,7 @@ import type {
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapOpenAIError } from "../openai-compatible/errors.js";
 import { toOpenAIChatCompletionParams } from "../openai-compatible/request-map.js";
+import { accumulatorHasPartialResult } from "../openai-compatible/stream-collect.js";
 import { enrichOpenRouterResult } from "./enrich-result.js";
 import {
   buildOpenRouterGenerateResult,
@@ -76,6 +77,17 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
           const timeout = modelAttemptTimeoutEvent(request.signal);
           if (timeout) {
             yield timeout;
+            return;
+          }
+          if (accumulatorHasPartialResult(acc) || acc.generationId) {
+            const partial = buildOpenRouterGenerateResult(acc);
+            let enriched = partial;
+            try {
+              enriched = await enrichOpenRouterResult(partial, apiKey, baseUrl, request.signal);
+            } catch {
+              enriched = partial;
+            }
+            yield { type: "end", result: enriched };
             return;
           }
           yield {

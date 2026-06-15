@@ -92,6 +92,12 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import {
+  buildReconciliationStub,
+  type OpenRouterReconcileConfig,
+  reconcileInterruptedModelResult,
+  shouldPersistCancelledModelCall,
+} from "./cancel-settlement.js";
 import { type CheckpointArtifactFlushPort, createCheckpointSession } from "./checkpoint-session.js";
 import {
   type CheckpointAutoResumePolicy,
@@ -146,6 +152,8 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
+  /** OpenRouter /generation reconciliation for interrupted turns without stream usage. */
+  openRouterReconcile?: OpenRouterReconcileConfig;
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -516,6 +524,56 @@ async function persistModelResponse(input: {
   };
 }
 
+async function* settleAndFinalizeCancelled(input: {
+  deps: OrchestratorDeps;
+  runInput: RunTurnInput;
+  thread: Thread;
+  currentAssistantTurn: Turn;
+  treeBudget: TreeBudget;
+  turnAccounting: TurnAccounting;
+  blockSeq: number;
+  allBlocks: Block[];
+  result: GenerateResult | undefined;
+  model: string;
+  provider: string;
+  generationId?: string;
+}): AsyncGenerator<OrchestratorEvent> {
+  let currentAssistantTurn = input.currentAssistantTurn;
+  let blockSeq = input.blockSeq;
+  let settleResult = input.result;
+  if (!settleResult && input.generationId) {
+    settleResult = buildReconciliationStub({
+      model: input.model,
+      provider: input.provider,
+      generationId: input.generationId,
+    });
+  }
+
+  if (settleResult && shouldPersistCancelledModelCall(settleResult)) {
+    settleResult = await reconcileInterruptedModelResult(
+      input.deps.openRouterReconcile,
+      settleResult,
+      input.runInput.signal,
+    );
+    const persistedResponse = await persistModelResponse({
+      deps: input.deps,
+      runInput: input.runInput,
+      thread: input.thread,
+      currentAssistantTurn,
+      result: settleResult,
+      treeBudget: input.treeBudget,
+      turnAccounting: input.turnAccounting,
+      blockSeq,
+    });
+    currentAssistantTurn = persistedResponse.updatedTurn;
+    blockSeq = persistedResponse.nextBlockSeq;
+    input.allBlocks.push(...persistedResponse.createdBlocks);
+    yield* persistedResponse.events;
+  }
+
+  yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
+}
+
 async function persistPermissionDenial(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -599,6 +657,7 @@ async function buildGenerateRequest(input: {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -622,7 +681,7 @@ async function buildGenerateRequest(input: {
     resolvedSkills: assembled.resolvedSkills,
     request: {
       ...assembled.generateRequest,
-      signal: input.runInput.signal,
+      signal: input.gatewaySignal ?? input.runInput.signal,
     },
   };
 }
@@ -686,12 +745,26 @@ async function* generateEvents(
 
       turnAccounting.recordIterationSpend(treeBudget);
 
+      const gatewayAbort = new AbortController();
+      let cancelRequested = input.signal?.aborted ?? false;
+      if (input.signal) {
+        input.signal.addEventListener(
+          "abort",
+          () => {
+            cancelRequested = true;
+            gatewayAbort.abort();
+          },
+          { once: true },
+        );
+      }
+
       const built = await buildGenerateRequest({
         deps,
         runInput: input,
         thread,
         turns: allTurns,
         blocks: allBlocks,
+        gatewaySignal: gatewayAbort.signal,
       });
       thread = built.thread;
       const request = built.request;
@@ -712,11 +785,19 @@ async function* generateEvents(
       // The gateway yields a self-terminating stream: a sequence of
       // text/reasoning/tool_call deltas followed by exactly one 'end'
       // (with the assembled GenerateResult) or one 'error'.
+      // On cancel, abort the gateway call and drain through 'end' so partial
+      // usage can be persisted before turn.cancelled.
       let result: GenerateResult | undefined;
+      let streamModel = request.model ?? "unknown";
+      let streamProvider = request.provider ?? "unknown";
       for await (const event of gateway.stream(request)) {
         if (input.signal?.aborted) {
-          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
-          return;
+          cancelRequested = true;
+        }
+
+        if (event.type === "start") {
+          streamModel = event.model;
+          streamProvider = event.provider;
         }
 
         const mapped = mapStreamEvent(event);
@@ -728,6 +809,9 @@ async function* generateEvents(
           result = event.result;
         }
         if (event.type === "error") {
+          if (cancelRequested) {
+            break;
+          }
           yield* await finalizeError(
             deps,
             input.threadId,
@@ -736,6 +820,26 @@ async function* generateEvents(
           );
           return;
         }
+      }
+
+      if (cancelRequested) {
+        yield* settleAndFinalizeCancelled({
+          deps,
+          runInput: input,
+          thread,
+          currentAssistantTurn,
+          treeBudget,
+          turnAccounting,
+          blockSeq: allBlocks.filter(
+            (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+          ).length,
+          allBlocks,
+          result,
+          model: result?.model ?? streamModel,
+          provider: result?.provider ?? streamProvider,
+          generationId: result ? readOpenRouterGenerationId(result.providerData) : undefined,
+        });
+        return;
       }
 
       if (!result) {

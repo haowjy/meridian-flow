@@ -82,6 +82,16 @@ export function flushTextBuffer(acc: StreamAccumulator): void {
   }
 }
 
+export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
+  return (
+    acc.usage.inputTokens > 0 ||
+    acc.usage.outputTokens > 0 ||
+    acc.textBuffer.length > 0 ||
+    acc.contentParts.length > 0 ||
+    acc.toolCalls.size > 0
+  );
+}
+
 export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   // Chat Completions has no final response object with reconstructed content, so
   // the GenerateResult is built entirely from accumulated deltas.
