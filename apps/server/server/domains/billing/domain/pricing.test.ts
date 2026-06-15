@@ -95,18 +95,48 @@ describe("model pricing", () => {
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
 
-  it("uses provider-reported cost when usage.estimatedCostUsd is present", () => {
+  it("uses OpenRouter providerData.reportedCostUsd when provider is openrouter", () => {
     const cost = computeModelCost({
       provider: "openrouter",
       model: "anthropic/claude-sonnet-4",
-      usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0.0042 },
+      usage: { inputTokens: 0, outputTokens: 0 },
+      providerData: { reportedCostUsd: 0.0042, enrichmentSource: "stream_usage" },
       rateSource,
     });
 
     expect(cost.costUsd).toBe("0.004200");
     expect(cost.millicredits).toBe("420");
+    expect(cost.priceSource).toBe("provider_reported");
     expect(cost.pricingSnapshot.sourceLayer).toBe("provider_reported");
     expect(cost.pricingSnapshot.source).toBe("provider_reported");
+  });
+
+  it("ignores providerData.reportedCostUsd for non-openrouter providers", () => {
+    const cost = computeModelCost({
+      provider: "stub",
+      model: "stub-model",
+      usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      providerData: { reportedCostUsd: 0.0042 },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("0.000000");
+    expect(cost.priceSource).toBe("computed");
+    expect(cost.pricingSnapshot.sourceLayer).toBe("override");
+  });
+
+  it("surfaces missing_usage instead of silently billing zero for openrouter", () => {
+    const cost = computeModelCost({
+      provider: "openrouter",
+      model: "anthropic/claude-sonnet-4",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      providerData: { meteringStatus: "missing_usage", generationId: "gen-missing" },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("0.000000");
+    expect(cost.priceSource).toBe("unknown");
+    expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
   });
 
   it("falls back to pinned rates when provider-reported cost is absent", () => {

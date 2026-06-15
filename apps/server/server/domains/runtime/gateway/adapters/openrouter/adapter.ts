@@ -1,9 +1,10 @@
 /**
- * OpenRouter provider adapter: reuses the openai-compatible Chat Completions wire
- * format against OpenRouter's base URL, then enriches the final result with
- * provider-reported cost (stream usage.cost or /generation fallback).
+ * OpenRouter provider adapter: Chat Completions wire against OpenRouter's base URL,
+ * with OpenRouter-only stream metadata and best-effort /generation enrichment.
  */
 
+import OpenAI from "openai";
+import { modelAttemptTimeoutEvent } from "../../deadline.js";
 import type {
   GenerateRequest,
   ModelInfo,
@@ -11,8 +12,14 @@ import type {
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { createOpenAICompatibleAdapter } from "../openai-compatible/adapter.js";
+import { mapOpenAIError } from "../openai-compatible/errors.js";
+import { toOpenAIChatCompletionParams } from "../openai-compatible/request-map.js";
 import { enrichOpenRouterResult } from "./enrich-result.js";
+import {
+  buildOpenRouterGenerateResult,
+  createOpenRouterStreamAccumulator,
+  eventsFromOpenRouterChunk,
+} from "./stream-collect.js";
 
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -31,27 +38,61 @@ function openRouterHeaders(config: ProviderConfig): Record<string, string> {
 
 export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter {
   const apiKey = resolveApiKey(config.auth);
-  const inner = createOpenAICompatibleAdapter({
-    ...config,
-    adapter: "openai-compatible",
-    baseUrl: config.baseUrl ?? DEFAULT_BASE_URL,
-    auth: {
-      ...config.auth,
-      apiKey,
-      headers: openRouterHeaders(config),
-    },
+  const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+  const client = new OpenAI({
+    apiKey: apiKey ?? "not-needed",
+    baseURL: baseUrl,
+    defaultHeaders: openRouterHeaders(config),
   });
+  const providerId = config.id;
 
   return {
-    providerId: config.id,
+    providerId,
     async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
-      for await (const event of inner.stream(request, model)) {
-        if (event.type !== "end") {
-          yield event;
-          continue;
+      const acc = createOpenRouterStreamAccumulator(model.id, providerId);
+      yield { type: "start", model: model.id, provider: providerId };
+
+      try {
+        const params = toOpenAIChatCompletionParams(request, model.id);
+        const stream = await client.chat.completions.create(
+          { ...params, stream: true },
+          { signal: request.signal },
+        );
+
+        for await (const chunk of stream) {
+          yield* eventsFromOpenRouterChunk(chunk, acc);
         }
-        const enriched = await enrichOpenRouterResult(event.result, apiKey, request.signal);
+
+        const result = buildOpenRouterGenerateResult(acc);
+        let enriched = result;
+        try {
+          enriched = await enrichOpenRouterResult(result, apiKey, baseUrl, request.signal);
+        } catch {
+          enriched = result;
+        }
         yield { type: "end", result: enriched };
+      } catch (err) {
+        if (request.signal?.aborted) {
+          const timeout = modelAttemptTimeoutEvent(request.signal);
+          if (timeout) {
+            yield timeout;
+            return;
+          }
+          yield {
+            type: "error",
+            code: "invalid_request",
+            message: "Request aborted",
+            retryable: false,
+          };
+          return;
+        }
+        const mapped = mapOpenAIError(err);
+        yield {
+          type: "error",
+          code: mapped.code,
+          message: mapped.message,
+          retryable: mapped.retryable,
+        };
       }
     },
   };

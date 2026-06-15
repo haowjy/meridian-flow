@@ -84,6 +84,7 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import { readOpenRouterGenerationId } from "../gateway/adapters/openrouter/provider-data.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -432,6 +433,7 @@ async function persistModelResponse(input: {
       sequence: responseSeq,
       provider: result.provider,
       model: result.model,
+      providerRequestId: readOpenRouterGenerationId(result.providerData) ?? null,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens ?? null,
@@ -439,7 +441,7 @@ async function persistModelResponse(input: {
       cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
       costUsd,
       millicredits: computedCost.millicredits,
-      priceSource: "computed",
+      priceSource: computedCost.priceSource,
       pricingSnapshot: computedCost.pricingSnapshot,
       finishReason: result.finishReason,
       rawUsage: toJsonValue(result.usage),
