@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../server/domains/billing/index.js";
-import { createInMemoryContextPortFactory } from "../../server/domains/context/index.js";
+import {
+  createInMemoryContextPortFactory,
+  createInMemoryUnifiedContextPortFactory,
+} from "../../server/domains/context/index.js";
 import { createInMemoryEventSink } from "../../server/domains/observability/index.js";
 import { createInMemoryProjectRepository } from "../../server/domains/projects/index.js";
 import type {
@@ -88,7 +91,8 @@ describe("smoke: in-process turn", () => {
     const project = await projectRepo.create({ userId: "smoke-user", title: "Smoke" });
     const thread = await repos.threads.create({ userId: "smoke-user", projectId: project.id });
     const contextPorts = createInMemoryContextPortFactory();
-    const writeResult = await contextPorts
+    const unifiedContextPorts = createInMemoryUnifiedContextPortFactory();
+    const writeResult = await unifiedContextPorts
       .forProject(project.id, project.userId)
       .write(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
     expect(writeResult.ok).toBe(true);
@@ -97,6 +101,8 @@ describe("smoke: in-process turn", () => {
       registrations: createWiredCoreToolRegistrations({
         threads: repos.threads,
         contextPorts,
+        unifiedContextPorts,
+        threadWorks: repos.threadWorks,
         documentTouches: repos.documentTouches,
         eventSink: createInMemoryEventSink(),
       }),

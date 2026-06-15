@@ -93,4 +93,23 @@ describe("parseUnifiedContextUri", () => {
     const result = parseUnifiedContextUri(`manuscript://${workId}/chapter-1.md`);
     expect(result.ok).toBe(false);
   });
+
+  it("rejects malformed work authority segments", () => {
+    const result = parseUnifiedContextUri("work://0000-not-a-uuid/notes.md");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("invalid_uri");
+      if (result.error.code === "invalid_uri") {
+        expect(result.error.reason).toContain("Invalid Work authority");
+      }
+    }
+  });
+
+  it("still treats non-authority work paths with slashes as paths", () => {
+    const result = parseUnifiedContextUri("work://notes/sub/file.md");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.authority).toBeNull();
+    expect(result.value.path).toBe("notes/sub/file.md");
+  });
 });

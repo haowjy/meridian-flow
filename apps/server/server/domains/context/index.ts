@@ -302,7 +302,6 @@ export type { ResultProvenance } from "./promotion/result-provenance.js";
 export {
   createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,
-  type InMemoryUnifiedContextStoreRegistry,
   type UnifiedContextPortFactory,
 } from "./unified-context-port-factory.js";
 export * from "./uploads/index.js";

@@ -12,6 +12,14 @@ const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["work", "uploads"
 const UUID_AUTHORITY_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function looksLikeMalformedWorkAuthority(segment: string): boolean {
+  if (UUID_AUTHORITY_PATTERN.test(segment)) return false;
+  const dashIndex = segment.indexOf("-");
+  if (dashIndex === -1) return false;
+  const firstGroup = segment.slice(0, dashIndex);
+  return /^[0-9a-f]{4,}$/i.test(firstGroup);
+}
+
 export interface ParsedContextUri {
   scheme: ContextScheme;
   /** Work ID from the URI authority for work-scoped schemes, or null for bare URIs. */
@@ -56,6 +64,17 @@ function parseAuthorityPrefix(
 
   const [firstSegment = "", ...remainingSegments] = rawPath.split("/");
   if (!UUID_AUTHORITY_PATTERN.test(firstSegment)) {
+    if (
+      AUTHORITY_SCHEMES.has(scheme) &&
+      remainingSegments.length > 0 &&
+      looksLikeMalformedWorkAuthority(firstSegment)
+    ) {
+      return Err({
+        code: "invalid_uri",
+        uri: rawUri,
+        reason: `Invalid Work authority "${firstSegment}"`,
+      });
+    }
     return Ok({ authority: null, rawPath });
   }
 
