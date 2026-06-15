@@ -10,6 +10,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { PriceSource } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -214,6 +215,9 @@ export const modelResponses = pgTable(
     sequence: integer("sequence").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
+    providerRequestId: text("provider_request_id"),
+    priceSource: text("price_source").$type<PriceSource>().notNull().default("computed"),
+    pricingSnapshot: jsonb("pricing_snapshot"),
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
     usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
@@ -232,6 +236,10 @@ export const modelResponses = pgTable(
       table.provider,
       table.model,
       table.createdAt,
+    ),
+    check(
+      "model_responses_price_source_valid",
+      sql`${table.priceSource} IN ('computed', 'provider_reported', 'unknown')`,
     ),
   ],
 );

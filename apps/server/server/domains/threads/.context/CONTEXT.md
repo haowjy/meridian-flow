@@ -83,9 +83,9 @@ Meridian Flow's Supabase/Postgres schema. Key column mappings:
 | `turns.responseMetadata` | — | Not a column; hardcoded `null` |
 | `turnBlocks.provider` / `turnBlocks.providerData` | — | Not columns; hardcoded `null` in mapper |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
-| `modelResponses.providerRequestId` | — | Not a column; hardcoded `null` |
-| `modelResponses.priceSource` | — | Not a column; hardcoded `"computed"` |
-| `modelResponses.pricingSnapshot` | — | Mapped from `responseMetadata` |
+| `modelResponses.providerRequestId` | `modelResponses.providerRequestId` | |
+| `modelResponses.priceSource` | `modelResponses.priceSource` | Default `computed` |
+| `modelResponses.pricingSnapshot` | `modelResponses.pricingSnapshot` | |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |
 
 ### Date handling

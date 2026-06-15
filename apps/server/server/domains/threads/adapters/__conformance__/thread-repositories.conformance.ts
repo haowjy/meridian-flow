@@ -436,6 +436,81 @@ export function describeThreadRepositoriesConformance(
       expect(await repos.modelResponses.listByTurn(turn.id)).toEqual([modelResponse.row]);
     });
 
+    it("round-trips providerRequestId, priceSource, and pricingSnapshot", async () => {
+      const { repos, projects } = await makeFixture();
+      const project = await projects.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        title: "Project",
+      });
+      const thread = await repos.threads.create({
+        userId: THREAD_REPOSITORIES_CONFORMANCE_USER_ID,
+        projectId: project.id,
+      });
+      const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
+
+      const providerReported = await repos.modelResponses.create({
+        turnId: turn.id,
+        sequence: 0,
+        provider: "openrouter",
+        model: "anthropic/claude-sonnet-4",
+        providerRequestId: "gen-openrouter-abc123",
+        inputTokens: 100,
+        outputTokens: 50,
+        costUsd: "0.050000",
+        priceSource: "provider_reported",
+        pricingSnapshot: {
+          provider: "openrouter",
+          model: "anthropic/claude-sonnet-4",
+          source: "provider_reported",
+          sourceLayer: "provider_reported",
+        },
+      });
+
+      const missingUsage = await repos.modelResponses.create({
+        turnId: turn.id,
+        sequence: 1,
+        provider: "openrouter",
+        model: "anthropic/claude-sonnet-4",
+        providerRequestId: "gen-openrouter-missing-usage",
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: "0.000000",
+        priceSource: "unknown",
+        pricingSnapshot: {
+          provider: "openrouter",
+          model: "anthropic/claude-sonnet-4",
+          source: "unknown",
+          usageMeteringStatus: "missing_usage",
+        },
+      });
+
+      expect(providerReported.row).toMatchObject({
+        providerRequestId: "gen-openrouter-abc123",
+        priceSource: "provider_reported",
+        pricingSnapshot: {
+          source: "provider_reported",
+          sourceLayer: "provider_reported",
+        },
+      });
+      expect(missingUsage.row).toMatchObject({
+        providerRequestId: "gen-openrouter-missing-usage",
+        priceSource: "unknown",
+        pricingSnapshot: {
+          source: "unknown",
+          usageMeteringStatus: "missing_usage",
+        },
+      });
+
+      expect(await repos.modelResponses.findById(providerReported.row.id)).toEqual(
+        providerReported.row,
+      );
+      expect(await repos.modelResponses.findById(missingUsage.row.id)).toEqual(missingUsage.row);
+      expect(await repos.modelResponses.listByTurn(turn.id)).toEqual([
+        providerReported.row,
+        missingUsage.row,
+      ]);
+    });
+
     it("returns the existing model response when replaying the same response id", async () => {
       const { repos, projects } = await makeFixture();
       const project = await projects.create({
