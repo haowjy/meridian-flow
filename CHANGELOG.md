@@ -1,5 +1,21 @@
 # Changelog
 
+## WorkOS auth (2026-06-16, branch h/v3)
+
+- Authentication is now WorkOS AuthKit, not Supabase GoTrue/JWKS. Sessions are a
+  sealed `wos-session` cookie; the API server and collab WebSocket authenticate
+  from that cookie. No bearer JWT, no JWKS.
+- Identity is app-owned: a `public.users` row keyed by the WorkOS user id,
+  provisioned on first sign-in. The Supabase-managed `auth.users` table and its
+  13 foreign keys are gone (migration `0013`).
+- Dev sign-in is a real WorkOS password auth (`/api/auth/dev-login`), gated to
+  non-production with dev creds present (`WORKOS_DEV_AUTOLOGIN=1`). `pnpm
+  bootstrap` seeds the dev user + default project; first login reconciles it.
+- Supabase stays only as the local Postgres provider (`DATABASE_URL`,
+  `pnpm supabase:*`). `@supabase/supabase-js` is removed from both apps.
+- `pnpm dev` now defaults to `--tailscale` sharing; opt out with
+  `pnpm dev --no-tailscale` (or `pnpm dev:local`).
+
 ## context-URI + model-gateway cleanse (2026-06-16, branch h/v3)
 
 - Context addressing unified behind one port and one scheme vocabulary.
