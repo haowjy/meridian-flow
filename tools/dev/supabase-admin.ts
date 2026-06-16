@@ -71,9 +71,27 @@ export class SupabaseAdminClient {
     return data.id;
   }
 
+  /** Reset an existing user's password + confirm email (idempotent dev login). */
+  async updateUserPassword(userId: string, password: string): Promise<void> {
+    const url = `${this.supabaseUrl}/auth/v1/admin/users/${userId}`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify({ password, email_confirm: true }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`update user failed (${res.status}): ${body}`);
+    }
+  }
+
   async ensureUser(email: string, password: string): Promise<string> {
     const existing = await this.getUserIdByEmail(email);
     if (existing) {
+      // The user may pre-exist with a different/missing password (e.g. seeded
+      // directly into auth.users), which breaks dev password sign-in. Reset it
+      // so bootstrap is fully idempotent and dev-login/e2e auth always works.
+      await this.updateUserPassword(existing, password);
       return existing;
     }
     return this.createUser(email, password);
