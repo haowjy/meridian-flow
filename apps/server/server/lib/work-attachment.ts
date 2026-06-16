@@ -1,0 +1,98 @@
+/**
+ * Work membership resolution for newly-created threads. Creates the thread_works
+ * primary membership after the thread row exists, so Work context scoping has one
+ * source of truth and no stale threads.work_id column path.
+ */
+import type { WorkRepository } from "../domains/projects/index.js";
+import type { ThreadRepositories, ThreadWorksRepository } from "../domains/threads/index.js";
+
+export class InvalidWorkAttachmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidWorkAttachmentError";
+  }
+}
+
+export class MissingPrimaryWorkMembershipError extends Error {
+  constructor(public readonly parentThreadId: string) {
+    super(
+      `Cannot spawn subagent: parent thread "${parentThreadId}" has no primary Work membership`,
+    );
+    this.name = "MissingPrimaryWorkMembershipError";
+  }
+}
+
+export interface ResolveWorkMembershipDeps {
+  workRepo: WorkRepository;
+  threadWorks: ThreadWorksRepository;
+  threads: ThreadRepositories["threads"];
+}
+
+export interface ResolveWorkMembershipArgs {
+  threadId: string;
+  projectId: string;
+  /** Explicit work assignment from the request, if any. */
+  workId?: string | null;
+  /** When set, this is a subagent thread — inherit the parent's primary Work. */
+  parentThreadId?: string | null;
+  /** Title for the default work when one must be created. */
+  defaultTitle?: string;
+}
+
+/**
+ * Create thread-to-Work membership(s) for a newly-created thread.
+ *
+ * - An explicit `workId` wins: creates one membership (isPrimary = true).
+ * - A subagent inherits its parent's primary Work as its own primary.
+ * - A primary thread with no explicit work: attaches to the project's default work.
+ *
+ * Returns the primary Work ID.
+ */
+export async function resolveWorkMembership(
+  deps: ResolveWorkMembershipDeps,
+  args: ResolveWorkMembershipArgs,
+): Promise<string> {
+  let primaryWorkId: string;
+
+  if (args.workId) {
+    const work = await deps.workRepo.findById(args.workId);
+    if (!work || work.deletedAt || work.projectId !== args.projectId) {
+      throw new InvalidWorkAttachmentError("Work is not available in this project");
+    }
+    primaryWorkId = args.workId;
+  } else if (args.parentThreadId) {
+    const parentPrimary = await deps.threadWorks.findPrimary(args.parentThreadId);
+    if (!parentPrimary) {
+      throw new MissingPrimaryWorkMembershipError(args.parentThreadId);
+    }
+    primaryWorkId = parentPrimary.workId;
+  } else {
+    const work = await deps.workRepo.ensureDefaultForProject(args.projectId, args.defaultTitle);
+    primaryWorkId = work.id;
+  }
+
+  await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);
+  return primaryWorkId;
+}
+
+/** @deprecated Use resolveWorkMembership after thread creation. */
+export async function resolveWorkIdForThread(
+  deps: Pick<ResolveWorkMembershipDeps, "workRepo" | "threads"> & {
+    threadWorks?: ThreadWorksRepository;
+  },
+  args: Omit<ResolveWorkMembershipArgs, "threadId">,
+): Promise<string | null> {
+  if (args.workId) return args.workId;
+
+  if (args.parentThreadId) {
+    if (deps.threadWorks) {
+      const parentPrimary = await deps.threadWorks.findPrimary(args.parentThreadId);
+      return parentPrimary?.workId ?? null;
+    }
+    const parent = await deps.threads.findById(args.parentThreadId);
+    return parent?.workId ?? null;
+  }
+
+  const work = await deps.workRepo.ensureDefaultForProject(args.projectId, args.defaultTitle);
+  return work.id;
+}

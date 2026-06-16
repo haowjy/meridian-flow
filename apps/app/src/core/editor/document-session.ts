@@ -1,0 +1,242 @@
+/**
+ * document-session — owns the lifecycle of one collaborative document's CRDT.
+ *
+ * Wraps a Yjs `Y.Doc`, IndexedDB local persistence, awareness, and a pluggable
+ * transport provider into a subscribable session with a status snapshot
+ * (syncing / synced / offline / destroyed). The single place document
+ * collaboration state is created and torn down; `EditorView` binds to it.
+ *
+ * Status semantics — derived from BOTH local persistence and the live
+ * transport connection state, so the indicator stays honest after the initial
+ * load:
+ *   - `syncing`   — initial local load and/or first server sync hasn't
+ *                   completed yet, or the transport is actively reconnecting
+ *                   after a drop.
+ *   - `synced`    — local persistence is loaded AND the server transport is
+ *                   currently connected & synced (edits are safe on the
+ *                   server). Only this state may claim "synced".
+ *   - `offline`   — local persistence is loaded but the socket is
+ *                   disconnected/terminal (edits are buffered in IndexedDB
+ *                   and have NOT reached the server). The only state that
+ *                   should communicate "saved locally, not yet on server".
+ *   - `destroyed` — the session has been torn down.
+ */
+import { IndexeddbPersistence } from "y-indexeddb";
+import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
+import * as Y from "yjs";
+
+import type { ConnectionState } from "@/core/transport/ThreadTransport";
+
+import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+
+export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "destroyed";
+
+export type DocumentSessionSnapshot = {
+  documentId: string;
+  status: DocumentSessionStatus;
+  localPersistenceSynced: boolean;
+};
+
+/**
+ * Surface `DocumentSession` consumes from its transport.
+ *
+ * `synced` / `whenSynced` describe the FIRST server reconciliation. Live
+ * connection-state changes after that (drop / reconnect / terminal close) flow
+ * through `subscribeStatus` so the session can re-derive `status` whenever
+ * the transport changes — without that, the pill would freeze on its startup
+ * value and `offline` could never fire.
+ */
+export type DocumentSessionTransportProvider = {
+  awareness?: Awareness;
+  synced?: boolean;
+  whenSynced?: Promise<void>;
+  /**
+   * Subscribe to live connection-state updates from the underlying socket.
+   * Implementations MUST emit the current state synchronously on subscribe
+   * and on every subsequent change. Returns an unsubscribe function.
+   */
+  subscribeStatus?: (listener: (state: ConnectionState) => void) => () => void;
+  destroy: () => void | Promise<void>;
+};
+
+export type DocumentSessionTransportFactory = (opts: {
+  documentId: string;
+  document: Y.Doc;
+  awareness: Awareness;
+  fragmentName: typeof PROSEMIRROR_FRAGMENT_NAME;
+}) => DocumentSessionTransportProvider;
+
+export type DocumentSessionOptions = {
+  documentId: string;
+  /** Defaults to y-indexeddb's document name, scoped to Meridian app content. */
+  persistenceKey?: string;
+  /** Tests and SSR can disable IndexedDB; browser sessions enable it by default. */
+  enableIndexedDb?: boolean;
+  /** W3b plugs the multiplexed Yjs WS provider here. */
+  transportFactory?: DocumentSessionTransportFactory;
+};
+
+type Listener = (snapshot: DocumentSessionSnapshot) => void;
+
+function canUseIndexedDb(): boolean {
+  return typeof indexedDB !== "undefined";
+}
+
+export class DocumentSession {
+  readonly documentId: string;
+  readonly document: Y.Doc;
+  readonly awareness: Awareness;
+  readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
+
+  private readonly persistence: IndexeddbPersistence | null;
+  private readonly transportProvider: DocumentSessionTransportProvider | null;
+  private readonly listeners = new Set<Listener>();
+  private readonly unsubscribeTransportStatus: (() => void) | null;
+  private destroyed = false;
+  private localPersistenceSynced = false;
+  private status: DocumentSessionStatus = "syncing";
+  /**
+   * Latest live connection-state from the transport. When the transport is
+   * pre-`whenSynced` we treat the session as syncing; this field lets us
+   * distinguish "connected & synced" from "disconnected" after that.
+   */
+  private transportState: ConnectionState | null = null;
+  private readonly syncedPromise: Promise<void>;
+
+  constructor({
+    documentId,
+    persistenceKey = `meridian:document:${documentId}`,
+    enableIndexedDb = canUseIndexedDb(),
+    transportFactory,
+  }: DocumentSessionOptions) {
+    this.documentId = documentId;
+    this.document = new Y.Doc();
+    this.awareness = new Awareness(this.document);
+    this.persistence = enableIndexedDb
+      ? new IndexeddbPersistence(persistenceKey, this.document)
+      : null;
+    this.transportProvider =
+      transportFactory?.({
+        documentId,
+        document: this.document,
+        awareness: this.awareness,
+        fragmentName: this.fragmentName,
+      }) ?? null;
+
+    this.unsubscribeTransportStatus =
+      this.transportProvider?.subscribeStatus?.((state) => {
+        this.transportState = state;
+        this.recomputeStatus();
+      }) ?? null;
+
+    this.syncedPromise = this.watchSync();
+    this.emit();
+  }
+
+  get cursorProvider(): { awareness: Awareness } {
+    return { awareness: this.transportProvider?.awareness ?? this.awareness };
+  }
+
+  getSnapshot(): DocumentSessionSnapshot {
+    return {
+      documentId: this.documentId,
+      status: this.status,
+      localPersistenceSynced: this.localPersistenceSynced,
+    };
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    listener(this.getSnapshot());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async whenSynced(): Promise<void> {
+    await this.syncedPromise;
+  }
+
+  /**
+   * Cleanup ordering is intentionally caller-friendly: React unmounts the
+   * TipTap editor first, then calls this method so providers can detach before
+   * the Y.Doc is destroyed.
+   */
+  async destroy(): Promise<void> {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.status = "destroyed";
+    this.emit();
+
+    removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
+
+    this.unsubscribeTransportStatus?.();
+    await this.transportProvider?.destroy();
+    await this.persistence?.destroy();
+    this.awareness.destroy();
+    this.document.destroy();
+    this.listeners.clear();
+  }
+
+  private async watchSync(): Promise<void> {
+    await this.persistence?.whenSynced;
+    if (this.destroyed) return;
+    this.localPersistenceSynced = true;
+    this.recomputeStatus();
+
+    await this.transportProvider?.whenSynced;
+    if (this.destroyed) return;
+    this.recomputeStatus();
+  }
+
+  /**
+   * Single derivation site for `status`. Called on every input change —
+   * local persistence load, transport connection-state transition, transport
+   * first-sync resolution — so the indicator never freezes on a startup value.
+   *
+   * Honesty matters here: only emit `synced` when edits are actually on the
+   * server (transport connected AND first sync complete). When the transport
+   * has no server channel (no factory at all), local-only IS the steady state,
+   * so `synced` still applies once persistence has loaded.
+   */
+  private recomputeStatus(): void {
+    if (this.destroyed) return;
+    const next = this.deriveStatus();
+    if (next === this.status) return;
+    this.status = next;
+    this.emit();
+  }
+
+  private deriveStatus(): DocumentSessionStatus {
+    if (!this.localPersistenceSynced) return "syncing";
+
+    // No transport at all → local-only session; persistence load IS being synced.
+    if (!this.transportProvider) return "synced";
+
+    const state = this.transportState;
+    const serverSynced = this.transportProvider.synced !== false;
+
+    // Terminal close (auth fail, server refusal): the socket will never come
+    // back without intervention; treat as offline so the indicator stops
+    // claiming server safety.
+    if (state?.kind === "terminal") return "offline";
+
+    // Live disconnect: edits buffer locally until reconnect.
+    if (state?.kind === "disconnected") return "offline";
+
+    // Actively reconnecting/degraded after a drop — still syncing.
+    if (state?.kind === "reconnecting" || state?.kind === "degraded") return "syncing";
+
+    // Connecting or connected-but-not-yet-server-synced → syncing.
+    if (state?.kind === "connecting") return "syncing";
+    if (!serverSynced) return "syncing";
+
+    // state?.kind === "connected" || (no state yet but provider reports synced)
+    return "synced";
+  }
+
+  private emit(): void {
+    const snapshot = this.getSnapshot();
+    for (const listener of this.listeners) listener(snapshot);
+  }
+}

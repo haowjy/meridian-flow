@@ -1,308 +1,238 @@
-# AGENTS.md
-
-This file provides guidance when working with the code in this repository.
-
-## Project Overview
-
-Meridian is a Agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
-
-**Current Status:**
-- ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Thread/LLM in progress (Anthropic provider working, streaming complete)
-- ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Thread UI complete
-
-For product details, see `_docs/high-level/1-overview.md`.
-
-## Product Philosophy
-
-**Writer-first**: Meridian exists to serve the writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
-
-See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
-
-## Guiding Principles for Development
-
-ALWAYS FOLLOW SOLID PRINCIPLES.
-
-### SOLID Quick Reference
-
-- **SRP**: Files < 500 lines. One store = one domain. Split large components.
-- **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
-- **LSP**: All implementations must be substitutable for their interfaces
-- **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
-- **DIP**: Depend on interfaces, not concrete types (especially for external services)
-
-Then, these principles can also help you make architectural decisions and other development tasks:
-
-1. **Start Simple, Stay Simple**
-   - Write the simplest thing that could work
-   - Add complexity only when necessary
-   - Regularly refactor to remove unnecessary complexity
-
-2. **Make Correctness Obvious**
-   - Code should make bugs impossible or obvious
-   - Use types to prevent invalid states
-   - Fail fast and loudly (don't swallow errors)
-
-3. **One Thing At A Time**
-   - Don't optimize and add features simultaneously
-   - Test each change before moving on
-   - Small, incremental changes are easier to debug
-
-4. **Explicit Over Implicit**
-   - `hasUserEdit` flag > trying to detect user edits
-   - `content !== undefined` > `content` (falsy check)
-   - Direct sync > background queue
-
-5. **Design for Debuggability**
-   - Clear console logs at key decision points
-   - Helper functions to inspect state (`getRetryQueueState()`)
-   - Predictable, deterministic behavior
-
-6. **Guard Against Races**
-   - Add locks/flags to prevent concurrent execution
-   - Use intent flags to coordinate subsystems
-   - Cancel stale operations proactively
-
-7. **Treat Empty as Valid**
-   - Empty string `""` is valid data
-   - Empty array `[]` is valid data
-   - Only `undefined`/`null` means "absent"
-
-8. **Comment the "Weird" and the "WHY"**
-   - anything that is not obvious, comment why.
-   - If it needs a guard, comment why
-   - If it prevents a race, explain the race
-   - If you had to debug it, future you will too
-   - etc.
-
-9. **Extensible** - Design for extensibility.
-
-10. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
-
-11. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well). Make sure each function/method/file mostly does one thing and does it well (SRP).
-
-## Before Writing New Code
-
-1. **Search for existing patterns** - Before implementing, search for similar implementations:
-   - Hooks: `grep -r "use<Similar>" frontend/src/`
-   - Services: Check `backend/internal/service/` for similar business logic
-   - Repositories: Check existing repos for query patterns
-   - Components: Search `frontend/src/features/` for similar UI patterns
-
-2. **Reuse over recreate** - If a pattern exists, use it. If it's close but not quite right, extend it.
-
-3. **Check shared utilities** - Before writing a helper:
-   - Backend: `backend/internal/util/`, domain errors, httputil
-   - Frontend: `frontend/src/core/lib/`, shared hooks, UI components
-
-4. **When patterns diverge, consolidate** - If you find 2+ implementations of the same thing, refactor to one.
-
-## Consistency Checklist
-
-Before submitting code, verify:
-- [ ] Error handling follows existing patterns (HTTPError, domain errors)
-- [ ] Similar code elsewhere? → Extract shared utility
-- [ ] Dialog patterns use shared components (DeleteConfirmationDialog, etc.)
-- [ ] Store patterns match existing stores (abort controllers, selectors)
-- [ ] API calls follow api.ts conventions
-
-## Where to Find Things
-
-### Code-Specific Instructions
-
-- **Backend**: `backend/CLAUDE.md` - Development commands, architecture, conventions
-- **Frontend**: `frontend/CLAUDE.md` - Caching patterns, store architecture, CodeMirror conventions
-
-### Documentation
-
-- **Features**: `_docs/features/` - Feature status, implementation guides by stack (f-/b-/fb- prefixes)
-  - **Overview**: `_docs/features/README.md` - Complete feature inventory with status
-  - **Authentication**: `_docs/features/fb-authentication/` - JWT validation, Supabase integration
-  - **Document Editor**: `_docs/features/f-document-editor/` - CodeMirror, auto-save, caching
-  - **Thread/LLM**: `_docs/features/fb-thread-llm/` - Turn branching, providers, streaming
-  - **File System**: `_docs/features/fb-file-system/` - CRUD operations, tree structure
-- **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
-- **Technical details**: `_docs/technical/` - Deep-dive architecture, implementation specifics
-  - **Backend**: `_docs/technical/backend/` - Go backend architecture, API design
-  - **Frontend**: `_docs/technical/frontend/` - Vite + TanStack Router frontend architecture, patterns
-  - **Authentication**: `_docs/technical/auth-overview.md` - Cross-stack auth flow (Supabase)
-  - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
-- **Documentation structure**: `_docs/README.md` - How docs are organized
-
-**Always check `_docs/features/` first for feature status, then `_docs/technical/` for implementation details.**
-
-## Documentation Philosophy
-
-Documentation is organized in three tiers:
-
-1. **Features** (`_docs/features/`) - **Start here**
-   - What features exist and their status (✅/🟡/❌)
-   - Stack-prefixed folders show frontend-only (f-), backend-only (b-), or both (fb-)
-   - Concise implementation guides with links to technical details
-
-2. **High-Level** (`_docs/high-level/`)
-   - Product vision, user stories, MVP specifications
-   - Non-technical stakeholder documentation
-
-3. **Technical** (`_docs/technical/`)
-   - Deep-dive architecture documents
-   - Detailed implementation patterns and edge cases
-   - Referenced from feature docs when needed
-
-### Feature Documentation Sync Rule
-
-**IMPORTANT: When adding or significantly updating a feature, you MUST update the corresponding feature documentation.**
-
-This applies to both Claude and human developers:
-
-✅ **Update feature docs when:**
-- Implementing a new feature
-- Significantly changing existing feature behavior
-- Changing feature status (e.g., from 🟡 partial to ✅ complete)
-- Adding/removing major functionality
-- Changing stack requirements (e.g., backend-only -> full-stack)
-
-**Workflow:**
-1. Implement the feature/update
-2. Update `_docs/features/<feature-name>/` with changes
-3. Update status in `_docs/features/README.md` if needed
-4. Run `./scripts/check-md-links.sh`
-5. Commit code + docs together
-
-## Repository Structure
-
-```
-backend/
-├── cmd/                    # Entry points (server, seed)
-├── internal/
-│   ├── domain/             # Interfaces + models (Clean Architecture)
-│   ├── service/            # Business logic
-│   ├── repository/         # Data access
-│   ├── handler/            # HTTP handlers
-│   ├── middleware/         # Auth, error handling
-│   └── config/             # Configuration
-├── scripts/                # Shell scripts (seeding)
-├── tests/                  # Test artifacts
-└── schema.sql              # Database schema
-
-_docs/
-├── features/               # Feature documentation (stack-prefixed)
-│   ├── README.md           # Feature inventory and status
-│   ├── fb-authentication/  # Both stacks
-│   ├── f-document-editor/  # Frontend only
-│   ├── fb-file-system/     # Both stacks
-│   ├── fb-thread-llm/      # Both stacks
-│   └── ...                 # Other features
-├── high-level/             # Product docs
-└── technical/              # Deep-dive technical docs
-    ├── backend/            # Backend architecture
-    ├── frontend/           # Frontend architecture
-    └── llm/                # LLM integration details
-```
-
-## Documentation Writing Rules
-
-**Default: MINIMUM content unless otherwise stated.**
-
-### Core Principles
-
-1. **Diagrams > Words** - A picture is easier to understand than paragraphs
-   - Prefer Mermaid diagrams to explain flows, architecture, relationships
-   - Use tables for comparisons or lists of issues
-   - Keep text minimal - just enough to connect the diagrams
-
-2. **Minimize words** - Every sentence should earn its place
-   - Can a diagram replace 3 paragraphs? Use the diagram
-   - Can a table replace verbose lists? Use the table
-   - Cut ruthlessly; too much text hurts comprehension
-
-3. **Reference, don't duplicate** - Point to code, don't copy it
-   - ✅ "See `internal/service/document.go:29-33`"
-   - ❌ Pasting 50 lines of existing code
-
-4. **Split by purpose, not size** - Each doc should have a single, clear purpose
-   - If covering multiple distinct topics -> split into separate docs
-   - Organize related docs into folders (e.g., `features/fb-authentication/`, `technical/backend/`)
-   - Update index/README to maintain discoverability
-   - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong
-
-5. **Use frontmatter** for detail level:
-   ```yaml
-   ---
-   detail: minimal | standard | comprehensive
-   audience: developer | architect | claude
-   ---
-   ```
-
-6. **Code examples sparingly** - Only when:
-   - Showing a pattern that doesn't exist yet
-   - Demonstrating a specific fix/workaround
-   - Concept can't be found in existing code
-
-7. **Focus on WHY and WHAT, not HOW** - let the implementation show the how. How can always change. Some How details are important to note (like specific implementation details to ensure effiency, compliance, etc.), but not always.
-
-8. **Mermaid diagrams** - Use dark mode compatible colors:
-   - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
-   - Avoid light pastels that disappear on dark backgrounds
-   - Test: colors should be visible on both light AND dark backgrounds
-
-### Mermaid Quick Rules
-
-- Quote labels with spaces/punctuation: `Node["Label"]`, `A -->|"edge"| B`
-- Use ASCII operators (`>=`, `<=`) not unicode
-- Fix parse errors by adding quotes, not restructuring diagrams
-
-### Example
-
-```markdown
-# Database Connections
-
-## Problem
-PgBouncer conflicts with prepared statements.
-
-## Solution
-Add `?pgbouncer=true` for dev (port 6543).
-
-## Implementation
-See `internal/repository/postgres/connection.go`
+# Meridian Flow — Agent Instructions
+
+> **v3 Full-Stack Rebuild** — ground-up TypeScript rebuild (replacing the prior
+> Go backend). Context-URI + model-gateway cleanse has **landed** (`h/v3` branch):
+> unified `ContextPort`, scheme vocabulary, M:N thread↔work model, registry-
+> sourced pricing, billing-correct cancel. Migration-snapshot chain is stale
+> (0004 meta vs 12 journal entries) — pending squash. Key decisions: **Yjs**
+> collab engine with voluma-derived exact-text edit pipeline + **TipTap
+> (ProseMirror)** / y-prosemirror on `Y.XmlFragment`; **agent definitions**
+> (Mars `.md` packages) replace skills; **credits-only** billing gate; linear
+> turns; event journal; Yjs persistence; **Drizzle ORM** over Postgres; Supabase
+> auth (JWKS) + dev Postgres.
+>
+> No real users or data yet, and **no backwards compatibility** — change schemas
+> freely, delete what's unused, and never add a compat shim or alias (rename or
+> replace the real thing instead).
+
+## Mission
+
+**Writers should spend their time writing, not fighting their tools.** Meridian
+Flow makes creative-writing ideas flow faster — it helps fiction writers get the
+story out of their head and onto the page, with AI that understands narrative
+craft. Every architectural and product decision should survive the question:
+*does this help a writer bring their idea to life faster?*
+
+**Who it's for:** fiction writers managing 100+ chapter web serials (xianxia,
+LitRPG, progression fantasy) at 5,000–10,000+ words/day — Scrivener's power at
+that scale, without the complexity cliff.
+
+## Engineering principles
+
+**Load `/dev-principles` when planning or changing code** — it is the single
+source for engineering values (simplicity, deep modules, separation of concerns,
+naming discipline, commenting, aggressive deletion, consistency, testing
+restraint).
+
+Meridian-specific: the primary writer primitive is a **Project** (a serial /
+book / body of work and everything scoped under it; formerly "workbench" — now
+fully renamed).
+
+## Conventions
+
+**Layering.** Apps are thin shells — business logic lives in packages or server
+domains, never in route handlers. Don't import across packages in ways that
+bypass their public exports.
+
+**Ports & adapters.** Protocol boundaries are explicit port interfaces; domain
+logic depends on ports, never concrete adapters. Adapter/provider choice is
+config-driven DI at the composition root, not hardcoded. Layout is
+`domain/` + `ports/` + `adapters/` where the seam earns it; new/growing domains
+converge on it.
+
+**Package naming.** Every package fits one category below, or the name is wrong
+(examples illustrate the pattern; not all are extracted yet):
+
+| Suffix / pattern | What it means | Examples |
+|---|---|---|
+| **Domain noun** | First-class domain concept; state, types, persistence | `projects`, `threads`, `collab` |
+| **`*-system`** | Foundational machinery other modules consume | `package-system` |
+| **`*-runtime`** | Executes things against a substrate (FS, network, services) | `tool-runtime` |
+| **`*-gateway`** | Brokers to external systems with provider abstraction | `model-gateway` |
+
+**Tooling.** `pnpm` (not npm); Biome for lint/format; Nx for task orchestration.
+No raw hex/color outside `design-tokens`.
+
+**File headers.** At the top of each file, a short description: what it's *for*
+and any key decisions tied to it.
+
+## Context-URI scheme vocabulary
+
+Durable Project content vs ephemeral Work scratch — see `work-model.md` in the
+cleanse design package and `kb/decisions/` for cross-cutting terms:
+
+| Scheme | Scope | Lifecycle | Notes |
+|---|---|---|---|
+| `manuscript://` | project | durable | The book; one per Project. **Bare-path default.** |
+| `kb://` | project | durable | Agent KB + import target (`kb://imports/…`) |
+| `user://` | user (cross-project) | durable | Personal files |
+| `work://` | **work** (`<workId>` authority) | ephemeral | Agent working memory |
+| `uploads://` | **work** (`<workId>` authority) | ephemeral | Per-Work upload target |
+
+**Deleted:** `fs1://` (sandbox-era), `work://.results` (promotion cruft).  
+**No `results://` scheme** — promotion results → `work://<workId>/results/…`.
+
+Bare paths default to `manuscript://`. Work-scoped URIs carry a `<workId>`
+authority; omitted authority resolves to the thread's primary Work.
+
+## M:N thread↔work model
+
+`threads.workId` is **dropped**, replaced by `thread_works` membership join
+(one primary per thread). A thread addresses multiple Works:
+- **Work authority in URIs** — `work://<workId>/…`, `uploads://<workId>/…`
+- **Primary Work as default** when `<workId>` is omitted in work-scoped schemes.
+- **Membership gate** — work-scoped browse requires ownership/membership.
+- M:N shapes shipped; multi-Work orchestration + GC/handoff deferred.
+
+## Gateway / pricing
+
+- **One `MODEL_REGISTRY`** — config + pinned pricing, single-sourced from
+  `registry.ts`. The flat `MODEL_TOKEN_RATES` table is **deleted**.
+- **Pricing layers** — pinned rates (direct providers) + provider-reported-cost
+  (OpenRouter). `PinnedModelRate` is **gateway-local** (defined in `registry.ts`);
+  billing imports it from the gateway — the gateway never imports billing.
+- **OpenRouter** — restored via `openai-compatible` adapter (config entry).
+- **Billing-correct cancel** — soft-cancel/drain + cancel-on-disconnect
+  (connectionToken ownership). Provider-reported cost persisted on
+  `model_responses.providerRequestId` / `priceSource` / `pricingSnapshot`.
+  Failed turn generator → `turn.error` (no stuck "streaming").
+
+## Dev-auth / test-isolation conventions
+
+- `pnpm bootstrap` provisions a **GoTrue-native** dev user (distinct UUID,
+  NOT the shared test-fixture id `…0111`).
+- DB-backed tests must use an **isolated fixture identity** (dedicated email,
+  NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a
+  dedicated throwaway DB, never the dev DB.
+- `supabase/migrations` stays **empty by design** — app schema is Drizzle in
+  `packages/database` (`config.toml` `[db.migrations] schema_paths=[]`).
+
+## Migration-snapshot debt
+
+The Drizzle meta snapshot chain is stale (snapshots at 0004 vs 12 journal
+entries) so `db:generate` is broken and migrations 0009–0012 were hand-authored.
+A migration **squash** is the pending fix — do not run `db:generate` until
+resolved.
+
+## Cross-cutting invariants
+
+Two invariants that silently corrupt data if violated:
+
+- **`contracts` is JSON-natural** — types survive
+  `JSON.parse(JSON.stringify(x))` unchanged: string IDs/dates, union-literal
+  enums; no `Date`/`BigInt`/branded types on the wire.
+- **`prosemirror-schema` is shared by both sides** — the server collab adapter
+  and the frontend TipTap editor must build **structurally identical** schemas,
+  or y-prosemirror corrupts the CRDT.
+
+## Documentation layers
+
+Knowledge is layered by need — put it where agents look for it, and never in two
+places (see `/qi-layer`):
+
+- **AGENTS.md** (per directory) — the *intent layer*: mental model, constraints,
+  invariants, anti-patterns; what to understand before touching files here. Not a
+  file index or routing table.
+- **`.context/CONTEXT.md`** (beside the code) — reference depth: contracts,
+  architecture, rationale, read on demand.
+- **KB** (`meridian context kb`, git-backed via `meridian.toml` `[context.kb]`) —
+  cross-cutting concepts no single directory owns, including `decisions/`.
+- **Active work item** (`meridian work current`) — in-progress design decisions.
+- **docs/** — user-facing docs.
+
+Keep repo-root markdown thin: frame and pointers, not duplicated detail; don't
+redefine canonical terms in root docs — link to the KB.
+
+## Monorepo architecture
+
+TypeScript monorepo (pnpm + Nx). `apps/` (app, server, www) are thin shells over
+domain logic in shared `packages/` and server domains
+(`apps/server/server/domains/`); dev/CI scripts live in `tools/`.
+
+Don't memorize structure from this file — it rots. When working in a module,
+start from colocated knowledge:
+
+1. `meridian qi graph <path>` — surfaces the `AGENTS.md` chain + `.context/CONTEXT.md`
+2. Read `AGENTS.md` for the frame/intent, then `.context/CONTEXT.md` for contracts, architecture, invariants
+3. Then `ls` + raw source to confirm specifics
+
+## Token hygiene for command output
+
+Use `rtk` for noisy human-readable commands so agents spend context on signal,
+not log volume: `rtk git diff`, `rtk git status`, `rtk rg "<pattern>"`,
+`rtk pnpm test`, etc. Use raw commands when exact output is required
+(machine-readable formats, pipes, snapshots, reproduction logs). If `rtk` is
+unavailable, run the raw command and note that compressed output was missing.
+
+## Dev environment (portless — read before running or probing anything)
+
+Dev does **not** use raw ports. Apps are served by **portless** at HTTPS
+`*.localhost` URLs. Do **not** assume `localhost:3000`, bind ports by hand, or
+probe `ws://127.0.0.1:<port>` — that bypasses the real proxy/TLS path.
+
+- **Live URLs:** `pnpm portless:list`
+- Run the stack: `pnpm dev` (worktree-scoped tmux). Stuck? `pnpm dev:restart`.
+- TLS for curl/node: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`
+
+## Local Supabase (database + auth)
+
+Dev Postgres and `auth.users` run via Supabase CLI. App schema is Drizzle in
+`packages/database` (not `supabase/migrations`).
+
+```bash
+pnpm supabase:start      # Docker: API :54421, Postgres :54422, Studio :54423
+pnpm supabase:env        # print keys → copy into .env from .env.example
+pnpm bootstrap           # auth user + db:migrate + apply-functions + seed project
+pnpm db:migrate          # apply Drizzle migrations (packages/database)
+pnpm db:apply-functions  # sync PL/pgSQL from packages/database/src/functions/
+pnpm db:generate         # generate migration SQL from schema changes
+pnpm db:studio           # drizzle-kit studio
 ```
 
-## General Conventions
+See [supabase/README.md](supabase/README.md) and
+[packages/database/README.md](packages/database/README.md).
 
-### Server Management
+## Build and test
 
-- User manages dev server (starts/stops/restarts)
-- Claude suggests commands but doesn't run them
-- Claude CAN run curl commands to test APIs
+`pnpm check` is the full gate: lint + negative-space + typecheck + test + graph.
+Individual scripts (`lint`, `typecheck`, `test`, `dev`, `db:*`) are in
+`package.json`. E2e needs the portless CA:
 
-### Git Commits
+```bash
+NODE_EXTRA_CA_CERTS=~/.portless/ca.pem \
+  pnpm --filter @meridian/app exec playwright test -c e2e/playwright.auth.config.ts
+```
 
-- Only commit when user explicitly requests
-- Follow repository's commit message style
-- See general Git conventions in main CLAUDE.md guidelines
+## Commit discipline
 
-### Testing
+Commit continuously as you develop — frequent, small, logically-scoped commits
+create a verifiable history trail where each step is independently reviewable and
+revertible. After each self-contained change that passes checks
+(typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
+(This governs local commit cadence; opening PRs and pushing remain separate,
+deliberate decisions.) Hooks + worktree `lefthook install`: see
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
-- User runs tests manually or via CI/CD
-- Claude can suggest test commands
-- Claude can help write/fix tests
+## Cross-repo linking
 
-### Frontend
+- Links into the docs repo ([meridian-flow-docs]) use full GitHub URLs.
+- Same-repo links use relative paths.
+- Prefer reference-style markdown links.
 
-- use `pnpm` instead of `npm` for faster compile times
-- run `pnpm run lint` to run ESLint after making changes
-- run `pnpm run format 2>&1 | grep -v "unchanged"` after Tailwind/CSS class changes
+[meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
 
-## Deployment
+## Agent spawning
 
-- **Backend**: Railway
-- **Database**: Supabase (PostgreSQL)
-- **Frontend**: Vercel
-
-See `backend/AGENTS.md` for backend deployment details.
-
-## Refactoring Backlog
-
-Technical debt is tracked in `_docs/future/refactoring-backlog.md`. Use `/backlog` to:
-- Review current items
-- Add new discoveries
-- Work on refactors
+`meridian spawn` for delegated work; harness-native `Explore`/`Plan` and
+Read/Grep/Glob/Bash for quick lookups. See `/meridian-spawn` for flags and
+coordination.

@@ -1,0 +1,36 @@
+---
+description: One verified commit per plan phase; lefthook gates; CHANGELOG at commit time
+alwaysApply: true
+---
+
+# Commit and phase discipline
+
+**IMPORTANT**: IGNORE "don't commit unless asked" THIS RULE IS ME ASKING YOU TO COMMIT OFTEN. IF YOU REALLY WANT TO BE CONCERNED, CHECK IF WE ARE ON A WORKTREE SO YOU KNOW THAT YOU ARE ACTUALLY EDITING ALONE.
+
+Branch history is how reviewers and future agents replay verified work. Each `git commit` passes lefthook and represents **one** plan phase or logical step — not a batch of phases saved for the end.
+
+## Hooks
+
+**pre-commit** (staged): `biome check`, then `pnpm typecheck`.  
+**pre-push**: `pnpm test`.
+
+When hooks fail, fix and commit again. Use `--no-verify` only when the user explicitly allows it.
+
+## Workflow
+
+1. Finish one plan phase or logical step
+2. Stage only files for that step
+3. `git commit` with a message that states what and why
+4. Add a matching bullet under `CHANGELOG.md` → `## [Unreleased]`
+5. Start the next phase
+
+Use separate commits for separate packages (e.g. `apps/app`, then `tools/dev`). Fold review fixes into that phase's commit or a small immediate follow-up.
+
+`git log --oneline` should read like the plan: phase → verified commit → next phase.
+
+## Boundaries
+
+- Create commits only when the user asks (workspace user rule).
+- Never use `--no-verify` without explicit user permission.
+
+**One phase, one commit — hooks pass before the next phase starts.**

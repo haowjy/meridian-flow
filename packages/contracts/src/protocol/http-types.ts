@@ -1,0 +1,289 @@
+/**
+ * Purpose: Defines JSON-natural HTTP request and response DTOs for project, thread, work, context-tree, and figure APIs.
+ * Why independent: These route payloads are the client/server wire contract and stay shared instead of living in app route handlers.
+ * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
+ */
+
+import type { Project, ProjectStatsResponse } from "../projects/index.js";
+import type {
+  Block,
+  BlockType,
+  ModelRequestDebugRecord,
+  ModelResponse,
+  Thread,
+  ThreadListItem,
+  Turn,
+  TurnContextPreview,
+  TurnRole,
+  TurnStatus,
+  TurnUsage,
+} from "../threads/index.js";
+import type { Work } from "../works/index.js";
+import type { Filetype } from "./filetype.js";
+import type { YjsTrackedSchemaType } from "./yjs-multiplex.js";
+
+export type { JsonValue } from "../threads/index.js";
+export type {
+  Block,
+  BlockType,
+  ModelResponse,
+  ProjectStatsResponse,
+  Thread,
+  ThreadListItem,
+  Turn,
+  TurnContextPreview,
+  TurnRole,
+  TurnStatus,
+  TurnUsage,
+};
+
+export type ThreadLiveState = {
+  threadId: string;
+  status: Thread["status"];
+  runningTurnId: string | null;
+  currentAgent: string | null;
+  nextSeq: string;
+  /** WS cursor for replaying events not yet reflected in snapshot read-model rows. */
+  resumeAfterSeq: string;
+};
+
+export type CreateProjectRequest = {
+  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
+  id?: string;
+  title: string;
+  description?: string | null;
+};
+
+export type CreateProjectResponse = Project;
+
+export type UpdateProjectRequest = {
+  title?: string;
+  description?: string | null;
+};
+
+export type ListProjectsResponse = {
+  projects: Project[];
+};
+
+export type ListProjectThreadsResponse = {
+  threads: ThreadListItem[];
+};
+
+export type { Work };
+
+export type ListWorksResponse = {
+  works: Work[];
+};
+
+export type ProjectContextTreeScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
+
+/** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
+export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
+  "work",
+  "uploads",
+]);
+
+export function isWorkScopedProjectContextScheme(scheme: ProjectContextTreeScheme): boolean {
+  return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
+}
+
+type ProjectContextTreeFileBase = {
+  kind: "file";
+  /** Persisted documents.id UUID used by Yjs and figure routes. */
+  documentId: string;
+  name: string;
+  /** Slash-prefixed display/routing path, e.g. `/project/README.md`. */
+  path: string;
+  /** Canonical context URI, e.g. `kb://project/README.md`. */
+  uri: string;
+  sizeBytes?: number;
+  updatedAt?: string;
+  readonly?: boolean;
+};
+
+export type ProjectContextTreeEditableFile = ProjectContextTreeFileBase & {
+  editable: true;
+  filetype: Filetype;
+  schemaType: YjsTrackedSchemaType;
+};
+
+export type ProjectContextTreeBinaryFile = ProjectContextTreeFileBase & {
+  editable: false;
+  fileType: DocumentFileType;
+  mimeType?: string;
+};
+
+export type ProjectContextTreeFile = ProjectContextTreeEditableFile | ProjectContextTreeBinaryFile;
+
+export type ProjectContextTreeDirectory = {
+  kind: "dir";
+  name: string;
+  /** Slash-prefixed display/routing path; root is `/`. */
+  path: string;
+  uri: string;
+  readonly?: boolean;
+  children: ProjectContextTreeNode[];
+};
+
+export type ProjectContextTreeNode = ProjectContextTreeDirectory | ProjectContextTreeFile;
+
+export type ProjectContextTreeResponse = {
+  projectId: string;
+  scheme: ProjectContextTreeScheme;
+  tree: ProjectContextTreeDirectory;
+};
+
+export type ContextReadTrackedResponse = {
+  kind: "tracked";
+  /** Slash-prefixed display/routing path, e.g. `/project/README.md`. */
+  path: string;
+  /** Yjs schema family used to render/edit this projection. */
+  schemaType: YjsTrackedSchemaType;
+  /** Filetype determining the viewer/editor surface. */
+  filetype: Filetype;
+  /** Markdown/fenced projection of the canonical Yjs document. */
+  content: string;
+};
+
+export type ContextReadBinaryResponse = {
+  kind: "binary";
+  /** Slash-prefixed display/routing path, e.g. `/project/report.pdf`. */
+  path: string;
+  /** Short-lived URL for browser preview/download; clients must not persist it. */
+  url: string;
+  fileType: DocumentFileType;
+  mimeType: string;
+};
+
+export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
+
+export type CorpusImportSourceKind = "upload" | "google_drive_fixture" | "google_drive";
+
+export type CorpusImportItemResponse =
+  | {
+      status: "imported";
+      filename: string;
+      title: string;
+      uri: string;
+      documentId?: string;
+      source: { kind: CorpusImportSourceKind };
+      messages: string[];
+    }
+  | {
+      status: "skipped";
+      filename: string;
+      title: string;
+      reason: string;
+      source: { kind: CorpusImportSourceKind };
+    }
+  | {
+      status: "failed";
+      filename: string;
+      title: string;
+      reason: string;
+      source: { kind: CorpusImportSourceKind };
+    };
+
+export type CorpusImportResponse = {
+  projectId: string;
+  targetScheme: "kb";
+  requestedCount: number;
+  importedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  items: CorpusImportItemResponse[];
+};
+
+export type CreateThreadRequest = {
+  /** Client-provided ID for optimistic creation. Server generates one if omitted. */
+  id?: string;
+  projectId: string;
+  title?: string;
+  systemPrompt?: string;
+  /** Mars agent slug — when set, agent body becomes the thread system prompt. */
+  currentAgent?: string;
+  workId?: string | null;
+};
+
+export type CreateThreadResponse = Thread;
+
+/** Rebind agent on a thread that has not started. */
+export type UpdateThreadAgentRequest = {
+  /** Agent slug, or null for platform-default (no agent binding). */
+  currentAgent: string | null;
+};
+
+export type UpdateThreadAgentResponse = Thread;
+
+export type SendMessageRequest = {
+  text: string;
+  /** Client connection token from the WebSocket `connected` frame; ties turn ownership to a peer. */
+  connectionToken?: string;
+};
+
+export type SendMessageResponse = {
+  threadId: string;
+  userTurnId: string;
+  assistantTurnId: string;
+  streamCursor: string;
+  status: "accepted" | "already_active";
+};
+
+export type CancelTurnResponse = {
+  threadId: string;
+  turnId: string;
+  status: "cancelled" | "already_finished" | "not_found";
+};
+
+export type ThreadSnapshotResponse = {
+  threadId: string;
+  thread: Thread;
+  turns: Turn[];
+  liveState: ThreadLiveState;
+  waitingForUser: boolean;
+  nextSeq: string;
+};
+
+/** Dev-only: per-request model context captured by the orchestrator. */
+export type ModelRequestDebugListResponse = {
+  records: ModelRequestDebugRecord[];
+};
+
+export type ListThreadsResponse = {
+  threads: Thread[];
+};
+
+export type BinaryDocumentFileType = "docx" | "image" | "pdf";
+
+export type DocumentFileType = BinaryDocumentFileType | "binary";
+
+export interface FigureNodeReference {
+  /** Stable MyST figure src. This is not an expiring render URL. */
+  src: string;
+  alt: string;
+  label: string | null;
+  caption: string | null;
+}
+
+export interface FigureAssetReference {
+  documentId: string;
+  storageUrl: string;
+  mimeType: string;
+  fileType: BinaryDocumentFileType;
+  sizeBytes: number;
+  figure: FigureNodeReference;
+  /** Short-lived URL for immediate browser preview/rendering. Do not persist in Yjs. */
+  signedUrl: string;
+  signedUrlExpiresAt: string;
+}
+
+export type UploadFigureAssetResponse = FigureAssetReference;
+
+export type GetFigureSignedUrlResponse = {
+  documentId: string;
+  storageUrl: string;
+  mimeType: string;
+  fileType: BinaryDocumentFileType;
+  signedUrl: string;
+  signedUrlExpiresAt: string;
+};

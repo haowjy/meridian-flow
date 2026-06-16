@@ -1,153 +1,57 @@
-# Meridian
+# Meridian Flow
 
-AI Writing Assistant - a agentic writing system.
+Meridian Flow is a TypeScript-first writing platform for fiction writers managing long-running web serials. The v3 rebuild keeps the full-stack monorepo shape: thin deployable apps, domain packages for shared contracts and persistence, explicit server domains, and repo-level tooling for local dev, CI, smoke checks, and deployment scaffolding.
 
-## Project Status (Nov 29, 2025)
+For setup, see [DEVELOPMENT.md](DEVELOPMENT.md). For product context, see [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), and the project knowledge base.
 
-- ✅ Backend: Complete and functional (see `backend/README.md`)
-- ✅ Frontend: Complete (Vite + TanStack Router + CodeMirror)
+## Shared packages
 
-## Monorepo Structure
+| Package | Role |
+|---|---|
+| `@meridian/contracts` | Shared wire types, branded IDs, protocol events, thread DTOs, work/project contracts, interrupt/checkpoint types, and agent metadata. |
+| `@meridian/database` | Drizzle schema, migrations, PL/pgSQL functions, and Postgres connection helpers for the Supabase-backed local/runtime database. |
+| `@meridian/design-tokens` | Warm-paper design token package for colors, typography, spacing, and shared primitives. |
+| `@meridian/prosemirror-schema` | Shared ProseMirror structural contract for TipTap/Yjs document editing. |
 
-```
-meridian/
-├── backend/                 # Go + net/http + PostgreSQL
-│   ├── cmd/                 # Applications (server, seeder)
-│   ├── internal/            # Internal packages
-│   ├── tests/               # Testing artifacts
-│   ├── schema.sql           # Database schema
-│   ├── README.md            # Backend documentation
-│   └── QUICKSTART.md        # 5-minute setup guide
-├── _docs/                   # Product & technical documentation
-├── frontend/                # Vite + TanStack Router + CodeMirror
-└── README.md                # This file
-```
+Domain runtime lives in `apps/server/server/domains/`, not in package route handlers. See [AGENTS.md](AGENTS.md) for the active layout rules.
 
-## Phase 1: File System Foundation
+## Workspace layout
 
-**Goal**: Create, organize, and edit rich text documents with auto-save.
+- `apps/app/` — authenticated writing workspace (TanStack Start + React + TipTap)
+- `apps/server/` — Nitro API/WebSocket service: auth boundary, thread endpoints, orchestration, collaboration, packages, billing, storage, and server domains
+- `apps/www/` — public marketing site
+- `packages/` — shared TypeScript libraries
+- `supabase/` — local Supabase project for Postgres/auth development infrastructure
+- `tools/` — local dev, CI, deployment, smoke-test, and migration tooling
+- `tests/smoke/` — operator-facing smoke checks and browser/manual runbooks
 
-### Backend ✅ Complete
+## Quickstart
 
-Go REST API for file management:
-
-- Projects, folders, documents (full CRUD)
-- Path-based operations (`folder_id` or `folder_path`)
-- Bulk import from zip (merge/replace)
-- Automatic word counting
-- Path validation and normalization
-- CORS-enabled for frontend access
-- PostgreSQL/Supabase integration
-
-See `backend/README.md` and `backend/QUICKSTART.md` for setup.
-
-### Frontend ✅ Complete
-
-Vite + TanStack Router application with:
-
-- CodeMirror 6 markdown editor
-- Document tree/folder navigation
-- Auto-save (1 second debounce)
-- IndexedDB caching with Zustand
-- Word count display
-
-## Getting Started
-
-### Backend Setup
-
-1. **Set up Supabase**
-   - Create a project at [supabase.com](https://supabase.com)
-   - Run `backend/schema.sql` in Supabase SQL Editor
-
-2. **Configure environment**
-   ```bash
-   cd backend
-   cp .env.example .env
-   # Edit .env with your Supabase credentials
-   ```
-
-3. **Start the server**
-   ```bash
-   go run ./cmd/server/main.go
-   ```
-
-See the [Backend Quick Start Guide](./backend/QUICKSTART.md) for detailed instructions.
-
-### Frontend Setup
-
-1. **Install dependencies**
-   ```bash
-   cd frontend
-   pnpm install
-   ```
-
-2. **Start development server**
-   ```bash
-   pnpm run dev
-   ```
-
-See `frontend/README.md` for detailed documentation.
-
-## Tech Stack
-
-### Backend
-- **Language**: Go 1.25.3
-- **HTTP**: Go standard library `net/http`
-- **Database**: PostgreSQL via [Supabase](https://supabase.com/)
-- **Deployment**: Railway
-
-### Frontend
-- **Framework**: Vite + TanStack Router
-- **Editor**: CodeMirror 6 (markdown-native)
-- **State Management**: Zustand + IndexedDB (Dexie)
-- **Styling**: Tailwind CSS + Radix UI
-- **Deployment**: Vercel
-
-## API Docs
-
-- Overview: `_docs/technical/backend/api/overview.md`
-- Contracts & validation: `_docs/technical/backend/api/contracts.md`
-- Backend guide: `backend/README.md`
-
-## Features
-
-### Phase 1 (Current)
-- ✅ Create and organize documents
-- ✅ Path-based folder organization
-- ✅ Word count tracking
-- ✅ Zip import (merge/replace)
-
-### Phase 2 (Future)
-- 🔮 AI context building
-- 🔮 Semantic search
-- 🔮 Thread interface
-- 🔮 Full-text search
-- 🔮 User authentication
-- 🔮 Multiple projects
-
-## Development
-
-### Backend
 ```bash
-cd backend
-
-# Run server
-go run ./cmd/server/main.go
-
-# Build
-go build -o bin/server ./cmd/server
-
-# Test
-go test ./...
-```
-
-### Frontend
-```bash
-cd frontend
-
-# Install dependencies
+direnv allow
 pnpm install
-
-# Run dev server
-pnpm run dev
+pnpm supabase:start
+pnpm supabase:env   # copy values into .env from .env.example
+pnpm bootstrap
+pnpm dev
 ```
+
+Dev is portless: use `pnpm portless:list` for live `https://*.localhost` URLs instead of hard-coded raw ports.
+
+## Verification
+
+```bash
+pnpm check
+MODEL_PROVIDER=mock pnpm exec tsx tests/smoke/run.ts
+pnpm --filter @meridian/server smoke:thread-runtime
+```
+
+Database schema changes are generated by Drizzle in `packages/database`; local auth/database infrastructure is provided by Supabase CLI.
+
+## Pull requests
+
+Open PRs against `main` using the repo [pull request template](.github/PULL_REQUEST_TEMPLATE.md). Fill in the behavior, verification, knowledge updates, and spawn trace sections before merge.
+
+## Canonical docs policy
+
+Repo-root docs are pointer-oriented. Durable product decisions live in the Meridian knowledge base; local `.context/` files capture implementation-near facts that agents should read before changing code.

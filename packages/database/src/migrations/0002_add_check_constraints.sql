@@ -1,0 +1,14 @@
+ALTER TABLE "credit_transactions" ADD CONSTRAINT "credit_transactions_transaction_type_valid" CHECK ("credit_transactions"."transaction_type" IN ('purchase', 'grant', 'consumption', 'expiration', 'refund'));--> statement-breakpoint
+ALTER TABLE "user_subscriptions" ADD CONSTRAINT "user_subscriptions_plan_valid" CHECK ("user_subscriptions"."plan" IN ('pro'));--> statement-breakpoint
+ALTER TABLE "user_subscriptions" ADD CONSTRAINT "user_subscriptions_status_valid" CHECK ("user_subscriptions"."status" IN ('active', 'past_due', 'cancelled', 'trialing'));--> statement-breakpoint
+ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_scope_valid" CHECK ("context_sources"."scope" IN ('project', 'session'));--> statement-breakpoint
+ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_adapter_type_valid" CHECK ("context_sources"."adapter_type" IN ('local', 'google_drive', 'dropbox', 'notion'));--> statement-breakpoint
+ALTER TABLE "documents" ADD CONSTRAINT "documents_file_type_valid" CHECK ("documents"."file_type" IN ('markdown', 'docx', 'image', 'pdf', 'text'));--> statement-breakpoint
+ALTER TABLE "thread_documents" ADD CONSTRAINT "thread_documents_relationship_valid" CHECK ("thread_documents"."relationship" IN ('editing', 'reading', 'created'));--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_spawn_origin_required_fields" CHECK ("threads"."origin_type" != 'spawn' OR ("threads"."kind" = 'subagent' AND "threads"."parent_thread_id" IS NOT NULL AND "threads"."origin_turn_id" IS NOT NULL AND "threads"."spawn_status" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_fork_origin_required_fields" CHECK ("threads"."origin_type" != 'fork' OR ("threads"."kind" = 'primary' AND "threads"."parent_thread_id" IS NOT NULL AND "threads"."origin_turn_id" IS NOT NULL AND "threads"."handoff_summary" IS NULL));--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_handoff_origin_required_fields" CHECK ("threads"."origin_type" != 'handoff' OR ("threads"."kind" = 'primary' AND "threads"."parent_thread_id" IS NOT NULL AND "threads"."handoff_summary" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_organic_origin_fields_empty" CHECK ("threads"."origin_type" IS NOT NULL OR ("threads"."parent_thread_id" IS NULL AND "threads"."origin_turn_id" IS NULL AND "threads"."handoff_summary" IS NULL AND "threads"."spawn_status" IS NULL));--> statement-breakpoint
+ALTER TABLE "agent_skills" ADD CONSTRAINT "agent_skills_loading_mode_valid" CHECK ("agent_skills"."loading_mode" IN ('preloaded', 'available'));--> statement-breakpoint
+ALTER TABLE "skills" ADD CONSTRAINT "skills_type_valid" CHECK ("skills"."type" IN ('principle', 'guardrail', 'reference'));--> statement-breakpoint
+ALTER TABLE "skills" ADD CONSTRAINT "skills_source_type_valid" CHECK ("skills"."source_type" IN ('builtin', 'package', 'user'));

@@ -1,6 +1,0 @@
-[submodule "meridian-stream-go"]
-	path = meridian-stream-go
-	url = https://github.com/haowjy/meridian-stream-go
-[submodule "meridian-llm-go"]
-	path = meridian-llm-go
-	url = https://github.com/haowjy/meridian-llm-go

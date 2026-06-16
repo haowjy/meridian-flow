@@ -1,0 +1,83 @@
+/**
+ * CustomBlockRenderer — inline renderer for `blockType: "custom"` chat blocks.
+ *
+ * Purpose: Parses the custom block content, looks up `content.kind` in the
+ * component registry, and mounts the registered component with the component
+ * protocol props. Unknown or malformed content renders a visible placeholder
+ * rather than falling through to the generic block-step renderer.
+ * Key decision: components only call `respond(value)` with component-local data;
+ * this renderer attaches the checkpoint correlation tuple before handing the
+ * message to the chat transport/controller layer.
+ */
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
+import type { Block, TurnStatus } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/threads";
+import { componentBlockContent } from "./component-block-content";
+import { COMPONENT_REGISTRY } from "./component-registry";
+
+export type CheckpointRespondRequest = {
+  threadId: string;
+  turnId: string;
+  checkpointId: string;
+  value: JsonValue;
+};
+
+export type CustomBlockRendererProps = {
+  block: Block;
+  threadId: string;
+  turnStatus?: TurnStatus;
+  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+};
+
+export function CustomBlockRenderer({
+  block,
+  threadId,
+  turnStatus,
+  onRespondToCheckpoint,
+}: CustomBlockRendererProps) {
+  const content = componentBlockContent(block.content);
+  const kind = content?.kind ?? null;
+  const Component = kind ? COMPONENT_REGISTRY[kind] : undefined;
+
+  if (!content || !Component) {
+    return <UnknownComponentFallback block={block} kind={kind} />;
+  }
+
+  const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
+  const checkpointId = content.checkpoint?.id ?? null;
+  const respond = (value: JsonValue) => {
+    if (!checkpointId) return;
+    onRespondToCheckpoint?.({
+      threadId,
+      turnId: block.turnId,
+      checkpointId,
+      value,
+    });
+  };
+
+  return (
+    <Component
+      content={content}
+      respond={respond}
+      isAwaitingResponse={Boolean(
+        checkpointId && !hasResolvedValue && turnStatus === "waiting_checkpoint",
+      )}
+    />
+  );
+}
+
+function UnknownComponentFallback({ block, kind }: { block: Block; kind: string | null }) {
+  const kindLabel = kind ?? t`missing kind`;
+  return (
+    <div
+      className="mb-4 rounded-lg border border-subtle bg-surface-subtle px-3 py-2 text-xs text-muted-foreground"
+      data-block-id={block.id}
+      data-block-type={block.blockType}
+      data-block-seq={block.sequence}
+      role="note"
+    >
+      <Trans>Unknown component: {kindLabel}</Trans>
+    </div>
+  );
+}

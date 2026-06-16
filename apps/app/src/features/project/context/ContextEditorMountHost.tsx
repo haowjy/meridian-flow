@@ -1,0 +1,158 @@
+/**
+ * ContextEditorMountHost — hosts the *active* TRACKED context document with
+ * a bounded "keep-warm" set of recently-viewed editors.
+ *
+ * Why this exists. Switching context tabs naively (unmount old, mount new)
+ * tears down every `DocumentSession` on every click — losing cursor + scroll
+ * state and forcing a full Yjs sync round-trip. We want VS Code / Cursor
+ * behaviour: switching tabs is instant and preserves state. So we mount each
+ * recently-used tracked editor and hide the inactive ones with `hidden`
+ * instead of removing them from the React tree. Document-session transport
+ * subscriptions are retained by the registry for the true open-tab set, so a
+ * warm-set eviction drops only the view, not the live Yjs session.
+ *
+ * Bounded set. We cap the warm set at MAX (small) entries. The currently
+ * active tab is *always* in the warm set; on eviction we drop the least
+ * recently used (other) editor. Its `EditorView` unmounts, but the registry
+ * keeps the session alive until the tab actually closes or this host unmounts.
+ * That separation preserves document continuity without duplicate
+ * transport-level subscriptions when a view remounts.
+ *
+ * One host owns one slot per documentId — even a `documentId` re-entering
+ * the warm set re-uses its same JSX slot keyed by id, so it always passes
+ * through React's mount/unmount lifecycle in the natural order:
+ *   open A → mount A           [A:active]
+ *   open B → mount B           [A:warm, B:active]
+ *   open C → mount C           [A:warm, B:warm, C:active]  (if MAX≥3)
+ *   open D, evicting A:        unmount A → mount D         [B:warm, C:warm, D:active]
+ * React commits the unmount cleanup BEFORE the next render's mount effect for
+ * the same `documentId`, so subscribe/unsubscribe stay paired.
+ */
+import { type ReactNode, useEffect, useRef } from "react";
+
+import type { ContextTab } from "@/client/stores";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { EditorView } from "@/features/editor/EditorView";
+import { cn } from "@/lib/utils";
+
+const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
+
+type EditableContextTab = Extract<ContextTab, { editable: true }>;
+
+/** Concurrent-mount cap. The active tab is always counted; the remaining
+ *  slots hold the LRU "warm" editors so a switch back stays instant. */
+export const MAX_MOUNTED_EDITORS = 6;
+
+export type ContextEditorMountHostProps = {
+  projectId: string;
+  /** TRACKED tabs only — viewer tabs are routed elsewhere. */
+  trackedTabs: EditableContextTab[];
+  /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
+  activeTabId: string | null;
+  /**
+   * Leading slot threaded to the ACTIVE editor's formatting toolbar. Only
+   * the active tab's `EditorView` receives it — hidden warm-set editors
+   * pass `undefined` so their toolbar stays clean (they're not painted).
+   */
+  toolbarLeading?: ReactNode;
+};
+
+/**
+ * Picks which subset of TRACKED tab ids should be MOUNTED right now. The
+ * caller owns the LRU bookkeeping (a stack of document ids most-recently
+ * accessed first). We always include `activeTabId`, then fill with the LRU
+ * order until we hit `MAX_MOUNTED_EDITORS`.
+ */
+export function pickMountedIds(
+  lru: readonly string[],
+  trackedIds: readonly string[],
+  activeTabId: string | null,
+  cap: number,
+): Set<string> {
+  const known = new Set(trackedIds);
+  const out = new Set<string>();
+  if (activeTabId && known.has(activeTabId)) out.add(activeTabId);
+  for (const id of lru) {
+    if (out.size >= cap) break;
+    if (known.has(id)) out.add(id);
+  }
+  return out;
+}
+
+export function ContextEditorMountHost({
+  projectId,
+  trackedTabs,
+  activeTabId,
+  toolbarLeading,
+}: ContextEditorMountHostProps) {
+  // LRU stack of documentIds: head = most recent. Maintained in an effect so
+  // we never mutate state during render. The eviction policy reads from this
+  // every render to pick which tabs stay mounted.
+  const lruRef = useRef<string[]>([]);
+
+  // Bring the active tab to the front of the LRU stack whenever it changes.
+  useEffect(() => {
+    if (!activeTabId) return;
+    const next = [activeTabId, ...lruRef.current.filter((id) => id !== activeTabId)];
+    lruRef.current = next;
+  }, [activeTabId]);
+
+  // Drop ids for tabs that no longer exist so the LRU stack can't grow
+  // unbounded across long sessions. We key the effect on a stringified id
+  // list so we re-run when the membership actually changes, not on every
+  // parent render (the array identity is fresh each time).
+  const trackedIds = trackedTabs.map((t) => t.documentId);
+  const trackedIdsKey = trackedIds.join("|");
+  useEffect(() => {
+    const known = new Set(trackedIds);
+    lruRef.current = lruRef.current.filter((id) => known.has(id));
+  }, [trackedIdsKey]);
+
+  // Reconcile this desktop host's open-document set with the registry.
+  // Sessions outlive view mounts (so leaving Context / warm-set eviction no
+  // longer tears down Yjs); they are reclaimed when their document closes
+  // (drops out of `trackedTabs`) or when this host unmounts entirely.
+  useEffect(() => {
+    getDocumentSessionRegistry().retain(DESKTOP_CONTEXT_EDITOR_OWNER, trackedIds);
+  }, [trackedIdsKey]);
+
+  useEffect(() => {
+    return () => {
+      getDocumentSessionRegistry().release(DESKTOP_CONTEXT_EDITOR_OWNER);
+    };
+  }, []);
+
+  const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      {trackedTabs.map((tab) => {
+        if (!mounted.has(tab.documentId)) return null;
+        const isActive = tab.documentId === activeTabId;
+        return (
+          <div
+            key={tab.documentId}
+            data-context-editor-document-id={tab.documentId}
+            className={cn(
+              // Each editor fills the host's frame; only the active one is
+              // visible. `hidden` keeps DOM/state alive without painting.
+              "absolute inset-0 flex min-h-0 flex-col",
+              isActive ? "" : "hidden",
+            )}
+            // Defensive: aria-hidden hides background editors from AT.
+            aria-hidden={!isActive}
+          >
+            {/* Filename chrome is host-owned: the context tab strip names the
+                active file, so EditorView renders no redundant header bar. */}
+            <EditorView
+              projectId={projectId}
+              documentId={tab.documentId}
+              schemaType={tab.schemaType}
+              toolbarLeading={isActive ? toolbarLeading : undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}

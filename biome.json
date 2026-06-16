@@ -1,0 +1,45 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.output",
+      "!**/.nx",
+      "!**/.mars",
+      "!**/.meridian",
+      "!**/.codex-local",
+      "!**/routeTree.gen.ts",
+      "!apps/**/src/styles",
+      "!packages/design-tokens/src/*.css",
+      "!apps/app/.auth",
+      "!apps/app/test-results",
+      "!apps/app/playwright-report",
+      "!.claude",
+      "!.codex",
+      "!.pi",
+      "!.opencode",
+      "!.cursor"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  }
+}

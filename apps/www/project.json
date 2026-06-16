@@ -1,0 +1,24 @@
+{
+  "name": "@meridian/www",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/www/src",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/www typecheck"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @meridian/www test"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

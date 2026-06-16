@@ -1,9 +1,0 @@
-.env
-.env.local
-.git
-.gitignore
-bin/
-*.md
-Makefile
-.DS_Store
-

@@ -1,0 +1,98 @@
+---
+detail: standard
+audience: developer, architect
+---
+# Collab Data Model v2
+
+**Status:** approved
+
+## Why
+
+The v1 collab design accumulated unnecessary complexity: legacy text-derived hunk identity, extra review-state indirection, delayed resolution semantics, and a persistent AI document. v2 simplifies to one canonical Y.Doc, ephemeral projection, and immediate undoable actions.
+
+This plan covers core data model changes (append-only persistence, yjs_update proposals, decision state in Yjs) and the manual-path experience for reviewing proposed changes. The proposal model is participant-agnostic — proposals can come from AI agents or human collaborators. Both auto-apply and manual modes are continuous.
+
+## Core Model
+
+```mermaid
+flowchart LR
+    A["Collaborator proposes edit"] --> B["Proposal with yjs_update"]
+    B --> C{"auto-apply?"}
+    C -->|yes| D["Apply to canonical<br/>mark accepted"]
+    C -->|no| E["Store as pending"]
+    E --> F["Per-user projection:<br/>clone + apply + diff"]
+    F --> G["Owner sees inline hunks<br/>accepts/rejects when ready"]
+```
+
+- One canonical Y.Doc: `Y.Text('content')` + `Y.Map('_proposal_status')`
+- Proposals store `yjs_update` (binary Yjs operations)
+- Diff is ephemeral: clone canonical, apply pending proposals, diff, group into hunks, discard
+- Actions are immediate: accept/reject are Yjs transactions, undoable via Ctrl-Z
+- Projection GC auto-marks stale proposals (no remaining diff)
+- Thread-level undo/reapply: revert or reapply any individual proposal through the UI, in either mode
+- Per-user projection: each user sees only their own pending proposals; other users' activity shown as awareness indicators
+
+## Spec Documents
+
+| Doc | Purpose |
+|-----|---------|
+| [Architecture](spec/architecture.md) | Data model evolution, canonical + projection model, two modes, key decisions |
+| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints, bookmarks, compaction, GC strategy |
+| [Frontend Diff Model](spec/frontend-diff-model.md) | Projection/diff pipeline, grouped region hunks, CM6 rendering |
+| [Local-First Authority](spec/local-first-authority.md) | Immediate local actions, transaction code, backend status mirroring |
+| [Undo Design](spec/undo.md) | Session Ctrl-Z + thread-level undo/reapply |
+| [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
+| [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
+
+## Future
+
+Designs for features that build on the core v2 model but are separate work streams:
+
+| Doc | Purpose |
+|-----|---------|
+| [Editor Strategy](future/editor-strategy.md) | CM6 decision rationale, block rendering extensions, DOCX/PDF import/export |
+| [Review Comments](future/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
+
+## Verification
+
+Target state specs for verifying implementation completeness -- what the system should look like when done, and what must be cleaned up.
+
+| Doc | Purpose |
+|-----|---------|
+| [Target Architecture](verification/target-architecture.md) | Authority model, separation of concerns, persistence layer, what backend does vs doesn't do |
+| [Target API](verification/target-api.md) | Complete REST/WS endpoint list, removed endpoints, internal interface changes |
+| [Cleanup Checklist](verification/cleanup-checklist.md) | Tables, columns, files, interfaces, and code to remove -- with verification grep commands |
+
+## UX Behaviors
+
+Concrete walkthroughs of what the writer sees and does -- editor mockups, state transitions, edge cases.
+
+| Doc | Flow |
+|-----|------|
+| [Proposal Review](ux/proposal-review.md) | AI proposes edits, writer accepts/rejects individual hunks |
+| [Thread Undo](ux/thread-undo.md) | Writer reverts/reapplies accepted edits days later via thread UI |
+| [Auto-Apply Mode](ux/auto-apply-mode.md) | Changes land immediately, writer reverts what they don't like |
+
+## Research
+
+[Research Notes](_other/research.md) -- competitive landscape, CRDT research, and ecosystem analysis. These are background reference notes only; they informed the design but are not required reading for implementation. Skip unless you need to understand *why* a decision was made.
+
+## Implementation Strategy
+
+A complete frontend overhaul is planned separately. For v2 implementation, **do not integrate into the production frontend**. Instead:
+
+- Backend changes (schema, append-only persistence, status mirror) land in production normally.
+- Frontend logic is built and verified in two layers:
+  1. **Pure Yjs toys** (`toy/`) -- validate data model logic (projection, undo, status mirror) without any editor. Already exists (`frontend.html`, `backend.go`).
+  2. **Dev-only CM6 route** -- bare `EditorView` + `y-codemirror.next` + the projection/diff pipeline. Validates real CM6 behavior (decorations, `map()` remapping, widget interactions) without production components or styling. Minimal UI -- just enough to test hunk rendering, accept/reject, and undo.
+- Production frontend integration happens during the UI/UX overhaul, using the verified dev route logic as the reference implementation.
+
+## Dependencies
+
+- **Yjs collab foundation complete** -- canonical Y.Doc sync is the transport foundation.
+- **Current proposal system stable** -- this redesign refines proposal resolution behavior.
+
+## Relationship to Existing Plans
+
+- **Supersedes** v1 specs (`backend-hunk-authority.md`, `proposal-undo.md`)
+- **References** `_docs/technical/collab/` for current implementation docs
