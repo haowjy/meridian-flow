@@ -18,8 +18,12 @@
  */
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import {
+  isTerminalTurnStatus,
+  type OrchestratorEvent,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
@@ -69,4 +73,24 @@ export async function finalizeError(
     };
   });
   return events;
+}
+
+/** Idempotent terminal finalize when a background generator exits without yielding. */
+export async function finalizeTurnOnGeneratorFailure(
+  deps: Pick<OrchestratorDeps, "repos" | "eventWriter">,
+  input: {
+    threadId: ThreadId;
+    assistantTurnId: TurnId;
+    error: unknown;
+    signal?: AbortSignal;
+  },
+): Promise<OrchestratorEvent[]> {
+  const turn = await deps.repos.turns.findById(input.assistantTurnId);
+  if (!turn || turn.threadId !== input.threadId) return [];
+  if (isTerminalTurnStatus(turn.status)) return [];
+  if (input.signal?.aborted) {
+    return finalizeCancelled(deps, input.threadId, turn);
+  }
+  const message = input.error instanceof Error ? input.error.message : String(input.error);
+  return finalizeError(deps, input.threadId, turn, message);
 }

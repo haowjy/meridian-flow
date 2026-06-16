@@ -2128,4 +2128,67 @@ describe("runtime loop integration", () => {
     const recorded = eventWriter.getEvents(thread.id);
     expect(recorded.at(-1)?.event.type).toBe("turn.error");
   });
+
+  it("finalizes as error when setup before the agent loop throws", async () => {
+    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        async read() {
+          throw new Error("preferences DB unavailable");
+        },
+      },
+    );
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+
+    const events = await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }),
+    );
+
+    const assistantCreated = events.find(
+      (e): e is Extract<OrchestratorEvent, { type: "turn.created" }> =>
+        e.type === "turn.created" && e.turn.role === "assistant",
+    );
+    if (!assistantCreated) throw new Error("missing assistant turn");
+
+    const assistantTurn = await repos.turns.findById(assistantCreated.turn.id);
+    expect(assistantTurn?.status).toBe("error");
+    expect(assistantTurn?.status).not.toBe("streaming");
+    expect(events.at(-1)?.type).toBe("turn.error");
+    expect(
+      eventWriter.getEvents(thread.id).filter((entry) => entry.event.type === "turn.error"),
+    ).toHaveLength(1);
+  });
+
+  it("finalizeGeneratorFailure is idempotent after generator error finalization", async () => {
+    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        async read() {
+          throw new Error("preferences DB unavailable");
+        },
+      },
+    );
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "hello" });
+    await collectEvents(handle);
+
+    const assistantTurn = await repos.turns.findById(handle.assistantTurnId);
+    expect(assistantTurn?.status).toBe("error");
+
+    await orchestrator.finalizeGeneratorFailure({
+      threadId: thread.id,
+      assistantTurnId: handle.assistantTurnId,
+      error: new Error("duplicate finalize"),
+    });
+
+    expect(
+      eventWriter.getEvents(thread.id).filter((entry) => entry.event.type === "turn.error"),
+    ).toHaveLength(1);
+  });
 });

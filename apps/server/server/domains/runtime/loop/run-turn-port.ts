@@ -26,9 +26,20 @@ export interface RunTurnHandle {
   events: AsyncGenerator<OrchestratorEvent>;
 }
 
+export interface FinalizeGeneratorFailureInput {
+  threadId: ThreadId;
+  assistantTurnId: TurnId;
+  error: unknown;
+  signal?: AbortSignal;
+}
+
 export interface RunTurnPort {
   runTurn(input: RunTurnInput): Promise<RunTurnHandle>;
+  /** Persist + journal a terminal outcome when the event generator throws. */
+  finalizeGeneratorFailure(input: FinalizeGeneratorFailureInput): Promise<void>;
 }
+
+export const noopFinalizeGeneratorFailure: RunTurnPort["finalizeGeneratorFailure"] = async () => {};
 
 export function createLateBindRunTurnPort(): RunTurnPort & { bind(target: RunTurnPort): void } {
   let target: RunTurnPort | null = null;
@@ -36,6 +47,10 @@ export function createLateBindRunTurnPort(): RunTurnPort & { bind(target: RunTur
     runTurn(input) {
       if (!target) throw new Error("RunTurnPort not yet bound");
       return target.runTurn(input);
+    },
+    finalizeGeneratorFailure(input) {
+      if (!target) throw new Error("RunTurnPort not yet bound");
+      return target.finalizeGeneratorFailure(input);
     },
     bind(t: RunTurnPort) {
       target = t;

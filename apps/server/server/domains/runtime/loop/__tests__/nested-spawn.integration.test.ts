@@ -146,14 +146,20 @@ describe("nested spawn runtime (P2b gate)", () => {
 
     let orchestrator: ReturnType<typeof createOrchestrator>;
     const runner = createTurnRunner({
-      orchestrator: { runTurn: (input) => orchestrator.runTurn(input) },
+      orchestrator: {
+        runTurn: (input) => orchestrator.runTurn(input),
+        finalizeGeneratorFailure: (input) => orchestrator.finalizeGeneratorFailure(input),
+      },
       hub,
       repos: { turns: repos.turns },
       eventSink: createInMemoryEventSink(),
     });
 
     const coordinator = createChildRunCoordinator({
-      orchestrator: { runTurn: (input) => orchestrator.runTurn(input) },
+      orchestrator: {
+        runTurn: (input) => orchestrator.runTurn(input),
+        finalizeGeneratorFailure: (input) => orchestrator.finalizeGeneratorFailure(input),
+      },
       repos: {
         threads: repos.threads,
         subagentThreads: repos.threads,

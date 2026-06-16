@@ -230,6 +230,12 @@ export function createTurnRunner(deps: {
                 ...unknownToEventPayload(error),
               },
             });
+            await deps.orchestrator.finalizeGeneratorFailure({
+              threadId: input.threadId,
+              assistantTurnId: handle.assistantTurnId,
+              error,
+              signal: controller.signal,
+            });
           } finally {
             unregisterConnectionOwnership(input.connectionToken, input.threadId);
             running.delete(input.threadId);

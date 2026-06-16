@@ -105,7 +105,11 @@ import {
   type CheckpointRegistry,
   defaultCheckpointAutoResumePolicy,
 } from "./checkpoints.js";
-import { finalizeCancelled, finalizeError } from "./finalization.js";
+import {
+  finalizeCancelled,
+  finalizeError,
+  finalizeTurnOnGeneratorFailure,
+} from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
 import type { PermissionGate } from "./permissions/index.js";
 import { appendEvent, persistAndAppendEvents } from "./persistence.js";
@@ -161,6 +165,9 @@ export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
   return {
     runTurn(input: RunTurnInput): Promise<RunTurnHandle> {
       return runTurn(deps, input);
+    },
+    async finalizeGeneratorFailure(input) {
+      await finalizeTurnOnGeneratorFailure(deps, input);
     },
   };
 }
@@ -708,19 +715,19 @@ async function* generateEvents(
 
   // Local state: accumulate turns + blocks to avoid re-reading the entire
   // thread from the DB on every tool-loop iteration.
-  const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
-  const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
-  const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
   let currentAssistantTurn: Turn = assistantTurn;
-  let iteration = 0;
-  const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
-
-  // ── Agentic turn loop ──
-  // Each iteration: build context → stream model → persist response +
-  // blocks → optionally execute tools → repeat or finalize.
-  // Every cancellation/error path must yield terminal events, not just
-  // return/throw, so subscribers see the turn lifecycle closure.
   try {
+    const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
+    const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
+    const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
+    let iteration = 0;
+    const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
+
+    // ── Agentic turn loop ──
+    // Each iteration: build context → stream model → persist response +
+    // blocks → optionally execute tools → repeat or finalize.
+    // Every cancellation/error path must yield terminal events, not just
+    // return/throw, so subscribers see the turn lifecycle closure.
     while (true) {
       iteration += 1;
       if (iteration > MAX_TURN_ITERATIONS) {
@@ -988,14 +995,12 @@ async function* generateEvents(
   } catch (err) {
     // Unexpected exception (e.g. DB failure, tool crash). If the signal is
     // already aborted, treat as cancellation; otherwise finalize as error.
-    // We re-throw after yielding events so the caller (turn-runner) can log.
-    if (input.signal?.aborted) {
-      yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
-      return;
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    yield* await finalizeError(deps, input.threadId, currentAssistantTurn, message);
-    throw err;
+    yield* await finalizeTurnOnGeneratorFailure(deps, {
+      threadId: input.threadId,
+      assistantTurnId: currentAssistantTurn.id,
+      error: err,
+      signal: input.signal,
+    });
   } finally {
     // Helper result delivery is flushed by callers after their live-turn registry
     // is cleared. Draining here would race queued helper system turns into a

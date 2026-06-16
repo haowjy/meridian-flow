@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-
+import { noopFinalizeGeneratorFailure } from "../run-turn-port.js";
 import { createTurnRunner, StaleConnectionTokenError } from "../turn-runner.js";
 
 async function* emptyEvents() {
@@ -25,6 +25,7 @@ describe("createTurnRunner", () => {
             events: emptyEvents(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: {
@@ -57,6 +58,7 @@ describe("createTurnRunner", () => {
             events: emptyEvents(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: {
@@ -99,6 +101,7 @@ describe("createTurnRunner", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: {
@@ -140,6 +143,7 @@ describe("createTurnRunner", () => {
             events: emptyEvents(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: {
