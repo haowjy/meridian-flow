@@ -17,6 +17,10 @@ streaming `Gateway` port.
 | Retry/fallback | exponential back-off and optional ordered fallback only before output has been emitted |
 | Deadline | per-attempt wall-clock timeout (`GatewayConfig.attemptTimeoutMs`, env `MODEL_CALL_TIMEOUT_MS`, default 120s), enforced with a derived `AbortSignal` |
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptTimeoutMs` policy; `createGatewayFromEnv` for env-driven setup |
+| Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
+| Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
+| OpenRouter | Restored via `openai-compatible` adapter (config entry). Provider-reported cost path via `/generation` enrichment. |
+| Cancel settlement | `cancel-settlement.ts` — soft-cancel/drain on user abort + cancel-on-disconnect (connectionToken ownership). Idempotent debits. |
 
 Canonical gateway types live in `gateway/domain/types.ts`.
 
@@ -38,7 +42,7 @@ skeleton and delegates the moving parts.
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
-| `finalization.ts` | Terminal turn status + thread status transitions. |
+| `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 

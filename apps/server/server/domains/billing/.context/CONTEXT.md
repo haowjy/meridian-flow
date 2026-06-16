@@ -1,18 +1,23 @@
-# domains/billing — credit ledger & pricing
+# domains/billing — credit ledger & pricing (registry-sourced)
 
 Owns the credit lot model (canonical balance truth), the `CreditLedger` port,
-and model-call pricing conversions. The runtime cost gate and spawn rollups
-consume this domain.
+and model-call pricing conversions. Rates are single-sourced from the gateway's
+`MODEL_REGISTRY` — the flat `MODEL_TOKEN_RATES` table is **deleted**.
 
 ## What it owns
 
 - **Credit ledger port** — `grant`, `debit` (FIFO lot consumption with
   usage-event idempotency), `getBalance`, and per-run/per-agent/per-thread
   debit total queries.
-- **Pricing** — `ModelTokenRate` lookup and `computeModelCost` for converting
-  token usage to USD and millicredits.
+- **Pricing** — `PinnedModelRate` (gateway-local type, imported from gateway's
+  `registry.ts`), `createLayeredTokenRateSource` (pinned + fallback layers),
+  `computeModelCost` for converting token usage to USD and millicredits.
 - **Domain types** — `CreditGrantInput`, `CreditDebitInput`, `CreditLedger`
   interface.
+- **Provider-reported cost (OpenRouter)** — passed through as
+  `priceSource: "provider"` with `pricingSnapshot` on `model_responses`.
+  `model_responses` now persists `provider_request_id`, `price_source`, and
+  `pricing_snapshot` for billing audit.
 
 ## Ports
 
@@ -51,10 +56,15 @@ parity reference; they are not consumed by the Drizzle adapter.
 - **FIFO consumption** with debt-lot overspend support.
 - **`transactionId` for debits** is the `consumptionGroupId` (a
   `crypto.randomUUID()`), not a row ID from the DB.
+- **Pricing source priority:** provider-reported cost (OpenRouter) → pinned
+  rates (direct providers). The gateway-local `PinnedModelRate` type breaks the
+  dependency cycle (gateway does not import billing types).
 
 ## Cross-domain dependencies
 
 - **Consumed by `domains/runtime`** — `turn-accounting.ts` and
-  `ChildRunCoordinator` check/consume credits.
-- **Depends on `@meridian/database/schema`** — `creditLots`, `creditTransactions`.
+  `ChildRunCoordinator` check/consume credits. `cancel-settlement.ts` handles
+  soft-cancel/drain billing.
+- **Depends on `@meridian/database/schema`** — `creditLots`, `creditTransactions`,
+  `modelResponses` (for pricing audit columns).
 - **Depends on `lib/` shared** — `currentDrizzleDb` transaction context.
