@@ -16,7 +16,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { EditorView } from "@/features/editor/EditorView";
@@ -39,6 +39,7 @@ export function MobileDocumentHost({
   activeContextScheme,
   activeContextPath,
 }: MobileDocumentHostProps) {
+  const workId = useContextWorkId(projectId, activeThreadId);
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
     projectId,
@@ -51,8 +52,8 @@ export function MobileDocumentHost({
       return null;
     }
     const file = findContextFile(tree, activeContextPath);
-    return file ? contextTabFromFile(activeContextScheme, file) : null;
-  }, [activeContextPath, activeContextScheme, hasRouteDocument, tree]);
+    return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
+  }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
 
   useEffect(() => {
     if (activeTab?.editable) {

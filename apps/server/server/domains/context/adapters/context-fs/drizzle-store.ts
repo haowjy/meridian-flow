@@ -322,6 +322,18 @@ function locationRevision(updatedAt: Date | string): string {
   return updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt;
 }
 
+function revisionAt(revision: string): Date {
+  return new Date(revision);
+}
+
+function documentRevisionWhere(revision: string) {
+  return revision ? [eq(documents.updatedAt, revisionAt(revision))] : [];
+}
+
+function folderRevisionWhere(revision: string) {
+  return revision ? [eq(folders.updatedAt, revisionAt(revision))] : [];
+}
+
 function isPgConstraintError(error: unknown): boolean {
   const code =
     typeof error === "object" && error !== null ? (error as { code?: unknown }).code : null;
@@ -341,7 +353,18 @@ function rollback(code: ContextTreeMutationError["code"]): never {
 
 /** Drizzle implementation of the backing-scoped atomic ContextFS tree mutator. */
 export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore {
+  private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
+
   constructor(private readonly db: Database) {}
+
+  /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
+  setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
+    this.beforeDestructiveWrite = hook;
+  }
+
+  private async runBeforeDestructiveWrite(): Promise<void> {
+    await this.beforeDestructiveWrite?.();
+  }
 
   private async withMutationTransaction<T>(
     operation: () => Promise<Result<T, ContextTreeMutationError>>,
@@ -556,6 +579,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
       if (input.source.kind === "file") {
         if (targetToken?.kind === "file") {
+          await this.runBeforeDestructiveWrite();
           const deletedTarget = await currentDrizzleDb(this.db)
             .update(documents)
             .set({ deletedAt: now, updatedAt: now })
@@ -564,6 +588,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
                 eq(documents.id, targetToken.nodeId),
                 eq(documents.contextSourceId, input.destinationSourceId),
                 isNull(documents.deletedAt),
+                ...documentRevisionWhere(targetToken.revision),
               ),
             )
             .returning({ id: documents.id });
@@ -572,6 +597,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         }
 
         const { name, extension } = parseFilename(targetBasename);
+        await this.runBeforeDestructiveWrite();
         const moved = await currentDrizzleDb(this.db)
           .update(documents)
           .set({
@@ -586,6 +612,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(documents.id, input.source.nodeId),
               eq(documents.contextSourceId, input.source.sourceId),
               isNull(documents.deletedAt),
+              ...documentRevisionWhere(input.source.revision),
             ),
           )
           .returning({ id: documents.id });
@@ -597,6 +624,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       if (input.source.sourceId === input.destinationSourceId) {
+        await this.runBeforeDestructiveWrite();
         const movedRoot = await currentDrizzleDb(this.db)
           .update(folders)
           .set({
@@ -609,6 +637,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(folders.id, input.source.nodeId),
               eq(folders.contextSourceId, input.source.sourceId),
               isNull(folders.deletedAt),
+              ...folderRevisionWhere(input.source.revision),
             ),
           )
           .returning({ id: folders.id });
@@ -660,6 +689,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       `);
       if (!movedFolders.some((row) => row.id === input.source.nodeId)) rollback("stale_source");
 
+      await this.runBeforeDestructiveWrite();
       const movedRoot = await currentDrizzleDb(this.db)
         .update(folders)
         .set({ parentId: destParentId, name: targetBasename, updatedAt: new Date() })
@@ -668,6 +698,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             eq(folders.id, input.source.nodeId),
             eq(folders.contextSourceId, input.destinationSourceId),
             isNull(folders.deletedAt),
+            ...folderRevisionWhere(input.source.revision),
           ),
         )
         .returning({ id: folders.id });
@@ -709,6 +740,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const now = new Date();
 
       if (token.kind === "file") {
+        await this.runBeforeDestructiveWrite();
         const deleted = await currentDrizzleDb(this.db)
           .update(documents)
           .set({ deletedAt: now, updatedAt: now })
@@ -717,6 +749,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(documents.id, token.nodeId),
               eq(documents.contextSourceId, token.sourceId),
               isNull(documents.deletedAt),
+              ...documentRevisionWhere(token.revision),
             ),
           )
           .returning({ id: documents.id });
@@ -750,6 +783,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         .limit(1);
       if (childDocument) return Err({ code: "invalid_operation" });
 
+      await this.runBeforeDestructiveWrite();
       const deleted = await currentDrizzleDb(this.db)
         .update(folders)
         .set({ deletedAt: now, updatedAt: now })
@@ -758,6 +792,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             eq(folders.id, token.nodeId),
             eq(folders.contextSourceId, token.sourceId),
             isNull(folders.deletedAt),
+            ...folderRevisionWhere(token.revision),
           ),
         )
         .returning({ id: folders.id });

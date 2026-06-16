@@ -22,6 +22,7 @@ import { CreateContextEntryMenu } from "./CreateContextEntryMenu";
 import type { ContextCreateKind } from "./context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
+import { contextTabFromFile } from "./context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 
 export type ContextTreePanelProps = {
@@ -150,6 +151,7 @@ function SchemeSection({
     enabled: isOpen,
     activeThreadId,
   });
+  const workId = useContextWorkId(projectId, activeThreadId);
 
   // Resolve the newly-created file once the refetched tree has it, and open
   // it as a tab. If the path doesn't resolve (delete race, rename), we drop
@@ -163,25 +165,9 @@ function SchemeSection({
       setPendingOpenPath(null);
       return;
     }
-    openTab(projectId, {
-      documentId: file.documentId,
-      scheme,
-      path: file.path,
-      name: file.name,
-      ...(file.editable
-        ? {
-            editable: true as const,
-            filetype: file.filetype,
-            schemaType: file.schemaType,
-          }
-        : {
-            editable: false as const,
-            fileType: file.fileType,
-            mimeType: file.mimeType,
-          }),
-    });
+    openTab(projectId, contextTabFromFile(scheme, file, workId));
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, openTab, projectId, scheme]);
+  }, [pendingOpenPath, tree, openTab, projectId, scheme, workId]);
 
   const Chevron = ChevronRight;
   const label = schemeLabel(scheme);

@@ -28,6 +28,7 @@ import type {
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -37,6 +38,8 @@ export type ContextTab = {
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
+  /** Owning work for work-scoped schemes (`work`, `uploads`). */
+  workId?: string;
 } & (
   | {
       editable: true;
@@ -67,6 +70,8 @@ type ContextTabsActions = {
    */
   closeTab: (projectId: string, documentId: string) => ContextTab | null;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
+  /** Drop work-scoped tabs that belong to a different active work. */
+  pruneWorkScopedTabs: (projectId: string, activeWorkId: string | null) => void;
   /** Clear every tab for a project — used when the project is deleted. */
   clearProject: (projectId: string) => void;
 };
@@ -144,6 +149,18 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         });
       },
 
+      pruneWorkScopedTabs: (projectId, activeWorkId) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          const nextTabs = slice.tabs.filter((tab) => {
+            if (!isWorkScopedProjectContextScheme(tab.scheme)) return true;
+            return tab.workId === activeWorkId;
+          });
+          if (nextTabs.length === slice.tabs.length) return state;
+          return patchSlice(state, projectId, { tabs: nextTabs });
+        });
+      },
+
       clearProject: (projectId) => {
         set((state) => {
           if (!state.byProject[projectId]) return state;
@@ -167,6 +184,7 @@ export function useContextTabsActions(): ContextTabsActions {
       openTab: s.openTab,
       closeTab: s.closeTab,
       reorderTabs: s.reorderTabs,
+      pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
     })),
   );
