@@ -77,6 +77,16 @@ export type ListWorksResponse = {
 
 export type ProjectContextTreeScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
 
+/** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
+export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
+  "work",
+  "uploads",
+]);
+
+export function isWorkScopedProjectContextScheme(scheme: ProjectContextTreeScheme): boolean {
+  return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
+}
+
 type ProjectContextTreeFileBase = {
   kind: "file";
   /** Persisted documents.id UUID used by Yjs and figure routes. */

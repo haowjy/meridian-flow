@@ -2,7 +2,7 @@ import type { CorpusImportItemResponse, CorpusImportResponse } from "@meridian/c
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileUp, FolderOpen, Loader2, TriangleAlert } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { importDriveFixture, uploadCorpusFiles } from "@/client/api/corpus-import-api";
+import { importDriveFixture, uploadCorpusFiles } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { cn } from "@/lib/utils";
 

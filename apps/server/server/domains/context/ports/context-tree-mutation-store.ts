@@ -17,6 +17,8 @@ export type ContextLocationToken =
       sourceId: string;
       /** Normalized scheme-relative path that resolved to this node. */
       path: string;
+      /** `documents.updated_at` observed at prepare — content-safe CAS revision. */
+      revision: string;
     }
   | {
       kind: "directory";
@@ -26,6 +28,8 @@ export type ContextLocationToken =
       sourceId: string;
       /** Normalized scheme-relative path that resolved to this node. */
       path: string;
+      /** `folders.updated_at` observed at prepare; empty for the synthetic source root. */
+      revision: string;
     };
 
 export type ContextTargetExpectation =

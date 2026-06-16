@@ -313,8 +313,13 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
     a?.kind === b?.kind &&
     a?.nodeId === b?.nodeId &&
     a?.sourceId === b?.sourceId &&
-    a?.path === b?.path
+    a?.path === b?.path &&
+    a?.revision === b?.revision
   );
+}
+
+function locationRevision(updatedAt: Date | string): string {
+  return updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt;
 }
 
 function isPgConstraintError(error: unknown): boolean {
@@ -457,12 +462,34 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {
     const normalized = normalizeTreePath(path);
     if (!normalized) {
-      return { kind: "directory", nodeId: CONTEXT_ROOT_DIRECTORY_ID, sourceId, path: "" };
+      return {
+        kind: "directory",
+        nodeId: CONTEXT_ROOT_DIRECTORY_ID,
+        sourceId,
+        path: "",
+        revision: "",
+      };
     }
     const doc = await this.findDocumentAtPath(sourceId, normalized);
-    if (doc) return { kind: "file", nodeId: doc.id, sourceId, path: normalized };
+    if (doc) {
+      return {
+        kind: "file",
+        nodeId: doc.id,
+        sourceId,
+        path: normalized,
+        revision: locationRevision(doc.updatedAt),
+      };
+    }
     const folder = await this.findFolderAtPath(sourceId, normalized);
-    if (folder) return { kind: "directory", nodeId: folder.id, sourceId, path: normalized };
+    if (folder) {
+      return {
+        kind: "directory",
+        nodeId: folder.id,
+        sourceId,
+        path: normalized,
+        revision: locationRevision(folder.updatedAt),
+      };
+    }
     return null;
   }
 

@@ -51,7 +51,7 @@ function makeResult(overrides: Partial<ProjectResultItem> = {}): ProjectResultIt
     id: "result_1",
     projectId: "wb-1",
     workspacePath: "/work/results/figure.png",
-    resultsUri: "results://wb-1/figure.png",
+    resultsUri: "work://work-1/results/figure.png",
     mimeType: "image/png",
     sizeBytes: 1024,
     rootThreadId: "thread-root",
@@ -75,7 +75,7 @@ describe("Results rail pure helpers", () => {
     it("falls back to the resultsUri tail when workspace path is empty", () => {
       expect(
         displayName(
-          makeResult({ workspacePath: "", resultsUri: "results://wb-1/exports/table.csv" }),
+          makeResult({ workspacePath: "", resultsUri: "work://work-1/results/exports/table.csv" }),
         ),
       ).toBe("table.csv");
     });

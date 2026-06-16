@@ -8,13 +8,10 @@ import { createPaymentProviderFromEnv } from "../domains/billing/payment-provide
 import { createDocumentSyncService } from "../domains/collab/index.js";
 import {
   createCheckpointArtifactFlush,
-  createCorpusImportService,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
   createFigureAssetService,
-  createFixtureDriveImportSource,
-  createMammothDocumentConverter,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
@@ -116,11 +113,6 @@ async function createAppServices(): Promise<AppServices> {
   const promotionService = createPromotionService({ objectStore, results });
   const documentAccess = createDrizzleDocumentAccess(db);
   const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
-  const corpusImport = createCorpusImportService({
-    contextPorts,
-    converter: createMammothDocumentConverter(),
-    driveSource: createFixtureDriveImportSource(),
-  });
   const tools = createRuntimeToolRegistry({
     db,
     contextPorts,
@@ -264,7 +256,6 @@ async function createAppServices(): Promise<AppServices> {
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
       documentSync,
       contextPorts,
-      corpusImport,
       onboarding,
       projects,
       works: workRepo,

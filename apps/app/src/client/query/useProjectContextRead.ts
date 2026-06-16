@@ -14,9 +14,12 @@
  */
 
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 
 import { getProjectContextRead } from "@/client/api/projects-api";
+
+import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWorkId";
 
 export type ContextReadStatus = {
   data: ContextReadResponse | null;
@@ -30,22 +33,35 @@ export function contextReadQueryKey(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
+  workId?: string | null,
 ) {
-  return ["projects", projectId, "context", scheme, "read", path] as const;
+  return isWorkScopedProjectContextScheme(scheme) && workId
+    ? (["projects", projectId, "context", scheme, workId, "read", path] as const)
+    : (["projects", projectId, "context", scheme, "read", path] as const);
 }
 
 export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; activeThreadId?: string | null },
 ): ContextReadStatus {
+  const workId = useContextWorkId(projectId, options?.activeThreadId ?? null);
   const callerEnabled = options?.enabled ?? true;
-  const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
+  const resolvedScheme = scheme ?? "kb";
+  const workScoped = scheme !== null && isWorkScopedProjectContextScheme(scheme);
+  const enabled =
+    callerEnabled && Boolean(scheme) && Boolean(path) && (!workScoped || workId !== null);
+  const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, workId) : undefined;
   const result = useQuery({
-    queryKey: contextReadQueryKey(projectId, scheme ?? "kb", path ?? ""),
+    queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", workId),
     queryFn: () =>
-      getProjectContextRead(projectId, scheme as ProjectContextTreeScheme, path as string),
+      getProjectContextRead(
+        projectId,
+        scheme as ProjectContextTreeScheme,
+        path as string,
+        contextOpts,
+      ),
     enabled,
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,

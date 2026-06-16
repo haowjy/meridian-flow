@@ -18,13 +18,13 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, FileText, Folder, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { cn } from "@/lib/utils";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "../context/context-entry-name";
-import { CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
 import type { ProjectViewProps } from "../ProjectView";
@@ -32,6 +32,7 @@ import type { ProjectViewProps } from "../ProjectView";
 export type MobileContextBrowserProps = Pick<
   ProjectViewProps,
   | "projectId"
+  | "activeThreadId"
   | "activeContextScheme"
   | "activeContextFolder"
   | "onSelectContextScheme"
@@ -50,6 +51,7 @@ export type MobileContextBrowserProps = Pick<
 
 export function MobileContextBrowser({
   projectId,
+  activeThreadId,
   activeContextScheme,
   activeContextFolder,
   onSelectContextScheme,
@@ -58,10 +60,14 @@ export function MobileContextBrowser({
   creating,
   onCreateDone,
 }: MobileContextBrowserProps) {
+  const workId = useContextWorkId(projectId, activeThreadId);
+  const schemes = visibleContextSchemes(workId);
+
   if (activeContextScheme) {
     return (
       <MobileFolderListing
         projectId={projectId}
+        activeThreadId={activeThreadId}
         scheme={activeContextScheme}
         folder={activeContextFolder}
         onSelectContextFolder={onSelectContextFolder}
@@ -76,7 +82,7 @@ export function MobileContextBrowser({
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ul className="flex flex-col">
-          {CONTEXT_SCHEMES.map((scheme) => {
+          {schemes.map((scheme) => {
             // Schemes are context sources, not folders — each carries its
             // identity icon; folder icons are reserved for real directories.
             const SchemeIcon = schemeIcon(scheme);
@@ -104,6 +110,7 @@ export function MobileContextBrowser({
  */
 function MobileFolderListing({
   projectId,
+  activeThreadId,
   scheme,
   folder,
   onSelectContextFolder,
@@ -112,6 +119,7 @@ function MobileFolderListing({
   onCreateDone,
 }: {
   projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Current folder path (`/a/b`) or null for the scheme root. */
   folder: string | null;
@@ -120,7 +128,9 @@ function MobileFolderListing({
   creating: ContextCreateKind | null;
   onCreateDone: () => void;
 }) {
-  const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme);
+  const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
+    activeThreadId,
+  });
 
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen
@@ -130,6 +140,7 @@ function MobileFolderListing({
       {creating ? (
         <MobileCreateRow
           projectId={projectId}
+          activeThreadId={activeThreadId}
           scheme={scheme}
           parent={folder ?? ""}
           kind={creating}
@@ -257,12 +268,14 @@ function FolderListingBody({
  */
 function MobileCreateRow({
   projectId,
+  activeThreadId,
   scheme,
   parent,
   kind,
   onDone,
 }: {
   projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Parent folder path (`""` for the scheme root). */
   parent: string;
@@ -273,7 +286,7 @@ function MobileCreateRow({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
-  const mutation = useCreateContextEntry(projectId, scheme);
+  const mutation = useCreateContextEntry(projectId, scheme, { activeThreadId });
 
   // Auto-focus brings the on-screen keyboard up immediately — naming is the
   // only thing this row is for. The row mounts while the create menu is still

@@ -4,6 +4,7 @@
  * shapes so reads, writes, and invalidations stay consistent.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
 export const projectQueryKeys = {
   all: ["projects"] as const,
@@ -12,8 +13,10 @@ export const projectQueryKeys = {
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   preferences: (projectId: string) => ["projects", projectId, "preferences"] as const,
-  contextTree: (projectId: string, scheme: ProjectContextTreeScheme) =>
-    ["projects", projectId, "context", scheme, "tree"] as const,
+  contextTree: (projectId: string, scheme: ProjectContextTreeScheme, workId?: string | null) =>
+    isWorkScopedProjectContextScheme(scheme) && workId
+      ? (["projects", projectId, "context", scheme, workId, "tree"] as const)
+      : (["projects", projectId, "context", scheme, "tree"] as const),
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,
   library: (projectId: string) => ["projects", projectId, "library"] as const,
   agentDefinition: (projectId: string, slug: string) =>

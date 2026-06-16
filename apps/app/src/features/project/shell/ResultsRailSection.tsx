@@ -272,7 +272,7 @@ function KindIcon({ mimeType }: { mimeType: string }) {
 /* ── Pure helpers ─────────────────────────────────────────────────────
  *
  * Exported for the unit test — display name parsing has to survive both
- * `/project workspace/path.ext` and bare URI shapes (`results://project/foo.ext`),
+ * `/project workspace/path.ext` and bare URI shapes (`work://<workId>/results/foo.ext`),
  * so it gets its own test alongside the rail render.
  */
 

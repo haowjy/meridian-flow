@@ -54,6 +54,7 @@ const FILES_BOUNDS = CONTEXT_FILES_WIDTH_BOUNDS;
 
 export type ContextViewerProps = {
   projectId: string;
+  activeThreadId: string | null;
   tabs: ContextTab[];
   activeTabId: string | null;
   onSelectTab: (documentId: string) => void;
@@ -86,6 +87,7 @@ export type ContextViewerProps = {
  */
 export function ContextViewer({
   projectId,
+  activeThreadId,
   tabs,
   activeTabId,
   onSelectTab,
@@ -146,6 +148,7 @@ export function ContextViewer({
           >
             <ContextTreePanel
               projectId={projectId}
+              activeThreadId={activeThreadId}
               activeScheme={activeContextScheme}
               activePath={activeContextPath}
               onSelectFile={onSelectFile}
@@ -195,7 +198,11 @@ export function ContextViewer({
           ) : null}
           {activeTab && !activeIsTracked ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost projectId={projectId} tab={activeTab} />
+              <ContextViewerHost
+                projectId={projectId}
+                activeThreadId={activeThreadId}
+                tab={activeTab}
+              />
             </div>
           ) : null}
           {!activeTab ? (

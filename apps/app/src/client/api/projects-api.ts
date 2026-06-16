@@ -17,6 +17,8 @@ import type { Project } from "@meridian/contracts/projects";
 import {
   API_PROJECTS_PATH,
   apiProjectContextCreatePath,
+  apiProjectContextKbImportDriveFixturePath,
+  apiProjectContextKbImportPath,
   apiProjectContextReadPath,
   apiProjectContextTreePath,
   apiProjectPath,
@@ -24,13 +26,16 @@ import {
   apiProjectThreadsPath,
   apiProjectWorksPath,
   type ContextReadResponse,
+  type CorpusImportResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
+  deserializeTransport,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
+  type ProjectContextRequestOptions,
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
   type ThreadListItem,
@@ -103,10 +108,11 @@ export async function updateProjectPreferences(
 export async function getProjectContextTree(
   projectId: string,
   scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
 ): Promise<ProjectContextTreeResponse> {
   return getJson<ProjectContextTreeResponse>(
-    urlFor(apiProjectContextTreePath(projectId, scheme), init),
+    urlFor(apiProjectContextTreePath(projectId, scheme, opts), init),
     {
       headers: init?.headers,
     },
@@ -140,9 +146,10 @@ export async function createContextEntry(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   body: { type: "file" | "folder"; path: string; content?: string },
+  opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
 ): Promise<void> {
-  await postJson(urlFor(apiProjectContextCreatePath(projectId, scheme), init), body, {
+  await postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
   });
 }
@@ -150,10 +157,50 @@ export async function getProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
+  opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
 ): Promise<ContextReadResponse> {
   return getJson<ContextReadResponse>(
-    urlFor(apiProjectContextReadPath(projectId, scheme, path), init),
+    urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
     { headers: init?.headers },
   );
+}
+
+export type UploadCorpusFilesInput = {
+  projectId: string;
+  files: File[];
+  onProgress?: (progress: { loaded: number; total: number; percent: number | null }) => void;
+};
+
+export function uploadCorpusFiles(input: UploadCorpusFilesInput): Promise<CorpusImportResponse> {
+  const form = new FormData();
+  for (const file of input.files) {
+    form.append("files", file, file.webkitRelativePath || file.name);
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", apiProjectContextKbImportPath(input.projectId));
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      input.onProgress?.({
+        loaded: event.loaded,
+        total: event.total,
+        percent: event.lengthComputable ? Math.round((event.loaded / event.total) * 100) : null,
+      });
+    };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(xhr.response?.message ?? `Import failed (${xhr.status})`));
+        return;
+      }
+      resolve(deserializeTransport<CorpusImportResponse>(xhr.response as CorpusImportResponse));
+    };
+    xhr.onerror = () => reject(new Error("Import request failed"));
+    xhr.send(form);
+  });
+}
+
+export async function importDriveFixture(projectId: string): Promise<CorpusImportResponse> {
+  return postJson<CorpusImportResponse>(apiProjectContextKbImportDriveFixturePath(projectId), {});
 }

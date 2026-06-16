@@ -144,12 +144,14 @@ function renderActiveView(
       return props.activeContextPath ? (
         <MobileDocumentHost
           projectId={props.projectId}
+          activeThreadId={props.activeThreadId}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
         />
       ) : (
         <MobileContextBrowser
           projectId={props.projectId}
+          activeThreadId={props.activeThreadId}
           activeContextScheme={props.activeContextScheme}
           activeContextFolder={props.activeContextFolder}
           onSelectContextScheme={props.onSelectContextScheme}
