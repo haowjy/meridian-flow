@@ -9,6 +9,7 @@ import { createDb, documents, documentYjsUpdates } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import WebSocket from "ws";
 import * as Y from "yjs";
+import { cookieAuthHeaders, mintWorkOsDevSession } from "./workos-dev-session.js";
 import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
@@ -20,15 +21,9 @@ try {
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
-const supabaseUrl = process.env.SUPABASE_URL;
-const anonKey = process.env.SUPABASE_ANON_KEY;
-const email = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-const password = process.env.TEST_USER_PASSWORD ?? "meridian-dev";
 
 if (!serverUrl) throw new Error("SMOKE_SERVER_URL is required");
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
-if (!supabaseUrl || !anonKey) throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
-const supabaseAnonKey = anonKey;
 
 type BootstrapResponse = {
   projectId: string;
@@ -37,20 +32,6 @@ type BootstrapResponse = {
   documentId: string;
   uri: string;
 };
-
-async function signIn(): Promise<string> {
-  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: supabaseAnonKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!response.ok) throw new Error(`sign-in failed: ${response.status} ${await response.text()}`);
-  const body = (await response.json()) as { access_token: string };
-  return body.access_token;
-}
 
 function wsUrlFor(url: string): string {
   const parsed = new URL("/ws/yjs", url);
@@ -108,11 +89,12 @@ function waitForSyncedMarkdown(
   });
 }
 
-const token = await signIn();
+const session = await mintWorkOsDevSession();
+const authHeaders = cookieAuthHeaders(session);
 
 const bootstrapResponse = await fetch(new URL("/api/projects/bootstrap-default", serverUrl), {
   method: "POST",
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 if (bootstrapResponse.status !== 201) {
   throw new Error(
@@ -125,7 +107,7 @@ const messageResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/messages`, serverUrl),
   {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { ...authHeaders, "content-type": "application/json" },
     body: JSON.stringify({ text: "prepare a Phase 4 document edit" }),
   },
 );
@@ -140,7 +122,7 @@ const writeResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/context/write`, serverUrl),
   {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { ...authHeaders, "content-type": "application/json" },
     body: JSON.stringify({
       uri: bootstrap.uri,
       markdown,
@@ -157,7 +139,7 @@ const readResponse = await fetch(
     `/api/threads/${bootstrap.threadId}/context?uri=${encodeURIComponent(bootstrap.uri)}`,
     serverUrl,
   ),
-  { headers: { authorization: `Bearer ${token}` } },
+  { headers: authHeaders },
 );
 if (readResponse.status !== 200) {
   throw new Error(`context read failed: ${readResponse.status} ${await readResponse.text()}`);
@@ -168,7 +150,7 @@ if (readBody.markdown !== expectedMarkdown)
 
 const forgetCacheResponse = await fetch(new URL("/api/_smoke/collab/forget-cache", serverUrl), {
   method: "POST",
-  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  headers: { ...authHeaders, "content-type": "application/json" },
   body: JSON.stringify({ documentId: bootstrap.documentId }),
 });
 if (forgetCacheResponse.status !== 200) {
@@ -178,7 +160,7 @@ if (forgetCacheResponse.status !== 200) {
 }
 
 const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 await waitForOpen(verifyYjs);
 const synced = waitForSyncedMarkdown(verifyYjs, expectedMarkdown);

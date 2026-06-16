@@ -20,7 +20,7 @@ function quoteDrizzleTable(table: unknown): string {
  * Central safety net: refuse to TRUNCATE anything but a throwaway test DB.
  * Works off the live connection (`current_database()`), so it holds even if a
  * suite is misgated and accidentally points at the dev `postgres` database —
- * this destructive reset is what wipes `auth.users` and clobbers the dev user.
+ * this destructive reset is what wipes `public.users` and clobbers the dev user.
  */
 async function assertThrowawayDatabase(db: Database): Promise<void> {
   if (process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;

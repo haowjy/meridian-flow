@@ -10,6 +10,6 @@ export default defineConfig({
   out: "./src/migrations",
   dialect: "postgresql",
   dbCredentials: { url: databaseUrl },
-  // Only generate migrations for public app tables; auth.users is managed by Supabase.
+  // Only generate migrations for public app tables (identity is app-owned public.users).
   schemaFilter: ["public"],
 });

@@ -1,6 +1,6 @@
 # @meridian/database
 
-Drizzle schema, migrations, functions, and Postgres connection helpers for the Supabase-backed Meridian database.
+Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (local Supabase CLI in dev).
 
 - Schema changes live here, not in `supabase/migrations`.
 - PL/pgSQL functions live in `src/functions/` and are applied with `pnpm db:apply-functions`.

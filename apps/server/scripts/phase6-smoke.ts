@@ -21,6 +21,11 @@ import * as Y from "yjs";
 import { createDocumentSyncService } from "../server/domains/collab/index.js";
 import { createProductionUnifiedContextPortFactory } from "../server/domains/context/index.js";
 import { createRuntimeToolRegistry } from "../server/domains/runtime/tool-registry.js";
+import {
+  cookieAuthHeaders,
+  mintWorkOsDevSession,
+  resolveDevInternalUserId,
+} from "./workos-dev-session.js";
 import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
@@ -32,34 +37,15 @@ try {
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
-const supabaseUrl = process.env.SUPABASE_URL;
-const anonKey = process.env.SUPABASE_ANON_KEY;
-const email = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-const password = process.env.TEST_USER_PASSWORD ?? "meridian-dev";
 
 if (!serverUrl) throw new Error("SMOKE_SERVER_URL is required");
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
-if (!supabaseUrl || !anonKey) throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
 
 type BootstrapResponse = {
   threadId: ThreadId;
   documentId: DocumentId;
   uri: string;
 };
-
-async function signIn(): Promise<{ token: string; userId: UserId }> {
-  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: anonKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!response.ok) throw new Error(`sign-in failed: ${response.status} ${await response.text()}`);
-  const body = (await response.json()) as { access_token: string; user: { id: UserId } };
-  return { token: body.access_token, userId: body.user.id };
-}
 
 function wsUrlFor(url: string): string {
   const parsed = new URL("/ws/yjs", url);
@@ -117,11 +103,13 @@ function waitForSyncedMarkdown(
   });
 }
 
-const { token, userId } = await signIn();
+const session = await mintWorkOsDevSession();
+const authHeaders = cookieAuthHeaders(session);
+const userId = (await resolveDevInternalUserId(databaseUrl, session.externalUserId)) as UserId;
 
 const bootstrapResponse = await fetch(new URL("/api/projects/bootstrap-default", serverUrl), {
   method: "POST",
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 if (bootstrapResponse.status !== 201) {
   throw new Error(
@@ -136,7 +124,7 @@ const messageResponse = await fetch(
   new URL(`/api/threads/${bootstrap.threadId}/messages`, serverUrl),
   {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { ...authHeaders, "content-type": "application/json" },
     body: JSON.stringify({ text: messageText }),
   },
 );
@@ -163,7 +151,7 @@ if (!agentUpdate) throw new Error("timed out waiting for agent-attributed Yjs up
 
 const forgetCacheResponse = await fetch(new URL("/api/_smoke/collab/forget-cache", serverUrl), {
   method: "POST",
-  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  headers: { ...authHeaders, "content-type": "application/json" },
   body: JSON.stringify({ documentId: bootstrap.documentId }),
 });
 if (forgetCacheResponse.status !== 200) {
@@ -173,7 +161,7 @@ if (forgetCacheResponse.status !== 200) {
 }
 
 const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 await waitForOpen(verifyYjs);
 const synced = waitForSyncedMarkdown(verifyYjs, expectedSnippet);

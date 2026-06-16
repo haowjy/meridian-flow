@@ -21,7 +21,6 @@
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
-    "@supabase/supabase-js": "^2.108.1",
     "@t3-oss/env-core": "^0.13.11",
     "@workos/authkit-session": "^0.5.4",
     "drizzle-orm": "catalog:",

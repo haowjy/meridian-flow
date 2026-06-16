@@ -6,19 +6,10 @@
  */
 import type { BackendTier, ModelProvider, ObjectStoreProvider } from "./backend-policy.js";
 
-const DEFAULT_DEV_SECRETS = new Set([
-  "",
-  "dev-openai-key",
-  "dev-supabase-url",
-  "dev-supabase-anon-key",
-  "dev-workos-key",
-  "dev-workos-client",
-]);
+const DEFAULT_DEV_SECRETS = new Set(["", "dev-openai-key", "dev-workos-key", "dev-workos-client"]);
 const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
 
 const PLACEHOLDER_SECRET_PATTERNS: Partial<Record<keyof ApiStartupEnv, RegExp[]>> = {
-  SUPABASE_URL: [/localhost/i, /127\.0\.0\.1/],
-  SUPABASE_ANON_KEY: [/^ey-dev-/i],
   WORKOS_CLIENT_ID: [/^client_\.\.\.$/i, /^client_ci/i],
 };
 
@@ -41,10 +32,9 @@ export type ApiStartupEnv = {
   OBJECT_STORE_PROVIDER: ObjectStoreProvider;
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
-  SUPABASE_URL?: string;
-  SUPABASE_ANON_KEY?: string;
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
+  WORKOS_COOKIE_PASSWORD?: string;
   API_REPLICA_COUNT?: number;
   DURABLE_EVENT_BACKEND: string;
 };
@@ -140,18 +130,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   if (isProduction) {
     requireRealSecret(
       errors,
-      "SUPABASE_URL",
-      config.SUPABASE_URL,
-      "must be set to a production Supabase URL.",
-    );
-    requireRealSecret(
-      errors,
-      "SUPABASE_ANON_KEY",
-      config.SUPABASE_ANON_KEY,
-      "must be set to a production Supabase anon key.",
-    );
-    requireRealSecret(
-      errors,
       "WORKOS_API_KEY",
       config.WORKOS_API_KEY,
       "must be set to a real WorkOS API key in production.",
@@ -162,6 +140,12 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
       "WORKOS_CLIENT_ID",
       config.WORKOS_CLIENT_ID,
       "must be set to a real WorkOS client id in production.",
+    );
+    requireValue(
+      errors,
+      "WORKOS_COOKIE_PASSWORD",
+      config.WORKOS_COOKIE_PASSWORD,
+      "required for sealed session cookies in production.",
     );
   }
 
@@ -201,10 +185,9 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     OBJECT_STORE_PROVIDER: backends.objectStore,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
-    SUPABASE_URL: process.env.SUPABASE_URL,
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
+    WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,
     API_REPLICA_COUNT: process.env.API_REPLICA_COUNT
       ? Number(process.env.API_REPLICA_COUNT)
       : undefined,

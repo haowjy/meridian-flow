@@ -109,8 +109,10 @@ authority; omitted authority resolves to the thread's primary Work.
 
 ## Dev-auth / test-isolation conventions
 
-- `pnpm bootstrap` provisions a **GoTrue-native** dev user (distinct UUID,
-  NOT the shared test-fixture id `…0111`).
+- `pnpm bootstrap` seeds a deterministic dev `public.users` row (`external_id =
+  WORKOS_DEV_LOGIN_USER_ID`, email from `WORKOS_DEV_LOGIN_EMAIL`) plus the default
+  dev project. First WorkOS login runs `UserRepository.ensureUser` (idempotent upsert
+  on `external_id`).
 - DB-backed tests must use an **isolated fixture identity** (dedicated email,
   NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a
   dedicated throwaway DB, never the dev DB.
@@ -184,15 +186,16 @@ probe `ws://127.0.0.1:<port>` — that bypasses the real proxy/TLS path.
 - Run the stack: `pnpm dev` (worktree-scoped tmux). Stuck? `pnpm dev:restart`.
 - TLS for curl/node: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`
 
-## Local Supabase (database + auth)
+## Local Supabase (Postgres only)
 
-Dev Postgres and `auth.users` run via Supabase CLI. App schema is Drizzle in
-`packages/database` (not `supabase/migrations`).
+Dev Postgres runs via Supabase CLI. App schema is Drizzle in
+`packages/database` (not `supabase/migrations`). Auth is **WorkOS AuthKit**;
+identity is app-owned `public.users`.
 
 ```bash
-pnpm supabase:start      # Docker: API :54421, Postgres :54422, Studio :54423
-pnpm supabase:env        # print keys → copy into .env from .env.example
-pnpm bootstrap           # auth user + db:migrate + apply-functions + seed project
+pnpm supabase:start      # Docker: Postgres :54422, Studio :54423
+pnpm supabase:env        # print DATABASE_URL for .env
+pnpm bootstrap           # migrate + apply-functions + seed dev user + project
 pnpm db:migrate          # apply Drizzle migrations (packages/database)
 pnpm db:apply-functions  # sync PL/pgSQL from packages/database/src/functions/
 pnpm db:generate         # generate migration SQL from schema changes

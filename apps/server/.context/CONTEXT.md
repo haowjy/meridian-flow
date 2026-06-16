@@ -56,19 +56,20 @@ The shipped route surface covers:
 
 Project-scoped handlers gate through `requireProjectOwner` from
 `server/domains/projects` before reading or mutating project-owned data.
-Supabase remains the auth boundary; alternate auth adapter route code is not part of
+WorkOS AuthKit is the auth boundary; alternate auth adapter route code is not part of
 Meridian Flow. The removed external execution-provider route surface is also out
 of scope for Meridian; do not port it back while filling route parity gaps.
 
-## Supabase auth boundary
+## WorkOS auth boundary
 
-Meridian uses Supabase for local and production auth. Domain logic works with
-canonical `UserId` values from `auth.users`; route and WebSocket boundaries are
-responsible for turning cookies/tokens into the current user.
+Meridian uses WorkOS AuthKit for authentication. Domain logic works with
+canonical internal `UserId` values from `public.users`; route and WebSocket
+boundaries verify the sealed `wos-session` cookie and provision via
+`UserRepository.ensureUser` on first login.
 
-Keep provider-specific auth details in `server/lib/auth*.ts` and app-side
-Supabase helpers. Domain repositories should depend on user IDs and explicit
-access checks, not on Supabase client objects.
+Keep provider-specific auth details in `server/lib/auth.ts` and app-side AuthKit
+helpers. Domain repositories should depend on user IDs and explicit access
+checks, not on WorkOS client objects.
 
 ## ThreadEventHub
 
