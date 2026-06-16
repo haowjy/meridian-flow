@@ -9,7 +9,7 @@
 import { HTTPError } from "nitro/h3";
 import { type AppServices, getApp } from "./app.js";
 import type { ResolvedUser } from "./auth.js";
-import { requireUser } from "./auth.js";
+import { provisionAuthenticatedUser, resolveUser } from "./auth.js";
 
 export interface AppUser {
   app: AppServices;
@@ -28,8 +28,8 @@ export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
  * Compose app services + authenticate + provision user row.
  *
  * The single gate every route handler passes through. Combines three concerns:
- * 1. Get the singleton AppServices (lazy init, gateway, DB)
- * 2. Validate the WorkOS session cookie → external user identity
+ * 1. Validate the WorkOS session cookie → external user identity (401 if absent)
+ * 2. Get the singleton AppServices (lazy init, gateway, DB)
  * 3. Upsert the user row in our DB → internal UserId
  *
  * Default project/bootstrap provisioning stays on onboarding and explicit
@@ -39,11 +39,14 @@ export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
  * provisioning fails (DB unavailable, etc.).
  */
 export async function requireAppUserFromRequest(request: Request): Promise<AppUser> {
+  const externalUser = await resolveUser(request);
+  if (!externalUser) {
+    throw new HTTPError({ status: 401, message: "Unauthorized" });
+  }
+
   const app = await getApp();
-  const user = await requireUser(request, {
-    users: app.users,
-  });
-  return { app, user };
+  const userId = await provisionAuthenticatedUser(externalUser, { users: app.users });
+  return { app, user: { ...externalUser, userId } };
 }
 
 /**

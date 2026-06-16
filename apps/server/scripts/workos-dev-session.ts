@@ -12,12 +12,11 @@ export type WorkOsDevSession = {
 };
 
 function readDevLoginCredentials(): { email: string; password: string } {
-  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || process.env.TEST_USER_EMAIL?.trim();
-  const password =
-    process.env.WORKOS_DEV_LOGIN_PASSWORD?.trim() || process.env.TEST_USER_PASSWORD?.trim();
+  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim();
+  const password = process.env.WORKOS_DEV_LOGIN_PASSWORD?.trim();
   if (!email || !password) {
     throw new Error(
-      "WORKOS_DEV_LOGIN_EMAIL/PASSWORD (or TEST_USER_EMAIL/PASSWORD) are required for smoke auth",
+      "WORKOS_DEV_LOGIN_EMAIL and WORKOS_DEV_LOGIN_PASSWORD are required for smoke auth",
     );
   }
   return { email, password };

@@ -1,6 +1,6 @@
 /**
  * Shared public.users fixture identity for DB-backed tests.
- * Never overlaps the dev-login user (TEST_USER_EMAIL / test@meridian.dev).
+ * Never overlaps the dev-login user (WORKOS_DEV_LOGIN_EMAIL / test@meridian.dev).
  */
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
@@ -57,7 +57,7 @@ export function assertLocalSupabaseOrExplicitAllow(databaseUrl: string | undefin
   }
 }
 
-/** Seed or refresh a dedicated fixture user; never reads TEST_USER_EMAIL. */
+/** Seed or refresh a dedicated fixture user; never reads WORKOS_DEV_LOGIN_EMAIL. */
 export async function resolveDbTestFixtureUserId(
   databaseUrl: string,
   options: { fixtureUserId: string; suite: string },
@@ -87,7 +87,7 @@ export async function resolveDbTestFixtureUserId(
 
 type ExecutableDb = { execute: (query: ReturnType<typeof sql>) => Promise<unknown> };
 
-export async function seedAuthUser(db: ExecutableDb, id: string, email: string): Promise<void> {
+export async function seedUser(db: ExecutableDb, id: string, email: string): Promise<void> {
   const externalId = `fixture-external-${id}`;
   await db.execute(sql`
     INSERT INTO public.users (

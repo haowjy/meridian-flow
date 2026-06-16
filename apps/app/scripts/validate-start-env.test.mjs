@@ -9,8 +9,6 @@ const scriptPath = fileURLToPath(new URL("./validate-start-env.mjs", import.meta
 const baseProductionEnv = {
   NODE_ENV: "production",
   APP_ENV: "production",
-  SUPABASE_URL: "https://example.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature",
   MERIDIAN_API_ORIGIN: "https://server.meridian.example",
   WORKOS_API_KEY: "workos_live_abcdefghijklmnopqrstuvwxyz",
   WORKOS_CLIENT_ID: "client_abcdefghijklmnopqrstuvwxyz",
@@ -24,22 +22,6 @@ describe("validateStartEnv", () => {
 
     expect(result.ok).toBe(true);
     expect(result.issues).toHaveLength(0);
-  });
-
-  it("rejects missing and development placeholder Supabase values", () => {
-    const result = validateStartEnv({
-      ...baseProductionEnv,
-      SUPABASE_URL: "http://127.0.0.1:54421",
-      SUPABASE_ANON_KEY: "dev-anon-key",
-    });
-
-    expect(result.ok).toBe(false);
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "SUPABASE_URL" }),
-        expect.objectContaining({ name: "SUPABASE_ANON_KEY" }),
-      ]),
-    );
   });
 
   it("rejects placeholder WorkOS API and client values", () => {
@@ -128,8 +110,6 @@ describe("validateStartEnv", () => {
         ...process.env,
         NODE_ENV: "production",
         APP_ENV: "production",
-        SUPABASE_URL: "http://127.0.0.1:54421",
-        SUPABASE_ANON_KEY: "dev-anon-key",
         MERIDIAN_API_ORIGIN: "not-a-url",
         WORKOS_API_KEY: "sk_test_placeholder",
         WORKOS_CLIENT_ID: "client_...",
@@ -140,7 +120,6 @@ describe("validateStartEnv", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Production start blocked");
-    expect(result.stderr).toContain("SUPABASE_URL");
     expect(result.stderr).toContain("MERIDIAN_API_ORIGIN");
     expect(result.stderr).toContain("WORKOS_API_KEY");
     expect(result.stderr).toContain("WORKOS_REDIRECT_URI");

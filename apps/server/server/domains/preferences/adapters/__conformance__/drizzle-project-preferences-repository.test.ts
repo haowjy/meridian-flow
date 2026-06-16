@@ -7,7 +7,7 @@
  */
 
 import { createDb, projects, projectUserPreferences } from "@meridian/database";
-import { dbTestFixtureEmail, seedAuthUser } from "@meridian/database/__test-support__/db-fixtures";
+import { dbTestFixtureEmail, seedUser } from "@meridian/database/__test-support__/db-fixtures";
 import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe } from "vitest";
 import { createDrizzleProjectPreferencesRepository } from "../drizzle/project-preferences-repository.js";
@@ -33,8 +33,8 @@ describe.skipIf(!RUN_DB_TESTS || !DATABASE_URL)(
     beforeEach(async () => {
       await db.delete(projectUserPreferences);
       await db.delete(projects).where(inArray(projects.id, [ids.projectId, ids.otherProjectId]));
-      await seedAuthUser(db, ids.userId, dbTestFixtureEmail("preferences-conformance-1"));
-      await seedAuthUser(db, ids.otherUserId, dbTestFixtureEmail("preferences-conformance-2"));
+      await seedUser(db, ids.userId, dbTestFixtureEmail("preferences-conformance-1"));
+      await seedUser(db, ids.otherUserId, dbTestFixtureEmail("preferences-conformance-2"));
       await db.insert(projects).values([
         {
           id: ids.projectId,

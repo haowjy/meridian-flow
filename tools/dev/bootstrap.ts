@@ -10,10 +10,7 @@ loadRepoEnv(repoRoot);
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
-  const email =
-    process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() ||
-    process.env.TEST_USER_EMAIL?.trim() ||
-    "test@meridian.dev";
+  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
 
   if (!databaseUrl) {
     console.log(

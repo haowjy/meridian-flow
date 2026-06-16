@@ -5,8 +5,6 @@ describe("parseAppServerConfig", () => {
   it("defaults isProduction to false and devAutologin to false", () => {
     expect(parseAppServerConfig({})).toMatchObject({
       isProduction: false,
-      supabaseUrl: null,
-      supabaseAnonKey: null,
       workosClientId: null,
       workosDevLogin: null,
       devAutologin: false,
@@ -19,19 +17,15 @@ describe("parseAppServerConfig", () => {
     expect(parseAppServerConfig({ NODE_ENV: "development" }).isProduction).toBe(false);
   });
 
-  it("parses Supabase env and API origin with trimming", () => {
+  it("parses WorkOS env and API origin with trimming", () => {
     const config = parseAppServerConfig({
-      SUPABASE_URL: "  https://supabase.example.test  ",
-      SUPABASE_ANON_KEY: "  anon  ",
-      SUPABASE_AUTH_REDIRECT_URI: "  https://app.meridian.localhost/api/auth/callback  ",
       MERIDIAN_API_ORIGIN: "  https://api.meridian.localhost  ",
       WORKOS_CLIENT_ID: "  client_abc  ",
+      WORKOS_REDIRECT_URI: "  https://app.meridian.localhost/api/auth/callback  ",
     });
-    expect(config.supabaseUrl).toBe("https://supabase.example.test");
-    expect(config.supabaseAnonKey).toBe("anon");
-    expect(config.supabaseAuthRedirectUri).toBe("https://app.meridian.localhost/api/auth/callback");
     expect(config.apiOrigin).toBe("https://api.meridian.localhost");
     expect(config.workosClientId).toBe("client_abc");
+    expect(config.workosRedirectUri).toBe("https://app.meridian.localhost/api/auth/callback");
   });
 
   describe("workosDevLogin", () => {
