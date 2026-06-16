@@ -17,17 +17,24 @@ function isTruthy(value: string | undefined): boolean {
   return value === "1" || value === "true";
 }
 
+function isFalsy(value: string | undefined): boolean {
+  return value === "0" || value === "false";
+}
+
 export function parseDevCliOptions({ argv, env = process.env }: ParseModeInput): DevCliOptions {
   const wantsFunnel = argv.includes("--funnel") || isTruthy(env.PORTLESS_FUNNEL);
-  const wantsTailscale =
-    wantsFunnel || argv.includes("--tailscale") || isTruthy(env.PORTLESS_TAILSCALE);
+  // Tailscale is the default sharing mode. Opt out with `--no-tailscale`
+  // (or `PORTLESS_TAILSCALE=0`). Funnel always implies tailscale and wins.
+  const optOutTailscale =
+    !wantsFunnel && (argv.includes("--no-tailscale") || isFalsy(env.PORTLESS_TAILSCALE));
 
   return {
-    mode: wantsFunnel ? "funnel" : wantsTailscale ? "tailscale" : "local",
+    mode: wantsFunnel ? "funnel" : optOutTailscale ? "local" : "tailscale",
     restart: argv.includes("--restart"),
     print: argv.includes("--print") || env.DEV_TMUX_DRY === "1",
     preserveModeOnRestart: argv.includes("--preserve-mode"),
-    explicitModeFlag: argv.includes("--tailscale") || argv.includes("--funnel"),
+    explicitModeFlag:
+      argv.includes("--tailscale") || argv.includes("--funnel") || argv.includes("--no-tailscale"),
   };
 }
 

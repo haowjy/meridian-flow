@@ -2,8 +2,22 @@ import { describe, expect, it } from "vitest";
 import { applyModeEnv, parseDevCliOptions } from "./dev-mode";
 
 describe("parseDevCliOptions", () => {
-  it("defaults to local mode", () => {
-    expect(parseDevCliOptions({ argv: [] }).mode).toBe("local");
+  it("defaults to tailscale mode", () => {
+    expect(parseDevCliOptions({ argv: [], env: {} as NodeJS.ProcessEnv }).mode).toBe("tailscale");
+  });
+
+  it("opts out of tailscale with --no-tailscale", () => {
+    const parsed = parseDevCliOptions({ argv: ["--no-tailscale"], env: {} as NodeJS.ProcessEnv });
+    expect(parsed.mode).toBe("local");
+    expect(parsed.explicitModeFlag).toBe(true);
+  });
+
+  it("opts out of tailscale with PORTLESS_TAILSCALE=0", () => {
+    const parsed = parseDevCliOptions({
+      argv: [],
+      env: { PORTLESS_TAILSCALE: "0" } as NodeJS.ProcessEnv,
+    });
+    expect(parsed.mode).toBe("local");
   });
 
   it("parses tailscale and restart flags", () => {
@@ -12,8 +26,11 @@ describe("parseDevCliOptions", () => {
     expect(parsed.restart).toBe(true);
   });
 
-  it("makes funnel win over tailscale", () => {
-    const parsed = parseDevCliOptions({ argv: ["--tailscale", "--funnel"] });
+  it("makes funnel win over --no-tailscale", () => {
+    const parsed = parseDevCliOptions({
+      argv: ["--no-tailscale", "--funnel"],
+      env: {} as NodeJS.ProcessEnv,
+    });
     expect(parsed.mode).toBe("funnel");
   });
 

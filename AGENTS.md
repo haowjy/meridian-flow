@@ -184,6 +184,9 @@ probe `ws://127.0.0.1:<port>` — that bypasses the real proxy/TLS path.
 
 - **Live URLs:** `pnpm portless:list`
 - Run the stack: `pnpm dev` (worktree-scoped tmux). Stuck? `pnpm dev:restart`.
+- **`pnpm dev` defaults to `--tailscale`** (shares app+server over the tailnet).
+  Opt out with `pnpm dev --no-tailscale` (or `pnpm dev:local`, or
+  `PORTLESS_TAILSCALE=0`) for localhost-only; `--funnel` for public sharing.
 - TLS for curl/node: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`
 
 ## Local Supabase (Postgres only)
