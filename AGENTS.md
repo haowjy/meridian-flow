@@ -1,13 +1,15 @@
 # Meridian Flow — Agent Instructions
 
-> **CURRENT STATE — v3 Full-Stack Rebuild** *(temporary; delete this banner once
-> the rebuild stabilizes).* Ground-up rebuild, **TypeScript throughout**
-> (replacing the prior Go backend) — chosen to make the codebase easier to
-> change. Key decisions: canonical **Yjs** collab engine with the voluma-derived
-> exact-text edit pipeline + **TipTap (ProseMirror)** / y-prosemirror on
-> `Y.XmlFragment`; **agent definitions** (Mars `.md` packages) replace skills;
-> **credits-only** billing gate; linear turns; event journal; Yjs persistence;
-> **Drizzle ORM** over Postgres; Supabase auth (JWKS) + dev Postgres.
+> **v3 Full-Stack Rebuild** — ground-up TypeScript rebuild (replacing the prior
+> Go backend). Context-URI + model-gateway cleanse has **landed** (`h/v3` branch):
+> unified `ContextPort`, scheme vocabulary, M:N thread↔work model, registry-
+> sourced pricing, billing-correct cancel. Migration-snapshot chain is stale
+> (0004 meta vs 12 journal entries) — pending squash. Key decisions: **Yjs**
+> collab engine with voluma-derived exact-text edit pipeline + **TipTap
+> (ProseMirror)** / y-prosemirror on `Y.XmlFragment`; **agent definitions**
+> (Mars `.md` packages) replace skills; **credits-only** billing gate; linear
+> turns; event journal; Yjs persistence; **Drizzle ORM** over Postgres; Supabase
+> auth (JWKS) + dev Postgres.
 >
 > No real users or data yet, and **no backwards compatibility** — change schemas
 > freely, delete what's unused, and never add a compat shim or alias (rename or
@@ -63,6 +65,64 @@ No raw hex/color outside `design-tokens`.
 
 **File headers.** At the top of each file, a short description: what it's *for*
 and any key decisions tied to it.
+
+## Context-URI scheme vocabulary
+
+Durable Project content vs ephemeral Work scratch — see `work-model.md` in the
+cleanse design package and `kb/decisions/` for cross-cutting terms:
+
+| Scheme | Scope | Lifecycle | Notes |
+|---|---|---|---|
+| `manuscript://` | project | durable | The book; one per Project. **Bare-path default.** |
+| `kb://` | project | durable | Agent KB + import target (`kb://imports/…`) |
+| `user://` | user (cross-project) | durable | Personal files |
+| `work://` | **work** (`<workId>` authority) | ephemeral | Agent working memory |
+| `uploads://` | **work** (`<workId>` authority) | ephemeral | Per-Work upload target |
+
+**Deleted:** `fs1://` (sandbox-era), `work://.results` (promotion cruft).  
+**No `results://` scheme** — promotion results → `work://<workId>/results/…`.
+
+Bare paths default to `manuscript://`. Work-scoped URIs carry a `<workId>`
+authority; omitted authority resolves to the thread's primary Work.
+
+## M:N thread↔work model
+
+`threads.workId` is **dropped**, replaced by `thread_works` membership join
+(one primary per thread). A thread addresses multiple Works:
+- **Work authority in URIs** — `work://<workId>/…`, `uploads://<workId>/…`
+- **Primary Work as default** when `<workId>` is omitted in work-scoped schemes.
+- **Membership gate** — work-scoped browse requires ownership/membership.
+- M:N shapes shipped; multi-Work orchestration + GC/handoff deferred.
+
+## Gateway / pricing
+
+- **One `MODEL_REGISTRY`** — config + pinned pricing, single-sourced from
+  `registry.ts`. The flat `MODEL_TOKEN_RATES` table is **deleted**.
+- **Pricing layers** — pinned rates (direct providers) + provider-reported-cost
+  (OpenRouter). `PinnedModelRate` is **gateway-local** (defined in `registry.ts`);
+  billing imports it from the gateway — the gateway never imports billing.
+- **OpenRouter** — restored via `openai-compatible` adapter (config entry).
+- **Billing-correct cancel** — soft-cancel/drain + cancel-on-disconnect
+  (connectionToken ownership). Provider-reported cost persisted on
+  `model_responses.providerRequestId` / `priceSource` / `pricingSnapshot`.
+  Failed turn generator → `turn.error` (no stuck "streaming").
+
+## Dev-auth / test-isolation conventions
+
+- `pnpm bootstrap` provisions a **GoTrue-native** dev user (distinct UUID,
+  NOT the shared test-fixture id `…0111`).
+- DB-backed tests must use an **isolated fixture identity** (dedicated email,
+  NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a
+  dedicated throwaway DB, never the dev DB.
+- `supabase/migrations` stays **empty by design** — app schema is Drizzle in
+  `packages/database` (`config.toml` `[db.migrations] schema_paths=[]`).
+
+## Migration-snapshot debt
+
+The Drizzle meta snapshot chain is stale (snapshots at 0004 vs 12 journal
+entries) so `db:generate` is broken and migrations 0009–0012 were hand-authored.
+A migration **squash** is the pending fix — do not run `db:generate` until
+resolved.
 
 ## Cross-cutting invariants
 

@@ -1,7 +1,9 @@
-# domains/threads — thread persistence & event spine
+# domains/threads — thread persistence & event spine (M:N work model)
 
 Owns the durable state for threads, turns, blocks, and model responses, plus
 the event journal that bridges orchestrator writes to AG-UI client streams.
+Threads now use an M:N membership model with Works (`thread_works` join table)
+instead of the N:1 `threads.workId` column.
 
 ## What it owns
 
@@ -9,6 +11,9 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups.
+- **Thread↔Work membership** — `thread_works` join table (one primary per
+  thread). `threads.workId` column is **dropped**. Work-authority URIs resolve
+  through membership.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -83,10 +88,16 @@ Meridian Flow's Supabase/Postgres schema. Key column mappings:
 | `turns.responseMetadata` | — | Not a column; hardcoded `null` |
 | `turnBlocks.provider` / `turnBlocks.providerData` | — | Not columns; hardcoded `null` in mapper |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
-| `modelResponses.providerRequestId` | `modelResponses.providerRequestId` | |
-| `modelResponses.priceSource` | `modelResponses.priceSource` | Default `computed` |
-| `modelResponses.pricingSnapshot` | `modelResponses.pricingSnapshot` | |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |
+| `threads.workId` (N:1) | **`thread_works` join** (M:N) | Column **dropped** in migration 0011; replaced by membership join with primary marker |
+
+**Billing audit columns on `model_responses`** (added during cleanse):
+
+| Column | Role |
+|---|---|
+| `provider_request_id` | OpenRouter generation ID / provider request ID for cost reconciliation |
+| `price_source` | `"pinned"` (direct provider) or `"provider"` (OpenRouter reported) |
+| `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
 ### Date handling
 
