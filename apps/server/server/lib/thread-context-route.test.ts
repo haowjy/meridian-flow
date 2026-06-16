@@ -52,6 +52,14 @@ class RecordingContextPort implements ContextPort {
   async search() {
     return { ok: true as const, value: [] };
   }
+
+  async move() {
+    return { ok: true as const, value: {} };
+  }
+
+  async delete() {
+    return { ok: true as const, value: undefined };
+  }
 }
 
 function factoryFor(port: ContextPort): UnifiedContextPortFactory {

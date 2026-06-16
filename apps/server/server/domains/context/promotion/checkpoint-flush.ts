@@ -64,6 +64,7 @@ export type RehydrateResult =
 
 export interface FlushAtCheckpointInput {
   projectId: string;
+  workId: string;
   provenance: ResultProvenance;
   /** Writable-context-relative paths to promote; policy may skip ineligible paths. */
   sourcePaths: string[];
@@ -94,7 +95,7 @@ function rehydrateErr(code: CheckpointFlushErrorCode, message: string): Rehydrat
   return { ok: false, error: { code, message } };
 }
 
-/** Extract fs1/bare source paths from checkpoint artifact refs. */
+/** Extract manuscript/bare source paths from checkpoint artifact refs. */
 export function sourcePathsFromArtifactRefs(artifacts: ArtifactRef[]): string[] {
   const paths = new Set<string>();
   for (const artifact of artifacts) {
@@ -108,7 +109,8 @@ export function sourcePathsFromArtifactRefs(artifacts: ArtifactRef[]): string[] 
 function artifactUriToSourcePath(uri: string): string | null {
   const trimmed = uri.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith("fs1://")) return trimmed.slice("fs1://".length).replace(/^\/+/, "");
+  if (trimmed.startsWith("manuscript://"))
+    return trimmed.slice("manuscript://".length).replace(/^\/+/, "");
   if (!trimmed.includes("://")) return trimmed.replace(/^\/+/, "");
   return null;
 }
@@ -136,6 +138,7 @@ export function createCheckpointFlushService(
   return {
     async flushAtCheckpoint(input): Promise<CheckpointFlushResult> {
       if (!input.projectId) return flushErr("invalid_input", "projectId is required");
+      if (!input.workId) return flushErr("invalid_input", "workId is required");
       if (input.sourcePaths.length === 0) {
         return flushErr("invalid_input", "At least one source path is required");
       }
@@ -165,6 +168,7 @@ export function createCheckpointFlushService(
 
         const promoted = await deps.promotion.promoteArtifact({
           projectId: input.projectId,
+          workId: input.workId,
           sourcePath,
           bytes,
           provenance: input.provenance,

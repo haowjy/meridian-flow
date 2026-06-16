@@ -1,3 +1,4 @@
+/** GET /api/projects/[projectId]/context/[scheme]/tree — project context file tree. */
 import {
   type ProjectContextTreeDirectory,
   type ProjectContextTreeFile,
@@ -6,31 +7,39 @@ import {
   type ProjectContextTreeScheme,
   serializeTransport,
 } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getRouterParam } from "nitro/h3";
+import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
+import {
+  projectBrowseContextUri,
+  WORK_SCOPED_BROWSE_SCHEMES,
+  workScopedBrowseUri,
+} from "../../../../../../domains/context/browse-layer-scheme.js";
+import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextError, FileEntry } from "../../../../../../domains/context/index.js";
 import type { ContextPort } from "../../../../../../domains/context/ports/context-port.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
+  manuscript: "Manuscript",
   kb: "Knowledge Base",
   work: "Work",
+  uploads: "Uploads",
   user: "User Files",
-  fs1: "Project Files",
 };
 
-function browseRootUri(scheme: ProjectContextTreeScheme): string {
-  return scheme === "fs1" ? "manuscript://" : `${scheme}://`;
-}
-
-function browseSchemeLabel(scheme: ProjectContextTreeScheme): string {
-  if (scheme === "fs1") return "Manuscript";
-  return ROOT_NAMES[scheme];
-}
 function parseScheme(value: string): ProjectContextTreeScheme {
-  if (value === "kb" || value === "work" || value === "user" || value === "fs1") return value;
+  if (
+    value === "manuscript" ||
+    value === "kb" ||
+    value === "work" ||
+    value === "uploads" ||
+    value === "user"
+  ) {
+    return value;
+  }
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
 }
+
 function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {
     case "invalid_uri":
@@ -39,50 +48,63 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 403, message: "Context access denied" });
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: "Invalid context operation" });
     case "context_unavailable":
       throw createError({ statusCode: 503, message: "Context is unavailable" });
     case "io_error":
       throw createError({ statusCode: 502, message: error.message });
   }
 }
-function storageUriPrefix(scheme: ProjectContextTreeScheme): string {
-  return scheme === "fs1" ? "manuscript://" : `${scheme}://`;
+
+function rootUri(scheme: ProjectContextTreeScheme, workId: string | null): string {
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+    if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
+    return workScopedBrowseUri(scheme as "work" | "uploads", workId);
+  }
+  return projectBrowseContextUri(scheme, "");
 }
-function pathFromUri(scheme: ProjectContextTreeScheme, uri: string): string {
-  const prefix = storageUriPrefix(scheme);
-  if (!uri.startsWith(prefix))
+
+function pathFromUri(uri: string, root: string): string {
+  if (!uri.startsWith(root))
     throw createError({ statusCode: 502, message: `Unexpected context URI: ${uri}` });
-  const path = uri.slice(prefix.length).replace(/^\/+|\/+$/g, "");
+  const path = uri.slice(root.length).replace(/^\/+|\/+$/g, "");
   return path ? `/${path}` : "/";
 }
+
 function nameFromPath(path: string): string {
   if (path === "/") return "";
   const segments = path.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? "";
 }
+
 function sortTree(nodes: ProjectContextTreeNode[]): ProjectContextTreeNode[] {
   return nodes.sort((a, b) =>
     a.kind !== b.kind ? (a.kind === "dir" ? -1 : 1) : a.name.localeCompare(b.name),
   );
 }
+
 async function listEntries(port: ContextPort, uri: string): Promise<FileEntry[]> {
   const result = await port.list(uri);
   if (!result.ok) contextErrorToHttp(result.error);
   return result.value;
 }
+
 async function buildDirectory(
   port: ContextPort,
-  scheme: ProjectContextTreeScheme,
+  root: string,
   uri: string,
   name: string,
 ): Promise<ProjectContextTreeDirectory> {
-  const path = pathFromUri(scheme, uri);
+  const path = pathFromUri(uri, root);
   const entries = await listEntries(port, uri);
   const children: ProjectContextTreeNode[] = [];
   for (const entry of entries) {
-    const entryPath = pathFromUri(scheme, entry.uri);
+    const entryPath = pathFromUri(entry.uri, root);
     if (entry.kind === "directory") {
-      children.push(await buildDirectory(port, scheme, entry.uri, nameFromPath(entryPath)));
+      children.push(await buildDirectory(port, root, entry.uri, nameFromPath(entryPath)));
       continue;
     }
     if (!entry.documentId)
@@ -114,17 +136,28 @@ async function buildDirectory(
     children: sortTree(children),
   };
 }
+
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
+  const query = getQuery(event);
+  const workId = typeof query.workId === "string" ? query.workId : null;
+
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  const rootUri = browseRootUri(scheme);
-  const tree = await buildDirectory(
-    app.contextPorts.forProject(projectId, user.userId),
-    scheme,
-    rootUri,
-    browseSchemeLabel(scheme),
-  );
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme) && !workId) {
+    throw createError({ statusCode: 400, message: "`workId` is required" });
+  }
+
+  const port = await contextPortForProjectBrowse({
+    deps: { contextPorts: app.contextPorts, works: app.workRepo },
+    projectId,
+    userId: user.userId,
+    workId,
+  });
+  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+
+  const root = rootUri(scheme, workId);
+  const tree = await buildDirectory(port, root, root, ROOT_NAMES[scheme]);
   return serializeTransport({ projectId, scheme, tree } satisfies ProjectContextTreeResponse);
 });

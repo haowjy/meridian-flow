@@ -48,7 +48,7 @@ export type ProjectViewProps = {
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
-  /** Active context scheme (kb/user/work/fs1), when `screen=context`. */
+  /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** Active context folder retained in route state for future context navigation. */
   activeContextFolder: string | null;

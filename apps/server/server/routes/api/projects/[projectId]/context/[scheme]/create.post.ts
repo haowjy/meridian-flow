@@ -1,6 +1,10 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
+import { createError, defineEventHandler, getQuery, getRouterParam, readBody } from "nitro/h3";
+import {
+  projectBrowseContextUri,
+  WORK_SCOPED_BROWSE_SCHEMES,
+} from "../../../../../../domains/context/browse-layer-scheme.js";
+import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextError } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
@@ -11,7 +15,15 @@ interface CreateContextEntryBody {
   content?: string;
 }
 function parseScheme(value: string): ProjectContextTreeScheme {
-  if (value === "kb" || value === "work" || value === "user" || value === "fs1") return value;
+  if (
+    value === "manuscript" ||
+    value === "kb" ||
+    value === "work" ||
+    value === "uploads" ||
+    value === "user"
+  ) {
+    return value;
+  }
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
 }
 function parseBody(raw: unknown): CreateContextEntryBody {
@@ -39,6 +51,10 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 400, message: error.reason });
     case "permission_denied":
       throw createError({ statusCode: 403, message: "Context access denied" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: "Invalid context operation" });
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
     case "context_unavailable":
@@ -52,10 +68,21 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
+  const query = getQuery(event);
+  const workId = typeof query.workId === "string" ? query.workId : null;
   const body = parseBody(await readBody(event));
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  const port = app.contextPorts.forProject(projectId, user.userId);
-  const uri = toUri(scheme, body.path);
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme) && !workId) {
+    throw createError({ statusCode: 400, message: "`workId` is required" });
+  }
+  const port = await contextPortForProjectBrowse({
+    deps: { contextPorts: app.contextPorts, works: app.workRepo },
+    projectId,
+    userId: user.userId,
+    workId,
+  });
+  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  const uri = toUri(scheme, body.path, workId);
   const result =
     body.type === "folder"
       ? await port.mkdir(uri, { origin: { type: "human", userId: user.userId } })

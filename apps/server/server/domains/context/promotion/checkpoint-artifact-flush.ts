@@ -35,6 +35,7 @@ export function createCheckpointArtifactFlush(
         if (!stored.ok) return { ok: false, error: stored.error };
         const promoted = await deps.promotion.promoteArtifact({
           projectId: input.projectId,
+          workId: input.workId,
           sourcePath: sourcePathForArtifact(artifact, key),
           bytes: stored.value.bytes,
           provenance: input.provenance,

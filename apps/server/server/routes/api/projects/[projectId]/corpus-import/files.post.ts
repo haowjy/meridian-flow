@@ -20,7 +20,7 @@ export default defineEventHandler(async (event): Promise<CorpusImportResponse> =
     throw createError({ statusCode: 400, message: "multipart field 'files' is required" });
   }
 
-  const result = await app.corpusImports.importFiles({
+  const result = await app.corpusImport.importFiles({
     userId: user.userId,
     projectId,
     files,

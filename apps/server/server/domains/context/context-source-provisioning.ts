@@ -14,6 +14,7 @@ import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store
 import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
+  UpsertBinaryDocumentInput,
   UpsertDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
@@ -188,6 +189,18 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   async createBinaryDocument(input: CreateBinaryDocumentInput) {
     return (await this.sourceStore()).createBinaryDocument(input);
+  }
+
+  async upsertBinaryDocument(input: UpsertBinaryDocumentInput) {
+    return (await this.sourceStore()).upsertBinaryDocument(input);
+  }
+
+  async contextSourceId() {
+    return (await this.sourceStore()).contextSourceId();
+  }
+
+  async transaction<T>(operation: () => Promise<T>) {
+    return (await this.sourceStore()).transaction(operation);
   }
 
   async listFolders(parentId: string | null) {

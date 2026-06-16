@@ -2,17 +2,17 @@ import { describe, expect, it } from "vitest";
 import { parseContextUri, parseUnifiedContextUri } from "../context/uri.js";
 
 describe("parseContextUri", () => {
-  it("defaults bare paths to fs1://", () => {
+  it("defaults bare paths to manuscript://", () => {
     const result = parseContextUri("data/results.csv");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.scheme).toBe("fs1");
-    expect(result.value.canonical).toBe("fs1://data/results.csv");
+    expect(result.value.scheme).toBe("manuscript");
+    expect(result.value.canonical).toBe("manuscript://data/results.csv");
   });
 
   it("normalizes leading/duplicate/trailing slashes and . segments", () => {
     const cases: Array<[string, string]> = [
-      ["fs1:///data/results.csv", "fs1://data/results.csv"],
+      ["manuscript:///data/results.csv", "manuscript://data/results.csv"],
       ["kb://protocols/", "kb://protocols"],
       ["kb://./protocols/blot.md", "kb://protocols/blot.md"],
       ["work://", "work://"],
@@ -25,7 +25,7 @@ describe("parseContextUri", () => {
   });
 
   it("rejects path traversal", () => {
-    const result = parseContextUri("fs1://../../etc/passwd");
+    const result = parseContextUri("manuscript://../../etc/passwd");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("invalid_uri");
   });
@@ -47,17 +47,17 @@ describe("parseContextUri", () => {
   });
 
   it("rejects a scheme-like prefix that is not scheme://", () => {
-    for (const input of ["kb:notes.md", "package:/foo", "fs1:x"]) {
+    for (const input of ["kb:notes.md", "package:/foo", "manuscript:x"]) {
       const result = parseContextUri(input);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.code).toBe("invalid_uri");
     }
   });
 
-  it("still treats slash-only bare paths as fs1://", () => {
+  it("still treats slash-only bare paths as manuscript://", () => {
     const result = parseContextUri("data/sub/results.csv");
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.canonical).toBe("fs1://data/sub/results.csv");
+    if (result.ok) expect(result.value.canonical).toBe("manuscript://data/sub/results.csv");
   });
 
   it("treats a scheme root as an empty path", () => {
@@ -95,7 +95,6 @@ describe("parseUnifiedContextUri", () => {
   });
 
   it("rejects a UUID-shaped but invalid work authority (mistyped Work id)", () => {
-    // Full 8-4-4-4-12 shape, but non-hex chars in the last group → not a valid UUID.
     const result = parseUnifiedContextUri("work://12345678-1234-1234-1234-1234567890zz/notes.md");
     expect(result.ok).toBe(false);
     if (!result.ok) {

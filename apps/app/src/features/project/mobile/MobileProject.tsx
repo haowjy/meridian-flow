@@ -113,8 +113,7 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  // All four schemes accept creation (fs1 falls back to its offline mirror
-  // when the project workspace is down), matching the desktop tree's per-scheme `+`.
+  // All schemes accept creation when browsing a scheme root, matching the desktop tree's per-scheme `+`.
   if (props.activeScreen === "context" && props.activeContextScheme && !props.activeContextPath) {
     return <MobileCreateEntryMenu onSelect={onRequestCreate} />;
   }

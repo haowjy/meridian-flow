@@ -6,16 +6,31 @@
 
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { InMemoryContextDocumentStore } from "../adapters/context-fs/in-memory-store.js";
+import {
+  createInMemoryContextDocumentStoreBacking,
+  findInMemoryContextDocumentsById,
+  InMemoryContextDocumentStore,
+  type InMemoryContextDocumentStoreBacking,
+  InMemoryContextTreeMutationStore,
+} from "../adapters/context-fs/in-memory-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "../ports/context-port.js";
+import type { ContextTreeMutationStore } from "../ports/context-tree-mutation-store.js";
 
 export interface InMemoryUnifiedContextStoreRegistry {
+  backing: InMemoryContextDocumentStoreBacking;
   projectStores: Map<string, InMemoryContextDocumentStore>;
   workStores: Map<string, InMemoryContextDocumentStore>;
+  mutationStore: InMemoryContextTreeMutationStore;
 }
 
 export function createInMemoryUnifiedContextStoreRegistry(): InMemoryUnifiedContextStoreRegistry {
-  return { projectStores: new Map(), workStores: new Map() };
+  const backing = createInMemoryContextDocumentStoreBacking();
+  return {
+    backing,
+    projectStores: new Map(),
+    workStores: new Map(),
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
+  };
 }
 
 function projectStoreKey(
@@ -40,7 +55,7 @@ export function getInMemoryProjectContextStore(
   const key = projectStoreKey(projectId, userId, scheme);
   let store = registry.projectStores.get(key);
   if (!store) {
-    store = new InMemoryContextDocumentStore();
+    store = new InMemoryContextDocumentStore({ sourceId: key, backing: registry.backing });
     registry.projectStores.set(key, store);
   }
   return store;
@@ -54,17 +69,23 @@ export function getInMemoryWorkContextStore(
   const key = workStoreKey(workId, scheme);
   let store = registry.workStores.get(key);
   if (!store) {
-    store = new InMemoryContextDocumentStore();
+    store = new InMemoryContextDocumentStore({ sourceId: key, backing: registry.backing });
     registry.workStores.set(key, store);
   }
   return store;
 }
 
+export function getInMemoryContextTreeMutationStore(
+  registry: InMemoryUnifiedContextStoreRegistry,
+): ContextTreeMutationStore {
+  return registry.mutationStore;
+}
+
 function projectionFromStore(
-  store: InMemoryContextDocumentStore,
+  registry: InMemoryUnifiedContextStoreRegistry,
   documentId: DocumentId,
 ): { markdown: string; filetype: Filetype } | null {
-  const doc = store.getDocumentById(documentId);
+  const doc = findInMemoryContextDocumentsById(registry.backing, [documentId])[0];
   if (!doc) return null;
   return { markdown: doc.markdown, filetype: doc.filetype ?? "markdown" };
 }
@@ -74,13 +95,5 @@ export function findInMemoryDocumentProjection(
   registry: InMemoryUnifiedContextStoreRegistry,
   documentId: DocumentId,
 ): { markdown: string; filetype: Filetype } | null {
-  for (const store of registry.projectStores.values()) {
-    const projection = projectionFromStore(store, documentId);
-    if (projection) return projection;
-  }
-  for (const store of registry.workStores.values()) {
-    const projection = projectionFromStore(store, documentId);
-    if (projection) return projection;
-  }
-  return null;
+  return projectionFromStore(registry, documentId);
 }

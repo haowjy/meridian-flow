@@ -8,7 +8,7 @@ export default defineEventHandler(async (event): Promise<CorpusImportResponse> =
   const projectId = getRouterParam(event, "projectId") ?? "";
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
 
-  const result = await app.driveCorpusImports.importFixture({ userId: user.userId, projectId });
+  const result = await app.corpusImport.importDriveFixture({ userId: user.userId, projectId });
   setResponseStatus(event, 201);
   return result;
 });

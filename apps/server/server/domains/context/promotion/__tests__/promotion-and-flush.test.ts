@@ -41,6 +41,7 @@ describe("promotion service", () => {
 
     const promoted = await promotion.promoteArtifact({
       projectId: "wb-1",
+      workId: "work-1",
       sourcePath,
       bytes: payload,
       provenance: {
@@ -57,7 +58,7 @@ describe("promotion service", () => {
 
     expect(promoted.value).toMatchObject({
       sourcePath,
-      resultsUri: "work://.results/output/qc/overlay.png",
+      resultsUri: "work://work-1/results/output/qc/overlay.png",
       mimeType: "image/png",
       sizeBytes: 4,
       provenance: {
@@ -81,6 +82,7 @@ describe("promotion service", () => {
 
     const result = await promotion.promoteArtifact({
       projectId: "wb-1",
+      workId: "work-1",
       sourcePath: "runs/root-1/scratch.log",
       bytes: Uint8Array.from([1]),
       provenance: {
@@ -123,6 +125,7 @@ describe("checkpoint flush and rehydrate", () => {
 
     const flushed = await flushService.flushAtCheckpoint({
       projectId: "wb-1",
+      workId: "work-1",
       provenance: {
         rootThreadId: "root-1",
         threadId: "thread-1",

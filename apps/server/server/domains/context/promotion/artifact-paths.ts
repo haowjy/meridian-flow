@@ -4,13 +4,18 @@ export function parentSourcePath(sourcePath: string): string {
   return idx <= 0 ? "." : normalized.slice(0, idx);
 }
 
-export function resultsUriForSourcePath(rootThreadId: string, sourcePath: string): string {
+/** Maps a source path to a work-scoped results URI under the promoting Work. */
+export function resultsUriForSourcePath(
+  workId: string,
+  rootThreadId: string,
+  sourcePath: string,
+): string {
   const normalized = sourcePath.replace(/^\/+/, "");
   const runPrefix = `runs/${rootThreadId}/`;
   const relative = normalized.startsWith(runPrefix)
     ? normalized.slice(runPrefix.length)
     : normalized;
-  return `work://.results/${relative}`;
+  return `work://${workId}/results/${relative}`;
 }
 
 export function objectStoreKeyForResult(

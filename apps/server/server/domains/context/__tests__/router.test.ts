@@ -7,38 +7,31 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryDocumentStore } from "../../collab/adapters/in-memory/document-store.js";
 import { createDocumentSyncService } from "../../collab/domain/document-sync-service.js";
 import { ContextFS } from "../adapters/context-fs/context-fs.js";
-import { InMemoryContextDocumentStore } from "../adapters/context-fs/in-memory-store.js";
+import {
+  createInMemoryContextDocumentStoreBacking,
+  InMemoryContextDocumentStore,
+  InMemoryContextTreeMutationStore,
+} from "../adapters/context-fs/in-memory-store.js";
 import { createContextPortRouter } from "../context/router.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 
-function buildRouter() {
+function contextFs(scheme: ContextScheme) {
+  const backing = createInMemoryContextDocumentStoreBacking();
   const documentSync = createDocumentSyncService(createInMemoryDocumentStore());
+  return new ContextFS({
+    store: new InMemoryContextDocumentStore({ backing }),
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
+    documentSync,
+    scheme,
+  });
+}
+
+function buildRouter() {
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>([
-    [
-      "kb",
-      new ContextFS({
-        store: new InMemoryContextDocumentStore(),
-        documentSync,
-        scheme: "kb",
-      }),
-    ],
-    [
-      "work",
-      new ContextFS({
-        store: new InMemoryContextDocumentStore(),
-        documentSync,
-        scheme: "work",
-      }),
-    ],
-    [
-      "fs1",
-      new ContextFS({
-        store: new InMemoryContextDocumentStore(),
-        documentSync,
-        scheme: "fs1",
-      }),
-    ],
+    ["kb", contextFs("kb")],
+    ["work", contextFs("work")],
+    ["manuscript", contextFs("manuscript")],
   ]);
   return createContextPortRouter({ adapters });
 }

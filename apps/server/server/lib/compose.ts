@@ -5,9 +5,8 @@ import type { PaymentProvider } from "../domains/billing/ports/payment-provider.
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import {
-  type CorpusImportPort,
+  type CorpusImportService,
   createInMemoryUnifiedContextPortFactory,
-  type DriveCorpusImportPort,
   type FigureAssetService,
   type ResultRepository,
   type ThreadUploadDocumentStore,
@@ -67,8 +66,7 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
   contextPorts: UnifiedContextPortFactory;
-  corpusImports: CorpusImportPort;
-  driveCorpusImports: DriveCorpusImportPort;
+  corpusImport: CorpusImportService;
   onboarding: OnboardingService;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -291,14 +289,12 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory(),
-    corpusImports: {
+    corpusImport: {
       async importFiles() {
-        throw new Error("in-memory corpus imports are not implemented");
+        throw new Error("in-memory corpus import is not implemented");
       },
-    },
-    driveCorpusImports: {
-      async importFixture() {
-        throw new Error("in-memory drive corpus imports are not implemented");
+      async importDriveFixture() {
+        throw new Error("in-memory corpus import is not implemented");
       },
     },
     onboarding: {

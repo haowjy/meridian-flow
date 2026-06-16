@@ -6,7 +6,6 @@
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextError, ContextScheme } from "../ports/context-port.js";
 
-const LEGACY_SCHEMES: readonly ContextScheme[] = ["fs1", "kb", "work", "user"];
 const UNIFIED_SCHEMES: readonly ContextScheme[] = ["manuscript", "kb", "user", "work", "uploads"];
 const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["work", "uploads"]);
 const UUID_AUTHORITY_PATTERN =
@@ -94,15 +93,14 @@ function parseAuthorityPrefix(
 /**
  * Parse a context URI. Strict serializer, lenient parser.
  *
- * Legacy default: bare paths → `fs1://`.
- * Unified default (pass `{ barePathDefault: "manuscript" }`): bare paths → `manuscript://`.
+ * Unified default: bare paths → `manuscript://`.
  */
 export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
 ): Result<ParsedContextUri, ContextError> {
-  const schemes = options.schemes ?? LEGACY_SCHEMES;
-  const bareDefault = options.barePathDefault ?? "fs1";
+  const schemes = options.schemes ?? UNIFIED_SCHEMES;
+  const bareDefault = options.barePathDefault ?? "manuscript";
 
   const trimmed = raw.trim();
   if (!trimmed) {
