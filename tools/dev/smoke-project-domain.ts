@@ -1,6 +1,6 @@
 /**
  * Manual/runtime smoke for Meridian project, work, and thread repositories
- * against the local Supabase/Postgres database.
+ * against the local Postgres database.
  *
  * Run after `pnpm supabase:start` and `pnpm bootstrap`:
  *   pnpm smoke:project-domain
@@ -14,7 +14,7 @@ import { createDrizzleProjectRepository } from "../../apps/server/server/domains
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
 import { loadRepoEnv, requireEnv } from "./load-env.ts";
-import { SupabaseAdminClient } from "./supabase-admin.ts";
+import { seedDevUser } from "./seed-dev-user.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 loadRepoEnv(repoRoot);
@@ -26,13 +26,13 @@ async function resolveSmokeUserId(): Promise<UserId> {
   const explicit = process.env.TEST_USER_ID?.trim();
   if (explicit) return explicit as UserId;
 
-  const admin = new SupabaseAdminClient(
-    requireEnv("SUPABASE_URL"),
-    requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
-  );
-  const email = process.env.TEST_USER_EMAIL ?? "smoke@meridian.dev";
-  const password = process.env.TEST_USER_PASSWORD ?? "meridian-dev";
-  return (await admin.ensureUser(email, password)) as UserId;
+  const databaseUrl = requireEnv("DATABASE_URL");
+  const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
+  const email =
+    process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() ||
+    process.env.TEST_USER_EMAIL?.trim() ||
+    "test@meridian.dev";
+  return (await seedDevUser({ databaseUrl, externalId, email })) as UserId;
 }
 
 async function cleanupSmokeRows(db: ReturnType<typeof createDb>): Promise<void> {

@@ -13,10 +13,9 @@ const TEST_BASE_ENV: ApiStartupEnv = {
   OBJECT_STORE_PROVIDER: "local",
   S3_ACCESS_KEY: undefined,
   S3_SECRET_KEY: undefined,
-  SUPABASE_URL: "http://127.0.0.1:54421",
-  SUPABASE_ANON_KEY: "local-anon-key",
   WORKOS_API_KEY: "dev-workos-key",
   WORKOS_CLIENT_ID: "dev-workos-client",
+  WORKOS_COOKIE_PASSWORD: "local-cookie-password-at-least-32-characters-long",
   API_REPLICA_COUNT: 1,
   DURABLE_EVENT_BACKEND: "none",
 };
@@ -93,22 +92,6 @@ describe("evaluateApiStartupGuards", () => {
     );
   });
 
-  it("rejects production Supabase placeholder configuration", () => {
-    const result = evaluateApiStartupGuards(
-      withOverrides({
-        NODE_ENV: "production",
-        SUPABASE_URL: "http://127.0.0.1:54421",
-        SUPABASE_ANON_KEY: "dev-supabase-anon-key",
-      }),
-    );
-    expect(result.errors).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("SUPABASE_URL"),
-        expect.stringContaining("SUPABASE_ANON_KEY"),
-      ]),
-    );
-  });
-
   it("rejects production WorkOS placeholder credentials", () => {
     const result = evaluateApiStartupGuards(
       withOverrides({
@@ -116,6 +99,7 @@ describe("evaluateApiStartupGuards", () => {
         APP_ENV: "production",
         WORKOS_API_KEY: "sk_test_placeholder",
         WORKOS_CLIENT_ID: "client_ci",
+        WORKOS_COOKIE_PASSWORD: "production-cookie-password-32-chars-min",
       }),
     );
 
@@ -127,6 +111,20 @@ describe("evaluateApiStartupGuards", () => {
     );
   });
 
+  it("requires WORKOS_COOKIE_PASSWORD in production", () => {
+    const result = evaluateApiStartupGuards(
+      withOverrides({
+        NODE_ENV: "production",
+        APP_ENV: "production",
+        WORKOS_API_KEY: "workos_live_ci_value",
+        WORKOS_CLIENT_ID: "client_live_ci_value",
+        WORKOS_COOKIE_PASSWORD: undefined,
+      }),
+    );
+
+    expect(result.errors).toContainEqual(expect.stringContaining("WORKOS_COOKIE_PASSWORD"));
+  });
+
   it("accepts WorkOS staging API keys in a production-built staging deploy", () => {
     const result = evaluateApiStartupGuards(
       withOverrides({
@@ -134,8 +132,7 @@ describe("evaluateApiStartupGuards", () => {
         APP_ENV: "staging",
         WORKOS_API_KEY: "sk_test_workos_staging",
         WORKOS_CLIENT_ID: "client_staging_value",
-        SUPABASE_URL: "https://project.supabase.co",
-        SUPABASE_ANON_KEY: "prod-anon-key",
+        WORKOS_COOKIE_PASSWORD: "staging-cookie-password-32-chars-min",
       }),
     );
 
@@ -148,10 +145,9 @@ describe("evaluateApiStartupGuards", () => {
         NODE_ENV: "production",
         APP_ENV: "production",
         API_REPLICA_COUNT: undefined,
-        SUPABASE_URL: "https://project.supabase.co",
-        SUPABASE_ANON_KEY: "prod-anon-key",
         WORKOS_API_KEY: "workos_live_ci_value",
         WORKOS_CLIENT_ID: "client_live_ci_value",
+        WORKOS_COOKIE_PASSWORD: "production-cookie-password-32-chars-min",
       }),
     );
     expect(result.errors).toHaveLength(0);
@@ -168,10 +164,9 @@ describe("evaluateApiStartupGuards", () => {
         API_REPLICA_COUNT: 1,
         MODEL_PROVIDER: "openai",
         OPENAI_API_KEY: "sk-openai-real",
-        SUPABASE_URL: "https://project.supabase.co",
-        SUPABASE_ANON_KEY: "prod-anon-key",
         WORKOS_API_KEY: "workos_live_ci_value",
         WORKOS_CLIENT_ID: "client_live_ci_value",
+        WORKOS_COOKIE_PASSWORD: "production-cookie-password-32-chars-min",
       }),
     );
     expect(result.errors).toHaveLength(0);

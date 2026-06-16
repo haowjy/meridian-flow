@@ -7,7 +7,7 @@ and AI runtime that understands narrative context.
 ## System topology
 
 ```
-apps/app ──HTTPS/WS──▶ apps/server ──▶ Supabase Postgres + auth.users
+apps/app ──HTTPS/WS──▶ apps/server ──▶ Postgres (Supabase CLI in dev) + public.users
    │                         │
    │                         ├── Drizzle app schema
    │                         ├── Yjs document updates

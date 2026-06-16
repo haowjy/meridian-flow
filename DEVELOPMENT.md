@@ -12,14 +12,14 @@ cp .env.example .env
 pnpm supabase:start
 pnpm supabase:env    # copy printed keys into .env
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap       # auth user, db:migrate, apply-functions, sample project
+pnpm bootstrap       # migrate, apply-functions, seed dev public.users + sample project
 ```
 
 `pnpm install` runs `prepare` → `lefthook install`. On a **git worktree** that often fails (see [Git hooks](#git-hooks-lefthook) below); run the `--reset-hooks-path` command once after install.
 
 ## Local database
 
-Postgres and `auth.users` come from Supabase CLI. App schema is Drizzle in `packages/database` (not `supabase/migrations`).
+Postgres comes from Supabase CLI. App schema is Drizzle in `packages/database` (not `supabase/migrations`). Auth is WorkOS AuthKit with app-owned `public.users`.
 
 | Command | Purpose |
 |---------|---------|
@@ -28,7 +28,7 @@ Postgres and `auth.users` come from Supabase CLI. App schema is Drizzle in `pack
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm bootstrap` | Migrate + functions + dev user + seed project |
+| `pnpm bootstrap` | Migrate + functions + seed dev `public.users` + sample project |
 
 Details: [supabase/README.md](supabase/README.md), [packages/database/README.md](packages/database/README.md).
 

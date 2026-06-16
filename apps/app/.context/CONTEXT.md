@@ -7,31 +7,19 @@ govern visual and interaction work.
 
 `src/server/config.ts` is the app server's config seam. It parses the
 upstream-shaped runtime variables `APP_ENV` and `LOG_LEVEL` through
-`src/server/runtime-config.ts`, then adds Meridian/Supabase settings:
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_AUTH_REDIRECT_URI`,
-`TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, `SUPABASE_DEV_AUTOLOGIN`, and
-`MERIDIAN_API_ORIGIN`. The parsed config is server-only; isomorphic client-path
-helpers such as `src/client/api/ssr-api-request.ts` must keep their guarded env
-reads local instead of importing `getAppServerConfig()`.
+`src/server/runtime-config.ts`, then adds Meridian/WorkOS settings:
+`WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI`, `WORKOS_DEV_LOGIN_*`,
+`WORKOS_DEV_AUTOLOGIN`, and `MERIDIAN_API_ORIGIN`. The parsed config is
+server-only; isomorphic client-path helpers such as `src/client/api/ssr-api-request.ts`
+must keep their guarded env reads local instead of importing `getAppServerConfig()`.
 
-Auth remains Supabase cookie auth in `src/server/auth.ts`. `/logout` clears the
-Meridian Supabase session cookies and redirects to `/login`. `/api/auth/callback`
-is present as the callback route surface for OAuth or magic-link flows, but it
-currently redirects to `/auth-check`.
+Auth is WorkOS AuthKit: the sealed `wos-session` cookie is minted by
+`/api/auth/callback` (hosted AuthKit) or `/api/auth/dev-login` (dev-only password
+auth). `/logout` clears the session via `signOut()`.
 
-`resolveAuthRedirectUri(request)` uses the configured
-`SUPABASE_AUTH_REDIRECT_URI` outside dev. In dev it may derive the callback from
-the request origin for the real portless/Tailscale host (`*.localhost` or
-`*.ts.net`) when the protocol is compatible. Supabase dev-login does not use the
-callback path.
-
-There are two dev-auth predicates with different scopes:
-
-- `devLoginEnabled()` (`src/server/auth.ts`) gates the visible/manual dev-login
-  route and still checks the Supabase/test-user env directly.
-- `isDevAutologinEnabled()` (`src/server/dev-auth.ts`) is the config-backed
-  autologin predicate; it is false in production and requires
-  `SUPABASE_DEV_AUTOLOGIN` plus test-user credentials.
+`isDevAutologinEnabled()` (`src/server/dev-auth.ts`) gates dev autologin; it is
+false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
+`WORKOS_DEV_LOGIN_EMAIL` / `WORKOS_DEV_LOGIN_PASSWORD`.
 
 ## State + transport seams
 

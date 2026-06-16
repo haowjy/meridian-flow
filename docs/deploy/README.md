@@ -29,8 +29,9 @@ Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestrati
 
 ## Database
 
-Production uses Postgres. Dev uses local Supabase for Postgres + `auth.users`;
-the app schema remains Drizzle-owned in `@meridian/database`.
+Production uses Postgres. Dev uses local Supabase CLI for Postgres only;
+the app schema remains Drizzle-owned in `@meridian/database`. Auth is WorkOS
+AuthKit with `public.users` as the identity table.
 
 ```bash
 pnpm --filter @meridian/database db:migrate
@@ -47,9 +48,10 @@ Required baseline:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres connection |
-| `SUPABASE_URL` | Supabase Auth API |
-| `SUPABASE_ANON_KEY` | Browser/server auth verification |
-| `SUPABASE_SERVICE_ROLE_KEY` | Dev/bootstrap/admin-only operations |
+| `WORKOS_API_KEY` | WorkOS API key |
+| `WORKOS_CLIENT_ID` | AuthKit client id |
+| `WORKOS_COOKIE_PASSWORD` | Sealed session cookie encryption (≥32 chars) |
+| `WORKOS_REDIRECT_URI` | AuthKit callback URL registered in WorkOS |
 | `MERIDIAN_API_ORIGIN` | Public server/API origin used by app SSR when the app and server are not same-process |
 | `APP_ENV` | Set to `production` for production deploys |
 

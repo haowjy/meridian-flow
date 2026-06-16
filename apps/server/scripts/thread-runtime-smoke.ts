@@ -20,6 +20,11 @@ import {
   createDrizzleEventJournalWriter,
   createThreadEventHub,
 } from "../server/domains/threads/index.js";
+import {
+  cookieAuthHeaders,
+  mintWorkOsDevSession,
+  resolveDevInternalUserId,
+} from "./workos-dev-session.js";
 
 try {
   loadEnvFile("../../.env");
@@ -30,28 +35,9 @@ try {
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
-const supabaseUrl = process.env.SUPABASE_URL;
-const anonKey = process.env.SUPABASE_ANON_KEY;
-const email = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-const password = process.env.TEST_USER_PASSWORD ?? "meridian-dev";
 
 if (!serverUrl) throw new Error("SMOKE_SERVER_URL is required");
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
-if (!supabaseUrl || !anonKey) throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
-
-async function signIn(): Promise<{ token: string; userId: string }> {
-  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: anonKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!response.ok) throw new Error(`sign-in failed: ${response.status} ${await response.text()}`);
-  const body = (await response.json()) as { access_token: string; user: { id: string } };
-  return { token: body.access_token, userId: body.user.id };
-}
 
 function wsUrlFor(url: string): string {
   const parsed = new URL("/api/threads/ws", url);
@@ -114,7 +100,9 @@ function waitForEventTypes(ws: WebSocket, expected: Set<string>): Promise<string
   });
 }
 
-const { token, userId } = await signIn();
+const session = await mintWorkOsDevSession();
+const authHeaders = cookieAuthHeaders(session);
+const userId = await resolveDevInternalUserId(databaseUrl, session.externalUserId);
 const db = createDb(databaseUrl);
 const projectId = randomUUID();
 const workId = randomUUID();
@@ -161,7 +149,7 @@ await db.insert(creditTransactions).values({
 });
 
 const ws = new WebSocket(wsUrlFor(serverUrl), {
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 await waitForOpen(ws);
 
@@ -181,7 +169,7 @@ await subscribedPromise;
 
 const response = await fetch(new URL(`/api/threads/${threadId}/messages`, serverUrl), {
   method: "POST",
-  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  headers: { ...authHeaders, "content-type": "application/json" },
   body: JSON.stringify({ text: "hello phase three" }),
 });
 if (response.status !== 202)
@@ -191,7 +179,7 @@ const seenEvents = await eventsPromise;
 ws.close();
 
 const catchupWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 await waitForOpen(catchupWs);
 const catchupPromise = waitForSubscribed(catchupWs);
@@ -205,7 +193,7 @@ const contentSeq = catchupFrame.catchup?.find(
 if (!contentSeq) throw new Error("catchup missing content seq");
 
 const resumeWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: { authorization: `Bearer ${token}` },
+  headers: authHeaders,
 });
 await waitForOpen(resumeWs);
 const resumePromise = waitForSubscribed(resumeWs);
