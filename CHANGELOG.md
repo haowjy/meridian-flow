@@ -1,5 +1,11 @@
 # Changelog
 
+## Fixes (2026-06-16, branch h/v3)
+
+- "New chat" works from the default composer again. The client-only `general`
+  default agent slug is no longer sent on thread create (it has no server agent),
+  so the request no longer 400s with `Agent not found: general`.
+
 ## WorkOS auth (2026-06-16, branch h/v3)
 
 - Authentication is now WorkOS AuthKit, not Supabase GoTrue/JWKS. Sessions are a
