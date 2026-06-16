@@ -15,7 +15,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("drizzle credit ledger (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { authUsers, creditLots, creditTransactions } = await import("@meridian/database/schema");
+    const { creditLots, creditTransactions, users } = await import("@meridian/database/schema");
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { sql } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleCreditLedger } = await import("../drizzle/credit-ledger.js");
@@ -27,11 +30,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const projectId = "00000000-0000-4000-8000-000000000201";
 
     async function seedUser(): Promise<void> {
-      await db.insert(authUsers).values({ id: userId });
+      await db.insert(users).values(conformanceUserValues(userId, "credit-ledger"));
     }
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [creditTransactions, creditLots, authUsers]);
+      await truncateDrizzleTables(db, [creditTransactions, creditLots, users]);
       await seedUser();
     });
 

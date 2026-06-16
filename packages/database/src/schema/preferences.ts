@@ -10,8 +10,8 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { authUsers } from "./auth";
 import { projects } from "./content";
+import { users } from "./users";
 
 export const projectUserPreferences = pgTable(
   "project_user_preferences",
@@ -19,7 +19,7 @@ export const projectUserPreferences = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .notNull()

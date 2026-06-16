@@ -2,8 +2,8 @@ import type { DocumentId, DocumentRestorePointId, TurnId, UserId } from "@meridi
 import { bigint, bigserial, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, idColumn } from "./_shared";
 import { turns } from "./agent-threads";
-import { authUsers } from "./auth";
 import { documents } from "./content";
+import { users } from "./users";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -36,7 +36,7 @@ export const documentYjsUpdates = pgTable(
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
-      .references(() => authUsers.id, {
+      .references(() => users.id, {
         onDelete: "set null",
       }),
     actorTurnId: uuid("actor_turn_id")
@@ -75,7 +75,7 @@ export const documentRestorePoints = pgTable("document_restore_points", {
   upToSeq: bigint("up_to_seq", { mode: "number" }),
   createdByUserId: uuid("created_by_user_id")
     .$type<UserId>()
-    .references(() => authUsers.id, {
+    .references(() => users.id, {
       onDelete: "set null",
     }),
   createdAt: createdAt(),

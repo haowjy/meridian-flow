@@ -1,14 +1,14 @@
 import type { ProjectId, UserId } from "@meridian/contracts";
 import { pgTable, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { createdAt, jsonbDefault, updatedAt } from "./_shared";
-import { authUsers } from "./auth";
 import { projects } from "./content";
+import { users } from "./users";
 
 export const userPreferences = pgTable("user_preferences", {
   userId: uuid("user_id")
     .$type<UserId>()
     .primaryKey()
-    .references(() => authUsers.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "cascade" }),
   preferences: jsonbDefault("preferences"),
   onboardingState: jsonbDefault("onboarding_state"),
   createdAt: createdAt(),
@@ -21,7 +21,7 @@ export const userProjectFavorites = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .notNull()

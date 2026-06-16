@@ -51,6 +51,8 @@
     "@tiptap/pm": "2.27.2",
     "@tiptap/react": "^2.26.1",
     "@tiptap/starter-kit": "^2.26.1",
+    "@workos/authkit-session": "^0.5.4",
+    "@workos/authkit-tanstack-react-start": "^0.8.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "katex": "0.16.22",

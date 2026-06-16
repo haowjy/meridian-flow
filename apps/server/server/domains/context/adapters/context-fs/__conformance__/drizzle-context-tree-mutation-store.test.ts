@@ -11,8 +11,11 @@ describe.skipIf(!RUN_DB_TESTS || !DATABASE_URL)(
   "drizzle context tree mutation store (postgres)",
   async () => {
     const { createDb } = await import("@meridian/database");
-    const { authUsers, contextSources, documents, folders, projects } = await import(
+    const { contextSources, documents, folders, projects, users } = await import(
       "@meridian/database/schema"
+    );
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../../../test-support/drizzle-reset.js");
     const { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } = await import(
@@ -29,8 +32,11 @@ describe.skipIf(!RUN_DB_TESTS || !DATABASE_URL)(
     const sourceB = "00000000-0000-4000-8000-0000000000b1";
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [documents, folders, contextSources, projects, authUsers]);
-      await db.insert(authUsers).values({ id: userId }).onConflictDoNothing();
+      await truncateDrizzleTables(db, [documents, folders, contextSources, projects, users]);
+      await db
+        .insert(users)
+        .values(conformanceUserValues(userId, "context-tree-mutation"))
+        .onConflictDoNothing();
       await db.insert(projects).values({
         id: projectId,
         userId,

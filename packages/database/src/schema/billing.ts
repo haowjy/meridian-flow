@@ -17,7 +17,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, millicredits, updatedAt } from "./_shared";
-import { authUsers } from "./auth";
+import { users } from "./users";
 
 export const userSubscriptions = pgTable(
   "user_subscriptions",
@@ -26,7 +26,7 @@ export const userSubscriptions = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
     stripeCustomerId: text("stripe_customer_id").notNull(),
     plan: text("plan").notNull().default("pro"),
@@ -62,7 +62,7 @@ export const creditLots = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     sourceType: text("source_type").notNull(),
     originalAmountMillicredits: millicredits("original_amount_millicredits").notNull(),
     remainingMillicredits: millicredits("remaining_millicredits").notNull(),
@@ -112,7 +112,7 @@ export const creditTransactions = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     transactionType: text("transaction_type").notNull(),
     amountMillicredits: millicredits("amount_millicredits").notNull(),
     lotId: uuid("lot_id")

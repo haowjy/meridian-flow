@@ -13,6 +13,10 @@ function serviceHarness(initialState: OnboardingState = {}, projectCount = 0) {
       async ensureUser() {
         return userId;
       },
+      async getLastActiveProjectId() {
+        return null;
+      },
+      async setLastActiveProjectId() {},
       async getOnboardingState() {
         return state;
       },

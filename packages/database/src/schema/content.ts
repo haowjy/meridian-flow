@@ -25,7 +25,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { authUsers } from "./auth";
+import { users } from "./users";
 
 export const projects = pgTable(
   "projects",
@@ -34,7 +34,7 @@ export const projects = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     isPersonal: boolean("is_personal").notNull().default(false),
@@ -69,7 +69,7 @@ export const works = pgTable(
     createdByUserId: uuid("created_by_user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
     visibility: text("visibility").$type<WorkVisibility>().notNull().default("private"),
     persistence: text("persistence").$type<WorkPersistence>().notNull().default("persisted"),

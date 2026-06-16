@@ -23,6 +23,7 @@
     "@meridian/prosemirror-schema": "workspace:*",
     "@supabase/supabase-js": "^2.108.1",
     "@t3-oss/env-core": "^0.13.11",
+    "@workos/authkit-session": "^0.5.4",
     "drizzle-orm": "catalog:",
     "lib0": "^0.2.114",
     "mammoth": "1.12.0",
@@ -48,11 +49,11 @@
     "@types/markdown-it": "^14.1.2",
     "@types/semver": "^7.7.1",
     "@types/tar": "^7.0.87",
+    "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.3",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.18.3",
-    "@types/turndown": "^5.0.6"
+    "ws": "^8.18.3"
   }
 }

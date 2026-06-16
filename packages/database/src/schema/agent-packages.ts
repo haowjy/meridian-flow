@@ -18,8 +18,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, updatedAt } from "./_shared";
-import { authUsers } from "./auth";
 import { projects } from "./content";
+import { users } from "./users";
 
 export const agentDefinitions = pgTable(
   "agent_definitions",
@@ -101,7 +101,7 @@ export const userInstalledSkills = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description").notNull().default(""),
