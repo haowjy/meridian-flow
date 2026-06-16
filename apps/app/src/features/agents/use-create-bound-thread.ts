@@ -11,7 +11,7 @@ import { invalidateProjectThreadData } from "@/client/query/project-invalidation
 import { useThreadActions } from "@/client/stores";
 import { defaultThreadTitle } from "@/lib/thread-title";
 
-import { wireAgentSlug } from "./constants";
+import { threadCreateAgentField } from "./constants";
 
 export function useCreateBoundProjectThread(projectId: string) {
   const threadActions = useThreadActions();
@@ -19,10 +19,9 @@ export function useCreateBoundProjectThread(projectId: string) {
 
   return useMutation({
     mutationFn: async ({ agentSlug, title }: { agentSlug: string; title?: string }) => {
-      const wireSlug = wireAgentSlug(agentSlug);
       const thread = await createProjectThread(projectId, {
         title: title ?? defaultThreadTitle(),
-        ...(wireSlug ? { currentAgent: wireSlug } : {}),
+        ...threadCreateAgentField(agentSlug),
       });
       threadActions.ensureThread(thread);
       await invalidateProjectThreadData(queryClient, projectId);

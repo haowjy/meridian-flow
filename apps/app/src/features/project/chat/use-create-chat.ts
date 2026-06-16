@@ -11,13 +11,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { createProjectThread } from "@/client/api/projects-api";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { DEFAULT_AGENT_SLUG, threadCreateAgentField } from "@/features/agents";
 
 export function useCreateChat(projectId: string, onSelectThread: (threadId: string) => void) {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => createProjectThread(projectId, { currentAgent: DEFAULT_AGENT_SLUG }),
+    mutationFn: () => createProjectThread(projectId, threadCreateAgentField(DEFAULT_AGENT_SLUG)),
     onSuccess: async (thread) => {
       await invalidateProjectThreadData(queryClient, projectId);
       onSelectThread(thread.id);
