@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../../observability/index.js";
+import { noopFinalizeGeneratorFailure } from "../run-turn-port.js";
 import { createTurnRunner } from "../turn-runner.js";
 
 describe("createTurnRunner background child registry", () => {
@@ -15,6 +16,7 @@ describe("createTurnRunner background child registry", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: { headSeq: async () => 0n } as never,
@@ -88,6 +90,7 @@ describe("createTurnRunner background child registry", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: { headSeq: async () => 0n } as never,
@@ -123,6 +126,7 @@ describe("createTurnRunner background child registry", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       eventSink: createInMemoryEventSink(),
       hub: { headSeq: async () => 0n } as never,

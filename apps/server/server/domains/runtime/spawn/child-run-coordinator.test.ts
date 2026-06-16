@@ -7,6 +7,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
+import { noopFinalizeGeneratorFailure } from "../loop/run-turn-port.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 import { createHelperResultDelivery } from "./helper-result-delivery.js";
 
@@ -113,6 +114,7 @@ describe("ChildRunCoordinator background spawn", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       repos: {
         threads: repos.threads,
@@ -245,6 +247,7 @@ describe("ChildRunCoordinator background spawn", () => {
             })(),
           };
         },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
       },
       repos: {
         threads: repos.threads,
