@@ -128,6 +128,7 @@ function MobileFolderListing({
   creating: ContextCreateKind | null;
   onCreateDone: () => void;
 }) {
+  const workId = useContextWorkId(projectId, activeThreadId);
   const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
     activeThreadId,
   });
@@ -154,6 +155,7 @@ function MobileFolderListing({
           isFetching={isFetching}
           scheme={scheme}
           folder={folder}
+          workId={workId}
           onSelectContextFolder={onSelectContextFolder}
           onSelectContextPath={onSelectContextPath}
         />
@@ -168,6 +170,7 @@ function FolderListingBody({
   isFetching,
   scheme,
   folder,
+  workId,
   onSelectContextFolder,
   onSelectContextPath,
 }: {
@@ -176,6 +179,7 @@ function FolderListingBody({
   isFetching: boolean;
   scheme: ProjectContextTreeScheme;
   folder: string | null;
+  workId: string | null;
   onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
 }) {
@@ -225,7 +229,7 @@ function FolderListingBody({
   }
 
   function openFile(file: ContextFile) {
-    const contextTab = contextTabFromFile(scheme, file);
+    const contextTab = contextTabFromFile(scheme, file, workId);
     onSelectContextPath(contextTab.path, contextTab.scheme);
   }
 

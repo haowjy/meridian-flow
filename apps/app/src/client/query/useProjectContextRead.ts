@@ -44,9 +44,10 @@ export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options?: { enabled?: boolean; activeThreadId?: string | null },
+  options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
 ): ContextReadStatus {
-  const workId = useContextWorkId(projectId, options?.activeThreadId ?? null);
+  const threadWorkId = useContextWorkId(projectId, options?.activeThreadId ?? null);
+  const workId = options?.workId ?? threadWorkId;
   const callerEnabled = options?.enabled ?? true;
   const resolvedScheme = scheme ?? "kb";
   const workScoped = scheme !== null && isWorkScopedProjectContextScheme(scheme);

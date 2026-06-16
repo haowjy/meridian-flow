@@ -16,7 +16,9 @@ export interface ContextTreeMutationStoreHarness {
   sourceB: string;
   storeA: ContextDocumentStore;
   storeB: ContextDocumentStore;
-  mutationStore: ContextTreeMutationStore;
+  mutationStore: ContextTreeMutationStore & {
+    setBeforeDestructiveWrite?: (hook: (() => void | Promise<void>) | null) => void;
+  };
 }
 
 export function describeContextTreeMutationStoreConformance(
@@ -322,6 +324,29 @@ export function describeContextTreeMutationStoreConformance(
         ok: false,
         error: { code: "stale_source" },
       });
+      expect(await h.mutationStore.inspect(h.sourceA, "delete-me.md")).toMatchObject({
+        nodeId: doc.id,
+      });
+    });
+
+    it("rejects delete when content changes after CAS recheck but before destructive write", async () => {
+      const h = await harness();
+      const setHook = h.mutationStore.setBeforeDestructiveWrite;
+      if (!setHook) throw new Error("mutation store missing interleave hook");
+
+      const doc = await write(h.storeA, "delete-me.md", "original");
+      const token = await h.mutationStore.inspect(h.sourceA, "delete-me.md");
+      if (!token) throw new Error("expected delete token");
+
+      setHook.call(h.mutationStore, async () => {
+        await write(h.storeA, "delete-me.md", "raced after recheck");
+      });
+
+      expect(await h.mutationStore.commitDelete(token)).toEqual({
+        ok: false,
+        error: { code: "stale_source" },
+      });
+      setHook.call(h.mutationStore, null);
       expect(await h.mutationStore.inspect(h.sourceA, "delete-me.md")).toMatchObject({
         nodeId: doc.id,
       });

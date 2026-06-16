@@ -93,4 +93,20 @@ describe("context-tabs-store", () => {
     closeTab(PROJECT_A, "a");
     expect(useContextTabsStore.getState().byProject[PROJECT_B]?.tabs).toHaveLength(1);
   });
+
+  it("pruneWorkScopedTabs drops tabs from other works", () => {
+    const { openTab, pruneWorkScopedTabs } = useContextTabsStore.getState();
+    openTab(PROJECT_A, {
+      ...tab("a", { path: "/work/notes.md" }),
+      scheme: "work",
+      workId: "work-a",
+    });
+    openTab(PROJECT_A, {
+      ...tab("b", { path: "/kb/readme.md" }),
+      scheme: "kb",
+    });
+    pruneWorkScopedTabs(PROJECT_A, "work-b");
+    const slice = useContextTabsStore.getState().byProject[PROJECT_A];
+    expect(slice?.tabs.map((t) => t.documentId)).toEqual(["b"]);
+  });
 });

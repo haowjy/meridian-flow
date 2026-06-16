@@ -39,7 +39,10 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, { activeThreadId });
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
+    activeThreadId,
+    workId: tab.workId,
+  });
   if (tab.editable) {
     return (
       <ViewerStatus tone="error">

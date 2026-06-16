@@ -15,12 +15,13 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef } from "react";
-
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { type ContextTab, useContextTabs, useContextTabsActions } from "@/client/stores";
+import { useContextTabs, useContextTabsActions } from "@/client/stores";
 
 import { ContextViewer } from "./context/ContextViewer";
 import { contextTabFromFile } from "./context/context-tab-from-file";
+import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import { findContextFile } from "./context/context-tree";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -51,9 +52,10 @@ export function ContextViewerSurfaceController({
   dockToggle,
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
+  const workId = useContextWorkId(projectId, activeThreadId);
   const { tabs } = useContextTabs(projectId);
-  const { openTab, closeTab } = useContextTabsActions();
-  const activeTab = findActiveTab(tabs, activeContextScheme, activeContextPath);
+  const { openTab, closeTab, pruneWorkScopedTabs } = useContextTabsActions();
+  const activeTab = findContextTabForRoute(tabs, activeContextScheme, activeContextPath, workId);
   const activeTabId = activeTab?.documentId ?? null;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
@@ -76,9 +78,13 @@ export function ContextViewerSurfaceController({
   // file later re-opens it instead of being permanently blocked.
   const openTabKey =
     activeContextScheme !== null && activeContextPath !== null
-      ? `${projectId}:${activeContextScheme}:${activeContextPath}`
+      ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, workId)
       : null;
   const openedKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    pruneWorkScopedTabs(projectId, workId);
+  }, [projectId, pruneWorkScopedTabs, workId]);
 
   useEffect(() => {
     // Re-arm once the route stops needing an auto-open (the tab now exists,
@@ -92,7 +98,7 @@ export function ContextViewerSurfaceController({
     if (openedKeyRef.current === openTabKey) return;
     const file = findContextFile(routeTree, activeContextPath);
     if (!file) return;
-    openTab(projectId, contextTabFromFile(activeContextScheme, file));
+    openTab(projectId, contextTabFromFile(activeContextScheme, file, workId));
     openedKeyRef.current = openTabKey;
   }, [
     activeContextPath,
@@ -102,6 +108,7 @@ export function ContextViewerSurfaceController({
     openTabKey,
     projectId,
     routeTree,
+    workId,
   ]);
 
   function handleSelectTab(documentId: string) {
@@ -125,7 +132,7 @@ export function ContextViewerSurfaceController({
   // ContextFilesSurfaceController, now lifted alongside the viewer state
   // because the file tree renders inside `ContextViewer`.
   function handleSelectFile(scheme: ProjectContextTreeScheme, file: ProjectContextTreeFile) {
-    const tab = contextTabFromFile(scheme, file);
+    const tab = contextTabFromFile(scheme, file, workId);
     openTab(projectId, tab);
     onSelectContextPath(tab.path, tab.scheme);
   }
@@ -206,13 +213,4 @@ function findEditorScroller(documentId: string): HTMLElement | null {
     return host.querySelector<HTMLElement>("[data-stable-layout-scroll]");
   }
   return null;
-}
-
-function findActiveTab(
-  tabs: ContextTab[],
-  scheme: ProjectContextTreeScheme | null,
-  path: string | null,
-): ContextTab | null {
-  if (scheme === null || path === null) return null;
-  return tabs.find((tab) => tab.scheme === scheme && tab.path === path) ?? null;
 }

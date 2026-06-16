@@ -9,18 +9,24 @@ import type {
   ProjectContextTreeFile,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
 import type { ContextTab } from "@/client/stores";
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: ProjectContextTreeFile,
+  workId?: string | null,
 ): ContextTab {
-  return {
+  const base = {
     documentId: file.documentId,
     scheme,
     path: file.path,
     name: file.name,
+    ...(isWorkScopedProjectContextScheme(scheme) && workId ? { workId } : {}),
+  };
+  return {
+    ...base,
     ...(file.editable
       ? {
           editable: true as const,

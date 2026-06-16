@@ -342,7 +342,18 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
  * backing rollback makes failure behavior match a database transaction.
  */
 export class InMemoryContextTreeMutationStore implements ContextTreeMutationStore {
+  private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
+
   constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
+
+  /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
+  setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
+    this.beforeDestructiveWrite = hook;
+  }
+
+  private async runBeforeDestructiveWrite(): Promise<void> {
+    await this.beforeDestructiveWrite?.();
+  }
 
   private nextTimestamp(): string {
     this.backing.clock.value += 1;
@@ -618,16 +629,20 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const invalidatedDocumentIds: string[] = [];
       const now = this.nextTimestamp();
       if (input.source.kind === "file") {
-        const sourceRow = this.backing.documents.get(input.source.nodeId);
-        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
         if (targetToken?.kind === "file") {
+          await this.runBeforeDestructiveWrite();
           const targetRow = this.backing.documents.get(targetToken.nodeId);
           if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
+          if (targetRow.updatedAt !== targetToken.revision) return Err({ code: "stale_target" });
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
           invalidatedDocumentIds.push(targetRow.id);
         }
         const { name, extension } = parseFilename(targetBasename);
+        await this.runBeforeDestructiveWrite();
+        const sourceRow = this.backing.documents.get(input.source.nodeId);
+        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
+        if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
         if (sourceRow.contextSourceId !== input.destinationSourceId) {
           invalidatedDocumentIds.push(sourceRow.id);
         }
@@ -641,7 +656,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
 
       const root = this.backing.folders.get(input.source.nodeId);
       if (!root || root.deletedAt !== null) return Err({ code: "stale_source" });
-      const subtree = this.collectSubtree(root.id, input.source.sourceId);
+      await this.runBeforeDestructiveWrite();
+      const movedRoot = this.backing.folders.get(input.source.nodeId);
+      if (!movedRoot || movedRoot.deletedAt !== null) return Err({ code: "stale_source" });
+      if (movedRoot.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
+      const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {
         const folder = this.backing.folders.get(id);
@@ -649,9 +668,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         folder.contextSourceId = input.destinationSourceId;
         folder.updatedAt = this.nextTimestamp();
       }
-      root.parentId = destParentId;
-      root.name = targetBasename;
-      root.updatedAt = this.nextTimestamp();
+      movedRoot.parentId = destParentId;
+      movedRoot.name = targetBasename;
+      movedRoot.updatedAt = this.nextTimestamp();
       for (const documentId of movedDocumentIds) {
         const doc = this.backing.documents.get(documentId);
         if (!doc) continue;
@@ -661,7 +680,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (input.source.sourceId !== input.destinationSourceId) {
         invalidatedDocumentIds.push(...movedDocumentIds);
       }
-      return Ok({ movedNodeId: root.id, invalidatedDocumentIds });
+      return Ok({ movedNodeId: movedRoot.id, invalidatedDocumentIds });
     });
   }
 
@@ -674,8 +693,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });
       const now = this.nextTimestamp();
       if (token.kind === "file") {
+        await this.runBeforeDestructiveWrite();
         const doc = this.backing.documents.get(token.nodeId);
         if (!doc || doc.deletedAt !== null) return Err({ code: "stale_source" });
+        if (doc.updatedAt !== token.revision) return Err({ code: "stale_source" });
         doc.deletedAt = now;
         doc.updatedAt = now;
         return Ok({ deletedNodeId: doc.id, invalidatedDocumentIds: [doc.id] });
@@ -685,9 +706,13 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (this.folderHasLiveChildren(folder.id, token.sourceId)) {
         return Err({ code: "invalid_operation" });
       }
-      folder.deletedAt = now;
-      folder.updatedAt = now;
-      return Ok({ deletedNodeId: folder.id, invalidatedDocumentIds: [] });
+      await this.runBeforeDestructiveWrite();
+      const folderNow = this.backing.folders.get(token.nodeId);
+      if (!folderNow || folderNow.deletedAt !== null) return Err({ code: "stale_source" });
+      if (folderNow.updatedAt !== token.revision) return Err({ code: "stale_source" });
+      folderNow.deletedAt = now;
+      folderNow.updatedAt = now;
+      return Ok({ deletedNodeId: folderNow.id, invalidatedDocumentIds: [] });
     });
   }
 }
