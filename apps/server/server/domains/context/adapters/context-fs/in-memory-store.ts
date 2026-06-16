@@ -339,16 +339,23 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
 /**
  * Backing-scoped in-memory implementation of the atomic move/delete CAS port.
  * Snapshots are intentionally coarse: this adapter is test-only, and a whole
- * backing rollback makes failure behavior match a database transaction.
+ * backing rollback on failure matches a database transaction for mutator-owned
+ * writes only — concurrent store writes interleaved via the destructive hook
+ * persist when the mutator returns Err without having applied its own changes.
  */
 export class InMemoryContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
+  private mutatorTouchedBacking = false;
 
   constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
     this.beforeDestructiveWrite = hook;
+  }
+
+  private markMutatorWrite(): void {
+    this.mutatorTouchedBacking = true;
   }
 
   private async runBeforeDestructiveWrite(): Promise<void> {
@@ -380,9 +387,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     operation: () => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
     const snapshot = this.snapshot();
+    this.mutatorTouchedBacking = false;
     try {
       const result = await operation();
-      if (!result.ok) this.restore(snapshot);
+      if (!result.ok && this.mutatorTouchedBacking) this.restore(snapshot);
       return result;
     } catch (error) {
       this.restore(snapshot);
@@ -428,6 +436,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         updatedAt: this.nextTimestamp(),
       };
       this.backing.folders.set(folder.id, folder);
+      this.markMutatorWrite();
       parentId = folder.id;
     }
     return parentId;
@@ -636,6 +645,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           if (targetRow.updatedAt !== targetToken.revision) return Err({ code: "stale_target" });
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
+          this.markMutatorWrite();
           invalidatedDocumentIds.push(targetRow.id);
         }
         const { name, extension } = parseFilename(targetBasename);
@@ -651,6 +661,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceRow.name = name;
         sourceRow.extension = extension;
         sourceRow.updatedAt = this.nextTimestamp();
+        this.markMutatorWrite();
         return Ok({ movedNodeId: sourceRow.id, invalidatedDocumentIds });
       }
 
@@ -677,6 +688,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.contextSourceId = input.destinationSourceId;
         doc.updatedAt = this.nextTimestamp();
       }
+      this.markMutatorWrite();
       if (input.source.sourceId !== input.destinationSourceId) {
         invalidatedDocumentIds.push(...movedDocumentIds);
       }
@@ -699,6 +711,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         if (doc.updatedAt !== token.revision) return Err({ code: "stale_source" });
         doc.deletedAt = now;
         doc.updatedAt = now;
+        this.markMutatorWrite();
         return Ok({ deletedNodeId: doc.id, invalidatedDocumentIds: [doc.id] });
       }
       const folder = this.backing.folders.get(token.nodeId);
@@ -710,8 +723,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const folderNow = this.backing.folders.get(token.nodeId);
       if (!folderNow || folderNow.deletedAt !== null) return Err({ code: "stale_source" });
       if (folderNow.updatedAt !== token.revision) return Err({ code: "stale_source" });
+      if (this.folderHasLiveChildren(folderNow.id, token.sourceId)) {
+        return Err({ code: "invalid_operation" });
+      }
       folderNow.deletedAt = now;
       folderNow.updatedAt = now;
+      this.markMutatorWrite();
       return Ok({ deletedNodeId: folderNow.id, invalidatedDocumentIds: [] });
     });
   }

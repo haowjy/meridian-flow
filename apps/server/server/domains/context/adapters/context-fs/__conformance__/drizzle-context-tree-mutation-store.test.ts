@@ -22,7 +22,7 @@ describe.skipIf(!RUN_DB_TESTS || !DATABASE_URL)(
       "./context-tree-mutation-store.conformance.js"
     );
 
-    const db = createDb(DATABASE_URL ?? "postgresql://skip:skip@localhost:1/skip", { max: 1 });
+    const db = createDb(DATABASE_URL ?? "postgresql://skip:skip@localhost:1/skip", { max: 4 });
     const userId = "00000000-0000-4000-8000-000000000111";
     const projectId = "00000000-0000-4000-8000-0000000000aa";
     const sourceA = "00000000-0000-4000-8000-0000000000a1";
