@@ -1,4 +1,6 @@
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { useEffect } from "react";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
@@ -17,18 +19,34 @@ import {
   useContextFilesPanelStore,
 } from "@/features/project/context/context-files-store";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
-import { getCurrentUser } from "@/server/current-user";
+import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { resolveOnboardingGate, shouldRedirectToOnboarding } from "@/server/onboarding-gate";
+
+/**
+ * Decide where to send an UNAUTHENTICATED request, server-side.
+ * Returns `/api/auth/dev-login` when dev-autologin is enabled; otherwise WorkOS sign-in.
+ */
+const resolveUnauthRedirect = createServerFn({ method: "GET" })
+  .inputValidator((data: { returnPathname: string }) => data)
+  .handler(async ({ data }): Promise<{ to: string } | { href: string }> => {
+    if (isDevAutologinEnabled()) {
+      return { to: "/api/auth/dev-login" };
+    }
+
+    const href = await getSignInUrl({ data: { returnPathname: data.returnPathname } });
+    return { href };
+  });
 
 export const Route = createFileRoute("/_authenticated")({
   loader: async ({ location }) => {
-    const user = await getCurrentUser();
+    const { user } = await getAuth();
     if (!user) {
-      throw redirect({
-        to: "/login",
-        search: { redirect: `${location.pathname}${location.searchStr}` },
-      });
+      const path = `${location.pathname}${location.searchStr}`;
+      const target = await resolveUnauthRedirect({ data: { returnPathname: path } });
+      throw redirect(target);
     }
+
+    const currentUser = { userId: user.id, email: user.email ?? null };
 
     const onboardingGate = await resolveOnboardingGate();
     if (!onboardingGate.ok && location.pathname !== "/onboarding") {
@@ -46,14 +64,14 @@ export const Route = createFileRoute("/_authenticated")({
       location.pathname.startsWith("/settings/billing");
 
     if (!usesWorkspaceProviders) {
-      return { user, projects: null, now };
+      return { user: currentUser, projects: null, now };
     }
 
     try {
-      return { user, projects: await loadProjectList(), now };
+      return { user: currentUser, projects: await loadProjectList(), now };
     } catch (error) {
       console.error("Failed to load project list during SSR:", error);
-      return { user, projects: null, now };
+      return { user: currentUser, projects: null, now };
     }
   },
   staleTime: 60_000,

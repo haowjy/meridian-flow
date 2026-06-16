@@ -2,12 +2,12 @@
  * __root route — Meridian app document shell.
  *
  * Renders the global CSS link, head/meta, i18n provider, tooltip provider,
- * global announcement region, and router Outlet. Auth remains Supabase-backed in
- * route loaders/server helpers; no provider-specific auth shell is required here.
+ * AuthKit client provider, global announcement region, and router Outlet.
  */
 import { I18nProvider } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { AuthKitProvider, getAuthAction } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -29,6 +29,10 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: "stylesheet", href: globalCssUrl }],
   }),
+  loader: async () => {
+    const auth = await getAuthAction();
+    return { auth };
+  },
   component: RootComponent,
   notFoundComponent: () => (
     <main className="grid min-h-svh place-items-center bg-background text-foreground">
@@ -38,6 +42,7 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const { auth } = Route.useLoaderData();
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
 
   useEffect(() => {
@@ -49,10 +54,12 @@ function RootComponent() {
   return (
     <RootDocument lang={locale}>
       <I18nProvider i18n={i18n}>
-        <TooltipProvider>
-          <AnnouncementRegion />
-          <Outlet />
-        </TooltipProvider>
+        <AuthKitProvider initialAuth={auth}>
+          <TooltipProvider>
+            <AnnouncementRegion />
+            <Outlet />
+          </TooltipProvider>
+        </AuthKitProvider>
       </I18nProvider>
     </RootDocument>
   );
