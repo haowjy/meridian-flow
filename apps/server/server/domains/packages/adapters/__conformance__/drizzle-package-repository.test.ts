@@ -9,10 +9,11 @@
 import { afterAll, beforeEach, describe, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const USER_ID = "00000000-0000-4000-9000-000000000201";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 
-if (!DATABASE_URL) {
+if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle package repository (postgres)", () => {
     it("requires DATABASE_URL", () => {});
   });

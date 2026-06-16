@@ -1,8 +1,9 @@
 import { describe } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-if (!DATABASE_URL) {
+if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle work repository (postgres)", () => {});
 } else {
   describe("drizzle work repository (postgres)", async () => {
