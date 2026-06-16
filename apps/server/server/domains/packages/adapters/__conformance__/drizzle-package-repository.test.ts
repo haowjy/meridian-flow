@@ -20,8 +20,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("drizzle package repository (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { agentDefinitions, agentSkills, authUsers, projects, skills, userInstalledSkills } =
+    const { agentDefinitions, agentSkills, projects, skills, userInstalledSkills, users } =
       await import("@meridian/database/schema");
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzlePackageStore } = await import("../drizzle-package-store.js");
     const { describePackageRepositoryConformance } = await import(
@@ -31,7 +34,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 1 });
 
     async function ensureFixtures(): Promise<void> {
-      await db.insert(authUsers).values({ id: USER_ID });
+      await db.insert(users).values(conformanceUserValues(USER_ID, "package-repository"));
       await db.insert(projects).values({
         id: PROJECT_ID,
         userId: USER_ID,
@@ -47,7 +50,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         skills,
         agentDefinitions,
         projects,
-        authUsers,
+        users,
       ]);
     }
 

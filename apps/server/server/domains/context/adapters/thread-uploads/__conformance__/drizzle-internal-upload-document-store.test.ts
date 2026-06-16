@@ -25,11 +25,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.folders,
         schema.contextSources,
         schema.projects,
-        schema.authUsers,
+        schema.users,
       ]);
-      await db.insert(schema.authUsers).values({
-        id: "00000000-0000-4000-8000-000000000901",
-      });
+      const { conformanceUserValues } = await import(
+        "@meridian/database/__test-support__/db-fixtures"
+      );
+      await db
+        .insert(schema.users)
+        .values(
+          conformanceUserValues("00000000-0000-4000-8000-000000000901", "upload-conformance"),
+        );
       await db.insert(schema.projects).values({
         id: "00000000-0000-4000-8000-000000000902",
         userId: "00000000-0000-4000-8000-000000000901",

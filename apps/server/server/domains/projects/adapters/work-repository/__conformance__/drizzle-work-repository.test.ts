@@ -9,7 +9,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("drizzle work repository (postgres)", async () => {
     const { afterAll, beforeEach } = await import("vitest");
     const { createDb } = await import("@meridian/database");
-    const { authUsers, projects, works } = await import("@meridian/database/schema");
+    const { users, projects, works } = await import("@meridian/database/schema");
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { truncateDrizzleTables } = await import("../../../../../test-support/drizzle-reset.js");
     const { createDrizzleWorkRepository } = await import("../drizzle.js");
     const { describeWorkRepositoryConformance } = await import("./work-repository.conformance.js");
@@ -23,7 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 1 });
 
     async function ensureFixtures(): Promise<void> {
-      await db.insert(authUsers).values({ id: USER_ID });
+      await db.insert(users).values(conformanceUserValues(USER_ID, "work-repository"));
       await db.insert(projects).values(
         PROJECT_FIXTURES.map((fixture) => ({
           id: fixture.id,
@@ -35,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     async function truncateAll(): Promise<void> {
-      await truncateDrizzleTables(db, [works, projects, authUsers]);
+      await truncateDrizzleTables(db, [works, projects, users]);
     }
 
     beforeEach(async () => {

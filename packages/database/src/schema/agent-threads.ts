@@ -31,8 +31,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { agentDefinitions } from "./agent-packages";
-import { authUsers } from "./auth";
 import { documents, projects, works } from "./content";
+import { users } from "./users";
 
 export const threads = pgTable(
   "threads",
@@ -45,7 +45,7 @@ export const threads = pgTable(
     createdByUserId: uuid("created_by_user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("active"),
@@ -313,7 +313,7 @@ export const threadUserState = pgTable(
     userId: uuid("user_id")
       .$type<UserId>()
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.userId] })],

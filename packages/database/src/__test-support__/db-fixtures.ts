@@ -1,5 +1,5 @@
 /**
- * Shared auth.users fixture identity for DB-backed tests.
+ * Shared public.users fixture identity for DB-backed tests.
  * Never overlaps the dev-login user (TEST_USER_EMAIL / test@meridian.dev).
  */
 import { sql } from "drizzle-orm";
@@ -15,6 +15,11 @@ export function dbTestFixtureEmail(suite: string): string {
     .replace(/^-|-$/g, "")
     .toLowerCase();
   return `fixture+${normalized}@test.invalid`;
+}
+
+/** Deterministic WorkOS external id per test suite (never overlaps production credentials). */
+export function dbTestFixtureExternalId(suite: string): string {
+  return `fixture-external-${suite.replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
 }
 
 export function databaseNameFromUrl(databaseUrl: string): string {
@@ -58,23 +63,22 @@ export async function resolveDbTestFixtureUserId(
   options: { fixtureUserId: string; suite: string },
 ): Promise<string> {
   const email = dbTestFixtureEmail(options.suite);
+  const externalId = dbTestFixtureExternalId(options.suite);
   const client = postgres(databaseUrl, { max: 1 });
   try {
     const rows = await client<{ id: string }[]>`
-      INSERT INTO auth.users (
-        id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
-        email_confirmed_at, created_at, updated_at
+      INSERT INTO public.users (
+        id, external_id, email, created_at, updated_at
       )
       VALUES (
-        ${options.fixtureUserId}::uuid, ${email}, 'authenticated', 'authenticated',
-        '{}'::jsonb, '{}'::jsonb, now(), now(), now()
+        ${options.fixtureUserId}::uuid, ${externalId}, ${email}, now(), now()
       )
       ON CONFLICT (id) DO UPDATE
-      SET email = excluded.email, updated_at = now()
+      SET email = excluded.email, external_id = excluded.external_id, updated_at = now()
       RETURNING id::text
     `;
     const id = rows[0]?.id;
-    if (!id) throw new Error(`Failed to seed auth.users fixture for suite ${options.suite}`);
+    if (!id) throw new Error(`Failed to seed public.users fixture for suite ${options.suite}`);
     return id;
   } finally {
     await client.end();
@@ -84,31 +88,32 @@ export async function resolveDbTestFixtureUserId(
 type ExecutableDb = { execute: (query: ReturnType<typeof sql>) => Promise<unknown> };
 
 export async function seedAuthUser(db: ExecutableDb, id: string, email: string): Promise<void> {
+  const externalId = `fixture-external-${id}`;
   await db.execute(sql`
-    INSERT INTO auth.users (
+    INSERT INTO public.users (
       id,
-      aud,
-      role,
+      external_id,
       email,
-      encrypted_password,
-      email_confirmed_at,
-      raw_app_meta_data,
-      raw_user_meta_data,
       created_at,
       updated_at
     )
     VALUES (
       ${id}::uuid,
-      'authenticated',
-      'authenticated',
+      ${externalId},
       ${email},
-      '',
-      now(),
-      '{}'::jsonb,
-      '{}'::jsonb,
       now(),
       now()
     )
-    ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, updated_at = now()
+    ON CONFLICT (id) DO UPDATE
+    SET email = EXCLUDED.email, external_id = EXCLUDED.external_id, updated_at = now()
   `);
+}
+
+/** Drizzle insert shape for conformance tests that need a fixed user id. */
+export function conformanceUserValues(id: string, suite: string) {
+  return {
+    id,
+    externalId: `fixture-external-${id}`,
+    email: dbTestFixtureEmail(suite),
+  };
 }

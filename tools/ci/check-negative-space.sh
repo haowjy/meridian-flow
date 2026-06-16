@@ -23,8 +23,6 @@ while IFS= read -r hit; do
   found+=("$hit")
 done < <(
   git grep -n \
-    -e "Work""OS" \
-    -e "work""os" \
     -e "markdown""-replace" \
     -e "Sand""boxProvider" \
     -e "Sand""boxScope" \

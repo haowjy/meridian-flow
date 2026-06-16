@@ -4,8 +4,17 @@ import { z } from "zod";
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    APP_ENV: z.enum(["dev", "staging", "production"]).default("dev"),
     PORT: z.coerce.number().int().positive().default(4000),
     DATABASE_URL: z.string().min(1).optional(),
+
+    WORKOS_API_KEY: z.string().default("dev-workos-key"),
+    WORKOS_CLIENT_ID: z.string().default("dev-workos-client"),
+    WORKOS_COOKIE_PASSWORD: z.string().default(""),
+    WORKOS_REDIRECT_URI: z.string().url().optional(),
+    WORKOS_DEV_LOGIN_EMAIL: z.string().optional(),
+    WORKOS_DEV_LOGIN_PASSWORD: z.string().optional(),
+    WORKOS_DEV_AUTOLOGIN: z.enum(["0", "1"]).optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

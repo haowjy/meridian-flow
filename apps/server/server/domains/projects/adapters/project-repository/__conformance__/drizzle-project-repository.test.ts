@@ -10,7 +10,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { afterAll, beforeEach } = await import("vitest");
     const { createDb } = await import("@meridian/database");
     const {
-      authUsers,
       projects,
       threads,
       turns,
@@ -19,7 +18,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       threadDocuments,
       turnDocumentTouches,
       eventJournal,
+      users,
     } = await import("@meridian/database/schema");
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { truncateDrizzleTables } = await import("../../../../../test-support/drizzle-reset.js");
     const { createDrizzleProjectRepository } = await import("../drizzle.js");
     const {
@@ -40,19 +43,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         turns,
         threads,
         projects,
-        authUsers,
+        users,
       ]);
     }
 
     async function seedUsers(): Promise<void> {
-      await db.insert(authUsers).values([
-        {
-          id: PROJECT_REPOSITORY_CONFORMANCE_USER_1,
-        },
-        {
-          id: PROJECT_REPOSITORY_CONFORMANCE_USER_2,
-        },
-      ]);
+      await db
+        .insert(users)
+        .values([
+          conformanceUserValues(PROJECT_REPOSITORY_CONFORMANCE_USER_1, "project-repository-1"),
+          conformanceUserValues(PROJECT_REPOSITORY_CONFORMANCE_USER_2, "project-repository-2"),
+        ]);
     }
 
     beforeEach(async () => {

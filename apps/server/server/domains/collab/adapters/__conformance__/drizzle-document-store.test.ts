@@ -22,6 +22,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       folders,
       projects,
     } = schema;
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleDocumentStore } = await import("../drizzle/document-store.js");
     const { describeDocumentStoreConformance, documentStoreConformanceFixtures } = await import(
@@ -47,7 +50,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const fixtures = documentStoreConformanceFixtures;
       const [docA, docB, docC] = fixtures.documentIds;
 
-      await db.insert(schema.authUsers).values({ id: fixtures.userId }).onConflictDoNothing();
+      await db
+        .insert(schema.users)
+        .values(conformanceUserValues(fixtures.userId, "document-store"))
+        .onConflictDoNothing();
       await db.insert(projects).values({
         id: fixtures.contextSourceId,
         userId: fixtures.userId,

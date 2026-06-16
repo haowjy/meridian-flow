@@ -4,6 +4,7 @@ import { type ApiStartupEnv, evaluateApiStartupGuards } from "./startup-guards";
 
 const TEST_BASE_ENV: ApiStartupEnv = {
   NODE_ENV: "development",
+  APP_ENV: "dev",
   DATABASE_URL: "postgresql://meridian:meridian@localhost:54422/postgres",
   MODEL_PROVIDER: "openai",
   backends: "local",
@@ -14,6 +15,8 @@ const TEST_BASE_ENV: ApiStartupEnv = {
   S3_SECRET_KEY: undefined,
   SUPABASE_URL: "http://127.0.0.1:54421",
   SUPABASE_ANON_KEY: "local-anon-key",
+  WORKOS_API_KEY: "dev-workos-key",
+  WORKOS_CLIENT_ID: "dev-workos-client",
   API_REPLICA_COUNT: 1,
   DURABLE_EVENT_BACKEND: "none",
 };
@@ -106,13 +109,49 @@ describe("evaluateApiStartupGuards", () => {
     );
   });
 
+  it("rejects production WorkOS placeholder credentials", () => {
+    const result = evaluateApiStartupGuards(
+      withOverrides({
+        NODE_ENV: "production",
+        APP_ENV: "production",
+        WORKOS_API_KEY: "sk_test_placeholder",
+        WORKOS_CLIENT_ID: "client_ci",
+      }),
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("WORKOS_API_KEY"),
+        expect.stringContaining("WORKOS_CLIENT_ID"),
+      ]),
+    );
+  });
+
+  it("accepts WorkOS staging API keys in a production-built staging deploy", () => {
+    const result = evaluateApiStartupGuards(
+      withOverrides({
+        NODE_ENV: "production",
+        APP_ENV: "staging",
+        WORKOS_API_KEY: "sk_test_workos_staging",
+        WORKOS_CLIENT_ID: "client_staging_value",
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_ANON_KEY: "prod-anon-key",
+      }),
+    );
+
+    expect(result.errors).not.toContainEqual(expect.stringContaining("WORKOS_API_KEY"));
+  });
+
   it("warns when production replica count is not supplied by deployment config", () => {
     const result = evaluateApiStartupGuards(
       withOverrides({
         NODE_ENV: "production",
+        APP_ENV: "production",
         API_REPLICA_COUNT: undefined,
         SUPABASE_URL: "https://project.supabase.co",
         SUPABASE_ANON_KEY: "prod-anon-key",
+        WORKOS_API_KEY: "workos_live_ci_value",
+        WORKOS_CLIENT_ID: "client_live_ci_value",
       }),
     );
     expect(result.errors).toHaveLength(0);
@@ -125,11 +164,14 @@ describe("evaluateApiStartupGuards", () => {
     const result = evaluateApiStartupGuards(
       withOverrides({
         NODE_ENV: "production",
+        APP_ENV: "production",
         API_REPLICA_COUNT: 1,
         MODEL_PROVIDER: "openai",
         OPENAI_API_KEY: "sk-openai-real",
         SUPABASE_URL: "https://project.supabase.co",
         SUPABASE_ANON_KEY: "prod-anon-key",
+        WORKOS_API_KEY: "workos_live_ci_value",
+        WORKOS_CLIENT_ID: "client_live_ci_value",
       }),
     );
     expect(result.errors).toHaveLength(0);

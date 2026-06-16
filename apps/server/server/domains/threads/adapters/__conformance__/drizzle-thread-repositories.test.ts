@@ -13,6 +13,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { contextSources, documents } = schema;
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleProjectRepository } = await import(
       "../../../projects/adapters/project-repository/drizzle.js"
@@ -51,8 +54,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function seedUsers(): Promise<void> {
       await db
-        .insert(schema.authUsers)
-        .values({ id: THREAD_REPOSITORIES_CONFORMANCE_USER_ID })
+        .insert(schema.users)
+        .values(
+          conformanceUserValues(THREAD_REPOSITORIES_CONFORMANCE_USER_ID, "thread-repositories"),
+        )
         .onConflictDoNothing();
     }
 

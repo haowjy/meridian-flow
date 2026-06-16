@@ -349,6 +349,10 @@ export function createInMemoryAppServices(): AppServices {
       async ensureUser() {
         throw new Error("in-memory user repository is not implemented");
       },
+      async getLastActiveProjectId() {
+        return null;
+      },
+      async setLastActiveProjectId() {},
       async getOnboardingState() {
         return {};
       },

@@ -55,7 +55,7 @@ describe.skipIf(!RUN_DB_TESTS || !DATABASE_URL)(
       await db.delete(projectUserPreferences);
       await db.delete(projects).where(inArray(projects.id, [ids.projectId, ids.otherProjectId]));
       await db.execute(sql`
-        DELETE FROM auth.users
+        DELETE FROM public.users
         WHERE id IN (${ids.userId}::uuid, ${ids.otherUserId}::uuid)
       `);
       await db.close();

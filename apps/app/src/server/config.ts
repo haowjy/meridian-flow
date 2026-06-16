@@ -1,4 +1,4 @@
-/** App server config: runtime config plus Supabase/dev-login/API origin settings. */
+/** App server config: runtime config plus Supabase/WorkOS/dev-login/API origin settings. */
 import { parseRuntimeConfig, type RuntimeConfig } from "./runtime-config";
 
 export type AppServerConfig = {
@@ -9,6 +9,9 @@ export type AppServerConfig = {
   supabaseAuthRedirectUri: string | null;
   devLogin: { email: string; password: string } | null;
   devAutologin: boolean;
+  workosClientId: string | null;
+  workosRedirectUri: string | null;
+  workosDevLogin: { email: string; password: string } | null;
   apiOrigin: string | null;
 };
 
@@ -24,9 +27,17 @@ function parseDevLogin(env: NodeJS.ProcessEnv): { email: string; password: strin
   return { email, password };
 }
 
+function parseWorkosDevLogin(env: NodeJS.ProcessEnv): { email: string; password: string } | null {
+  const email = readOptionalTrimmed(env.WORKOS_DEV_LOGIN_EMAIL);
+  const password = readOptionalTrimmed(env.WORKOS_DEV_LOGIN_PASSWORD);
+  if (!email || !password) return null;
+  return { email, password };
+}
+
 export function parseAppServerConfig(env: NodeJS.ProcessEnv): AppServerConfig {
   const isProduction = env.NODE_ENV === "production";
   const devLogin = parseDevLogin(env);
+  const workosDevLogin = parseWorkosDevLogin(env);
   return {
     runtime: parseRuntimeConfig(env),
     isProduction,
@@ -35,6 +46,9 @@ export function parseAppServerConfig(env: NodeJS.ProcessEnv): AppServerConfig {
     supabaseAuthRedirectUri: readOptionalTrimmed(env.SUPABASE_AUTH_REDIRECT_URI),
     devLogin,
     devAutologin: !isProduction && Boolean(env.SUPABASE_DEV_AUTOLOGIN) && devLogin !== null,
+    workosClientId: readOptionalTrimmed(env.WORKOS_CLIENT_ID),
+    workosRedirectUri: readOptionalTrimmed(env.WORKOS_REDIRECT_URI),
+    workosDevLogin,
     apiOrigin: readOptionalTrimmed(env.MERIDIAN_API_ORIGIN),
   };
 }

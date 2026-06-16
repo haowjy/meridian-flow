@@ -7,11 +7,22 @@ const PLACEHOLDER_PATTERNS = {
   SUPABASE_URL: [/^empty$/i, /^https?:\/\/127\.0\.0\.1/, /^https?:\/\/localhost/],
   SUPABASE_ANON_KEY: [/^empty$/i, /^anon[_-]?key$/i, /^dev-/i],
   MERIDIAN_API_ORIGIN: [/^empty$/i],
+  WORKOS_API_KEY: [/^dev-workos-key$/i, /^empty$/i],
+  WORKOS_CLIENT_ID: [/^dev-workos-client$/i, /^client_\.\.\.$/i, /^client_ci$/i, /^empty$/i],
+  WORKOS_COOKIE_PASSWORD: [/^empty$/i],
+  WORKOS_REDIRECT_URI: [/^empty$/i],
 };
 
-function isPlaceholder(name, value) {
+const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
+
+function isPlaceholder(name, value, options = {}) {
   const patterns = PLACEHOLDER_PATTERNS[name] ?? [];
-  return patterns.some((pattern) => pattern.test(value));
+  if (patterns.some((pattern) => pattern.test(value))) return true;
+  return (
+    name === "WORKOS_API_KEY" &&
+    !options.allowWorkosTestApiKey &&
+    WORKOS_TEST_API_KEY_PATTERN.test(value)
+  );
 }
 
 function requireHttpUrl(name, value, issues) {
@@ -27,6 +38,7 @@ function requireHttpUrl(name, value, issues) {
 
 export function validateStartEnv(env = process.env) {
   const isProduction = env.NODE_ENV === "production";
+  const allowWorkosTestApiKey = env.APP_ENV === "staging";
   if (!isProduction) {
     return { ok: true, skipped: true, issues: [] };
   }
@@ -41,7 +53,7 @@ export function validateStartEnv(env = process.env) {
     }
 
     const trimmed = value.trim();
-    if (isPlaceholder(name, trimmed)) {
+    if (isPlaceholder(name, trimmed, { allowWorkosTestApiKey })) {
       issues.push({ name, issue: "must not use a development placeholder value" });
       return null;
     }
@@ -53,8 +65,43 @@ export function validateStartEnv(env = process.env) {
   readRequiredEnv("SUPABASE_ANON_KEY");
   const meridianApiOrigin = readRequiredEnv("MERIDIAN_API_ORIGIN");
 
+  readRequiredEnv("WORKOS_API_KEY");
+  readRequiredEnv("WORKOS_CLIENT_ID");
+  const workosCookiePassword = readRequiredEnv("WORKOS_COOKIE_PASSWORD");
+  const workosRedirectUri = readRequiredEnv("WORKOS_REDIRECT_URI");
+
   if (supabaseUrl) requireHttpUrl("SUPABASE_URL", supabaseUrl, issues);
   if (meridianApiOrigin) requireHttpUrl("MERIDIAN_API_ORIGIN", meridianApiOrigin, issues);
+
+  if (workosCookiePassword && workosCookiePassword.length < 32) {
+    issues.push({
+      name: "WORKOS_COOKIE_PASSWORD",
+      issue: "must be at least 32 characters",
+    });
+  }
+
+  if (workosRedirectUri) {
+    try {
+      const parsed = new URL(workosRedirectUri);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        issues.push({
+          name: "WORKOS_REDIRECT_URI",
+          issue: "must use http:// or https://",
+        });
+      }
+      if (parsed.pathname !== "/api/auth/callback") {
+        issues.push({
+          name: "WORKOS_REDIRECT_URI",
+          issue: "must use the /api/auth/callback path",
+        });
+      }
+    } catch {
+      issues.push({
+        name: "WORKOS_REDIRECT_URI",
+        issue: "must be a valid absolute URL",
+      });
+    }
+  }
 
   return { ok: issues.length === 0, skipped: false, issues };
 }

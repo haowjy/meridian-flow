@@ -11,11 +11,15 @@ const DEFAULT_DEV_SECRETS = new Set([
   "dev-openai-key",
   "dev-supabase-url",
   "dev-supabase-anon-key",
+  "dev-workos-key",
+  "dev-workos-client",
 ]);
+const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
 
 const PLACEHOLDER_SECRET_PATTERNS: Partial<Record<keyof ApiStartupEnv, RegExp[]>> = {
   SUPABASE_URL: [/localhost/i, /127\.0\.0\.1/],
   SUPABASE_ANON_KEY: [/^ey-dev-/i],
+  WORKOS_CLIENT_ID: [/^client_\.\.\.$/i, /^client_ci/i],
 };
 
 type StartupGuardOutcome = {
@@ -27,6 +31,7 @@ type StartupGuardOutcome = {
 
 export type ApiStartupEnv = {
   NODE_ENV: "development" | "test" | "production";
+  APP_ENV: "dev" | "staging" | "production";
   DATABASE_URL?: string;
   MODEL_PROVIDER: ModelProvider;
   backends: BackendTier;
@@ -38,6 +43,8 @@ export type ApiStartupEnv = {
   S3_SECRET_KEY?: string;
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
+  WORKOS_API_KEY: string;
+  WORKOS_CLIENT_ID: string;
   API_REPLICA_COUNT?: number;
   DURABLE_EVENT_BACKEND: string;
 };
@@ -46,10 +53,21 @@ function hasValue(value: string | undefined | null): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isRealSecret(key: keyof ApiStartupEnv, value: string | undefined | null): boolean {
+function isRealSecret(
+  key: keyof ApiStartupEnv,
+  value: string | undefined | null,
+  options: { allowWorkosTestApiKey?: boolean } = {},
+): boolean {
   if (!hasValue(value)) return false;
   const trimmed = value.trim();
   if (DEFAULT_DEV_SECRETS.has(trimmed)) return false;
+  if (
+    key === "WORKOS_API_KEY" &&
+    !options.allowWorkosTestApiKey &&
+    WORKOS_TEST_API_KEY_PATTERN.test(trimmed)
+  ) {
+    return false;
+  }
   return !(PLACEHOLDER_SECRET_PATTERNS[key] ?? []).some((pattern) => pattern.test(trimmed));
 }
 
@@ -67,14 +85,16 @@ function requireRealSecret(
   key: keyof ApiStartupEnv,
   value: string | undefined,
   reason: string,
+  options?: { allowWorkosTestApiKey?: boolean },
 ): void {
-  if (!isRealSecret(key, value)) errors.push(`${key}: ${reason}`);
+  if (!isRealSecret(key, value, options)) errors.push(`${key}: ${reason}`);
 }
 
 export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOutcome {
   const errors: string[] = [];
   const warnings: string[] = [];
   const isProduction = config.NODE_ENV === "production";
+  const allowWorkosTestApiKey = config.APP_ENV === "staging";
 
   requireValue(errors, "DATABASE_URL", config.DATABASE_URL, "required for persistence.");
 
@@ -130,6 +150,19 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
       config.SUPABASE_ANON_KEY,
       "must be set to a production Supabase anon key.",
     );
+    requireRealSecret(
+      errors,
+      "WORKOS_API_KEY",
+      config.WORKOS_API_KEY,
+      "must be set to a real WorkOS API key in production.",
+      { allowWorkosTestApiKey },
+    );
+    requireRealSecret(
+      errors,
+      "WORKOS_CLIENT_ID",
+      config.WORKOS_CLIENT_ID,
+      "must be set to a real WorkOS client id in production.",
+    );
   }
 
   const replicaCount = config.API_REPLICA_COUNT ?? null;
@@ -158,6 +191,7 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
 
   const outcome = evaluateApiStartupGuards({
     NODE_ENV: env.NODE_ENV,
+    APP_ENV: env.APP_ENV,
     DATABASE_URL: env.DATABASE_URL,
     MODEL_PROVIDER: backends.model,
     backends: backends.backends,
@@ -169,6 +203,8 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+    WORKOS_API_KEY: env.WORKOS_API_KEY,
+    WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     API_REPLICA_COUNT: process.env.API_REPLICA_COUNT
       ? Number(process.env.API_REPLICA_COUNT)
       : undefined,
