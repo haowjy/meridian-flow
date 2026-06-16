@@ -22,8 +22,9 @@ import { createDrizzleProjectBootstrapRepository } from "../projects/index.js";
 import { createDocumentSyncService } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
+const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-describe.skipIf(!databaseUrl)("collab facade project-scoped scope", () => {
+describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope", () => {
   let db: Database;
   let userId: UserId;
   let projectId: string;

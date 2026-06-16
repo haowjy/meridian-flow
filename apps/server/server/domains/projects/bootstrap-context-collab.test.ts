@@ -25,8 +25,9 @@ import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { createDrizzleProjectBootstrapRepository } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
+const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-describe.skipIf(!databaseUrl)("Phase 4 bootstrap/context/collab", () => {
+describe.skipIf(!runDbTests || !databaseUrl)("Phase 4 bootstrap/context/collab", () => {
   let db: Database;
   let userId: UserId;
 

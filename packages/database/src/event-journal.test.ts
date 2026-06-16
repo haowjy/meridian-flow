@@ -12,8 +12,9 @@ import { createDrizzleEventJournal } from "./event-journal";
 import { eventJournal, projects, threads, threadWorks, works } from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
+const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-describe.skipIf(!databaseUrl)("event journal", () => {
+describe.skipIf(!runDbTests || !databaseUrl)("event journal", () => {
   let db: Database;
   let projectId: ProjectId;
   let workId: WorkId;
