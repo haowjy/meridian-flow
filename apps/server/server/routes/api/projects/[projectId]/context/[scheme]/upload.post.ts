@@ -2,11 +2,16 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
   createError,
   defineEventHandler,
+  getQuery,
   getRouterParam,
   readMultipartFormData,
   setResponseStatus,
 } from "nitro/h3";
-import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
+import {
+  projectBrowseContextUri,
+  WORK_SCOPED_BROWSE_SCHEMES,
+} from "../../../../../../domains/context/browse-layer-scheme.js";
+import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
 import { mapFigureFileType } from "../../../../../../domains/context/figures/figure-file-types.js";
 import type { ContextError } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
@@ -22,7 +27,15 @@ function formText(
   return text.length > 0 ? text : null;
 }
 function parseScheme(value: string): ProjectContextTreeScheme {
-  if (value === "kb" || value === "work" || value === "user" || value === "fs1") return value;
+  if (
+    value === "manuscript" ||
+    value === "kb" ||
+    value === "work" ||
+    value === "uploads" ||
+    value === "user"
+  ) {
+    return value;
+  }
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
 }
 function sanitizePath(raw: string): string {
@@ -42,6 +55,10 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 400, message: error.reason });
     case "permission_denied":
       throw createError({ statusCode: 403, message: "Context access denied" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: "Invalid context operation" });
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
     case "context_unavailable":
@@ -54,7 +71,12 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
+  const query = getQuery(event);
+  const workId = typeof query.workId === "string" ? query.workId : null;
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme) && !workId) {
+    throw createError({ statusCode: 400, message: "`workId` is required" });
+  }
   const parts = await readMultipartFormData(event);
   const file = parts?.find((part) => part.name === "file" && part.filename);
   if (!file?.filename)
@@ -65,8 +87,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 415, message: `Unsupported file type: ${mimeType}` });
   const rawPath = formText(parts, "path");
   const path = rawPath ? sanitizePath(rawPath) : `/uploads/${file.filename}`;
-  const port = app.contextPorts.forProject(projectId, user.userId);
-  const uri = toUri(scheme, path);
+  const port = await contextPortForProjectBrowse({
+    deps: { contextPorts: app.contextPorts, works: app.workRepo },
+    projectId,
+    userId: user.userId,
+    workId,
+  });
+  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  const uri = toUri(scheme, path, workId);
   const existing = await port.stat(uri);
   if (existing.ok) throw createError({ statusCode: 409, message: `Path already exists: ${path}` });
   if (!existing.ok && existing.error.code !== "not_found") contextErrorToHttp(existing.error);

@@ -75,7 +75,7 @@ export type ListWorksResponse = {
   works: Work[];
 };
 
-export type ProjectContextTreeScheme = "kb" | "work" | "user" | "fs1";
+export type ProjectContextTreeScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
 
 type ProjectContextTreeFileBase = {
   kind: "file";

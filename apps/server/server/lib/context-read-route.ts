@@ -1,13 +1,26 @@
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
-import { browseLayerContextScheme } from "../domains/context/browse-layer-scheme.js";
-import type { ContextError, UnifiedContextPortFactory } from "../domains/context/index.js";
+import {
+  projectBrowseContextUri,
+  WORK_SCOPED_BROWSE_SCHEMES,
+  workScopedBrowseUri,
+} from "../domains/context/browse-layer-scheme.js";
+import {
+  type ContextError,
+  contextPortForProjectBrowse,
+  type UnifiedContextPortFactory,
+} from "../domains/context/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
-import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
+import {
+  type ProjectRepository,
+  requireProjectOwner,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
 
 export interface ContextReadRouteDeps {
   projectRepo: ProjectRepository;
+  workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
@@ -17,6 +30,7 @@ export interface ContextReadRouteInput {
   userId: string;
   scheme: ProjectContextTreeScheme;
   rawPath: unknown;
+  workId?: string | null;
 }
 interface ResolvedReadPath {
   uri: string;
@@ -29,6 +43,10 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 400, message: error.reason });
     case "permission_denied":
       throw createError({ statusCode: 403, message: "Context access denied" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: "Invalid context operation" });
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
     case "context_unavailable":
@@ -39,7 +57,6 @@ function contextErrorToHttp(error: ContextError): never {
 }
 
 function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): string {
-  const contextScheme = browseLayerContextScheme(scheme);
   const segments = path
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
@@ -47,12 +64,13 @@ function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): st
     .filter((segment) => segment !== "" && segment !== ".");
   if (segments.includes(".."))
     throw createError({ statusCode: 400, message: '`path` may not contain ".."' });
-  return segments.length > 0 ? `${contextScheme}://${segments.join("/")}` : `${contextScheme}://`;
+  return projectBrowseContextUri(scheme, segments.join("/"));
 }
 
 export function resolveContextReadPath(
   scheme: ProjectContextTreeScheme,
   rawPath: unknown,
+  workId?: string | null,
 ): ResolvedReadPath {
   if (Array.isArray(rawPath))
     throw createError({ statusCode: 400, message: "`path` must be a single string" });
@@ -62,20 +80,24 @@ export function resolveContextReadPath(
   const explicitScheme = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/);
   let uri: string;
   if (explicitScheme) {
-    const expectedScheme = browseLayerContextScheme(scheme);
-    if (
-      explicitScheme[1] !== expectedScheme &&
-      !(scheme === "fs1" && explicitScheme[1] === "manuscript")
-    )
+    if (explicitScheme[1] !== scheme)
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
-    uri = normalizeSchemePath(scheme, explicitScheme[2]);
+    if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+      if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
+      uri = workScopedBrowseUri(scheme as "work" | "uploads", workId, explicitScheme[2]);
+    } else {
+      uri = normalizeSchemePath(scheme, explicitScheme[2]);
+    }
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
+  } else if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+    if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
+    uri = workScopedBrowseUri(scheme as "work" | "uploads", workId, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
-  const contextScheme = browseLayerContextScheme(scheme);
-  const normalizedPath = uri.slice(`${contextScheme}://`.length);
+  const prefix = WORK_SCOPED_BROWSE_SCHEMES.has(scheme) ? `${scheme}://${workId}/` : `${scheme}://`;
+  const normalizedPath = uri.slice(prefix.length);
   const segments = normalizedPath.split("/").filter(Boolean);
   if (!segments.at(-1))
     throw createError({ statusCode: 400, message: "`path` must name a non-root file" });
@@ -87,8 +109,17 @@ export async function handleContextReadRequest(
   input: ContextReadRouteInput,
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  const path = resolveContextReadPath(input.scheme, input.rawPath);
-  const port = deps.contextPorts.forProject(input.projectId, input.userId);
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(input.scheme) && !input.workId) {
+    throw createError({ statusCode: 400, message: "`workId` is required" });
+  }
+  const path = resolveContextReadPath(input.scheme, input.rawPath, input.workId);
+  const port = await contextPortForProjectBrowse({
+    deps: { contextPorts: deps.contextPorts, works: deps.workRepo },
+    projectId: input.projectId,
+    userId: input.userId,
+    workId: input.workId,
+  });
+  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
   const ref = await port.stat(path.uri);
   if (!ref.ok) contextErrorToHttp(ref.error);
   if (ref.value.kind === "tracked") {

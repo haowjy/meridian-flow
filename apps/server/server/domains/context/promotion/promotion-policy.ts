@@ -1,5 +1,5 @@
 /**
- * Type-based auto-promotion policy for generated artifacts → `work://.results/`.
+ * Type-based auto-promotion policy for generated artifacts → `work://<workId>/results/…`.
  * Single table — extend here when new pilot output types land.
  */
 

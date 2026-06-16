@@ -4,11 +4,9 @@ export {
   type CorpusImportBatchResult,
   type CorpusImportInputFile,
   type CorpusImportItemResult,
-  type CorpusImportPort,
+  type CorpusImportService,
   type CorpusImportSource,
   createCorpusImportService,
-  createDriveCorpusImportService,
-  type DriveCorpusImportPort,
 } from "./corpus-import-service.js";
 export type {
   ConversionMessage,

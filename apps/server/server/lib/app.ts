@@ -9,7 +9,6 @@ import { createDocumentSyncService } from "../domains/collab/index.js";
 import {
   createCheckpointArtifactFlush,
   createCorpusImportService,
-  createDriveCorpusImportService,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
@@ -117,13 +116,10 @@ async function createAppServices(): Promise<AppServices> {
   const promotionService = createPromotionService({ objectStore, results });
   const documentAccess = createDrizzleDocumentAccess(db);
   const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
-  const corpusImports = createCorpusImportService({
+  const corpusImport = createCorpusImportService({
     contextPorts,
     converter: createMammothDocumentConverter(),
-  });
-  const driveCorpusImports = createDriveCorpusImportService({
-    source: createFixtureDriveImportSource(),
-    imports: corpusImports,
+    driveSource: createFixtureDriveImportSource(),
   });
   const tools = createRuntimeToolRegistry({
     db,
@@ -268,8 +264,7 @@ async function createAppServices(): Promise<AppServices> {
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
       documentSync,
       contextPorts,
-      corpusImports,
-      driveCorpusImports,
+      corpusImport,
       onboarding,
       projects,
       works: workRepo,

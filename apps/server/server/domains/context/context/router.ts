@@ -4,6 +4,7 @@
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import type { DocumentSyncPort } from "../../collab/ports/document-sync.js";
 import type {
   AdapterFault,
   AdapterFileRef,
@@ -12,6 +13,8 @@ import type {
 } from "../ports/context-adapter.js";
 import type {
   ContextError,
+  ContextMoveOptions,
+  ContextMoveResult,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -22,6 +25,7 @@ import type {
   FileRef,
   SearchResult,
 } from "../ports/context-port.js";
+import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextPortRouterDeps {
@@ -34,12 +38,15 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (workId: string) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
+  /** Injected for cross-scheme move mirror eviction. */
+  documentSync?: DocumentSyncPort;
 }
 
-interface Dispatch {
+interface Dispatch extends ContextTreeDispatch {
   adapter: ContextSchemeAdapter;
   scheme: ContextScheme;
   authority: string | null;
+  workScopeId: string | null;
   path: string;
   canonical: string;
 }
@@ -52,6 +59,10 @@ function toContextError(fault: AdapterFault, uri: string): ContextError {
   switch (fault.code) {
     case "permission_denied":
       return { code: "permission_denied", uri };
+    case "conflict":
+      return { code: "conflict", uri };
+    case "invalid_operation":
+      return { code: "invalid_operation", uri };
     case "context_unavailable":
       return { code: "context_unavailable", uri };
     case "io_error":
@@ -122,6 +133,7 @@ async function callAdapter<T>(
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
+  const treeMover = new ContextTreeMover({ documentSync: deps.documentSync });
 
   function authorityAllowed(workId: string): boolean {
     return deps.allowedAuthorities?.has(workId) ?? false;
@@ -154,7 +166,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         reason: `No adapter registered for scheme "${scheme}"`,
       });
     }
-    return Ok({ adapter, scheme, authority, path, canonical });
+    return Ok({
+      adapter,
+      scheme,
+      authority,
+      workScopeId: authority ?? deps.primaryWorkId ?? null,
+      path,
+      canonical,
+    });
   }
 
   return {
@@ -219,6 +238,43 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: canonical });
       }
       return callAdapter(canonical, () => adapter.writeBinary(path, options));
+    },
+
+    async move(
+      sourceUri: string,
+      destinationUri: string,
+      options?: ContextMoveOptions,
+    ): Promise<Result<ContextMoveResult, ContextError>> {
+      const source = await resolve(sourceUri);
+      if (!source.ok) return source;
+      const destination = await resolve(destinationUri);
+      if (!destination.ok) return destination;
+      if (source.value.canonical === destination.value.canonical) {
+        return Err({ code: "invalid_operation", uri: destination.value.canonical });
+      }
+      if (
+        source.value.scheme === destination.value.scheme &&
+        source.value.workScopeId === destination.value.workScopeId
+      ) {
+        if (!source.value.adapter.capabilities.writable) {
+          return Err({ code: "permission_denied", uri: source.value.canonical });
+        }
+      } else if (
+        !source.value.adapter.capabilities.writable ||
+        !destination.value.adapter.capabilities.writable
+      ) {
+        return Err({ code: "permission_denied", uri: destination.value.canonical });
+      }
+      return treeMover.move(source.value, destination.value, options);
+    },
+
+    async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
+      const r = await resolve(uri);
+      if (!r.ok) return r;
+      if (!r.value.adapter.capabilities.writable) {
+        return Err({ code: "permission_denied", uri: r.value.canonical });
+      }
+      return treeMover.delete(r.value, options);
     },
 
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {

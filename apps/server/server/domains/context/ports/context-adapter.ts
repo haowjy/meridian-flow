@@ -1,8 +1,8 @@
 /**
- * Scheme-adapter port: the contract each context scheme (`fs1`, `kb`, `work`,
- * `user`) implements for the router to dispatch reads/writes/searches. Owns the
- * capability flags and the scope-free AdapterFault type that the router enriches
- * into a ContextError at the boundary.
+ * Scheme-adapter port: the contract each context scheme implements for router
+ * dispatch. Adapters own scheme-local reads/writes/searches; durable ContextFS
+ * tree mutation is exposed only through an optional atomic capability.
+ * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
 import type { Result } from "../../../shared/result.js";
 import type {
@@ -14,6 +14,7 @@ import type {
   FileRef,
   SearchResult,
 } from "./context-port.js";
+import type { ContextLocationToken, PreparedContextMove } from "./context-tree-mutation-store.js";
 
 /** What a scheme adapter supports. Checked by the router before dispatch. */
 export interface SchemeCapabilities {
@@ -30,6 +31,8 @@ export interface SchemeCapabilities {
  */
 export type AdapterFault =
   | { code: "permission_denied" }
+  | { code: "conflict" }
+  | { code: "invalid_operation" }
   | { code: "context_unavailable" }
   | { code: "io_error"; message: string };
 
@@ -50,56 +53,52 @@ export type AdapterFileRef = FileRef extends infer T
 /** A search hit as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterSearchHit = Omit<SearchResult, "uri"> & { path: string };
 
+export type AdapterMoveResult = {
+  movedNodeId?: string;
+  path: string;
+};
+
+export type AdapterDeleteResult = {
+  deletedNodeId?: string;
+};
+
+export interface ContextTreeAdapter {
+  inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
+  commitPreparedMove(
+    prepared: PreparedContextMove,
+  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+  commitPreparedDelete(
+    token: ContextLocationToken,
+  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+}
+
 /**
  * The reduced surface each scheme is backed by. The adapter never parses URIs
  * or validates schemes — it receives pre-parsed, normalized paths from the
  * router. It returns scheme-relative paths; the router re-attaches the scheme.
  */
 export interface ContextSchemeAdapter {
-  /** Human-readable name for logging and errors. */
   readonly name: string;
-
-  /** What this adapter supports. */
   readonly capabilities: SchemeCapabilities;
+  readonly tree?: ContextTreeAdapter;
 
-  /** Resolve one file. `Ok(null)` means not found or the path names a directory. */
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
-
-  /** Read file content. `Ok(null)` means not found. */
   read(path: string): Promise<Result<ContextReadResult | null, AdapterFault>>;
-
-  /** Write text content. Only called when `capabilities.writable`. */
   write(
     path: string,
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
-
-  /** Atomically transform tracked text content. Only called when `capabilities.writable`. */
   edit(
     path: string,
     transform: (content: string) => string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
-
-  /** Write a binary file. Only called when `capabilities.writable`. */
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
-
-  /** List direct children of a path prefix. Empty array when absent. */
   list(path: string): Promise<Result<AdapterFileEntry[], AdapterFault>>;
-
-  /**
-   * Create an empty directory, including any missing ancestors. No-op if it
-   * already exists. Only called when `capabilities.writable`.
-   */
   mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
-
-  /**
-   * Full-text search within this scheme. Only called when
-   * `capabilities.searchable`. `pathPrefix` optionally scopes the search.
-   */
   search(query: string, pathPrefix?: string): Promise<Result<AdapterSearchHit[], AdapterFault>>;
 }

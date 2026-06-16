@@ -51,22 +51,23 @@ export type CorpusImportBatchResult = {
   items: CorpusImportItemResult[];
 };
 
-export interface CorpusImportPort {
+export type CorpusImportServiceDeps = {
+  contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
+  converter: DocumentConverterPort;
+  driveSource?: DriveImportSourcePort;
+};
+
+export type CorpusImportService = {
   importFiles(input: {
     userId: string;
     projectId: string;
     files: CorpusImportInputFile[];
     source: CorpusImportSource;
   }): Promise<CorpusImportBatchResult>;
-}
-
-export interface DriveCorpusImportPort {
-  importFixture(input: { userId: string; projectId: string }): Promise<CorpusImportBatchResult>;
-}
-
-export type CorpusImportServiceDeps = {
-  contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
-  converter: DocumentConverterPort;
+  importDriveFixture(input: {
+    userId: string;
+    projectId: string;
+  }): Promise<CorpusImportBatchResult>;
 };
 
 function titleFromFilename(filename: string): string {
@@ -140,105 +141,112 @@ function contextErrorMessage(error: ContextError): string {
       return "Context is unavailable";
     case "not_found":
       return "Context path not found";
+    case "conflict":
+      return "Context path conflict";
+    case "invalid_operation":
+      return "Invalid context operation";
   }
 }
 
 export function createCorpusImportService({
   contextPorts,
   converter,
-}: CorpusImportServiceDeps): CorpusImportPort {
-  return {
-    async importFiles(input) {
-      const port = contextPorts.forProject(input.projectId, input.userId);
-      const taken = new Set<string>();
-      const exists = async (path: string) => {
-        const stat = await port.stat(`kb://${path}`);
-        return stat.ok;
-      };
-      const items: CorpusImportItemResult[] = [];
+  driveSource,
+}: CorpusImportServiceDeps): CorpusImportService {
+  const importFiles = async (input: {
+    userId: string;
+    projectId: string;
+    files: CorpusImportInputFile[];
+    source: CorpusImportSource;
+  }): Promise<CorpusImportBatchResult> => {
+    const port = contextPorts.forProject(input.projectId, input.userId);
+    const taken = new Set<string>();
+    const exists = async (path: string) => {
+      const stat = await port.stat(`kb://${path}`);
+      return stat.ok;
+    };
+    const items: CorpusImportItemResult[] = [];
 
-      for (const file of input.files) {
-        const title = titleFromFilename(file.filename);
-        const kind = converter.classify({ filename: file.filename, mimeType: file.mimeType });
-        if (kind === "unsupported") {
-          items.push({
-            status: "skipped",
-            filename: file.filename,
-            title,
-            reason: `Unsupported file type${file.mimeType ? `: ${file.mimeType}` : ""}`,
-            source: input.source,
-          });
-          continue;
-        }
-
-        let converted: ConvertedDocument;
-        try {
-          converted = await converter.convert(file);
-        } catch (error) {
-          items.push({
-            status: "failed",
-            filename: file.filename,
-            title,
-            reason: error instanceof Error ? error.message : String(error),
-            source: input.source,
-          });
-          continue;
-        }
-
-        const path = await uniqueTargetPath(file, taken, exists);
-        const uri = `kb://${path}`;
-        const write = await port.write(uri, markdownForImport(kind, title, converted.markdown), {
-          origin: {
-            type: "import",
-            userId: input.userId,
-            source: input.source.kind,
-            filename: file.filename,
-            sourceId: file.sourceId,
-          },
-        });
-        if (!write.ok) {
-          items.push({
-            status: "failed",
-            filename: file.filename,
-            title,
-            reason: contextErrorMessage(write.error),
-            source: input.source,
-          });
-          continue;
-        }
-
+    for (const file of input.files) {
+      const title = titleFromFilename(file.filename);
+      const kind = converter.classify({ filename: file.filename, mimeType: file.mimeType });
+      if (kind === "unsupported") {
         items.push({
-          status: "imported",
+          status: "skipped",
           filename: file.filename,
           title,
-          uri,
-          documentId: write.value.documentId,
+          reason: `Unsupported file type${file.mimeType ? `: ${file.mimeType}` : ""}`,
           source: input.source,
-          messages: converted.messages.map((message) => message.message),
         });
+        continue;
       }
 
-      return {
-        projectId: input.projectId,
-        targetScheme: "kb",
-        requestedCount: input.files.length,
-        importedCount: items.filter((item) => item.status === "imported").length,
-        skippedCount: items.filter((item) => item.status === "skipped").length,
-        failedCount: items.filter((item) => item.status === "failed").length,
-        items,
-      };
-    },
-  };
-}
+      let converted: ConvertedDocument;
+      try {
+        converted = await converter.convert(file);
+      } catch (error) {
+        items.push({
+          status: "failed",
+          filename: file.filename,
+          title,
+          reason: error instanceof Error ? error.message : String(error),
+          source: input.source,
+        });
+        continue;
+      }
 
-export function createDriveCorpusImportService(deps: {
-  source: DriveImportSourcePort;
-  imports: CorpusImportPort;
-}): DriveCorpusImportPort {
+      const path = await uniqueTargetPath(file, taken, exists);
+      const uri = `kb://${path}`;
+      const write = await port.write(uri, markdownForImport(kind, title, converted.markdown), {
+        origin: {
+          type: "import",
+          userId: input.userId,
+          source: input.source.kind,
+          filename: file.filename,
+          sourceId: file.sourceId,
+        },
+      });
+      if (!write.ok) {
+        items.push({
+          status: "failed",
+          filename: file.filename,
+          title,
+          reason: contextErrorMessage(write.error),
+          source: input.source,
+        });
+        continue;
+      }
+
+      items.push({
+        status: "imported",
+        filename: file.filename,
+        title,
+        uri,
+        documentId: write.value.documentId,
+        source: input.source,
+        messages: converted.messages.map((message) => message.message),
+      });
+    }
+
+    return {
+      projectId: input.projectId,
+      targetScheme: "kb",
+      requestedCount: input.files.length,
+      importedCount: items.filter((item) => item.status === "imported").length,
+      skippedCount: items.filter((item) => item.status === "skipped").length,
+      failedCount: items.filter((item) => item.status === "failed").length,
+      items,
+    };
+  };
+
   return {
-    async importFixture(input) {
-      const files = await deps.source.listFiles(input);
-      return deps.imports.importFiles({
+    importFiles,
+    async importDriveFixture(input) {
+      if (!driveSource) {
+        throw new Error("Drive corpus import source is not configured");
+      }
+      const files = await driveSource.listFiles(input);
+      return importFiles({
         ...input,
         files: files.map((file) => ({
           filename: file.filename,

@@ -1,19 +1,24 @@
 /**
- * Browse-layer scheme mapping: HTTP routes and UI still expose legacy `fs1`
- * while the unified ContextPort uses `manuscript://`. Centralizes that flip.
+ * Browse-layer helpers for project context HTTP routes.
+ * Project routes use the same scheme names as the unified ContextPort.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
-/** Map browse-layer route scheme to the unified ContextPort scheme. */
-export function browseLayerContextScheme(
+export const WORK_SCOPED_BROWSE_SCHEMES = new Set<ProjectContextTreeScheme>(["work", "uploads"]);
+
+export function projectBrowseContextUri(
   scheme: ProjectContextTreeScheme,
-): ProjectContextTreeScheme | "manuscript" {
-  return scheme === "fs1" ? "manuscript" : scheme;
+  path: string,
+  workId?: string | null,
+): string {
+  const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
+  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+    return workScopedBrowseUri(scheme as "work" | "uploads", workId ?? "", normalized);
+  }
+  return normalized ? `${scheme}://${normalized}` : `${scheme}://`;
 }
 
-/** Build a canonical context URI from a browse-layer scheme + relative path. */
-export function projectBrowseContextUri(scheme: ProjectContextTreeScheme, path: string): string {
-  const contextScheme = browseLayerContextScheme(scheme);
+export function workScopedBrowseUri(scheme: "work" | "uploads", workId: string, path = ""): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  return normalized ? `${contextScheme}://${normalized}` : `${contextScheme}://`;
+  return normalized ? `${scheme}://${workId}/${normalized}` : `${scheme}://${workId}`;
 }

@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryUnifiedContextPortFactory } from "../../unified-context-port-factory.js";
 import { createFixtureDriveImportSource } from "../adapters/fixture-drive-import-source.js";
 import { createMammothDocumentConverter } from "../adapters/mammoth-document-converter.js";
-import {
-  createCorpusImportService,
-  createDriveCorpusImportService,
-} from "../corpus-import-service.js";
+import { createCorpusImportService } from "../corpus-import-service.js";
 
 function utf8(value: string): Uint8Array {
   return Buffer.from(value, "utf8");
@@ -104,13 +101,10 @@ describe("corpus import", () => {
     const imports = createCorpusImportService({
       contextPorts,
       converter: createMammothDocumentConverter(),
-    });
-    const driveImports = createDriveCorpusImportService({
-      source: createFixtureDriveImportSource(),
-      imports,
+      driveSource: createFixtureDriveImportSource(),
     });
 
-    const result = await driveImports.importFixture({ userId: "user-1", projectId: "project-1" });
+    const result = await imports.importDriveFixture({ userId: "user-1", projectId: "project-1" });
 
     expect(result.requestedCount).toBe(3);
     expect(result.importedCount).toBe(2);

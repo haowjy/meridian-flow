@@ -9,7 +9,7 @@ import { getProjectContextTree } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 
 /**
- * Project context tree for the given scheme (`kb`, `work`, `user`, or `fs1`). Files
+ * Project context tree for the given scheme (`manuscript`, `kb`, `work`, or `user`).
  * include the persisted `documents.id`; the editor must use that id, not the
  * display path.
  *

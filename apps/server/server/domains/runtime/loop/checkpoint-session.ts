@@ -35,6 +35,7 @@ import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 export interface CheckpointArtifactFlushPort {
   flushCheckpointArtifacts(input: {
     projectId: string;
+    workId: string;
     provenance: {
       rootThreadId: string;
       threadId: string;
@@ -170,10 +171,11 @@ export function createCheckpointSession(
     state.currentTurn = persistedCheckpoint.result.updatedTurn;
     checkpointEventBuffer.push(...persistedCheckpoint.events);
 
-    if (request.artifacts.length > 0) {
+    if (request.artifacts.length > 0 && state.thread.workId) {
       // DEFERRED(project workspace-reaper): no-reap-while-parked is policy; checkpoint flush is the safety net.
       const flushResult = await deps.checkpointArtifacts.flushCheckpointArtifacts({
         projectId: state.thread.projectId,
+        workId: state.thread.workId,
         provenance: {
           rootThreadId: state.thread.rootThreadId,
           threadId: state.threadId as string,

@@ -1,7 +1,6 @@
 /**
- * Context port + scheme vocabulary: the stat/read/list/write/search contract over the
- * four context URI schemes (`fs1`/`kb`/`work`/`user`) plus the file-entry,
- * result, and error types. The boundary the router implements and other domains depend on.
+ * Context port + scheme vocabulary: the stat/read/list/write/search/move/delete
+ * contract over context URI schemes plus file-entry, result, and error types.
  */
 
 import type {
@@ -14,11 +13,10 @@ import type { Result } from "../../../shared/result.js";
 /**
  * Registered context URI schemes.
  *
- * Legacy port: `fs1`/`kb`/`work`/`user` (bare paths default to `fs1`).
- * Unified port: `manuscript`/`kb`/`user` (project-scoped) + `work`/`uploads`
- * (work-scoped; bare paths default to `manuscript`).
+ * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
+ * Work-scoped: `work`/`uploads` (authority URIs use `scheme://<workId>/...`).
  */
-export type ContextScheme = "fs1" | "manuscript" | "kb" | "work" | "uploads" | "user";
+export type ContextScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
 
 /** Schemes provisioned at project scope in the unified context port. */
 export type ProjectContextFsScheme = "manuscript" | "kb" | "user";
@@ -28,23 +26,17 @@ export type WorkScopedContextFsScheme = "work" | "uploads";
 
 export interface ContextReadResult {
   content: string;
-  /** Persisted document row id for ContextFS-backed files (`fs1`, `kb`, `work`, `user`). */
   documentId?: string;
 }
 
 export interface ContextWriteResult {
-  /** Persisted document row id for ContextFS-backed files (`fs1`, `kb`, `work`, `user`). */
   documentId?: string;
-  /** Canonical markdown after a tracked write or edit. */
   markdown?: string;
-  /** Yjs update sequence after a tracked write or edit. */
   updateSeq?: number;
 }
 
 interface BaseListEntry {
-  /** Canonical `scheme://path` URI of the entry. */
   uri: string;
-  /** Persisted document row id for ContextFS-backed files (`fs1`, `kb`, `work`, `user`). */
   documentId?: string;
   sizeBytes?: number;
   updatedAt?: string;
@@ -73,9 +65,7 @@ export type ContextListEntry = DirectoryEntry | ContextFileEntry;
 export type FileEntry = ContextListEntry;
 
 interface BaseFileRef {
-  /** Canonical `scheme://path` URI of the file. */
   uri: string;
-  /** Persisted document row id for ContextFS-backed files (`fs1`, `kb`, `work`, `user`). */
   documentId?: string;
   sizeBytes?: number;
   updatedAt?: string;
@@ -122,6 +112,8 @@ export interface SearchResult {
 export type ContextError =
   | { code: "not_found"; uri: string }
   | { code: "permission_denied"; uri: string }
+  | { code: "conflict"; uri: string }
+  | { code: "invalid_operation"; uri: string }
   | { code: "context_unavailable"; uri: string }
   | { code: "invalid_uri"; uri: string; reason: string }
   | { code: "io_error"; uri: string; message: string };
@@ -133,11 +125,15 @@ export type WriteProvenance =
   | { type: "system" };
 
 export interface ContextWriteOptions {
-  /**
-   * Attribution for content writes. ContextFS documents persist this into
-   * the Yjs update log; adapters that do not support attribution may ignore it.
-   */
   origin?: WriteProvenance;
+}
+
+export interface ContextMoveOptions extends ContextWriteOptions {
+  overwrite?: boolean;
+}
+
+export interface ContextMoveResult {
+  movedNodeId?: string;
 }
 
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
@@ -185,7 +181,14 @@ export interface ContextPort {
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 
-  /** List direct children of a URI prefix. Empty array if the prefix is absent. */
+  move(
+    sourceUri: string,
+    destinationUri: string,
+    options?: ContextMoveOptions,
+  ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
+
   list(uri: string): Promise<Result<ContextListEntry[], ContextError>>;
 
   /**

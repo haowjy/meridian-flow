@@ -7,14 +7,20 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryDocumentStore } from "../../collab/adapters/in-memory/document-store.js";
 import { createDocumentSyncService } from "../../collab/domain/document-sync-service.js";
 import { ContextFS } from "../adapters/context-fs/context-fs.js";
-import { InMemoryContextDocumentStore } from "../adapters/context-fs/in-memory-store.js";
+import {
+  createInMemoryContextDocumentStoreBacking,
+  InMemoryContextDocumentStore,
+  InMemoryContextTreeMutationStore,
+} from "../adapters/context-fs/in-memory-store.js";
 import type { ContextDocument, ContextDocumentStore } from "../ports/context-document-store.js";
 
 function makeAdapter() {
-  const contextStore = new InMemoryContextDocumentStore();
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const contextStore = new InMemoryContextDocumentStore({ backing });
   const documentStore = createInMemoryDocumentStore();
   return new ContextFS({
     store: contextStore,
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
     documentSync: createDocumentSyncService(documentStore),
     scheme: "kb",
   });
@@ -22,6 +28,8 @@ function makeAdapter() {
 
 function makeStatOnlyAdapter(document: ContextDocument) {
   const store: ContextDocumentStore = {
+    transaction: async (operation) => operation(),
+    contextSourceId: async () => "test-source",
     findFolder: async () => null,
     createFolder: async () => {
       throw new Error("not used");
@@ -36,12 +44,17 @@ function makeStatOnlyAdapter(document: ContextDocument) {
     async createBinaryDocument() {
       throw new Error("not implemented");
     },
+    async upsertBinaryDocument() {
+      throw new Error("not implemented");
+    },
     listFolders: async () => [],
     listDocuments: async () => [],
     searchDocuments: async () => [],
   };
+  const backing = createInMemoryContextDocumentStoreBacking();
   return new ContextFS({
     store,
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
     documentSync: createDocumentSyncService(createInMemoryDocumentStore()),
     scheme: "kb",
   });
@@ -224,10 +237,12 @@ describe("ContextFS", () => {
   });
 
   it("persists import provenance into Yjs update origins", async () => {
-    const contextStore = new InMemoryContextDocumentStore();
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const contextStore = new InMemoryContextDocumentStore({ backing });
     const documentStore = createInMemoryDocumentStore();
     const adapter = new ContextFS({
       store: contextStore,
+      mutationStore: new InMemoryContextTreeMutationStore(backing),
       documentSync: createDocumentSyncService(documentStore),
       scheme: "kb",
     });
@@ -260,10 +275,12 @@ describe("ContextFS", () => {
   });
 
   it("persists Yjs read-back markdown into the store projection with attribution", async () => {
-    const contextStore = new InMemoryContextDocumentStore();
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const contextStore = new InMemoryContextDocumentStore({ backing });
     const documentStore = createInMemoryDocumentStore();
     const adapter = new ContextFS({
       store: contextStore,
+      mutationStore: new InMemoryContextTreeMutationStore(backing),
       documentSync: createDocumentSyncService(documentStore),
       scheme: "kb",
     });

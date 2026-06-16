@@ -124,6 +124,8 @@ function withTouchRecording(
     mkdir: (uri, options) => port.mkdir(uri, options),
     search: (query, uri) => port.search(query, uri),
     writeBinary: (uri, options) => port.writeBinary(uri, options),
+    move: (source, destination, options) => port.move(source, destination, options),
+    delete: (uri, options) => port.delete(uri, options),
   };
 }
 

@@ -1,13 +1,12 @@
 /**
  * ContextFS: filesystem-shaped adapter for Meridian-managed context schemes
- * (`fs1`/`kb`/`work`/`user`). It hides the document-store + Yjs backing behind
- * path-oriented filesystem operations, owning path resolution, folder
- * auto-creation, and write provenance at the ContextDocumentStore /
- * DocumentSyncPort boundary.
+ * (`manuscript`/`kb`/`work`/`user`/`uploads`). It hides the document-store +
+ * Yjs backing behind path-oriented filesystem operations; move/delete go through
+ * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
 import { filetypeForPath } from "@meridian/contracts/protocol";
-import { Ok, type Result } from "../../../../shared/result.js";
+import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { SyncError } from "../../../collab/ports/document-sync.js";
 import {
   type ContextCollabDocumentSync,
@@ -17,11 +16,14 @@ import {
 } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
+  AdapterDeleteResult,
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
+  AdapterMoveResult,
   AdapterSearchHit,
   ContextSchemeAdapter,
+  ContextTreeAdapter,
   SchemeCapabilities,
 } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
@@ -30,9 +32,16 @@ import type {
   ContextWriteBinaryOptions,
   ContextWriteOptions,
 } from "../../ports/context-port.js";
+import type {
+  ContextLocationToken,
+  ContextTreeMutationError,
+  ContextTreeMutationStore,
+  PreparedContextMove,
+} from "../../ports/context-tree-mutation-store.js";
 
 export interface ContextFSDeps {
   store: ContextDocumentStore;
+  mutationStore: ContextTreeMutationStore;
   documentSync: ContextCollabDocumentSync;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
@@ -49,7 +58,7 @@ function schemaTypeForStr(filetype: string): "document" | "code" {
 }
 
 /**
- * Store-backed file tree for the `fs1://`, `kb://`, `work://`, and `user://` schemes.
+ * Store-backed file tree for project and work context schemes.
  * Owns path ↔ folder-tree resolution and folder auto-creation; delegates
  * single-node persistence to a {@link ContextDocumentStore}.
  *
@@ -69,10 +78,18 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly capabilities: SchemeCapabilities = { writable: true, searchable: true };
 
   private readonly store: ContextDocumentStore;
+  private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: ContextCollabDocumentSync;
+
+  readonly tree: ContextTreeAdapter = {
+    inspectMovable: (path) => this.inspectMovable(path),
+    commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
+    commitPreparedDelete: (token) => this.commitPreparedDelete(token),
+  };
 
   constructor(deps: ContextFSDeps) {
     this.store = deps.store;
+    this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;
     this.name = deps.scheme;
   }
@@ -362,5 +379,47 @@ export class ContextFS implements ContextSchemeAdapter {
       hits.push({ path, excerpt: row.excerpt, line: row.line });
     }
     return Ok(hits);
+  }
+
+  private mutationFault(error: ContextTreeMutationError): AdapterFault {
+    switch (error.code) {
+      case "stale_source":
+      case "stale_target":
+      case "conflict":
+        return { code: "conflict" };
+      case "invalid_operation":
+      case "not_found":
+        return { code: "invalid_operation" };
+    }
+  }
+
+  private async inspectMovable(
+    path: string,
+  ): Promise<Result<ContextLocationToken | null, AdapterFault>> {
+    const sourceId = await this.store.contextSourceId();
+    return Ok(await this.mutationStore.inspect(sourceId, path));
+  }
+
+  private async commitPreparedMove(
+    prepared: PreparedContextMove,
+  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+    const committed = await this.mutationStore.commitMove(prepared);
+    if (!committed.ok) return Err(this.mutationFault(committed.error));
+    return Ok({
+      movedNodeId: committed.value.movedNodeId,
+      path: prepared.destinationPath,
+      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
+    });
+  }
+
+  private async commitPreparedDelete(
+    token: ContextLocationToken,
+  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+    const committed = await this.mutationStore.commitDelete(token);
+    if (!committed.ok) return Err(this.mutationFault(committed.error));
+    return Ok({
+      deletedNodeId: committed.value.deletedNodeId,
+      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
+    });
   }
 }

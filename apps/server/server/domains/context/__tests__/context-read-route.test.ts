@@ -4,7 +4,10 @@ import {
   resolveContextReadPath,
 } from "../../../lib/context-read-route.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createInMemoryProjectRepository } from "../../projects/index.js";
+import {
+  createInMemoryProjectRepository,
+  createInMemoryWorkRepository,
+} from "../../projects/index.js";
 import {
   createInMemoryObjectStore,
   createObjectStorageUrl,
@@ -75,6 +78,14 @@ class TestContextPort implements ContextPort {
   async search() {
     return ok([]);
   }
+
+  async move() {
+    return ok({});
+  }
+
+  async delete() {
+    return ok(undefined);
+  }
 }
 
 async function expectHttpStatus(operation: Promise<unknown>, statusCode: number): Promise<void> {
@@ -94,11 +105,11 @@ describe("context read route core", () => {
       uri: "kb://notes/README.MD",
       path: "/notes/README.MD",
     });
-    expect(resolveContextReadPath("work", "/drafts/a.py")).toMatchObject({
-      uri: "work://drafts/a.py",
+    expect(resolveContextReadPath("work", "/drafts/a.py", "work-1")).toMatchObject({
+      uri: "work://work-1/drafts/a.py",
       path: "/drafts/a.py",
     });
-    expect(resolveContextReadPath("fs1", "/chapter-1.md")).toMatchObject({
+    expect(resolveContextReadPath("manuscript", "/chapter-1.md")).toMatchObject({
       uri: "manuscript://chapter-1.md",
       path: "/chapter-1.md",
     });
@@ -122,6 +133,7 @@ describe("context read route core", () => {
     const response = await handleContextReadRequest(
       {
         projectRepo,
+        workRepo: createInMemoryWorkRepository(),
         contextPorts: contextFactoryFor(port),
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
@@ -159,6 +171,7 @@ describe("context read route core", () => {
     const response = await handleContextReadRequest(
       {
         projectRepo,
+        workRepo: createInMemoryWorkRepository(),
         contextPorts: contextFactoryFor(port),
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
@@ -193,6 +206,7 @@ describe("context read route core", () => {
     const response = await handleContextReadRequest(
       {
         projectRepo,
+        workRepo: createInMemoryWorkRepository(),
         contextPorts: contextFactoryFor(port),
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
@@ -233,6 +247,7 @@ describe("context read route core", () => {
     const response = await handleContextReadRequest(
       {
         projectRepo,
+        workRepo: createInMemoryWorkRepository(),
         contextPorts: contextFactoryFor(port),
         objectStore,
         eventSink: createInMemoryEventSink(),
@@ -264,6 +279,7 @@ describe("context read route core", () => {
       handleContextReadRequest(
         {
           projectRepo,
+          workRepo: createInMemoryWorkRepository(),
           contextPorts: contextFactoryFor(port),
           objectStore: createInMemoryObjectStore(),
           eventSink: createInMemoryEventSink(),
@@ -283,6 +299,7 @@ describe("context read route core", () => {
       handleContextReadRequest(
         {
           projectRepo,
+          workRepo: createInMemoryWorkRepository(),
           contextPorts: contextFactoryFor(port),
           objectStore: createInMemoryObjectStore(),
           eventSink: createInMemoryEventSink(),
@@ -318,6 +335,7 @@ describe("context read route core", () => {
       handleContextReadRequest(
         {
           projectRepo,
+          workRepo: createInMemoryWorkRepository(),
           contextPorts: contextFactoryFor(port),
           objectStore: createInMemoryObjectStore(),
           eventSink: createInMemoryEventSink(),
@@ -358,6 +376,7 @@ describe("context read route core", () => {
       handleContextReadRequest(
         {
           projectRepo,
+          workRepo: createInMemoryWorkRepository(),
           contextPorts: contextFactoryFor(port),
           objectStore,
           eventSink: createInMemoryEventSink(),

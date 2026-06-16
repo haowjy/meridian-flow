@@ -20,6 +20,10 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 400, message: error.reason });
     case "permission_denied":
       throw createError({ statusCode: 403, message: "Context access denied" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: "Invalid context operation" });
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });
     case "context_unavailable":

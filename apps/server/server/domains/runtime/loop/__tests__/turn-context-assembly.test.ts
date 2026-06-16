@@ -58,7 +58,7 @@ describe("assembleNextTurnContext", () => {
     const frozenByAgentB = thread({
       currentAgent: "agent-b",
       composedSystemPrompt:
-        "Prompt for agent-b\n\nRuntime URI rules: use kb://, user://, work://, or fs1:// URIs exactly as provided by context tools.",
+        "Prompt for agent-b\n\nRuntime URI rules: use kb://, user://, work://, or manuscript:// URIs exactly as provided by context tools.",
       bakedSkillSlugs: [],
       systemPrompt: null,
     });

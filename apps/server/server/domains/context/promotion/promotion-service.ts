@@ -19,6 +19,7 @@ export type PromotionResult =
   | { ok: false; error: PromotionError };
 export interface PromoteArtifactInput {
   projectId: string;
+  workId: string;
   sourcePath: string;
   bytes: Uint8Array;
   provenance: ResultProvenance;
@@ -53,6 +54,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       if (!sourcePath || sourcePath.includes(".."))
         return err("invalid_input", "Invalid source path");
       if (!input.projectId) return err("invalid_input", "projectId is required");
+      if (!input.workId) return err("invalid_input", "workId is required");
       if (!input.provenance.agentSlug)
         return err("invalid_input", "provenance.agentSlug is required");
       const policy = evaluatePromotionPolicy(sourcePath);
@@ -67,7 +69,11 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       );
       const put = await deps.objectStore.put(objectKey, input.bytes, policy.mimeType);
       if (!put.ok) return err("object_store_error", put.error.message);
-      const resultsUri = resultsUriForSourcePath(input.provenance.rootThreadId, sourcePath);
+      const resultsUri = resultsUriForSourcePath(
+        input.workId,
+        input.provenance.rootThreadId,
+        sourcePath,
+      );
       const provenance = {
         ...input.provenance,
         toolCallId: input.toolCallId ?? input.provenance.toolCallId,
