@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { announce, useProjectActions, useProjectStore, useThreadActions } from "@/client/stores";
+import { wireAgentSlug } from "@/features/agents";
 import { startProjectFromComposer } from "@/lib/optimistic-project";
 
 export type UseComposerNewProjectOptions = {
@@ -23,7 +24,7 @@ export function useComposerNewProject(options: UseComposerNewProjectOptions = {}
     (text: string, currentAgent?: string) => {
       startProjectFromComposer({
         text,
-        currentAgent,
+        currentAgent: wireAgentSlug(currentAgent),
         projectActions,
         threadActions,
         navigate,

@@ -15,6 +15,7 @@ import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
+import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
 
@@ -111,7 +112,7 @@ export function useThreadHandoff(
                 id: threadId,
                 projectId,
                 title,
-                ...(currentAgent ? { currentAgent } : {}),
+                ...threadCreateAgentField(currentAgent),
               },
             });
             actions.ensureThread(thread);

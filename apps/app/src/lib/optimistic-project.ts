@@ -15,6 +15,7 @@ import {
   type ProjectStoreActions,
   type ThreadStoreActions,
 } from "@/client/stores";
+import { threadCreateAgentField } from "@/features/agents";
 
 import { deriveTitleFromMessage } from "./thread-title";
 
@@ -117,7 +118,7 @@ export function startProjectFromComposer({
       title,
       text,
       optimisticUserTurnId: optimisticUserTurn.id,
-      ...(currentAgent ? { currentAgent } : {}),
+      ...threadCreateAgentField(currentAgent),
     },
   });
 
