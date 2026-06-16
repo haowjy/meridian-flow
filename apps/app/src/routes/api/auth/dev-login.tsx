@@ -3,14 +3,15 @@ import { getConfig, sessionEncryption, validateConfig } from "@workos/authkit-se
 import { getAuthkit } from "@workos/authkit-tanstack-react-start";
 
 import { getAppServerConfig } from "@/server/config";
+import { isDevAutologinEnabled } from "@/server/dev-auth";
 
 /**
  * Dev-only WorkOS dev-login route.
  *
  * Performs REAL WorkOS password authentication for the fixed env user and
  * mints the SAME sealed AuthKit session cookie the normal `/api/auth/callback`
- * produces. Hard-gated: 404 unless NODE_ENV !== "production" AND the dev-login
- * env creds are present.
+ * produces. Hard-gated via `isDevAutologinEnabled()` (404 when WORKOS_DEV_AUTOLOGIN
+ * is unset or production).
  */
 
 type FailurePhase = "config validation" | "WorkOS password authentication";
@@ -147,12 +148,16 @@ function diagnosticResponse(args: {
   });
 }
 
-async function handleDevLogin(): Promise<Response> {
-  const { isProduction, workosDevLogin, workosClientId } = getAppServerConfig();
+export async function handleDevLogin(): Promise<Response> {
+  if (!isDevAutologinEnabled()) {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  const { workosDevLogin, workosClientId } = getAppServerConfig();
   const email = workosDevLogin?.email;
   const password = workosDevLogin?.password;
 
-  if (isProduction || !email || !password) {
+  if (!email || !password) {
     return new Response("Not Found", { status: 404 });
   }
 

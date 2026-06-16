@@ -4,8 +4,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const PLACEHOLDER_PATTERNS = {
-  SUPABASE_URL: [/^empty$/i, /^https?:\/\/127\.0\.0\.1/, /^https?:\/\/localhost/],
-  SUPABASE_ANON_KEY: [/^empty$/i, /^anon[_-]?key$/i, /^dev-/i],
   MERIDIAN_API_ORIGIN: [/^empty$/i],
   WORKOS_API_KEY: [/^dev-workos-key$/i, /^empty$/i],
   WORKOS_CLIENT_ID: [/^dev-workos-client$/i, /^client_\.\.\.$/i, /^client_ci$/i, /^empty$/i],
@@ -61,8 +59,6 @@ export function validateStartEnv(env = process.env) {
     return trimmed;
   }
 
-  const supabaseUrl = readRequiredEnv("SUPABASE_URL");
-  readRequiredEnv("SUPABASE_ANON_KEY");
   const meridianApiOrigin = readRequiredEnv("MERIDIAN_API_ORIGIN");
 
   readRequiredEnv("WORKOS_API_KEY");
@@ -70,7 +66,6 @@ export function validateStartEnv(env = process.env) {
   const workosCookiePassword = readRequiredEnv("WORKOS_COOKIE_PASSWORD");
   const workosRedirectUri = readRequiredEnv("WORKOS_REDIRECT_URI");
 
-  if (supabaseUrl) requireHttpUrl("SUPABASE_URL", supabaseUrl, issues);
   if (meridianApiOrigin) requireHttpUrl("MERIDIAN_API_ORIGIN", meridianApiOrigin, issues);
 
   if (workosCookiePassword && workosCookiePassword.length < 32) {
