@@ -45,7 +45,7 @@ export function parseAppServerConfig(env: NodeJS.ProcessEnv): AppServerConfig {
     supabaseAnonKey: readOptionalTrimmed(env.SUPABASE_ANON_KEY),
     supabaseAuthRedirectUri: readOptionalTrimmed(env.SUPABASE_AUTH_REDIRECT_URI),
     devLogin,
-    devAutologin: !isProduction && Boolean(env.SUPABASE_DEV_AUTOLOGIN) && devLogin !== null,
+    devAutologin: !isProduction && env.WORKOS_DEV_AUTOLOGIN === "1" && workosDevLogin !== null,
     workosClientId: readOptionalTrimmed(env.WORKOS_CLIENT_ID),
     workosRedirectUri: readOptionalTrimmed(env.WORKOS_REDIRECT_URI),
     workosDevLogin,

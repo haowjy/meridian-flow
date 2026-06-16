@@ -1,11 +1,12 @@
 /**
  * Packages that must stay bundled in Vite's SSR module runner.
  *
- * Meridian's Supabase auth path currently does not require auth-provider
- * packages to be forced into the SSR bundle. Keep this seam so provider-specific
- * bundling quirks stay out of `vite.config.ts` when they appear.
+ * WorkOS AuthKit packages can lose named exports when externalized in dev SSR.
  */
-export const APP_SSR_NO_EXTERNAL: (string | RegExp)[] = [];
+export const APP_SSR_NO_EXTERNAL: (string | RegExp)[] = [
+  "@workos/authkit-tanstack-react-start",
+  "@workos/authkit-session",
+];
 
 /**
  * Packages that must be externalized from the SSR bundle even when a package is

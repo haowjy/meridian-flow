@@ -1,83 +1,123 @@
+/**
+ * WorkOS authentication seam: wraps @workos/authkit-session (cookie session
+ * storage, requireUser) and resolves an authenticated identity. Owns the auth
+ * provider integration; depends inward on the user repository port.
+ */
 import type { UserId } from "@meridian/contracts/runtime";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { CookieSessionStorage, createAuthService, validateConfig } from "@workos/authkit-session";
 import { HTTPError } from "nitro/h3";
+import type { UserRepository } from "../domains/projects/index.js";
+
+/**
+ * Custom cookie session storage that manually parses the cookie header.
+ *
+ * WorkOS's default CookieSessionStorage uses a cookie-parsing library that
+ * depends on Node.js HTTP request objects. Our Nitro routes receive Web API
+ * `Request` objects, so we bypass the library and parse the cookie header
+ * directly. Splitting and rejoining `=` preserves cookie values that contain
+ * `=` signs (e.g., base64-encoded payloads).
+ */
+class ApiCookieSessionStorage extends CookieSessionStorage<Request, Response> {
+  async getCookie(request: Request, name: string): Promise<string | null> {
+    const cookieHeader = request.headers.get("cookie");
+    if (!cookieHeader) return null;
+
+    for (const cookie of cookieHeader.split(";")) {
+      const [rawName, ...rawValue] = cookie.trim().split("=");
+      if (rawName !== name) continue;
+
+      try {
+        return decodeURIComponent(rawValue.join("="));
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+}
 
 export interface ResolvedUser {
+  externalId: string;
   userId: UserId;
-  email?: string | null;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
 }
 
-const ACCESS_TOKEN_COOKIE = "meridian.sb.access-token";
+export type ResolvedExternalUser = Omit<ResolvedUser, "userId">;
 
-let supabase: SupabaseClient | undefined;
-
-function getSupabase(): SupabaseClient {
-  if (supabase) return supabase;
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY for request auth");
-  }
-
-  supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-  return supabase;
+export interface UserProvisioningDeps {
+  users: UserRepository;
 }
 
-function bearerToken(request: Request): string | null {
-  const authorization = request.headers.get("authorization");
-  if (!authorization) return null;
+const authkit = createAuthService({
+  sessionStorageFactory: (config) => new ApiCookieSessionStorage(config),
+});
 
-  const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
-  return match?.[1] ?? null;
+/**
+ * Deferred config validation flag.
+ *
+ * `createAuthService()` is called at module top-level (import time), but
+ * WorkOS config must be validated lazily because env vars may not be
+ * available until after Nitro's env loading phase. `ensureAuthConfig()`
+ * gates `validateConfig()` behind a once flag so it's only called the
+ * first time a request triggers auth. No promise or mutex — concurrent
+ * callers may double-validate, which is harmless (idempotent check).
+ */
+let configValidated = false;
+
+async function ensureAuthConfig(): Promise<void> {
+  if (configValidated) return;
+  await validateConfig();
+  configValidated = true;
 }
 
-function parseCookies(cookieHeader: string | null): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  if (!cookieHeader) return cookies;
-
-  for (const cookie of cookieHeader.split(";")) {
-    const [rawName, ...rawValue] = cookie.trim().split("=");
-    if (!rawName) continue;
-    try {
-      cookies[rawName] = decodeURIComponent(rawValue.join("="));
-    } catch {
-      cookies[rawName] = rawValue.join("=");
-    }
-  }
-
-  return cookies;
+function composeName(firstName: string | null, lastName: string | null): string | null {
+  const name = [firstName, lastName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(" ");
+  return name || null;
 }
 
-function accessTokenCookie(request: Request): string | null {
-  return parseCookies(request.headers.get("cookie"))[ACCESS_TOKEN_COOKIE] ?? null;
+export async function validateAuthConfiguration(): Promise<void> {
+  await ensureAuthConfig();
 }
 
-async function resolveJwt(jwt: string): Promise<ResolvedUser | null> {
-  const { data, error } = await getSupabase().auth.getUser(jwt);
-  if (error || !data.user) return null;
+export async function resolveUser(request: Request): Promise<ResolvedExternalUser | null> {
+  await ensureAuthConfig();
+  const { auth } = await authkit.withAuth(request);
+  if (!auth.user) return null;
 
   return {
-    userId: data.user.id as UserId,
-    email: data.user.email ?? null,
+    externalId: auth.user.id,
+    email: auth.user.email,
+    name: composeName(auth.user.firstName, auth.user.lastName),
+    avatarUrl: auth.user.profilePictureUrl ?? null,
   };
 }
 
-export async function resolveUser(request: Request): Promise<ResolvedUser | null> {
-  const token = bearerToken(request) ?? accessTokenCookie(request);
-  if (!token) return null;
-  return resolveJwt(token);
+export async function provisionAuthenticatedUser(
+  user: ResolvedExternalUser,
+  deps: UserProvisioningDeps,
+): Promise<UserId> {
+  return deps.users.ensureUser({
+    externalId: user.externalId,
+    email: user.email,
+    name: user.name,
+    avatarUrl: user.avatarUrl,
+  });
 }
 
-export async function requireUser(request: Request): Promise<ResolvedUser> {
+export async function requireUser(
+  request: Request,
+  deps: UserProvisioningDeps,
+): Promise<ResolvedUser> {
   const user = await resolveUser(request);
   if (!user) {
     throw new HTTPError({ status: 401, message: "Unauthorized" });
   }
-  return user;
+  const userId = await provisionAuthenticatedUser(user, deps);
+  return { ...user, userId };
 }

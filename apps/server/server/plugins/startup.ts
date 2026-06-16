@@ -3,6 +3,7 @@
  * validation at boot, logging warnings through the event sink.
  */
 import { emitEvent } from "../domains/observability";
+import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
@@ -21,6 +22,9 @@ export default async function startupPlugin() {
       payload: { warning },
     });
   }
+
+  // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
+  await validateAuthConfiguration();
 
   emitEvent(eventSink, {
     level: "info",

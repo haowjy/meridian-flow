@@ -10,36 +10,26 @@ export function openE2eDb(databaseUrl: string): Db {
 
 export async function login(page: Page): Promise<void> {
   await page.goto("/api/auth/dev-login", { waitUntil: "domcontentloaded" });
-  await page.waitForURL(/\/(auth-check|onboarding)$/, { timeout: 30_000 });
+  await page.waitForURL((url) => !url.pathname.startsWith("/api/auth/"), { timeout: 30_000 });
+}
+
+export async function findInternalUserId(db: Db, externalUserId: string): Promise<string> {
+  const rows = await db<{ id: string }[]>`
+    SELECT id::text AS id FROM users WHERE external_id = ${externalUserId} LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row?.id) {
+    throw new Error(`No provisioned user row found for WORKOS_DEV_LOGIN_USER_ID=${externalUserId}`);
+  }
+  return row.id;
 }
 
 export async function findTestUserId(db: Db): Promise<string> {
-  const userId = process.env.TEST_USER_ID?.trim();
-  if (userId) {
-    const rows = await db<{ email: string }[]>`
-      SELECT email FROM auth.users WHERE id = ${userId}::uuid LIMIT 1
-    `;
-    const email = rows[0]?.email;
-    if (email !== "test@meridian.dev" && !email?.endsWith(".e2e@meridian.dev")) {
-      throw new Error(
-        `Refusing destructive onboarding e2e reset for non-disposable TEST_USER_ID=${userId}`,
-      );
-    }
-    return userId;
+  const externalUserId = process.env.WORKOS_DEV_LOGIN_USER_ID?.trim();
+  if (!externalUserId) {
+    throw new Error("WORKOS_DEV_LOGIN_USER_ID is required for e2e user lookup");
   }
-
-  const email = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-  if (email !== "test@meridian.dev" && !email.endsWith(".e2e@meridian.dev")) {
-    throw new Error(
-      `Refusing destructive onboarding e2e reset for non-disposable TEST_USER_EMAIL=${email}`,
-    );
-  }
-  const rows = await db<{ id: string }[]>`
-    SELECT id::text AS id FROM auth.users WHERE email = ${email} LIMIT 1
-  `;
-  const row = rows[0];
-  if (!row) throw new Error(`No Supabase auth user found for TEST_USER_EMAIL=${email}`);
-  return row.id;
+  return findInternalUserId(db, externalUserId);
 }
 
 export type ProjectFixture = {

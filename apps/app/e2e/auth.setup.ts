@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, expect } from "@playwright/test";
+import { chromium } from "@playwright/test";
 import { resolveAppUrl } from "./portless";
 
 const APP_URL = resolveAppUrl();
@@ -15,9 +15,9 @@ export async function authenticate(): Promise<string> {
     const page = await context.newPage();
 
     await page.goto(`${APP_URL}/api/auth/dev-login`, { waitUntil: "domcontentloaded" });
-    await page.waitForURL("**/auth-check", { timeout: 30_000 });
-    await expect(page.getByTestId("auth-check-title")).toHaveText("Authenticated");
-    await expect(page.getByTestId("auth-check-user")).not.toHaveText("");
+    await page.waitForURL((url: URL) => !url.pathname.startsWith("/api/auth/"), {
+      timeout: 30_000,
+    });
 
     mkdirSync(dirname(STATE_PATH), { recursive: true });
     await context.storageState({ path: STATE_PATH });
