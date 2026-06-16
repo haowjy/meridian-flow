@@ -11,74 +11,17 @@ import {
   projects,
   threadDocuments,
 } from "@meridian/database";
+import {
+  assertLocalSupabaseOrExplicitAllow,
+  DB_TEST_FIXTURE_USER_ID_PRIMARY,
+  resolveDbTestFixtureUserId,
+} from "@meridian/database/__test-support__/db-fixtures";
 import { and, eq } from "drizzle-orm";
-import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleProjectBootstrapRepository } from "../projects/index.js";
 import { createDocumentSyncService } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const testUserId = process.env.TEST_USER_ID;
-const testUserEmail = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-const fallbackTestUserId = "00000000-0000-4000-8000-000000000111" as UserId;
-
-function assertSafeTestDatabase(): void {
-  if (!databaseUrl || process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;
-  if (!databaseUrl.includes("127.0.0.1:54422")) {
-    throw new Error(
-      "Refusing collab facade scope tests: DATABASE_URL must be local Supabase (127.0.0.1:54422)",
-    );
-  }
-}
-
-async function resolveTestUserId(): Promise<UserId> {
-  if (!databaseUrl) throw new Error("DATABASE_URL is required");
-
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    if (testUserId) {
-      const rows = await sql<{ id: string }[]>`
-        INSERT INTO auth.users (
-          id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
-          email_confirmed_at, created_at, updated_at
-        )
-        VALUES (
-          ${testUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
-          '{}'::jsonb, '{}'::jsonb, now(), now(), now()
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET email = excluded.email, updated_at = now()
-        RETURNING id::text
-      `;
-      return rows[0]?.id as UserId;
-    }
-
-    const rows = await sql<{ id: string }[]>`
-      SELECT id::text
-      FROM auth.users
-      WHERE email = ${testUserEmail}
-      LIMIT 1
-    `;
-    if (rows[0]?.id) return rows[0].id as UserId;
-
-    const inserted = await sql<{ id: string }[]>`
-      INSERT INTO auth.users (
-        id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
-        email_confirmed_at, created_at, updated_at
-      )
-      VALUES (
-        ${fallbackTestUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
-        '{}'::jsonb, '{}'::jsonb, now(), now(), now()
-      )
-      ON CONFLICT (id) DO UPDATE
-      SET email = excluded.email, updated_at = now()
-      RETURNING id::text
-    `;
-    return inserted[0]?.id as UserId;
-  } finally {
-    await sql.end();
-  }
-}
 
 describe.skipIf(!databaseUrl)("collab facade project-scoped scope", () => {
   let db: Database;
@@ -88,9 +31,12 @@ describe.skipIf(!databaseUrl)("collab facade project-scoped scope", () => {
   let documentId: DocumentId;
 
   beforeEach(async () => {
-    assertSafeTestDatabase();
+    assertLocalSupabaseOrExplicitAllow(databaseUrl);
     db = createDb(databaseUrl as string);
-    userId = await resolveTestUserId();
+    userId = (await resolveDbTestFixtureUserId(databaseUrl as string, {
+      fixtureUserId: DB_TEST_FIXTURE_USER_ID_PRIMARY,
+      suite: "collab-facade-scope",
+    })) as UserId;
     projectId = crypto.randomUUID();
     sourceId = crypto.randomUUID();
     documentId = crypto.randomUUID() as DocumentId;

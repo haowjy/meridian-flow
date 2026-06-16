@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { defineProject } from "vitest/config";
 
 /** Opt-in DB conformance project for destructive Drizzle adapter tests. */
@@ -10,6 +11,10 @@ if (RUN_DB_TESTS && !DATABASE_URL) {
   throw new Error(
     "RUN_DB_TESTS requires DATABASE_URL to point at a dedicated throwaway Postgres DB.",
   );
+}
+
+if (RUN_DB_TESTS && DATABASE_URL) {
+  assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
 }
 
 const contractsRuntimeEntry = fileURLToPath(
