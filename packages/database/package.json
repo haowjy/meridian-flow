@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./__test-support__/db-fixtures": "./src/__test-support__/db-fixtures.ts",
     "./schema": "./src/schema/index.ts",
     "./schema/*": "./src/schema/*.ts",
     "./schema/sql/*": "./src/schema/sql/*"

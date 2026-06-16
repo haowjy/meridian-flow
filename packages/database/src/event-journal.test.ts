@@ -1,79 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import { eq, inArray } from "drizzle-orm";
-import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  assertLocalSupabaseOrExplicitAllow,
+  DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL,
+  resolveDbTestFixtureUserId,
+} from "./__test-support__/db-fixtures";
 import { createDb, type Database } from "./connection";
 import { createDrizzleEventJournal } from "./event-journal";
 import { eventJournal, projects, threads, threadWorks, works } from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
-const testUserId = process.env.TEST_USER_ID;
-const testUserEmail = process.env.TEST_USER_EMAIL ?? "test@meridian.dev";
-const fallbackTestUserId = "00000000-0000-4000-8000-000000000112" as UserId;
-
-function assertSafeTestDatabase(): void {
-  if (!databaseUrl) {
-    return;
-  }
-  if (process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") {
-    return;
-  }
-  if (!databaseUrl.includes("127.0.0.1:54422")) {
-    throw new Error(
-      "Refusing event journal tests: DATABASE_URL must be local Supabase (127.0.0.1:54422) or set TEST_DB_ALLOW_DESTRUCTIVE=1",
-    );
-  }
-}
-
-async function resolveTestUserId(): Promise<UserId> {
-  if (!databaseUrl) throw new Error("DATABASE_URL is required");
-
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    if (testUserId) {
-      const rows = await sql<{ id: string }[]>`
-        INSERT INTO auth.users (
-          id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
-          email_confirmed_at, created_at, updated_at
-        )
-        VALUES (
-          ${testUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
-          '{}'::jsonb, '{}'::jsonb, now(), now(), now()
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET email = excluded.email, updated_at = now()
-        RETURNING id::text
-      `;
-      return rows[0]?.id as UserId;
-    }
-
-    const rows = await sql<{ id: string }[]>`
-      SELECT id::text
-      FROM auth.users
-      WHERE email = ${testUserEmail}
-      LIMIT 1
-    `;
-    if (rows[0]?.id) return rows[0].id as UserId;
-
-    const inserted = await sql<{ id: string }[]>`
-      INSERT INTO auth.users (
-        id, email, aud, role, raw_app_meta_data, raw_user_meta_data,
-        email_confirmed_at, created_at, updated_at
-      )
-      VALUES (
-        ${fallbackTestUserId}::uuid, ${testUserEmail}, 'authenticated', 'authenticated',
-        '{}'::jsonb, '{}'::jsonb, now(), now(), now()
-      )
-      ON CONFLICT (id) DO UPDATE
-      SET email = excluded.email, updated_at = now()
-      RETURNING id::text
-    `;
-    return inserted[0]?.id as UserId;
-  } finally {
-    await sql.end();
-  }
-}
 
 describe.skipIf(!databaseUrl)("event journal", () => {
   let db: Database;
@@ -84,10 +22,13 @@ describe.skipIf(!databaseUrl)("event journal", () => {
   let userId: UserId;
 
   beforeEach(async () => {
-    assertSafeTestDatabase();
+    assertLocalSupabaseOrExplicitAllow(databaseUrl);
     db = createDb(databaseUrl as string);
     threadIds = [];
-    userId = await resolveTestUserId();
+    userId = (await resolveDbTestFixtureUserId(databaseUrl as string, {
+      fixtureUserId: DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL,
+      suite: "event-journal",
+    })) as UserId;
     projectId = randomUUID() as ProjectId;
     workId = randomUUID() as WorkId;
     threadId = randomUUID() as ThreadId;
