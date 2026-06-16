@@ -9,6 +9,7 @@
     "db:apply-functions": "pnpm --filter @meridian/database db:apply-functions",
     "db:studio": "pnpm --filter @meridian/database db:studio",
     "dev": "tsx tools/dev/dev-tmux.ts",
+    "dev:local": "tsx tools/dev/dev-tmux.ts --no-tailscale",
     "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",
     "dev:infra": "supabase start",
     "dev:infra:down": "supabase stop",
