@@ -28,12 +28,14 @@ const MOBILE_DOCUMENT_OWNER = "mobile-project-document-host";
 
 export type MobileDocumentHostProps = {
   projectId: string;
+  activeThreadId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
 };
 
 export function MobileDocumentHost({
   projectId,
+  activeThreadId,
   activeContextScheme,
   activeContextPath,
 }: MobileDocumentHostProps) {
@@ -41,7 +43,7 @@ export function MobileDocumentHost({
   const { tree, isError, isFetching } = useProjectContextTree(
     projectId,
     activeContextScheme ?? "kb",
-    { enabled: hasRouteDocument },
+    { enabled: hasRouteDocument, activeThreadId },
   );
 
   const activeTab = useMemo(() => {
@@ -94,7 +96,13 @@ export function MobileDocumentHost({
   }
 
   if (!activeTab.editable) {
-    return <ContextViewerBareHost projectId={projectId} tab={activeTab} />;
+    return (
+      <ContextViewerBareHost
+        projectId={projectId}
+        activeThreadId={activeThreadId}
+        tab={activeTab}
+      />
+    );
   }
 
   return (

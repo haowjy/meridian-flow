@@ -170,6 +170,7 @@ function DesktopProject(props: ProjectViewProps) {
       children: (
         <ContextViewerSurfaceController
           projectId={props.projectId}
+          activeThreadId={props.activeThreadId}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           active={props.activeScreen === "context"}

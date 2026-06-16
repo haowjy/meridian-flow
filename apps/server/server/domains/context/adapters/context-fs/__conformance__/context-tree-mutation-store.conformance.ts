@@ -288,6 +288,44 @@ export function describeContextTreeMutationStoreConformance(
         kind: "directory",
       });
     });
+
+    it("rejects overwrite when target file content changed between prepare and commit", async () => {
+      const h = await harness();
+      const sourceDoc = await write(h.storeA, "draft.md", "draft");
+      await write(h.storeB, "final.md", "old");
+      const source = await h.mutationStore.inspect(h.sourceA, "draft.md");
+      const target = await h.mutationStore.inspect(h.sourceB, "final.md");
+      if (!source || !target) throw new Error("expected source and target tokens");
+
+      await write(h.storeB, "final.md", "edited concurrently");
+
+      const moved = await h.mutationStore.commitMove(
+        prepared(source, h.sourceB, "final.md", { state: "occupied", token: target }, true),
+      );
+
+      expect(moved).toEqual({ ok: false, error: { code: "stale_target" } });
+      expect(await h.mutationStore.inspect(h.sourceA, "draft.md")).toMatchObject({
+        nodeId: sourceDoc.id,
+      });
+      expect(await h.mutationStore.inspect(h.sourceB, "final.md")).toMatchObject({ kind: "file" });
+    });
+
+    it("rejects delete when file content changed between inspect and commit", async () => {
+      const h = await harness();
+      const doc = await write(h.storeA, "delete-me.md", "original");
+      const token = await h.mutationStore.inspect(h.sourceA, "delete-me.md");
+      if (!token) throw new Error("expected delete token");
+
+      await write(h.storeA, "delete-me.md", "edited concurrently");
+
+      expect(await h.mutationStore.commitDelete(token)).toEqual({
+        ok: false,
+        error: { code: "stale_source" },
+      });
+      expect(await h.mutationStore.inspect(h.sourceA, "delete-me.md")).toMatchObject({
+        nodeId: doc.id,
+      });
+    });
   });
 }
 

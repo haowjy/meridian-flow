@@ -5,7 +5,6 @@ import type { PaymentProvider } from "../domains/billing/ports/payment-provider.
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import type { DocumentSyncService } from "../domains/collab/index.js";
 import {
-  type CorpusImportService,
   createInMemoryUnifiedContextPortFactory,
   type FigureAssetService,
   type ResultRepository,
@@ -66,7 +65,6 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
   contextPorts: UnifiedContextPortFactory;
-  corpusImport: CorpusImportService;
   onboarding: OnboardingService;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -289,14 +287,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory(),
-    corpusImport: {
-      async importFiles() {
-        throw new Error("in-memory corpus import is not implemented");
-      },
-      async importDriveFixture() {
-        throw new Error("in-memory corpus import is not implemented");
-      },
-    },
     onboarding: {
       async status() {
         throw new Error("in-memory onboarding is not implemented");
@@ -435,6 +425,7 @@ export function createInMemoryAppServices(): AppServices {
       async runTurn() {
         throw new Error("in-memory orchestrator is not implemented");
       },
+      finalizeGeneratorFailure: async () => {},
     },
     runner: {
       childRunRegistry: {

@@ -2,7 +2,22 @@
  * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread, context, and Yjs endpoints.
  * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
  */
-import type { ProjectContextTreeScheme } from "./http-types.js";
+import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from "./http-types.js";
+
+export type ProjectContextRequestOptions = {
+  workId?: string | null;
+};
+
+function projectContextQuery(
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): string {
+  const workId = opts?.workId;
+  if (isWorkScopedProjectContextScheme(scheme) && workId) {
+    return `?workId=${encodeURIComponent(workId)}`;
+  }
+  return "";
+}
 export const API_PROJECTS_PATH = "/api/projects";
 
 export const API_THREADS_PATH = "/api/threads";
@@ -36,23 +51,39 @@ export function apiProjectAgentsPath(projectId: string): string {
 export function apiProjectContextTreePath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
 ): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/tree`;
+  return `${apiProjectPath(projectId)}/context/${scheme}/tree${projectContextQuery(scheme, opts)}`;
 }
 
 export function apiProjectContextCreatePath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
 ): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/create`;
+  return `${apiProjectPath(projectId)}/context/${scheme}/create${projectContextQuery(scheme, opts)}`;
 }
 
 export function apiProjectContextReadPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
+  opts?: ProjectContextRequestOptions,
 ): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/read?path=${encodeURIComponent(path)}`;
+  const search = new URLSearchParams({ path });
+  const workId = opts?.workId;
+  if (isWorkScopedProjectContextScheme(scheme) && workId) {
+    search.set("workId", workId);
+  }
+  return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
+}
+
+export function apiProjectContextKbImportPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/kb/import`;
+}
+
+export function apiProjectContextKbImportDriveFixturePath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/kb/import-drive-fixture`;
 }
 
 export function apiThreadPath(threadId: string): string {

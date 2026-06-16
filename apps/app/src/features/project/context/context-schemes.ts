@@ -5,16 +5,24 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { BookOpen, Brain, FileText, User } from "lucide-react";
 
-/** Ordered list of context schemes the UI surfaces (matches `ProjectContextTreeScheme`). */
+/** Ordered list of context schemes the UI may surface (matches `ProjectContextTreeScheme`). */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "manuscript",
   "kb",
   "user",
   "work",
 ];
+
+/** Schemes shown in the tree panel for the current work context. */
+export function visibleContextSchemes(workId: string | null): readonly ProjectContextTreeScheme[] {
+  return CONTEXT_SCHEMES.filter(
+    (scheme) => !isWorkScopedProjectContextScheme(scheme) || workId !== null,
+  );
+}
 
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   switch (scheme) {

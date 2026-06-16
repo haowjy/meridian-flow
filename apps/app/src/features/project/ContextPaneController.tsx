@@ -26,6 +26,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
+  activeThreadId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectContextPath: (
@@ -42,6 +43,7 @@ export type ContextViewerSurfaceControllerProps = {
 
 export function ContextViewerSurfaceController({
   projectId,
+  activeThreadId,
   activeContextScheme,
   activeContextPath,
   active,
@@ -65,6 +67,7 @@ export function ContextViewerSurfaceController({
   const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
   const { tree: routeTree } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: needsRouteTab,
+    activeThreadId,
   });
 
   // Guard: openTab fires at most once per (projectId, scheme, path)
@@ -183,6 +186,7 @@ export function ContextViewerSurfaceController({
   return (
     <ContextViewer
       projectId={projectId}
+      activeThreadId={activeThreadId}
       tabs={tabs}
       activeTabId={retainedActiveTabId}
       onSelectTab={handleSelectTab}

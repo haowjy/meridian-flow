@@ -6,9 +6,10 @@ import {
   readMultipartFormData,
   setResponseStatus,
 } from "nitro/h3";
-import { requireProjectOwner } from "../../../../../domains/projects/index.js";
-import { requireAppUser } from "../../../../../lib/auth-gate.js";
-import { corpusFilesFromMultipart } from "../../../../../lib/corpus-import-route.js";
+import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
+import { requireAppUser } from "../../../../../../lib/auth-gate.js";
+import { handleContextKbImportFilesRequest } from "../../../../../../lib/context-import-route.js";
+import { corpusFilesFromMultipart } from "../../../../../../lib/corpus-import-route.js";
 
 export default defineEventHandler(async (event): Promise<CorpusImportResponse> => {
   const { app, user } = await requireAppUser(event);
@@ -20,12 +21,15 @@ export default defineEventHandler(async (event): Promise<CorpusImportResponse> =
     throw createError({ statusCode: 400, message: "multipart field 'files' is required" });
   }
 
-  const result = await app.corpusImport.importFiles({
-    userId: user.userId,
-    projectId,
-    files,
-    source: { kind: "upload" },
-  });
+  const result = await handleContextKbImportFilesRequest(
+    { contextPorts: app.contextPorts },
+    {
+      userId: user.userId,
+      projectId,
+      files,
+      source: { kind: "upload" },
+    },
+  );
   setResponseStatus(event, 201);
   return result;
 });

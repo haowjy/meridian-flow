@@ -10,6 +10,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChevronRight, FileText, Folder, FolderOpen, PanelLeftClose } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabsActions } from "@/client/stores";
@@ -20,11 +21,13 @@ import { SidebarSectionLabel } from "../shell/SidebarSectionLabel";
 import { CreateContextEntryMenu } from "./CreateContextEntryMenu";
 import type { ContextCreateKind } from "./context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
-import { CONTEXT_SCHEMES, schemeLabel } from "./context-schemes";
+import { schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 
 export type ContextTreePanelProps = {
   projectId: string;
+  /** Active chat thread — used to resolve work-scoped context browse `workId`. */
+  activeThreadId: string | null;
   /** Scheme of the currently active file (drives section auto-expand). */
   activeScheme: ProjectContextTreeScheme | null;
   /** Path of the currently active file inside `activeScheme`'s tree. */
@@ -48,11 +51,14 @@ export type ContextTreePanelProps = {
  */
 export function ContextTreePanel({
   projectId,
+  activeThreadId,
   activeScheme,
   activePath,
   onSelectFile,
   onCollapse,
 }: ContextTreePanelProps) {
+  const workId = useContextWorkId(projectId, activeThreadId);
+  const schemes = visibleContextSchemes(workId);
   const [creating, setCreating] = useState<{
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
@@ -81,10 +87,11 @@ export function ContextTreePanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-2">
         <ul className="flex flex-col">
-          {CONTEXT_SCHEMES.map((scheme, index) => (
+          {schemes.map((scheme, index) => (
             <SchemeSection
               key={scheme}
               projectId={projectId}
+              activeThreadId={activeThreadId}
               scheme={scheme}
               activeScheme={activeScheme}
               activePath={activePath}
@@ -105,6 +112,7 @@ export function ContextTreePanel({
 
 function SchemeSection({
   projectId,
+  activeThreadId,
   scheme,
   activeScheme,
   activePath,
@@ -115,6 +123,7 @@ function SchemeSection({
   onCreateDone,
 }: {
   projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
@@ -139,6 +148,7 @@ function SchemeSection({
 
   const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
     enabled: isOpen,
+    activeThreadId,
   });
 
   // Resolve the newly-created file once the refetched tree has it, and open
@@ -202,6 +212,7 @@ function SchemeSection({
           {creating ? (
             <CreateRow
               projectId={projectId}
+              activeThreadId={activeThreadId}
               scheme={scheme}
               parent={creating.parent}
               kind={creating.kind}
@@ -387,6 +398,7 @@ function FileRow({
  */
 function CreateRow({
   projectId,
+  activeThreadId,
   scheme,
   parent,
   kind,
@@ -394,6 +406,7 @@ function CreateRow({
   onCreatedFilePath,
 }: {
   projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   parent: string;
   kind: ContextCreateKind;
@@ -408,7 +421,7 @@ function CreateRow({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
-  const mutation = useCreateContextEntry(projectId, scheme);
+  const mutation = useCreateContextEntry(projectId, scheme, { activeThreadId });
 
   useEffect(() => {
     inputRef.current?.focus();

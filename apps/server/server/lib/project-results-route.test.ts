@@ -17,6 +17,8 @@ import {
 } from "./project-results-route.js";
 
 describe("project results route core", () => {
+  const workId = "work-1";
+
   it("lists promoted artifacts for an owned project, newest first", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const results = createInMemoryResultRepository();
@@ -27,7 +29,7 @@ describe("project results route core", () => {
     const older = await results.create({
       projectId: "wb-1",
       sourcePath: "/work/results/older.png",
-      resultsUri: "results://wb-1/older.png",
+      resultsUri: `work://${workId}/results/older.png`,
       storageUrl: createObjectStorageUrl("results/wb-1/older.png"),
       mimeType: "image/png",
       sizeBytes: 100,
@@ -44,7 +46,7 @@ describe("project results route core", () => {
     const newer = await results.create({
       projectId: "wb-1",
       sourcePath: "/work/results/newer.csv",
-      resultsUri: "results://wb-1/newer.csv",
+      resultsUri: `work://${workId}/results/newer.csv`,
       storageUrl: createObjectStorageUrl("results/wb-1/newer.csv"),
       mimeType: "text/csv",
       sizeBytes: 200,
@@ -109,7 +111,7 @@ describe("project results route core", () => {
     const record = await results.create({
       projectId: "wb-1",
       sourcePath: "/work/results/figure.png",
-      resultsUri: "results://wb-1/figure.png",
+      resultsUri: `work://${workId}/results/figure.png`,
       storageUrl: put.value.storageUrl,
       mimeType: "image/png",
       sizeBytes: 9,
