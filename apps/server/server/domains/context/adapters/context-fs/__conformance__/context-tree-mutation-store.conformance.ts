@@ -351,6 +351,86 @@ export function describeContextTreeMutationStoreConformance(
         nodeId: doc.id,
       });
     });
+
+    it("moves and deletes freshly created nodes using inspected revision tokens", async () => {
+      const h = await harness();
+      const parentId = await ensureFolder(h.storeA, ["fresh-dir"]);
+      if (!parentId) throw new Error("expected parent folder");
+      await h.storeA.createFolder(parentId, "empty-leaf");
+      const folderToken = await h.mutationStore.inspect(h.sourceA, "fresh-dir/empty-leaf");
+      if (!folderToken) throw new Error("expected folder token");
+
+      const doc = await write(h.storeA, "fresh-file.md", "new");
+      const fileToken = await h.mutationStore.inspect(h.sourceA, "fresh-file.md");
+      if (!fileToken) throw new Error("expected file token");
+
+      expect(
+        await h.mutationStore.commitMove(prepared(fileToken, h.sourceA, "moved-fresh.md")),
+      ).toEqual({
+        ok: true,
+        value: { movedNodeId: doc.id, invalidatedDocumentIds: [] },
+      });
+      expect(
+        await h.mutationStore.commitMove(prepared(folderToken, h.sourceA, "moved-leaf")),
+      ).toEqual({
+        ok: true,
+        value: { movedNodeId: folderToken.nodeId, invalidatedDocumentIds: [] },
+      });
+
+      const movedFileToken = await h.mutationStore.inspect(h.sourceA, "moved-fresh.md");
+      const movedFolderToken = await h.mutationStore.inspect(h.sourceA, "moved-leaf");
+      if (!movedFileToken || !movedFolderToken) throw new Error("expected moved tokens");
+
+      expect(await h.mutationStore.commitDelete(movedFileToken)).toMatchObject({ ok: true });
+      expect(await h.mutationStore.commitDelete(movedFolderToken)).toMatchObject({ ok: true });
+    });
+
+    it("moves a freshly created directory across sources without spurious stale_source", async () => {
+      const h = await harness();
+      const parentId = await ensureFolder(h.storeA, ["export"]);
+      if (!parentId) throw new Error("expected parent folder");
+      await h.storeA.createFolder(parentId, "bundle");
+      const doc = await write(h.storeA, "export/bundle/note.md", "payload");
+      const source = await h.mutationStore.inspect(h.sourceA, "export/bundle");
+      if (!source) throw new Error("expected directory token");
+
+      const moved = await h.mutationStore.commitMove(prepared(source, h.sourceB, "import/bundle"));
+
+      expect(moved).toEqual({
+        ok: true,
+        value: { movedNodeId: source.nodeId, invalidatedDocumentIds: [doc.id] },
+      });
+      expect(await h.mutationStore.inspect(h.sourceB, "import/bundle/note.md")).toMatchObject({
+        nodeId: doc.id,
+      });
+    });
+
+    it("rejects empty directory delete when a child is created before the destructive write", async () => {
+      const h = await harness();
+      const setHook = h.mutationStore.setBeforeDestructiveWrite;
+      if (!setHook) throw new Error("mutation store missing interleave hook");
+
+      const folderId = await ensureFolder(h.storeA, ["racy-empty"]);
+      if (!folderId) throw new Error("expected folder");
+      const token = await h.mutationStore.inspect(h.sourceA, "racy-empty");
+      if (!token) throw new Error("expected directory token");
+
+      setHook.call(h.mutationStore, async () => {
+        await write(h.storeA, "racy-empty/child.md", "raced");
+      });
+
+      expect(await h.mutationStore.commitDelete(token)).toEqual({
+        ok: false,
+        error: { code: "invalid_operation" },
+      });
+      setHook.call(h.mutationStore, null);
+      expect(await h.mutationStore.inspect(h.sourceA, "racy-empty")).toMatchObject({
+        nodeId: folderId,
+      });
+      expect(await h.mutationStore.inspect(h.sourceA, "racy-empty/child.md")).toMatchObject({
+        kind: "file",
+      });
+    });
   });
 }
 

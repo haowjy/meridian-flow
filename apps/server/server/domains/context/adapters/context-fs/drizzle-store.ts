@@ -318,20 +318,13 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
   );
 }
 
-function locationRevision(updatedAt: Date | string): string {
-  return updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt;
-}
-
-function revisionAt(revision: string): Date {
-  return new Date(revision);
-}
-
+/** Postgres timestamptz text from `::text` — full microsecond precision for CAS tokens. */
 function documentRevisionWhere(revision: string) {
-  return revision ? [eq(documents.updatedAt, revisionAt(revision))] : [];
+  return revision ? [sql`${documents.updatedAt} = ${revision}::timestamptz`] : [];
 }
 
 function folderRevisionWhere(revision: string) {
-  return revision ? [eq(folders.updatedAt, revisionAt(revision))] : [];
+  return revision ? [sql`${folders.updatedAt} = ${revision}::timestamptz`] : [];
 }
 
 function isPgConstraintError(error: unknown): boolean {
@@ -441,13 +434,19 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return parentId;
   }
 
-  private async findFolderAtPath(sourceId: string, path: string): Promise<FolderRow | null> {
+  private async findFolderAtPath(
+    sourceId: string,
+    path: string,
+  ): Promise<{ id: string; updatedAt: string } | null> {
     const segments = treePathSegments(path);
     if (segments.length === 0) return null;
     const folderId = await this.findFolderId(sourceId, segments);
     if (folderId === undefined || folderId === null) return null;
     const [row] = await currentDrizzleDb(this.db)
-      .select()
+      .select({
+        id: folders.id,
+        updatedAt: sql<string>`${folders.updatedAt}::text`,
+      })
       .from(folders)
       .where(
         and(
@@ -460,14 +459,20 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return row ?? null;
   }
 
-  private async findDocumentAtPath(sourceId: string, path: string): Promise<DocumentRow | null> {
+  private async findDocumentAtPath(
+    sourceId: string,
+    path: string,
+  ): Promise<{ id: string; updatedAt: string } | null> {
     const { dir, filename } = splitPath(normalizeTreePath(path));
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === undefined) return null;
     const { name, extension } = parseFilename(filename);
     const [row] = await currentDrizzleDb(this.db)
-      .select()
+      .select({
+        id: documents.id,
+        updatedAt: sql<string>`${documents.updatedAt}::text`,
+      })
       .from(documents)
       .where(
         and(
@@ -500,7 +505,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         nodeId: doc.id,
         sourceId,
         path: normalized,
-        revision: locationRevision(doc.updatedAt),
+        revision: doc.updatedAt,
       };
     }
     const folder = await this.findFolderAtPath(sourceId, normalized);
@@ -510,7 +515,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         nodeId: folder.id,
         sourceId,
         path: normalized,
-        revision: locationRevision(folder.updatedAt),
+        revision: folder.updatedAt,
       };
     }
     return null;
@@ -669,10 +674,30 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           ),
         );
 
-      const movedFolders = await currentDrizzleDb(this.db).execute<{ id: string }>(sql`
+      await this.runBeforeDestructiveWrite();
+      const movedRoot = await currentDrizzleDb(this.db)
+        .update(folders)
+        .set({
+          contextSourceId: input.destinationSourceId,
+          parentId: destParentId,
+          name: targetBasename,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(folders.id, input.source.nodeId),
+            eq(folders.contextSourceId, input.source.sourceId),
+            isNull(folders.deletedAt),
+            ...folderRevisionWhere(input.source.revision),
+          ),
+        )
+        .returning({ id: folders.id });
+      if (movedRoot.length !== 1) rollback("stale_source");
+
+      await currentDrizzleDb(this.db).execute(sql`
         WITH RECURSIVE subtree AS (
           SELECT id FROM folders
-          WHERE id = ${input.source.nodeId}
+          WHERE parent_id = ${input.source.nodeId}
             AND context_source_id = ${input.source.sourceId}
             AND deleted_at IS NULL
           UNION ALL
@@ -685,42 +710,22 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
         WHERE id IN (SELECT id FROM subtree)
-        RETURNING id
       `);
-      if (!movedFolders.some((row) => row.id === input.source.nodeId)) rollback("stale_source");
-
-      await this.runBeforeDestructiveWrite();
-      const movedRoot = await currentDrizzleDb(this.db)
-        .update(folders)
-        .set({ parentId: destParentId, name: targetBasename, updatedAt: new Date() })
-        .where(
-          and(
-            eq(folders.id, input.source.nodeId),
-            eq(folders.contextSourceId, input.destinationSourceId),
-            isNull(folders.deletedAt),
-            ...folderRevisionWhere(input.source.revision),
-          ),
-        )
-        .returning({ id: folders.id });
-      if (movedRoot.length !== 1) rollback("stale_source");
 
       await currentDrizzleDb(this.db).execute(sql`
         WITH RECURSIVE subtree AS (
           SELECT id FROM folders
           WHERE id = ${input.source.nodeId}
-            AND context_source_id = ${input.destinationSourceId}
             AND deleted_at IS NULL
           UNION ALL
           SELECT f.id FROM folders f
           JOIN subtree s ON f.parent_id = s.id
-          WHERE f.context_source_id = ${input.destinationSourceId}
-            AND f.deleted_at IS NULL
+          WHERE f.deleted_at IS NULL
         )
         UPDATE documents
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
-        WHERE context_source_id = ${input.source.sourceId}
-          AND deleted_at IS NULL
+        WHERE deleted_at IS NULL
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
@@ -793,10 +798,26 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             eq(folders.contextSourceId, token.sourceId),
             isNull(folders.deletedAt),
             ...folderRevisionWhere(token.revision),
+            sql`NOT EXISTS (
+              SELECT 1 FROM folders AS child_folders
+              WHERE child_folders.parent_id = ${token.nodeId}
+                AND child_folders.context_source_id = ${token.sourceId}
+                AND child_folders.deleted_at IS NULL
+            )`,
+            sql`NOT EXISTS (
+              SELECT 1 FROM documents AS child_documents
+              WHERE child_documents.folder_id = ${token.nodeId}
+                AND child_documents.context_source_id = ${token.sourceId}
+                AND child_documents.deleted_at IS NULL
+            )`,
           ),
         )
         .returning({ id: folders.id });
-      if (deleted.length !== 1) rollback("stale_source");
+      if (deleted.length !== 1) {
+        const still = await this.inspect(token.sourceId, token.path);
+        if (!sameLocation(still, token)) rollback("stale_source");
+        rollback("invalid_operation");
+      }
       return Ok({ deletedNodeId: token.nodeId, invalidatedDocumentIds: [] });
     });
   }
