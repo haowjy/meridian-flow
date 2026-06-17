@@ -5,7 +5,7 @@
  *
  * Per the integration report (p1506) FALLBACK path: this gives us pixel-identical
  * pointer surface to the production EditorView (same StarterKit config, same
- * Meridian marks/nodes, same Collaboration/CollaborationCursor extensions, same
+ * Meridian marks/nodes, same Collaboration/CollaborationCaret extensions, same
  * contenteditable behavior) without needing a live WS session.
  *
  * The instance is created ONCE per mount, and seeded with scrollable content so
@@ -99,7 +99,7 @@ export function SpikeEditorSurface({
         seededRef.current = true;
         // Seed only if the doc is empty (it is — local-only, fresh Y.Doc).
         if (editor.isEmpty) {
-          editor.commands.setContent(buildSeedDoc(), false);
+          editor.commands.setContent(buildSeedDoc(), { emitUpdate: false });
         }
       },
     },

@@ -2,7 +2,7 @@
  * editor config — assembles the TipTap editor option set for a document session.
  *
  * Wires the Meridian node/mark extensions, collaboration (Yjs `Y.Doc` +
- * awareness/cursor) and math/code-highlight extensions into a `createEditorConfig`
+ * awareness/caret) and code-highlight extensions into a `createEditorConfig`
  * factory, plus the `EditorUser` type and a sample document. Owns editor wiring,
  * not the session lifecycle (see `document-session.ts`).
  */
@@ -10,8 +10,7 @@
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
-import Mathematics from "@tiptap/extension-mathematics";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
@@ -74,6 +73,40 @@ const DEFAULT_USER: EditorUser = {
   color: "var(--color-primary)",
 };
 
+const STARTER_KIT_YJS_SAFETY_OPTIONS = {
+  dropcursor: false,
+  gapcursor: false,
+  link: false,
+  listKeymap: false,
+  trailingNode: false,
+  underline: false,
+  undoRedo: false,
+} as const;
+
+const DOCUMENT_STARTER_KIT_OPTIONS = {
+  ...STARTER_KIT_YJS_SAFETY_OPTIONS,
+  // Schema names diverge from the server for these built-ins, so Meridian
+  // installs snake_case/parity wrappers below instead.
+  bold: false,
+  bulletList: false,
+  code: false,
+  codeBlock: false,
+  hardBreak: false,
+  horizontalRule: false,
+  italic: false,
+  listItem: false,
+  orderedList: false,
+  strike: false,
+} as const;
+
+const CODE_STARTER_KIT_OPTIONS = {
+  ...DOCUMENT_STARTER_KIT_OPTIONS,
+  blockquote: false,
+  document: false,
+  heading: false,
+  paragraph: false,
+} as const;
+
 const CodeDocument = Node.create({
   name: "doc",
   topNode: true,
@@ -95,9 +128,8 @@ function createCollaborationExtensions({
   const collaboration = [
     Collaboration.configure({
       document,
-      // TipTap v2 calls this option `fragment`; passing the concrete
-      // Y.XmlFragment keeps the shared type name at the server contract
-      // value (`prosemirror`).
+      // Passing the concrete Y.XmlFragment keeps the shared type name at the
+      // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
     }),
   ];
@@ -106,7 +138,7 @@ function createCollaborationExtensions({
 
   return [
     ...collaboration,
-    CollaborationCursor.configure({
+    CollaborationCaret.configure({
       provider,
       user: user ?? DEFAULT_USER,
       render: (cursorUser) => {
@@ -150,25 +182,7 @@ export function createEditorExtensions({
 
   if (schemaType === "code") {
     return [
-      StarterKit.configure({
-        blockquote: false,
-        bold: false,
-        bulletList: false,
-        code: false,
-        codeBlock: false,
-        document: false,
-        dropcursor: false,
-        gapcursor: false,
-        hardBreak: false,
-        heading: false,
-        history: false,
-        horizontalRule: false,
-        italic: false,
-        listItem: false,
-        orderedList: false,
-        paragraph: false,
-        strike: false,
-      }),
+      StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       MeridianCodeBlockLowlight.configure({ lowlight }),
       ...collaboration,
@@ -176,23 +190,7 @@ export function createEditorExtensions({
   }
 
   return [
-    StarterKit.configure({
-      // Schema names diverge from the server for these built-ins, so Meridian
-      // installs snake_case/parity wrappers below instead.
-      bold: false,
-      bulletList: false,
-      code: false,
-      codeBlock: false,
-      dropcursor: false,
-      gapcursor: false,
-      hardBreak: false,
-      history: false,
-      horizontalRule: false,
-      italic: false,
-      listItem: false,
-      orderedList: false,
-      strike: false,
-    }),
+    StarterKit.configure(DOCUMENT_STARTER_KIT_OPTIONS),
     MeridianStrong,
     MeridianEm,
     MeridianCode,
@@ -202,7 +200,6 @@ export function createEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    Mathematics,
     MeridianMathDisplay,
     MeridianTable,
     MeridianTableRow,
@@ -241,6 +238,6 @@ export function createEditorConfig({
     }),
     editable,
     autofocus,
-    editorProps,
+    ...(editorProps ? { editorProps } : {}),
   };
 }
