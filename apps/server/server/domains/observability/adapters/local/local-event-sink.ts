@@ -54,7 +54,7 @@ export class LocalEventSink implements EventSink {
   }
 
   private enqueue(events: EventRecord[]): void {
-    this.writeChain = this.writeChain.then(() => this.appendEvents(events));
+    this.writeChain = this.writeChain.catch(() => undefined).then(() => this.appendEvents(events));
   }
 
   private async appendEvents(events: EventRecord[]): Promise<void> {
@@ -62,9 +62,13 @@ export class LocalEventSink implements EventSink {
       .map((event) => `${JSON.stringify(sanitizeEventRecord(event))}\n`)
       .join("");
     this.stdout.write(payload);
-    const filePath = await this.resolveFilePath();
-    if (!filePath) return;
-    await appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
+    if (!this.dir) return;
+    try {
+      const filePath = await this.resolveFilePath();
+      if (filePath) await appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
+    } catch {
+      // Stdout is the required local sink; JSONL mirroring is best-effort.
+    }
   }
 
   private async resolveFilePath(): Promise<string | null> {

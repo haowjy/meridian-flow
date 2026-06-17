@@ -12,38 +12,30 @@ collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
 |---|---|
 | `env.ts` | Typed env schema via `@t3-oss/env-core` + zod. Single source of truth for server env vars. |
 | `db.ts` | Singleton Drizzle `PostgresJsDatabase` client, lazily created from `DATABASE_URL`. |
-| `gateway.ts` | Singleton model `Gateway`, lazily constructed via `createGatewayFromEnv()`. |
-| `event-sink-factory.ts` | Env-driven observability adapter factory. |
+| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op). |
+| `observability.ts` | Process-scoped deferred EventSink; startup binds the concrete sink before validation/logging. |
 | `object-store-factory.ts` | Env-driven object-store adapter factory. |
-| `compose.ts` | `AppServices` type definition, pass-through combinators, and in-memory stub factory for tests/dev. Does **not** contain the production wiring. |
-| `app.ts` | App singleton + DI composition root. `getApp()` caches `AppServices` on `Symbol.for("meridian.app.v1")` and calls `createAppServices()` which performs all production wiring. |
+| `compose.ts` | `AppServices` type, production adapter-port construction, pure runtime service wiring, and in-memory stub factory for tests/dev. |
+| `app.ts` | App singleton. `getApp()` caches `AppServices` on `Symbol.for("meridian.app.v1")`, gets the DB/process sink, builds production ports, and calls `composeAppServices()`. |
 
 ### Wiring location
 
-All production wiring lives in `createAppServices()` in `app.ts`. This is the
-single composition root that:
+Production wiring is split by side-effect boundary:
 
-1. Creates Drizzle-backed domain adapters (thread repos, journal, credit ledger,
-   packages, projects, works, document sync, context port factory).
-2. Creates pure/in-memory adapters (preferences, checkpoint registry, noop event
-   sink, noop checkpoint artifact flush).
-3. Assembles the orchestrator stack in order: gateway, tool registry/executor,
-   late-bound `RunTurnPort`, turn runner, child-run coordinator, then
-   orchestrator. Binds the proxy after orchestrator construction.
-4. Composes an explicit `PermissionGate` with `coding` profile
-   (`computeEffectivePermissions(resolveProfile("coding"))`).
-5. Passes everything through `createProductionAppPorts()` / `composeAppServices()`
-   (currently thin pass-throughs) to form the final `AppServices`.
-
-**`compose.ts`** defines the `AppServices` type, `createProductionAppPorts()`
-(pass-through identity), `composeAppServices()` (pass-through identity), and
-`createInMemoryAppServices()` (stub factory with `phase: "skeleton"` sentinels
-and throwing stubs for unimplemented methods).
-
-**`createInMemoryAppServices()`** — test/dev composition. Creates in-memory stubs
-for every `AppServices` slot: gateway echo, skeleton repos, throwing document
-sync, noop event sink, pass-through checkpoint registry, and unimplemented throw
-stubs for orchestrator/runner/tool executor.
+1. `app.ts` owns the process singleton edge: DB lookup, process EventSink binding/reuse,
+   and global hot-reload-safe caching.
+2. `createProductionAppPorts()` in `compose.ts` constructs concrete adapters and
+   env-driven provider ports: Drizzle repositories, event journal, object store,
+   document sync, context port factory, package repository/fetcher/seeder,
+   preferences, projects/works/users, billing, model gateway, model-request debug,
+   upload/figure/result services, and document access.
+3. `composeAppServices()` in `compose.ts` is pure service graph wiring: it builds
+   the ThreadEventHub, checkpoint registry, tool registry/executor, late-bound
+   turn runner, child-run coordinator, orchestrator, `threadRuntime`, and explicit
+   `repos`/`hub` aliases.
+4. `createInMemoryAppServices()` is test/dev composition with explicit stubs and
+   no-op observability. `hub` and `threadEventHub` are the same object so copied
+   route/lib code sees the same alias shape as production.
 
 ### Late-binding `RunTurnPort`
 
