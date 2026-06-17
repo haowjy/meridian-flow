@@ -113,7 +113,7 @@ export function ProjectRow({
     event.stopPropagation();
     if (!actions.softDelete(project.id, project)) return;
     if (isActive) {
-      void navigate({ to: "/" });
+      void navigate({ to: "/home" });
     }
     announce(t`Project deleted. Press undo to restore.`);
   }

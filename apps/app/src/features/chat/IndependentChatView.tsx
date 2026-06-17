@@ -43,7 +43,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
         <button
           type="button"
           aria-label={t`Back to home`}
-          onClick={() => void navigate({ to: "/" })}
+          onClick={() => void navigate({ to: "/home" })}
           className="focus-ring grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden />
