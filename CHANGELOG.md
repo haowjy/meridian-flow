@@ -25,10 +25,16 @@
 - Dev sign-in is a real WorkOS password auth (`/api/auth/dev-login`), gated to
   non-production with dev creds present (`WORKOS_DEV_AUTOLOGIN=1`). `pnpm
   bootstrap` applies schema only (no user/project seed); identity provisioned on
-  first sign-in, project created via onboarding.
+  first sign-in, personal project auto-created on first login.
 - `@supabase/supabase-js` is removed from both apps.
 - `pnpm dev` now defaults to `--tailscale` sharing; opt out with
   `pnpm dev --no-tailscale` (or `pnpm dev:local`).
+
+## Onboarding wizard removed (2026-06-16, branch h/v3)
+
+- Onboarding wizard (`/onboarding` route + domain + `user_preferences.onboarding_state` column) deleted and replaced with voluma-style auto-creation: on first authenticated request `provisionAuthenticatedUser` → `ensureDefaultBootstrap` provisions the personal project, guard-railed by a cheap existence check. `GET /api/projects/home` resolves the landing project; `/` redirects to `/projects/$id/agent`. `/home` now renders the HomeView composer for creating additional projects.
+- `user_preferences.onboarding_state` column dropped.
+- Existing changelog claim "project created via onboarding" corrected to "personal project auto-created on first login".
 
 ## context-URI + model-gateway cleanse (2026-06-16, branch h/v3)
 
