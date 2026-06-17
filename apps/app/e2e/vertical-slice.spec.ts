@@ -1,39 +1,54 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+import { openE2eDb, prepareAuthenticatedProjectAccess } from "./support/e2e-db";
 
-test("streams an agent edit into the live TipTap editor with attribution", async ({ page }) => {
-  await page.goto("/projects");
-  await expect(page).toHaveURL(/\/projects\/[^/]+\/agent$/);
+const DATABASE_URL = process.env.DATABASE_URL;
 
-  const editor = page.getByTestId("chapter-editor");
-  await expect(page.getByTestId("project-shell")).toBeVisible();
-  await expect(page.getByTestId("thread-ws-status")).toContainText("subscribed");
-  await expect(page.getByTestId("yjs-status")).toContainText("subscribed");
+test.describe("vertical slice", () => {
+  test.beforeEach(async () => {
+    test.skip(!DATABASE_URL, "DATABASE_URL is required");
+    const db = openE2eDb(DATABASE_URL ?? "");
+    try {
+      await prepareAuthenticatedProjectAccess(db);
+    } finally {
+      await db.end();
+    }
+  });
 
-  await expect(editor).toHaveClass(/ProseMirror/);
-  await expect(editor).toHaveAttribute("contenteditable", "true");
-  await expect(editor).toContainText("Chapter 1");
+  test("streams an agent edit into the live TipTap editor with attribution", async ({ page }) => {
+    await page.goto("/projects");
+    await expect(page).toHaveURL(/\/projects\/[^/]+\/agent$/);
 
-  const uniqueMessage = `Phase 7 final gate ${Date.now()}`;
-  await page.getByTestId("chat-composer").fill(uniqueMessage);
-  await page.getByTestId("send-message").click();
+    const editor = page.getByTestId("chapter-editor");
+    await expect(page.getByTestId("project-shell")).toBeVisible();
+    await expect(page.getByTestId("thread-ws-status")).toContainText("subscribed");
+    await expect(page.getByTestId("yjs-status")).toContainText("subscribed");
 
-  const assistantTurn = page.getByTestId("assistant-turn").last();
-  await expect(assistantTurn).toContainText(`Acknowledged: ${uniqueMessage}`);
-  await expect(page.getByTestId("assistant-turn-state").last()).toHaveText("finished");
+    await expect(editor).toHaveClass(/ProseMirror/);
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    await expect(editor).toContainText("Chapter 1");
 
-  const assistantTurnId = await assistantTurn.getAttribute("data-turn-id");
-  expect(assistantTurnId).toBeTruthy();
+    const uniqueMessage = `Phase 7 final gate ${Date.now()}`;
+    await page.getByTestId("chat-composer").fill(uniqueMessage);
+    await page.getByTestId("send-message").click();
 
-  await expect(editor).toContainText(`Acknowledged: ${uniqueMessage}`);
+    const assistantTurn = page.getByTestId("assistant-turn").last();
+    await expect(assistantTurn).toContainText(`Acknowledged: ${uniqueMessage}`);
+    await expect(page.getByTestId("assistant-turn-state").last()).toHaveText("finished");
 
-  const attribution = page.getByTestId("editor-attribution");
-  await expect(attribution).toHaveAttribute("data-origin-type", "agent");
-  await expect(attribution).toHaveAttribute("data-actor-turn-id", assistantTurnId ?? "");
-  await expect(attribution).toContainText(assistantTurnId ?? "");
-  await expect(editor).toHaveAttribute("contenteditable", "true");
-  await expect(editor).toContainText(`Acknowledged: ${uniqueMessage}`);
+    const assistantTurnId = await assistantTurn.getAttribute("data-turn-id");
+    expect(assistantTurnId).toBeTruthy();
+
+    await expect(editor).toContainText(`Acknowledged: ${uniqueMessage}`);
+
+    const attribution = page.getByTestId("editor-attribution");
+    await expect(attribution).toHaveAttribute("data-origin-type", "agent");
+    await expect(attribution).toHaveAttribute("data-actor-turn-id", assistantTurnId ?? "");
+    await expect(attribution).toContainText(assistantTurnId ?? "");
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    await expect(editor).toContainText(`Acknowledged: ${uniqueMessage}`);
+  });
 });
 
 test("source tree has no markdown-replace protocol path", () => {

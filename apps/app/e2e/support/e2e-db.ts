@@ -24,12 +24,29 @@ export async function findInternalUserId(db: Db, externalUserId: string): Promis
   return row.id;
 }
 
-export async function findTestUserId(db: Db): Promise<string> {
+/** Idempotent e2e fixture user — does not depend on bootstrap or auth.setup ordering. */
+export async function ensureTestUserId(db: Db): Promise<string> {
   const externalUserId = process.env.WORKOS_DEV_LOGIN_USER_ID?.trim();
   if (!externalUserId) {
     throw new Error("WORKOS_DEV_LOGIN_USER_ID is required for e2e user lookup");
   }
-  return findInternalUserId(db, externalUserId);
+  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
+  const rows = await db<{ id: string }[]>`
+    INSERT INTO public.users (external_id, email, created_at, updated_at)
+    VALUES (${externalUserId}, ${email}, now(), now())
+    ON CONFLICT (external_id) DO UPDATE
+    SET email = EXCLUDED.email, updated_at = now()
+    RETURNING id::text
+  `;
+  const id = rows[0]?.id;
+  if (!id) {
+    throw new Error(`Failed to ensure user row for WORKOS_DEV_LOGIN_USER_ID=${externalUserId}`);
+  }
+  return id;
+}
+
+export async function findTestUserId(db: Db): Promise<string> {
+  return ensureTestUserId(db);
 }
 
 export type ProjectFixture = {
@@ -161,6 +178,22 @@ export async function resetUserOnboardingState(db: Db, userId: string): Promise<
       ON CONFLICT (user_id) DO UPDATE SET onboarding_state = '{}'::jsonb
     `;
   });
+}
+
+/**
+ * Reset onboarding and seed a project so /projects skips the onboarding gate.
+ * Ensures the dev-login user row exists before DB fixtures (auth.setup is external
+ * to Playwright — not a guaranteed setup project dependency).
+ */
+export async function prepareAuthenticatedProjectAccess(db: Db): Promise<ProjectFixture> {
+  const userId = await ensureTestUserId(db);
+  await resetUserOnboardingState(db, userId);
+  const fixture = await seedProjectFixture(db, {
+    userId,
+    titlePrefix: "Auth e2e",
+  });
+  await markOnboardingCompleted(db, userId, fixture.projectId);
+  return fixture;
 }
 
 export async function markOnboardingCompleted(

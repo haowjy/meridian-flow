@@ -2,7 +2,7 @@
  * Manual/runtime smoke for Meridian project, work, and thread repositories
  * against the local Postgres database.
  *
- * Run after `pnpm supabase:start` and `pnpm bootstrap`:
+ * Run after `pnpm supabase:start` and `pnpm bootstrap` (schema):
  *   pnpm smoke:project-domain
  */
 
@@ -14,7 +14,6 @@ import { createDrizzleProjectRepository } from "../../apps/server/server/domains
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
 import { loadRepoEnv, requireEnv } from "./load-env.ts";
-import { seedDevUser } from "./seed-dev-user.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 loadRepoEnv(repoRoot);
@@ -22,14 +21,33 @@ loadRepoEnv(repoRoot);
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111" as ProjectId;
 const OTHER_USER_ID = "11111111-1111-4111-8111-111111111102" as UserId;
 
+async function ensureSmokeUserId(databaseUrl: string): Promise<UserId> {
+  const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
+  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
+  const { default: postgres } = await import("postgres");
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO public.users (external_id, email, created_at, updated_at)
+      VALUES (${externalId}, ${email}, now(), now())
+      ON CONFLICT (external_id) DO UPDATE
+      SET email = EXCLUDED.email, updated_at = now()
+      RETURNING id::text
+    `;
+    const id = rows[0]?.id;
+    if (!id) throw new Error("ensureSmokeUserId did not return an internal user id");
+    return id as UserId;
+  } finally {
+    await sql.end();
+  }
+}
+
 async function resolveSmokeUserId(): Promise<UserId> {
   const explicit = process.env.TEST_USER_ID?.trim();
   if (explicit) return explicit as UserId;
 
   const databaseUrl = requireEnv("DATABASE_URL");
-  const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
-  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
-  return (await seedDevUser({ databaseUrl, externalId, email })) as UserId;
+  return ensureSmokeUserId(databaseUrl);
 }
 
 async function cleanupSmokeRows(db: ReturnType<typeof createDb>): Promise<void> {

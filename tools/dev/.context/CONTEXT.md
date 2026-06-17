@@ -7,7 +7,6 @@ Local-dev-only utilities. Nothing here is loaded by the application runtime; too
 - **Environment loading** — `load-env.ts` reads root `.env` and reports missing required keys with setup guidance.
 - **Database readiness** — thin CLIs for ensuring, preparing, and dropping the active Postgres database URL used by this worktree.
 - **Drizzle schema application** — bootstrap runs migrations and applies PL/pgSQL functions from `@meridian/database`.
-- **Seed data** — `seed-dev-user.ts` upserts the dev `public.users` row; `seed-dev-project.ts` creates a sample project; `seed.ts` wraps both.
 - **Dev orchestration** — `dev-tmux.ts` starts the worktree-scoped tmux stack and portless routes; `dev-mode.ts` selects local/tailscale/funnel exposure modes.
 - **Portless route helpers** — `portless-routes.ts` and app e2e helpers discover the HTTPS `*.meridian.localhost` routes used in development.
 
@@ -18,10 +17,7 @@ tools/dev/
 ├── lib/
 │   └── dev-env.ts             active env helpers + database URL resolution
 ├── __tests__/                 vitest units for dev-mode, portless routes, session identity, etc.
-├── bootstrap.ts               pnpm bootstrap: migrate, functions, seed dev user + project
-├── seed-dev-user.ts           idempotent public.users seed for WorkOS dev login
-├── seed-dev-project.ts        idempotent sample project/context-source seed helper
-├── seed.ts                    pnpm seed: standalone wrapper around user + project seed
+├── bootstrap.ts               pnpm bootstrap: migrate + apply-functions
 ├── supabase-env.ts            prints local Postgres URL from Supabase CLI status
 ├── ensure-db.ts               validates/ensures active DATABASE_URL target
 ├── prepare-db.ts              prepares active database before dev stack startup
@@ -42,8 +38,7 @@ Meridian v3 uses Supabase CLI for local Postgres only. Auth is WorkOS AuthKit.
 - Start infra with `pnpm supabase:start`.
 - Populate `.env` from `.env.example` and `pnpm supabase:env` (DATABASE_URL).
 - App schema is Drizzle-owned in `packages/database`, not Supabase migration files.
-- `pnpm bootstrap` migrates, seeds `public.users` for `WORKOS_DEV_LOGIN_USER_ID`, and seeds a sample project.
-- `pnpm seed` re-runs user + project seed when `DATABASE_URL` and `WORKOS_DEV_LOGIN_USER_ID` are set.
+- `pnpm bootstrap` migrates and applies functions only. Dev identity is provisioned on first dev-login (`ensureUser`); onboarding creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is for e2e lookups.
 
 ## Dev server contract
 
