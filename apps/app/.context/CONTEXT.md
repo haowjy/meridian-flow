@@ -276,14 +276,14 @@ geometry) or it's a token that wants promoting.
 ## Dev limitations (pilot)
 
 - Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
-- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` so TanStack Start route handlers can own Supabase cookie auth in-process.
+- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` so TanStack Start route handlers can own WorkOS AuthKit cookie auth in-process.
 
 ## Seeded from
 
-The official TanStack Start + Supabase example
-(`TanStack/router/examples/react/start-supabase`), adapted to monorepo
-conventions: `@meridian/app` name, workspace deps for domain packages, biome
-toolchain (prettier config removed), `tsconfig.base.json` extension.
+The official TanStack Start example (originally seeded from
+`TanStack/router/examples/react/start-supabase`, Supabase removed), adapted to
+monorepo conventions: `@meridian/app` name, workspace deps for domain packages,
+biome toolchain (prettier config removed), `tsconfig.base.json` extension.
 
 ## Cross-module links
 
@@ -293,4 +293,4 @@ toolchain (prettier config removed), `tsconfig.base.json` extension.
 ## KB links
 
 - [API and frontend surface](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/api-and-frontend-surface.md)
-- [Supabase auth](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/supabase-auth.md)
+- [WorkOS auth](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/auth-workos.md) (archived: [Supabase auth](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/supabase-auth.md))

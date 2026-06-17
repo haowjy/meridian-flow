@@ -9,8 +9,7 @@ See also [AGENTS.md](AGENTS.md), [CHANGELOG.md](CHANGELOG.md), and [.cursor/rule
 ```bash
 pnpm install
 cp .env.example .env
-pnpm supabase:start
-pnpm supabase:env    # copy printed keys into .env
+pnpm dev:infra       # start postgres:16 Docker container
 pnpm exec lefthook install --reset-hooks-path
 pnpm bootstrap       # migrate + apply-functions (schema only)
 ```
@@ -19,18 +18,18 @@ pnpm bootstrap       # migrate + apply-functions (schema only)
 
 ## Local database
 
-Postgres comes from Supabase CLI. App schema is Drizzle in `packages/database` (not `supabase/migrations`). Auth is WorkOS AuthKit with app-owned `public.users`.
+Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docker-compose.yml`). App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm supabase:start` | Docker: API `:54421`, Postgres `:54422`, Studio `:54423` |
+| `pnpm dev:infra` | Start `postgres:16` Docker container (`:54422`) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `pnpm bootstrap` | Migrate + apply PL/pgSQL functions (no user/project seed) |
 
-Details: [supabase/README.md](supabase/README.md), [packages/database/README.md](packages/database/README.md).
+Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
 ## Git hooks (lefthook)
 

@@ -72,7 +72,7 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 ## Schema adaptation (Upstream → Meridian Flow)
 
 The Drizzle adapters were copied from the upstream codebase and adapted to
-Meridian Flow's Supabase/Postgres schema. Key column mappings:
+Meridian Flow's Postgres schema. Key column mappings:
 
 | Upstream | Meridian Flow | Notes |
 |---|---|---|
@@ -147,4 +147,4 @@ to prevent null from leaking into contract shapes.
 - **Depends on `@meridian/contracts`** — entity types, `OrchestratorEvent`,
   AG-UI event schemas.
 - **Depends on `@meridian/database/schema`** — Drizzle table definitions for
-  the Meridian Flow Supabase/Postgres schema.
+  the Meridian Flow Postgres schema.

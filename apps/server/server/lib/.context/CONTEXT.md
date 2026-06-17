@@ -109,7 +109,7 @@ available for future wiring but are not yet the production tool path.
 
 | File | Role |
 |---|---|
-| `auth.ts` | Supabase authentication seam. `resolveUser(request)` validates the session cookie; `requireUser(request, deps)` provisions/loads the Meridian Flow user row. |
+| `auth.ts` | WorkOS AuthKit authentication seam. `resolveUser(request)` validates the session cookie; `requireUser(request, deps)` provisions/loads the Meridian Flow user row. |
 | `auth-gate.ts` | Single seam combining app composition with auth. `requireAppUser(event)` returns `{ app, user }`; `resolveAppUserFromRequest` is nullable for WS upgrade paths. |
 | `ws-upgrade-auth.ts` | Shared WS upgrade auth returning authenticated or deferred-close contexts. |
 
@@ -151,7 +151,7 @@ those pieces into `AppServices` and route/WebSocket entry points.
 Nitro route handler
   │
   ▼
-requireAppUser(event)  → getApp() + Supabase user provisioning
+requireAppUser(event)  → getApp() + WorkOS/AuthKit user provisioning
   │
   ▼
 Route destructures needed AppServices
@@ -188,7 +188,7 @@ Domain API call → contract wire shape
 lib/*
   │
   ├── depends on: domains/*, @meridian/contracts, @meridian/database
-  ├── depends on: Supabase/Nitro/env/provider libraries
+  ├── depends on: WorkOS AuthKit/Nitro/env/provider libraries
   │
   ▼
 domains/*  ←  MUST NOT import from lib/

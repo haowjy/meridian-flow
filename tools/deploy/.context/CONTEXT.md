@@ -18,5 +18,5 @@ Stubs are loud on purpose: a green deployment run must not imply that real infra
 ## Runtime assumptions
 
 - Apps are TypeScript deployables: `@meridian/app`, `@meridian/server`, and `@meridian/www`.
-- Migrations run through the Drizzle/Supabase-backed `@meridian/database` package.
+- Migrations run through the Drizzle-backed `@meridian/database` package (provider-agnostic Postgres).
 - Provider credentials and staging URLs are configuration, not source-code constants.

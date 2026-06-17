@@ -172,7 +172,7 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 
 - **`pnpm test` is deterministic** — pure unit + in-memory adapter conformance;
   DB tests remain opt-in.
-- **Database checks** use `@meridian/database` and local Supabase Postgres when
+- **Database checks** use `@meridian/database` and local Postgres when
   `RUN_DB_TESTS=1` and `DATABASE_URL` are set.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.

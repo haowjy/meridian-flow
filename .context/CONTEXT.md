@@ -10,7 +10,7 @@ the Meridian KB.
 flowchart TD
   Projects[Projects + works]
   Projects[Project route surface]
-  Auth[Supabase Auth + users]
+  Auth[WorkOS AuthKit + public.users]
   Packages[Agent packages]
   Runtime[Runtime orchestrator]
   Gateway[Model gateway]
@@ -66,7 +66,7 @@ composition root (`apps/server/server/lib/app.ts`).
 - Domain code depends on ports, never concrete adapters internally.
 - Adapter/provider choice is configuration-driven at composition time.
 - Provider-specific types stay inside adapters.
-- Supabase is the local auth/Postgres substrate; Drizzle owns the app schema.
+- Postgres is the DB; WorkOS AuthKit is the auth boundary. Drizzle owns the app schema.
 - No external package-execution provider/runtime is part of Meridian Flow v3.
 
 ## Support packages
@@ -102,12 +102,12 @@ Agents should read `.context/` before raw source files when entering an area.
 - The upstream root/Python SDK and `uv` files are intentionally not ported into tracked source for v3. Meridian Flow's runtime and dev tooling are TypeScript/pnpm/Nx; reintroducing a separate Python SDK/toolchain would be a new product/API decision, not parity work.
 - Files from the rejected external execution-provider subsystem remain excluded by policy. Runtime tools operate through Meridian-owned context/project surfaces instead.
 - The upstream warm-organic token surface is represented by `@meridian/design-tokens/warm-paper.css`; the token values match, with only the Meridian theme name and `apps/www` wording changed.
-- Current app e2e parity now lives under `apps/app/e2e`: auth, vertical slice, mobile shell, chat virtualization, and ProcessDisclosure verification all use Supabase dev-login plus portless routes. Database-backed specs seed throwaway project/work/thread fixtures and clean them by project id.
+- Current app e2e parity now lives under `apps/app/e2e`: auth, vertical slice, mobile shell, chat virtualization, and ProcessDisclosure verification all use WorkOS dev-login plus portless routes. Database-backed specs seed throwaway project/work/thread fixtures and clean them by project id.
 - Remaining exact-path audit findings should classify old branded filenames as renamed, old auth adapter files as rejected, raw Python/toolchain files as superseded, and old provider runtime files as rejected unless a Meridian-owned TypeScript runtime equivalent is explicitly missing.
 
 ### Remaining exact-path parity categories (June 2026 pass)
 
 - **Rejected provider/runtime leftovers:** `backend-policy`, `wired-core-tools`, old runtime loop/tool prompt-freeze and skill-tool tests, and old startup guard surfaces depended on the removed external execution-provider subsystem. Meridian uses in-process, no-external-execution runtime tools plus model-gateway/provider config instead.
-- **Superseded auth/startup surfaces:** old startup plugin/auth guard paths are superseded by Supabase request auth, app/server env validation, `process-crash-policy`, and existing composition wiring.
-- **Applicable but still TODO:** context read/factory/input/figure/promotion conformance, billing/package Drizzle conformance, websocket route handler tests, and server smoke harnesses should be ported in later passes against current Supabase/Postgres and portless assumptions.
+- **Superseded auth/startup surfaces:** old startup plugin/auth guard paths are superseded by WorkOS AuthKit request auth, app/server env validation, `process-crash-policy`, and existing composition wiring.
+- **Applicable but still TODO:** context read/factory/input/figure/promotion conformance, billing/package Drizzle conformance, websocket route handler tests, and server smoke harnesses should be ported in later passes against current Postgres and portless assumptions.
 - **Route exact-path gaps:** thread upload POST remains implemented through the project-scoped upload route; adding the old non-project route needs an ownership decision rather than a blind copy.

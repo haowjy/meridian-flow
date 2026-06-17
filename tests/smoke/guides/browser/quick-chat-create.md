@@ -5,7 +5,7 @@ Meridian Flow project graph and routes to the agent project.
 
 ## Preconditions
 
-- `pnpm supabase:start`, `pnpm bootstrap`, and `pnpm dev` are running.
+- `pnpm dev:infra`, `pnpm bootstrap`, and `pnpm dev` are running.
 - `APP_URL` is the portless app origin.
 - Browser is logged in through `$APP_URL/dev-login`.
 
