@@ -12,7 +12,7 @@ cp .env.example .env
 pnpm supabase:start
 pnpm supabase:env    # copy printed keys into .env
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap       # migrate, apply-functions, seed dev public.users + sample project
+pnpm bootstrap       # migrate + apply-functions (schema only)
 ```
 
 `pnpm install` runs `prepare` → `lefthook install`. On a **git worktree** that often fails (see [Git hooks](#git-hooks-lefthook) below); run the `--reset-hooks-path` command once after install.
@@ -28,7 +28,7 @@ Postgres comes from Supabase CLI. App schema is Drizzle in `packages/database` (
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm bootstrap` | Migrate + functions + seed dev `public.users` + sample project |
+| `pnpm bootstrap` | Migrate + apply PL/pgSQL functions (no user/project seed) |
 
 Details: [supabase/README.md](supabase/README.md), [packages/database/README.md](packages/database/README.md).
 

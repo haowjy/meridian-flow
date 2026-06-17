@@ -13,7 +13,7 @@ Local Postgres for meridian-collab via Supabase CLI. App schema is applied via `
 pnpm supabase:start          # first run pulls images (~1–2 min)
 pnpm supabase:env            # print DATABASE_URL for .env
 cp .env.example .env         # then paste DATABASE_URL + WorkOS keys
-pnpm bootstrap               # migrate + seed public.users dev row + sample project
+pnpm bootstrap               # migrate + apply-functions (schema only)
 ```
 
 Studio: http://127.0.0.1:54423  
@@ -44,5 +44,5 @@ Configure `WORKOS_*` and `WORKOS_DEV_LOGIN_*` in `.env` (see `.env.example`).
 ## Design notes
 
 - **`supabase/migrations` is intentionally empty.** App schema is Drizzle in `packages/database` (`config.toml` `[db.migrations] schema_paths=[]`). Do not put app migrations here.
-- **Dev user is app-owned.** `pnpm bootstrap` upserts `public.users` with `external_id = WORKOS_DEV_LOGIN_USER_ID` and seeds the default project. First login reconciles via `UserRepository.ensureUser`.
+- **Dev user is app-owned.** `pnpm bootstrap` applies schema only. First dev-login provisions `public.users` via `UserRepository.ensureUser`; onboarding creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is the WorkOS id for e2e lookups.
 - **DB-backed tests must target a dedicated throwaway DB** (set `RUN_DB_TESTS` + point `DATABASE_URL` at a separate Postgres), not the dev DB. Tests use an isolated fixture identity (dedicated email), NOT `TEST_USER_EMAIL`/`test@meridian.dev`.

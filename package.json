@@ -35,7 +35,6 @@
     "dev:db:prepare": "tsx tools/dev/prepare-db.ts",
     "dev:db:drop": "tsx tools/dev/drop-db.ts",
     "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
-    "seed": "tsx tools/dev/seed.ts",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts"
   },
   "devDependencies": {

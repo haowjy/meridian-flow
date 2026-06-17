@@ -58,7 +58,7 @@ enabled = true
 schema_paths = []
 
 [db.seed]
-# App data is seeded by `pnpm seed` (tools/dev/seed.ts), not here; app schema is
+# App data is seeded by `pnpm bootstrap` (tools/dev/bootstrap.ts), not here; app schema is
 # Drizzle in packages/database. Nothing to seed via the Supabase CLI.
 enabled = false
 sql_paths = []

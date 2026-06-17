@@ -109,10 +109,11 @@ authority; omitted authority resolves to the thread's primary Work.
 
 ## Dev-auth / test-isolation conventions
 
-- `pnpm bootstrap` seeds a deterministic dev `public.users` row (`external_id =
-  WORKOS_DEV_LOGIN_USER_ID`, email from `WORKOS_DEV_LOGIN_EMAIL`) plus the default
-  dev project. First WorkOS login runs `UserRepository.ensureUser` (idempotent upsert
-  on `external_id`).
+- `pnpm bootstrap` applies schema only (`db:migrate` + `db:apply-functions`) — no
+  user or project seed. Dev identity is provisioned on first sign-in via
+  `UserRepository.ensureUser` (idempotent upsert on `external_id`); onboarding
+  creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is the WorkOS id used by
+  e2e lookups, not by bootstrap.
 - DB-backed tests must use an **isolated fixture identity** (dedicated email,
   NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a
   dedicated throwaway DB, never the dev DB.
@@ -198,7 +199,7 @@ identity is app-owned `public.users`.
 ```bash
 pnpm supabase:start      # Docker: Postgres :54422, Studio :54423
 pnpm supabase:env        # print DATABASE_URL for .env
-pnpm bootstrap           # migrate + apply-functions + seed dev user + project
+pnpm bootstrap           # migrate + apply-functions (schema only)
 pnpm db:migrate          # apply Drizzle migrations (packages/database)
 pnpm db:apply-functions  # sync PL/pgSQL from packages/database/src/functions/
 pnpm db:generate         # generate migration SQL from schema changes
