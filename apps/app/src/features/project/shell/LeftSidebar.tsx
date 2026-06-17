@@ -71,7 +71,7 @@ export function LeftSidebar({
           onClick={onCollapse}
         />
         <Link
-          to="/"
+          to="/home"
           className="focus-ring flex min-w-0 cursor-pointer items-center gap-1 rounded-md no-underline"
           aria-label={t`Home`}
         >

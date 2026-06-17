@@ -100,7 +100,7 @@ export function NavigationDrawer({
           <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
               <Link
-                to="/"
+                to="/home"
                 className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline"
                 aria-label={t`Home`}
                 onClick={() => onOpenChange(false)}

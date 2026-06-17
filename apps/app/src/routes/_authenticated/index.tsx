@@ -6,6 +6,6 @@ import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 export const Route = createFileRoute("/_authenticated/")({
   loader: async () => {
     const { projectId } = await getHomeProject(ssrApiRequestInit());
-    throw redirect({ to: "/projects/$projectId", params: { projectId } });
+    throw redirect({ to: "/project/$projectId", params: { projectId } });
   },
 });
