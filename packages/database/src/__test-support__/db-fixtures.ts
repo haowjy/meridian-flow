@@ -10,6 +10,9 @@ export const DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL = "00000000-0000-4000-8000-00
 
 const DEV_DATABASE_NAMES = new Set(["postgres", "meridian"]);
 
+/** Host port mapped in tools/dev/docker-compose.yml — must match LOCAL_DEV_POSTGRES_PORT. */
+const LOCAL_DEV_POSTGRES_PORT = 54422;
+
 /** Reserved RFC 2606 domain; suite suffix keeps emails unique per test file. */
 export function dbTestFixtureEmail(suite: string): string {
   const normalized = suite
@@ -33,10 +36,14 @@ export function databaseNameFromUrl(databaseUrl: string): string {
   return decodeURIComponent(withoutQuery.slice(slash + 1));
 }
 
-export function isLocalDatabaseHost(databaseUrl: string): boolean {
+function isLocalDevPostgres(databaseUrl: string): boolean {
   try {
-    const hostname = new URL(databaseUrl).hostname;
-    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    const url = new URL(databaseUrl);
+    const hostname = url.hostname;
+    const isLocalHost = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    if (!isLocalHost) return false;
+    const port = url.port ? Number.parseInt(url.port, 10) : 5432;
+    return port === LOCAL_DEV_POSTGRES_PORT;
   } catch {
     return false;
   }
@@ -61,9 +68,9 @@ export function assertThrowawayDatabaseForRunDbTests(databaseUrl: string): void 
 
 export function assertLocalDevPostgresOrExplicitAllow(databaseUrl: string | undefined): void {
   if (!databaseUrl || process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;
-  if (!isLocalDatabaseHost(databaseUrl)) {
+  if (!isLocalDevPostgres(databaseUrl)) {
     throw new Error(
-      "Refusing DB tests: DATABASE_URL must target local dev Postgres (127.0.0.1/localhost) or set TEST_DB_ALLOW_DESTRUCTIVE=1",
+      `Refusing DB tests: DATABASE_URL must target local dev Postgres (127.0.0.1:${LOCAL_DEV_POSTGRES_PORT} or localhost:${LOCAL_DEV_POSTGRES_PORT}) or set TEST_DB_ALLOW_DESTRUCTIVE=1`,
     );
   }
 }
