@@ -10,13 +10,18 @@ const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
     sink: DeferredEventSink;
+    delegateBound: boolean;
     shutdownInstalled: boolean;
   };
 };
 
 function state() {
   const store = globalThis as ObservabilityGlobal;
-  store[OBSERVABILITY_KEY] ??= { sink: new DeferredEventSink(), shutdownInstalled: false };
+  store[OBSERVABILITY_KEY] ??= {
+    sink: new DeferredEventSink(),
+    delegateBound: false,
+    shutdownInstalled: false,
+  };
   return store[OBSERVABILITY_KEY];
 }
 
@@ -25,9 +30,21 @@ export function getProcessEventSink(): EventSink {
 }
 
 export function bindProcessEventSink(delegate: EventSink): EventSink {
-  const current = state().sink;
-  current.bind(delegate);
-  return current;
+  const current = state();
+  if (!current.delegateBound) {
+    current.sink.bind(delegate);
+    current.delegateBound = true;
+  }
+  return current.sink;
+}
+
+export function getOrBindProcessEventSink(createDelegate: () => EventSink): EventSink {
+  const current = state();
+  if (!current.delegateBound) {
+    current.sink.bind(createDelegate());
+    current.delegateBound = true;
+  }
+  return current.sink;
 }
 
 export function installObservabilityShutdownHooks(): void {

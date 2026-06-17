@@ -65,21 +65,18 @@ represented as a fully-typed slot:
 | `creditLedger` | billing | Drizzle credit lot/transaction ledger |
 | `agents` | agents | Package store (skeleton) |
 | `checkpointRegistry` | runtime | In-memory checkpoint registry |
-| `eventSink` | observability | Noop (env-configurable) |
+| `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `packageRepository` | packages | Drizzle package store |
-| `preferences` | preferences | In-memory only (Meridian Flow does not persist preferences) |
+| `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
-| `modelRequestDebug` | runtime | In-memory debug store for model requests |
+| `modelRequestDebug` | runtime | Env-selected model request debug store |
 
 ## Tool wiring
 
-`app.ts` constructs the runtime tool registry with `{ db, contextPorts }` and
-passes it into the orchestrator stack. The concrete registry currently lives in
-`domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool
-algorithms.
+`createProductionAppPorts()` constructs the runtime tool registry with `{ db, contextPorts, threads, threadWorks }`; `composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete registry currently lives in `domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool algorithms.
 
 Context-backed handlers resolve the legacy thread-scoped context port with
 `contextPorts.forThread(ctx)`. The factory consumes `threadId` and `userId`;

@@ -6,7 +6,7 @@
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
-import { bindProcessEventSink } from "./observability.js";
+import { getOrBindProcessEventSink } from "./observability.js";
 
 const APP_SINGLETON_KEY = Symbol.for("meridian.app.v1");
 
@@ -18,7 +18,7 @@ let initPromise: Promise<AppServices> | undefined;
 
 async function createAppServices(): Promise<AppServices> {
   const db = getDb();
-  const eventSink = bindProcessEventSink(createEventSinkFromEnv());
+  const eventSink = getOrBindProcessEventSink(createEventSinkFromEnv);
   const ports = await createProductionAppPorts({ db, eventSink, environment: process.env });
   return composeAppServices(ports);
 }
