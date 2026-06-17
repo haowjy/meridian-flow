@@ -20,7 +20,6 @@ import {
 } from "@/features/project/context/context-files-store";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
-import { resolveOnboardingGate, shouldRedirectToOnboarding } from "@/server/onboarding-gate";
 
 /**
  * Decide where to send an UNAUTHENTICATED request, server-side.
@@ -48,17 +47,9 @@ export const Route = createFileRoute("/_authenticated")({
 
     const currentUser = { userId: user.id, email: user.email ?? null };
 
-    const onboardingGate = await resolveOnboardingGate();
-    if (!onboardingGate.ok && location.pathname !== "/onboarding") {
-      throw redirect({ to: "/onboarding" });
-    }
-    if (onboardingGate.ok && shouldRedirectToOnboarding(onboardingGate.status, location.pathname)) {
-      throw redirect({ to: "/onboarding" });
-    }
-
     const now = Date.now();
     const usesWorkspaceProviders =
-      location.pathname === "/" ||
+      location.pathname === "/home" ||
       location.pathname.startsWith("/project/") ||
       location.pathname.startsWith("/chat/") ||
       location.pathname.startsWith("/settings/billing");
@@ -83,7 +74,7 @@ function AuthenticatedLayout() {
   const { projects, now } = Route.useLoaderData();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const usesWorkspaceProviders =
-    pathname === "/" ||
+    pathname === "/home" ||
     pathname.startsWith("/project/") ||
     pathname.startsWith("/chat/") ||
     pathname.startsWith("/settings/billing");

@@ -30,10 +30,7 @@ export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
  * The single gate every route handler passes through. Combines three concerns:
  * 1. Validate the WorkOS session cookie → external user identity (401 if absent)
  * 2. Get the singleton AppServices (lazy init, gateway, DB)
- * 3. Upsert the user row in our DB → internal UserId
- *
- * Default project/bootstrap provisioning stays on onboarding and explicit
- * bootstrap routes so first-time writers still flow through onboarding.
+ * 3. Upsert the user row in our DB and ensure a personal project exists → internal UserId
  *
  * Throws 401 if the session is missing or invalid. Throws 500 if user-row
  * provisioning fails (DB unavailable, etc.).
@@ -45,7 +42,10 @@ export async function requireAppUserFromRequest(request: Request): Promise<AppUs
   }
 
   const app = await getApp();
-  const userId = await provisionAuthenticatedUser(externalUser, { users: app.users });
+  const userId = await provisionAuthenticatedUser(externalUser, {
+    users: app.users,
+    projects: app.projects,
+  });
   return { app, user: { ...externalUser, userId } };
 }
 

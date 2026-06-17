@@ -42,19 +42,17 @@ export type DefaultBootstrap = {
 };
 
 export type ProjectBootstrapRepository = {
+  /** Cheap existence check — no advisory lock or bootstrap side effects. */
+  findPersonalProjectId(userId: UserId): Promise<ProjectId | null>;
   ensureDefaultBootstrap(userId: UserId): Promise<DefaultBootstrap>;
-  createOnboardingBootstrap(
-    userId: UserId,
-    input: BootstrapProjectInput,
-  ): Promise<DefaultBootstrap>;
 };
 
 export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
   return {
-    async ensureDefaultBootstrap() {
-      throw new Error("in-memory project repository is not implemented");
+    async findPersonalProjectId() {
+      return null;
     },
-    async createOnboardingBootstrap() {
+    async ensureDefaultBootstrap() {
       throw new Error("in-memory project repository is not implemented");
     },
   };
@@ -290,7 +288,19 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
     return thread.id;
   }
 
+  async function findPersonalProjectId(userId: UserId): Promise<ProjectId | null> {
+    const [existing] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
+      )
+      .limit(1);
+    return existing?.id ?? null;
+  }
+
   return {
+    findPersonalProjectId,
     async ensureDefaultBootstrap(userId) {
       return db.transaction(async (tx): Promise<DefaultBootstrap> => {
         await lockBootstrap(tx, userId);
@@ -306,40 +316,6 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
           documentId,
           agentDefinitionId,
           agentSlug: "writer",
-        });
-
-        return {
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          contextSourceId,
-          agentDefinitionId,
-          uri: DEFAULT_BOOTSTRAP_URI,
-        };
-      });
-    },
-    async createOnboardingBootstrap(userId, input) {
-      return db.transaction(async (tx): Promise<DefaultBootstrap> => {
-        await lockBootstrap(tx, userId);
-        const projectId = await ensureProject(tx, userId, input);
-        const agentDefinitionId = await ensureAgent(
-          tx,
-          projectId,
-          "setup",
-          "Setup",
-          "Onboarding agent that gathers project context.",
-        );
-        const workId = await ensureWork(tx, projectId, userId);
-        const contextSourceId = await ensureContextSource(tx, projectId);
-        const documentId = await ensureDocument(tx, contextSourceId);
-        const threadId = await ensureThread(tx, {
-          projectId,
-          workId,
-          userId,
-          documentId,
-          agentDefinitionId,
-          agentSlug: "setup",
         });
 
         return {
