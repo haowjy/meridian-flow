@@ -41,7 +41,7 @@ Meridian v3 uses a plain `postgres:16` Docker container for local Postgres. Auth
 - Start infra with `pnpm dev:infra`.
 - Set `DATABASE_URL` in `.env` (see `.env.example`).
 - App schema is Drizzle-owned in `packages/database`.
-- `pnpm bootstrap` migrates and applies functions only. Dev identity is provisioned on first dev-login (`ensureUser`); onboarding creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is for e2e lookups.
+- `pnpm bootstrap` migrates and applies functions only. Dev identity is provisioned on first dev-login (`ensureUser`); first login auto-creates the personal project (voluma-style via `ensureDefaultBootstrap`). `WORKOS_DEV_LOGIN_USER_ID` is for e2e lookups.
 
 ### Reset vs full wipe
 

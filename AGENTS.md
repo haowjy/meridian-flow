@@ -110,8 +110,8 @@ authority; omitted authority resolves to the thread's primary Work.
 
 - `pnpm bootstrap` applies schema only (`db:migrate` + `db:apply-functions`) — no
   user or project seed. Dev identity is provisioned on first sign-in via
-  `UserRepository.ensureUser` (idempotent upsert on `external_id`); onboarding
-  creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is the WorkOS id used by
+  `UserRepository.ensureUser` (idempotent upsert on `external_id`); first login
+  auto-creates the personal project (server-side via `ensureDefaultBootstrap`). `WORKOS_DEV_LOGIN_USER_ID` is the WorkOS id used by
   e2e lookups, not by bootstrap.
 - DB-backed tests must use an **isolated fixture identity** (dedicated email,
   NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a

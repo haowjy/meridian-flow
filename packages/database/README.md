@@ -27,7 +27,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ## Auth boundary
 
 - Identity is app-owned **`public.users`** (`external_id` = WorkOS user id).
-- `pnpm bootstrap` applies schema only. Dev user row is created on first sign-in; projects via onboarding.
+- `pnpm bootstrap` applies schema only. Dev user row is created on first sign-in; personal project auto-created on first login.
 - DB-backed tests must use an **isolated fixture identity** (dedicated email, NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and target a dedicated throwaway DB, never the dev DB.
 
 ## Token usage (`model_responses`)
