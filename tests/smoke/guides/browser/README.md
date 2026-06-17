@@ -9,7 +9,7 @@ verify real browser behavior, console output, WebSocket state, and database rows
 1. Start local infra and app stack from the same worktree you will inspect:
 
    ```bash
-   pnpm supabase:start
+   pnpm dev:infra
    pnpm bootstrap
    pnpm dev
    pnpm portless:list

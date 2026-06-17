@@ -4,8 +4,8 @@ Nitro API/WebSocket service. Domains live under `server/domains/<domain>/{domain
 
 - Keep route handlers thin; compose repositories/services in `server/lib/app.ts`.
 - Put non-trivial route logic in testable `server/lib/*-route.ts` route-core helpers; Nitro route files authenticate, parse, delegate, and serialize.
-- Domain logic depends on ports, not concrete Drizzle/Supabase/provider adapters.
-- Supabase CLI provides local Postgres only; app schema and functions live in `@meridian/database`. Auth is WorkOS AuthKit.
+- Domain logic depends on ports, not concrete Drizzle/provider adapters.
+- A plain `postgres:16` Docker container provides local Postgres; app schema and functions live in `@meridian/database`. Auth is WorkOS AuthKit.
 - Do not reintroduce external package-execution runtime paths.
 - Thread orchestration emits/persists through the copied event/journal/read-model pipeline.
 - Project-scoped API routes live under `/api/projects` and owner-gate through `requireProjectOwner` (`domains/projects/project-access.ts`).

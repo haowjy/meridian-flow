@@ -7,7 +7,7 @@ and AI runtime that understands narrative context.
 ## System topology
 
 ```
-apps/app ──HTTPS/WS──▶ apps/server ──▶ Postgres (Supabase CLI in dev) + public.users
+apps/app ──HTTPS/WS──▶ apps/server ──▶ Postgres (plain Docker postgres:16 in dev) + public.users
    │                         │
    │                         ├── Drizzle app schema
    │                         ├── Yjs document updates
@@ -32,7 +32,7 @@ lib/ plugins/ routes/ shared/
 
 ### projects
 
-Owns default project/work bootstrap and project/work persistence. Supabase Auth
+Owns default project/work bootstrap and project/work persistence. WorkOS AuthKit
 credentials are resolved at the HTTP/WS edge and mapped to the internal user id
 used by project/thread ownership.
 

@@ -1,12 +1,12 @@
 # @meridian/database
 
-Drizzle schema and migrations for the v3 Meridian Postgres database (local Supabase in dev).
+Drizzle schema and migrations for the v3 Meridian Postgres database (plain `postgres:16` Docker container in dev).
 
 **Schema spec:** v3-fullstack-rebuild work dir `schema/` + `specs/` (see `meridian work current`; repo mirror at `.meridian/context/orange-channel-vale/work/v3-fullstack-rebuild/`).
 
 ## Commands
 
-From repo root (requires `.env` with `DATABASE_URL`, port **54422** for collab Supabase):
+From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
 
 ```bash
 pnpm db:migrate          # apply pending migrations
@@ -22,7 +22,7 @@ pnpm typecheck
 pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
-**Fresh clone:** `pnpm supabase:start` → `pnpm bootstrap` (migrate + apply-functions).
+**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
 
 ## Auth boundary
 

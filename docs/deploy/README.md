@@ -29,9 +29,9 @@ Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestrati
 
 ## Database
 
-Production uses Postgres. Dev uses local Supabase CLI for Postgres only;
-the app schema remains Drizzle-owned in `@meridian/database`. Auth is WorkOS
-AuthKit with `public.users` as the identity table.
+Production uses Postgres. Dev uses a plain `postgres:16` Docker container for
+Postgres only; the app schema remains Drizzle-owned in `@meridian/database`.
+Auth is WorkOS AuthKit with `public.users` as the identity table.
 
 ```bash
 pnpm --filter @meridian/database db:migrate

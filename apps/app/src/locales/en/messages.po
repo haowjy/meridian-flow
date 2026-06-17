@@ -1135,8 +1135,8 @@ msgid "This folder no longer exists."
 msgstr "This folder no longer exists."
 
 #: src/routes/dev-login.tsx
-msgid "This page exists only when SUPABASE_DEV_LOGIN is enabled. Clicking the button below performs a real Supabase password authentication and mints the same session cookie as the production sign-in flow."
-msgstr "This page exists only when SUPABASE_DEV_LOGIN is enabled. Clicking the button below performs a real Supabase password authentication and mints the same session cookie as the production sign-in flow."
+msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "This stored figure needs a project and document before it can be rendered."
@@ -1326,6 +1326,4 @@ msgstr "you answered"
 msgid "Your message"
 msgstr "Your message"
 
-#: src/features/account/SettingsDialog.tsx
-msgid "Your Supabase profile, as seen by Meridian Flow."
-msgstr "Your Supabase profile, as seen by Meridian Flow."
+

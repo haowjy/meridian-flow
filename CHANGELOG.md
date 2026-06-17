@@ -1,5 +1,13 @@
 # Changelog
 
+## Local Supabase removed + migration squash (2026-06-16, branch h/v3)
+- Local Supabase CLI and `supabase/` directory removed. Dev Postgres is now a
+  plain `postgres:16` Docker container (`pnpm dev:infra`, compose project
+  `meridian-dev`, host port `54422`). No `supabase:*` npm scripts remain.
+- All 13 migrations `0001`–`0013` collapsed into ONE baseline
+  `0000_careless_rockslide.sql`. No migration references `auth.users`.
+  `pnpm db:generate` works again (snapshot debt resolved).
+
 ## Fixes (2026-06-16, branch h/v3)
 
 - "New chat" works from the default composer again. The client-only `general`
@@ -13,12 +21,12 @@
   from that cookie. No bearer JWT, no JWKS.
 - Identity is app-owned: a `public.users` row keyed by the WorkOS user id,
   provisioned on first sign-in. The Supabase-managed `auth.users` table and its
-  13 foreign keys are gone (migration `0013`).
+  foreign keys are gone (squashed into single baseline).
 - Dev sign-in is a real WorkOS password auth (`/api/auth/dev-login`), gated to
   non-production with dev creds present (`WORKOS_DEV_AUTOLOGIN=1`). `pnpm
-  bootstrap` seeds the dev user + default project; first login reconciles it.
-- Supabase stays only as the local Postgres provider (`DATABASE_URL`,
-  `pnpm supabase:*`). `@supabase/supabase-js` is removed from both apps.
+  bootstrap` applies schema only (no user/project seed); identity provisioned on
+  first sign-in, project created via onboarding.
+- `@supabase/supabase-js` is removed from both apps.
 - `pnpm dev` now defaults to `--tailscale` sharing; opt out with
   `pnpm dev --no-tailscale` (or `pnpm dev:local`).
 

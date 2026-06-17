@@ -3,13 +3,12 @@
 > **v3 Full-Stack Rebuild** — ground-up TypeScript rebuild (replacing the prior
 > Go backend). Context-URI + model-gateway cleanse has **landed** (`h/v3` branch):
 > unified `ContextPort`, scheme vocabulary, M:N thread↔work model, registry-
-> sourced pricing, billing-correct cancel. Migration-snapshot chain is stale
-> (0004 meta vs 12 journal entries) — pending squash. Key decisions: **Yjs**
-> collab engine with voluma-derived exact-text edit pipeline + **TipTap
-> (ProseMirror)** / y-prosemirror on `Y.XmlFragment`; **agent definitions**
-> (Mars `.md` packages) replace skills; **credits-only** billing gate; linear
-> turns; event journal; Yjs persistence; **Drizzle ORM** over Postgres; Supabase
-> auth (JWKS) + dev Postgres.
+> sourced pricing, billing-correct cancel. Migration-snapshot debt resolved.
+> Key decisions: **Yjs** collab engine with voluma-derived exact-text edit
+> pipeline + **TipTap (ProseMirror)** / y-prosemirror on `Y.XmlFragment`;
+> **agent definitions** (Mars `.md` packages) replace skills; **credits-only**
+> billing gate; linear turns; event journal; Yjs persistence; **Drizzle ORM**
+> over Postgres; WorkOS AuthKit + plain Docker postgres:16 in dev.
 >
 > No real users or data yet, and **no backwards compatibility** — change schemas
 > freely, delete what's unused, and never add a compat shim or alias (rename or
@@ -117,15 +116,9 @@ authority; omitted authority resolves to the thread's primary Work.
 - DB-backed tests must use an **isolated fixture identity** (dedicated email,
   NOT `TEST_USER_EMAIL`/`test@meridian.dev`) and `RUN_DB_TESTS` must target a
   dedicated throwaway DB, never the dev DB.
-- `supabase/migrations` stays **empty by design** — app schema is Drizzle in
-  `packages/database` (`config.toml` `[db.migrations] schema_paths=[]`).
-
-## Migration-snapshot debt
-
-The Drizzle meta snapshot chain is stale (snapshots at 0004 vs 12 journal
-entries) so `db:generate` is broken and migrations 0009–0012 were hand-authored.
-A migration **squash** is the pending fix — do not run `db:generate` until
-resolved.
+- No `auth` schema — identity is app-owned `public.users`.
+- Migrations squashed to a single baseline (`0000_careless_rockslide.sql`);
+  `pnpm db:generate` works again.
 
 ## Cross-cutting invariants
 
@@ -190,23 +183,31 @@ probe `ws://127.0.0.1:<port>` — that bypasses the real proxy/TLS path.
   `PORTLESS_TAILSCALE=0`) for localhost-only; `--funnel` for public sharing.
 - TLS for curl/node: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`
 
-## Local Supabase (Postgres only)
+## Local Postgres (provider-agnostic)
 
-Dev Postgres runs via Supabase CLI. App schema is Drizzle in
-`packages/database` (not `supabase/migrations`). Auth is **WorkOS AuthKit**;
-identity is app-owned `public.users`.
+Dev Postgres runs via a plain `postgres:16` Docker container. App schema is
+Drizzle in `packages/database`. Auth is **WorkOS AuthKit**; identity is
+app-owned `public.users`. The DB seam is `DATABASE_URL` only — point it at any
+Postgres (including a hosted Supabase Postgres) by changing the URL.
 
 ```bash
-pnpm supabase:start      # Docker: Postgres :54422, Studio :54423
-pnpm supabase:env        # print DATABASE_URL for .env
-pnpm bootstrap           # migrate + apply-functions (schema only)
-pnpm db:migrate          # apply Drizzle migrations (packages/database)
-pnpm db:apply-functions  # sync PL/pgSQL from packages/database/src/functions/
-pnpm db:generate         # generate migration SQL from schema changes
-pnpm db:studio           # drizzle-kit studio
+pnpm dev:infra            # docker compose -f tools/dev/docker-compose.yml up -d
+pnpm bootstrap            # migrate + apply-functions (schema only)
+pnpm db:migrate           # apply Drizzle migrations (packages/database)
+pnpm db:apply-functions   # sync PL/pgSQL from packages/database/src/functions/
+pnpm db:generate          # generate migration SQL from schema changes
+pnpm db:studio            # drizzle-kit studio
+pnpm db:reset             # drop/recreate public schema + re-migrate
+pnpm dev:infra:down       # stop the container
 ```
 
-See [supabase/README.md](supabase/README.md) and
+Full wipe: `pnpm dev:infra:down` + remove the `meridian-dev_meridian-postgres-data`
+Docker volume + `pnpm bootstrap`.
+
+`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54422/meridian` (in
+`.env`; `.env.example` documents it).
+
+See [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md) and
 [packages/database/README.md](packages/database/README.md).
 
 ## Build and test

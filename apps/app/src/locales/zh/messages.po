@@ -1135,7 +1135,7 @@ msgid "This folder no longer exists."
 msgstr ""
 
 #: src/routes/dev-login.tsx
-msgid "This page exists only when SUPABASE_DEV_LOGIN is enabled. Clicking the button below performs a real Supabase password authentication and mints the same session cookie as the production sign-in flow."
+msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -1326,6 +1326,4 @@ msgstr ""
 msgid "Your message"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
-msgid "Your Supabase profile, as seen by Meridian Flow."
-msgstr "你的 Supabase 个人资料，由 Meridian Flow 展示。"
+
