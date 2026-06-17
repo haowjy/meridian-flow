@@ -1,6 +1,9 @@
 import postgres from "postgres";
 
-const RESERVED_DATABASES = new Set(["postgres", "template0", "template1"]);
+/** Host port mapped in tools/dev/docker-compose.yml (postgres:16 → 54422). */
+export const LOCAL_DEV_POSTGRES_PORT = 54422;
+
+const RESERVED_DATABASES = new Set(["postgres", "template0", "template1", "meridian"]);
 
 export interface ParsedTargetDatabase {
   targetDb: string;
@@ -48,21 +51,59 @@ function validateExtensionName(name: string): void {
   }
 }
 
-export function isLocalDatabaseHost(databaseUrl: string): boolean {
+function parsePostgresPort(databaseUrl: string): number {
+  const port = new URL(databaseUrl).port;
+  return port ? Number.parseInt(port, 10) : 5432;
+}
+
+/** True when DATABASE_URL targets the committed local dev Postgres endpoint. */
+export function isLocalDevPostgres(databaseUrl: string): boolean {
   try {
-    const hostname = new URL(databaseUrl).hostname;
-    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    const url = new URL(databaseUrl);
+    const hostname = url.hostname;
+    const isLocalHost = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    if (!isLocalHost) return false;
+    return parsePostgresPort(databaseUrl) === LOCAL_DEV_POSTGRES_PORT;
   } catch {
     return false;
   }
 }
 
-/** Connect to admin DB and CREATE DATABASE when the target is missing. */
+function assertLocalDevPostgresEndpoint(databaseUrl: string, action: string): void {
+  if (isLocalDevPostgres(databaseUrl)) return;
+  const url = new URL(databaseUrl);
+  const port = parsePostgresPort(databaseUrl);
+  throw new Error(
+    `Refusing to ${action} on non-local dev Postgres endpoint ` +
+      `(expected 127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}, localhost:${LOCAL_DEV_POSTGRES_PORT}, or ::1:${LOCAL_DEV_POSTGRES_PORT}): ` +
+      `got ${url.hostname}:${port}`,
+  );
+}
+
+/** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
 ): Promise<{ targetDb: string; created: boolean }> {
   const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
+
+  const targetSql = postgres(databaseUrl, { max: 1 });
+  try {
+    await targetSql`SELECT 1`;
+    return { targetDb, created: false };
+  } catch (error) {
+    const err = error as PgLikeError;
+    if (err.code !== "3D000") throw error;
+  } finally {
+    await targetSql.end();
+  }
+
+  if (!isLocalDevPostgres(databaseUrl)) {
+    throw new Error(
+      `Database "${targetDb}" does not exist. Create it on your Postgres host or point DATABASE_URL at an existing database. ` +
+        `Auto-create is only available for the local dev Postgres endpoint (127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}).`,
+    );
+  }
 
   const adminSql = postgres(adminConnString, { max: 1 });
   try {
@@ -122,9 +163,7 @@ export function formatPgError(error: unknown): string {
 
 /** Drop and recreate app schemas so migrations re-apply from scratch (keeps the database). */
 export async function resetSchemaForUrl(databaseUrl: string): Promise<{ targetDb: string }> {
-  if (!isLocalDatabaseHost(databaseUrl)) {
-    throw new Error(`Refusing to reset schema on non-local host: ${new URL(databaseUrl).hostname}`);
-  }
+  assertLocalDevPostgresEndpoint(databaseUrl, "reset schema");
   const { targetDb } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
   await executeSqlForUrl(
@@ -142,11 +181,7 @@ export async function dropDatabaseForUrl(
   databaseUrl: string,
   mainDbNames: Iterable<string>,
 ): Promise<{ targetDb: string; dropped: boolean }> {
-  if (!isLocalDatabaseHost(databaseUrl)) {
-    throw new Error(
-      `Refusing to drop database on non-local host: ${new URL(databaseUrl).hostname}`,
-    );
-  }
+  assertLocalDevPostgresEndpoint(databaseUrl, "drop database");
   const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
   if (isReservedDatabase(targetDb, mainDbNames)) {
