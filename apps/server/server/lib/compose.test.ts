@@ -9,6 +9,7 @@ describe("createInMemoryAppServices", () => {
   it("exposes upstream-compatible thread aliases", () => {
     const services = createInMemoryAppServices();
     expect(services.repos).toBe(services.threadRepos);
+    expect(services.hub).toBe(services.threadEventHub);
     expect(typeof services.hub.catchup).toBe(typeof services.threadEventHub.catchup);
     expect(typeof services.hub.appendEvent).toBe(typeof services.threadEventHub.appendEvent);
   });

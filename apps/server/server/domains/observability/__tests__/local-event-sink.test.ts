@@ -139,4 +139,25 @@ describe("LocalEventSink", () => {
     expect(writes).toHaveLength(1);
     expect(JSON.parse(writes[0] ?? "")).toMatchObject({ name: "stdout_only" });
   });
+
+  it("keeps stdout working when JSONL mirroring fails", async () => {
+    const writes: string[] = [];
+    const sink = new LocalEventSink({
+      dir: "/dev/null/meridian-events",
+      stdout: {
+        write(chunk) {
+          writes.push(String(chunk));
+          return true;
+        },
+      } as Pick<NodeJS.WriteStream, "write">,
+    });
+
+    sink.emit(sampleEvent({ name: "first" }));
+    await sink.flush();
+    sink.emit(sampleEvent({ name: "second" }));
+    await sink.flush();
+
+    expect(writes).toHaveLength(2);
+    expect(writes.map((line) => JSON.parse(line).name)).toEqual(["first", "second"]);
+  });
 });

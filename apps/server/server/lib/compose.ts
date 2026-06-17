@@ -512,6 +512,34 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
+  const inMemoryThreadEventHub: ThreadEventHub = {
+    publishPersistedEvent() {},
+    async appendEvent() {
+      return 0n;
+    },
+    async catchup() {
+      return [];
+    },
+    subscribe() {
+      return () => undefined;
+    },
+    async catchupAndSubscribe() {
+      return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
+    },
+    async headSeq() {
+      return 0n;
+    },
+    journalSeqForEventSeq(seq: bigint) {
+      return seq / 1000n;
+    },
+    async readModelProjectionWatermark() {
+      return 0n;
+    },
+    hasThreadState() {
+      return false;
+    },
+  };
+
   return {
     gateway: {
       async *stream(request) {
@@ -563,60 +591,8 @@ export function createInMemoryAppServices(): AppServices {
         return 1n;
       },
     },
-    threadEventHub: {
-      publishPersistedEvent() {},
-      async appendEvent() {
-        return 0n;
-      },
-      async catchup() {
-        return [];
-      },
-      subscribe() {
-        return () => undefined;
-      },
-      async catchupAndSubscribe() {
-        return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
-      },
-      async headSeq() {
-        return 0n;
-      },
-      journalSeqForEventSeq(seq: bigint) {
-        return seq / 1000n;
-      },
-      async readModelProjectionWatermark() {
-        return 0n;
-      },
-      hasThreadState() {
-        return false;
-      },
-    },
-    hub: {
-      publishPersistedEvent() {},
-      async appendEvent() {
-        return 0n;
-      },
-      async catchup() {
-        return [];
-      },
-      subscribe() {
-        return () => undefined;
-      },
-      async catchupAndSubscribe() {
-        return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
-      },
-      async headSeq() {
-        return 0n;
-      },
-      journalSeqForEventSeq(seq: bigint) {
-        return seq / 1000n;
-      },
-      async readModelProjectionWatermark() {
-        return 0n;
-      },
-      hasThreadState() {
-        return false;
-      },
-    },
+    threadEventHub: inMemoryThreadEventHub,
+    hub: inMemoryThreadEventHub,
     threadRuntime: {
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");

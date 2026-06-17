@@ -4,11 +4,12 @@
  */
 import { emitEvent } from "../domains/observability";
 import { validateAuthConfiguration } from "../lib/auth";
-import { getProcessEventSink, installObservabilityShutdownHooks } from "../lib/observability";
+import { createEventSinkFromEnv } from "../lib/event-sink-factory";
+import { bindProcessEventSink, installObservabilityShutdownHooks } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 
-const eventSink = getProcessEventSink();
+const eventSink = bindProcessEventSink(createEventSinkFromEnv());
 
 installApiProcessCrashPolicy({ eventSink });
 installObservabilityShutdownHooks();
