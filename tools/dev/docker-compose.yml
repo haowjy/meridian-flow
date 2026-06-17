@@ -1,0 +1,24 @@
+# Local dev Postgres for Meridian Flow — plain postgres:16 on host port 54422.
+# Start with `pnpm dev:infra`; schema is Drizzle-owned via `pnpm bootstrap`.
+# Explicit project name so the `tools/dev` directory doesn't collide with a
+# sibling repo's compose project (e.g. voluma also has tools/dev/docker-compose).
+name: meridian-dev
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meridian
+    ports:
+      - "54422:5432"
+    volumes:
+      - meridian-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d meridian"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  meridian-postgres-data:

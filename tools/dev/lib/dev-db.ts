@@ -48,18 +48,34 @@ function validateExtensionName(name: string): void {
   }
 }
 
-/** Supabase CLI owns database creation; this verifies the configured DB is reachable. */
+export function isLocalDatabaseHost(databaseUrl: string): boolean {
+  try {
+    const hostname = new URL(databaseUrl).hostname;
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/** Connect to admin DB and CREATE DATABASE when the target is missing. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
-): Promise<{ targetDb: string; created: false }> {
-  const { targetDb } = parseTargetDatabase(databaseUrl);
+): Promise<{ targetDb: string; created: boolean }> {
+  const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
-  const sql = postgres(databaseUrl, { max: 1 });
+
+  const adminSql = postgres(adminConnString, { max: 1 });
   try {
-    await sql`SELECT 1`;
-    return { targetDb, created: false };
+    try {
+      await adminSql.unsafe(`CREATE DATABASE "${targetDb}"`);
+      return { targetDb, created: true };
+    } catch (error) {
+      const err = error as PgLikeError;
+      if (err.code === "42P04") return { targetDb, created: false };
+      throw error;
+    }
   } finally {
-    await sql.end();
+    await adminSql.end();
   }
 }
 
@@ -93,14 +109,55 @@ export function formatPgError(error: unknown): string {
   const err = error as PgLikeError;
   const message = typeof err.message === "string" ? err.message : String(error);
   if (err.code === "ECONNREFUSED") {
-    return `${message}\n  Hint: run pnpm supabase:start, then pnpm supabase:env and update .env.`;
+    return `${message}\n  Hint: run pnpm dev:infra to start the local Postgres container, then check DATABASE_URL in .env.`;
   }
-  if (err.code === "28P01")
-    return `${message}\n  Hint: refresh local Supabase credentials with pnpm supabase:env.`;
-  if (err.code === "3D000") return `${message}\n  Hint: run pnpm db:migrate after Supabase starts.`;
+  if (err.code === "28P01") {
+    return `${message}\n  Hint: check DATABASE_URL credentials in .env (default: postgres/postgres).`;
+  }
+  if (err.code === "3D000") {
+    return `${message}\n  Hint: run pnpm bootstrap after the Postgres container is up.`;
+  }
   return message;
 }
 
-export async function dropDatabaseForUrl(): Promise<never> {
-  throw new Error("Meridian local DB reset is owned by Supabase CLI. Use pnpm supabase:reset.");
+/** Drop and recreate app schemas so migrations re-apply from scratch (keeps the database). */
+export async function resetSchemaForUrl(databaseUrl: string): Promise<{ targetDb: string }> {
+  if (!isLocalDatabaseHost(databaseUrl)) {
+    throw new Error(`Refusing to reset schema on non-local host: ${new URL(databaseUrl).hostname}`);
+  }
+  const { targetDb } = parseTargetDatabase(databaseUrl);
+  validateDbName(targetDb);
+  await executeSqlForUrl(
+    databaseUrl,
+    `
+      DROP SCHEMA IF EXISTS public CASCADE;
+      CREATE SCHEMA public;
+      DROP SCHEMA IF EXISTS drizzle CASCADE;
+    `,
+  );
+  return { targetDb };
+}
+
+export async function dropDatabaseForUrl(
+  databaseUrl: string,
+  mainDbNames: Iterable<string>,
+): Promise<{ targetDb: string; dropped: boolean }> {
+  if (!isLocalDatabaseHost(databaseUrl)) {
+    throw new Error(
+      `Refusing to drop database on non-local host: ${new URL(databaseUrl).hostname}`,
+    );
+  }
+  const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
+  validateDbName(targetDb);
+  if (isReservedDatabase(targetDb, mainDbNames)) {
+    throw new Error(`Refusing to drop reserved database: ${targetDb}`);
+  }
+
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    await adminSql.unsafe(`DROP DATABASE IF EXISTS "${targetDb}" WITH (FORCE)`);
+    return { targetDb, dropped: true };
+  } finally {
+    await adminSql.end();
+  }
 }

@@ -3,7 +3,7 @@ import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  assertLocalSupabaseOrExplicitAllow,
+  assertLocalDevPostgresOrExplicitAllow,
   DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL,
   resolveDbTestFixtureUserId,
 } from "./__test-support__/db-fixtures";
@@ -23,7 +23,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("event journal", () => {
   let userId: UserId;
 
   beforeEach(async () => {
-    assertLocalSupabaseOrExplicitAllow(databaseUrl);
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     db = createDb(databaseUrl as string);
     threadIds = [];
     userId = (await resolveDbTestFixtureUserId(databaseUrl as string, {

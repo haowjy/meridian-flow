@@ -12,7 +12,7 @@ import {
   threadDocuments,
 } from "@meridian/database";
 import {
-  assertLocalSupabaseOrExplicitAllow,
+  assertLocalDevPostgresOrExplicitAllow,
   DB_TEST_FIXTURE_USER_ID_PRIMARY,
   resolveDbTestFixtureUserId,
 } from "@meridian/database/__test-support__/db-fixtures";
@@ -32,7 +32,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
   let documentId: DocumentId;
 
   beforeEach(async () => {
-    assertLocalSupabaseOrExplicitAllow(databaseUrl);
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     db = createDb(databaseUrl as string);
     userId = (await resolveDbTestFixtureUserId(databaseUrl as string, {
       fixtureUserId: DB_TEST_FIXTURE_USER_ID_PRIMARY,

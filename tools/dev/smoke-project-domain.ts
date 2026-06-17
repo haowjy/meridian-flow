@@ -2,7 +2,7 @@
  * Manual/runtime smoke for Meridian project, work, and thread repositories
  * against the local Postgres database.
  *
- * Run after `pnpm supabase:start` and `pnpm bootstrap` (schema):
+ * Run after `pnpm dev:infra` and `pnpm bootstrap` (schema):
  *   pnpm smoke:project-domain
  */
 

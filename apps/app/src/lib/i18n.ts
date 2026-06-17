@@ -74,7 +74,7 @@ function readNavigatorLocale(): SupportedLocale | null {
  * is deferred to a `useEffect` in `__root.tsx` to avoid SSR/client hydration
  * mismatch on `I18nProvider`.
  *
- * When user-account-scoped preferences land (Supabase metadata or a Meridian
+ * When user-account-scoped preferences land (account metadata or a Meridian
  * profiles table), insert them between steps 2 and 3 — explicit choice on
  * *this* device beats account preference (someone using a borrowed machine),
  * but account preference beats the borrowed machine's browser language.

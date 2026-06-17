@@ -8,6 +8,8 @@ import postgres from "postgres";
 export const DB_TEST_FIXTURE_USER_ID_PRIMARY = "00000000-0000-4000-8000-000000000111";
 export const DB_TEST_FIXTURE_USER_ID_EVENT_JOURNAL = "00000000-0000-4000-8000-000000000112";
 
+const DEV_DATABASE_NAMES = new Set(["postgres", "meridian"]);
+
 /** Reserved RFC 2606 domain; suite suffix keeps emails unique per test file. */
 export function dbTestFixtureEmail(suite: string): string {
   const normalized = suite
@@ -31,12 +33,21 @@ export function databaseNameFromUrl(databaseUrl: string): string {
   return decodeURIComponent(withoutQuery.slice(slash + 1));
 }
 
+export function isLocalDatabaseHost(databaseUrl: string): boolean {
+  try {
+    const hostname = new URL(databaseUrl).hostname;
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 /** Refuse RUN_DB_TESTS when DATABASE_URL targets the dev database. */
 export function assertThrowawayDatabaseForRunDbTests(databaseUrl: string): void {
   const dbName = databaseNameFromUrl(databaseUrl);
-  if (dbName === "postgres") {
+  if (DEV_DATABASE_NAMES.has(dbName)) {
     throw new Error(
-      'RUN_DB_TESTS refused: DATABASE_URL points at the dev database "postgres". ' +
+      `RUN_DB_TESTS refused: DATABASE_URL points at the dev database "${dbName}". ` +
         'Create a throwaway database whose name contains "test" (e.g. meridian_test) and set DATABASE_URL to it.',
     );
   }
@@ -48,11 +59,11 @@ export function assertThrowawayDatabaseForRunDbTests(databaseUrl: string): void 
   }
 }
 
-export function assertLocalSupabaseOrExplicitAllow(databaseUrl: string | undefined): void {
+export function assertLocalDevPostgresOrExplicitAllow(databaseUrl: string | undefined): void {
   if (!databaseUrl || process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") return;
-  if (!databaseUrl.includes("127.0.0.1:54422")) {
+  if (!isLocalDatabaseHost(databaseUrl)) {
     throw new Error(
-      "Refusing DB tests: DATABASE_URL must be local Supabase (127.0.0.1:54422) or set TEST_DB_ALLOW_DESTRUCTIVE=1",
+      "Refusing DB tests: DATABASE_URL must target local dev Postgres (127.0.0.1/localhost) or set TEST_DB_ALLOW_DESTRUCTIVE=1",
     );
   }
 }

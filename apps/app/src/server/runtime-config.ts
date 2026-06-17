@@ -2,7 +2,7 @@
  * runtime-config — parses the app server runtime environment into a typed shape.
  *
  * This mirrors the upstream app-server config seam while keeping provider choice
- * out of runtime parsing. Auth/database specifics live in Supabase helpers.
+ * out of runtime parsing. Auth/database specifics live in server adapters.
  */
 export const APP_ENV_VALUES = ["dev", "staging", "production"] as const;
 export const LOG_LEVEL_VALUES = ["debug", "info", "warn", "error"] as const;

@@ -13,16 +13,16 @@ export interface DevDatabase {
 }
 
 /**
- * Meridian Flow keeps a single-registry dev-tool contract, but the adapter is
- * Supabase local Postgres. Supabase owns database creation/port allocation, so
- * worktrees do not rewrite DATABASE_URL to sibling DB names here.
+ * Meridian Flow keeps a single-registry dev-tool contract against local
+ * postgres:16 (Docker). Worktrees share one dev database — no per-worktree
+ * DATABASE_URL rewrite.
  */
 export const DEV_DATABASES: readonly DevDatabase[] = [
   {
     envVar: "DATABASE_URL",
     migrateScript: "pnpm db:migrate",
     postMigrateScript: "pnpm db:apply-functions",
-    label: "Meridian Supabase Postgres",
+    label: "Meridian local Postgres",
     extensions: ["pg_trgm"],
   },
 ];
@@ -72,11 +72,11 @@ export function assertRequiredBaseUrl(db: DevDatabase, value: string | undefined
   if (value) return true;
   if (db.optional) return false;
   throw new Error(
-    `Missing ${db.envVar}. Run pnpm supabase:start, pnpm supabase:env, then update .env.`,
+    `Missing ${db.envVar}. Run pnpm dev:infra, copy .env.example to .env, and set DATABASE_URL.`,
   );
 }
 
-/** Supabase local DB URLs are already scoped by the Supabase project. */
+/** Local dev uses a single shared DATABASE_URL — no worktree rewrite. */
 export function resolveDatabaseUrl(input: { baseUrl: string }): string {
   return input.baseUrl;
 }
