@@ -1,7 +1,7 @@
 /**
  * Drizzle conformance tests for PackageRepository against real Postgres.
  * Runs against the canonical @meridian/database schema, adapted to Meridian's
- * Supabase auth users and projects-as-projects storage shape.
+ * public.users and projects-as-projects storage shape.
  *
  * Requires:
  *   DATABASE_URL  — Postgres connection string

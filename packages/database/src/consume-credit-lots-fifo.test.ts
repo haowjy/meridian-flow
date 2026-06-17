@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
+import { assertLocalDevPostgresOrExplicitAllow } from "./__test-support__/db-fixtures";
 
 const databaseUrl = process.env.DATABASE_URL;
 const testUserId = process.env.TEST_USER_ID;
@@ -12,23 +13,9 @@ function testConfig(): { databaseUrl: string; userId: string } {
   return { databaseUrl, userId: testUserId };
 }
 
-function assertSafeTestDatabase(): void {
-  if (!databaseUrl) {
-    return;
-  }
-  if (process.env.TEST_DB_ALLOW_DESTRUCTIVE === "1") {
-    return;
-  }
-  if (!databaseUrl.includes("127.0.0.1:54422")) {
-    throw new Error(
-      "Refusing billing tests: DATABASE_URL must be local Supabase (127.0.0.1:54422) or set TEST_DB_ALLOW_DESTRUCTIVE=1",
-    );
-  }
-}
-
 describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   it("debits FIFO, is idempotent, and can go negative via debt lot", async () => {
-    assertSafeTestDatabase();
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
     const groupId = randomUUID();
@@ -129,7 +116,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   });
 
   it("creates debt lot on overspend when user has no lots", async () => {
-    assertSafeTestDatabase();
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 
@@ -161,7 +148,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   });
 
   it("debits expiring grant before non-expiring purchase", async () => {
-    assertSafeTestDatabase();
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
     const usageEventId = `test-${randomUUID()}`;
@@ -234,7 +221,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   });
 
   it("rejects purchase lots without an active subscription", async () => {
-    assertSafeTestDatabase();
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 
@@ -309,7 +296,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
   });
 
   it("rejects null or empty usage_event_id", async () => {
-    assertSafeTestDatabase();
+    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 

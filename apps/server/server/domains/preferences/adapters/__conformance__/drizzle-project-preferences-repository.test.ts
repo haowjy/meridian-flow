@@ -1,7 +1,7 @@
 /**
  * Drizzle conformance for the persisted project preference repository.
  *
- * Opt in with RUN_DB_TESTS=1 DATABASE_URL=... against a migrated local Supabase
+ * Opt in with RUN_DB_TESTS=1 DATABASE_URL=... against a migrated local Postgres
  * database. The default test suite uses the in-memory adapter and skips this
  * database-facing spec.
  */

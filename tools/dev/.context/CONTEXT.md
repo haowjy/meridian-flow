@@ -15,13 +15,16 @@ Local-dev-only utilities. Nothing here is loaded by the application runtime; too
 ```
 tools/dev/
 ├── lib/
-│   └── dev-env.ts             active env helpers + database URL resolution
+│   ├── dev-env.ts             active env helpers + database URL resolution
+│   ├── dev-db.ts              CREATE/DROP/EXTENSION admin against local Postgres
+│   └── dev-infra.ts           docker compose lifecycle for postgres:16
+├── docker-compose.yml         local postgres:16 on host port 54422
 ├── __tests__/                 vitest units for dev-mode, portless routes, session identity, etc.
 ├── bootstrap.ts               pnpm bootstrap: migrate + apply-functions
-├── supabase-env.ts            prints local Postgres URL from Supabase CLI status
 ├── ensure-db.ts               validates/ensures active DATABASE_URL target
 ├── prepare-db.ts              prepares active database before dev stack startup
 ├── drop-db.ts                 guarded drop helper for active dev database
+├── reset-db.ts                schema reset (public + drizzle) + prepare-db
 ├── load-env.ts                root .env loader + requireEnv helper
 ├── print-worktree-env.ts      helper eval'd by .envrc to expose DATABASE_URL
 ├── dev-tmux.ts                pnpm dev entrypoint; starts app/server/www through tmux
@@ -33,12 +36,19 @@ tools/dev/
 
 ## Local database/auth contract
 
-Meridian v3 uses Supabase CLI for local Postgres only. Auth is WorkOS AuthKit.
+Meridian v3 uses a plain `postgres:16` Docker container for local Postgres. Auth is WorkOS AuthKit.
 
-- Start infra with `pnpm supabase:start`.
-- Populate `.env` from `.env.example` and `pnpm supabase:env` (DATABASE_URL).
-- App schema is Drizzle-owned in `packages/database`, not Supabase migration files.
+- Start infra with `pnpm dev:infra`.
+- Set `DATABASE_URL` in `.env` (see `.env.example`).
+- App schema is Drizzle-owned in `packages/database`.
 - `pnpm bootstrap` migrates and applies functions only. Dev identity is provisioned on first dev-login (`ensureUser`); onboarding creates the first project. `WORKOS_DEV_LOGIN_USER_ID` is for e2e lookups.
+
+### Reset vs full wipe
+
+Worktrees share one dev database (`meridian`). `drop-db` refuses reserved/main-checkout DB names — that guard stays; use schema reset instead of `DROP DATABASE`.
+
+- **Reset schema (normal):** `pnpm db:reset` — ensures Docker Postgres is up, drops/recreates `public`, drops `drizzle` (migration journal), then runs `prepare-db` (extensions + migrate + apply-functions).
+- **Full wipe:** `pnpm dev:infra:down`, remove the `meridian-dev_meridian-postgres-data` Docker volume, then `pnpm bootstrap`.
 
 ## Dev server contract
 
@@ -67,11 +77,10 @@ Warnings do not currently block the pipeline; errors do.
 - Keep local infrastructure provider assumptions in dev tooling and composition roots, not domain code.
 - Use `new URL()` for URL transformations.
 - Prefer explicit setup errors over silent fallback.
-- Keep dev tooling aligned with Supabase CLI + Drizzle + portless.
+- Keep dev tooling aligned with Docker Postgres + Drizzle + portless.
 
 ## Related documentation
 
 - [`DEVELOPMENT.md`](../../DEVELOPMENT.md)
-- [`supabase/README.md`](../../supabase/README.md)
 - [`packages/database/README.md`](../../packages/database/README.md)
 - [`tests/smoke/README.md`](../../tests/smoke/README.md)

@@ -12,8 +12,8 @@ async function main(): Promise<void> {
   if (active.length === 0) throw new Error("No dev database URLs are set (expected DATABASE_URL)");
 
   for (const { db, dbUrl } of active) {
-    const { targetDb } = await ensureDatabaseForUrl(dbUrl);
-    console.log(`▸ ${db.label} database "${targetDb}" reachable`);
+    const { targetDb, created } = await ensureDatabaseForUrl(dbUrl);
+    console.log(`▸ ${db.label} database "${targetDb}" ${created ? "created" : "ready"}`);
     if (db.extensions?.length) {
       await ensureExtensionsForUrl(dbUrl, db.extensions);
       console.log(`▸ ${db.label} extensions ready: ${db.extensions.join(", ")}`);

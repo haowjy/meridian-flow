@@ -9,8 +9,8 @@ async function main(): Promise<void> {
     const dbUrl = process.env[envVar];
     if (!dbUrl) continue;
     checkedAny = true;
-    const { targetDb } = await ensureDatabaseForUrl(dbUrl);
-    console.log(`▸ ${label} database "${targetDb}" reachable`);
+    const { targetDb, created } = await ensureDatabaseForUrl(dbUrl);
+    console.log(`▸ ${label} database "${targetDb}" ${created ? "created" : "ready"}`);
   }
   if (!checkedAny) throw new Error("No dev database URLs are set (expected DATABASE_URL)");
 }
