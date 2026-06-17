@@ -1,5 +1,13 @@
 # Changelog
 
+## TipTap v3 editor upgrade (2026-06-17, branch h/tiptap-v3-upgrade)
+
+- Upgraded the shared TipTap editor stack to v3, including the collaboration
+  extension rename to CollaborationCaret and the StarterKit undoRedo option.
+- Kept the custom Meridian schema as the editor/server contract: removed the
+  standalone Mathematics extension because v3 adds blockMath/inlineMath nodes
+  that are not in the shared markdown-safe schema.
+
 ## Server architecture alignment (2026-06-17, branch h/v3)
 
 - Ported Voluma-hardened server observability foundations: interrupt HTTP error handler registration, process-scoped deferred EventSink, request observability, safe-event redaction, and local stdout + optional JSONL event output.
