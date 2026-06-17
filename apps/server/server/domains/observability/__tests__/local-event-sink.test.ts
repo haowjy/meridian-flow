@@ -2,10 +2,14 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { JsonlEventSink } from "../adapters/jsonl/jsonl-event-sink.js";
+import { LocalEventSink } from "../adapters/local/local-event-sink.js";
 import type { EventRecord } from "../ports/event-sink.js";
 
 const dirs: string[] = [];
+
+function discardStdout(): Pick<NodeJS.WriteStream, "write"> {
+  return { write: () => true } as Pick<NodeJS.WriteStream, "write">;
+}
 
 function sampleEvent(overrides: Partial<EventRecord> = {}): EventRecord {
   return {
@@ -19,7 +23,7 @@ function sampleEvent(overrides: Partial<EventRecord> = {}): EventRecord {
 }
 
 async function tempDir(): Promise<string> {
-  const dir = path.join(tmpdir(), `meridian-jsonl-sink-${crypto.randomUUID()}`);
+  const dir = path.join(tmpdir(), `meridian-local-sink-${crypto.randomUUID()}`);
   dirs.push(dir);
   return dir;
 }
@@ -31,12 +35,13 @@ afterEach(async () => {
   }
 });
 
-describe("JsonlEventSink", () => {
+describe("LocalEventSink", () => {
   it("writes one JSON object per line with the full record shape", async () => {
     const dir = await tempDir();
-    const sink = new JsonlEventSink({
+    const sink = new LocalEventSink({
       dir,
       now: () => new Date("2026-06-10T08:30:00.000Z"),
+      stdout: discardStdout(),
     });
 
     const event = sampleEvent();
@@ -52,14 +57,19 @@ describe("JsonlEventSink", () => {
     expect(lines).toHaveLength(1);
     const [line] = lines;
     if (!line) throw new Error("missing JSONL line");
-    expect(JSON.parse(line)).toEqual(event);
+    expect(JSON.parse(line)).toEqual({
+      ...event,
+      eventId: expect.any(String),
+      sensitivity: "safe",
+    });
   });
 
   it("appends batch emits as separate JSONL lines", async () => {
     const dir = await tempDir();
-    const sink = new JsonlEventSink({
+    const sink = new LocalEventSink({
       dir,
       now: () => new Date("2026-06-10T00:00:00.000Z"),
+      stdout: discardStdout(),
     });
 
     sink.emitBatch([
@@ -82,9 +92,10 @@ describe("JsonlEventSink", () => {
 
   it("serializes concurrent emits so every line remains valid JSON", async () => {
     const dir = await tempDir();
-    const sink = new JsonlEventSink({
+    const sink = new LocalEventSink({
       dir,
       now: () => new Date("2026-06-10T00:00:00.000Z"),
+      stdout: discardStdout(),
     });
 
     const count = 40;
@@ -108,5 +119,24 @@ describe("JsonlEventSink", () => {
       expect(parsed.payload.index).toBeTypeOf("number");
       expect(parsed.name).toMatch(/^event-\d+$/);
     }
+  });
+
+  it("writes stdout without requiring LOG_DIR", async () => {
+    const writes: string[] = [];
+    const sink = new LocalEventSink({
+      stdout: {
+        write(chunk) {
+          writes.push(String(chunk));
+          return true;
+        },
+      } as Pick<NodeJS.WriteStream, "write">,
+    });
+
+    sink.emit(sampleEvent({ name: "stdout_only" }));
+    await sink.flush();
+
+    expect(sink.currentFilePath()).toBeNull();
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(writes[0] ?? "")).toMatchObject({ name: "stdout_only" });
   });
 });

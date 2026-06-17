@@ -190,6 +190,12 @@ export function createCheckpointSession(
           level: "warn",
           source: "runtime.orchestrator",
           name: "checkpoint_artifacts.flush_failed",
+          correlation: {
+            threadId: state.threadId,
+            turnId: state.currentTurn.id,
+            runId: state.currentTurn.id,
+            projectId: state.thread.projectId,
+          },
           payload: {
             threadId: state.threadId,
             turnId: state.currentTurn.id,

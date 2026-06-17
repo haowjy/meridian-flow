@@ -2,30 +2,44 @@
 
 Structured observability behind a single required port. Domains that need
 runtime diagnostics receive an `EventSink` through DI and emit JSON-natural
-records; adapters decide where those records go.
+records; adapters decide where safe records go.
 
 ## What it owns
 
-- **`EventRecord`** — minimal JSON-natural record: `timestamp`, `level`,
-  `source`, `name`, `payload`.
+- **`EventRecord`** — safe structured record: `eventId`, `timestamp`, `level`,
+  `source`, `name`, `sensitivity`, optional correlation envelope, and sanitized
+  `payload`.
 - **`EventSink`** — `emit` / `emitBatch` / `flush`.
-- **`emitEvent`** — fire-and-log helper for non-critical diagnostics.
-- **`JsonlEventSink`** — local/dev adapter writing `LOG_DIR/YYYY-MM-DD.jsonl`.
+- **`emitEvent`** — timestamping helper for non-critical diagnostics.
+- **Safe-event helpers** — id stamping, key-pattern redaction, secret stripping,
+  and truncation before records leave process memory.
+- **`DeferredEventSink`** — process bootstrap sink that buffers startup/crash
+  events until production composition binds the real sink.
+- **`LocalEventSink`** — local/prod-default adapter: always writes structured
+  JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set.
 - **`InMemoryEventSink`** / **`NoopEventSink`** — tests and disabled paths.
 
 ## Wiring
 
-`lib/event-sink-factory.ts` owns `createEventSinkFromEnv()` and reads
-`EVENT_PROVIDER` (`local` → JSONL, `postgres` → currently fails closed until a
-Postgres sink lands, `none`/test paths use explicit no-op or in-memory sinks).
-`lib/app.ts` creates the production sink and passes it into
-`createProductionAppPorts()`; `composeAppServices()` then requires it for the
-hub, orchestrator, turn runner, core/skill tool wiring, uploads, figures, and
-other diagnostics-producing services.
+`lib/observability.ts` owns the process-scoped deferred sink. Startup plugins,
+request observability, crash policy, and app composition all use the same sink;
+`lib/app.ts` binds the env-selected concrete sink once the app singleton starts.
+
+`lib/event-sink-factory.ts` reads `EVENT_PROVIDER` (`local` → stdout + optional
+JSONL, `none`/`noop` → no-op). External provider policy is deliberately not wired
+into production composition yet; inject another `EventSink` later without
+changing route or domain code.
 
 There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit
 adapter choice.
+
+## Safety model
+
+Adapters sanitize with `safe-event.ts` before records leave process memory.
+Call sites should still emit allowlisted metadata and correlation ids rather than
+raw prompts, model text, tool arguments/results, uploaded bytes, cookies, or
+headers.
 
 ## Related
 

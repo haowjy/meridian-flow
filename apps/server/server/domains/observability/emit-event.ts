@@ -28,10 +28,7 @@ export function emitEvent(
   event: Omit<EventRecord, "timestamp"> & { timestamp?: string },
 ): void {
   sink.emit({
+    ...event,
     timestamp: event.timestamp ?? new Date().toISOString(),
-    level: event.level,
-    source: event.source,
-    name: event.name,
-    payload: event.payload,
   });
 }

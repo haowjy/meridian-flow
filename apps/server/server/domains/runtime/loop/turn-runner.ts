@@ -224,6 +224,11 @@ export function createTurnRunner(deps: {
               level: "error",
               source: "runtime.turn-runner",
               name: "generator.failed",
+              correlation: {
+                threadId: input.threadId,
+                turnId: handle.assistantTurnId,
+                runId: handle.assistantTurnId,
+              },
               payload: {
                 threadId: input.threadId,
                 assistantTurnId: handle.assistantTurnId,

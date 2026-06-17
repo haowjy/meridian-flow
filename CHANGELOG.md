@@ -1,5 +1,10 @@
 # Changelog
 
+## Server architecture alignment (2026-06-17, branch h/v3)
+
+- Ported Voluma-hardened server observability foundations: interrupt HTTP error handler registration, process-scoped deferred EventSink, request observability, safe-event redaction, and local stdout + optional JSONL event output.
+- Split production server assembly so `app.ts` binds process resources while `compose.ts` owns adapter-port construction and runtime service wiring.
+
 ## Local Supabase removed + migration squash (2026-06-16, branch h/v3)
 - Local Supabase CLI and `supabase/` directory removed. Dev Postgres is now a
   plain `postgres:16` Docker container (`pnpm dev:infra`, compose project

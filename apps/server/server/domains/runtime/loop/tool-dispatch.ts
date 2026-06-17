@@ -85,6 +85,12 @@ export async function dispatchToolCall(
           level: "warn",
           source: "runtime.orchestrator",
           name: "tool_output_delta.append_failed",
+          correlation: {
+            threadId: ctx.state.threadId,
+            turnId: ctx.state.currentTurn.id,
+            runId: ctx.state.currentTurn.id,
+            toolName: call.name,
+          },
           payload: {
             threadId: ctx.state.threadId,
             turnId: ctx.state.currentTurn.id,
