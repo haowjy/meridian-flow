@@ -1,55 +1,116 @@
+/**
+ * Composition root: wires production adapters into AppServices and owns the pure
+ * runtime service graph. App startup supplies process-level resources; this file
+ * chooses concrete server adapters and assembles domain services behind ports.
+ */
+import type { Database } from "@meridian/database";
 import type { AgentPackageStore } from "../domains/agents/index.js";
+import { createDrizzleSubscriptionStore } from "../domains/billing/adapters/drizzle/subscription-store.js";
 import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
-import { type CreditLedger, createInMemoryCreditLedger } from "../domains/billing/index.js";
+import {
+  type CreditLedger,
+  createDrizzleCreditLedger,
+  createFreeGrantPipeline,
+  createGrantingCreditLedger,
+  createInMemoryCreditLedger,
+} from "../domains/billing/index.js";
+import { createPaymentProviderFromEnv } from "../domains/billing/payment-provider-factory.js";
 import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
-import type { DocumentSyncService } from "../domains/collab/index.js";
+import { createDocumentSyncService, type DocumentSyncService } from "../domains/collab/index.js";
 import {
+  createCheckpointArtifactFlush,
+  createDrizzleFigureDocumentRepository,
+  createDrizzleResultRepository,
+  createDrizzleThreadUploadDocumentStore,
+  createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
+  createProductionUnifiedContextPortFactory,
+  createPromotionService,
+  createThreadUploadImportService,
   type FigureAssetService,
+  type PromotionService,
   type ResultRepository,
   type ThreadUploadDocumentStore,
   type ThreadUploadImportService,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
-import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
+import { createNoopEventSink, type EventSink, emitEvent } from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
-import type {
-  DefaultPackageSeeder,
-  MarsPackageFetcher,
-  PackageRepository,
+import {
+  createDefaultPackageSeeder,
+  createDrizzlePackageStore,
+  createGitHubMarsPackageFetcher,
+  type DefaultPackageSeeder,
+  defaultPackageSeedConfigFromEnv,
+  type MarsPackageFetcher,
+  type PackageRepository,
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/index.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import type {
-  ProjectBootstrapRepository,
-  ProjectRepository,
-  WorkRepository as ProjectWorkRepository,
-  UserRepository,
+import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  createDrizzleProjectBootstrapRepository,
+  createDrizzleProjectRepository,
+  createDrizzleProjectWorkRepository,
+  createDrizzleUserRepository,
+  type ProjectBootstrapRepository,
+  type ProjectRepository,
+  type WorkRepository as ProjectWorkRepository,
+  type UserRepository,
 } from "../domains/projects/index.js";
-import type {
-  Gateway,
-  RunTurnPort,
-  ToolExecutor,
-  ToolRegistry,
-  TurnRunner,
+import {
+  computeEffectivePermissions,
+  createChildRunCoordinator,
+  createGatewayFromEnv,
+  createHelperResultDelivery,
+  createInvokeToolRegistration,
+  createLateBindRunTurnPort,
+  createOrchestrator,
+  createPermissionGate,
+  createSpawnToolRegistrations,
+  createToolExecutor,
+  createToolRegistry,
+  createTurnRunner,
+  type Gateway,
+  type RunTurnPort,
+  resolveProfile,
+  type ToolExecutor,
+  type ToolRegistry,
+  type TurnRunner,
 } from "../domains/runtime/index.js";
 import {
   type CheckpointRegistry,
   createCheckpointRegistry,
 } from "../domains/runtime/loop/checkpoints.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
-import { createInMemoryModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
+import {
+  createInMemoryModelRequestDebugStore,
+  createModelRequestDebugStoreFromEnv,
+} from "../domains/runtime/model-request-debug/index.js";
+import {
+  createRuntimeToolRegistry,
+  type RuntimeToolRegistry,
+} from "../domains/runtime/tool-registry.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
+import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
+import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
+import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
+  InternalThreadRepositories,
   ThreadRepositories,
 } from "../domains/threads/ports/index.js";
-import type { ThreadRuntimeService } from "../domains/threads/runtime-service.js";
-import type { ThreadEventHub } from "../domains/threads/thread-event-hub.js";
-import type { DocumentAccessPort } from "./document-access.js";
+import {
+  createThreadRuntimeService,
+  type ThreadRuntimeService,
+} from "../domains/threads/runtime-service.js";
+import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
+import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -94,14 +155,301 @@ export type AppServices = {
   documentAccess: DocumentAccessPort;
 };
 
-export type ProductionAppPorts = Omit<AppServices, never>;
+export type ProductionAppPorts = {
+  db: Database;
+  gateway: Gateway;
+  threadRepos: InternalThreadRepositories;
+  journalReader: EventJournalReader;
+  journalWriter: EventJournalWriter;
+  eventSink: EventSink;
+  documentSync: DocumentSyncService;
+  contextPorts: UnifiedContextPortFactory;
+  runtimeTools: RuntimeToolRegistry;
+  projects: ProjectBootstrapRepository;
+  works: ProjectWorkRepository;
+  projectRepo: ProjectRepository;
+  users: UserRepository;
+  workRepo: ProjectWorkRepository;
+  creditLedger: CreditLedger;
+  paymentProvider: PaymentProvider;
+  subscriptionStore: SubscriptionStore;
+  agents: AgentPackageStore;
+  packageRepository: PackageRepository;
+  marsPackageFetcher: MarsPackageFetcher;
+  defaultPackageSeeder: DefaultPackageSeeder;
+  preferences: ProjectPreferencesRepository;
+  modelRequestDebug: ModelRequestDebugStore;
+  objectStore: ObjectStorePort;
+  localObjectStore: LocalObjectStoreAdapter | null;
+  uploadDocuments: ThreadUploadDocumentStore;
+  threadUploadImports: ThreadUploadImportService;
+  figureAssets: FigureAssetService;
+  results: ResultRepository;
+  promotionService: PromotionService;
+  documentAccess: DocumentAccessPort;
+  openRouterReconcile?: { apiKey: string; baseUrl?: string };
+};
 
-export function composeAppServices(ports: ProductionAppPorts): AppServices {
-  return ports;
+export async function createProductionAppPorts(input: {
+  db: Database;
+  eventSink: EventSink;
+  environment?: NodeJS.ProcessEnv;
+}): Promise<ProductionAppPorts> {
+  const environment = input.environment ?? process.env;
+  const eventSink = input.eventSink;
+  const { gateway } = await createGatewayFromEnv(environment, {
+    onWarning: (span) => {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "gateway",
+        name: span.name,
+        payload: span.attributes ?? {},
+      });
+    },
+  });
+  const db = input.db;
+  const threadRepos = createDrizzleRepositories(db);
+  const journalReader = createDrizzleEventJournalReader(db);
+  const journalWriter = createDrizzleEventJournalWriter(db);
+  const { objectStore, localObjectStore } = createObjectStoreFromEnv();
+  const documentSync = createDocumentSyncService({ db });
+  const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
+  const threadUploadImports = createThreadUploadImportService({
+    repos: threadRepos,
+    uploadDocuments,
+    documentSync,
+    objectStore,
+    eventSink,
+  });
+  const figureAssets = createFigureAssetService({
+    objectStore,
+    documents: createDrizzleFigureDocumentRepository({ db }),
+    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    eventSink,
+  });
+  const results = createDrizzleResultRepository(db);
+  const promotionService = createPromotionService({ objectStore, results });
+  const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
+  const runtimeTools = createRuntimeToolRegistry({
+    db,
+    contextPorts,
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+  });
+  const packageRepository = createDrizzlePackageStore({ db });
+  const marsPackageFetcher = createGitHubMarsPackageFetcher({
+    githubToken: environment.GITHUB_TOKEN,
+  });
+  const defaultPackageSeeder = createDefaultPackageSeeder({
+    repository: packageRepository,
+    fetcher: marsPackageFetcher,
+    config: defaultPackageSeedConfigFromEnv(environment),
+  });
+  const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const projectRepo = createDrizzleProjectRepository({ db });
+  const users = createDrizzleUserRepository({ db });
+  const projects = createDrizzleProjectBootstrapRepository(db);
+  const workRepo = createDrizzleProjectWorkRepository({ db });
+  const baseCreditLedger = createDrizzleCreditLedger(db);
+  const creditLedger = createGrantingCreditLedger({
+    ledger: baseCreditLedger,
+    grants: createFreeGrantPipeline({ ledger: baseCreditLedger }),
+  });
+
+  return {
+    db,
+    gateway,
+    threadRepos,
+    journalReader,
+    journalWriter,
+    eventSink,
+    documentSync,
+    contextPorts,
+    runtimeTools,
+    projects,
+    works: workRepo,
+    projectRepo,
+    users,
+    workRepo,
+    creditLedger,
+    paymentProvider: createPaymentProviderFromEnv(environment),
+    subscriptionStore: createDrizzleSubscriptionStore(db),
+    agents: { phase: "skeleton" },
+    packageRepository,
+    marsPackageFetcher,
+    defaultPackageSeeder,
+    preferences,
+    modelRequestDebug: createModelRequestDebugStoreFromEnv(),
+    objectStore,
+    localObjectStore,
+    uploadDocuments,
+    threadUploadImports,
+    figureAssets,
+    results,
+    promotionService,
+    documentAccess: createDrizzleDocumentAccess(db),
+    openRouterReconcile: environment.OPENROUTER_API_KEY
+      ? {
+          apiKey: environment.OPENROUTER_API_KEY,
+          baseUrl: environment.OPENROUTER_BASE_URL,
+        }
+      : undefined,
+  };
 }
 
-export function createProductionAppPorts(input: ProductionAppPorts): ProductionAppPorts {
-  return input;
+/** Pure wiring — no env reads and no concrete adapter construction. */
+export function composeAppServices(ports: ProductionAppPorts): AppServices {
+  const threadEventHub = createThreadEventHub({
+    journalReader: ports.journalReader,
+    journalWriter: ports.journalWriter,
+    eventSink: ports.eventSink,
+  });
+  const checkpointRegistry = createCheckpointRegistry();
+  const toolRegistry = createToolRegistry();
+  for (const registration of createWiredCoreToolRegistrations({
+    threads: ports.threadRepos.threads,
+    contextPorts: ports.contextPorts,
+    threadWorks: ports.threadRepos.threadWorks,
+    documentTouches: ports.threadRepos.documentTouches,
+    eventSink: ports.eventSink,
+  })) {
+    toolRegistry.register(registration);
+  }
+  toolRegistry.register(
+    createInvokeToolRegistration({
+      packageRepository: ports.packageRepository,
+      async findThreadById(threadId: string) {
+        const thread = await ports.threadRepos.threads.findById(threadId);
+        return thread
+          ? {
+              projectId: thread.projectId,
+              userId: thread.userId,
+              currentAgent: thread.currentAgent,
+              bakedSkillSlugs: thread.bakedSkillSlugs ?? null,
+            }
+          : null;
+      },
+    }),
+  );
+  for (const registration of createSpawnToolRegistrations()) {
+    toolRegistry.register(registration);
+  }
+  const toolExecutor = createToolExecutor(toolRegistry);
+  const runTurnProxy = createLateBindRunTurnPort();
+  let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
+  const runner = createTurnRunner({
+    orchestrator: runTurnProxy,
+    hub: threadEventHub,
+    repos: { turns: ports.threadRepos.turns },
+    eventSink: ports.eventSink,
+    helperResultDelivery: {
+      async flush(threadId) {
+        await helperResultDelivery?.flush(threadId);
+      },
+    },
+  });
+  helperResultDelivery = createHelperResultDelivery({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
+  });
+  const childRunCoordinator = createChildRunCoordinator({
+    orchestrator: runTurnProxy,
+    repos: {
+      threads: ports.threadRepos.threads,
+      subagentThreads: ports.threadRepos.threads,
+      turns: ports.threadRepos.turns,
+      blocks: ports.threadRepos.blocks,
+      transaction: ports.threadRepos.transaction,
+      threadWorks: ports.threadRepos.threadWorks,
+    },
+    resolveWorkMembership: async (input) => {
+      const { resolveWorkMembership } = await import("./work-attachment.js");
+      return resolveWorkMembership(
+        {
+          workRepo: ports.workRepo,
+          threadWorks: ports.threadRepos.threadWorks,
+          threads: ports.threadRepos.threads,
+        },
+        input,
+      );
+    },
+    eventWriter: threadEventHub,
+    packageRepository: ports.packageRepository,
+    childRunRegistry: runner.childRunRegistry,
+    helperResultDelivery,
+    creditLedger: ports.creditLedger,
+  });
+  const orchestrator = createOrchestrator({
+    gateway: ports.gateway,
+    toolExecutor,
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    packageRepository: ports.packageRepository,
+    toolRegistry,
+    projectPreferences: ports.preferences,
+    permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
+    childRunCoordinator,
+    helperResultDelivery,
+    checkpointRegistry,
+    creditLedger: ports.creditLedger,
+    checkpointArtifacts: createCheckpointArtifactFlush({
+      promotion: ports.promotionService,
+      objectStore: ports.objectStore,
+    }),
+    eventSink: ports.eventSink,
+    modelRequestDebug: ports.modelRequestDebug,
+    openRouterReconcile: ports.openRouterReconcile,
+  });
+  runTurnProxy.bind(orchestrator);
+
+  return {
+    gateway: ports.gateway,
+    threadRepos: ports.threadRepos,
+    repos: ports.threadRepos,
+    journalReader: ports.journalReader,
+    journalWriter: ports.journalWriter,
+    threadEventHub,
+    hub: threadEventHub,
+    threadRuntime: createThreadRuntimeService({
+      db: ports.db,
+      gateway: ports.gateway,
+      hub: threadEventHub,
+      tools: ports.runtimeTools,
+    }),
+    documentSync: ports.documentSync,
+    contextPorts: ports.contextPorts,
+    projects: ports.projects,
+    works: ports.works,
+    projectRepo: ports.projectRepo,
+    users: ports.users,
+    workRepo: ports.workRepo,
+    creditLedger: ports.creditLedger,
+    paymentProvider: ports.paymentProvider,
+    subscriptionStore: ports.subscriptionStore,
+    agents: ports.agents,
+    checkpointRegistry,
+    eventSink: ports.eventSink,
+    packageRepository: ports.packageRepository,
+    marsPackageFetcher: ports.marsPackageFetcher,
+    defaultPackageSeeder: ports.defaultPackageSeeder,
+    seedDefaultPackagesForProject: async (projectId) => {
+      await ports.defaultPackageSeeder.seedProject(projectId);
+    },
+    preferences: ports.preferences,
+    orchestrator,
+    runner,
+    toolRegistry,
+    toolExecutor,
+    modelRequestDebug: ports.modelRequestDebug,
+    objectStore: ports.objectStore,
+    localObjectStore: ports.localObjectStore,
+    uploadDocuments: ports.uploadDocuments,
+    threadUploadImports: ports.threadUploadImports,
+    figureAssets: ports.figureAssets,
+    results: ports.results,
+    documentAccess: ports.documentAccess,
+  };
 }
 
 export function createInMemoryAppServices(): AppServices {

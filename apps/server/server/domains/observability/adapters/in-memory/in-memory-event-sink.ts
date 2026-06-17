@@ -3,16 +3,17 @@
  * so behavioral tests can assert on sink output without touching the filesystem.
  */
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
+import { sanitizeEventRecord } from "../../safe-event.js";
 
 export class InMemoryEventSink implements EventSink {
   readonly events: EventRecord[] = [];
 
   emit(event: EventRecord): void {
-    this.events.push(event);
+    this.events.push(sanitizeEventRecord(event));
   }
 
   emitBatch(events: EventRecord[]): void {
-    this.events.push(...events);
+    this.events.push(...events.map(sanitizeEventRecord));
   }
 
   async flush(): Promise<void> {

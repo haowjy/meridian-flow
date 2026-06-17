@@ -88,6 +88,11 @@ function recordTouchInBackground(
       level: "warn",
       source: "lib.wired-core-tools",
       name: "document_touch.failed",
+      correlation: {
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        runId: ctx.turnId,
+      },
       payload: {
         threadId: ctx.threadId,
         turnId: ctx.turnId,

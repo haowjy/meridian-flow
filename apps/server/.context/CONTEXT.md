@@ -5,9 +5,7 @@ and the conventions for extending the server without bypassing domain seams.
 
 ## Composition root
 
-`server/lib/app.ts` owns the production singleton and assembles the production
-DI graph. `server/lib/compose.ts` defines the `AppServices` aggregate, keeps
-test/in-memory service stubs, and returns the assembled graph unchanged.
+`server/lib/app.ts` owns the production singleton and binds process resources. `server/lib/compose.ts` defines the `AppServices` aggregate, constructs production adapter ports, keeps test/in-memory service stubs, and owns pure runtime service wiring.
 
 The production graph is intentionally assembled at the edge:
 
@@ -138,11 +136,7 @@ and surfaces as a retryable provider error when no output has been emitted.
 
 ## Observability event sink
 
-`server/lib/event-sink-factory.ts` keeps the upstream composition seam but only
-selects Meridian-local sinks: `EVENT_PROVIDER=local` writes JSONL, while
-`none`/`noop` returns the no-op sink. External provider policy is deliberately
-not wired into production composition yet; inject another `EventSink` later
-without changing route or domain code.
+`server/lib/observability.ts` owns the process-scoped deferred sink used by startup, request observability, crash policy, and app composition. `server/lib/event-sink-factory.ts` keeps the upstream composition seam but only selects Meridian-local sinks: `EVENT_PROVIDER=local` writes structured JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set, while `none`/`noop` returns the no-op sink. External provider policy is deliberately not wired into production composition yet; inject another `EventSink` later without changing route or domain code.
 
 ## Route conventions
 

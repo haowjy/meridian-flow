@@ -1,16 +1,17 @@
 /**
  * Nitro startup plugin: installs the process crash policy and runs config
- * validation at boot, logging warnings through the event sink.
+ * validation at boot, logging warnings through the process EventSink.
  */
 import { emitEvent } from "../domains/observability";
 import { validateAuthConfiguration } from "../lib/auth";
-import { createEventSinkFromEnv } from "../lib/event-sink-factory";
+import { getProcessEventSink, installObservabilityShutdownHooks } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 
-const eventSink = createEventSinkFromEnv();
+const eventSink = getProcessEventSink();
 
 installApiProcessCrashPolicy({ eventSink });
+installObservabilityShutdownHooks();
 
 export default async function startupPlugin() {
   const { warnings, replicaCount, durableEventBackend } = await assertApiStartupGuards();

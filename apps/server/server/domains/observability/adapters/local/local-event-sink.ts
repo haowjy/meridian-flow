@@ -1,33 +1,38 @@
 /**
- * JSONL dev EventSink: appends one JSON object per line under a configurable
- * directory (`logs/YYYY-MM-DD.jsonl` by default). Safe under concurrent emits
- * from a single process via a serialized write chain.
+ * Local EventSink: always writes structured JSON events to stdout for platform
+ * log capture and optionally mirrors them to `LOG_DIR/YYYY-MM-DD.jsonl` when a
+ * log directory is configured. Writes are serialized per process.
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
+import { sanitizeEventRecord } from "../../safe-event.js";
 
-export type JsonlEventSinkOptions = {
-  /** Directory for daily JSONL files; created on first emit if missing. */
-  dir: string;
+export type LocalEventSinkOptions = {
+  /** Optional directory for daily JSONL files; omitted means stdout-only. */
+  dir?: string;
   /** Injectable clock for tests and deterministic filenames. */
   now?: () => Date;
+  /** Injectable output stream for tests; defaults to process stdout. */
+  stdout?: Pick<NodeJS.WriteStream, "write">;
 };
 
 function utcDateStamp(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-export class JsonlEventSink implements EventSink {
-  private readonly dir: string;
+export class LocalEventSink implements EventSink {
+  private readonly dir: string | undefined;
   private readonly now: () => Date;
+  private readonly stdout: Pick<NodeJS.WriteStream, "write">;
   private writeChain: Promise<void> = Promise.resolve();
   private activeDate: string | null = null;
   private activePath: string | null = null;
 
-  constructor(options: JsonlEventSinkOptions) {
+  constructor(options: LocalEventSinkOptions = {}) {
     this.dir = options.dir;
     this.now = options.now ?? (() => new Date());
+    this.stdout = options.stdout ?? process.stdout;
   }
 
   emit(event: EventRecord): void {
@@ -53,12 +58,17 @@ export class JsonlEventSink implements EventSink {
   }
 
   private async appendEvents(events: EventRecord[]): Promise<void> {
+    const payload = events
+      .map((event) => `${JSON.stringify(sanitizeEventRecord(event))}\n`)
+      .join("");
+    this.stdout.write(payload);
     const filePath = await this.resolveFilePath();
-    const payload = events.map((event) => `${JSON.stringify(event)}\n`).join("");
+    if (!filePath) return;
     await appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
   }
 
-  private async resolveFilePath(): Promise<string> {
+  private async resolveFilePath(): Promise<string | null> {
+    if (!this.dir) return null;
     const date = utcDateStamp(this.now());
     if (this.activeDate === date && this.activePath) {
       return this.activePath;
@@ -72,6 +82,6 @@ export class JsonlEventSink implements EventSink {
   }
 }
 
-export function createJsonlEventSink(options: JsonlEventSinkOptions): EventSink {
-  return new JsonlEventSink(options);
+export function createLocalEventSink(options: LocalEventSinkOptions = {}): EventSink {
+  return new LocalEventSink(options);
 }

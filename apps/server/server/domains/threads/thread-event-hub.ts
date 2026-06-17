@@ -202,6 +202,11 @@ export function createThreadEventHub(
         level: "error",
         source: "threads.event-hub",
         name: "turn.error",
+        correlation: {
+          threadId,
+          turnId: orchestratorEvent.turn.id,
+          runId: orchestratorEvent.turn.id,
+        },
         payload: {
           threadId,
           turnId: orchestratorEvent.turn.id,

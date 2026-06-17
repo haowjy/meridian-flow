@@ -1,21 +1,9 @@
 /**
- * Compose tests: verify the in-memory service graph exposes the same app-service
- * shape as production composition while keeping unimplemented adapters explicit.
+ * Compose tests: verify the in-memory service graph exposes the app-service
+ * shape expected by route tests while keeping unimplemented adapters explicit.
  */
 import { describe, expect, it } from "vitest";
-import {
-  composeAppServices,
-  createInMemoryAppServices,
-  createProductionAppPorts,
-} from "./compose.js";
-
-describe("composeAppServices", () => {
-  it("is an identity seam for already-built production ports", () => {
-    const services = createInMemoryAppServices();
-    expect(createProductionAppPorts(services)).toBe(services);
-    expect(composeAppServices(services)).toBe(services);
-  });
-});
+import { createInMemoryAppServices } from "./compose.js";
 
 describe("createInMemoryAppServices", () => {
   it("exposes upstream-compatible thread aliases", () => {
