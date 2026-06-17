@@ -1,9 +1,8 @@
 /** Drizzle UserRepository: idempotent user provisioning over the `users` table (ensure-on-auth). */
 
-import { OnboardingState, type OnboardingState as OnboardingStateType } from "@meridian/contracts";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { userPreferences, users } from "@meridian/database/schema";
+import { users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import type { EnsureUserInput, UserRepository } from "../../ports/user-repository.js";
 
@@ -14,10 +13,6 @@ export interface DrizzleUserRepositoryDeps {
 /** Drizzle-backed {@link UserRepository} over the `users` table. */
 export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): UserRepository {
   const { db } = deps;
-
-  function parseOnboardingState(value: unknown): OnboardingStateType {
-    return OnboardingState.catch({}).parse(value);
-  }
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
@@ -61,30 +56,6 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         .update(users)
         .set({ lastActiveProjectId: projectId, updatedAt: new Date().toISOString() })
         .where(eq(users.id, userId));
-    },
-
-    async getOnboardingState(userId: UserId): Promise<OnboardingStateType> {
-      const [row] = await db
-        .select({ onboardingState: userPreferences.onboardingState })
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, userId))
-        .limit(1);
-      return parseOnboardingState(row?.onboardingState ?? {});
-    },
-
-    async updateOnboardingState(
-      userId: UserId,
-      state: OnboardingStateType,
-    ): Promise<OnboardingStateType> {
-      const parsed = parseOnboardingState(state);
-      await db
-        .insert(userPreferences)
-        .values({ userId, onboardingState: parsed })
-        .onConflictDoUpdate({
-          target: userPreferences.userId,
-          set: { onboardingState: parsed, updatedAt: new Date() },
-        });
-      return parsed;
     },
   };
 }

@@ -19,12 +19,16 @@ function projectContextQuery(
   return "";
 }
 export const API_PROJECTS_PATH = "/api/projects";
+export const API_PROJECTS_HOME_PATH = `${API_PROJECTS_PATH}/home`;
 
 export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
-export const API_ONBOARDING_PATH = "/api/onboarding";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
+
+export function apiProjectsHomePath(): string {
+  return API_PROJECTS_HOME_PATH;
+}
 
 export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
@@ -160,16 +164,4 @@ export function apiBillingPacksPath(): string {
 
 export function apiBillingCheckoutSessionsPath(): string {
   return `${API_BILLING_PATH}/checkout-sessions`;
-}
-
-export function apiOnboardingPath(): string {
-  return API_ONBOARDING_PATH;
-}
-
-export function apiOnboardingProgressPath(): string {
-  return `${API_ONBOARDING_PATH}/progress`;
-}
-
-export function apiOnboardingCompletePath(): string {
-  return `${API_ONBOARDING_PATH}/complete`;
 }

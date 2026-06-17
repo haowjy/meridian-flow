@@ -16,7 +16,7 @@ import { SidebarUndoPill } from "./SidebarUndoPill";
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isHome = pathname === "/";
+  const isHome = pathname === "/home";
 
   // strict:false → params may be empty (e.g. on Home), or carry projectId on /project.
   const params = useParams({ strict: false }) as { projectId?: string };
@@ -26,7 +26,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border">
         <Link
-          to="/"
+          to="/home"
           activeOptions={{ exact: true }}
           className="focus-ring flex items-center gap-2.5 rounded-md px-1 py-1.5 text-foreground no-underline hover:bg-transparent active:bg-transparent"
           aria-label={t`Home`}

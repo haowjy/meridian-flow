@@ -14,8 +14,6 @@ export function isApiOwnedPath(pathname: string): boolean {
     pathname === "/api/agents" ||
     pathname === "/api/billing" ||
     pathname.startsWith("/api/billing/") ||
-    pathname === "/api/onboarding" ||
-    pathname.startsWith("/api/onboarding/") ||
     pathname === "/api/packages" ||
     pathname.startsWith("/api/packages/") ||
     pathname === "/api/threads" ||

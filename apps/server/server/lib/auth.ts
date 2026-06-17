@@ -6,7 +6,7 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { CookieSessionStorage, createAuthService, validateConfig } from "@workos/authkit-session";
 import { HTTPError } from "nitro/h3";
-import type { UserRepository } from "../domains/projects/index.js";
+import type { ProjectBootstrapRepository, UserRepository } from "../domains/projects/index.js";
 
 /**
  * Custom cookie session storage that manually parses the cookie header.
@@ -49,6 +49,7 @@ export type ResolvedExternalUser = Omit<ResolvedUser, "userId">;
 
 export interface UserProvisioningDeps {
   users: UserRepository;
+  projects: ProjectBootstrapRepository;
 }
 
 const authkit = createAuthService({
@@ -105,12 +106,19 @@ export async function provisionAuthenticatedUser(
   user: ResolvedExternalUser,
   deps: UserProvisioningDeps,
 ): Promise<UserId> {
-  return deps.users.ensureUser({
+  const userId = await deps.users.ensureUser({
     externalId: user.externalId,
     email: user.email,
     name: user.name,
     avatarUrl: user.avatarUrl,
   });
+
+  const personalProjectId = await deps.projects.findPersonalProjectId(userId);
+  if (!personalProjectId) {
+    await deps.projects.ensureDefaultBootstrap(userId);
+  }
+
+  return userId;
 }
 
 /**

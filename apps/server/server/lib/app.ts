@@ -17,7 +17,6 @@ import {
   createThreadUploadImportService,
 } from "../domains/context/index.js";
 import { emitEvent } from "../domains/observability/index.js";
-import { createOnboardingService } from "../domains/onboarding/index.js";
 import {
   createDefaultPackageSeeder,
   createDrizzlePackageStore,
@@ -132,7 +131,6 @@ async function createAppServices(): Promise<AppServices> {
   const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository(db);
-  const onboarding = createOnboardingService({ users, projects, projectRepo });
   const workRepo = createDrizzleProjectWorkRepository({ db });
   const baseCreditLedger = createDrizzleCreditLedger(db);
   const creditLedger = createGrantingCreditLedger({
@@ -256,7 +254,6 @@ async function createAppServices(): Promise<AppServices> {
       threadRuntime: createThreadRuntimeService({ db, gateway, hub: threadEventHub, tools }),
       documentSync,
       contextPorts,
-      onboarding,
       projects,
       works: workRepo,
       projectRepo,

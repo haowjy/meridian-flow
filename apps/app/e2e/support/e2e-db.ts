@@ -125,7 +125,7 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
   });
 }
 
-export async function resetUserOnboardingState(db: Db, userId: string): Promise<void> {
+export async function resetUserProjects(db: Db, userId: string): Promise<void> {
   await db.begin(async (tx) => {
     await tx`
       DELETE FROM event_journal
@@ -172,45 +172,14 @@ export async function resetUserOnboardingState(db: Db, userId: string): Promise<
       )
     `;
     await tx`DELETE FROM projects WHERE user_id = ${userId}::uuid`;
-    await tx`
-      INSERT INTO user_preferences (user_id, onboarding_state)
-      VALUES (${userId}::uuid, '{}'::jsonb)
-      ON CONFLICT (user_id) DO UPDATE SET onboarding_state = '{}'::jsonb
-    `;
   });
 }
 
 /**
- * Reset onboarding and seed a project so /projects skips the onboarding gate.
- * Ensures the dev-login user row exists before DB fixtures (auth.setup is external
- * to Playwright — not a guaranteed setup project dependency).
+ * Clear the dev-login user's projects so the next authenticated request provisions
+ * a fresh personal project via ensureDefaultBootstrap.
  */
-export async function prepareAuthenticatedProjectAccess(db: Db): Promise<ProjectFixture> {
+export async function prepareAuthenticatedProjectAccess(db: Db): Promise<void> {
   const userId = await ensureTestUserId(db);
-  await resetUserOnboardingState(db, userId);
-  const fixture = await seedProjectFixture(db, {
-    userId,
-    titlePrefix: "Auth e2e",
-  });
-  await markOnboardingCompleted(db, userId, fixture.projectId);
-  return fixture;
-}
-
-export async function markOnboardingCompleted(
-  db: Db,
-  userId: string,
-  projectId: string,
-): Promise<void> {
-  await db`
-    INSERT INTO user_preferences (user_id, onboarding_state)
-    VALUES (
-      ${userId}::uuid,
-      ${JSON.stringify({
-        status: "completed",
-        firstProjectId: projectId,
-        completedSteps: ["basics", "profile", "path", "complete"],
-      })}::jsonb
-    )
-    ON CONFLICT (user_id) DO UPDATE SET onboarding_state = EXCLUDED.onboarding_state
-  `;
+  await resetUserProjects(db, userId);
 }

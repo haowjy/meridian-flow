@@ -41,18 +41,3 @@ export const UserPreferences = z.object({
     .optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferences>;
-
-export const OnboardingState = z.object({
-  status: z.enum(["not_started", "in_progress", "completed"]).optional(),
-  completedSteps: z.array(z.string()).optional(),
-  firstProjectId: z.string().uuid().optional(),
-  firstThreadId: z.string().uuid().optional(),
-  workId: z.string().uuid().optional(),
-  documentId: z.string().uuid().optional(),
-  contextSourceId: z.string().uuid().optional(),
-  currentStep: z.string().optional(),
-  answers: z.record(z.string(), z.unknown()).optional(),
-  selectedPath: z.enum(["import_corpus", "start_chatting"]).optional(),
-  referralSource: z.string().optional(),
-});
-export type OnboardingState = z.infer<typeof OnboardingState>;

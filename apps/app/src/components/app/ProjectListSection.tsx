@@ -52,7 +52,7 @@ export function NewProjectLink(props: NewProjectLinkProps) {
   return (
     <div className="px-2 pt-2">
       <Link
-        to="/"
+        to="/home"
         className={cn(
           "focus-ring flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground",
           props.isActive && "bg-sidebar-accent text-foreground",

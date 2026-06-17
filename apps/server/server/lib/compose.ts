@@ -13,7 +13,6 @@ import {
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createNoopEventSink, type EventSink } from "../domains/observability/index.js";
-import type { OnboardingService } from "../domains/onboarding/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import type {
   DefaultPackageSeeder,
@@ -65,7 +64,6 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: DocumentSyncService;
   contextPorts: UnifiedContextPortFactory;
-  onboarding: OnboardingService;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -287,22 +285,11 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory(),
-    onboarding: {
-      async status() {
-        throw new Error("in-memory onboarding is not implemented");
-      },
-      async saveProgress() {
-        throw new Error("in-memory onboarding is not implemented");
-      },
-      async complete() {
-        throw new Error("in-memory onboarding is not implemented");
-      },
-    },
     projects: {
-      async ensureDefaultBootstrap() {
-        throw new Error("in-memory projects are not implemented");
+      async findPersonalProjectId() {
+        return null;
       },
-      async createOnboardingBootstrap() {
+      async ensureDefaultBootstrap() {
         throw new Error("in-memory projects are not implemented");
       },
     },
@@ -353,12 +340,6 @@ export function createInMemoryAppServices(): AppServices {
         return null;
       },
       async setLastActiveProjectId() {},
-      async getOnboardingState() {
-        return {};
-      },
-      async updateOnboardingState(_userId, state) {
-        return state;
-      },
     },
     workRepo: {
       async create() {

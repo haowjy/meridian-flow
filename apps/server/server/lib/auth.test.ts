@@ -2,8 +2,13 @@
  * Auth provisioning tests: verify external WorkOS identities map to internal
  * users idempotently and unauthenticated requests are rejected.
  */
+import { randomUUID } from "node:crypto";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createInMemoryUserRepository } from "../domains/projects/index.js";
+import {
+  createInMemoryUserRepository,
+  type ProjectBootstrapRepository,
+} from "../domains/projects/index.js";
 
 const TEST_WORKOS_COOKIE_PASSWORD = "abcdefghijklmnopqrstuvwxyz123456";
 const TEST_SESSION_ID = "session_test_01";
@@ -75,6 +80,41 @@ function requestWithCookie(cookie: string | null): Request {
   return new Request("https://server.localhost/api/test", {
     headers: cookie ? { cookie } : undefined,
   });
+}
+
+function createTestProjectBootstrap(): {
+  projects: ProjectBootstrapRepository;
+  bootstrapCalls: number;
+  personalProjectId: ProjectId | null;
+} {
+  let personalProjectId: ProjectId | null = null;
+  let bootstrapCalls = 0;
+  return {
+    get personalProjectId() {
+      return personalProjectId;
+    },
+    get bootstrapCalls() {
+      return bootstrapCalls;
+    },
+    projects: {
+      async findPersonalProjectId() {
+        return personalProjectId;
+      },
+      async ensureDefaultBootstrap() {
+        bootstrapCalls += 1;
+        personalProjectId = randomUUID() as ProjectId;
+        return {
+          projectId: personalProjectId,
+          workId: randomUUID() as never,
+          threadId: randomUUID() as never,
+          documentId: randomUUID() as never,
+          contextSourceId: randomUUID() as never,
+          agentDefinitionId: randomUUID() as never,
+          uri: "manuscript://chapter-1.md" as never,
+        };
+      },
+    },
+  };
 }
 
 describe("WorkOS request auth", () => {
@@ -169,9 +209,11 @@ describe("WorkOS request auth", () => {
   });
 
   it("rejects unauthenticated requests at the route boundary", async () => {
+    const bootstrap = createTestProjectBootstrap();
     await expect(
       requireUser(requestWithCookie(null), {
         users: createInMemoryUserRepository(),
+        projects: bootstrap.projects,
       }),
     ).rejects.toMatchObject({
       status: 401,
@@ -179,9 +221,11 @@ describe("WorkOS request auth", () => {
   });
 
   it("rejects forged session cookies at the route boundary", async () => {
+    const bootstrap = createTestProjectBootstrap();
     await expect(
       requireUser(requestWithCookie("wos-session=tampered"), {
         users: createInMemoryUserRepository(),
+        projects: bootstrap.projects,
       }),
     ).rejects.toMatchObject({
       status: 401,
@@ -192,16 +236,26 @@ describe("WorkOS request auth", () => {
     mockWithAuthFromSealedCookie();
 
     const users = createInMemoryUserRepository();
+    const bootstrap = createTestProjectBootstrap();
     const cookie = await mintTestSessionCookie({ email: "provisioned@example.com" });
 
-    const resolved = await requireUser(requestWithCookie(cookie), { users });
+    const resolved = await requireUser(requestWithCookie(cookie), {
+      users,
+      projects: bootstrap.projects,
+    });
 
     expect(resolved.externalId).toBe(TEST_EXTERNAL_USER_ID);
     expect(resolved.email).toBe("provisioned@example.com");
     expect(resolved.userId).toBeTruthy();
+    expect(bootstrap.bootstrapCalls).toBe(1);
+    expect(bootstrap.personalProjectId).toBeTruthy();
 
-    const second = await requireUser(requestWithCookie(cookie), { users });
+    const second = await requireUser(requestWithCookie(cookie), {
+      users,
+      projects: bootstrap.projects,
+    });
     expect(second.userId).toBe(resolved.userId);
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });
 
@@ -219,6 +273,7 @@ describe("auth principal provisioning", () => {
 
   it("maps external auth to an internal user idempotently", async () => {
     const users = createInMemoryUserRepository();
+    const bootstrap = createTestProjectBootstrap();
 
     const firstUserId = await provisionAuthenticatedUser(
       {
@@ -227,7 +282,7 @@ describe("auth principal provisioning", () => {
         name: "Test User",
         avatarUrl: null,
       },
-      { users },
+      { users, projects: bootstrap.projects },
     );
     const secondUserId = await provisionAuthenticatedUser(
       {
@@ -236,9 +291,27 @@ describe("auth principal provisioning", () => {
         name: "Renamed User",
         avatarUrl: "https://example.test/avatar.png",
       },
-      { users },
+      { users, projects: bootstrap.projects },
     );
 
     expect(secondUserId).toBe(firstUserId);
+    expect(bootstrap.bootstrapCalls).toBe(1);
+  });
+
+  it("bootstraps a personal project only when absent", async () => {
+    const users = createInMemoryUserRepository();
+    const bootstrap = createTestProjectBootstrap();
+    const externalUser = {
+      externalId: "user_bootstrap_once",
+      email: "bootstrap@example.com",
+      name: "Bootstrap User",
+      avatarUrl: null,
+    };
+
+    await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
+    expect(bootstrap.bootstrapCalls).toBe(1);
+
+    await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });

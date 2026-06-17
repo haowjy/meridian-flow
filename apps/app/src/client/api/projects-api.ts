@@ -14,6 +14,7 @@ import type {
   UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
 import type { Project } from "@meridian/contracts/projects";
+import type { HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectContextCreatePath,
@@ -23,6 +24,7 @@ import {
   apiProjectContextTreePath,
   apiProjectPath,
   apiProjectPreferencesPath,
+  apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorksPath,
   type ContextReadResponse,
@@ -51,6 +53,12 @@ type RequestInitOptions = {
 
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
+}
+
+export async function getHomeProject(init?: RequestInitOptions): Promise<HomeProjectResponse> {
+  return getJson<HomeProjectResponse>(urlFor(apiProjectsHomePath(), init), {
+    headers: init?.headers,
+  });
 }
 
 export async function listProjects(init?: RequestInitOptions): Promise<Project[]> {

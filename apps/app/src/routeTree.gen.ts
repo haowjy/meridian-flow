@@ -16,7 +16,7 @@ import { Route as ProtoIndexRouteImport } from './routes/proto.index'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
 import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
-import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
@@ -71,9 +71,9 @@ const ProtoPersistentSurfacesRoute = ProtoPersistentSurfacesRouteImport.update({
   path: '/proto/persistent-surfaces',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
+const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
+  id: '/home',
+  path: '/home',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
@@ -135,7 +135,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
-  '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/home': typeof AuthenticatedHomeRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/proto/': typeof ProtoIndexRoute
@@ -154,7 +154,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
-  '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/home': typeof AuthenticatedHomeRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/': typeof AuthenticatedIndexRoute
@@ -176,7 +176,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
-  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
+  '/_authenticated/home': typeof AuthenticatedHomeRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -199,7 +199,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/auth-check'
-    | '/onboarding'
+    | '/home'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/proto/'
@@ -218,7 +218,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/auth-check'
-    | '/onboarding'
+    | '/home'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/'
@@ -239,7 +239,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/_authenticated/auth-check'
-    | '/_authenticated/onboarding'
+    | '/_authenticated/home'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
     | '/_authenticated/'
@@ -332,11 +332,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtoPersistentSurfacesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/onboarding': {
-      id: '/_authenticated/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+    '/_authenticated/home': {
+      id: '/_authenticated/home'
+      path: '/home'
+      fullPath: '/home'
+      preLoaderRoute: typeof AuthenticatedHomeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/auth-check': {
@@ -407,7 +407,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
-  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
+  AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
   AuthenticatedProjectProjectIdRoute: typeof AuthenticatedProjectProjectIdRoute
@@ -419,7 +419,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
-  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
+  AuthenticatedHomeRoute: AuthenticatedHomeRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
   AuthenticatedProjectProjectIdRoute: AuthenticatedProjectProjectIdRoute,

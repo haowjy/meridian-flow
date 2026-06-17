@@ -1,11 +1,10 @@
-import type { OnboardingState } from "@meridian/contracts";
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
-
 /**
  * User persistence port: idempotent provisioning of external-auth credentials.
  * `users.id` is Meridian's internal domain user id; `users.external_id` stores the
  * provider credential id (WorkOS). The boundary both user adapters implement.
  */
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+
 export interface EnsureUserInput {
   externalId: string;
   email: string;
@@ -22,6 +21,4 @@ export interface UserRepository {
   ensureUser(input: EnsureUserInput): Promise<UserId>;
   getLastActiveProjectId(userId: UserId): Promise<ProjectId | null>;
   setLastActiveProjectId(userId: UserId, projectId: ProjectId | null): Promise<void>;
-  getOnboardingState(userId: UserId): Promise<OnboardingState>;
-  updateOnboardingState(userId: UserId, state: OnboardingState): Promise<OnboardingState>;
 }

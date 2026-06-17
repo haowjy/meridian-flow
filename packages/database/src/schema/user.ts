@@ -10,7 +10,6 @@ export const userPreferences = pgTable("user_preferences", {
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
   preferences: jsonbDefault("preferences"),
-  onboardingState: jsonbDefault("onboarding_state"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
