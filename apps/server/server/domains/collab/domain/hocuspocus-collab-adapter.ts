@@ -52,7 +52,7 @@ const MAX_QUEUE_AGE_MS = 30_000;
 
 class PersistenceQueues {
   private readonly queues = new Map<string, QueueTask[]>();
-  private readonly running = new Set<string>();
+  private readonly running = new Map<string, Promise<void>>();
   private readonly dropped = new Map<string, number>();
 
   enqueue(documentId: string, task: () => Promise<void>): boolean {
@@ -102,26 +102,31 @@ class PersistenceQueues {
     }
   }
 
-  private async drain(documentId: string): Promise<void> {
-    if (this.running.has(documentId)) return;
-    this.running.add(documentId);
-    try {
-      for (;;) {
-        const queue = this.queues.get(documentId);
-        const next = queue?.shift();
-        if (!next) {
-          this.queues.delete(documentId);
-          return;
+  private drain(documentId: string): Promise<void> {
+    const current = this.running.get(documentId);
+    if (current) return current;
+
+    const run = (async () => {
+      try {
+        for (;;) {
+          const queue = this.queues.get(documentId);
+          const next = queue?.shift();
+          if (!next) {
+            this.queues.delete(documentId);
+            return;
+          }
+          try {
+            await next.run();
+          } catch (error) {
+            console.error("collab persistence queue task failed", { documentId, error });
+          }
         }
-        try {
-          await next.run();
-        } catch (error) {
-          console.error("collab persistence queue task failed", { documentId, error });
-        }
+      } finally {
+        this.running.delete(documentId);
       }
-    } finally {
-      this.running.delete(documentId);
-    }
+    })();
+    this.running.set(documentId, run);
+    return run;
   }
 }
 
