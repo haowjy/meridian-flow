@@ -140,7 +140,7 @@ export function createInMemoryDocumentSyncFacade(
     async drainHocuspocusPersistence(): Promise<void> {},
 
     getPersistenceQueueMetrics() {
-      return [];
+      return { queues: [], liveDocumentCount: 0, openConnectionCount: 0 };
     },
 
     async writeDocument(input: {

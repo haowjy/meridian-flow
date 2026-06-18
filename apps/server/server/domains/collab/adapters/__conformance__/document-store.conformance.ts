@@ -34,6 +34,7 @@ export function describeDocumentStoreConformance(
       await store.upsertHead({
         documentId: DOC_A,
         fragmentName: "prosemirror",
+        schemaVersion: 1,
         filetype: "markdown",
         latestUpdateSeq: 0,
         latestStateVector: null,
@@ -42,6 +43,7 @@ export function describeDocumentStoreConformance(
       expect(await store.getHead(DOC_A)).toMatchObject({
         documentId: DOC_A,
         fragmentName: "prosemirror",
+        schemaVersion: 1,
         filetype: "markdown",
         latestUpdateSeq: 0,
         latestStateVector: null,
@@ -59,6 +61,7 @@ export function describeDocumentStoreConformance(
       await store.upsertHead({
         documentId: DOC_A,
         fragmentName: "body",
+        schemaVersion: 1,
         filetype: "python",
         latestUpdateSeq: 2,
         latestStateVector: bytes(1, 2, 3),
@@ -254,6 +257,7 @@ export function describeDocumentStoreConformance(
         await tx.upsertHead({
           documentId: DOC_A,
           fragmentName: "prosemirror",
+          schemaVersion: 1,
           filetype: "markdown",
           latestUpdateSeq: updateSeq,
           latestStateVector: bytes(10, 11, 12),
@@ -292,6 +296,7 @@ export function describeDocumentStoreConformance(
           await tx.upsertHead({
             documentId: DOC_B,
             fragmentName: "prosemirror",
+            schemaVersion: 1,
             filetype: "markdown",
             latestUpdateSeq: updateSeq,
             latestStateVector: bytes(96),
@@ -313,6 +318,7 @@ export function describeDocumentStoreConformance(
       await store.upsertHead({
         documentId: DOC_A,
         fragmentName: "prosemirror",
+        schemaVersion: 1,
         filetype: "markdown",
         latestUpdateSeq: 1,
         latestStateVector: bytes(1, 2, 3),
@@ -358,6 +364,7 @@ export function describeDocumentStoreConformance(
         await tx.upsertHead({
           documentId: DOC_B,
           fragmentName: "prosemirror",
+          schemaVersion: 1,
           filetype: "markdown",
           latestUpdateSeq: 1,
           latestStateVector: writtenStateVector,
