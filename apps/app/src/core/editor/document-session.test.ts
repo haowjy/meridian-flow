@@ -9,6 +9,7 @@
  * disconnected, `access-lost` on permanent auth denial, `syncing` while in flight, and live transitions on
  * every connection-state change — never a frozen startup value.
  */
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import type { Awareness } from "y-protocols/awareness";
 
@@ -18,6 +19,7 @@ import {
   DocumentSession,
   type DocumentSessionSnapshot,
   type DocumentSessionTransportProvider,
+  documentSessionPersistenceKey,
 } from "./document-session";
 
 type FakeTransport = DocumentSessionTransportProvider & {
@@ -94,6 +96,33 @@ function track(session: DocumentSession): {
 }
 
 describe("DocumentSession status derivation", () => {
+  it("builds a versioned IndexedDB persistence key from COLLAB_SCHEMA_VERSION", () => {
+    expect(documentSessionPersistenceKey("doc-abc")).toBe(
+      `meridian:document:v${COLLAB_SCHEMA_VERSION}:doc-abc`,
+    );
+  });
+
+  it("does not mark synced from empty local load while transport first sync is pending", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      documentId: "doc-1",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    await flushMicrotasks();
+    expect(session.getSnapshot().localPersistenceSynced).toBe(true);
+    expect(session.getSnapshot().status).toBe("syncing");
+
+    current().emit({ kind: "connected" });
+    expect(session.getSnapshot().status).toBe("syncing");
+
+    current().resolveFirstSync();
+    await flushMicrotasks();
+    expect(session.getSnapshot().status).toBe("synced");
+
+    void session.destroy();
+  });
+
   it("starts as syncing while local persistence is still loading", () => {
     const { factory } = makeFakeTransport();
     const session = new DocumentSession({
