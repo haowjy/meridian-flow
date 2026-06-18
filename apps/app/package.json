@@ -19,6 +19,7 @@
     "lingui:compile": "lingui compile"
   },
   "dependencies": {
+    "@hocuspocus/provider": "4.2.0",
     "@lingui/core": "^6.1.0",
     "@lingui/react": "^6.1.0",
     "@meridian/contracts": "workspace:*",
