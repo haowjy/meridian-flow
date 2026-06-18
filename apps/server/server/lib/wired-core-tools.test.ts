@@ -273,7 +273,7 @@ describe("createWiredCoreToolRegistrations", () => {
       .forWork(work.id, "project_1", "user_1", new Set([work.id]))
       .read(MANUSCRIPT_URI);
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("chapter content");
+    if (read.ok) expect(read.value.content).toBe("chapter content\n");
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     const touches = await repos.documentTouches.listByThread(thread.id);
@@ -323,7 +323,7 @@ describe("createWiredCoreToolRegistrations", () => {
     const workPort = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
     const read = await workPort.read("work://notes.md");
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("scratchpad");
+    if (read.ok) expect(read.value.content).toBe("scratchpad\n");
   });
 
   it("records document touches after reads and writes via unified kb://", async () => {
