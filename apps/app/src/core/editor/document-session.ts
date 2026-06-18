@@ -73,7 +73,7 @@ export type DocumentSessionOptions = {
   persistenceKey?: string;
   /** Tests and SSR can disable IndexedDB; browser sessions enable it by default. */
   enableIndexedDb?: boolean;
-  /** W3b plugs the multiplexed Yjs WS provider here. */
+  /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
 };
 
