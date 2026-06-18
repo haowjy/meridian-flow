@@ -223,6 +223,14 @@
   favorite. Updated the app/www imports, the package export, the renamed
   `UserPreferences.ui.theme` enum value, and the manifest theme color.
 
+## Hocuspocus collab hardening (2026-06-18, branch h/hocuspocus)
+
+- Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`, persisted
+  `schema_version` on Yjs heads, and rebuild-from-markdown recovery when a stored
+  head is on an older version.
+- Extended collab persistence metrics with live document and open connection counts;
+  shutdown drain emits the augmented payload.
+
 ## Dev portless app stability (2026-06-17, branch h/v3)
 
 - Fixed app dev websocket proxy startup when `MERIDIAN_API_ORIGIN` is present

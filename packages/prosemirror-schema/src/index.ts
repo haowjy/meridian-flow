@@ -150,6 +150,14 @@ const customMarks = {
 
 // ─── Exports ────────────────────────────────────────────────────────
 
+/**
+ * Bump when the ProseMirror/TipTap schema or Yjs encoding changes; bumping
+ * invalidates client IndexedDB caches and flags server-persisted docs built on
+ * the old version. Lives here because this package owns the schema shape the
+ * version tracks — client and server must import the same value.
+ */
+export const COLLAB_SCHEMA_VERSION = 1;
+
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 
 export const documentNodes = {

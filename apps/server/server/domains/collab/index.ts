@@ -11,6 +11,7 @@ import { HTTPError } from "nitro/h3";
 import type * as Y from "yjs";
 import type { DocumentAccessPort } from "../../lib/document-access.js";
 import { KeyedMutex } from "../../shared/keyed-mutex.js";
+import type { EventSink } from "../observability/index.js";
 import { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
 import { touchDocumentActivity } from "./domain/document-activity.js";
 import {
@@ -18,8 +19,8 @@ import {
   type DocumentSyncServiceOptions,
 } from "./domain/document-sync-service.js";
 import {
+  type CollabPersistenceMetrics,
   createHocuspocusCollabAdapter,
-  type PersistenceQueueMetrics,
 } from "./domain/hocuspocus-collab-adapter.js";
 import type { DocumentSyncPort, PersistedUpdate, UpdateOrigin } from "./ports/document-sync.js";
 
@@ -48,7 +49,7 @@ export type HocuspocusDocumentSync = {
   }): void;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
-  getPersistenceQueueMetrics(): PersistenceQueueMetrics;
+  getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
 export type DocumentSyncFacade = DocumentSyncPort &
@@ -93,6 +94,7 @@ function toUpdateOrigin(origin: DocumentWriteOrigin): UpdateOrigin {
 export function createDocumentSyncService(deps: {
   db: Database;
   documentAccess: RequiredDocumentAccess;
+  eventSink?: EventSink;
   options?: DocumentSyncServiceOptions;
 }): DocumentSyncFacade {
   const autoCheckpointEvery = deps.options?.autoCheckpointEvery ?? DEFAULT_AUTO_CHECKPOINT_EVERY;
@@ -103,6 +105,7 @@ export function createDocumentSyncService(deps: {
     db: deps.db,
     store,
     autoCheckpointEvery,
+    eventSink: deps.eventSink,
   });
 
   async function assertThreadScope(documentId: DocumentId, threadId: ThreadId): Promise<void> {
