@@ -25,13 +25,6 @@ import { buildSameOriginWsUrl } from "./dev-transport";
 import type { ConnectionState } from "./ThreadTransport";
 
 const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
-const TERMINAL_DENIAL_REASONS = [
-  "permission-denied",
-  "unauthorized",
-  "forbidden",
-  "authentication",
-  "auth",
-];
 
 let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 
@@ -49,9 +42,7 @@ function mapStatus(status: WebSocketStatus): ConnectionState {
 }
 
 function isTerminalDenialClose(event: onCloseParameters["event"]): boolean {
-  if (TERMINAL_DENIAL_CODES.has(event.code)) return true;
-  const reason = event.reason.toLowerCase();
-  return TERMINAL_DENIAL_REASONS.some((part) => reason.includes(part));
+  return TERMINAL_DENIAL_CODES.has(event.code);
 }
 
 function terminalState(reason: string, code?: number): ConnectionState {
