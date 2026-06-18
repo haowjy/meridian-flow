@@ -76,6 +76,8 @@ export interface DocumentStore {
   transaction<T>(fn: (store: DocumentStore) => Promise<T>): Promise<T>;
   getHead(documentId: string): Promise<HeadRow | null>;
   upsertHead(head: HeadRow): Promise<void>;
+  /** Updates only latestCheckpointId — avoids clobbering concurrent head advances. */
+  setLatestCheckpointId(documentId: string, checkpointId: number): Promise<void>;
   appendUpdate(input: AppendUpdateInput): Promise<number>;
   countUpdatesAfter(documentId: string, afterSeq: number): Promise<number>;
   listUpdatesAfter(documentId: string, afterSeq: number): Promise<UpdateRow[]>;

@@ -132,6 +132,13 @@ export function createDrizzleDocumentStore(db: StoreDb): DocumentStore {
         });
     },
 
+    async setLatestCheckpointId(documentId, checkpointId) {
+      await db
+        .update(documentYjsHeads)
+        .set({ latestCheckpointId: checkpointId, updatedAt: sql`now()` })
+        .where(eq(documentYjsHeads.documentId, asDocumentId(documentId)));
+    },
+
     async appendUpdate(input: AppendUpdateInput) {
       const [row] = await db
         .insert(documentYjsUpdates)

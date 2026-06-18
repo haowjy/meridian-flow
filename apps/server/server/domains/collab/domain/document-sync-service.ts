@@ -350,7 +350,7 @@ export class DocumentSyncService implements DocumentSyncPort {
       upToSeq: head.latestUpdateSeq,
       reason,
     });
-    await store.upsertHead({ ...head, latestCheckpointId: checkpointId });
+    await store.setLatestCheckpointId(documentId, checkpointId);
     return checkpointId;
   }
 
