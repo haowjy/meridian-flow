@@ -223,6 +223,9 @@
   scene-break node. Bumped `COLLAB_SCHEMA_VERSION` to 2. TipTap editor parity preserved.
 - MDX ingress: skip tilde-fenced code blocks in prose-escape pre-pass; reject
   boolean/shorthand `<Figure>` attrs (quoted strings only).
+- MDX ingress: CommonMark-complete inline code span handling (N-backtick open/close)
+  so `<`/`{` inside multi-backtick code is not backslash-corrupted; document
+  Phase-1 limits for indented code and angle-bracket autolinks.
 
 ## Hocuspocus collab transport (2026-06-18, branch h/hocuspocus)
 
