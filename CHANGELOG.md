@@ -2,6 +2,11 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Login: rebuilt the placeholder page as a branded split — a deep-ink hero with
+  the glowing needle, Cormorant wordmark, italic tagline, faint jade ink-wash,
+  and a corner cinnabar seal, beside a paper card with a jade primary call to
+  action. Drives the existing flows only (WorkOS hosted sign-in and dev login);
+  no new auth plumbing.
 - Brand mark: replaced the off-brand gradient hexagon with the compass needle
   (cinnabar north / jade south, token-driven fills) and added an SVG favicon
   using the seal-square needle housing.
