@@ -6,6 +6,12 @@
  * Whitespace-only paragraphs canonicalize to empty: a paragraph containing only
  * spaces/tabs/NBSP renders as the same blank vertical space as an empty paragraph,
  * so serialize and parse treat them as equivalent (sentinel on wire, empty in PM).
+ *
+ * Phase-1 ingress limitations (no data corruption — semantic edge only):
+ * - 4-space indented code blocks parse as paragraphs (text intact).
+ * - Angle-bracket autolinks (`<https://…>`) ingest as literal text, not links.
+ * Manuscripts use fenced code and the editor model; bridge output never emits
+ * these forms.
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
@@ -136,6 +142,30 @@ function tryConsumeJsxTag(text: string, start: number): number | null {
   return null;
 }
 
+/**
+ * CommonMark inline code span: N opening backticks, content, exactly N closing backticks.
+ * Returns span length when closed; null when unterminated (literal backticks, not code).
+ */
+function tryConsumeInlineCodeSpan(text: string, start: number): number | null {
+  if (text[start] !== "`") return null;
+
+  let openLen = 0;
+  while (start + openLen < text.length && text[start + openLen] === "`") openLen++;
+
+  let i = start + openLen;
+  while (i < text.length) {
+    if (text[i] === "`") {
+      let closeLen = 0;
+      while (i + closeLen < text.length && text[i + closeLen] === "`") closeLen++;
+      if (closeLen === openLen) return i + openLen - start;
+      i += closeLen;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+
 /** Escape prose `<`/`{` within a segment (respects inline code and JSX tags). */
 function escapeProseSegment(segment: string): string {
   let out = "";
@@ -147,12 +177,12 @@ function escapeProseSegment(segment: string): string {
       continue;
     }
     if (segment[i] === "`") {
-      let j = i + 1;
-      while (j < segment.length && segment[j] !== "`") j++;
-      if (j < segment.length) j++;
-      out += segment.slice(i, j);
-      i = j;
-      continue;
+      const len = tryConsumeInlineCodeSpan(segment, i);
+      if (len !== null) {
+        out += segment.slice(i, i + len);
+        i += len;
+        continue;
+      }
     }
     if (segment[i] === "<") {
       const len = tryConsumeJsxTag(segment, i);

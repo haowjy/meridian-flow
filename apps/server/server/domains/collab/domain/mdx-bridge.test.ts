@@ -219,6 +219,79 @@ describe("mdx-bridge — empty paragraphs", () => {
   });
 });
 
+describe("mdx-bridge — inline code ingress", () => {
+  function paraTextParts(doc: PMNode): { text: string; code: boolean }[] {
+    const parts: { text: string; code: boolean }[] = [];
+    doc.firstChild?.forEach((child) => {
+      if (child.type.name === "text") {
+        parts.push({
+          text: child.text ?? "",
+          code: child.marks.some((mark) => mark.type.name === "code"),
+        });
+      }
+    });
+    return parts;
+  }
+
+  function expectNoBackslashCorruption(doc: PMNode): void {
+    doc.descendants((node) => {
+      if (node.type.name === "text" && node.text?.includes("\\")) {
+        throw new Error(`backslash corruption in text: ${JSON.stringify(node.text)}`);
+      }
+    });
+  }
+
+  it("single-backtick inline code preserves < and {", () => {
+    const doc = mdxToDoc("before `a<b{c}` after");
+    expectNoBackslashCorruption(doc);
+    const parts = paraTextParts(doc);
+    expect(parts).toEqual([
+      { text: "before ", code: false },
+      { text: "a<b{c}", code: true },
+      { text: " after", code: false },
+    ]);
+  });
+
+  it("double-backtick inline code preserves < and embedded backtick", () => {
+    const doc = mdxToDoc("text ``a<b`c`` end");
+    expectNoBackslashCorruption(doc);
+    const parts = paraTextParts(doc);
+    expect(parts).toEqual([
+      { text: "text ", code: false },
+      { text: "a<b`c", code: true },
+      { text: " end", code: false },
+    ]);
+  });
+
+  it("triple-backtick inline code preserves < and {", () => {
+    const doc = mdxToDoc("wrap ```a<b{c}``` tail");
+    expectNoBackslashCorruption(doc);
+    const parts = paraTextParts(doc);
+    expect(parts).toEqual([
+      { text: "wrap ", code: false },
+      { text: "a<b{c}", code: true },
+      { text: " tail", code: false },
+    ]);
+  });
+
+  it("escapes prose < and { adjacent to intact inline code", () => {
+    const doc = mdxToDoc("prose <50 and {void} with ``code<50`` end");
+    expectNoBackslashCorruption(doc);
+    const parts = paraTextParts(doc);
+    expect(parts).toEqual([
+      { text: "prose <50 and {void} with ", code: false },
+      { text: "code<50", code: true },
+      { text: " end", code: false },
+    ]);
+  });
+
+  it("unterminated backtick run is literal prose; < and { escaped without throw", () => {
+    const doc = mdxToDoc("literal `a<b {c} tail");
+    expectNoBackslashCorruption(doc);
+    expect(doc.firstChild?.textContent).toBe("literal `a<b {c} tail");
+  });
+});
+
 describe("mdx-bridge — edge cases", () => {
   it("raw_url_literal_text (autolink demotion)", () => {
     const doc = schema.node("doc", null, [para(t("visit https://example.com today"))]);
