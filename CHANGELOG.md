@@ -2,6 +2,17 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Grounds + chrome (Quiet Pro): replaced the cream "Warm Manuscript" surface
+  ladder with the cooler, low-chroma warm-grey "Quiet Pro" ladder (hue ~100,
+  chroma ≤0.005) so nothing reads as parchment. Bright surfaces (cards, message
+  bubbles, composer/search fields via `surface-warm`) now lift ABOVE the canvas
+  while the rails/dock recede below it, divided by hairline borders — flush, not
+  floating (dropped the rounded rail corners + rail shadows).
+- Cinnabar pulled back to a scarce seal: routine selection is now neutral — the
+  active sidebar row uses a warm-grey fill + a jade "you are here" marker (not a
+  cinnabar tint/stripe) and the "Pinned" header is muted. Cinnabar is reserved
+  for the brand mark, the pin/favorite star, and destructive deletions only;
+  red was reading as "error". (Supersedes the earlier cinnabar-on-active-row.)
 - Texture: added a barely-there fixed paper-grain overlay (`paper-grain` utility
   on `<body>`, ~0.02 opacity, pointer-events none) for the rice-paper tooth; the
   manuscript editor is raised above it so long-form prose stays pristine.

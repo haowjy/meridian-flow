@@ -6,8 +6,9 @@
  * Writer-native re-skin: warm rice-paper grounds, near-black ink type, a jade
  * primary, and a cinnabar seal accent (the signature — chrome only, never prose).
  * Palette canonical in OKLCH; values mirror the WCAG-verified Ink & Jade spec.
- * Accent semantics: jade = "do/go" (actions, links, focus); cinnabar = "this
- * one/now" (active row, favorite/seal, brand) — used sparingly.
+ * Accent semantics: jade = "do/go" (actions, links, focus); cinnabar = the
+ * scarce seal — favorite/pinned, brand mark, and destructive deletions ONLY.
+ * Never routine selection/active rows (red reads as "error").
  *
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
@@ -19,13 +20,22 @@
   --font-heading: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --font-prose: "Noto Serif", Georgia, "Times New Roman", serif;
 
-  /* Core ramp — warm rice-paper grounds + ink type */
-  --color-background: oklch(0.961 0.008 91.5);
-  --color-foreground: oklch(0.217 0.006 107);
-  --color-card: oklch(0.985 0.005 95.1);
-  --color-card-foreground: oklch(0.217 0.006 107);
-  --color-popover: oklch(0.985 0.005 95.1);
-  --color-popover-foreground: oklch(0.217 0.006 107);
+  /* Quiet Pro surface ladder — a calm warm-grey studio (hue ~100, low chroma)
+     rather than cream parchment. The center canvas is a mid rest tone; bright
+     surfaces (cards / bubbles / composer field) lift ABOVE it; the chrome
+     (rails + dock) recedes below it. Small lightness steps, chroma kept ≤0.005
+     so nothing reads clinical-white or cream. Borders are hairlines; depth is
+     read in the surfaces, not in shadows. (See work/v3-fullstack-rebuild/
+     mockups/design-explore/chat-quiet-pro.md for the canonical rationale.) */
+  --color-background: oklch(0.974 0.003 100);
+  --color-foreground: oklch(0.22 0.006 107);
+  /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
+     bubbles / fields). Popover = a hair brighter still so floating menus read
+     as lifted off both the chrome and the page. */
+  --color-card: oklch(0.986 0.002 100);
+  --color-card-foreground: oklch(0.22 0.006 107);
+  --color-popover: oklch(0.988 0.002 100);
+  --color-popover-foreground: oklch(0.22 0.006 107);
 
   /* Jade — the calm interactive voice (do/go). Not for text on page. */
   --color-primary: oklch(0.536 0.082 175);
@@ -33,14 +43,20 @@
   /* Jade — text variant (links, jade labels), 6:1 on page */
   --color-jade-text: oklch(0.465 0.07 176);
 
-  --color-secondary: oklch(0.93 0.012 93);
-  --color-secondary-foreground: oklch(0.217 0.006 107);
-  --color-muted: oklch(0.935 0.012 93);
-  --color-muted-foreground: oklch(0.467 0.013 95.3);
-  --color-accent: oklch(0.919 0.014 93);
-  --color-accent-foreground: oklch(0.217 0.006 107);
+  /* Secondary / muted / accent live inside the same warm ladder so badges,
+     muted backgrounds, and hover accents never punch out of the page.
+     Secondary + muted sit on the "files" step; accent uses the chrome-hover
+     step (matches sidebar-accent) since accent is read as a hover/selected
+     surface in shadcn primitives. */
+  --color-secondary: oklch(0.929 0.005 100);
+  --color-secondary-foreground: oklch(0.22 0.006 107);
+  --color-muted: oklch(0.929 0.005 100);
+  --color-muted-foreground: oklch(0.467 0.008 100);
+  --color-accent: oklch(0.929 0.005 100);
+  --color-accent-foreground: oklch(0.22 0.006 107);
 
-  /* Cinnabar — the signature seal (this one/now). Active row, favorite, brand. */
+  /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
+     destructive deletions ONLY; never routine selection (red reads as "error"). */
   --color-cinnabar: oklch(0.521 0.158 29);
   --color-cinnabar-foreground: oklch(0.985 0.005 95.1);
   --color-cinnabar-tint: oklch(0.521 0.158 29 / 0.08);
@@ -60,23 +76,32 @@
   --color-destructive-tint: oklch(0.94 0.028 22);
   --color-destructive-border: oklch(0.86 0.06 20);
 
-  --color-border: oklch(0.887 0.014 97.5);
-  --color-input: oklch(0.887 0.014 97.5);
+  /* Hairline borders — the warm ladder leans on these for separation rather
+     than shadows. `border-subtle` sits a half-step softer for in-pane rules. */
+  --color-border: oklch(0.892 0.005 100);
+  --color-input: oklch(0.892 0.005 100);
   --color-ring: oklch(0.536 0.082 175);
 
-  /* Sidebar — now a warm paper tint (was white). */
-  --color-sidebar: oklch(0.919 0.014 93);
-  --color-sidebar-foreground: oklch(0.217 0.006 107);
+  /* Sidebar = the chrome step (left rail + right dock). Sidebar-accent =
+     the chrome-hover tone, deeper than sidebar so hover reads as the row
+     pressing into the rail rather than lifting off it. */
+  --color-sidebar: oklch(0.951 0.004 100);
+  --color-sidebar-foreground: oklch(0.22 0.006 107);
   --color-sidebar-primary: oklch(0.536 0.082 175);
   --color-sidebar-primary-foreground: oklch(0.985 0.005 95.1);
-  --color-sidebar-accent: oklch(0.895 0.016 92);
-  --color-sidebar-accent-foreground: oklch(0.217 0.006 107);
-  --color-sidebar-border: oklch(0.887 0.014 97.5);
+  --color-sidebar-accent: oklch(0.929 0.005 100);
+  --color-sidebar-accent-foreground: oklch(0.22 0.006 107);
+  --color-sidebar-border: oklch(0.892 0.005 100);
   --color-sidebar-ring: oklch(0.536 0.082 175);
 
-  --color-surface-warm: oklch(0.975 0.006 92);
-  --color-surface-subtle: oklch(0.93 0.012 93);
-  --color-border-subtle: oklch(0.905 0.013 95);
+  /* surface-warm = the field-fill tone (composer + sidebar search): a bright
+     surface that lifts as a card on the warm-grey ground (Quiet Pro reads
+     fields as raised cards, not recessed wells). surface-subtle = the
+     "surface-2" step, used for secondary panels / hovers one notch below the
+     canvas. */
+  --color-surface-warm: oklch(0.986 0.002 100);
+  --color-surface-subtle: oklch(0.929 0.005 100);
+  --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
 
   --color-status-streaming: oklch(0.536 0.082 175);
@@ -84,9 +109,9 @@
   --color-status-streaming-ring-strong: oklch(0.536 0.082 175 / 0.16);
   --color-status-done-bg: oklch(0.92 0.035 175);
   --color-status-done-foreground: oklch(0.38 0.06 176);
-  --color-status-live-bg: oklch(0.93 0.012 93);
-  --color-status-live-foreground: oklch(0.467 0.013 95.3);
-  --color-status-live-dot: oklch(0.467 0.013 95.3);
+  --color-status-live-bg: oklch(0.929 0.005 100);
+  --color-status-live-foreground: oklch(0.467 0.008 100);
+  --color-status-live-dot: oklch(0.467 0.008 100);
   --color-avatar-from: oklch(0.62 0.06 170);
   --color-avatar-to: oklch(0.46 0.07 176);
   --color-mark-from: oklch(0.536 0.082 175);
@@ -96,12 +121,16 @@
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
-  --color-chip-muted-bg: oklch(0.935 0.012 93);
+  --color-chip-muted-bg: oklch(0.929 0.005 100);
   --color-chip-result-bg: oklch(0.9 0.045 175);
   --color-countdown-track: oklch(0.217 0.006 107 / 0.08);
 
   --shadow-card: 0 1px 2px rgba(26, 26, 23, 0.04), 0 8px 24px rgba(26, 26, 23, 0.06);
   --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);
+  /* Pinned composer / inline inputs — a whisper of lift, not a floating slab.
+     The pinned composer sits flush on the warm dock, so it leans on its border
+     and a 1px hairline shadow rather than the heavy card drop shadow. */
+  --shadow-input: 0 1px 2px rgba(26, 26, 23, 0.05);
   --shadow-button: 0 3px 10px rgba(46, 125, 107, 0.24);
   --shadow-mark: 0 4px 12px rgba(46, 125, 107, 0.22);
 

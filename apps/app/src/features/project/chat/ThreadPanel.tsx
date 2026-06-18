@@ -331,7 +331,7 @@ function PinnedSection({
         surface === "panel" && "bg-surface-subtle",
       )}
     >
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-cinnabar">
+      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-muted-foreground">
         <Trans>Pinned</Trans>
       </div>
       <ThreadRows {...sectionProps} />
