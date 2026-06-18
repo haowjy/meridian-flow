@@ -218,6 +218,11 @@
 
 ## Hocuspocus collab hardening (2026-06-18, branch h/hocuspocus)
 
+- Versioned client IndexedDB persistence keys by `COLLAB_SCHEMA_VERSION` so schema
+  bumps invalidate stale local Yjs caches and force server resync; best-effort GC
+  deletes older per-document IndexedDB entries.
+- Added a soft live-document session cap warning in `DocumentSessionRegistry`
+  (no hard eviction).
 - Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`, persisted
   `schema_version` on Yjs heads, and rebuild-from-markdown recovery when a stored
   head is on an older version.
