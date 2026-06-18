@@ -251,19 +251,17 @@ export class DocumentSession {
     // No transport at all → local-only session; persistence load IS being synced.
     if (!this.transportProvider) return "synced";
 
+    const state = this.transportState;
+
+    // Terminal transport states pre-empt the initial-sync gate: first sync will
+    // never complete after permanent denial or a session-level terminal close.
+    if (state?.kind === "unauthorized") return "access-lost";
+    if (state?.kind === "terminal") return "offline";
+
     // Empty local cache after a schema bump must resync from the server first.
     if (!this.transportInitialSyncComplete) return "syncing";
 
-    const state = this.transportState;
     const serverSynced = this.transportProvider.synced !== false;
-
-    // Permanent document/session denial: edits may remain local, but there is
-    // no reconnect path that can honestly claim eventual upload.
-    if (state?.kind === "unauthorized") return "access-lost";
-
-    // Other terminal closes are session-level failures; keep the older offline
-    // wording unless the transport can prove document access was denied.
-    if (state?.kind === "terminal") return "offline";
 
     // Live disconnect: edits buffer locally until reconnect.
     if (state?.kind === "disconnected") return "offline";
