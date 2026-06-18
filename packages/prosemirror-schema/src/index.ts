@@ -38,6 +38,7 @@ const basicNodeOverrides = {
   image: {
     inline: true,
     group: "inline",
+    marks: "",
     attrs: {
       src: { default: "" },
       alt: { default: null },
@@ -45,17 +46,12 @@ const basicNodeOverrides = {
     },
     draggable: true,
   },
+
+  // Scene breaks / thematic breaks — round-trip as markdown `---`
+  horizontal_rule: specOnly(basicNodes.horizontal_rule),
 } satisfies Record<string, NodeSpec>;
 
-// TODO: horizontal_rule support — not yet included from prosemirror-schema-basic
-
 // ─── Nodes NOT in basic (defined from scratch) ──────────────────────
-
-const tableCellAttrs = {
-  colspan: { default: 1 },
-  rowspan: { default: 1 },
-  colwidth: { default: null },
-} satisfies NodeSpec["attrs"];
 
 const customNodes = {
   bullet_list: {
@@ -86,13 +82,11 @@ const customNodes = {
   },
 
   table_cell: {
-    attrs: tableCellAttrs,
     content: "inline*",
     isolating: true,
   },
 
   table_header: {
-    attrs: tableCellAttrs,
     content: "inline*",
     isolating: true,
   },
@@ -156,7 +150,7 @@ const customMarks = {
  * the old version. Lives here because this package owns the schema shape the
  * version tracks — client and server must import the same value.
  */
-export const COLLAB_SCHEMA_VERSION = 1;
+export const COLLAB_SCHEMA_VERSION = 2;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 

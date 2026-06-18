@@ -12,6 +12,7 @@ import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
+import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
@@ -48,6 +49,10 @@ export const MeridianHardBreak = HardBreak.extend({
   name: "hard_break",
 });
 
+export const MeridianHorizontalRule = HorizontalRule.extend({
+  name: "horizontal_rule",
+});
+
 export const MeridianListItem = ListItem.extend({
   name: "list_item",
 });
@@ -63,12 +68,6 @@ export const MeridianTableRow = TableRow.extend({
 
 // ─── Customized extensions ──────────────────────────────────────────
 // Extensions that add behavior beyond what TipTap defaults provide.
-
-const tableCellAttrs = {
-  colspan: { default: 1 },
-  rowspan: { default: 1 },
-  colwidth: { default: null },
-};
 
 export const MeridianLink = Link.extend({
   inclusive: false,
@@ -111,7 +110,7 @@ export const MeridianTable = Table.extend({
   content: "table_row+",
   group: "block",
   isolating: true,
-});
+}).configure({ resizable: false });
 
 export const MeridianTableCell = TableCell.extend({
   name: "table_cell",
@@ -119,7 +118,7 @@ export const MeridianTableCell = TableCell.extend({
   isolating: true,
 
   addAttributes() {
-    return tableCellAttrs;
+    return {};
   },
 });
 
@@ -129,11 +128,13 @@ export const MeridianTableHeader = TableHeader.extend({
   isolating: true,
 
   addAttributes() {
-    return tableCellAttrs;
+    return {};
   },
 });
 
 export const MeridianImage = Image.extend({
+  marks: "",
+
   addAttributes() {
     return {
       src: { default: "" },
