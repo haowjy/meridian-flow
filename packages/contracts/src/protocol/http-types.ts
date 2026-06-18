@@ -19,8 +19,7 @@ import type {
   TurnUsage,
 } from "../threads/index.js";
 import type { Work } from "../works/index.js";
-import type { Filetype } from "./filetype.js";
-import type { YjsTrackedSchemaType } from "./yjs-multiplex.js";
+import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
