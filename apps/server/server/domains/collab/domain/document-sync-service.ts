@@ -1,11 +1,9 @@
-import type * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { DocumentStore, HeadRow } from "../ports/document-store.js";
 import type {
   CheckpointInfo,
   DocumentSyncPort,
-  DocumentSyncTransport,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
@@ -32,7 +30,7 @@ export interface DocumentSyncServiceOptions {
 
 const DEFAULT_AUTO_CHECKPOINT_EVERY = 100;
 
-export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransport {
+export class DocumentSyncService implements DocumentSyncPort {
   private readonly store: DocumentStore;
   private readonly autoCheckpointEvery: number;
   private readonly cache = new Map<string, MirrorEntry>();
@@ -205,16 +203,6 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
     );
   }
 
-  async getDoc(documentId: string): Promise<Result<Y.Doc, SyncError>> {
-    return this.run(documentId, async () => {
-      const entry = await this.load(documentId);
-      if (!entry) {
-        return Err<SyncError>({ code: "not_found", documentId });
-      }
-      return Ok(entry.doc);
-    });
-  }
-
   async applyUpdate(
     documentId: string,
     update: Uint8Array,
@@ -233,16 +221,6 @@ export class DocumentSyncService implements DocumentSyncPort, DocumentSyncTransp
       await this.persistUpdate(documentId, staged, effectiveUpdate, origin);
       applyRemoteUpdate(entry, effectiveUpdate, origin);
       return Ok(undefined);
-    });
-  }
-
-  async encodeState(documentId: string): Promise<Result<Uint8Array, SyncError>> {
-    return this.run(documentId, async () => {
-      const entry = await this.load(documentId);
-      if (!entry) {
-        return Err<SyncError>({ code: "not_found", documentId });
-      }
-      return Ok(encodeState(entry));
     });
   }
 

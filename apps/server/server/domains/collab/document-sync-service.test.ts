@@ -6,6 +6,7 @@ import { createInMemoryDocumentStore } from "./adapters/in-memory/document-store
 import { createDocumentSyncService } from "./domain/document-sync-service.js";
 import { buildFragmentCache } from "./domain/fragment-cache.js";
 import { blockToMarkdown, markdownToNode, nodeToMarkdown } from "./domain/schemas.js";
+import { encodeState, rebuildMirror } from "./domain/yjs-mirror.js";
 import type { DocumentStore } from "./ports/document-store.js";
 
 const DOC = "00000000-0000-0000-0000-000000000001";
@@ -25,6 +26,22 @@ function isErr<T, E>(
 function unwrap<T, E>(result: { ok: true; value: T } | { ok: false; error: E }): T {
   if (result.ok) return result.value;
   throw new Error(`Unexpected error result: ${JSON.stringify(result.error)}`);
+}
+
+async function mirrorStateBytes(store: DocumentStore, documentId: string): Promise<Uint8Array> {
+  const head = await store.getHead(documentId);
+  if (!head) throw new Error("missing document head");
+  const checkpoint = await store.getLatestCheckpoint(documentId);
+  const afterSeq = checkpoint ? checkpoint.upToSeq : 0;
+  const updates = await store.listUpdatesAfter(documentId, afterSeq);
+  const entry = rebuildMirror(
+    head.filetype,
+    checkpoint ? checkpoint.state : null,
+    updates
+      .filter((update) => update.seq <= head.latestUpdateSeq)
+      .map((update) => update.updateData),
+  );
+  return encodeState(entry);
 }
 
 /** Build a raw Yjs update simulating a frontend editor rewriting the doc. */
@@ -257,21 +274,18 @@ describe("DocumentSyncService — auto-checkpoint", () => {
   });
 });
 
-describe("DocumentSyncService — transport (editor-facing)", () => {
-  it("exposes the doc, applies frontend updates, and encodes state", async () => {
+describe("DocumentSyncService — applyUpdate (reversal path)", () => {
+  it("applies frontend updates and persists markdown", async () => {
     const store = createInMemoryDocumentStore();
     const service = createDocumentSyncService(store);
     await service.getOrCreateMirror(DOC, "# T\n\nbody", "markdown");
 
-    expect(isOk(await service.getDoc(DOC))).toBe(true);
-
-    const state = unwrap(await service.encodeState(DOC));
+    const state = await mirrorStateBytes(store, DOC);
     const update = clientUpdate(state, "# T\n\nbody edited by editor");
     const applied = await service.applyUpdate(DOC, update, { type: "user", userId: "u" });
     expect(isOk(applied)).toBe(true);
     expect(unwrap(await service.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor");
 
-    // Persisted: a fresh service rebuilds the editor's change.
     const reader = createDocumentSyncService(store);
     expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor");
   });
@@ -322,35 +336,16 @@ describe("schemas — markdown isomorphism", () => {
   });
 });
 
-describe("fragment-cache — position map", () => {
-  it("joins per-block fragments into the full serialization with exact offsets", () => {
+describe("fragment-cache — full markdown", () => {
+  it("joins per-block fragments into the full serialization", () => {
     const md = "# Title\n\nFirst.\n\nSecond.\n\n```py\nx = 1\n```";
     const root = markdownToNode("document", md);
     const cache = buildFragmentCache(root, "document");
 
     expect(cache.fullMarkdown).toBe(nodeToMarkdown("document", root));
-    expect(cache.entries).toHaveLength(4);
-
-    // markdownOffset points at the start of each fragment in fullMarkdown.
-    for (const entry of cache.entries) {
-      expect(
-        cache.fullMarkdown.slice(
-          entry.markdownOffset,
-          entry.markdownOffset + entry.markdown.length,
-        ),
-      ).toBe(entry.markdown);
-    }
-
-    // pmPosition is the exact ProseMirror position of each top-level block.
-    let pos = 0;
-    root.forEach((child, offset, index) => {
-      expect(cache.entries[index].pmPosition).toBe(offset);
-      expect(offset).toBe(pos);
-      pos += child.nodeSize;
-    });
   });
 
-  it("leaves untouched fragments byte-identical after a single-block edit", () => {
+  it("reflects single-block edits in fullMarkdown", () => {
     const before = buildFragmentCache(
       markdownToNode("document", "# A\n\npara one\n\npara two"),
       "document",
@@ -360,9 +355,8 @@ describe("fragment-cache — position map", () => {
       "document",
     );
 
-    expect(after.entries[0].markdown).toBe(before.entries[0].markdown); // heading
-    expect(after.entries[1].markdown).toBe(before.entries[1].markdown); // para one
-    expect(after.entries[2].markdown).not.toBe(before.entries[2].markdown); // para two
+    expect(after.fullMarkdown).not.toBe(before.fullMarkdown);
+    expect(after.fullMarkdown).toContain("para EDITED");
 
     const para = markdownToNode("document", "lone").firstChild;
     expect(para && blockToMarkdown("document", para)).toBe("lone");

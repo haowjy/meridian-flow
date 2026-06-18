@@ -1,4 +1,3 @@
-import type * as Y from "yjs";
 import type { Result } from "../../../shared/result.js";
 
 export type SchemaType = "document" | "code";
@@ -49,14 +48,4 @@ export interface DocumentSyncPort {
   checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
   restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
-}
-
-export interface DocumentSyncTransport {
-  getDoc(documentId: string): Promise<Result<Y.Doc, SyncError>>;
-  applyUpdate(
-    documentId: string,
-    update: Uint8Array,
-    origin: UpdateOrigin,
-  ): Promise<Result<void, SyncError>>;
-  encodeState(documentId: string): Promise<Result<Uint8Array, SyncError>>;
 }
