@@ -331,7 +331,7 @@ function PinnedSection({
         surface === "panel" && "bg-surface-subtle",
       )}
     >
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-primary">
+      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-cinnabar">
         <Trans>Pinned</Trans>
       </div>
       <ThreadRows {...sectionProps} />
@@ -532,8 +532,8 @@ function ThreadRow({
             onTogglePin(thread.id);
           }}
           className={cn(
-            "thread-row-pin focus-ring grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:bg-sidebar-accent hover:text-primary",
-            pinned && "text-primary opacity-100",
+            "thread-row-pin focus-ring grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:bg-sidebar-accent hover:text-cinnabar",
+            pinned && "text-cinnabar opacity-100",
           )}
         >
           <Star className={cn("size-3.5", pinned && "fill-current")} aria-hidden />
