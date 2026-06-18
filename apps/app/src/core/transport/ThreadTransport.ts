@@ -19,7 +19,8 @@ export type ConnectionState =
   | { kind: "connected" }
   | { kind: "reconnecting"; attempt: number; nextRetryAt: number }
   | { kind: "degraded"; attempt: number; nextRetryAt: number }
-  | { kind: "terminal"; reason: string; code?: number };
+  | { kind: "terminal"; reason: string; code?: number }
+  | { kind: "unauthorized"; reason: string; code?: number };
 
 export type CheckpointRespondInput = Omit<
   Extract<WsClientMessage, { type: "checkpoint.respond" }>,

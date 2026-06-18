@@ -15,7 +15,7 @@
  * one registry. The transport (the multiplexed Yjs WS) is already a singleton;
  * this lifts the per-document *session* to the same plane.
  */
-import { getDocumentSessionTransport } from "@/core/transport";
+import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
 import { DocumentSession } from "./document-session";
 
@@ -36,7 +36,7 @@ class DocumentSessionRegistry {
     const session = new DocumentSession({
       documentId,
       transportFactory: ({ documentId: id, document, awareness }) =>
-        getDocumentSessionTransport().subscribe({ documentId: id, document, awareness }),
+        createHocuspocusDocumentTransport({ documentId: id, document, awareness }),
     });
     this.sessions.set(documentId, session);
     return session;

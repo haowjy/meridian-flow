@@ -23,7 +23,7 @@ function bannerKind(state: ConnectionState, showReconnected: boolean): BannerKin
   if (showReconnected) return "reconnected";
   if (state.kind === "reconnecting") return "reconnecting";
   if (state.kind === "degraded") return "degraded";
-  if (state.kind === "terminal") return "terminal";
+  if (state.kind === "terminal" || state.kind === "unauthorized") return "terminal";
   return null;
 }
 
@@ -36,7 +36,12 @@ export function ConnectionBanner() {
   useEffect(() => {
     return transport.onConnectionState((next) => {
       setState(next);
-      if (next.kind === "reconnecting" || next.kind === "degraded" || next.kind === "terminal") {
+      if (
+        next.kind === "reconnecting" ||
+        next.kind === "degraded" ||
+        next.kind === "terminal" ||
+        next.kind === "unauthorized"
+      ) {
         sawDisruptionRef.current = true;
         setShowReconnected(false);
         return;

@@ -3,7 +3,7 @@
  *
  * Wraps a Yjs `Y.Doc`, IndexedDB local persistence, awareness, and a pluggable
  * transport provider into a subscribable session with a status snapshot
- * (syncing / synced / offline / destroyed). The single place document
+ * (syncing / synced / offline / access-lost / destroyed). The single place document
  * collaboration state is created and torn down; `EditorView` binds to it.
  *
  * Status semantics — derived from BOTH local persistence and the live
@@ -16,9 +16,10 @@
  *                   currently connected & synced (edits are safe on the
  *                   server). Only this state may claim "synced".
  *   - `offline`   — local persistence is loaded but the socket is
- *                   disconnected/terminal (edits are buffered in IndexedDB
- *                   and have NOT reached the server). The only state that
- *                   should communicate "saved locally, not yet on server".
+ *                   disconnected (edits are buffered in IndexedDB and may
+ *                   upload after reconnect).
+ *   - `access-lost` — the server permanently denied this document/session;
+ *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
 import { IndexeddbPersistence } from "y-indexeddb";
@@ -29,7 +30,7 @@ import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
-export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "destroyed";
+export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-lost" | "destroyed";
 
 export type DocumentSessionSnapshot = {
   documentId: string;
@@ -216,9 +217,12 @@ export class DocumentSession {
     const state = this.transportState;
     const serverSynced = this.transportProvider.synced !== false;
 
-    // Terminal close (auth fail, server refusal): the socket will never come
-    // back without intervention; treat as offline so the indicator stops
-    // claiming server safety.
+    // Permanent document/session denial: edits may remain local, but there is
+    // no reconnect path that can honestly claim eventual upload.
+    if (state?.kind === "unauthorized") return "access-lost";
+
+    // Other terminal closes are session-level failures; keep the older offline
+    // wording unless the transport can prove document access was denied.
     if (state?.kind === "terminal") return "offline";
 
     // Live disconnect: edits buffer locally until reconnect.
