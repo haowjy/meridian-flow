@@ -5,8 +5,9 @@
  * desktop geometry into the registry/grid/shell. Key decision: this file
  * co-locates the static grid template with the slot list while runtime width
  * CSS variable values remain owned by the shell. Slot className fully owns
- * the visual chrome — rounded inside corners + inward shadow on rails, flat
- * tint on inner columns — so SlotGrid never branches on slot kind.
+ * the visual chrome — rails are flush warm-paper regions divided from the
+ * center by a hairline border (integrated, not floating) — so SlotGrid never
+ * branches on slot kind.
  *
  * History: the optional `context-header` row and the `files` column are gone
  * — the Context destination absorbs its sidebar/dock expand toggles into the
@@ -20,9 +21,9 @@ import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 export type { DesktopProjectSlotId } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
-  { id: "rail-l", className: "relative z-10 rounded-r-xl bg-sidebar shadow-rail-left" },
+  { id: "rail-l", className: "relative bg-sidebar border-r border-border" },
   { id: "center", className: "bg-background" },
-  { id: "dock", className: "relative z-10 rounded-l-xl bg-sidebar shadow-rail-right" },
+  { id: "dock", className: "relative bg-sidebar border-l border-border" },
 ];
 
 /**
