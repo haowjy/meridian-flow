@@ -9,6 +9,9 @@
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
+  /* Sit above the body paper-grain overlay so the manuscript reads pristine. */
+  position: relative;
+  z-index: 2;
 }
 
 .meridian-editor .ProseMirror {
