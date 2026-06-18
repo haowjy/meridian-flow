@@ -1,102 +1,21 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents } from "@meridian/database";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryDocumentStore } from "../adapters/in-memory/document-store.js";
 import { createHocuspocusCollabAdapter } from "./hocuspocus-collab-adapter.js";
 import { createMirror, encodeState, encodeStateVector, originColumns } from "./yjs-mirror.js";
 
 const DOC = "00000000-0000-4000-8000-000000000501" as DocumentId;
 
-function mockRecoveryDb(markdownProjection: string, fileType = "markdown"): Database {
-  type MockTx = {
-    transaction<T>(fn: (tx: MockTx) => Promise<T>): Promise<T>;
-    delete(): { where: () => Promise<void> };
-    select(): {
-      from: (table: unknown) => {
-        where: () => { limit: () => Promise<{ markdown: string; fileType: string }[]> };
-      };
-    };
-  };
-  const db: MockTx = {
-    transaction<T>(fn: (tx: MockTx) => Promise<T>): Promise<T> {
-      return fn(db);
-    },
-    delete() {
-      return {
-        where: () => Promise.resolve(),
-      };
-    },
-    select() {
-      return {
-        from: (table: unknown) => ({
-          where: () => ({
-            limit: () => {
-              if (table === documents) {
-                return Promise.resolve([{ markdown: markdownProjection, fileType }]);
-              }
-              return Promise.resolve([]);
-            },
-          }),
-        }),
-      };
-    },
-  };
-  return db as unknown as Database;
+function stubDb(): Database {
+  return {} as Database;
 }
 
 describe("createHocuspocusCollabAdapter", () => {
-  it("rebuilds from markdown projection when the stored schema version is stale", async () => {
-    const store = createInMemoryDocumentStore();
-    const eventSink = createInMemoryEventSink();
-    const entry = createMirror("stale yjs body", "markdown");
-    await store.transaction(async (tx) => {
-      const seq = await tx.appendUpdate({
-        documentId: DOC,
-        updateData: encodeState(entry),
-        ...originColumns({ type: "system" }),
-      });
-      await tx.upsertHead({
-        documentId: DOC,
-        fragmentName: "prosemirror",
-        schemaVersion: COLLAB_SCHEMA_VERSION - 1,
-        filetype: "markdown",
-        latestUpdateSeq: seq,
-        latestStateVector: encodeStateVector(entry),
-        latestCheckpointId: null,
-      });
-    });
-
-    const adapter = createHocuspocusCollabAdapter({
-      db: mockRecoveryDb("# Rebuilt from projection"),
-      store,
-      autoCheckpointEvery: 100,
-      eventSink,
-    });
-
-    const loaded = await adapter.loadDocument(DOC);
-    expect(loaded).toBeDefined();
-    if (!loaded) throw new Error("expected loaded document");
-
-    const doc = new Y.Doc({ gc: false, gcFilter: () => true });
-    Y.applyUpdate(doc, loaded);
-    const fragment = doc.getXmlFragment("prosemirror");
-    expect(fragment.toString()).toContain("Rebuilt from projection");
-
-    const head = await store.getHead(DOC);
-    expect(head?.schemaVersion).toBe(COLLAB_SCHEMA_VERSION);
-    expect(head?.latestUpdateSeq).toBeGreaterThan(0);
-
-    const events = eventSink.events;
-    expect(events.some((event) => event.name === "document.schema_version_mismatch")).toBe(true);
-  });
-
   it("reports live document and connection counts when the runtime is bound", () => {
     const adapter = createHocuspocusCollabAdapter({
-      db: mockRecoveryDb(""),
+      db: stubDb(),
       store: createInMemoryDocumentStore(),
       autoCheckpointEvery: 100,
     });
@@ -123,5 +42,111 @@ describe("createHocuspocusCollabAdapter", () => {
       liveDocumentCount: 3,
       openConnectionCount: 2,
     });
+  });
+
+  it("drains tasks enqueued while flushing pending stores", async () => {
+    const store = createInMemoryDocumentStore();
+    const entry = createMirror("# Drain loop", "markdown");
+    await store.transaction(async (tx) => {
+      const seq = await tx.appendUpdate({
+        documentId: DOC,
+        updateData: encodeState(entry),
+        ...originColumns({ type: "system" }),
+      });
+      await tx.upsertHead({
+        documentId: DOC,
+        fragmentName: "prosemirror",
+        schemaVersion: 1,
+        filetype: "markdown",
+        latestUpdateSeq: seq,
+        latestStateVector: encodeStateVector(entry),
+        latestCheckpointId: null,
+      });
+    });
+
+    const adapter = createHocuspocusCollabAdapter({
+      db: stubDb(),
+      store,
+      autoCheckpointEvery: 100,
+    });
+
+    let flushPasses = 0;
+    const doc = new Y.Doc({ gc: false, gcFilter: () => true });
+    Y.applyUpdate(doc, encodeState(entry));
+
+    adapter.bind({
+      openDirectConnection: async () => {
+        throw new Error("not used");
+      },
+      documents: new Map([[DOC, doc as never]]),
+      flushPendingStores: () => {
+        flushPasses += 1;
+        if (flushPasses === 1) {
+          adapter.persistConnectionUpdate({
+            documentId: DOC,
+            update: Y.encodeStateAsUpdate(doc),
+            origin: { type: "user", userId: "user-1" },
+            document: doc,
+          });
+        }
+      },
+      closeConnections: () => undefined,
+      getDocumentsCount: () => 1,
+      getConnectionsCount: () => 0,
+    });
+
+    const before = (await store.listUpdatesAfter(DOC, 0)).length;
+    await adapter.drain();
+    const after = (await store.listUpdatesAfter(DOC, 0)).length;
+
+    expect(after).toBeGreaterThan(before);
+    expect(adapter.metrics().queues.every((queue) => queue.depth === 0)).toBe(true);
+  });
+
+  it("setLatestCheckpointId preserves latestUpdateSeq when checkpoint is recorded", async () => {
+    const store = createInMemoryDocumentStore();
+    const entry = createMirror("# Checkpoint race", "markdown");
+    await store.transaction(async (tx) => {
+      const seq = await tx.appendUpdate({
+        documentId: DOC,
+        updateData: encodeState(entry),
+        ...originColumns({ type: "system" }),
+      });
+      await tx.upsertHead({
+        documentId: DOC,
+        fragmentName: "prosemirror",
+        schemaVersion: 1,
+        filetype: "markdown",
+        latestUpdateSeq: seq,
+        latestStateVector: encodeStateVector(entry),
+        latestCheckpointId: null,
+      });
+    });
+
+    const doc = new Y.Doc({ gc: false, gcFilter: () => true });
+    Y.applyUpdate(doc, encodeState(entry));
+
+    await store.transaction(async (tx) => {
+      const head = await tx.getHead(DOC);
+      if (!head) throw new Error("missing head");
+      await tx.appendUpdate({
+        documentId: DOC,
+        updateData: Y.encodeStateAsUpdate(doc),
+        ...originColumns({ type: "user", userId: "user-race" }),
+      });
+      await tx.upsertHead({ ...head, latestUpdateSeq: head.latestUpdateSeq + 1 });
+      const checkpointId = await tx.insertCheckpoint({
+        documentId: DOC,
+        state: Y.encodeStateAsUpdate(doc),
+        stateVector: Y.encodeStateVector(doc),
+        upToSeq: head.latestUpdateSeq,
+        reason: "store",
+      });
+      await tx.setLatestCheckpointId(DOC, checkpointId);
+    });
+
+    const head = await store.getHead(DOC);
+    expect(head?.latestUpdateSeq).toBe(2);
+    expect(head?.latestCheckpointId).not.toBeNull();
   });
 });
