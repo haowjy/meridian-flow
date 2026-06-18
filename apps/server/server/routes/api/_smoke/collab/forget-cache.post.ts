@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const app = await getApp();
-  app.documentSync.forgetMirror(documentId as DocumentId);
+  app.documentSync.forgetMirror?.(documentId as DocumentId);
   await forgetYjsDocumentCache(documentId);
 
   return { ok: true, documentId };

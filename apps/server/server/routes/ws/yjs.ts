@@ -8,6 +8,7 @@ import {
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { defineWebSocketHandler } from "nitro";
 import type { UpdateOrigin } from "../../domains/collab/index.js";
+import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
 import {
@@ -34,6 +35,7 @@ type YjsRoutePeer = {
 type YjsRouteServices = Pick<AppServices, "documentAccess" | "documentSync">;
 
 let hocuspocusPromise: Promise<Hocuspocus> | null = null;
+let acceptingConnections = true;
 
 function selectYjsRouteServices(app: AppServices): YjsRouteServices {
   return {
@@ -116,18 +118,27 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   return hocuspocus;
 }
 
-function getHocuspocus(): Promise<Hocuspocus> {
+export function getYjsHocuspocus(): Promise<Hocuspocus> {
   hocuspocusPromise ??= getApp().then((app) => createHocuspocus(selectYjsRouteServices(app)));
   return hocuspocusPromise;
 }
 
 export async function drainYjsCollabPersistence(): Promise<void> {
+  acceptingConnections = false;
+  const hocuspocus = await getYjsHocuspocus();
+  hocuspocus.closeConnections();
   const app = await getApp();
+  emitEvent(app.eventSink, {
+    level: "info",
+    source: "collab.hocuspocus",
+    name: "persistence_queue.drain",
+    payload: { queues: app.documentSync.getPersistenceQueueMetrics() },
+  });
   await app.documentSync.drainHocuspocusPersistence();
 }
 
 export async function forgetYjsDocumentCache(documentId: string): Promise<void> {
-  const hocuspocus = await getHocuspocus();
+  const hocuspocus = await getYjsHocuspocus();
   hocuspocus.closeConnections(documentId);
 }
 
@@ -156,7 +167,12 @@ export default defineWebSocketHandler(() => ({
       return;
     }
 
-    const hocuspocus = await getHocuspocus();
+    if (!acceptingConnections) {
+      wsPeer.close(1012, "server-shutdown");
+      return;
+    }
+
+    const hocuspocus = await getYjsHocuspocus();
     wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
       userId: context?.userId,
     });
