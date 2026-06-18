@@ -8,7 +8,7 @@ import {
 import * as Y from "yjs";
 import type { SchemaType, UpdateOrigin } from "../ports/document-sync.js";
 import { buildFragmentCache, type FragmentCache } from "./fragment-cache.js";
-import { getSchema, markdownToNode, nodeToMarkdown } from "./schemas.js";
+import { getSchema, mdxToNode, nodeToMdx } from "./schemas.js";
 
 export interface MirrorEntry {
   doc: Y.Doc;
@@ -52,7 +52,7 @@ function schemaTypeForFiletype(filetype: string): SchemaType {
 export function createMirror(initialContent: string, filetype: string): MirrorEntry {
   const schemaType = schemaTypeForFiletype(filetype);
   const doc = new Y.Doc();
-  const node = markdownToNode(schemaType, initialContent);
+  const node = mdxToNode(schemaType, initialContent);
   prosemirrorToYXmlFragment(node, fragmentOf(doc));
   return {
     doc,
@@ -99,7 +99,7 @@ export function setDocumentToMarkdown(
   targetMarkdown: string,
   origin: UpdateOrigin,
 ): Uint8Array | null {
-  const target = markdownToNode(entry.schemaType, targetMarkdown);
+  const target = mdxToNode(entry.schemaType, targetMarkdown);
   const before = Y.encodeStateVector(entry.doc);
   entry.doc.transact(() => {
     updateYFragment(entry.doc, fragmentOf(entry.doc), target, {
@@ -127,7 +127,7 @@ export function applyRemoteUpdate(
 export function markdownFromState(schemaType: SchemaType, state: Uint8Array): string {
   const doc = new Y.Doc();
   applyBytes(doc, state);
-  return nodeToMarkdown(schemaType, rootOf(doc, schemaType));
+  return nodeToMdx(schemaType, rootOf(doc, schemaType));
 }
 
 export function encodeState(entry: MirrorEntry): Uint8Array {

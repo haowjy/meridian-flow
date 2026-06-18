@@ -24,7 +24,7 @@ import { createWiredCoreToolRegistrations } from "../../server/lib/wired-core-to
 
 const FILE_URI = "kb://notes.md";
 const FILE_CONTENT = "Smoke test seed content";
-const EXPECTED_READ_OUTPUT = `1|${FILE_CONTENT}`;
+const EXPECTED_READ_OUTPUT = `1|${FILE_CONTENT}\n2|`;
 
 function createScriptedGateway(
   results: GenerateResult[],

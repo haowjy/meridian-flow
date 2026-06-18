@@ -72,7 +72,7 @@ describe("ContextFS", () => {
 
     const read = await adapter.read("protocols/staining/dapi.md");
     expect(read.ok).toBe(true);
-    if (read.ok && read.value) expect(read.value.content).toBe("# DAPI");
+    if (read.ok && read.value) expect(read.value.content).toBe("# DAPI\n");
   });
 
   it("allows user-visible dotfiles because uploads are not stored in the public tree", async () => {
@@ -99,7 +99,7 @@ describe("ContextFS", () => {
     await adapter.write("notes.md", "v1");
     await adapter.write("notes.md", "v2");
     const read = await adapter.read("notes.md");
-    if (read.ok && read.value) expect(read.value.content).toBe("v2");
+    if (read.ok && read.value) expect(read.value.content).toBe("v2\n");
 
     const list = await adapter.list("");
     if (list.ok) {
@@ -141,7 +141,7 @@ describe("ContextFS", () => {
     const list = await adapter.list("");
     if (list.ok) {
       const file = list.value.find((e) => e.path === "a.md");
-      expect(file?.sizeBytes).toBe(5);
+      expect(file?.sizeBytes).toBe(6);
       expect(file).toMatchObject({
         kind: "file",
         editable: true,
@@ -296,7 +296,7 @@ describe("ContextFS", () => {
     expect(write.ok).toBe(true);
 
     const doc = await contextStore.findDocument(null, "notes", "md");
-    expect(doc?.markdown).toBe("agent body");
+    expect(doc?.markdown).toBe("agent body\n");
 
     const updates = await documentStore.listUpdatesAfter(doc?.id ?? "", 0);
     expect(updates.map((u) => u.originType)).toEqual(["system", "agent"]);
