@@ -34,13 +34,19 @@ a defect — it breaks the markdown-native guarantee.
 | Text, headings, styling, figures, math, tables | ProseMirror nodes/marks → markdown |
 | *Who* edited each span, and *when* | Yjs update-log origin tags (provenance metadata; not in the markdown body) |
 
-## Transport — Hocuspocus v4
+## Transport — Hocuspocus-owned live documents
 
-Hocuspocus v4 owns the Y.Doc lifecycle and WebSocket transport
-(`domain/hocuspocus-collab-adapter.ts`). The adapter bridges Hocuspocus hooks
-to the domain's durable update log, checkpoint store, and markdown projection.
-Client connects via `HocuspocusProvider` with a shared
-`HocuspocusProviderWebsocket` singleton.
+Live collaborative editing runs on **Hocuspocus** at `/ws/yjs`
+(`routes/ws/yjs.ts`). Hocuspocus owns the in-memory `Y.Doc` for connected
+clients; `hocuspocus-collab-adapter.ts` loads state from the durable update log,
+persists connection-originated updates with attribution, and debounces snapshot
+writes. The client uses `@hocuspocus/provider` via
+`hocuspocus-document-transport.ts`.
+
+`DocumentSyncService` retains a separate on-demand **mirror cache** for
+server-side markdown operations (`getOrCreateMirror`, `editFromMarkdown`,
+`applyUpdate`, checkpoints) — not a competing WebSocket owner. Facade
+`forgetMirror` unloads live Hocuspocus documents via `closeConnections`.
 
 ## Deferred (post-v1) — explicit non-goals
 
