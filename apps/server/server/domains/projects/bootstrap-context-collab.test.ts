@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { TurnId, UserId } from "@meridian/contracts/runtime";
+import { Hocuspocus } from "@hocuspocus/server";
+import type { DocumentId, TurnId, UserId } from "@meridian/contracts/runtime";
 import {
   createDb,
   type Database,
@@ -19,6 +20,7 @@ import {
 } from "@meridian/database/__test-support__/db-fixtures";
 import { desc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDocumentSyncService } from "../collab/index.js";
 import { createProductionUnifiedContextPortFactory } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
@@ -107,7 +109,20 @@ describe.skipIf(!runDbTests || !databaseUrl)("Phase 4 bootstrap/context/collab",
       .set({ activeLeafTurnId: actorTurnId })
       .where(eq(threads.id, bootstrap.threadId));
 
-    const documentSync = createDocumentSyncService({ db });
+    const documentSync = createDocumentSyncService({
+      db,
+      documentAccess: createDrizzleDocumentAccess(db),
+    });
+    const hocuspocus = new Hocuspocus({
+      yDocOptions: { gc: false, gcFilter: () => true },
+      debounce: 0,
+      maxDebounce: 0,
+      onLoadDocument: ({ documentName }) =>
+        documentSync.loadHocuspocusDocument(documentName as DocumentId),
+      onStoreDocument: ({ documentName, document }) =>
+        documentSync.storeHocuspocusDocument(documentName as DocumentId, document),
+    });
+    documentSync.bindHocuspocus(hocuspocus);
     const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
     const markdown = `# Chapter 1\n\nPhase 4 context write ${randomUUID()}\n`;
 

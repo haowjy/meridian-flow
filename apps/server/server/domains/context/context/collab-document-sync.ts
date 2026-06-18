@@ -10,7 +10,7 @@ import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
 
 export type ContextCollabDocumentSync = DocumentSyncPort &
-  Partial<Pick<DocumentSyncFacade, "writeDocument" | "editDocument" | "initializeMirror">>;
+  Partial<Pick<DocumentSyncFacade, "writeDocument" | "editDocument">>;
 
 export type CollabMarkdownResult =
   | { ok: true; markdown: string; updateSeq?: number }
@@ -60,20 +60,6 @@ export async function ensureCollabMirror(
   markdown: string,
   filetype: string,
 ): Promise<{ ok: true } | { ok: false; error: AdapterFault }> {
-  if (documentSync.initializeMirror) {
-    try {
-      await documentSync.initializeMirror(documentId);
-      return { ok: true };
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "io_error",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  }
   const mirror = await documentSync.getOrCreateMirror(documentId, markdown, filetype);
   if (!mirror.ok) return { ok: false, error: syncFault(mirror.error) };
   return { ok: true };
