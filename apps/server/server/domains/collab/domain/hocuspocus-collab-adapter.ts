@@ -344,27 +344,33 @@ export function createHocuspocusCollabAdapter(deps: {
 
   async function storeDocument(documentId: DocumentId, document: Y.Doc): Promise<void> {
     return trackStore(
-      deps.store.transaction(async (tx) => {
-        const head = await tx.getHead(documentId);
-        if (!head) return;
-        const state = Y.encodeStateAsUpdate(document);
-        const checkpointId = await tx.insertCheckpoint({
-          documentId,
-          state,
-          stateVector: Y.encodeStateVector(document),
-          upToSeq: head.latestUpdateSeq,
-          reason: "store",
+      (async () => {
+        let filetype: string | null = null;
+        await deps.store.transaction(async (tx) => {
+          const head = await tx.getHead(documentId);
+          if (!head) return;
+          const state = Y.encodeStateAsUpdate(document);
+          const checkpointId = await tx.insertCheckpoint({
+            documentId,
+            state,
+            stateVector: Y.encodeStateVector(document),
+            upToSeq: head.latestUpdateSeq,
+            reason: "store",
+          });
+          const freshHead = await tx.getHead(documentId);
+          if (!freshHead) return;
+          filetype = freshHead.filetype;
+          await tx.upsertHead({ ...freshHead, latestCheckpointId: checkpointId });
         });
-        const freshHead = await tx.getHead(documentId);
-        if (!freshHead) return;
-        await tx.upsertHead({ ...freshHead, latestCheckpointId: checkpointId });
-        await updateMarkdownProjection(
-          deps.db,
-          documentId,
-          readDocAsMarkdown(document, freshHead.filetype),
-          new Date(),
-        );
-      }),
+        if (filetype) {
+          await updateMarkdownProjection(
+            deps.db,
+            documentId,
+            readDocAsMarkdown(document, filetype),
+            new Date(),
+          );
+        }
+      })(),
     );
   }
 
