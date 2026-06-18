@@ -212,7 +212,8 @@ export async function createProductionAppPorts(input: {
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
-  const documentSync = createDocumentSyncService({ db });
+  const documentAccess = createDrizzleDocumentAccess(db);
+  const documentSync = createDocumentSyncService({ db, documentAccess });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -287,7 +288,7 @@ export async function createProductionAppPorts(input: {
     figureAssets,
     results,
     promotionService,
-    documentAccess: createDrizzleDocumentAccess(db),
+    documentAccess,
     openRouterReconcile: environment.OPENROUTER_API_KEY
       ? {
           apiKey: environment.OPENROUTER_API_KEY,
@@ -465,10 +466,6 @@ export function createInMemoryAppServices(): AppServices {
     async editDocument() {
       throw new Error("in-memory document sync is not implemented");
     },
-    async requireOwnedDocument() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-
     bindHocuspocus() {},
     async loadHocuspocusDocument() {
       return undefined;
@@ -480,13 +477,7 @@ export function createInMemoryAppServices(): AppServices {
       return [];
     },
 
-    async initializeMirror() {
-      throw new Error("in-memory document sync is not implemented");
-    },
     async getLastUpdateAttribution() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async applyEditorUpdate() {
       throw new Error("in-memory document sync is not implemented");
     },
     forgetMirror() {
@@ -852,6 +843,7 @@ export function createInMemoryAppServices(): AppServices {
       async canAccessDocument() {
         return true;
       },
+      async requireOwnedDocument() {},
     },
     modelRequestDebug,
   };

@@ -2,6 +2,8 @@
  * Collab facade scope tests: project-scoped manuscript ownership and activity
  * timestamps after A0 re-homed manuscript sources to project scope.
  */
+
+import { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import {
   contextSources,
@@ -18,11 +20,26 @@ import {
 } from "@meridian/database/__test-support__/db-fixtures";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDrizzleProjectBootstrapRepository } from "../projects/index.js";
-import { createDocumentSyncService } from "./index.js";
+import { createDocumentSyncService, type DocumentSyncFacade } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+
+function createBoundFacade(db: Database): DocumentSyncFacade {
+  const facade = createDocumentSyncService({ db, documentAccess: createDrizzleDocumentAccess(db) });
+  const hocuspocus = new Hocuspocus({
+    yDocOptions: { gc: false, gcFilter: () => true },
+    debounce: 0,
+    maxDebounce: 0,
+    onLoadDocument: ({ documentName }) => facade.loadHocuspocusDocument(documentName as DocumentId),
+    onStoreDocument: ({ documentName, document }) =>
+      facade.storeHocuspocusDocument(documentName as DocumentId, document),
+  });
+  facade.bindHocuspocus(hocuspocus);
+  return facade;
+}
 
 describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope", () => {
   let db: Database;
@@ -69,12 +86,12 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
   });
 
   it("allows requireOwnedDocument for project-scoped manuscript docs", async () => {
-    const facade = createDocumentSyncService({ db });
-    await expect(facade.requireOwnedDocument(documentId, userId)).resolves.toBeUndefined();
+    const documentAccess = createDrizzleDocumentAccess(db);
+    await expect(documentAccess.requireOwnedDocument(documentId, userId)).resolves.toBeUndefined();
   });
 
   it("updates project lastActivityAt when a project-scoped manuscript doc is written", async () => {
-    const facade = createDocumentSyncService({ db });
+    const facade = createBoundFacade(db);
     const before = await db
       .select({ lastActivityAt: projects.lastActivityAt })
       .from(projects)
@@ -106,7 +123,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
   it("touches thread_documents.lastTouchedAt for human thread-scoped writes", async () => {
     const bootstrap =
       await createDrizzleProjectBootstrapRepository(db).ensureDefaultBootstrap(userId);
-    const facade = createDocumentSyncService({ db });
+    const facade = createBoundFacade(db);
     const threadId = bootstrap.threadId as ThreadId;
 
     await facade.writeDocument({
@@ -131,9 +148,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
   });
 
   it("applies parallel facade edits without clobbering", async () => {
-    const facade = createDocumentSyncService({ db });
-    await facade.initializeMirror(documentId);
-
+    const facade = createBoundFacade(db);
     await Promise.all([
       facade.editDocument({
         documentId,

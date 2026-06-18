@@ -15,7 +15,11 @@ describe("createInMemoryDocumentSyncFacade", () => {
       resolveDocumentProjection: () => ({ markdown: "# Chapter", filetype: "markdown" }),
     });
 
-    await facade.initializeMirror(documentId);
+    await facade.writeDocument({
+      documentId,
+      markdown: "# Chapter",
+      origin: { type: "user", actorUserId: USER },
+    });
 
     await Promise.all([
       facade.editDocument({
