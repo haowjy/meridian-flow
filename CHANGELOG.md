@@ -2,6 +2,9 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Texture: added a barely-there fixed paper-grain overlay (`paper-grain` utility
+  on `<body>`, ~0.02 opacity, pointer-events none) for the rice-paper tooth; the
+  manuscript editor is raised above it so long-form prose stays pristine.
 - Login: rebuilt the placeholder page as a branded split — a deep-ink hero with
   the glowing needle, Cormorant wordmark, italic tagline, faint jade ink-wash,
   and a corner cinnabar seal, beside a paper card with a jade primary call to

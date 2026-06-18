@@ -80,7 +80,7 @@ function RootDocument({ children, lang }: Readonly<{ children: ReactNode; lang: 
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="paper-grain">
         {children}
         <Scripts />
       </body>
