@@ -2,6 +2,11 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Chrome accents: the active sidebar row now carries the cinnabar seal (faint
+  cinnabar tint, cinnabar text, and a short rounded cinnabar marker instead of a
+  full side-stripe), and the thread pin/favorite star plus its "Pinned" header
+  read cinnabar. The composer send button picks up jade automatically from the
+  primary token.
 - Typography: load Cormorant Garamond (display), Noto Serif (prose), and Inter
   (UI chrome) via Google Fonts in both app and www roots; added a `--font-prose`
   token and repointed `--font-heading`/`--font-sans`. Applied the prose serif and
