@@ -6,7 +6,8 @@
  * (see `core/editor/document-session.ts`):
  *   - `synced`    → "Synced"                  (edits are on the server)
  *   - `syncing`   → "Syncing…"                (initial / reconnect in flight)
- *   - `offline`   → "Saved locally · offline" (buffered in IndexedDB only)
+ *   - `offline`   → "Saved locally · offline" (buffered until reconnect)
+ *   - `access-lost` → "Access lost · not saving to server" (terminal denial)
  *   - `destroyed` → "Closed"                  (session torn down)
  * Pure presentational leaf; owns only the pill chrome and its subscription.
  */
@@ -38,6 +39,7 @@ export function SyncStatus({ session }: SyncStatusProps) {
     >
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
       {snapshot.status === "offline" ? <Trans>Saved locally · offline</Trans> : null}
+      {snapshot.status === "access-lost" ? <Trans>Access lost · not saving to server</Trans> : null}
       {snapshot.status === "destroyed" ? <Trans>Closed</Trans> : null}
     </div>
   );
