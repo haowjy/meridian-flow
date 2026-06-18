@@ -11,9 +11,8 @@
  * consumers (`get`); the session survives view unmount and is destroyed only
  * when every opener has released that document from its open set.
  *
- * This mirrors the singleton `getDocumentSessionTransport()` model: one process,
- * one registry. The transport (the multiplexed Yjs WS) is already a singleton;
- * this lifts the per-document *session* to the same plane.
+ * The Hocuspocus adapter owns the shared socket; this registry owns the
+ * per-document sessions on the same process-wide plane.
  */
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
