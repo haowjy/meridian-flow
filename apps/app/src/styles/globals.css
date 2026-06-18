@@ -286,6 +286,22 @@
   }
 }
 
+/* Login hero — soft jade+cinnabar radial behind the needle, and a matching
+   glow on the needle itself. Colors stay token-derived (no literals in TSX). */
+@utility login-hero-glow {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-primary) 22%, transparent) 0%,
+    color-mix(in srgb, var(--color-cinnabar) 8%, transparent) 40%,
+    transparent 70%
+  );
+}
+
+@utility login-needle-glow {
+  filter: drop-shadow(0 0 24px color-mix(in srgb, var(--color-primary) 35%, transparent))
+    drop-shadow(0 0 8px color-mix(in srgb, var(--color-cinnabar) 22%, transparent));
+}
+
 /** Project pane header title — Home, Chat, Settings, thread switcher label. */
 @utility pane-title {
   @apply text-sm font-medium text-foreground;
