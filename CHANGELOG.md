@@ -233,6 +233,8 @@
   substring heuristics that could misclassify transient closes.
 - Added regression tests for denial-before-sync status, transport terminal
   classification, and registry union-of-openers retention lifecycle.
+- Deferred document session teardown with a grace window so React strict-mode
+  release→retain churn does not detach Hocuspocus providers on the shared socket.
 - Versioned client IndexedDB persistence keys by `COLLAB_SCHEMA_VERSION` so schema
   bumps invalidate stale local Yjs caches and force server resync; best-effort GC
   deletes older per-document IndexedDB entries.

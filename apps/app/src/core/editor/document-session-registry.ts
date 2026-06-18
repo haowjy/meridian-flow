@@ -9,7 +9,9 @@
  * Context destination tore down every Yjs session + its transport subscription
  * (re-syncing + reconnecting on return). With the registry, views are pure
  * consumers (`get`); the session survives view unmount and is destroyed only
- * when every opener has released that document from its open set.
+ * when every opener has released that document from its open set, after a
+ * short grace window so rapid release→retain (e.g. React strict mode) does
+ * not detach the Hocuspocus provider on the shared socket.
  *
  * The Hocuspocus adapter owns the shared socket; this registry owns the
  * per-document sessions on the same process-wide plane.
@@ -21,6 +23,14 @@ import { DocumentSession } from "./document-session";
 /** Soft cap — log once when exceeded; no hard eviction (R14). */
 const LIVE_DOC_SOFT_CAP = 50;
 
+/**
+ * Grace window before tearing down an unretained session. Rapid
+ * release→retain (React strict mode, fast navigation) cancels the timer so
+ * the live provider stays attached on the shared socket — avoiding a stale
+ * CloseMessage racing a new SyncStep1.
+ */
+const SESSION_TEARDOWN_GRACE_MS = 3_000;
+
 // R14: hard max-live-docs eviction + reconnect load-concurrency cap deferred
 // (before-prod); watch server liveDocumentCount metric
 
@@ -28,6 +38,8 @@ class DocumentSessionRegistry {
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → document ids that opener currently considers open. */
   private readonly retainedByOwner = new Map<string, Set<string>>();
+  /** document id → pending deferred teardown timer. */
+  private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
 
   /**
@@ -37,6 +49,7 @@ class DocumentSessionRegistry {
    * {@link release}.
    */
   get(documentId: string): DocumentSession {
+    this.cancelPendingTeardown(documentId);
     const existing = this.sessions.get(documentId);
     if (existing) return existing;
     const session = new DocumentSession({
@@ -77,6 +90,10 @@ class DocumentSessionRegistry {
   destroyAll(): void {
     this.retainedByOwner.clear();
     this.liveDocCapWarningEmitted = false;
+    for (const timer of this.pendingTeardownTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingTeardownTimers.clear();
     for (const [id, session] of this.sessions) {
       void session.destroy();
       this.sessions.delete(id);
@@ -101,12 +118,41 @@ class DocumentSessionRegistry {
       this.get(id);
     }
 
-    for (const [id, session] of this.sessions) {
+    for (const id of this.sessions.keys()) {
       if (!keep.has(id)) {
-        void session.destroy();
-        this.sessions.delete(id);
+        this.scheduleTeardown(id);
       }
     }
+  }
+
+  private cancelPendingTeardown(documentId: string): void {
+    const timer = this.pendingTeardownTimers.get(documentId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.pendingTeardownTimers.delete(documentId);
+  }
+
+  private scheduleTeardown(documentId: string): void {
+    if (this.pendingTeardownTimers.has(documentId)) return;
+
+    const timer = setTimeout(() => {
+      this.pendingTeardownTimers.delete(documentId);
+      if (this.isRetained(documentId)) return;
+
+      const session = this.sessions.get(documentId);
+      if (!session) return;
+      void session.destroy();
+      this.sessions.delete(documentId);
+    }, SESSION_TEARDOWN_GRACE_MS);
+
+    this.pendingTeardownTimers.set(documentId, timer);
+  }
+
+  private isRetained(documentId: string): boolean {
+    for (const ids of this.retainedByOwner.values()) {
+      if (ids.has(documentId)) return true;
+    }
+    return false;
   }
 }
 
