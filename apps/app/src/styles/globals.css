@@ -5,7 +5,7 @@
  * utilities stay here because only the project uses them.
  */
 @import "tailwindcss";
-@import "@meridian/design-tokens/warm-paper.css";
+@import "@meridian/design-tokens/ink-jade.css";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -279,7 +279,7 @@
 @utility focus-ring {
   @apply outline-none;
   &:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-border-focus), 0 0 0 4px rgba(29, 107, 87, 0.12);
+    box-shadow: 0 0 0 2px var(--color-border-focus), 0 0 0 4px rgba(46, 125, 107, 0.12);
   }
 }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
+
+- Renamed the shared token file `warm-paper.css` to `ink-jade.css` and swapped
+  the palette to the Ink & Jade direction: warm rice-paper grounds, near-black
+  ink type, jade primary, and a new cinnabar seal accent (chrome only). Added
+  `jade-text`, `cinnabar`, `cinnabar-tint`, `ink-deep`, `cream`/`cream-muted`
+  tokens; shifted `destructive` to a cooler crimson so error never reads as
+  favorite. Updated the app/www imports, the package export, the renamed
+  `UserPreferences.ui.theme` enum value, and the manifest theme color.
+
 ## Dev portless app stability (2026-06-17, branch h/v3)
 
 - Fixed app dev websocket proxy startup when `MERIDIAN_API_ORIGIN` is present
