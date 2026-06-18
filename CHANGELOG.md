@@ -1,6 +1,15 @@
 # Changelog
 
-## Hocuspocus collab hardening (2026-06-18, branch h/hocuspocus)
+## Hocuspocus collab transport (2026-06-18, branch h/hocuspocus)
+
+- Replaced the custom Yjs WebSocket transport with Hocuspocus v4 end-to-end:
+  the server now owns every live `Y.Doc` (single owner), and the client uses a
+  `HocuspocusProvider` bound to the existing editor session. Same editor
+  experience, but with built-in heartbeat, reconnect, and per-document auth —
+  the attributed update log and markdown projection are preserved.
+- Deleted the legacy transport stack: custom WS handler, `yjs-multiplex` wire
+  protocol + message constants, the old client transport, the
+  `DocumentSyncTransport` port, and the dead agent route.
 
 - Fixed document session status when access is denied before first server sync:
   terminal/unauthorized transport states now pre-empt the initial-sync gate so
