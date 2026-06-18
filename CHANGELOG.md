@@ -1,6 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
 ## [Unreleased]
 
 - Frontend cleanup: dropped the placeholder Import workspace screen — removed
@@ -216,6 +215,12 @@
   tokens; shifted `destructive` to a cooler crimson so error never reads as
   favorite. Updated the app/www imports, the package export, the renamed
   `UserPreferences.ui.theme` enum value, and the manifest theme color.
+
+## MDX manuscript format — schema narrowing (2026-06-18, branch h/mdx-manuscript)
+
+- Narrowed shared ProseMirror schema for markdown-representable subset: `image`
+  forbids marks, table cells drop colspan/rowspan/colwidth, added `horizontal_rule`
+  scene-break node. Bumped `COLLAB_SCHEMA_VERSION` to 2. TipTap editor parity preserved.
 
 ## Hocuspocus collab transport (2026-06-18, branch h/hocuspocus)
 

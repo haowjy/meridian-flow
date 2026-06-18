@@ -40,12 +40,10 @@ function tableContent(): JSONContent {
         content: [
           {
             type: "table_header",
-            attrs: { colspan: 1, rowspan: 1, colwidth: null },
             content: [{ type: "text", text: "A" }],
           },
           {
             type: "table_header",
-            attrs: { colspan: 1, rowspan: 1, colwidth: null },
             content: [{ type: "text", text: "B" }],
           },
         ],
@@ -55,12 +53,10 @@ function tableContent(): JSONContent {
         content: [
           {
             type: "table_cell",
-            attrs: { colspan: 1, rowspan: 1, colwidth: null },
             content: [{ type: "text", text: "1" }],
           },
           {
             type: "table_cell",
-            attrs: { colspan: 1, rowspan: 1, colwidth: null },
             content: [{ type: "text", text: "2" }],
           },
         ],
