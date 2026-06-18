@@ -22,7 +22,7 @@ import { emitEvent } from "../../observability/index.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { PersistedUpdate, UpdateOrigin } from "../ports/document-sync.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./document-activity.js";
-import { getSchema, markdownToNode, nodeToMarkdown } from "./schemas.js";
+import { getSchema, mdxToNode, nodeToMdx } from "./schemas.js";
 import {
   createMirror,
   encodeState,
@@ -152,19 +152,19 @@ function schemaTypeForFiletype(filetype: string): "document" | "code" {
   return filetype === "markdown" ? "document" : "code";
 }
 
-function readDocAsMarkdown(document: Y.Doc, filetype = "markdown"): string {
+function readAsMdx(document: Y.Doc, filetype = "markdown"): string {
   const schemaType = schemaTypeForFiletype(filetype);
   const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const root = yXmlFragmentToProseMirrorRootNode(fragment, getSchema(schemaType));
-  return nodeToMarkdown(schemaType, root);
+  return nodeToMdx(schemaType, root);
 }
 
-function writeDocFromMarkdown(document: Y.Doc, filetype: string, markdown: string): void {
+function writeDocFromMdx(document: Y.Doc, filetype: string, mdx: string): void {
   const schemaType = schemaTypeForFiletype(filetype);
   updateYFragment(
     document,
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    markdownToNode(schemaType, markdown),
+    mdxToNode(schemaType, mdx),
     { mapping: new Map(), isOMark: new Map() },
   );
 }
@@ -419,7 +419,7 @@ export function createHocuspocusCollabAdapter(deps: {
           await updateMarkdownProjection(
             deps.db,
             documentId,
-            readDocAsMarkdown(document, filetype),
+            readAsMdx(document, filetype),
             new Date(),
           );
         }
@@ -490,7 +490,7 @@ export function createHocuspocusCollabAdapter(deps: {
       const document = connection.document;
       if (!document) throw new Error("direct connection closed before write");
       const before = Y.encodeStateVector(document);
-      await connection.transact((doc) => writeDocFromMarkdown(doc, filetype, input.markdown));
+      await connection.transact((doc) => writeDocFromMdx(doc, filetype, input.markdown));
       const update = Y.encodeStateAsUpdate(document, before);
       const persistedUpdate = update.length
         ? await appendUpdateAndAdvanceHead({
@@ -503,7 +503,7 @@ export function createHocuspocusCollabAdapter(deps: {
             autoCheckpointEvery: deps.autoCheckpointEvery,
           })
         : null;
-      return { persistedUpdate, markdown: readDocAsMarkdown(document, filetype) };
+      return { persistedUpdate, markdown: readAsMdx(document, filetype) };
     } finally {
       await connection.disconnect({ unloadImmediately: false });
     }
@@ -528,8 +528,8 @@ export function createHocuspocusCollabAdapter(deps: {
       const before = Y.encodeStateVector(document);
       let beforeMarkdown = "";
       await connection.transact((doc) => {
-        beforeMarkdown = readDocAsMarkdown(doc, filetype);
-        writeDocFromMarkdown(doc, filetype, input.transform(beforeMarkdown));
+        beforeMarkdown = readAsMdx(doc, filetype);
+        writeDocFromMdx(doc, filetype, input.transform(beforeMarkdown));
       });
       const update = Y.encodeStateAsUpdate(document, before);
       const persistedUpdate = update.length
@@ -545,7 +545,7 @@ export function createHocuspocusCollabAdapter(deps: {
         : null;
       return {
         beforeMarkdown,
-        markdown: readDocAsMarkdown(document, filetype),
+        markdown: readAsMdx(document, filetype),
         persistedUpdate,
       };
     } finally {
@@ -555,12 +555,12 @@ export function createHocuspocusCollabAdapter(deps: {
 
   async function readAsMarkdown(documentId: DocumentId): Promise<string> {
     const live = runtime().documents.get(documentId);
-    if (live) return readDocAsMarkdown(live, await filetypeFor(documentId));
+    if (live) return readAsMdx(live, await filetypeFor(documentId));
     const loaded = await loadDocument(documentId);
     if (!loaded) throw new Error("Document not found");
     const doc = new Y.Doc({ gc: false, gcFilter: () => true });
     Y.applyUpdate(doc, loaded);
-    return readDocAsMarkdown(doc, await filetypeFor(documentId));
+    return readAsMdx(doc, await filetypeFor(documentId));
   }
 
   function forgetDocument(documentId: DocumentId): void {

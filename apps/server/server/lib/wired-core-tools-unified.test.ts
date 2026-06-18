@@ -60,7 +60,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
     const port = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
     const read = await port.read(UNIFIED_MANUSCRIPT_URI);
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("unified chapter");
+    if (read.ok) expect(read.value.content).toBe("unified chapter\n");
     expect(UNIFIED_MANUSCRIPT_URI).toBe(MANUSCRIPT_URI);
   });
 

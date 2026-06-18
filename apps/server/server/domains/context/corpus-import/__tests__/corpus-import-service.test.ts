@@ -58,7 +58,7 @@ describe("corpus import", () => {
 
     const port = contextPorts.forProject("project-1", "user-1");
     const read = await port.read("kb://imports/book-one/chapter-1.md");
-    expect(read.ok && read.value.content).toBe("The mountain woke.");
+    expect(read.ok && read.value.content).toBe("The mountain woke.\n");
   });
 
   it("suffixes target paths instead of overwriting existing KB imports", async () => {
@@ -92,8 +92,8 @@ describe("corpus import", () => {
     const port = contextPorts.forProject("project-1", "user-1");
     const original = await port.read("kb://imports/notes.md");
     const suffixed = await port.read("kb://imports/notes-2.md");
-    expect(original.ok && original.value.content).toBe("first");
-    expect(suffixed.ok && suffixed.value.content).toBe("second");
+    expect(original.ok && original.value.content).toBe("first\n");
+    expect(suffixed.ok && suffixed.value.content).toBe("second\n");
   });
 
   it("imports fixture Drive files through the drive source port", async () => {
