@@ -1,7 +1,7 @@
 /**
  * In-memory DocumentSyncFacade: wraps the inner DocumentSyncService with the
- * same mutex-guarded writeDocument/editDocument/initializeMirror surface as the
- * Drizzle facade so unified context ports exercise atomic collab edits in tests.
+ * same mutex-guarded writeDocument/editDocument surface as the Drizzle facade
+ * so unified context ports exercise atomic collab edits in tests.
  */
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { HTTPError } from "nitro/h3";
@@ -143,10 +143,6 @@ export function createInMemoryDocumentSyncFacade(
       return [];
     },
 
-    async initializeMirror(documentId: DocumentId): Promise<void> {
-      await ensureMirror(documentId);
-    },
-
     async writeDocument(input: {
       documentId: DocumentId;
       markdown: string;
@@ -238,24 +234,6 @@ export function createInMemoryDocumentSyncFacade(
         actorUserId: (latest?.actorUserId as UserId | null) ?? null,
         updateSeq: latest?.seq ?? null,
       };
-    },
-
-    async applyEditorUpdate(input: {
-      documentId: DocumentId;
-      update: Uint8Array;
-      origin: UpdateOrigin;
-      threadId?: ThreadId;
-    }) {
-      return facadeMutex.run(input.documentId, async () => {
-        const result = await inner.applyUpdate(input.documentId, input.update, input.origin);
-        if (!result.ok) throw syncErrorToHttp(result.error);
-
-        const markdownResult = await inner.readAsMarkdown(input.documentId);
-        if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
-
-        const projection = await resolveProjection(input.documentId);
-        rememberProjection(input.documentId, markdownResult.value, projection.filetype);
-      });
     },
   });
 }
