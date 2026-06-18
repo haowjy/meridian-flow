@@ -10,6 +10,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type * as Y from "yjs";
 import type { DocumentAccessPort } from "../../lib/document-access.js";
+import { forgetYjsDocumentCache } from "../../routes/ws/yjs.js";
 import { KeyedMutex } from "../../shared/keyed-mutex.js";
 import { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
 import { touchDocumentActivity } from "./domain/document-activity.js";
@@ -21,12 +22,7 @@ import {
   createHocuspocusCollabAdapter,
   type PersistenceQueueMetrics,
 } from "./domain/hocuspocus-collab-adapter.js";
-import type {
-  DocumentSyncPort,
-  DocumentSyncTransport,
-  PersistedUpdate,
-  UpdateOrigin,
-} from "./ports/document-sync.js";
+import type { DocumentSyncPort, PersistedUpdate, UpdateOrigin } from "./ports/document-sync.js";
 
 export type DocumentWriteOrigin =
   | { type: "agent"; actorTurnId: TurnId }
@@ -57,7 +53,6 @@ export type HocuspocusDocumentSync = {
 };
 
 export type DocumentSyncFacade = DocumentSyncPort &
-  DocumentSyncTransport &
   HocuspocusDocumentSync & {
     writeDocument(input: {
       documentId: DocumentId;
@@ -229,16 +224,15 @@ export function createDocumentSyncService(deps: {
 
   return {
     getOrCreateMirror: inner.getOrCreateMirror.bind(inner),
-    forgetMirror: inner.forgetMirror.bind(inner),
+    forgetMirror(documentId: string): void {
+      void forgetYjsDocumentCache(documentId);
+    },
     readAsMarkdown,
     editFromMarkdown: inner.editFromMarkdown.bind(inner),
     writeFromMarkdown: inner.writeFromMarkdown.bind(inner),
     checkpoint: inner.checkpoint.bind(inner),
     restore: inner.restore.bind(inner),
     listCheckpoints: inner.listCheckpoints.bind(inner),
-    getDoc: inner.getDoc.bind(inner),
-    applyUpdate: inner.applyUpdate.bind(inner),
-    encodeState: inner.encodeState.bind(inner),
     writeDocument,
     editDocument,
     bindHocuspocus: hocuspocus.bind,
@@ -308,4 +302,4 @@ async function latestUpdateData(
   return update?.updateData ?? Buffer.alloc(0);
 }
 
-export type { DocumentSyncServiceOptions, DocumentSyncTransport, PersistedUpdate, UpdateOrigin };
+export type { DocumentSyncServiceOptions, PersistedUpdate, UpdateOrigin };
