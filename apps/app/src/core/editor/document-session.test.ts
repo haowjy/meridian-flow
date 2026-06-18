@@ -6,7 +6,7 @@
  * startup and labelled with the inverse of its true meaning. These tests
  * pin down the corrected semantics: `synced` only when the server is
  * connected & first-sync is done, `offline` whenever the socket is
- * disconnected/terminal, `syncing` while in flight, and live transitions on
+ * disconnected, `access-lost` on permanent auth denial, `syncing` while in flight, and live transitions on
  * every connection-state change — never a frozen startup value.
  */
 import { describe, expect, it } from "vitest";
@@ -162,7 +162,7 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("treats a terminal close (e.g. auth fail 4401) as offline, not syncing", async () => {
+  it("treats permanent document denial as access-lost, not offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
       documentId: "doc-1",
@@ -176,8 +176,8 @@ describe("DocumentSession status derivation", () => {
     await flushMicrotasks();
     expect(snapshots.at(-1)?.status).toBe("synced");
 
-    current().emit({ kind: "terminal", reason: "auth_failed", code: 4401 });
-    expect(snapshots.at(-1)?.status).toBe("offline");
+    current().emit({ kind: "unauthorized", reason: "permission-denied", code: 4401 });
+    expect(snapshots.at(-1)?.status).toBe("access-lost");
 
     void session.destroy();
   });
