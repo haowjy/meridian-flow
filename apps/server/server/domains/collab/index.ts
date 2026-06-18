@@ -225,8 +225,15 @@ export function createDocumentSyncService(deps: {
   }
 
   return {
-    getOrCreateMirror: inner.getOrCreateMirror.bind(inner),
+    async getOrCreateMirror(documentId: string, initialContent: string, filetype: string) {
+      const first = await inner.getOrCreateMirror(documentId, initialContent, filetype);
+      if (first.ok || first.error.code !== "corrupt_state") return first;
+      inner.forgetMirror(documentId);
+      await hocuspocus.recoverDocumentFromMarkdownProjection(documentId as DocumentId);
+      return inner.getOrCreateMirror(documentId, initialContent, filetype);
+    },
     forgetMirror(documentId: string): void {
+      inner.forgetMirror(documentId);
       hocuspocus.forgetDocument(documentId as DocumentId);
     },
     readAsMarkdown,
