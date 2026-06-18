@@ -18,10 +18,17 @@ import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-d
 
 import { DocumentSession } from "./document-session";
 
+/** Soft cap — log once when exceeded; no hard eviction (R14). */
+const LIVE_DOC_SOFT_CAP = 50;
+
+// R14: hard max-live-docs eviction + reconnect load-concurrency cap deferred
+// (before-prod); watch server liveDocumentCount metric
+
 class DocumentSessionRegistry {
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → document ids that opener currently considers open. */
   private readonly retainedByOwner = new Map<string, Set<string>>();
+  private liveDocCapWarningEmitted = false;
 
   /**
    * Acquire the live session for a document, creating it (and its transport
@@ -38,6 +45,7 @@ class DocumentSessionRegistry {
         createHocuspocusDocumentTransport({ documentId: id, document, awareness }),
     });
     this.sessions.set(documentId, session);
+    this.maybeWarnLiveDocCap();
     return session;
   }
 
@@ -68,10 +76,19 @@ class DocumentSessionRegistry {
   /** Destroy every live session (e.g. on full teardown / tests). */
   destroyAll(): void {
     this.retainedByOwner.clear();
+    this.liveDocCapWarningEmitted = false;
     for (const [id, session] of this.sessions) {
       void session.destroy();
       this.sessions.delete(id);
     }
+  }
+
+  private maybeWarnLiveDocCap(): void {
+    if (this.liveDocCapWarningEmitted || this.sessions.size <= LIVE_DOC_SOFT_CAP) return;
+    this.liveDocCapWarningEmitted = true;
+    console.warn(
+      `[document-session-registry] live document session count (${this.sessions.size}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
+    );
   }
 
   private reconcileRetainedSessions(): void {

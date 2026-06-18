@@ -22,6 +22,7 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -29,6 +30,36 @@ import * as Y from "yjs";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+
+/** IndexedDB name for y-indexeddb; bumps with {@link COLLAB_SCHEMA_VERSION} invalidate stale caches. */
+export function documentSessionPersistenceKey(documentId: string): string {
+  return `meridian:document:v${COLLAB_SCHEMA_VERSION}:${documentId}`;
+}
+
+const PERSISTENCE_KEY_PREFIX = "meridian:document:v";
+
+/** Best-effort delete of pre-version-bump IndexedDB entries for one document. */
+function deleteStaleVersionedIndexedDb(documentId: string): void {
+  if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
+
+  const suffix = `:${documentId}`;
+  void indexedDB
+    .databases()
+    .then((databases) => {
+      for (const db of databases ?? []) {
+        const name = db.name;
+        if (!name?.startsWith(PERSISTENCE_KEY_PREFIX) || !name.endsWith(suffix)) continue;
+        const versionPart = name.slice(PERSISTENCE_KEY_PREFIX.length, name.length - suffix.length);
+        const version = Number.parseInt(versionPart, 10);
+        if (Number.isFinite(version) && version < COLLAB_SCHEMA_VERSION) {
+          indexedDB.deleteDatabase(name);
+        }
+      }
+    })
+    .catch(() => {
+      // Fire-and-forget GC; versioned key alone guarantees correctness.
+    });
+}
 
 export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-lost" | "destroyed";
 
@@ -95,6 +126,8 @@ export class DocumentSession {
   private readonly unsubscribeTransportStatus: (() => void) | null;
   private destroyed = false;
   private localPersistenceSynced = false;
+  /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
+  private transportInitialSyncComplete = false;
   private status: DocumentSessionStatus = "syncing";
   /**
    * Latest live connection-state from the transport. When the transport is
@@ -106,16 +139,19 @@ export class DocumentSession {
 
   constructor({
     documentId,
-    persistenceKey = `meridian:document:${documentId}`,
+    persistenceKey = documentSessionPersistenceKey(documentId),
     enableIndexedDb = canUseIndexedDb(),
     transportFactory,
   }: DocumentSessionOptions) {
     this.documentId = documentId;
     this.document = new Y.Doc();
     this.awareness = new Awareness(this.document);
-    this.persistence = enableIndexedDb
-      ? new IndexeddbPersistence(persistenceKey, this.document)
-      : null;
+    if (enableIndexedDb) {
+      deleteStaleVersionedIndexedDb(documentId);
+      this.persistence = new IndexeddbPersistence(persistenceKey, this.document);
+    } else {
+      this.persistence = null;
+    }
     this.transportProvider =
       transportFactory?.({
         documentId,
@@ -187,6 +223,7 @@ export class DocumentSession {
 
     await this.transportProvider?.whenSynced;
     if (this.destroyed) return;
+    this.transportInitialSyncComplete = true;
     this.recomputeStatus();
   }
 
@@ -213,6 +250,9 @@ export class DocumentSession {
 
     // No transport at all → local-only session; persistence load IS being synced.
     if (!this.transportProvider) return "synced";
+
+    // Empty local cache after a schema bump must resync from the server first.
+    if (!this.transportInitialSyncComplete) return "syncing";
 
     const state = this.transportState;
     const serverSynced = this.transportProvider.synced !== false;
