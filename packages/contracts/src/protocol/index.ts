@@ -40,5 +40,4 @@ export * from "./projects.js";
 export * from "./thread-documents.js";
 export * from "./transport-serializer.js";
 export * from "./ws-protocol.js";
-export * from "./yjs-multiplex.js";
 export * from "./yjs-ws.js";

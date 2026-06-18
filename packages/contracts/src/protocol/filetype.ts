@@ -13,7 +13,9 @@
  */
 
 import type { DocumentFileType } from "./http-types.js";
-import type { YjsTrackedSchemaType } from "./yjs-multiplex.js";
+
+/** ProseMirror schema backing a Yjs-tracked document. */
+export type YjsTrackedSchemaType = "document" | "code";
 
 /**
  * Identifies the viewer/editor surface for a file.

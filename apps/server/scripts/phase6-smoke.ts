@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { loadEnvFile } from "node:process";
-import {
-  decodeYjsBinaryEnvelope,
-  encodeYjsControlFrame,
-  parseYjsServerControlFrame,
-} from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { checkpointIdForBlock } from "@meridian/contracts/threads";
 import {
@@ -16,8 +11,6 @@ import {
   turns,
 } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import WebSocket from "ws";
-import * as Y from "yjs";
 import { createDocumentSyncService } from "../server/domains/collab/index.js";
 import { createProductionUnifiedContextPortFactory } from "../server/domains/context/index.js";
 import { createRuntimeToolRegistry } from "../server/domains/runtime/tool-registry.js";
@@ -26,7 +19,7 @@ import {
   mintWorkOsDevSession,
   resolveDevInternalUserId,
 } from "./workos-dev-session.js";
-import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
+import { waitForHocuspocusMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
   loadEnvFile("../../.env");
@@ -51,56 +44,6 @@ function wsUrlFor(url: string): string {
   const parsed = new URL("/ws/yjs", url);
   parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
   return parsed.toString();
-}
-
-function waitForOpen(ws: WebSocket): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ws.once("open", () => resolve());
-    ws.once("error", (error) => reject(error));
-  });
-}
-
-function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error("timed out waiting for yjs subscribed")),
-      10_000,
-    );
-    ws.on("message", (raw) => {
-      if (typeof raw !== "string" && !Buffer.isBuffer(raw)) return;
-      const frame = parseYjsServerControlFrame(raw.toString());
-      if (frame?.type === "subscribed") {
-        clearTimeout(timeout);
-        resolve({ channelIndex: frame.channelIndex });
-      }
-    });
-  });
-}
-
-function waitForSyncedMarkdown(
-  ws: WebSocket,
-  expected: string,
-): Promise<{ channelIndex: number; markdown: string }> {
-  const doc = new Y.Doc();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      doc.destroy();
-      reject(new Error("timed out waiting for yjs markdown sync"));
-    }, 10_000);
-    ws.on("message", (raw) => {
-      if (typeof raw === "string") return;
-      const bytes = Buffer.isBuffer(raw) ? raw : Buffer.concat(raw as Buffer[]);
-      if (bytes[0] === 0x7b) return;
-      const envelope = decodeYjsBinaryEnvelope(bytes);
-      if (envelope?.payload[0] !== 0) return;
-      const markdown = applyWsSyncPayloadToMarkdown(doc, envelope.payload);
-      if (markdown.includes(expected)) {
-        clearTimeout(timeout);
-        doc.destroy();
-        resolve({ channelIndex: envelope.channelIndex, markdown });
-      }
-    });
-  });
 }
 
 const session = await mintWorkOsDevSession();
@@ -149,18 +92,13 @@ for (let attempt = 0; attempt < 60; attempt++) {
 }
 if (!agentUpdate) throw new Error("timed out waiting for agent-attributed Yjs update");
 
-const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
+const syncedMarkdown = await waitForHocuspocusMarkdown({
+  wsUrl: wsUrlFor(serverUrl),
+  documentId: bootstrap.documentId,
+  authHeaders,
+  expectedSubstring: expectedSnippet,
 });
-await waitForOpen(verifyYjs);
-const synced = waitForSyncedMarkdown(verifyYjs, expectedSnippet);
-const subscribed = waitForSubscribed(verifyYjs);
-verifyYjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
-const { channelIndex } = await subscribed;
-const syncedState = await synced;
-verifyYjs.close();
-if (syncedState.channelIndex !== channelIndex) throw new Error("Yjs sync channel mismatch");
-if (!syncedState.markdown.includes(expectedSnippet)) {
+if (!syncedMarkdown.includes(expectedSnippet)) {
   throw new Error("Yjs synced markdown missing agent edit");
 }
 

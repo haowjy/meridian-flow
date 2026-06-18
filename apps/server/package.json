@@ -54,6 +54,7 @@
     "tsx": "^4.22.3",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@hocuspocus/provider": "4.2.0"
   }
 }

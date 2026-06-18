@@ -1,16 +1,9 @@
 import { loadEnvFile } from "node:process";
-import {
-  decodeYjsBinaryEnvelope,
-  encodeYjsControlFrame,
-  parseYjsServerControlFrame,
-} from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb, documents, documentYjsUpdates } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import WebSocket from "ws";
-import * as Y from "yjs";
 import { cookieAuthHeaders, mintWorkOsDevSession } from "./workos-dev-session.js";
-import { applyWsSyncPayloadToMarkdown } from "./yjs-smoke-helpers.js";
+import { waitForHocuspocusMarkdown } from "./yjs-smoke-helpers.js";
 
 try {
   loadEnvFile("../../.env");
@@ -37,56 +30,6 @@ function wsUrlFor(url: string): string {
   const parsed = new URL("/ws/yjs", url);
   parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
   return parsed.toString();
-}
-
-function waitForOpen(ws: WebSocket): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ws.once("open", () => resolve());
-    ws.once("error", (error) => reject(error));
-  });
-}
-
-function waitForSubscribed(ws: WebSocket): Promise<{ channelIndex: number }> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error("timed out waiting for yjs subscribed")),
-      10_000,
-    );
-    ws.on("message", (raw) => {
-      if (typeof raw !== "string" && !Buffer.isBuffer(raw)) return;
-      const frame = parseYjsServerControlFrame(raw.toString());
-      if (frame?.type === "subscribed") {
-        clearTimeout(timeout);
-        resolve({ channelIndex: frame.channelIndex });
-      }
-    });
-  });
-}
-
-function waitForSyncedMarkdown(
-  ws: WebSocket,
-  expected: string,
-): Promise<{ channelIndex: number; markdown: string }> {
-  const doc = new Y.Doc();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      doc.destroy();
-      reject(new Error("timed out waiting for yjs markdown sync"));
-    }, 10_000);
-    ws.on("message", (raw) => {
-      if (typeof raw === "string") return;
-      const bytes = Buffer.isBuffer(raw) ? raw : Buffer.concat(raw as Buffer[]);
-      if (bytes[0] === 0x7b) return;
-      const envelope = decodeYjsBinaryEnvelope(bytes);
-      if (envelope?.payload[0] !== 0) return;
-      const markdown = applyWsSyncPayloadToMarkdown(doc, envelope.payload);
-      if (markdown.includes(expected)) {
-        clearTimeout(timeout);
-        doc.destroy();
-        resolve({ channelIndex: envelope.channelIndex, markdown });
-      }
-    });
-  });
 }
 
 const session = await mintWorkOsDevSession();
@@ -148,16 +91,12 @@ const readBody = (await readResponse.json()) as { markdown: string };
 if (readBody.markdown !== expectedMarkdown)
   throw new Error("context read did not return written markdown");
 
-const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
+const syncedMarkdown = await waitForHocuspocusMarkdown({
+  wsUrl: wsUrlFor(serverUrl),
+  documentId: bootstrap.documentId,
+  authHeaders,
+  expectedSubstring: expectedMarkdown,
 });
-await waitForOpen(verifyYjs);
-const synced = waitForSyncedMarkdown(verifyYjs, expectedMarkdown);
-const subscribed = waitForSubscribed(verifyYjs);
-verifyYjs.send(encodeYjsControlFrame({ type: "subscribe", documentId: bootstrap.documentId }));
-const { channelIndex } = await subscribed;
-const syncedState = await synced;
-verifyYjs.close();
 
 const db = createDb(databaseUrl);
 const [document] = await db
@@ -173,8 +112,7 @@ await db.close();
 if (document?.markdownProjection !== expectedMarkdown)
   throw new Error("DB markdown projection mismatch");
 if (yjsUpdate?.originType !== "user") throw new Error("Yjs update origin_type mismatch");
-if (syncedState.channelIndex !== channelIndex) throw new Error("Yjs sync channel mismatch");
-if (syncedState.markdown !== expectedMarkdown) throw new Error("Yjs synced markdown mismatch");
+if (syncedMarkdown !== expectedMarkdown) throw new Error("Yjs synced markdown mismatch");
 
 console.log(
   JSON.stringify(
@@ -187,7 +125,6 @@ console.log(
       documentId: bootstrap.documentId,
       assistantTurnId: messageBody.assistantTurnId,
       updateSeq: writeBody.updateSeq,
-      yjsChannelIndex: channelIndex,
     },
     null,
     2,
