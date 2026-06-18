@@ -15,6 +15,13 @@
       "when": 1781667314741,
       "tag": "0001_tidy_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781768752926,
+      "tag": "0002_elite_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }

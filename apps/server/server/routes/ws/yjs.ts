@@ -132,7 +132,7 @@ export async function drainYjsCollabPersistence(): Promise<void> {
     level: "info",
     source: "collab.hocuspocus",
     name: "persistence_queue.drain",
-    payload: { queues: app.documentSync.getPersistenceQueueMetrics() },
+    payload: app.documentSync.getPersistenceQueueMetrics(),
   });
   await app.documentSync.drainHocuspocusPersistence();
 }

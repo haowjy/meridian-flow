@@ -213,7 +213,7 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const documentSync = createDocumentSyncService({ db, documentAccess });
+  const documentSync = createDocumentSyncService({ db, documentAccess, eventSink });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -474,7 +474,7 @@ export function createInMemoryAppServices(): AppServices {
     async storeHocuspocusDocument() {},
     async drainHocuspocusPersistence() {},
     getPersistenceQueueMetrics() {
-      return [];
+      return { queues: [], liveDocumentCount: 0, openConnectionCount: 0 };
     },
 
     async getLastUpdateAttribution() {

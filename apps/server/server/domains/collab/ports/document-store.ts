@@ -1,6 +1,7 @@
 export interface HeadRow {
   documentId: string;
   fragmentName: string;
+  schemaVersion: number;
   filetype: string;
   latestUpdateSeq: number;
   latestStateVector: Uint8Array | null;

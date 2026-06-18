@@ -1,3 +1,4 @@
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { DocumentStore, HeadRow } from "../ports/document-store.js";
@@ -266,6 +267,12 @@ export class DocumentSyncService implements DocumentSyncPort {
     if (!head) {
       return null;
     }
+    if (head.schemaVersion !== COLLAB_SCHEMA_VERSION) {
+      this.cache.delete(documentId);
+      throw new YjsDecodeError(
+        `schema version ${head.schemaVersion} does not match current ${COLLAB_SCHEMA_VERSION}`,
+      );
+    }
     const checkpoint = await this.store.getLatestCheckpoint(documentId);
     const afterSeq = checkpoint ? checkpoint.upToSeq : 0;
     const updates = await this.store.listUpdatesAfter(documentId, afterSeq);
@@ -356,6 +363,7 @@ export class DocumentSyncService implements DocumentSyncPort {
     return {
       documentId,
       fragmentName: entry.fragmentName,
+      schemaVersion: COLLAB_SCHEMA_VERSION,
       filetype: entry.filetype,
       latestUpdateSeq,
       latestStateVector: encodeStateVector(entry),
