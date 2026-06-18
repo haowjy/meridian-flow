@@ -201,7 +201,7 @@ function escapeProseForMdxIngress(text: string): string {
       continue;
     }
 
-    const fence = line.match(/^(`{3,})(.*)$/);
+    const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
     if (fence) {
       inCodeFence = true;
       fenceMarker = fence[1];
@@ -501,10 +501,15 @@ function attrMap(node: { attributes?: MdastJsxAttr[] }): Record<string, string> 
     if (a.type === "mdxJsxExpressionAttribute") {
       throw new Error("Figure: expression attrs forbidden");
     }
-    if (typeof a.value !== "string" && a.value !== null) {
+    if (a.value === null) {
+      throw new Error(
+        `Figure: boolean/shorthand attribute "${a.name}" forbidden (use quoted strings)`,
+      );
+    }
+    if (typeof a.value !== "string") {
       throw new Error(`Figure: expression-valued attr "${a.name}" forbidden`);
     }
-    map[a.name] = a.value ?? "";
+    map[a.name] = a.value;
   }
   return map;
 }
