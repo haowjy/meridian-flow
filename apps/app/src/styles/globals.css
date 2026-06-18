@@ -182,11 +182,13 @@
 }
 
 @utility user-message-bubble {
+  font-family: var(--font-prose);
   @apply overflow-hidden rounded-[14px_4px_14px_14px] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
 }
 
 @utility answer-body {
   max-width: var(--answer-max-width);
+  font-family: var(--font-prose);
   @apply text-answer text-answer-foreground whitespace-pre-wrap;
 }
 
@@ -197,6 +199,7 @@
    streaming caret variant. */
 @utility prose-tokens {
   max-width: var(--answer-max-width);
+  font-family: var(--font-prose);
   @apply min-w-0 w-full text-answer text-answer-foreground break-words;
 
   & h1 {
