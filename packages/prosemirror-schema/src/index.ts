@@ -77,8 +77,9 @@ const customNodes = {
     isolating: true,
   },
 
+  // GFM tables are first-row-header only; rows are homogeneous (no header columns).
   table_row: {
-    content: "(table_cell | table_header)+",
+    content: "(table_header)+ | (table_cell)+",
   },
 
   table_cell: {

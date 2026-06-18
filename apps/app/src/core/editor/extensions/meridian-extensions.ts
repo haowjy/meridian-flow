@@ -25,6 +25,7 @@ import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
+import { firstRowHeaderTablePlugin } from "./first-row-header-table";
 
 type RenderAttrs = Record<string, unknown>;
 
@@ -63,7 +64,7 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
 
 export const MeridianTableRow = TableRow.extend({
   name: "table_row",
-  content: "(table_cell | table_header)+",
+  content: "(table_header)+ | (table_cell)+",
 });
 
 // ─── Customized extensions ──────────────────────────────────────────
@@ -110,6 +111,22 @@ export const MeridianTable = Table.extend({
   content: "table_row+",
   group: "block",
   isolating: true,
+
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), firstRowHeaderTablePlugin()];
+  },
+
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      toggleHeaderColumn: () => () => false,
+      toggleHeaderRow: () => () => false,
+      toggleHeaderCell: () => () => false,
+      mergeCells: () => () => false,
+      splitCell: () => () => false,
+      mergeOrSplit: () => () => false,
+    };
+  },
 }).configure({ resizable: false });
 
 export const MeridianTableCell = TableCell.extend({
