@@ -44,7 +44,7 @@ describe("ContextPortRouter dispatch", () => {
 
     const read = await router.read("kb://protocols/blot.md");
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("# Western Blot");
+    if (read.ok) expect(read.value.content).toBe("# Western Blot\n");
   });
 
   it("keeps schemes isolated", async () => {
@@ -65,15 +65,19 @@ describe("ContextPortRouter dispatch", () => {
   it("routes tracked edits through the adapter under the collab mutex path", async () => {
     const router = buildRouter();
     await router.write("kb://notes.md", "hello");
-    const edited = await router.edit("kb://notes.md", (content) => `${content}!`, {
-      origin: { type: "system" },
-    });
+    const edited = await router.edit(
+      "kb://notes.md",
+      (content) => content.replace("hello", "hello!"),
+      {
+        origin: { type: "system" },
+      },
+    );
     expect(edited.ok).toBe(true);
-    if (edited.ok) expect(edited.value.markdown).toBe("hello!");
+    if (edited.ok) expect(edited.value.markdown).toBe("hello!\n");
 
     const read = await router.read("kb://notes.md");
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("hello!");
+    if (read.ok) expect(read.value.content).toBe("hello!\n");
   });
 
   it("rejects writes to read-only schemes with permission_denied", async () => {
