@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <title>Meridian</title>
+  <rect x="6" y="6" width="36" height="36" rx="6" stroke="#B23A2E" stroke-width="2" fill="none"/>
+  <path d="M24 12 L26 24 L24 23 L22 24 Z" fill="#B23A2E"/>
+  <path d="M24 36 L22 24 L24 25 L26 24 Z" fill="#2E7D6B"/>
+</svg>

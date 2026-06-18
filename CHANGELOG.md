@@ -2,6 +2,9 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Brand mark: replaced the off-brand gradient hexagon with the compass needle
+  (cinnabar north / jade south, token-driven fills) and added an SVG favicon
+  using the seal-square needle housing.
 - Chrome accents: the active sidebar row now carries the cinnabar seal (faint
   cinnabar tint, cinnabar text, and a short rounded cinnabar marker instead of a
   full side-stripe), and the thread pin/favorite star plus its "Pinned" header

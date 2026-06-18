@@ -1,30 +1,24 @@
 import { cn } from "@/lib/utils";
 
-/** Meridian wordmark mark — gradient hexagon used in the sidebar header. */
+/**
+ * Meridian brand mark — the compass needle (system #1).
+ *
+ * Cinnabar north / jade south on a cream+ink pivot. Carries both brand colors
+ * in one balanced mark; fills are token-driven (no hardcoded hex) so the needle
+ * follows the theme. Sits beside the Cormorant wordmark in the sidebar header.
+ */
 export function MeridianMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "grid size-[30px] shrink-0 place-items-center rounded-[9px] text-primary-foreground",
-        "bg-gradient-mark shadow-mark",
-        className,
-      )}
+    <svg
+      viewBox="0 0 48 48"
+      fill="none"
+      aria-hidden="true"
+      className={cn("size-7 shrink-0", className)}
     >
-      <svg width="16" height="16" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-        <path
-          d="M8.5 1.5 L15 5.2 V11.8 L8.5 15.5 L2 11.8 V5.2 Z"
-          stroke="#fff"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M8.5 8.5 L15 5.2 M8.5 8.5 V15.5 M8.5 8.5 L2 5.2"
-          stroke="#fff"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-          opacity=".55"
-        />
-      </svg>
-    </span>
+      <path d="M24 4 L29 24 L24 22 L19 24 Z" className="fill-cinnabar" />
+      <path d="M24 44 L19 24 L24 26 L29 24 Z" className="fill-primary" />
+      <circle cx="24" cy="24" r="2.5" className="fill-cream" />
+      <circle cx="24" cy="24" r="1" className="fill-ink-deep" />
+    </svg>
   );
 }
