@@ -277,6 +277,14 @@ describe("mdx-bridge — edge cases", () => {
     expect(roundTripEq(doc)).toBe(true);
   });
 
+  it("tilde-fenced code block with < and { round-trips intact on ingress", () => {
+    const input = "~~~js\na<b { c }\n~~~";
+    const doc = mdxToDoc(input);
+    expect(doc.firstChild?.type.name).toBe("code_block");
+    expect(doc.firstChild?.attrs.language).toBe("js");
+    expect(doc.firstChild?.textContent).toBe("a<b { c }");
+  });
+
   it("code_fence_with_triple_backticks_inside", () => {
     const inner = `${"`".repeat(3)}\ninside\n${"`".repeat(3)}`;
     const doc = schema.node("doc", null, [
@@ -356,6 +364,16 @@ describe("mdx-bridge — allowlist negatives", () => {
 
   it("rejects Figure with non-empty children", () => {
     expect(() => mdxToDoc("<Figure>child</Figure>\n")).toThrow(/non-empty children forbidden/);
+  });
+
+  it("rejects boolean/shorthand Figure src attr", () => {
+    expect(() => mdxToDoc("<Figure src />\n")).toThrow(/boolean\/shorthand attribute "src"/);
+  });
+
+  it("rejects mixed quoted and shorthand Figure attrs", () => {
+    expect(() => mdxToDoc('<Figure src="x" alt />\n')).toThrow(
+      /boolean\/shorthand attribute "alt"/,
+    );
   });
 });
 

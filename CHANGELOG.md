@@ -228,6 +228,8 @@
 - Narrowed shared ProseMirror schema for markdown-representable subset: `image`
   forbids marks, table cells drop colspan/rowspan/colwidth, added `horizontal_rule`
   scene-break node. Bumped `COLLAB_SCHEMA_VERSION` to 2. TipTap editor parity preserved.
+- MDX ingress: skip tilde-fenced code blocks in prose-escape pre-pass; reject
+  boolean/shorthand `<Figure>` attrs (quoted strings only).
 
 ## Hocuspocus collab transport (2026-06-18, branch h/hocuspocus)
 
