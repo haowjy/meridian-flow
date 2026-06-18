@@ -57,7 +57,8 @@ export type CollabPersistenceMetrics = {
 
 const DRAIN_MAX_ITERATIONS = 100;
 const DRAIN_MAX_MS = 30_000;
-const DRAIN_SETTLE_DELAY_MS = 10;
+const DRAIN_SETTLE_DELAY_MS = 50;
+const DRAIN_CONSECUTIVE_IDLE_PASSES = 2;
 
 type QueueTask = {
   startedAt: number;
@@ -433,6 +434,7 @@ export function createHocuspocusCollabAdapter(deps: {
 
   async function drain(): Promise<void> {
     const startedAt = Date.now();
+    let consecutiveIdlePasses = 0;
     for (let iteration = 0; iteration < DRAIN_MAX_ITERATIONS; iteration += 1) {
       await queues.drainAll();
       hocuspocus?.flushPendingStores();
@@ -440,7 +442,12 @@ export function createHocuspocusCollabAdapter(deps: {
         await Promise.all([...inFlightStores]);
       }
       if (!hasPendingPersistenceWork()) {
-        return;
+        consecutiveIdlePasses += 1;
+        if (consecutiveIdlePasses >= DRAIN_CONSECUTIVE_IDLE_PASSES) {
+          return;
+        }
+      } else {
+        consecutiveIdlePasses = 0;
       }
       if (Date.now() - startedAt > DRAIN_MAX_MS) {
         console.error("collab drain quiescence timeout", {
