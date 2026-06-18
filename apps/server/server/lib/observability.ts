@@ -12,6 +12,7 @@ type ObservabilityGlobal = typeof globalThis & {
     sink: DeferredEventSink;
     delegateBound: boolean;
     shutdownInstalled: boolean;
+    shutdownCallbacks: Array<() => Promise<void> | void>;
   };
 };
 
@@ -21,6 +22,7 @@ function state() {
     sink: new DeferredEventSink(),
     delegateBound: false,
     shutdownInstalled: false,
+    shutdownCallbacks: [],
   };
   return store[OBSERVABILITY_KEY];
 }
@@ -47,11 +49,18 @@ export function getOrBindProcessEventSink(createDelegate: () => EventSink): Even
   return current.sink;
 }
 
+export function registerProcessShutdownCallback(callback: () => Promise<void> | void): void {
+  state().shutdownCallbacks.push(callback);
+}
+
 export function installObservabilityShutdownHooks(): void {
   const current = state();
   if (current.shutdownInstalled) return;
   current.shutdownInstalled = true;
   const flush = async () => {
+    for (const callback of current.shutdownCallbacks) {
+      await Promise.resolve(callback()).catch(() => undefined);
+    }
     await current.sink.flush().catch(() => undefined);
   };
   process.once("SIGTERM", () => void flush().finally(() => process.exit(0)));

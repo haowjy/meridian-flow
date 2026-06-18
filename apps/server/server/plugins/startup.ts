@@ -3,15 +3,24 @@
  * validation at boot, logging warnings through the process EventSink.
  */
 import { emitEvent } from "../domains/observability";
+import { getApp } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
-import { getOrBindProcessEventSink, installObservabilityShutdownHooks } from "../lib/observability";
+import {
+  getOrBindProcessEventSink,
+  installObservabilityShutdownHooks,
+  registerProcessShutdownCallback,
+} from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 
 const eventSink = getOrBindProcessEventSink(createEventSinkFromEnv);
 
 installApiProcessCrashPolicy({ eventSink });
+registerProcessShutdownCallback(async () => {
+  const app = await getApp();
+  await app.documentSync.drainHocuspocusPersistence();
+});
 installObservabilityShutdownHooks();
 
 export default async function startupPlugin() {

@@ -468,6 +468,18 @@ export function createInMemoryAppServices(): AppServices {
     async requireOwnedDocument() {
       throw new Error("in-memory document sync is not implemented");
     },
+
+    bindHocuspocus() {},
+    async loadHocuspocusDocument() {
+      return undefined;
+    },
+    persistConnectionUpdate() {},
+    async storeHocuspocusDocument() {},
+    async drainHocuspocusPersistence() {},
+    getPersistenceQueueMetrics() {
+      return [];
+    },
+
     async initializeMirror() {
       throw new Error("in-memory document sync is not implemented");
     },
