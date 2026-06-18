@@ -1,10 +1,10 @@
 /**
- * Marketing app stylesheet — imports Tailwind plus the shared Warm Organic
+ * Marketing app stylesheet — imports Tailwind plus the shared Ink & Jade
  * theme and applies the public-site base chrome. This surface consumes shared
  * tokens directly and does not define project-only utilities.
  */
 @import 'tailwindcss' source('../');
-@import '@meridian/design-tokens/warm-paper.css';
+@import '@meridian/design-tokens/ink-jade.css';
 
 @layer base {
   :root {
