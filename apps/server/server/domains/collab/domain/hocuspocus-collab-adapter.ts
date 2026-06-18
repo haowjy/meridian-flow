@@ -32,7 +32,7 @@ import {
 
 export type HocuspocusRuntime = Pick<
   Hocuspocus,
-  "openDirectConnection" | "documents" | "flushPendingStores"
+  "openDirectConnection" | "documents" | "flushPendingStores" | "closeConnections"
 >;
 
 export type PersistenceQueueMetrics = Array<{
@@ -473,6 +473,10 @@ export function createHocuspocusCollabAdapter(deps: {
     return readDocAsMarkdown(doc, await filetypeFor(documentId));
   }
 
+  function forgetDocument(documentId: DocumentId): void {
+    runtime().closeConnections(documentId);
+  }
+
   return {
     bind,
     loadDocument,
@@ -483,5 +487,6 @@ export function createHocuspocusCollabAdapter(deps: {
     writeDocument,
     editDocument,
     readAsMarkdown,
+    forgetDocument,
   };
 }

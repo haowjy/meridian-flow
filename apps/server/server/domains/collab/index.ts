@@ -10,7 +10,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type * as Y from "yjs";
 import type { DocumentAccessPort } from "../../lib/document-access.js";
-import { forgetYjsDocumentCache } from "../../routes/ws/yjs.js";
 import { KeyedMutex } from "../../shared/keyed-mutex.js";
 import { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
 import { touchDocumentActivity } from "./domain/document-activity.js";
@@ -225,7 +224,7 @@ export function createDocumentSyncService(deps: {
   return {
     getOrCreateMirror: inner.getOrCreateMirror.bind(inner),
     forgetMirror(documentId: string): void {
-      void forgetYjsDocumentCache(documentId);
+      hocuspocus.forgetDocument(documentId as DocumentId);
     },
     readAsMarkdown,
     editFromMarkdown: inner.editFromMarkdown.bind(inner),

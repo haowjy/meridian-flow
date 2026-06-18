@@ -137,11 +137,6 @@ export async function drainYjsCollabPersistence(): Promise<void> {
   await app.documentSync.drainHocuspocusPersistence();
 }
 
-export async function forgetYjsDocumentCache(documentId: string): Promise<void> {
-  const hocuspocus = await getYjsHocuspocus();
-  hocuspocus.closeConnections(documentId);
-}
-
 export default defineWebSocketHandler(() => ({
   async upgrade(request) {
     const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
