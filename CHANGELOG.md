@@ -2,6 +2,11 @@
 
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
+- Typography: load Cormorant Garamond (display), Noto Serif (prose), and Inter
+  (UI chrome) via Google Fonts in both app and www roots; added a `--font-prose`
+  token and repointed `--font-heading`/`--font-sans`. Applied the prose serif and
+  a calm ~68ch measure with generous leading to the manuscript editor and the
+  conversation/markdown surfaces; headings use the Cormorant display serif.
 - Renamed the shared token file `warm-paper.css` to `ink-jade.css` and swapped
   the palette to the Ink & Jade direction: warm rice-paper grounds, near-black
   ink type, jade primary, and a new cinnabar seal accent (chrome only). Added

@@ -1,7 +1,11 @@
 /**
  * Editor stylesheet — tokenized ProseMirror chrome for collaborative context
- * documents. Geometry and color are expressed through Warm Organic variables so
+ * documents. Geometry and color are expressed through Ink & Jade variables so
  * the editor follows the app theme without embedding component logic.
+ *
+ * Long-form manuscript reading: Noto Serif prose, a calm ~68ch measure, and
+ * generous leading. The prose stays undecorated — the cinnabar signature lives
+ * only in chrome, never in the manuscript itself.
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
@@ -10,6 +14,8 @@
 .meridian-editor .ProseMirror {
   min-height: 100%;
   outline: none;
+  max-width: 68ch;
+  font-family: var(--font-prose);
 }
 
 .meridian-editor .ProseMirror > * + * {
@@ -23,7 +29,8 @@
 .meridian-editor .ProseMirror h5,
 .meridian-editor .ProseMirror h6 {
   color: var(--color-foreground);
-  font-weight: 650;
+  font-family: var(--font-heading);
+  font-weight: 600;
   line-height: 1.15;
 }
 
@@ -40,8 +47,8 @@
 .meridian-editor .ProseMirror blockquote,
 .meridian-editor .ProseMirror table {
   color: var(--color-foreground);
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: 1.0625rem;
+  line-height: 1.8;
 }
 
 .meridian-editor .ProseMirror blockquote {
