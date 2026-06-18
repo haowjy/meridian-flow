@@ -61,7 +61,7 @@ const FILTER_LABELS: Record<ThreadFilter, string> = {
 };
 
 const ICON_TRIGGER_CLASSES =
-  "focus-ring relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border-subtle bg-card p-0 text-sm font-medium text-ink-muted shadow-xs transition-all hover:border-border-focus hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0";
+  "focus-ring relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border-subtle bg-surface-warm p-0 text-sm font-medium text-ink-muted shadow-xs transition-all hover:border-border-focus hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
 export function ViewMenu({
   groupBy,
@@ -146,7 +146,7 @@ export function ThreadSearch({ value, onChange }: ThreadSearchProps) {
         aria-label={t`Search chats`}
         placeholder={t`Search chats`}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full border-border-subtle bg-card pl-7 md:!text-[13px]"
+        className="h-8 w-full border-border-subtle bg-surface-warm pl-7 md:!text-[13px]"
       />
     </div>
   );

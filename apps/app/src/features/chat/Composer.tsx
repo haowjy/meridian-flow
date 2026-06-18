@@ -131,8 +131,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   return (
     <div
       className={cn(
-        "surface-card rounded-[18px] px-4 pt-4 pb-3 transition-[border-color,box-shadow] focus-within:border-border-focus",
-        variant === "hero" ? "shadow-hero" : "shadow-card",
+        "border border-border px-4 pt-4 pb-3 transition-[border-color,box-shadow] focus-within:border-border-focus",
+        // Hero floats on the manuscript page as a raised lift surface; the
+        // pinned composer sits flush on the warm dock as a recessed field —
+        // surface-warm reads as a warm field on BOTH the bright page and the
+        // chrome, so callers don't need a per-context fill.
+        variant === "hero"
+          ? "bg-card rounded-[18px] shadow-hero"
+          : "bg-surface-warm rounded-[14px] shadow-input",
       )}
     >
       <Textarea
