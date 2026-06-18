@@ -191,6 +191,22 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("reports access-lost when denied before first sync completes", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      documentId: "doc-1",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    await flushMicrotasks();
+    expect(session.getSnapshot().status).toBe("syncing");
+
+    current().emit({ kind: "unauthorized", reason: "permission-denied", code: 4401 });
+    expect(session.getSnapshot().status).toBe("access-lost");
+
+    void session.destroy();
+  });
+
   it("treats permanent document denial as access-lost, not offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
