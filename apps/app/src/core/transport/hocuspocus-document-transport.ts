@@ -124,6 +124,9 @@ export function createHocuspocusDocumentTransport({
     onClose: handleClose,
   });
 
+  // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
+  provider.attach();
+
   if (provider.synced) resolveSynced();
 
   return {
