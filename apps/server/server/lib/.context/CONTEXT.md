@@ -112,7 +112,6 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 | File | Role |
 |---|---|
 | `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, hub catchup/live events, unsubscribe/cleanup. |
-| `ws-yjs-handler.ts` | Multiplexed Yjs collaboration handler. One socket can subscribe to many documents; `DocumentAccessPort` gates each document. |
 | `ws-safe-send.ts` | Defensive `peer.send` wrapper used for all server-initiated sends. |
 
 ## Route helpers / services
