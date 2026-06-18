@@ -13,10 +13,12 @@ import {
   documentYjsHeads,
   documentYjsUpdates,
 } from "@meridian/database";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
+import type { EventSink } from "../../observability/index.js";
+import { emitEvent } from "../../observability/index.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { PersistedUpdate, UpdateOrigin } from "../ports/document-sync.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./document-activity.js";
@@ -32,15 +34,29 @@ import {
 
 export type HocuspocusRuntime = Pick<
   Hocuspocus,
-  "openDirectConnection" | "documents" | "flushPendingStores" | "closeConnections"
+  | "openDirectConnection"
+  | "documents"
+  | "flushPendingStores"
+  | "closeConnections"
+  | "getDocumentsCount"
+  | "getConnectionsCount"
 >;
 
-export type PersistenceQueueMetrics = Array<{
+export type PersistenceQueueMetric = {
   documentId: string;
   depth: number;
   oldestAgeMs: number;
   dropped: number;
-}>;
+};
+
+export type CollabPersistenceMetrics = {
+  queues: PersistenceQueueMetric[];
+  liveDocumentCount: number;
+  openConnectionCount: number;
+};
+
+/** @deprecated Use CollabPersistenceMetrics — kept for import sites during transition. */
+export type PersistenceQueueMetrics = CollabPersistenceMetrics;
 
 type QueueTask = {
   startedAt: number;
@@ -76,7 +92,7 @@ class PersistenceQueues {
     return true;
   }
 
-  metrics(): PersistenceQueueMetrics {
+  metrics(): PersistenceQueueMetric[] {
     const now = Date.now();
     const documentIds = new Set([
       ...this.queues.keys(),
@@ -162,6 +178,37 @@ async function resetMirrorRows(db: Database, documentId: DocumentId): Promise<vo
   });
 }
 
+async function seedMirrorFromMarkdownProjection(input: {
+  db: Database;
+  store: DocumentStore;
+  documentId: DocumentId;
+}): Promise<Uint8Array | undefined> {
+  const [document] = await input.db
+    .select({ markdown: documents.markdownProjection, fileType: documents.fileType })
+    .from(documents)
+    .where(eq(documents.id, input.documentId))
+    .limit(1);
+  if (!document) return undefined;
+  const entry = createMirror(document.markdown, document.fileType);
+  await input.store.transaction(async (tx) => {
+    const seq = await tx.appendUpdate({
+      documentId: input.documentId,
+      updateData: encodeState(entry),
+      ...originColumns({ type: "system" }),
+    });
+    await tx.upsertHead({
+      documentId: input.documentId,
+      fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+      schemaVersion: COLLAB_SCHEMA_VERSION,
+      filetype: document.fileType,
+      latestUpdateSeq: seq,
+      latestStateVector: encodeStateVector(entry),
+      latestCheckpointId: null,
+    });
+  });
+  return encodeState(entry);
+}
+
 async function appendUpdateAndAdvanceHead(input: {
   store: DocumentStore;
   documentId: string;
@@ -183,6 +230,7 @@ async function appendUpdateAndAdvanceHead(input: {
     const nextHead = {
       documentId: input.documentId,
       fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+      schemaVersion: COLLAB_SCHEMA_VERSION,
       filetype: input.filetype,
       latestUpdateSeq: updateSeq,
       latestStateVector: Y.encodeStateVector(input.document),
@@ -209,6 +257,7 @@ export function createHocuspocusCollabAdapter(deps: {
   db: Database;
   store: DocumentStore;
   autoCheckpointEvery: number;
+  eventSink?: EventSink;
 }) {
   const queues = new PersistenceQueues();
   const inFlightStores = new Set<Promise<void>>();
@@ -239,29 +288,32 @@ export function createHocuspocusCollabAdapter(deps: {
     try {
       const head = await deps.store.getHead(documentId);
       if (!head) {
-        const [document] = await deps.db
-          .select({ markdown: documents.markdownProjection, fileType: documents.fileType })
-          .from(documents)
-          .where(eq(documents.id, documentId))
-          .limit(1);
-        if (!document) return undefined;
-        const entry = createMirror(document.markdown, document.fileType);
-        await deps.store.transaction(async (tx) => {
-          const seq = await tx.appendUpdate({
-            documentId,
-            updateData: encodeState(entry),
-            ...originColumns({ type: "system" }),
-          });
-          await tx.upsertHead({
-            documentId,
-            fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-            filetype: document.fileType,
-            latestUpdateSeq: seq,
-            latestStateVector: encodeStateVector(entry),
-            latestCheckpointId: null,
-          });
+        return seedMirrorFromMarkdownProjection({
+          db: deps.db,
+          store: deps.store,
+          documentId,
         });
-        return encodeState(entry);
+      }
+
+      if (head.schemaVersion !== COLLAB_SCHEMA_VERSION) {
+        if (deps.eventSink) {
+          emitEvent(deps.eventSink, {
+            level: "warn",
+            source: "collab.hocuspocus",
+            name: "document.schema_version_mismatch",
+            payload: {
+              documentId,
+              storedSchemaVersion: head.schemaVersion,
+              currentSchemaVersion: COLLAB_SCHEMA_VERSION,
+            },
+          });
+        }
+        await resetMirrorRows(deps.db, documentId);
+        return seedMirrorFromMarkdownProjection({
+          db: deps.db,
+          store: deps.store,
+          documentId,
+        });
       }
 
       const checkpoint = await deps.store.getLatestCheckpoint(documentId);
@@ -282,29 +334,11 @@ export function createHocuspocusCollabAdapter(deps: {
     } catch (error) {
       if (!(error instanceof YjsDecodeError)) throw error;
       await resetMirrorRows(deps.db, documentId);
-      const [document] = await deps.db
-        .select({ markdown: documents.markdownProjection, fileType: documents.fileType })
-        .from(documents)
-        .where(eq(documents.id, documentId))
-        .limit(1);
-      if (!document) return undefined;
-      const entry = createMirror(document.markdown, document.fileType);
-      await deps.store.transaction(async (tx) => {
-        const seq = await tx.appendUpdate({
-          documentId,
-          updateData: encodeState(entry),
-          ...originColumns({ type: "system" }),
-        });
-        await tx.upsertHead({
-          documentId,
-          fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-          filetype: document.fileType,
-          latestUpdateSeq: seq,
-          latestStateVector: encodeStateVector(entry),
-          latestCheckpointId: null,
-        });
+      return seedMirrorFromMarkdownProjection({
+        db: deps.db,
+        store: deps.store,
+        documentId,
       });
-      return encodeState(entry);
     }
   }
 
@@ -393,6 +427,7 @@ export function createHocuspocusCollabAdapter(deps: {
     origin: UpdateOrigin;
   }): Promise<{ persistedUpdate: PersistedUpdate | null; markdown: string }> {
     const filetype = await filetypeFor(input.documentId);
+    // R15 deferred: agent-write token bucket would attach here (openDirectConnection write path).
     const connection = await runtime().openDirectConnection(input.documentId, {
       origin: input.origin,
     });
@@ -477,13 +512,23 @@ export function createHocuspocusCollabAdapter(deps: {
     runtime().closeConnections(documentId);
   }
 
+  function collabMetrics(): CollabPersistenceMetrics {
+    const runtimeInstance = hocuspocus;
+    return {
+      queues: queues.metrics(),
+      liveDocumentCount:
+        runtimeInstance?.getDocumentsCount() ?? runtimeInstance?.documents.size ?? 0,
+      openConnectionCount: runtimeInstance?.getConnectionsCount() ?? 0,
+    };
+  }
+
   return {
     bind,
     loadDocument,
     persistConnectionUpdate,
     storeDocument,
     drain,
-    metrics: () => queues.metrics(),
+    metrics: collabMetrics,
     writeDocument,
     editDocument,
     readAsMarkdown,

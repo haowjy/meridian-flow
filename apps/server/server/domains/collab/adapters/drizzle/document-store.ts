@@ -43,6 +43,7 @@ function mapHead(row: typeof documentYjsHeads.$inferSelect, filetype: string): H
   return {
     documentId: row.documentId,
     fragmentName: row.fragmentName,
+    schemaVersion: row.schemaVersion,
     filetype,
     latestUpdateSeq: row.latestUpdateSeq,
     latestStateVector: row.latestStateVector ? toBytes(row.latestStateVector) : null,
@@ -113,6 +114,7 @@ export function createDrizzleDocumentStore(db: StoreDb): DocumentStore {
         .values({
           documentId: asDocumentId(head.documentId),
           fragmentName: head.fragmentName,
+          schemaVersion: head.schemaVersion,
           latestUpdateSeq: head.latestUpdateSeq,
           latestStateVector: stateVector,
           latestCheckpointId: head.latestCheckpointId,
@@ -121,6 +123,7 @@ export function createDrizzleDocumentStore(db: StoreDb): DocumentStore {
           target: documentYjsHeads.documentId,
           set: {
             fragmentName: head.fragmentName,
+            schemaVersion: head.schemaVersion,
             latestUpdateSeq: head.latestUpdateSeq,
             latestStateVector: stateVector,
             latestCheckpointId: head.latestCheckpointId,
