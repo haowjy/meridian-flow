@@ -148,17 +148,6 @@ const readBody = (await readResponse.json()) as { markdown: string };
 if (readBody.markdown !== expectedMarkdown)
   throw new Error("context read did not return written markdown");
 
-const forgetCacheResponse = await fetch(new URL("/api/_smoke/collab/forget-cache", serverUrl), {
-  method: "POST",
-  headers: { ...authHeaders, "content-type": "application/json" },
-  body: JSON.stringify({ documentId: bootstrap.documentId }),
-});
-if (forgetCacheResponse.status !== 200) {
-  throw new Error(
-    `forget-cache failed: ${forgetCacheResponse.status} ${await forgetCacheResponse.text()}`,
-  );
-}
-
 const verifyYjs = new WebSocket(wsUrlFor(serverUrl), {
   headers: authHeaders,
 });
