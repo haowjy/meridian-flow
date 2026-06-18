@@ -55,8 +55,9 @@ export type CollabPersistenceMetrics = {
   openConnectionCount: number;
 };
 
-/** @deprecated Use CollabPersistenceMetrics — kept for import sites during transition. */
-export type PersistenceQueueMetrics = CollabPersistenceMetrics;
+const DRAIN_MAX_ITERATIONS = 100;
+const DRAIN_MAX_MS = 30_000;
+const DRAIN_SETTLE_DELAY_MS = 10;
 
 type QueueTask = {
   startedAt: number;
@@ -178,6 +179,33 @@ async function resetMirrorRows(db: Database, documentId: DocumentId): Promise<vo
   });
 }
 
+async function resetAndSeedFromMarkdownProjection(input: {
+  db: Database;
+  store: DocumentStore;
+  documentId: DocumentId;
+  eventSink?: EventSink;
+  schemaMismatch?: { storedSchemaVersion: number };
+}): Promise<Uint8Array | undefined> {
+  if (input.schemaMismatch && input.eventSink) {
+    emitEvent(input.eventSink, {
+      level: "warn",
+      source: "collab.hocuspocus",
+      name: "document.schema_version_mismatch",
+      payload: {
+        documentId: input.documentId,
+        storedSchemaVersion: input.schemaMismatch.storedSchemaVersion,
+        currentSchemaVersion: COLLAB_SCHEMA_VERSION,
+      },
+    });
+  }
+  await resetMirrorRows(input.db, input.documentId);
+  return seedMirrorFromMarkdownProjection({
+    db: input.db,
+    store: input.store,
+    documentId: input.documentId,
+  });
+}
+
 async function seedMirrorFromMarkdownProjection(input: {
   db: Database;
   store: DocumentStore;
@@ -247,7 +275,7 @@ async function appendUpdateAndAdvanceHead(input: {
         upToSeq: updateSeq,
         reason: "auto",
       });
-      await store.upsertHead({ ...nextHead, latestCheckpointId: checkpointId });
+      await store.setLatestCheckpointId(input.documentId, checkpointId);
     }
   });
   return { updateSeq, updateData: input.update };
@@ -296,23 +324,12 @@ export function createHocuspocusCollabAdapter(deps: {
       }
 
       if (head.schemaVersion !== COLLAB_SCHEMA_VERSION) {
-        if (deps.eventSink) {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "collab.hocuspocus",
-            name: "document.schema_version_mismatch",
-            payload: {
-              documentId,
-              storedSchemaVersion: head.schemaVersion,
-              currentSchemaVersion: COLLAB_SCHEMA_VERSION,
-            },
-          });
-        }
-        await resetMirrorRows(deps.db, documentId);
-        return seedMirrorFromMarkdownProjection({
+        return resetAndSeedFromMarkdownProjection({
           db: deps.db,
           store: deps.store,
           documentId,
+          eventSink: deps.eventSink,
+          schemaMismatch: { storedSchemaVersion: head.schemaVersion },
         });
       }
 
@@ -333,8 +350,7 @@ export function createHocuspocusCollabAdapter(deps: {
       return encodeState(entry);
     } catch (error) {
       if (!(error instanceof YjsDecodeError)) throw error;
-      await resetMirrorRows(deps.db, documentId);
-      return seedMirrorFromMarkdownProjection({
+      return resetAndSeedFromMarkdownProjection({
         db: deps.db,
         store: deps.store,
         documentId,
@@ -388,18 +404,15 @@ export function createHocuspocusCollabAdapter(deps: {
         await deps.store.transaction(async (tx) => {
           const head = await tx.getHead(documentId);
           if (!head) return;
-          const state = Y.encodeStateAsUpdate(document);
           const checkpointId = await tx.insertCheckpoint({
             documentId,
-            state,
+            state: Y.encodeStateAsUpdate(document),
             stateVector: Y.encodeStateVector(document),
             upToSeq: head.latestUpdateSeq,
             reason: "store",
           });
-          const freshHead = await tx.getHead(documentId);
-          if (!freshHead) return;
-          filetype = freshHead.filetype;
-          await tx.upsertHead({ ...freshHead, latestCheckpointId: checkpointId });
+          await tx.setLatestCheckpointId(documentId, checkpointId);
+          filetype = head.filetype;
         });
         if (filetype) {
           await updateMarkdownProjection(
@@ -413,12 +426,47 @@ export function createHocuspocusCollabAdapter(deps: {
     );
   }
 
+  function hasPendingPersistenceWork(): boolean {
+    const metrics = collabMetrics();
+    return metrics.queues.some((queue) => queue.depth > 0) || inFlightStores.size > 0;
+  }
+
   async function drain(): Promise<void> {
-    await queues.drainAll();
-    hocuspocus?.flushPendingStores();
-    while (inFlightStores.size > 0) {
-      await Promise.all([...inFlightStores]);
+    const startedAt = Date.now();
+    for (let iteration = 0; iteration < DRAIN_MAX_ITERATIONS; iteration += 1) {
+      await queues.drainAll();
+      hocuspocus?.flushPendingStores();
+      while (inFlightStores.size > 0) {
+        await Promise.all([...inFlightStores]);
+      }
+      if (!hasPendingPersistenceWork()) {
+        return;
+      }
+      if (Date.now() - startedAt > DRAIN_MAX_MS) {
+        console.error("collab drain quiescence timeout", {
+          iteration,
+          metrics: collabMetrics(),
+          inFlightStores: inFlightStores.size,
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, DRAIN_SETTLE_DELAY_MS));
     }
+    console.error("collab drain max iterations exceeded", {
+      metrics: collabMetrics(),
+      inFlightStores: inFlightStores.size,
+    });
+  }
+
+  async function recoverDocumentFromMarkdownProjection(
+    documentId: DocumentId,
+  ): Promise<Uint8Array | undefined> {
+    return resetAndSeedFromMarkdownProjection({
+      db: deps.db,
+      store: deps.store,
+      documentId,
+      eventSink: deps.eventSink,
+    });
   }
 
   async function writeDocument(input: {
@@ -533,5 +581,6 @@ export function createHocuspocusCollabAdapter(deps: {
     editDocument,
     readAsMarkdown,
     forgetDocument,
+    recoverDocumentFromMarkdownProjection,
   };
 }

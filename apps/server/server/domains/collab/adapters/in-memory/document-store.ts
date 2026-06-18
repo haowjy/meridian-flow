@@ -108,6 +108,12 @@ export function createInMemoryDocumentStore(): DocumentStore {
         getState().heads.set(head.documentId, cloneHead(head));
       },
 
+      async setLatestCheckpointId(documentId, checkpointId) {
+        const head = getState().heads.get(documentId);
+        if (!head) return;
+        head.latestCheckpointId = checkpointId;
+      },
+
       async appendUpdate(input: AppendUpdateInput) {
         const current = getState();
         current.updateSeq += 1;
