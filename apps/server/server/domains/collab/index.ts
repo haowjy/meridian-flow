@@ -323,6 +323,9 @@ export function createDocumentSyncService(deps: {
   const inner = createInnerDocumentSyncService(store, { compaction: false, ...deps.options });
   const facadeMutex = new KeyedMutex();
   const queues = new PersistenceQueues();
+  const innerReadAsMarkdown = inner.readAsMarkdown.bind(inner);
+  const innerWriteFromMarkdown = inner.writeFromMarkdown.bind(inner);
+  const innerTransformFromMarkdown = inner.transformFromMarkdown.bind(inner);
   let hocuspocus: HocuspocusRuntime | null = null;
 
   function runtime(): HocuspocusRuntime | null {
@@ -404,13 +407,10 @@ export function createDocumentSyncService(deps: {
   }): Promise<{ persistedUpdate: PersistedUpdate | null; markdown: string }> {
     const instance = runtime();
     if (!instance) {
-      const fallback = await inner.writeFromMarkdown(
-        input.documentId,
-        input.markdown,
-        input.origin,
-      );
+      await ensureMirrorForDocument(deps.db, inner, input.documentId);
+      const fallback = await innerWriteFromMarkdown(input.documentId, input.markdown, input.origin);
       if (!fallback.ok) throw syncErrorToHttp(fallback.error);
-      const read = await inner.readAsMarkdown(input.documentId);
+      const read = await innerReadAsMarkdown(input.documentId);
       if (!read.ok) throw syncErrorToHttp(read.error);
       return { persistedUpdate: fallback.value, markdown: read.value };
     }
@@ -451,7 +451,8 @@ export function createDocumentSyncService(deps: {
   }> {
     const instance = runtime();
     if (!instance) {
-      const fallback = await inner.transformFromMarkdown(
+      await ensureMirrorForDocument(deps.db, inner, input.documentId);
+      const fallback = await innerTransformFromMarkdown(
         input.documentId,
         input.transform,
         input.origin,
@@ -696,7 +697,7 @@ export function createDocumentSyncService(deps: {
           value: readDocAsMarkdown(live, await filetypeFor(documentId as DocumentId)),
         };
       }
-      return inner.readAsMarkdown(documentId);
+      return innerReadAsMarkdown(documentId);
     },
 
     async requireOwnedDocument(documentId: DocumentId, userId: UserId) {
@@ -751,7 +752,7 @@ export function createDocumentSyncService(deps: {
         const result = await inner.applyUpdate(input.documentId, input.update, input.origin);
         if (!result.ok) throw syncErrorToHttp(result.error);
 
-        const markdownResult = await inner.readAsMarkdown(input.documentId);
+        const markdownResult = await innerReadAsMarkdown(input.documentId);
         if (!markdownResult.ok) throw syncErrorToHttp(markdownResult.error);
 
         const now = new Date();
