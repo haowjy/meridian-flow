@@ -21,7 +21,7 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 export const UserPreferences = z.object({
   ui: z
     .object({
-      theme: z.enum(["warm-paper"]).optional(),
+      theme: z.enum(["ink-jade"]).optional(),
       sidebarWidth: z.number().optional(),
       editorFontSize: z.number().optional(),
     })
