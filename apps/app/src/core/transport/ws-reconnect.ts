@@ -3,7 +3,7 @@
  *
  * Defines the default backoff config and pure delay computations (jittered
  * exponential for normal attempts, fixed for persistent retries). No socket
- * state; consumed by `WsThreadTransport` and `DocumentSessionTransport`.
+ * state; consumed by `WsThreadTransport` and Hocuspocus document transport.
  */
 export type WsReconnectBackoffConfig = {
   maxReconnectAttempts?: number;

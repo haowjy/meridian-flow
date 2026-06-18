@@ -2,8 +2,8 @@
  * socket-lifecycle — the boring, shared WebSocket control plane for the WS
  * transports.
  *
- * Owns everything that is identical between `WsThreadTransport` and
- * `DocumentSessionTransport`: socket creation, generation/epoch tracking,
+ * Owns everything that is identical between `WsThreadTransport` and the
+ * Hocuspocus-backed document transport: socket creation, generation/epoch tracking,
  * connect/reconnect with jittered backoff (via `ws-reconnect`), ping-timeout
  * liveness, terminal-close policy (via `isTerminalWsClose`), and connection-state
  * publication. The consumer owns only its domain: URL/binaryType, what to do on
