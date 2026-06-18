@@ -2,6 +2,14 @@
 
 ## Hocuspocus collab hardening (2026-06-18, branch h/hocuspocus)
 
+- Fixed document session status when access is denied before first server sync:
+  terminal/unauthorized transport states now pre-empt the initial-sync gate so
+  the pill shows access-lost instead of stuck syncing.
+- Tightened Hocuspocus terminal-denial classification to explicit 4401/4403 close
+  codes and `onAuthenticationFailed` (per-doc denial), dropping loose reason
+  substring heuristics that could misclassify transient closes.
+- Added regression tests for denial-before-sync status, transport terminal
+  classification, and registry union-of-openers retention lifecycle.
 - Versioned client IndexedDB persistence keys by `COLLAB_SCHEMA_VERSION` so schema
   bumps invalidate stale local Yjs caches and force server resync; best-effort GC
   deletes older per-document IndexedDB entries.
