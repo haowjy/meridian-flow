@@ -26,6 +26,7 @@ export const DOCUMENT_NODE_NAMES = [
   "image",
   "figure",
   "hard_break",
+  "horizontal_rule",
   "text",
 ] as const;
 
