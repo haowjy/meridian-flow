@@ -127,6 +127,22 @@ export function createInMemoryDocumentSyncFacade(
   }
 
   return Object.assign(inner, {
+    bindHocuspocus(): void {},
+
+    async loadHocuspocusDocument(): Promise<Uint8Array | undefined> {
+      return undefined;
+    },
+
+    persistConnectionUpdate(): void {},
+
+    async storeHocuspocusDocument(): Promise<void> {},
+
+    async drainHocuspocusPersistence(): Promise<void> {},
+
+    getPersistenceQueueMetrics() {
+      return [];
+    },
+
     async initializeMirror(documentId: DocumentId): Promise<void> {
       await ensureMirror(documentId);
     },
