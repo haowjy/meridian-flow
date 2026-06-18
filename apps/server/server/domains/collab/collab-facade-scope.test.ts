@@ -76,7 +76,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
       contextSourceId: sourceId,
       name: "chapter",
       extension: "md",
-      markdownProjection: "# Chapter",
+      markdownProjection: "# Chapter\n\nBody and tail",
       fileType: "markdown",
     });
   });
@@ -149,15 +149,21 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
 
   it("applies parallel facade edits without clobbering", async () => {
     const facade = createBoundFacade(db);
+    await facade.writeDocument({
+      documentId,
+      markdown: "# Chapter\n\nBody and tail",
+      origin: { type: "user", actorUserId: userId },
+    });
+
     await Promise.all([
       facade.editDocument({
         documentId,
-        transform: (markdown) => `${markdown}a`,
+        transform: (markdown) => markdown.replace("Body", "Body a"),
         origin: { type: "user", actorUserId: userId },
       }),
       facade.editDocument({
         documentId,
-        transform: (markdown) => `${markdown}b`,
+        transform: (markdown) => markdown.replace("tail", "tail b"),
         origin: { type: "user", actorUserId: userId },
       }),
     ]);
@@ -165,7 +171,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("collab facade project-scoped scope
     const read = await facade.readAsMarkdown(documentId);
     expect(read.ok).toBe(true);
     if (read.ok) {
-      expect(read.value).toMatch(/^# Chapter(ab|ba)$/);
+      expect(read.value).toBe("# Chapter\n\nBody a and tail b\n");
     }
   });
 });

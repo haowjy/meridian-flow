@@ -12,24 +12,27 @@ describe("createInMemoryDocumentSyncFacade", () => {
   it("applies parallel facade edits without clobbering", async () => {
     const documentId = crypto.randomUUID() as DocumentId;
     const facade = createInMemoryDocumentSyncFacade({
-      resolveDocumentProjection: () => ({ markdown: "# Chapter", filetype: "markdown" }),
+      resolveDocumentProjection: () => ({
+        markdown: "# Chapter\n\nBody and tail",
+        filetype: "markdown",
+      }),
     });
 
     await facade.writeDocument({
       documentId,
-      markdown: "# Chapter",
+      markdown: "# Chapter\n\nBody and tail",
       origin: { type: "user", actorUserId: USER },
     });
 
     await Promise.all([
       facade.editDocument({
         documentId,
-        transform: (markdown) => `${markdown}a`,
+        transform: (markdown) => markdown.replace("Body", "Body a"),
         origin: { type: "user", actorUserId: USER },
       }),
       facade.editDocument({
         documentId,
-        transform: (markdown) => `${markdown}b`,
+        transform: (markdown) => markdown.replace("tail", "tail b"),
         origin: { type: "user", actorUserId: USER },
       }),
     ]);
@@ -37,7 +40,7 @@ describe("createInMemoryDocumentSyncFacade", () => {
     const read = await facade.readAsMarkdown(documentId);
     expect(read.ok).toBe(true);
     if (read.ok) {
-      expect(read.value).toMatch(/^# Chapter(ab|ba)$/);
+      expect(read.value).toBe("# Chapter\n\nBody a and tail b\n");
     }
   });
 });

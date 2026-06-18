@@ -22,7 +22,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
 
     await expect(port.read("manuscript://chapter-1.md")).resolves.toEqual({
       ok: true,
-      value: expect.objectContaining({ content: "# Chapter 1" }),
+      value: expect.objectContaining({ content: "# Chapter 1\n" }),
     });
   });
 
@@ -33,7 +33,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     await port.write("notes/draft.md", "bare path", { origin: { type: "system" } });
     const read = await port.read("manuscript://notes/draft.md");
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("bare path");
+    if (read.ok) expect(read.value.content).toBe("bare path\n");
   });
 
   it("keeps project manuscript trees isolated by project", async () => {
@@ -44,7 +44,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     await first.write("manuscript://shared.md", "from project 1", { origin: { type: "system" } });
     await expect(first.read("manuscript://shared.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "from project 1" }),
+      value: expect.objectContaining({ content: "from project 1\n" }),
     });
     await expect(second.read("manuscript://shared.md")).resolves.toMatchObject({
       ok: false,
@@ -64,11 +64,11 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
 
     await expect(userB.read("manuscript://shared.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "project manuscript" }),
+      value: expect.objectContaining({ content: "project manuscript\n" }),
     });
     await expect(userB.read("kb://refs.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "project kb" }),
+      value: expect.objectContaining({ content: "project kb\n" }),
     });
   });
 
@@ -82,7 +82,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     });
     await expect(projectB.read("user://profile.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "cross-project profile" }),
+      value: expect.objectContaining({ content: "cross-project profile\n" }),
     });
   });
 
@@ -94,7 +94,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     await workPort.write("work://plan.md", "scratch", { origin: { type: "system" } });
     await expect(workPort.read("work://plan.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "scratch" }),
+      value: expect.objectContaining({ content: "scratch\n" }),
     });
   });
 
@@ -108,7 +108,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     await port.write(`work://${workB}/notes.md`, "other work", { origin: { type: "system" } });
     await expect(port.read(`work://${workB}/notes.md`)).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "other work" }),
+      value: expect.objectContaining({ content: "other work\n" }),
     });
 
     await expect(port.read(`work://${workC}/notes.md`)).resolves.toMatchObject({
@@ -148,7 +148,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     });
     await expect(port.read("work://scratch.md")).resolves.toMatchObject({
       ok: true,
-      value: expect.objectContaining({ content: "thread scratch" }),
+      value: expect.objectContaining({ content: "thread scratch\n" }),
     });
   });
 
@@ -156,15 +156,15 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     const factory = createInMemoryUnifiedContextPortFactory();
     const port = factory.forProject("project_1", USER);
 
-    await port.write("manuscript://chapter-1.md", "# Chapter", {
+    await port.write("manuscript://chapter-1.md", "# Chapter\n\nBody and tail", {
       origin: { type: "human", userId: USER },
     });
 
     await Promise.all([
-      port.edit("manuscript://chapter-1.md", (content) => `${content}a`, {
+      port.edit("manuscript://chapter-1.md", (content) => content.replace("Body", "Body a"), {
         origin: { type: "human", userId: USER },
       }),
-      port.edit("manuscript://chapter-1.md", (content) => `${content}b`, {
+      port.edit("manuscript://chapter-1.md", (content) => content.replace("tail", "tail b"), {
         origin: { type: "human", userId: USER },
       }),
     ]);
@@ -172,7 +172,7 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
     const read = await port.read("manuscript://chapter-1.md");
     expect(read.ok).toBe(true);
     if (read.ok) {
-      expect(read.value.content).toMatch(/^# Chapter(ab|ba)$/);
+      expect(read.value.content).toBe("# Chapter\n\nBody a and tail b\n");
     }
   });
 });

@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import { createInMemoryDocumentStore } from "./adapters/in-memory/document-store.js";
 import { createDocumentSyncService } from "./domain/document-sync-service.js";
 import { buildFragmentCache } from "./domain/fragment-cache.js";
-import { blockToMarkdown, markdownToNode, nodeToMarkdown } from "./domain/schemas.js";
+import { blockToMdx, mdxToNode, nodeToMdx } from "./domain/schemas.js";
 import { encodeState, rebuildMirror } from "./domain/yjs-mirror.js";
 import type { DocumentStore } from "./ports/document-store.js";
 
@@ -51,7 +51,7 @@ function clientUpdate(stateBytes: Uint8Array, newMarkdown: string): Uint8Array {
   const frag = doc.getXmlFragment("prosemirror");
   const before = Y.encodeStateVector(doc);
   doc.transact(() => {
-    updateYFragment(doc, frag, markdownToNode("document", newMarkdown), {
+    updateYFragment(doc, frag, mdxToNode("document", newMarkdown), {
       mapping: new Map(),
       isOMark: new Map(),
     });
@@ -63,9 +63,9 @@ describe("DocumentSyncService — document schema", () => {
   it("seeds, normalizes markdown, and is idempotent on re-open", async () => {
     const service = createDocumentSyncService(createInMemoryDocumentStore());
 
-    const first = unwrap(await service.getOrCreateMirror(DOC, "# Title\n\n- a\n- b", "markdown"));
-    // prosemirror-markdown normalizes bullet markers to "*" (tight list).
-    expect(first).toBe("# Title\n\n* a\n* b");
+    const first = unwrap(await service.getOrCreateMirror(DOC, "# Title\n\n* a\n* b", "markdown"));
+    // remark-stringify normalizes bullet markers to "-" (tight list).
+    expect(first).toBe("# Title\n\n- a\n- b\n");
 
     const second = unwrap(await service.getOrCreateMirror(DOC, "ignored", "markdown"));
     expect(second).toBe(first);
@@ -103,7 +103,7 @@ describe("DocumentSyncService — document schema", () => {
     await service.getOrCreateMirror(DOC, "old content", "markdown");
 
     await service.writeFromMarkdown(DOC, "# New\n\nFresh body.", { type: "user", userId: "u" });
-    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("# New\n\nFresh body.");
+    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("# New\n\nFresh body.\n");
   });
 
   it("returns not_found for unmirrored documents", async () => {
@@ -144,7 +144,7 @@ describe("DocumentSyncService — persistence", () => {
     await writer.writeFromMarkdown(DOC, "# Doc\n\nbody one\n\nbody two", { type: "system" });
 
     const reader = createDocumentSyncService(store);
-    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("# Doc\n\nbody one\n\nbody two");
+    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("# Doc\n\nbody one\n\nbody two\n");
   });
 
   it("rolls back append-log writes and live state when head advance fails", async () => {
@@ -179,13 +179,13 @@ describe("DocumentSyncService — persistence", () => {
     const updatesAfterFailure = await store.listUpdatesAfter(DOC, 0);
     expect(updatesAfterFailure.map((update) => update.seq)).toEqual([1]);
     expect((await store.getHead(DOC))?.latestUpdateSeq).toBe(1);
-    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("durable body");
+    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("durable body\n");
 
     await failingWriter.writeFromMarkdown(DOC, "successful edit", { type: "system" });
-    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("successful edit");
+    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("successful edit\n");
 
     const reader = createDocumentSyncService(store, { compaction: false });
-    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("successful edit");
+    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("successful edit\n");
   });
 
   it("rolls back head advancement and live state when auto-checkpoint insertion fails", async () => {
@@ -223,7 +223,7 @@ describe("DocumentSyncService — persistence", () => {
     expect((await store.getHead(DOC))?.latestUpdateSeq).toBe(1);
     expect(await store.listUpdatesAfter(DOC, 0)).toHaveLength(1);
     expect(await store.listCheckpoints(DOC)).toHaveLength(0);
-    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("durable body");
+    expect(unwrap(await failingWriter.readAsMarkdown(DOC))).toBe("durable body\n");
   });
 });
 
@@ -236,13 +236,13 @@ describe("DocumentSyncService — checkpoint and restore", () => {
     const restorePointId = unwrap(await service.checkpoint(DOC, "before risky change"));
 
     await service.writeFromMarkdown(DOC, "v1 body changed", { type: "user", userId: "u" });
-    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("v1 body changed");
+    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("v1 body changed\n");
 
     expect(isOk(await service.restore(DOC, restorePointId))).toBe(true);
-    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("v1 body");
+    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("v1 body\n");
 
     const reader = createDocumentSyncService(store);
-    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("v1 body");
+    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("v1 body\n");
   });
 
   it("lists named checkpoints newest first and rejects unknown restore points", async () => {
@@ -270,7 +270,7 @@ describe("DocumentSyncService — auto-checkpoint", () => {
 
     await service.writeFromMarkdown(DOC, "a b c", { type: "system" });
     const reader = createDocumentSyncService(store);
-    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("a b c");
+    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("a b c\n");
   });
 });
 
@@ -284,10 +284,10 @@ describe("DocumentSyncService — applyUpdate (reversal path)", () => {
     const update = clientUpdate(state, "# T\n\nbody edited by editor");
     const applied = await service.applyUpdate(DOC, update, { type: "user", userId: "u" });
     expect(isOk(applied)).toBe(true);
-    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor");
+    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor\n");
 
     const reader = createDocumentSyncService(store);
-    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor");
+    expect(unwrap(await reader.readAsMarkdown(DOC))).toBe("# T\n\nbody edited by editor\n");
   });
 
   it("maps malformed editor updates to corrupt_state and keeps the mirror usable", async () => {
@@ -299,12 +299,12 @@ describe("DocumentSyncService — applyUpdate (reversal path)", () => {
       userId: "u",
     });
     expect(isErr(bad) && bad.error.code).toBe("corrupt_state");
-    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("hello body");
+    expect(unwrap(await service.readAsMarkdown(DOC))).toBe("hello body\n");
   });
 });
 
-describe("schemas — markdown isomorphism", () => {
-  it("round-trips supported rich document markdown", () => {
+describe("schemas — MDX isomorphism", () => {
+  it("round-trips supported rich document MDX", () => {
     const md = [
       "# Heading",
       "",
@@ -313,8 +313,8 @@ describe("schemas — markdown isomorphism", () => {
       "",
       "> Quote line.",
       "",
-      "* Bullet one",
-      "* Bullet two",
+      "- Bullet one",
+      "- Bullet two",
       "",
       "3. Ordered one",
       "4. Ordered two",
@@ -324,41 +324,41 @@ describe("schemas — markdown isomorphism", () => {
       "```",
     ].join("\n");
 
-    const node = markdownToNode("document", md);
-    expect(nodeToMarkdown("document", node)).toBe(md);
+    const node = mdxToNode("document", md);
+    expect(node.eq(mdxToNode("document", nodeToMdx("document", node)))).toBe(true);
   });
 
   it("round-trips code as raw text", () => {
     const code = "for i in range(10):\n    print(i)\n";
-    const node = markdownToNode("code", code);
-    expect(nodeToMarkdown("code", node)).toBe(code);
+    const node = mdxToNode("code", code);
+    expect(nodeToMdx("code", node)).toBe(code);
     expect(node.firstChild?.type.name).toBe("code_block");
   });
 });
 
-describe("fragment-cache — full markdown", () => {
-  it("joins per-block fragments into the full serialization", () => {
+describe("fragment-cache — full MDX", () => {
+  it("whole-doc serialization matches nodeToMdx", () => {
     const md = "# Title\n\nFirst.\n\nSecond.\n\n```py\nx = 1\n```";
-    const root = markdownToNode("document", md);
+    const root = mdxToNode("document", md);
     const cache = buildFragmentCache(root, "document");
 
-    expect(cache.fullMarkdown).toBe(nodeToMarkdown("document", root));
+    expect(cache.fullMarkdown).toBe(nodeToMdx("document", root));
   });
 
   it("reflects single-block edits in fullMarkdown", () => {
     const before = buildFragmentCache(
-      markdownToNode("document", "# A\n\npara one\n\npara two"),
+      mdxToNode("document", "# A\n\npara one\n\npara two"),
       "document",
     );
     const after = buildFragmentCache(
-      markdownToNode("document", "# A\n\npara one\n\npara EDITED"),
+      mdxToNode("document", "# A\n\npara one\n\npara EDITED"),
       "document",
     );
 
     expect(after.fullMarkdown).not.toBe(before.fullMarkdown);
     expect(after.fullMarkdown).toContain("para EDITED");
 
-    const para = markdownToNode("document", "lone").firstChild;
-    expect(para && blockToMarkdown("document", para)).toBe("lone");
+    const para = mdxToNode("document", "lone").firstChild;
+    expect(para && blockToMdx("document", para)).toBe("lone\n");
   });
 });
