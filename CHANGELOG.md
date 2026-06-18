@@ -1,5 +1,11 @@
 # Changelog
 
+## Dev portless app stability (2026-06-17, branch h/v3)
+
+- Fixed app dev websocket proxy startup when `MERIDIAN_API_ORIGIN` is present
+  but blank in `.env`; the app now falls back to the portless server origin
+  instead of crashing Vite on `/api/threads/ws`.
+
 ## TipTap v3 editor upgrade (2026-06-17, branch h/tiptap-v3-upgrade)
 
 - Upgraded the shared TipTap editor stack to v3, including the collaboration

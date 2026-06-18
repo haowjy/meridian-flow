@@ -12,6 +12,7 @@ import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
 import { detectWorktreePrefix } from "./dev/detect-worktree-prefix";
 import { createPortlessHttpsAgent } from "./dev/portless-https-agent";
 import { linguiMacroBabelPlugin, shikiSsrExternalPlugin } from "./dev/vite-plugins";
+import { readOptionalEnvString } from "./src/core/env";
 import {
   resolveApiDevOriginFallback,
   resolveApiDevOriginForAppHost,
@@ -28,8 +29,8 @@ export default defineConfig(({ mode }) => {
     }
   }
   const apiDevOrigin =
-    process.env.MERIDIAN_API_ORIGIN ??
-    env.MERIDIAN_API_ORIGIN ??
+    readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN) ??
+    readOptionalEnvString(env.MERIDIAN_API_ORIGIN) ??
     resolveApiDevOriginFallback(detectWorktreePrefix(repoRoot));
   const portlessHttpsAgent = createPortlessHttpsAgent();
 
