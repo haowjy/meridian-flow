@@ -12,6 +12,7 @@
  */
 import { getGlobalStartContext } from "@tanstack/react-start";
 
+import { readOptionalEnvString } from "@/core/env";
 import {
   resolveApiDevOriginFallback,
   resolveApiDevOriginForAppHost,
@@ -51,8 +52,7 @@ function firstHeaderValue(value: string | null): string | undefined {
 function configuredApiOrigin(): string | undefined {
   if (typeof process === "undefined") return undefined;
   // See isDevRuntime — cannot use getAppServerConfig() from this isomorphic module.
-  const value = process.env.MERIDIAN_API_ORIGIN?.trim();
-  return value || undefined;
+  return readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
 }
 
 function requestUrlHost(request: Request): string | undefined {
