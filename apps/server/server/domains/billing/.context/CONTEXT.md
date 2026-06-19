@@ -67,4 +67,4 @@ parity reference; they are not consumed by the Drizzle adapter.
   soft-cancel/drain billing.
 - **Depends on `@meridian/database/schema`** — `creditLots`, `creditTransactions`,
   `modelResponses` (for pricing audit columns).
-- **Depends on `lib/` shared** — `currentDrizzleDb` transaction context.
+- **Depends on `apps/server/server/shared/drizzle-transaction.ts`** — `currentDrizzleDb` / `runInDrizzleTransaction` ambient transaction context.
