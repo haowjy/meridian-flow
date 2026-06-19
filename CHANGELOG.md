@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Docs (DB knowledge layer): added `packages/database/.context/CONTEXT.md`
+  (qi-layer expected it; only `AGENTS.md` + `README.md` existed). Records the
+  timestamp `mode` policy (default `Date` via `_shared.ts`; only `mode:"string"`
+  exceptions are `users.{created_at,updated_at}` and `thread_works.created_at`),
+  the "never bind a JS `Date` into a raw `sql` fragment" invariant with the
+  canonical typed-comparator and `::timestamptz` round-trip patterns, the
+  migration workflow, and a pointer to the `apps/server` transaction model.
 - Frontend cleanup (R1, step 2): relocated `rename()` out of the thread store.
   Thread rename was a pure query-cache mutation with no store state living on
   `ThreadStoreActions`. Moved it to a `useRenameThread` hook beside
