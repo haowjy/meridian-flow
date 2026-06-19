@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Frontend cleanup: dropped the placeholder Import workspace screen — removed
+  `?screen=import` from nav (`SCREENS`), desktop `ImportPaneController`, phone
+  import pane, `CorpusImportPanel`, and the unused corpus-upload client API.
+  Server import endpoints stay for a future entry point.
+
 - Docs (DB knowledge layer): promoted the DB schema map from the docs-repo work
   dir into the qi-layer as a durable, regenerate-on-demand artifact —
   `packages/database/.context/schema-map.md` (orientation text) +

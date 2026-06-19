@@ -21,7 +21,6 @@ import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { HomePaneController } from "./HomePaneController";
-import { ImportPaneController } from "./ImportPaneController";
 import {
   type SlotGridSurface,
   SURFACE_WIDTH_BOUNDS,
@@ -253,14 +252,6 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
       // sidebar/dock expand toggles, and the per-variant editor toolbar
       // owns the files-collapse affordance. See `ContextViewer`.
       return null;
-    case "import":
-      return (
-        <ImportPaneController
-          projectId={props.projectId}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          chatToggle={surfaceToggle("chat", t`Expand chat`)}
-        />
-      );
   }
 }
 
