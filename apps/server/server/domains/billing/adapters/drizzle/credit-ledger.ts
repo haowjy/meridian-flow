@@ -8,7 +8,8 @@
  */
 import type { Database } from "@meridian/database";
 import { creditLots, creditTransactions } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, type SQL, sql } from "drizzle-orm";
+import type { IndexColumn } from "drizzle-orm/pg-core";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -44,6 +45,50 @@ function toBigInt(value: unknown): bigint {
 }
 function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
+}
+
+interface LotConflictGuard {
+  target: IndexColumn | IndexColumn[];
+  where: SQL;
+}
+
+/**
+ * The idempotency guard a credit-lot insert rides on `onConflictDoNothing`:
+ * which unique index plus the partial-index predicate it must match. One guard
+ * per grant family (subscription period, Stripe purchase session, signup grant,
+ * monthly grant). Manual / ad-hoc grants have no idempotency key → `null` (plain
+ * insert). Keeping the dispatch here collapses what was a 5-arm nested ternary
+ * around the insert into one decision + one insert site.
+ */
+function resolveLotConflictGuard(
+  src: "grant" | "purchase" | "subscription",
+  input: Pick<CreditGrantInput, "reason" | "stripeSessionId">,
+): LotConflictGuard | null {
+  if (src === "subscription" && input.reason) {
+    return {
+      target: [creditLots.userId, creditLots.grantReason],
+      where: sql`${creditLots.sourceType} = 'subscription' AND ${creditLots.grantReason} IS NOT NULL`,
+    };
+  }
+  if (src === "purchase" && input.stripeSessionId) {
+    return {
+      target: creditLots.stripeSessionId,
+      where: sql`${creditLots.stripeSessionId} IS NOT NULL`,
+    };
+  }
+  if (src === "grant" && input.reason === "signup") {
+    return {
+      target: [creditLots.userId, creditLots.grantReason],
+      where: sql`${creditLots.grantReason} = 'signup'`,
+    };
+  }
+  if (src === "grant" && input.reason?.startsWith("monthly_")) {
+    return {
+      target: [creditLots.userId, creditLots.grantReason],
+      where: sql`${creditLots.grantReason} LIKE 'monthly_%'`,
+    };
+  }
+  return null;
 }
 
 async function findExistingGrantTransaction(
@@ -188,44 +233,11 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           grantReason: input.reason ?? null,
           metadata: input.metadata ?? {},
         };
-        const [lot] =
-          src === "subscription" && input.reason
-            ? await tx
-                .insert(creditLots)
-                .values(values)
-                .onConflictDoNothing({
-                  target: [creditLots.userId, creditLots.grantReason],
-                  where: sql`${creditLots.sourceType} = 'subscription' AND ${creditLots.grantReason} IS NOT NULL`,
-                })
-                .returning({ id: creditLots.id })
-            : src === "purchase" && input.stripeSessionId
-              ? await tx
-                  .insert(creditLots)
-                  .values(values)
-                  .onConflictDoNothing({
-                    target: creditLots.stripeSessionId,
-                    where: sql`${creditLots.stripeSessionId} IS NOT NULL`,
-                  })
-                  .returning({ id: creditLots.id })
-              : src === "grant" && input.reason === "signup"
-                ? await tx
-                    .insert(creditLots)
-                    .values(values)
-                    .onConflictDoNothing({
-                      target: [creditLots.userId, creditLots.grantReason],
-                      where: sql`${creditLots.grantReason} = 'signup'`,
-                    })
-                    .returning({ id: creditLots.id })
-                : src === "grant" && input.reason?.startsWith("monthly_")
-                  ? await tx
-                      .insert(creditLots)
-                      .values(values)
-                      .onConflictDoNothing({
-                        target: [creditLots.userId, creditLots.grantReason],
-                        where: sql`${creditLots.grantReason} LIKE 'monthly_%'`,
-                      })
-                      .returning({ id: creditLots.id })
-                  : await tx.insert(creditLots).values(values).returning({ id: creditLots.id });
+        const guard = resolveLotConflictGuard(src, input);
+        const builder = tx.insert(creditLots).values(values);
+        const [lot] = await (guard ? builder.onConflictDoNothing(guard) : builder).returning({
+          id: creditLots.id,
+        });
         const lotId = lot?.id;
         if (!lotId) {
           const racedTransactionId = await findExistingGrantTransaction(tx, {
