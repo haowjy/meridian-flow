@@ -9,7 +9,13 @@ import { createMirror, encodeState, encodeStateVector, originColumns } from "./y
 const DOC = "00000000-0000-4000-8000-000000000501" as DocumentId;
 
 function stubDb(): Database {
-  return {} as Database;
+  const noopChain: ProxyHandler<object> = {
+    get(_, prop) {
+      if (prop === "then") return (resolve: (v: never[]) => void) => resolve([]);
+      return () => new Proxy({}, noopChain);
+    },
+  };
+  return new Proxy({}, noopChain) as Database;
 }
 
 describe("createHocuspocusCollabAdapter", () => {
