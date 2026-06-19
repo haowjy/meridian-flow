@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Fix billing checkout 500 (`POST /api/billing/checkout-sessions`): the Drizzle
+  subscription upsert compared `currentPeriodStart` via raw ``sql`… > ${date}```
+  fragments, which bind the JS `Date` straight to postgres-js and throw
+  `TypeError [ERR_INVALID_ARG_TYPE]` (the server logger surfaced it only as an
+  opaque "Failed query"). Switched those comparisons to Drizzle's typed
+  `gt`/`lt`/`lte`/`eq` operators so the timestamp column encodes the `Date` to an
+  ISO string. Pre-existing bug, newly reachable now that `/billing` exposes
+  Checkout. (`apps/server` subscription-store.)
 - Settings overlay + unified provider tree (voluma-derived): collapsed
   `_authenticated.tsx` to ONE unconditional provider tree (AppQuery → project →
   thread → transport → copilot) for every authenticated route, deleting the
