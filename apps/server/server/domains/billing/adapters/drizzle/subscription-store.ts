@@ -1,6 +1,6 @@
 import type { Database } from "@meridian/database";
 import { userSubscriptions } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type {
   SubscriptionRecord,
@@ -43,14 +43,17 @@ function isStaleSubscriptionUpdate(
 }
 
 function monotonicUpdateWhere(input: SubscriptionUpsertInput) {
+  // Typed comparators (lt/eq) encode the Date through the timestamp column so
+  // postgres-js receives an ISO string; a raw `sql` fragment would bind the
+  // Date object directly and throw ERR_INVALID_ARG_TYPE.
   const inputStart = new Date(input.currentPeriodStart);
-  return sql`
-    ${userSubscriptions.currentPeriodStart} < ${inputStart}
-    OR (
-      ${userSubscriptions.currentPeriodStart} = ${inputStart}
-      AND NOT (${userSubscriptions.status} = 'cancelled' AND ${input.status} <> 'cancelled')
-    )
-  `;
+  return or(
+    lt(userSubscriptions.currentPeriodStart, inputStart),
+    and(
+      eq(userSubscriptions.currentPeriodStart, inputStart),
+      sql`NOT (${userSubscriptions.status} = 'cancelled' AND ${input.status} <> 'cancelled')`,
+    ),
+  );
 }
 
 export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore {
@@ -74,7 +77,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
               eq(userSubscriptions.userId, input.userId),
               inArray(userSubscriptions.status, ["active", "past_due", "trialing"]),
               sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
-              sql`${userSubscriptions.currentPeriodStart} > ${inputStart}`,
+              gt(userSubscriptions.currentPeriodStart, inputStart),
             ),
           )
           .limit(1);
@@ -90,7 +93,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
               eq(userSubscriptions.userId, input.userId),
               inArray(userSubscriptions.status, ["active", "past_due", "trialing"]),
               sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
-              sql`${userSubscriptions.currentPeriodStart} <= ${inputStart}`,
+              lte(userSubscriptions.currentPeriodStart, inputStart),
             ),
           );
       }
