@@ -16,6 +16,12 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Server hardening (S4): the observability error serializer
+  (`unknownToEventPayload`) now copies Postgres driver diagnostics
+  (`code`, `severity`, `detail`, `hint`, `constraint`, `column`, `table`, and a
+  truncated `query`) under a `postgres` key when the error is postgres-js-shaped,
+  so a driver/binding failure no longer surfaces as an opaque "Failed query".
+  Defensive — reads fields by name and never throws.
 - Server hardening (S6): made `@meridian/contracts/protocol` the canonical
   billing wire types — the credit-ledger domain port now aliases
   `CreditTransactionSummary`/`CreditBalanceBreakdown` to `BillingTransaction`/
