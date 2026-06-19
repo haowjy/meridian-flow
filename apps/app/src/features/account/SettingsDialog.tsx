@@ -20,7 +20,6 @@ import type { LucideIcon } from "lucide-react";
 import { CircleUserRound, CreditCard, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect } from "react";
 
-import { useBillingBalance } from "@/client/query/useBilling";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { creditsFromMillicredits } from "@/features/billing/format";
+import { CreditBalanceCard } from "@/features/billing/CreditBalanceCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -313,8 +312,6 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
  * own page, not inside the settings overlay.
  */
 function UsageSection() {
-  const balance = useBillingBalance();
-
   return (
     <div>
       <SectionHeading
@@ -323,23 +320,7 @@ function UsageSection() {
       />
 
       <div className="space-y-5">
-        <div className="rounded-lg border border-border-subtle bg-surface-subtle px-4 py-3">
-          <span className="block text-sm text-muted-foreground">
-            <Trans>Current balance</Trans>
-          </span>
-          <span className="mt-1 block text-xl font-semibold text-foreground">
-            {balance.data ? (
-              <>
-                {creditsFromMillicredits(balance.data.totalBalanceMillicredits)}{" "}
-                <span className="text-sm font-normal text-muted-foreground">
-                  <Trans>credits</Trans>
-                </span>
-              </>
-            ) : (
-              <Trans>Loading…</Trans>
-            )}
-          </span>
-        </div>
+        <CreditBalanceCard variant="compact" />
 
         <Link to="/billing" className="inline-block">
           <Button type="button" variant="outline">

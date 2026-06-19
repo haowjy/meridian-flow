@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F4): unified the duplicated credit-balance UI behind a new
+  `CreditBalanceCard` (`features/billing/`) with `compact`|`full` variants. The
+  settings Usage section composes the `compact` box and `/billing` composes the
+  `full` hero card with the usage bar; both share the one `useBillingBalance()`
+  query + `creditsFromMillicredits` formatter instead of re-deriving the balance
+  markup in two places. No visual change.
 - Frontend cleanup (F3): collapsed the ~120-LOC near-duplicate between
   `LeftSidebar` (desktop rail) and `NavigationDrawer` (phone Sheet) into a shared
   `WorkspaceNavBody` + `ScreenNavItem` in `features/project/shell/`. Both
@@ -10,6 +16,10 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Server hardening (S3): collapsed the 5-way nested ternary that chose the
+  credit-lot `onConflictDoNothing` target/where (with the insert boilerplate
+  repeated per arm) into one `resolveLotConflictGuard(src, input)` dispatcher and
+  a single insert site. Same conflict targets/predicates, no behavior change.
 - Server hardening (S5): replaced the residual raw
   ``sql`${stripeSubscriptionId} <> ${id}``` comparators in the Drizzle
   subscription store with the typed `ne(...)` operator, so the store uses one
