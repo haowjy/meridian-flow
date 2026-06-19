@@ -53,5 +53,3 @@ export function blockToMdx(type: SchemaType, block: PMNode): string {
   }
   return blockToMdxSingle(block);
 }
-
-export { docToMdx, mdxToDoc };

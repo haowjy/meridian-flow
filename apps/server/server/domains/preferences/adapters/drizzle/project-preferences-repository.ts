@@ -12,7 +12,7 @@ import type { Database } from "@meridian/database";
 import { projectUserPreferences } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { defaultProjectPreferences, mergeProjectPreferences } from "../../domain.js";
-import type { ProjectPreferencesRepository } from "../../ports/index.js";
+import type { ProjectPreferencesRepository } from "../../ports/project-preferences-repository.js";
 
 type ProjectPreferencesRow = typeof projectUserPreferences.$inferSelect;
 

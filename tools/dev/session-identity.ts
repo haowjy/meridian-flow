@@ -8,7 +8,7 @@ function stableHash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function sanitizeSegment(input: string): string {
+function sanitizeSegment(input: string): string {
   return input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -16,7 +16,7 @@ export function sanitizeSegment(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export function truncateSegment(input: string, maxLength = MAX_SLUG_LENGTH): string {
+function truncateSegment(input: string, maxLength = MAX_SLUG_LENGTH): string {
   if (input.length <= maxLength) {
     return input;
   }
