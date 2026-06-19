@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Docs (app comments): retarget stale Warm Paper file-header comments in
+  `globals.css` and `desktop-layout.ts` to Ink & Jade / Quiet Pro wording.
+
 - Docs (Ink & Jade knowledge capture): updated DESIGN.md, design-tokens/app/root
   `.context`, and app AGENTS.md after the ink-jade-skin merge — Quiet Pro surfaces,
   ThreadCachePort decoupling, settings overlay, and unified authenticated providers.
