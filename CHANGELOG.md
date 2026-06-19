@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Server hardening (S1): wrapped the Drizzle subscription `upsert` (probe →
+  newer-sibling guard → cancel-superseded UPDATE → insert/update) in
+  `runInDrizzleTransaction`, matching `credit-ledger.grant`. A crash mid-flow can
+  no longer leave a user's prior subscriptions cancelled with no replacement row;
+  the multi-statement upsert now commits atomically. No behavior change on the
+  happy path; billing route tests still pass.
 - Server hardening (S2): lifted the subscription monotonic-replacement rule into
   one pure domain module (`billing/domain/subscription-policy.ts`:
   `isMonotonicReplacement` + `classifyActiveSibling` + `ACTIVE_SUBSCRIPTION_STATUSES`),
