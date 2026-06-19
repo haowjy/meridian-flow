@@ -86,12 +86,15 @@ const DEFAULT_USER: EditorUser = {
   color: CURSOR_COLORS[4],
 };
 
-export function cursorColorForUser(userId: string): string {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) | 0;
-  return CURSOR_COLORS[
-    ((hash % CURSOR_COLORS.length) + CURSOR_COLORS.length) % CURSOR_COLORS.length
-  ];
+/** Pick the first palette color not already claimed by another connected client. */
+function pickCursorColor(awareness: Awareness): string {
+  const taken = new Set<string>();
+  for (const [clientID, state] of awareness.getStates()) {
+    if (clientID !== awareness.clientID && state.user?.color) {
+      taken.add(state.user.color as string);
+    }
+  }
+  return CURSOR_COLORS.find((c) => !taken.has(c)) ?? CURSOR_COLORS[0];
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
@@ -145,6 +148,10 @@ function createCollaborationExtensions({
   "document" | "awareness" | "cursorProvider" | "user" | "showCollaborationDecorations"
 >): Extensions {
   const provider = cursorProvider ?? { awareness };
+  const resolvedUser: EditorUser = {
+    name: (user ?? DEFAULT_USER).name,
+    color: pickCursorColor(provider.awareness),
+  };
 
   const collaboration = [
     Collaboration.configure({
@@ -161,7 +168,7 @@ function createCollaborationExtensions({
     ...collaboration,
     CollaborationCaret.configure({
       provider,
-      user: user ?? DEFAULT_USER,
+      user: resolvedUser,
       render: (cursorUser) => {
         const cursor = window.document.createElement("span");
         cursor.classList.add("meridian-collab-cursor");
