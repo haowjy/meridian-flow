@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Server hardening (S2): lifted the subscription monotonic-replacement rule into
+  one pure domain module (`billing/domain/subscription-policy.ts`:
+  `isMonotonicReplacement` + `classifyActiveSibling` + `ACTIVE_SUBSCRIPTION_STATUSES`),
+  killing two of the three drifting copies. The drizzle store keeps only its thin
+  SQL projection (`monotonicUpdateWhere`) and the in-memory store now calls the
+  shared predicates instead of re-implementing the loop — so a divergent (and
+  previously Date-unsafe) SQL path can't re-enter through an adapter. No behavior
+  change; billing route + in-memory ledger tests still pass.
 - Frontend cleanup (F2): removed the throwaway `/proto/palette` explorer — its
   route (`routes/proto.palette.tsx`), its `features/proto/palette/**` feature
   (~736 LOC), and the proto-index link card. The chosen palette already lives
