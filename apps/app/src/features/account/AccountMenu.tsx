@@ -11,10 +11,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
+import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { cn } from "@/lib/utils";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();
+  const { open } = useSettingsNavigation();
 
   const email = user?.email ?? null;
   const label = email ?? t`Signed in`;
@@ -40,10 +42,10 @@ export function AccountMenu() {
         <span className="min-w-0 flex-1 truncate">{label}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuLabel>{t`Profile`}</DropdownMenuLabel>
-        <DropdownMenuItem disabled>{email ?? t`Signed in`}</DropdownMenuItem>
+        <DropdownMenuLabel className="truncate">{email ?? t`Signed in`}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>{t`Settings`}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => open("profile")}>{t`Profile`}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => open()}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link to="/logout">{t`Log out`}</Link>

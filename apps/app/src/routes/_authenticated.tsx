@@ -13,7 +13,11 @@ import {
   useLayoutStore,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
-import { SettingsDialog } from "@/features/account/SettingsDialog";
+import {
+  isSettingsSection,
+  SettingsDialog,
+  type SettingsSection,
+} from "@/features/account/SettingsDialog";
 import {
   seedContextFilesPanelFromLegacy,
   useContextFilesPanelStore,
@@ -37,6 +41,12 @@ const resolveUnauthRedirect = createServerFn({ method: "GET" })
   });
 
 export const Route = createFileRoute("/_authenticated")({
+  // `?settings=` is layout-owned so the settings overlay is URL-addressable from
+  // ANY authenticated route — the path stays put, only the param toggles.
+  // See `features/account/SettingsDialog`.
+  validateSearch: (search: Record<string, unknown>): { settings?: SettingsSection } => ({
+    settings: isSettingsSection(search.settings) ? search.settings : undefined,
+  }),
   loader: async ({ location }) => {
     const { user } = await getAuth();
     if (!user) {
@@ -46,15 +56,11 @@ export const Route = createFileRoute("/_authenticated")({
     }
 
     const currentUser = { userId: user.id, email: user.email ?? null };
-
     const now = Date.now();
-    const usesWorkspaceProviders =
-      location.pathname === "/home" ||
-      location.pathname.startsWith("/project/") ||
-      location.pathname.startsWith("/chat/") ||
-      location.pathname.startsWith("/settings/billing");
 
-    if (!usesWorkspaceProviders) {
+    // `/` immediately redirects to the default project, so skip its list fetch;
+    // every other authenticated route mounts the same shell and wants the list.
+    if (location.pathname === "/") {
       return { user: currentUser, projects: null, now };
     }
 
@@ -73,27 +79,22 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now } = Route.useLoaderData();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const usesWorkspaceProviders =
-    pathname === "/home" ||
-    pathname.startsWith("/project/") ||
-    pathname.startsWith("/chat/") ||
-    pathname.startsWith("/settings/billing");
 
+  // Rehydrate localStorage-backed UI stores on the client only (all use
+  // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
   useEffect(() => {
-    if (!usesWorkspaceProviders) return;
-
     seedContextFilesPanelFromLegacy();
     void useContextFilesPanelStore.persist.rehydrate();
     void useLayoutStore.persist.rehydrate();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-  }, [usesWorkspaceProviders]);
+  }, []);
 
-  if (!usesWorkspaceProviders) {
-    return <Outlet />;
-  }
-
+  // One unconditional provider tree for every authenticated route — the settings
+  // overlay (`?settings=`) and the standalone /billing page render over the same
+  // stores. No pathname-based provider gating: a conditional tree dropped
+  // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
       <ProjectStoreProvider now={now}>

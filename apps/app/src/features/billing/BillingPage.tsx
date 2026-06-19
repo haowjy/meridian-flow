@@ -133,8 +133,8 @@ export function BillingPage() {
                         onClick={() =>
                           checkout.mutate({
                             entryId: entry.id,
-                            successUrl: returnUrl("/settings/billing?checkout=success"),
-                            cancelUrl: returnUrl("/settings/billing?checkout=cancelled"),
+                            successUrl: returnUrl("/billing?checkout=success"),
+                            cancelUrl: returnUrl("/billing?checkout=cancelled"),
                           })
                         }
                       >
