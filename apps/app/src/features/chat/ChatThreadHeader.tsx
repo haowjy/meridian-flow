@@ -9,7 +9,8 @@ import type { Thread } from "@meridian/contracts/protocol";
 import { Check, ChevronDown, Pencil } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { announce, useThreadActions } from "@/client/stores";
+import { useRenameThread } from "@/client/query/useRenameThread";
+import { announce } from "@/client/stores";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -191,7 +192,7 @@ function RenameField({
   initialTitle: string;
   onDone: () => void;
 }) {
-  const actions = useThreadActions();
+  const renameThread = useRenameThread();
   const [draft, setDraft] = useState(initialTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const closedRef = useRef(false);
@@ -208,11 +209,11 @@ function RenameField({
     closedRef.current = true;
     const trimmed = draft.trim();
     if (trimmed) {
-      actions.rename(threadId, trimmed);
+      renameThread(threadId, trimmed);
       announce(t`Renamed to ${trimmed}`);
     }
     onDone();
-  }, [actions, draft, onDone, threadId]);
+  }, [renameThread, draft, onDone, threadId]);
 
   const cancel = useCallback(() => {
     if (closedRef.current) return;
