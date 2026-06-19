@@ -16,12 +16,6 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import {
-  patchThreadInProjectCaches,
-  upsertThreadInProject,
-} from "@/client/query/project-thread-cache";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   clearPendingCheckpointPatchesForThread,
   clearPendingCheckpointPatchesForTurn,
@@ -31,6 +25,7 @@ import { baseTurnFields } from "@/core/session/state-helpers";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
 import { reconcileSnapshotTurns } from "./reconcile-snapshot-turns";
+import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type {
   EnsureAssistantTurnOptions,
   LiveTurnMeta,
@@ -65,7 +60,7 @@ type ThreadStoreSeed = {
 };
 
 type ThreadStoreConfig = ThreadStoreSeed & {
-  queryClient: import("@tanstack/react-query").QueryClient;
+  threadCache: ThreadCachePort;
 };
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
@@ -180,7 +175,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
 }
 
 export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
-  const { now, queryClient } = config;
+  const { now, threadCache } = config;
   return createStore<ThreadStoreSlice>()(
     devtools(
       (set, get) => ({
@@ -200,7 +195,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
         rename(id, title) {
           const next = title.trim() ? title.trim() : null;
-          patchThreadInProjectCaches(queryClient, id, {
+          threadCache.patchThread(id, {
             title: next,
             updatedAt: new Date().toISOString(),
           });
@@ -211,7 +206,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         },
 
         ensureThread(thread) {
-          upsertThreadInProject(queryClient, thread);
+          threadCache.upsertThread(thread);
           set((state) =>
             thread.id in state.turnsByThread
               ? state
@@ -327,7 +322,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
 
           if (threadListPatch) {
-            patchThreadInProjectCaches(queryClient, threadId, threadListPatch);
+            threadCache.patchThread(threadId, threadListPatch);
           }
         },
 
@@ -398,21 +393,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
 
           if (threadListPatch) {
-            patchThreadInProjectCaches(queryClient, threadId, threadListPatch);
+            threadCache.patchThread(threadId, threadListPatch);
           }
 
           if (!shouldInvalidateSnapshot) return;
-          // React Query side effects stay outside Zustand's `set()` call; the
-          // terminal reducer path writes store state first, then asks snapshots
-          // to catch projector-only fields such as final usage/cost metadata.
-          queueMicrotask(() => {
-            void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-            if (terminalProjectId) {
-              void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.threads(terminalProjectId),
-              });
-            }
-          });
+          // Cache side effects stay outside Zustand's `set()` call: the terminal
+          // reducer path writes store state first, then asks the cache to catch
+          // projector-only fields such as final usage/cost metadata. The port
+          // owns the render-safe deferral.
+          threadCache.invalidateThread(threadId, terminalProjectId);
         },
 
         pruneStaleAssistantTurns(threadId) {
@@ -469,7 +458,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           const handoffPending = Boolean(get().handoffPendingThreadIds[threadId]);
           const keepLocalTurns = handoffPending && serverTurns.length === 0;
 
-          upsertThreadInProject(queryClient, thread, lifecycle);
+          threadCache.upsertThread(thread, lifecycle);
           if (!keepLocalTurns) {
             clearPendingCheckpointPatchesForThread(threadId);
           }
@@ -575,7 +564,9 @@ function useThreadStoreApi(): ThreadStoreApi {
 
 export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [store] = useState(() => createThreadStore({ now, queryClient }));
+  const [store] = useState(() =>
+    createThreadStore({ now, threadCache: createThreadCache(queryClient) }),
+  );
 
   /**
    * Keep `store.now` in sync with the route loader's `now` prop.

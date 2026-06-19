@@ -1,10 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
+import { createThreadCache } from "./thread-cache";
 import { createThreadStore } from "./thread-store";
 
 function makeStore() {
-  return createThreadStore({ now: Date.now(), queryClient: new QueryClient() });
+  return createThreadStore({ now: Date.now(), threadCache: createThreadCache(new QueryClient()) });
 }
 
 describe("pending-creation gate", () => {

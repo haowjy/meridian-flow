@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (R1, step 1): decoupled the thread store from React Query.
+  Introduced a thin `ThreadCachePort` (`client/stores/thread-store/thread-cache.ts`)
+  with `upsertThread` / `patchThread` / `invalidateThread`, backed by the existing
+  `project-thread-cache` helpers. `createThreadStore` now takes a `threadCache`
+  port instead of a raw `QueryClient`, so the store no longer mutates the query
+  cache directly — the dual ownership behind the recurring `useThreadStore`/
+  `QueryClient` fragility. The terminal-turn `queueMicrotask` invalidation moved
+  into the port (render-safe deferral, documented there). No behavior change.
 - Frontend cleanup (F6): minor settings/composer tidies. `SettingsDialog` now
   drives both the desktop rail and both presentations' section bodies from a
   single `SECTION_CONTENT` map keyed by `SETTINGS_SECTIONS` (killed the

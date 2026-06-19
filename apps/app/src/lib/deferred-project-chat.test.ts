@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 
 import { DeferredFirstSendLatch, startDeferredProjectChat } from "./deferred-project-chat";
@@ -8,7 +9,10 @@ import { DeferredFirstSendLatch, startDeferredProjectChat } from "./deferred-pro
 describe("startDeferredProjectChat", () => {
   it("seeds an optimistic thread and marks only the thread pending (not the project)", () => {
     const queryClient = new QueryClient();
-    const store = createThreadStore({ now: 1_700_000_000_000, queryClient });
+    const store = createThreadStore({
+      now: 1_700_000_000_000,
+      threadCache: createThreadCache(queryClient),
+    });
     const actions = store.getState();
 
     const { threadId } = startDeferredProjectChat({
@@ -40,7 +44,10 @@ describe("DeferredFirstSendLatch", () => {
 describe("deferred first-send failure rollback", () => {
   it("removes the optimistic user turn so retry can resubmit", () => {
     const queryClient = new QueryClient();
-    const store = createThreadStore({ now: 1_700_000_000_000, queryClient });
+    const store = createThreadStore({
+      now: 1_700_000_000_000,
+      threadCache: createThreadCache(queryClient),
+    });
     const actions = store.getState();
 
     const { threadId } = startDeferredProjectChat({
