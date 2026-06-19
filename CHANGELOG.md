@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fix authenticated tailnet cold loads/reloads: SSR API seeding now uses the
+  same-origin app `/api` proxy for `.ts.net` app hosts instead of falling back to
+  the bare local server origin, which made browser-authenticated reloads render
+  TanStack's `Request failed: 503` error page while client-side `/api` calls
+  succeeded.
 - Fix billing checkout 500 (`POST /api/billing/checkout-sessions`): the Drizzle
   subscription upsert compared `currentPeriodStart` via raw ``sql`… > ${date}```
   fragments, which bind the JS `Date` straight to postgres-js and throw
