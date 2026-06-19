@@ -22,6 +22,13 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Design tokens (S7): the jade gradient/shadow lifts in `ink-jade.css` now derive
+  from the existing OKLCH tokens — `--background-image-gradient-mark`/`-avatar`
+  reference `var(--color-mark-from|-to)` / `var(--color-avatar-from|-to)`, and
+  `--shadow-button`/`-mark` use `color-mix(in oklab, var(--color-mark-from) …%,
+  transparent)` instead of re-encoding jade as raw hex/rgba. Jade is defined once
+  (the OKLCH ladder). Verified the tokens still compile under Tailwind v4 with all
+  `var()` references emitted. (`--color-cream*` left as-is.)
 - Dev tooling (S7): `assertDevInfraReady` (`tools/dev/lib/dev-infra.ts`) now
   throws a typed `DevInfraNotReadyError` instead of calling `process.exit`,
   matching the throw-style of every `dev-db.ts` function and keeping the
