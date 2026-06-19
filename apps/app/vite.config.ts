@@ -9,7 +9,7 @@ import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
-import { detectWorktreePrefix } from "./dev/detect-worktree-prefix";
+import { resolvePortlessServerOrigin } from "./dev/detect-worktree-prefix";
 import { createPortlessHttpsAgent } from "./dev/portless-https-agent";
 import { linguiMacroBabelPlugin, shikiSsrExternalPlugin } from "./dev/vite-plugins";
 import { readOptionalEnvString } from "./src/core/env";
@@ -31,7 +31,8 @@ export default defineConfig(({ mode }) => {
   const apiDevOrigin =
     readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN) ??
     readOptionalEnvString(env.MERIDIAN_API_ORIGIN) ??
-    resolveApiDevOriginFallback(detectWorktreePrefix(repoRoot));
+    resolvePortlessServerOrigin(repoRoot) ??
+    resolveApiDevOriginFallback();
   const portlessHttpsAgent = createPortlessHttpsAgent();
 
   return {
