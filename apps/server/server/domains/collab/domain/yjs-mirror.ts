@@ -1,3 +1,4 @@
+import { schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import {
@@ -7,7 +8,6 @@ import {
 } from "y-prosemirror";
 import * as Y from "yjs";
 import type { SchemaType, UpdateOrigin } from "../ports/document-sync.js";
-import { buildFragmentCache, type FragmentCache } from "./fragment-cache.js";
 import { getSchema, mdxToNode, nodeToMdx } from "./schemas.js";
 
 export interface MirrorEntry {
@@ -15,7 +15,7 @@ export interface MirrorEntry {
   fragmentName: string;
   filetype: string;
   schemaType: SchemaType;
-  cache: FragmentCache;
+  fullMarkdown: string;
 }
 
 export class YjsDecodeError extends Error {
@@ -41,16 +41,12 @@ function rootOf(doc: Y.Doc, schemaType: SchemaType): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), getSchema(schemaType));
 }
 
-function refreshCache(entry: MirrorEntry): void {
-  entry.cache = buildFragmentCache(rootOf(entry.doc, entry.schemaType), entry.schemaType);
-}
-
-function schemaTypeForFiletype(filetype: string): SchemaType {
-  return filetype === "markdown" ? "document" : "code";
+function refreshMarkdown(entry: MirrorEntry): void {
+  entry.fullMarkdown = nodeToMdx(entry.schemaType, rootOf(entry.doc, entry.schemaType));
 }
 
 export function createMirror(initialContent: string, filetype: string): MirrorEntry {
-  const schemaType = schemaTypeForFiletype(filetype);
+  const schemaType = schemaTypeForFiletype(filetype) ?? "code";
   const doc = new Y.Doc();
   const node = mdxToNode(schemaType, initialContent);
   prosemirrorToYXmlFragment(node, fragmentOf(doc));
@@ -59,7 +55,7 @@ export function createMirror(initialContent: string, filetype: string): MirrorEn
     fragmentName: PROSEMIRROR_FRAGMENT_NAME,
     filetype,
     schemaType,
-    cache: buildFragmentCache(node, schemaType),
+    fullMarkdown: nodeToMdx(schemaType, node),
   };
 }
 
@@ -68,7 +64,7 @@ export function rebuildMirror(
   checkpointState: Uint8Array | null,
   updates: Uint8Array[],
 ): MirrorEntry {
-  const schemaType = schemaTypeForFiletype(filetype);
+  const schemaType = schemaTypeForFiletype(filetype) ?? "code";
   const doc = new Y.Doc();
   if (checkpointState) {
     applyBytes(doc, checkpointState);
@@ -76,14 +72,13 @@ export function rebuildMirror(
   for (const update of updates) {
     applyBytes(doc, update);
   }
-  const entry: MirrorEntry = {
+  return {
     doc,
     fragmentName: PROSEMIRROR_FRAGMENT_NAME,
     filetype,
     schemaType,
-    cache: buildFragmentCache(rootOf(doc, schemaType), schemaType),
+    fullMarkdown: nodeToMdx(schemaType, rootOf(doc, schemaType)),
   };
-  return entry;
 }
 
 export function cloneMirror(entry: MirrorEntry): MirrorEntry {
@@ -91,7 +86,7 @@ export function cloneMirror(entry: MirrorEntry): MirrorEntry {
 }
 
 export function readAsMarkdown(entry: MirrorEntry): string {
-  return entry.cache.fullMarkdown;
+  return entry.fullMarkdown;
 }
 
 export function setDocumentToMarkdown(
@@ -108,7 +103,7 @@ export function setDocumentToMarkdown(
     });
   }, origin);
   const update = Y.encodeStateAsUpdate(entry.doc, before);
-  refreshCache(entry);
+  refreshMarkdown(entry);
   return update.length > 0 ? update : null;
 }
 
@@ -120,7 +115,7 @@ export function applyRemoteUpdate(
   const before = Y.encodeStateVector(entry.doc);
   applyBytes(entry.doc, update, origin);
   const effectiveUpdate = Y.encodeStateAsUpdate(entry.doc, before);
-  refreshCache(entry);
+  refreshMarkdown(entry);
   return effectiveUpdate.length > 0 ? effectiveUpdate : null;
 }
 
