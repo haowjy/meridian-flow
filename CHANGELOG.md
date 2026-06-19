@@ -240,7 +240,7 @@
   the server now owns every live `Y.Doc` (single owner), and the client uses a
   `HocuspocusProvider` bound to the existing editor session. Same editor
   experience, but with built-in heartbeat, reconnect, and per-document auth —
-  the attributed update log and markdown projection are preserved.
+  the attributed update log is preserved (overload-dropped updates are not).
 - Deleted the legacy transport stack: custom WS handler, `yjs-multiplex` wire
   protocol + message constants, the old client transport, the
   `DocumentSyncTransport` port, and the dead agent route.

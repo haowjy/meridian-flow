@@ -12,7 +12,7 @@ import {
   documentYjsHeads,
   documentYjsUpdates,
 } from "@meridian/database";
-import { and, asc, desc, eq, gt, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import type {
   AppendUpdateInput,
   CheckpointRow,
@@ -155,19 +155,6 @@ export function createDrizzleDocumentStore(db: StoreDb): DocumentStore {
       return row.id;
     },
 
-    async countUpdatesAfter(documentId, afterSeq) {
-      const [row] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(documentYjsUpdates)
-        .where(
-          and(
-            eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
-            gt(documentYjsUpdates.id, afterSeq),
-          ),
-        );
-      return row?.count ?? 0;
-    },
-
     async listUpdatesAfter(documentId, afterSeq) {
       const rows = await db
         .select()
@@ -256,33 +243,6 @@ export function createDrizzleDocumentStore(db: StoreDb): DocumentStore {
         .where(eq(documentRestorePoints.id, restorePointId(id)))
         .limit(1);
       return row ? mapRestorePoint(row) : null;
-    },
-
-    async compactDocumentLog(input) {
-      await db
-        .delete(documentYjsUpdates)
-        .where(
-          and(
-            eq(documentYjsUpdates.documentId, asDocumentId(input.documentId)),
-            lte(documentYjsUpdates.id, input.pruneUpdatesThroughSeq),
-            lt(documentYjsUpdates.createdAt, new Date(input.pruneRowsCreatedBefore)),
-          ),
-        );
-
-      const keepPredicate =
-        input.keepCheckpointIds.length > 0
-          ? notInArray(documentYjsCheckpoints.id, input.keepCheckpointIds)
-          : sql`true`;
-      await db
-        .delete(documentYjsCheckpoints)
-        .where(
-          and(
-            eq(documentYjsCheckpoints.documentId, asDocumentId(input.documentId)),
-            lte(documentYjsCheckpoints.upToSeq, input.pruneCheckpointsThroughSeq),
-            lt(documentYjsCheckpoints.createdAt, new Date(input.pruneRowsCreatedBefore)),
-            keepPredicate,
-          ),
-        );
     },
   };
 }

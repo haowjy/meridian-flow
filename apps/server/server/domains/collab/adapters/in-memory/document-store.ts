@@ -7,7 +7,6 @@
 import type {
   AppendUpdateInput,
   CheckpointRow,
-  CompactDocumentLogInput,
   DocumentStore,
   HeadRow,
   InsertCheckpointInput,
@@ -130,11 +129,6 @@ export function createInMemoryDocumentStore(): DocumentStore {
         return current.updateSeq;
       },
 
-      async countUpdatesAfter(documentId, afterSeq) {
-        return getState().updates.filter((u) => u.documentId === documentId && u.seq > afterSeq)
-          .length;
-      },
-
       async listUpdatesAfter(documentId, afterSeq) {
         return getState()
           .updates.filter((u) => u.documentId === documentId && u.seq > afterSeq)
@@ -204,34 +198,6 @@ export function createInMemoryDocumentStore(): DocumentStore {
       async getRestorePoint(id) {
         const found = getState().restorePoints.find((r) => r.id === id);
         return found ? { ...found } : null;
-      },
-
-      async compactDocumentLog(input: CompactDocumentLogInput) {
-        const keepCheckpointIds = new Set(input.keepCheckpointIds);
-        const current = getState();
-
-        for (let i = current.updates.length - 1; i >= 0; i -= 1) {
-          const update = current.updates[i];
-          if (
-            update.documentId === input.documentId &&
-            update.seq <= input.pruneUpdatesThroughSeq &&
-            update.createdAt < input.pruneRowsCreatedBefore
-          ) {
-            current.updates.splice(i, 1);
-          }
-        }
-
-        for (let i = current.checkpoints.length - 1; i >= 0; i -= 1) {
-          const checkpoint = current.checkpoints[i];
-          if (
-            checkpoint.documentId === input.documentId &&
-            checkpoint.upToSeq <= input.pruneCheckpointsThroughSeq &&
-            checkpoint.createdAt < input.pruneRowsCreatedBefore &&
-            !keepCheckpointIds.has(checkpoint.id)
-          ) {
-            current.checkpoints.splice(i, 1);
-          }
-        }
       },
     };
   }

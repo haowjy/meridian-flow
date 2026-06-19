@@ -10,7 +10,7 @@
 
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
-import { createInMemoryDocumentSyncFacade } from "../collab/adapters/in-memory/index.js";
+import { createInMemoryDocumentSyncFacade } from "../collab/adapters/in-memory/document-sync-facade.js";
 import type { DocumentSyncFacade } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-store.js";
