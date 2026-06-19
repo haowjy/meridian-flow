@@ -13,7 +13,7 @@ and frontend must build **structurally identical** schemas or y-prosemirror
 corrupts the CRDT — guarded by `schema-parity.test.ts`.
 
 No node or mark may be added without a lossless serializer+parser pair in
-`domain/schemas.ts`.
+`domain/mdx-bridge.ts`.
 
 Transport is Hocuspocus v4 (`domain/hocuspocus-collab-adapter.ts`).
 

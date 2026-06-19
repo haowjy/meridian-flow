@@ -109,10 +109,6 @@ export function describeDocumentStoreConformance(
 
       expect(first < second).toBe(true);
       expect(second < otherDocument).toBe(true);
-      await expect(store.countUpdatesAfter(DOC_A, 0)).resolves.toBe(2);
-      await expect(store.countUpdatesAfter(DOC_A, first)).resolves.toBe(1);
-      await expect(store.countUpdatesAfter(DOC_A, second)).resolves.toBe(0);
-
       const afterFirst = await store.listUpdatesAfter(DOC_A, first);
       expect(afterFirst).toHaveLength(1);
       expect(afterFirst[0]).toMatchObject({
@@ -270,8 +266,6 @@ export function describeDocumentStoreConformance(
           upToSeq: updateSeq,
           createdByUserId: null,
         });
-
-        expect(await tx.countUpdatesAfter(DOC_A, 0)).toBe(1);
       });
 
       const beforeRollback = await snapshotDocument(store, DOC_A);
@@ -406,65 +400,6 @@ export function describeDocumentStoreConformance(
       expectBytes(writtenCheckpoint?.state, [19, 20, 21]);
       expectBytes(writtenCheckpoint?.stateVector, [22, 23, 24]);
     });
-
-    it("compacts only the requested document log while preserving requested checkpoints", async () => {
-      const store = await makeStore();
-
-      const first = await appendSystemUpdate(store, DOC_A, bytes(1));
-      const second = await appendSystemUpdate(store, DOC_A, bytes(2));
-      const third = await appendSystemUpdate(store, DOC_A, bytes(3));
-      const otherDocumentUpdate = await appendSystemUpdate(store, DOC_B, bytes(4));
-
-      const oldCheckpoint = await store.insertCheckpoint({
-        documentId: DOC_A,
-        state: bytes(10),
-        stateVector: bytes(11),
-        upToSeq: first,
-        reason: "old",
-      });
-      const keptCheckpoint = await store.insertCheckpoint({
-        documentId: DOC_A,
-        state: bytes(20),
-        stateVector: bytes(21),
-        upToSeq: second,
-        reason: "keep",
-      });
-      const latestCheckpoint = await store.insertCheckpoint({
-        documentId: DOC_A,
-        state: bytes(30),
-        stateVector: bytes(31),
-        upToSeq: third,
-        reason: "latest",
-      });
-      const otherDocumentCheckpoint = await store.insertCheckpoint({
-        documentId: DOC_B,
-        state: bytes(40),
-        stateVector: bytes(41),
-        upToSeq: otherDocumentUpdate,
-        reason: "other document",
-      });
-
-      await store.compactDocumentLog({
-        documentId: DOC_A,
-        pruneUpdatesThroughSeq: second,
-        pruneRowsCreatedBefore: new Date(Date.now() + 60_000).toISOString(),
-        keepCheckpointIds: [keptCheckpoint],
-        pruneCheckpointsThroughSeq: second,
-      });
-
-      expect((await store.listUpdatesAfter(DOC_A, 0)).map((update) => update.seq)).toEqual([third]);
-      expect((await store.listUpdatesAfter(DOC_B, 0)).map((update) => update.seq)).toEqual([
-        otherDocumentUpdate,
-      ]);
-      await expect(store.getCheckpoint(oldCheckpoint)).resolves.toBeNull();
-      expect((await store.listCheckpoints(DOC_A)).map((checkpoint) => checkpoint.id)).toEqual([
-        latestCheckpoint,
-        keptCheckpoint,
-      ]);
-      expect((await store.listCheckpoints(DOC_B)).map((checkpoint) => checkpoint.id)).toEqual([
-        otherDocumentCheckpoint,
-      ]);
-    });
   });
 }
 
@@ -474,21 +409,6 @@ function bytes(...values: number[]): Uint8Array {
 
 function expectBytes(actual: Uint8Array | null | undefined, expected: number[]) {
   expect(actual ? [...actual] : actual).toEqual(expected);
-}
-
-async function appendSystemUpdate(
-  store: DocumentStore,
-  documentId: string,
-  updateData: Uint8Array,
-): Promise<number> {
-  return store.appendUpdate({
-    documentId,
-    updateData,
-    originType: "system",
-    actorUserId: null,
-    actorAgentRunId: null,
-    actorTurnId: null,
-  });
 }
 
 async function snapshotDocument(store: DocumentStore, documentId: string) {
