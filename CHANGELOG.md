@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F1): deleted the dead `AppShell` desktop-shell island
+  (`components/app/AppShell.tsx`, `AppSidebar.tsx`, `ProjectListSection.tsx`,
+  `ProjectRow.tsx`, `SidebarUndoPill.tsx`), its sole consumer the shadcn
+  `components/ui/sidebar.tsx` primitive, and the now-orphaned
+  `hooks/use-mobile.ts` (`useIsMobile`, used only by `ui/sidebar`). ~1,172 LOC,
+  zero behavior change — the live desktop shell is `features/project/shell/`
+  and the live viewport hook is `use-phone-shell`.
 - Fix authenticated tailnet cold loads/reloads: SSR API seeding now uses the
   same-origin app `/api` proxy for `.ts.net` app hosts instead of falling back to
   the bare local server origin, which made browser-authenticated reloads render
