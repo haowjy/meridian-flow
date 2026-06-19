@@ -75,7 +75,7 @@ composition root (`apps/server/server/lib/app.ts`).
 |---|---|---|
 | `@meridian/contracts` | Shared JSON-natural types, IDs, protocol DTOs | Types only; no server logic |
 | `@meridian/database` | Drizzle schema, migrations, Postgres functions | Persistence shape only; repos live in `apps/server` |
-| `@meridian/design-tokens` | Warm-paper design tokens | CSS/token primitives only |
+| `@meridian/design-tokens` | Ink & Jade design tokens (`ink-jade.css`) | CSS/token primitives only; semantic `@theme`, no raw hex outside package |
 | `@meridian/prosemirror-schema` | Shared ProseMirror node/mark specs | Server and frontend schemas stay structurally identical |
 
 ## App layer
@@ -102,7 +102,7 @@ Agents should read `.context/` before raw source files when entering an area.
 - Upstream `apps/web` is intentionally represented as `apps/www` in this repo, so exact-path audits should classify those paths as ported under the Meridian marketing app name rather than missing.
 - The upstream root/Python SDK and `uv` files are intentionally not ported into tracked source for v3. Meridian Flow's runtime and dev tooling are TypeScript/pnpm/Nx; reintroducing a separate Python SDK/toolchain would be a new product/API decision, not parity work.
 - Files from the rejected external execution-provider subsystem remain excluded by policy. Runtime tools operate through Meridian-owned context/project surfaces instead.
-- The upstream warm-organic token surface is represented by `@meridian/design-tokens/warm-paper.css`; the token values match, with only the Meridian theme name and `apps/www` wording changed.
+- The upstream warm-organic token surface diverged into Ink & Jade (`@meridian/design-tokens/ink-jade.css`); Quiet Pro surface ladder and accent semantics differ from the legacy warm-paper palette.
 - Current app e2e parity now lives under `apps/app/e2e`: auth, vertical slice, mobile shell, chat virtualization, and ProcessDisclosure verification all use WorkOS dev-login plus portless routes. Database-backed specs seed throwaway project/work/thread fixtures and clean them by project id.
 - Remaining exact-path audit findings should classify old branded filenames as renamed, old auth adapter files as rejected, raw Python/toolchain files as superseded, and old provider runtime files as rejected unless a Meridian-owned TypeScript runtime equivalent is explicitly missing.
 

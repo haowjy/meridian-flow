@@ -1,10 +1,10 @@
 ---
 version: alpha
-name: Warm Paper
-summary: Meridian Flow writing project UI — calm editorial surfaces, warm neutrals, restrained green accent, and long-session readability.
+name: Ink & Jade
+summary: Meridian Flow writing project UI — fiction-native skin with Quiet Pro surfaces, ink type, jade actions, and scarce cinnabar seal accents.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
-  canonicalCss: "packages/design-tokens/src"
+  canonicalCss: "ink-jade.css"
   appCss: "apps/app/src/styles/globals.css"
 principles:
   - writing-first
@@ -14,46 +14,50 @@ principles:
   - tokens-not-one-offs
 ---
 
-# Design System: Meridian Flow — Warm Paper
+# Design System: Meridian Flow — Ink & Jade
 
-Agent-facing visual identity for `@meridian/app`. This is a pointer document: token values belong in `@meridian/design-tokens`, while app-only utilities live in `apps/app/src/styles/globals.css`. Do not add raw color values or magic layout numbers in TSX; promote repeated visual decisions into tokens or shared primitives.
+Agent-facing visual identity for `@meridian/app`. Token values live in `@meridian/design-tokens/ink-jade.css`; app-only utilities live in `apps/app/src/styles/globals.css`. Do not add raw color values or magic layout numbers in TSX; promote repeated visual decisions into tokens or shared primitives.
 
 ## Overview
 
-Warm Paper is the v3 project aesthetic: a calm writing environment with warm neutral surfaces, restrained green accenting, editorial rhythm, and compact metadata. It should support long drafting and review sessions without making the writer feel like they are operating infrastructure.
+Ink & Jade is the v3 project aesthetic: a calm writing environment with Quiet Pro warm-grey surfaces (cooler, low-chroma — not bright white cards), near-black ink type, jade primary actions, and cinnabar reserved for seal moments. It should support long drafting and review sessions without making the writer feel like they are operating infrastructure.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
-- **Mood:** warm paper, quiet structure, capable engine.
+- **Mood:** ink on warm paper, quiet structure, capable engine.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
-- **Scope:** authenticated app shell, project/project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
+- **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
+
+**Skin, not shell.** This direction changes identity only — color tokens, typography, accent semantics, texture, brand mark, login hero. Layout, sidebar structure, and composer anatomy stay Voluma-style; restyle tokens, never behavior or layout.
 
 ## Color roles
 
-Use semantic tokens from `@meridian/design-tokens` instead of literal values:
+Use semantic tokens from `@meridian/design-tokens/ink-jade.css` instead of literal values:
 
-- `background` — default page/project wash.
-- `foreground` — primary text and headings.
-- `primary` — brand/action/live-state accent.
-- `card` — elevated cards, dialogs, and popovers.
-- `surface-subtle` — soft fills such as user-message and quiet panel backgrounds.
-- `border` / `border-subtle` / `border-focus` — structural edges and focus affordance.
+- `background` — Quiet Pro canvas (mid rest tone; chrome recedes below, cards lift above).
+- `foreground` — ink type for primary text and headings.
+- `primary` / `jade-text` — jade fill for actions; jade-text for links and labels (fill fails AA on page).
+- `card` / `surface-warm` — raised surfaces (message bubbles, composer field, cards).
+- `sidebar` — chrome step (left rail + right dock).
+- `cinnabar` — **scarce seal only:** favorite/pinned, brand mark, destructive deletions. Never routine selection or active rows (red reads as error).
+- `destructive` — errors and irreversible actions (distinct from cinnabar).
+- `border` / `border-subtle` / `border-focus` — hairline separation; depth reads in surfaces, not shadows.
 - `ink-strong` / `ink-muted` / `ink-subtle` — editorial hierarchy inside dense UI and prose-adjacent surfaces.
-- `destructive` — errors and irreversible actions.
 
 ## Typography
 
-Use the shared sans/heading tokens and app prose utilities. Long-form text must prioritize readability and stable rhythm over decorative styling.
+Three fonts, three jobs — loaded via Google Fonts in each app's root layout:
 
-| Role | Use |
-|---|---|
-| Hero headline | Home greeting and sparse marketing emphasis |
-| Section headline | Shell and panel section titles |
-| Body | Forms, rows, and ordinary UI copy |
-| Small / extra small | Compact rows, counts, timestamps, labels |
-| Meta / eyebrow | Section labels, pills, provenance labels |
-| Answer / prose | Streaming thread text, markdown, draft-adjacent explanations |
+| Role | Font | Use |
+|---|---|---|
+| Display | Cormorant Garamond | Headings, chapter titles, wordmark, login hero |
+| Prose / body | Noto Serif | Manuscript editor, rendered markdown, conversation turns |
+| UI chrome | Inter | Sidebar, buttons, badges, labels, metadata, composer chrome |
 
-Markdown and streaming answers should share the same prose token layer so final and in-progress text do not visually jump.
+Long-form text must prioritize readability and stable rhythm (~68ch measure, generous leading). Markdown and streaming answers share the same prose token layer so final and in-progress text do not visually jump.
+
+## Login
+
+Branded split hero (deep ink ground, needle mark, Cormorant wordmark, corner seal chop). Credentials and account creation are **WorkOS AuthKit hosted sign-in** — the right card hands off to WorkOS; Meridian owns visual identity, not the auth form. Dev login remains available in development.
 
 ## Layout
 
@@ -77,7 +81,7 @@ Core shell expectations:
 
 ## Implementation rules
 
-- Shared visual decisions go in `@meridian/design-tokens` or app-level CSS utilities.
+- Shared visual decisions go in `@meridian/design-tokens/ink-jade.css` or app-level CSS utilities.
 - Components consume semantic classes/vars, not literal colors.
 - Feature surfaces should compose existing UI primitives before adding new ones.
 - App code should preserve the product language: projects, works, chapters, context, threads, agents, turns.

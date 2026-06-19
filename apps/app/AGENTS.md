@@ -8,3 +8,5 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
 - Server auth/config is WorkOS AuthKit (`wos-session` cookie) and lives under `src/server/`; do not add alternate auth adapters in app code.
 - No literal colors in TSX; use design tokens and app CSS utilities.
 - Preserve TipTap/Yjs document-session boundaries; do not invent a second editor sync path.
+- `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
+- Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).

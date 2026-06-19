@@ -35,6 +35,13 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `markPendingCreation`, `clearPendingCreation`, and
   `removeOptimisticUserTurn`; the last one is only rollback for a locally
   appended user turn that failed before server acknowledgement.
+- **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
+  thin seam between thread-store lifecycle transitions and the React Query cache.
+  The store depends on this port, not `QueryClient` directly — list/snapshot
+  projections stay in Query; per-thread turn state stays in the store.
+- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
+  thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
+  (cache-only today, no PATCH endpoint) rather than on the thread store.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
@@ -105,7 +112,24 @@ Authoritative turn history enters the store through exactly two paths:
 
 Do not call `applyThreadSnapshot` from `ChatView` or other view effects. Snapshot application stays in data-sync hooks and transport recovery, and uses identity-based block reconciliation.
 
+## Authenticated layout shell
+
+`src/routes/_authenticated.tsx` mounts one unconditional provider tree for every
+authenticated route (`AppQueryProvider` → `ProjectStoreProvider` →
+`ThreadStoreProvider` → `TransportProvider` → `MeridianCopilotProvider`). No
+pathname-based provider gating — conditional light↔workspace branches previously
+dropped `ThreadStoreProvider` during transitions.
+
+**Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
+`/_authenticated`) so the settings dialog is URL-addressable from any authenticated
+route without changing path. See `features/account/SettingsDialog.tsx`.
+
 ## Project screen routing
+
+`SCREENS` (`features/project/shell/screens.ts`) is the single source of
+route-valid primary destinations: **home, chat, context** (Import removed).
+Settings and phone Results are auxiliary routed surfaces (`?settings=`,
+`?results=`), not drawer/sidebar destinations.
 
 `src/routes/_authenticated/project/$projectId.tsx` owns the workspace search
 params (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
@@ -134,30 +158,35 @@ Ownership rules:
   contradictory KB state from hand-typed/stale URLs). Switching screens drops the
   subordinate params of the screen left behind.
 
-## Visual conventions — Warm Paper design language
+## Visual conventions — Ink & Jade / Quiet Pro
 
-Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; Stitch-shaped overview + YAML snapshot).
+Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
 This section is the implementation contract (tiers, overflow chain, discipline test).
+
+**Skin, not shell.** Ink & Jade is a re-skin — tokens, typography, accent semantics,
+brand mark, login hero. Sidebar/composer structure and interaction patterns stay
+Voluma-style; restyle tokens, never layout or behavior.
 
 ### Token hierarchy
 
-**Tier 1 — semantic tokens (`@meridian/design-tokens/warm-paper.css`).**
+**Tier 1 — semantic tokens (`@meridian/design-tokens/ink-jade.css`).**
 Shared palette imported into `globals.css` as Tailwind v4 `@theme` variables,
 consumed everywhere as classes (`bg-surface-warm`, `shadow-card`, `text-headline-hero`) or direct `var(--color-*)` CSS references. Categories:
 
-- **Colors:** background, foreground, primary, muted, ink-*, chip-*, status-*
+- **Quiet Pro ladder:** background (canvas rest tone), card/surface-warm (lifted fields), sidebar (chrome step)
+- **Colors:** foreground (ink), primary/jade-text, cinnabar (seal only), muted, ink-*, chip-*, status-*
 - **Surfaces:** `surface-warm`, `card`, `surface-subtle`
-- **Borders:** `border`, `border-subtle`, `border-focus`
+- **Borders:** `border`, `border-subtle`, `border-focus` — hairlines; depth in surfaces, not shadows
 - **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-mark`
 - **Gradients:** `gradient-mark`, `gradient-avatar`
 - **Type scale:** `text-eyebrow`, `text-headline-hero`, `text-headline-section`,
   `text-body`, `text-sm`, `text-xs`, `text-meta`, `text-answer`
 - **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry
   needs distinct values
-- **Status colors:** `status-streaming`, `destructive`
+- **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
 
 When a new visual concept appears in ≥2 places, it becomes a Tier 1 token. New
-shared tokens land in `packages/design-tokens/src/warm-paper.css` (or project-only
+shared tokens land in `packages/design-tokens/src/ink-jade.css` (or project-only
 `@theme` in `globals.css` when app-specific); only then are they consumed.
 
 **Tier 2 — `@utility` primitives (also in `globals.css`).** Composite patterns
@@ -224,10 +253,11 @@ Spacing is contextual and resists full centralization:
 
 ### Typography
 
-**System UI stack** for both body and headings (`--font-sans` / `--font-heading`
-in `@theme`). Headline weight/size still comes from `text-headline-*` tokens —
-components never reference font families directly. Webfonts were removed to avoid
-FOUT during dev.
+Three fonts via `@theme`: `--font-heading` → Cormorant Garamond (display),
+`--font-prose` → Noto Serif (editor/turns/markdown), `--font-sans` → Inter (UI
+chrome). Loaded via Google Fonts in the app root layout. Headline weight/size
+comes from `text-headline-*` tokens — components consume token classes, not font
+family names directly.
 
 ### Dark mode (not yet shipped, prepare the seams)
 
