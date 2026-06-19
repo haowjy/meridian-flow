@@ -15,12 +15,16 @@ import {
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 
 import { applyAguiEventToStore } from "./reduce-turn-event";
 
 function foldAguiStream(events: typeof SIMPLE_TEXT_TURN_AGUI, threadId: string) {
-  const store = createThreadStore({ now: Date.now(), queryClient: new QueryClient() });
+  const store = createThreadStore({
+    now: Date.now(),
+    threadCache: createThreadCache(new QueryClient()),
+  });
   for (const event of events) {
     applyAguiEventToStore(store.getState(), threadId, event);
   }

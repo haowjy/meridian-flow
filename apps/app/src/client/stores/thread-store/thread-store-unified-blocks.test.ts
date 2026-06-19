@@ -13,11 +13,12 @@ import { describe, expect, it } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { lifecycleFor } from "@/features/project/lifecycle";
 
+import { createThreadCache } from "./thread-cache";
 import { createThreadStore } from "./thread-store";
 import type { TurnStatusPatch } from "./types";
 
 function makeStore(now = Date.parse("2026-01-01T00:00:00.000Z")) {
-  return createThreadStore({ now, queryClient: new QueryClient() });
+  return createThreadStore({ now, threadCache: createThreadCache(new QueryClient()) });
 }
 
 const PROJECT_ID = "project-1";
@@ -178,7 +179,10 @@ describe("unified-block store actions", () => {
   it("patches project thread-list lifecycle through checkpoint resolve", () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(projectQueryKeys.threads(PROJECT_ID), [threadListItem()]);
-    const store = createThreadStore({ now: Date.parse("2026-01-01T00:00:00.000Z"), queryClient });
+    const store = createThreadStore({
+      now: Date.parse("2026-01-01T00:00:00.000Z"),
+      threadCache: createThreadCache(queryClient),
+    });
 
     store.getState().ensureAssistantTurn("thread-1", "turn-1");
     expect(cachedThreadListItem(queryClient)).toMatchObject({

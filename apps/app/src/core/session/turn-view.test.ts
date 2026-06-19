@@ -8,6 +8,7 @@ import { type Block, EventType, type Thread, type Turn } from "@meridian/contrac
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 
 import { applyAguiEventToStore } from "./reduce-turn-event";
@@ -15,7 +16,7 @@ import { applyAguiEventToStore } from "./reduce-turn-event";
 function makeStore() {
   return createThreadStore({
     now: Date.parse("2026-01-01T00:00:00.000Z"),
-    queryClient: new QueryClient(),
+    threadCache: createThreadCache(new QueryClient()),
   });
 }
 
