@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F3): collapsed the ~120-LOC near-duplicate between
+  `LeftSidebar` (desktop rail) and `NavigationDrawer` (phone Sheet) into a shared
+  `WorkspaceNavBody` + `ScreenNavItem` in `features/project/shell/`. Both
+  sidebars are now chrome-only wrappers (collapse control / Sheet + wordmark);
+  the body owns the screen nav, Chats controls, thread list, and account row. A
+  `presentation` prop carries the desktop↔phone touch/spacing differences, and
+  "close the drawer on select" stays a wrapper concern via wrapped callbacks —
+  mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
 - Server hardening (S1): wrapped the Drizzle subscription `upsert` (probe →
   newer-sibling guard → cancel-superseded UPDATE → insert/update) in
   `runInDrizzleTransaction`, matching `credit-ledger.grant`. A crash mid-flow can
