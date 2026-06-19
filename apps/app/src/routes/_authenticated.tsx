@@ -104,6 +104,10 @@ function AuthenticatedLayout() {
               <div className="app-frame flex flex-col">
                 <ConnectionBanner />
                 <div className="min-h-0 flex-1 overflow-hidden">
+                  {/* Keyed by pathname to force a full remount per route — the
+                      providers above stay mounted, so this intentionally discards
+                      in-route state on navigation (e.g. /project/$id ↔ /billing)
+                      rather than reconciling stale subtrees across routes. */}
                   <Outlet key={pathname} />
                 </div>
               </div>

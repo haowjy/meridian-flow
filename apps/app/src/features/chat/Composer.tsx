@@ -1,10 +1,10 @@
 /**
  * Composer — shared chat input surface used by home and pinned chat footers.
- * It owns textarea growth, keyboard submit/stop behaviour, and attach/send
- * chrome while callers own message dispatch and streaming state.
+ * It owns textarea growth, keyboard submit/stop behaviour, and the send control
+ * while callers own message dispatch and streaming state.
  */
 import { t } from "@lingui/core/macro";
-import { ArrowUp, Paperclip } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import {
   type ChangeEvent,
   forwardRef,
@@ -42,7 +42,7 @@ export type ComposerProps = {
    * Phase 3. Behaviour is identical across variants.
    */
   variant?: "hero" | "pinned";
-  /** Agent chip in the footer left; attach relocates beside send when set. */
+  /** Agent chip rendered in the footer left. */
   agent?: Omit<ComposerAgentControlProps, "compact"> & { compact?: boolean };
 };
 
@@ -59,15 +59,13 @@ function resizeComposerTextarea(el: HTMLTextAreaElement) {
 }
 
 /**
- * The shared notebook composer: an auto-growing textarea with a visual attach
- * affordance and a send button that morphs from a rounded square (send) into a
- * circle (stop) while a turn is streaming. Enter submits; Shift+Enter inserts a
- * newline; Cmd/Ctrl+Enter always submits; Esc cancels a running stream. Clears
- * after a successful submit.
+ * The shared notebook composer: an auto-growing textarea with a send button
+ * that morphs from a rounded square (send) into a circle (stop) while a turn is
+ * streaming. Enter submits; Shift+Enter inserts a newline; Cmd/Ctrl+Enter always
+ * submits; Esc cancels a running stream. Clears after a successful submit.
  *
- * This phase has NO model selector and NO real upload — the attach control is a
- * visual placeholder. The ChatView reuses this component (variant="pinned") in
- * Phase 3, so keep the prop surface stable.
+ * This phase has NO model selector. The ChatView reuses this component
+ * (variant="pinned") in Phase 3, so keep the prop surface stable.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   { onSubmit, onStop, streaming = false, placeholder, autoFocus = false, variant = "hero", agent },
@@ -173,10 +171,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ) : null}
 
         <div className="flex-1" />
-
-        <button type="button" aria-label={t`Attach scans or reference files`} className="icon-chip">
-          <Paperclip className="size-[18px]" />
-        </button>
 
         <Button
           type="button"

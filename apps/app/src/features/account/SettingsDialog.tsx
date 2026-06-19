@@ -105,6 +105,27 @@ function phoneSections(): PhoneSettingsSectionItem[] {
   }));
 }
 
+/**
+ * One body per section, parameterized by presentation — the phone takeover and
+ * the desktop dialog render the SAME bodies; only the surrounding chrome
+ * differs. This is the single place that maps a section to its content.
+ */
+const SECTION_CONTENT: Record<SettingsSection, (presentation: SectionPresentation) => ReactNode> = {
+  profile: (presentation) => <ProfileSection presentation={presentation} />,
+  preferences: (presentation) => <PreferencesSection presentation={presentation} />,
+  usage: () => <UsageSection />,
+};
+
+function SectionContent({
+  section,
+  presentation,
+}: {
+  section: SettingsSection | undefined;
+  presentation: SectionPresentation;
+}) {
+  return section ? SECTION_CONTENT[section](presentation) : null;
+}
+
 export function SettingsDialog() {
   const search = useSearch({ strict: false }) as { settings?: SettingsSection };
   const { open, switchSection, close } = useSettingsNavigation();
@@ -139,9 +160,7 @@ export function SettingsDialog() {
           sections={phoneSections()}
           onSwitchSection={switchSection}
         >
-          {section === "profile" ? <ProfileSection presentation="phone" /> : null}
-          {section === "preferences" ? <PreferencesSection presentation="phone" /> : null}
-          {section === "usage" ? <UsageSection /> : null}
+          <SectionContent section={section} presentation="phone" />
         </PhoneSettingsContent>
       ) : (
         <DialogContent className="flex h-[540px] max-w-3xl gap-0 overflow-hidden p-0">
@@ -154,16 +173,19 @@ export function SettingsDialog() {
             </DialogDescription>
             <nav className="flex flex-col gap-4" aria-label={t`Settings sections`}>
               <SectionGroup label={<Trans>Account</Trans>}>
-                <SectionLink section="profile" active={section} onSelect={switchSection} />
-                <SectionLink section="preferences" active={section} onSelect={switchSection} />
-                <SectionLink section="usage" active={section} onSelect={switchSection} />
+                {SETTINGS_SECTIONS.map((item) => (
+                  <SectionLink
+                    key={item}
+                    section={item}
+                    active={section}
+                    onSelect={switchSection}
+                  />
+                ))}
               </SectionGroup>
             </nav>
           </aside>
           <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-            {section === "profile" ? <ProfileSection /> : null}
-            {section === "preferences" ? <PreferencesSection /> : null}
-            {section === "usage" ? <UsageSection /> : null}
+            <SectionContent section={section} presentation="desktop" />
           </section>
         </DialogContent>
       )}
