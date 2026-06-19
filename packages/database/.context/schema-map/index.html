@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meridian Flow — Database Schema</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { color-scheme: light dark; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0b1120; color: #e2e8f0; }
+    .surface { background: #111827 !important; border-color: #1f2937 !important; }
+    .surface-2 { background: #0f172a !important; }
+    .muted { color: #94a3b8 !important; }
+    .tab { color: #94a3b8; }
+    .tab[aria-selected="true"] { background: #1e293b; color: #e2e8f0; }
+    .chip { background: #1e293b; border-color: #334155; }
+    .src-link { color: #7dd3fc; }
+  }
+  .surface { background: #ffffff; border-color: #e2e8f0; }
+  .surface-2 { background: #f1f5f9; }
+  .muted { color: #64748b; }
+  .tab { color: #475569; cursor: pointer; }
+  .tab[aria-selected="true"] { background: #e2e8f0; color: #0f172a; }
+  .chip { background: #f1f5f9; border: 1px solid #e2e8f0; }
+  .src-link { color: #0369a1; }
+
+  /* Stage / pan-zoom */
+  #viewport { touch-action: none; overflow: hidden; }
+  #stage { transform-origin: 0 0; will-change: transform; }
+  #stage svg { max-width: none !important; height: auto; }
+  .mermaid .nodeLabel { font-weight: 600; }
+  /* make node tap targets feel clickable */
+  .mermaid .node { cursor: pointer; }
+
+  /* Detail panel: side panel (md+) / bottom sheet (mobile) */
+  #panel {
+    transition: transform .25s ease;
+  }
+  /* Scroll container inside the panel — must be height-constrained so it (and
+     the code block) scroll instead of overflowing off-screen. */
+  #panel-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* code block: its own bounded scroll, vertical AND horizontal for long lines */
+  #panel-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #panel-code pre {
+    margin: 0;
+    padding: 12px;
+    border-radius: 8px;
+    overflow: auto;                 /* both axes */
+    white-space: pre;               /* don't wrap long Drizzle lines */
+    max-height: clamp(160px, 38vh, 460px);
+    font-size: 12px;
+    line-height: 1.5;
+    tab-size: 2;
+  }
+  /* writer-facing "why" callout */
+  #panel-why { border-left: 3px solid #14b8a6; }
+  @media (prefers-color-scheme: dark) { #panel-why { border-left-color: #2dd4bf; } }
+</style>
+</head>
+<body class="h-full">
+<div class="flex flex-col h-screen">
+  <!-- Header -->
+  <header class="surface border-b px-4 py-3 flex items-center gap-3 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-base sm:text-lg font-bold truncate">Meridian Flow — Database Schema</h1>
+      <p class="muted text-xs">Drizzle schema · <code>packages/database/src/schema</code> · click any table for detail</p>
+      <p class="muted text-[11px] mt-0.5">
+        Map regenerated <strong>2026-06-18</strong> · DB layer last changed
+        <strong>2026-06-16</strong> (<code>d864bab9</code>). Regenerated on demand,
+        not auto-maintained — if the DB layer is newer than the regen date, treat
+        as stale and rebuild from <code>../../src/schema/*.ts</code>.
+      </p>
+    </div>
+    <button id="legend-toggle" class="chip rounded-md px-3 py-1.5 text-xs font-medium">Legend</button>
+    <button id="reset-view" class="chip rounded-md px-3 py-1.5 text-xs font-medium">Reset view</button>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="surface border-b px-2 py-2 flex gap-1 overflow-x-auto text-sm font-medium" id="tabs"></nav>
+
+  <!-- Per-group "why this matters to the writer" intro -->
+  <div id="group-intro" class="surface border-b px-4 py-2 text-[13px] leading-snug"></div>
+
+  <!-- Body -->
+  <main class="relative flex-1 min-h-0">
+    <div id="viewport" class="absolute inset-0">
+      <div id="stage" class="p-6"></div>
+    </div>
+    <p class="muted absolute bottom-2 left-3 text-[11px] pointer-events-none select-none">scroll / pinch to zoom · drag to pan</p>
+  </main>
+</div>
+
+<!-- Legend overlay -->
+<div id="legend" class="hidden fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="surface border rounded-xl max-w-md w-full p-5 shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold text-base">Legend</h2>
+      <button class="chip rounded-md px-2 py-1 text-xs" onclick="document.getElementById('legend').classList.add('hidden')">Close</button>
+    </div>
+    <ul class="space-y-2.5 text-sm">
+      <li class="flex gap-3 items-start"><span class="chip rounded px-2 py-0.5 text-xs font-mono">PK</span><span><b>Primary key</b> — every table's <code>id</code> (uuid <code>defaultRandom()</code>), unless noted.</span></li>
+      <li class="flex gap-3 items-start"><span class="chip rounded px-2 py-0.5 text-xs font-mono">→ FK</span><span><b>Foreign key</b> — arrow points from the child (FK column) to the referenced table.</span></li>
+      <li class="flex gap-3 items-start"><span style="border:2px solid #d97706" class="rounded px-2 py-0.5 text-xs">amber</span><span><b>Timestamp <code>mode:"string"</code></b> — returns ISO strings instead of <code>Date</code>. Only <code>users</code> &amp; <code>thread_works</code>.</span></li>
+      <li class="flex gap-3 items-start"><span style="border:1.5px solid #0ea5e9" class="rounded px-2 py-0.5 text-xs">sky</span><span><b>Soft-delete</b> — has <code>deleted_at</code>; active queries filter <code>IS NULL</code>.</span></li>
+      <li class="flex gap-3 items-start"><span class="rounded px-2 py-0.5 text-xs border" style="border-style:double;border-width:3px">▌▌</span><span><b>Composite PK</b> — multi-column primary key (junction / state tables).</span></li>
+      <li class="flex gap-3 items-start"><span style="border:2px dashed #7c3aed" class="rounded-full px-2 py-0.5 text-xs">view</span><span><b>View</b> — <code>credit_balances</code> is a SQL view, not a table.</span></li>
+      <li class="flex gap-3 items-start"><span class="muted text-xs">- - -&gt;</span><span><b>Deferred / self FK</b> — dotted edge = FK added in migration SQL (self-refs, tree parents) rather than inline Drizzle.</span></li>
+      <li class="flex gap-3 items-start"><span class="muted text-xs">faded</span><span><b>External</b> — a table shown for context; it lives in another group.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- Detail panel -->
+<aside id="panel"
+  class="fixed z-30 surface border shadow-2xl
+         inset-x-0 bottom-0 max-h-[78vh] rounded-t-2xl translate-y-full
+         md:inset-y-0 md:right-0 md:left-auto md:w-[440px] md:max-h-none md:rounded-none md:rounded-l-2xl md:translate-y-0 md:translate-x-full md:border-l overflow-hidden flex flex-col">
+  <div class="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b surface">
+    <div class="min-w-0">
+      <div class="md:hidden mx-auto w-10 h-1 rounded-full bg-slate-400/40 mb-3"></div>
+      <h2 id="panel-title" class="font-bold text-lg font-mono truncate"></h2>
+      <p id="panel-group" class="muted text-xs mt-0.5"></p>
+    </div>
+    <button id="panel-close" class="chip rounded-md px-2.5 py-1 text-sm shrink-0">✕</button>
+  </div>
+  <div id="panel-scroll" class="px-5 py-4 space-y-4 text-sm">
+    <div id="panel-why" class="surface-2 rounded-r-md pl-3 pr-3 py-2.5">
+      <div class="text-[10px] font-semibold uppercase tracking-wide muted mb-0.5">For the writer</div>
+      <p id="panel-why-text" class="leading-relaxed"></p>
+    </div>
+
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide muted mb-1.5">What it is (technical)</h3>
+      <p id="panel-desc" class="leading-relaxed"></p>
+    </div>
+
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide muted mb-1.5">Source</h3>
+      <div id="panel-src" class="font-mono text-xs"></div>
+    </div>
+
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide muted mb-1.5">Key columns</h3>
+      <div id="panel-cols" class="space-y-1.5"></div>
+    </div>
+
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide muted mb-1.5">Relationships</h3>
+      <ul id="panel-rels" class="space-y-1 list-disc pl-5"></ul>
+    </div>
+
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide muted mb-1.5">Drizzle definition</h3>
+      <div id="panel-code"></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ============ Drizzle code snippets (raw text, no JS escaping needed) ============ -->
+<script type="text/plain" data-code="users">
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id").notNull(),       // WorkOS credential id
+    email: text("email").notNull(),
+    name: text("name"),
+    avatarUrl: text("avatar_url"),
+    lastActiveProjectId: uuid("last_active_project_id"), // soft pointer, no FK
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+      .defaultNow().notNull(),
+  },
+  (t) => [
+    unique("users_external_id_unique").on(t.externalId),
+    unique("users_email_unique").on(t.email),
+    index("users_last_active_project_idx").on(t.lastActiveProjectId),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="projects">
+export const projects = pgTable(
+  "projects",
+  {
+    id: idColumn<ProjectId>(),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    isPersonal: boolean("is_personal").notNull().default(false),
+    systemPrompt: text("system_prompt"),
+    settings: jsonbDefault("settings").$type<ProjectSettings>(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true })
+      .notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: softDeleteAt(),            // soft delete
+  },
+  (t) => [
+    uniqueIndex("projects_user_slug_active").on(t.userId, t.slug)
+      .where(sql`${t.deletedAt} IS NULL`),
+    uniqueIndex("projects_user_personal").on(t.userId)
+      .where(sql`${t.isPersonal} = true AND ${t.deletedAt} IS NULL`),
+    // … activity index …
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="works">
+export const works = pgTable(
+  "works",
+  {
+    id: idColumn<WorkId>(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    visibility: text("visibility").$type<WorkVisibility>().notNull().default("private"),
+    persistence: text("persistence").$type<WorkPersistence>().notNull().default("persisted"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: softDeleteAt(),
+  },
+  (t) => [
+    check("works_visibility_valid", sql`${t.visibility} IN ('private', 'shared')`),
+    check("works_persistence_valid", sql`${t.persistence} IN ('persisted', 'ephemeral')`),
+    unique("works_project_id_unique").on(t.projectId, t.id), // composite-FK target
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="context_sources">
+export const contextSources = pgTable(
+  "context_sources",
+  {
+    id: idColumn<ContextSourceId>(),
+    projectId: uuid("project_id").$type<ProjectId>()       // nullable (XOR)
+      .references(() => projects.id, { onDelete: "cascade" }),
+    workId: uuid("work_id").$type<WorkId>()                // nullable (XOR)
+      .references(() => works.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    scope: text("scope").notNull().default("project"),
+    adapterType: text("adapter_type").notNull().default("local"),
+    adapterConfig: jsonbDefault("adapter_config"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(), updatedAt: updatedAt(), deletedAt: softDeleteAt(),
+  },
+  (t) => [
+    check("context_sources_exactly_one_scope",
+      sql`(${t.projectId} IS NOT NULL AND ${t.workId} IS NULL)
+        OR (${t.projectId} IS NULL AND ${t.workId} IS NOT NULL)`),
+    // … scope/adapter checks + slug uniqueness …
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="folders">
+export const folders = pgTable(
+  "folders",
+  {
+    id: idColumn<FolderId>(),
+    contextSourceId: uuid("context_source_id").$type<ContextSourceId>().notNull()
+      .references(() => contextSources.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").$type<FolderId>(),   // self-FK (deferred, in migration SQL)
+    name: text("name").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(), updatedAt: updatedAt(), deletedAt: softDeleteAt(),
+  },
+  (t) => [
+    uniqueIndex("folders_context_parent_name_active")
+      .on(t.contextSourceId, t.parentId, t.name)
+      .where(sql`${t.deletedAt} IS NULL`),
+    uniqueIndex("folders_context_root_name_active")
+      .on(t.contextSourceId, t.name)
+      .where(sql`${t.parentId} IS NULL AND ${t.deletedAt} IS NULL`),
+  ],
+);
+// folders.parent_id self-FK added in migration SQL
+</script>
+
+<script type="text/plain" data-code="documents">
+export const documents = pgTable(
+  "documents",
+  {
+    id: idColumn<DocumentId>(),
+    contextSourceId: uuid("context_source_id").$type<ContextSourceId>().notNull()
+      .references(() => contextSources.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").$type<FolderId>()    // null = source root
+      .references(() => folders.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    extension: text("extension").notNull().default("md"),
+    fileType: text("file_type").notNull().default("markdown"),
+    storageUrl: text("storage_url"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    markdownProjection: text("markdown_projection").notNull().default(""),
+    metadata: jsonbDefault("metadata"),
+    createdAt: createdAt(), updatedAt: updatedAt(), deletedAt: softDeleteAt(),
+  },
+  (t) => [
+    // GIN fts + trgm indexes on name & markdown_projection
+    // CAS revisions compare updated_at::text in the adapter
+    check("documents_file_type_valid", sql`${t.fileType} IN ('markdown', …)`),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="threads">
+export const threads = pgTable(
+  "threads",
+  {
+    id: idColumn<ThreadId>(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    kind: text("kind").notNull().default("primary"),     // primary | subagent
+    status: text("status").notNull().default("active"),  // active | archived
+    parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),  // deferred FK
+    originTurnId: uuid("origin_turn_id").$type<TurnId>(),        // deferred FK
+    originType: text("origin_type"),                     // spawn | handoff | fork
+    spawnStatus: text("spawn_status"),
+    activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(), // deferred FK
+    turnCount: integer("turn_count").notNull().default(0),
+    nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
+    createdAt: createdAt(), updatedAt: updatedAt(), deletedAt: softDeleteAt(),
+  },
+  (t) => [
+    check("threads_next_seq_nonneg", sql`${t.nextSeq} >= 0`),
+    // … 13 spawn/handoff/fork origin invariant CHECKs …
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="thread_works">
+/** M:N thread↔work membership; primary Work is the default authority. */
+export const threadWorks = pgTable(
+  "thread_works",
+  {
+    threadId: uuid("thread_id").$type<ThreadId>().notNull(),
+    workId: uuid("work_id").$type<WorkId>().notNull(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull(),
+    isPrimary: boolean("is_primary").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow().notNull(),                       // mode:"string"
+  },
+  (t) => [
+    primaryKey({ columns: [t.threadId, t.workId], name: "thread_works_pk" }),
+    foreignKey({ columns: [t.projectId, t.threadId],
+      foreignColumns: [threads.projectId, threads.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.projectId, t.workId],
+      foreignColumns: [works.projectId, works.id] }).onDelete("restrict"),
+    uniqueIndex("thread_works_primary_unique").on(t.threadId)
+      .where(sql`${t.isPrimary} = true`),            // one primary per thread
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="turns">
+export const turns = pgTable(
+  "turns",
+  {
+    id: idColumn<TurnId>(),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "restrict" }),
+    parentTurnId: uuid("parent_turn_id").$type<TurnId>(),   // self-FK (deferred)
+    agentDefinitionId: uuid("agent_definition_id").$type<AgentDefinitionId>()
+      .references(() => agentDefinitions.id, { onDelete: "set null" }),
+    role: text("role").notNull(),          // user | assistant | system | compaction
+    status: text("status").notNull().default("pending"),
+    totalInputTokens: integer("total_input_tokens"),
+    totalOutputTokens: integer("total_output_tokens"),
+    totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }),
+    totalMillicredits: bigint("total_millicredits", { mode: "number" }),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("turns_thread_single_root").on(t.threadId)
+      .where(sql`${t.parentTurnId} IS NULL`),   // one root turn per thread
+    // … role/status CHECKs …
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="model_responses">
+export const modelResponses = pgTable(
+  "model_responses",
+  {
+    id: idColumn<ModelResponseId>(),
+    turnId: uuid("turn_id").$type<TurnId>().notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    priceSource: text("price_source").$type<PriceSource>().notNull().default("computed"),
+    pricingSnapshot: jsonb("pricing_snapshot"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    millicredits: bigint("millicredits", { mode: "number" }),
+    latencyMs: bigint("latency_ms", { mode: "number" }),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("model_responses_turn_sequence").on(t.turnId, t.sequence),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="turn_blocks">
+export const turnBlocks = pgTable(
+  "turn_blocks",
+  {
+    id: idColumn<TurnBlockId>(),
+    turnId: uuid("turn_id").$type<TurnId>().notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    modelResponseId: uuid("model_response_id").$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "set null" }),
+    blockType: text("block_type").notNull(),  // text|thinking|tool_use|tool_result|…
+    status: text("status").notNull().default("complete"),
+    sequence: integer("sequence").notNull(),
+    modelText: text("model_text"),
+    content: jsonb("content"),
+    pruned: boolean("pruned").notNull().default(false),
+    executionSide: text("execution_side"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("turn_blocks_turn_sequence").on(t.turnId, t.sequence),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="event_journal">
+export const eventJournal = pgTable(
+  "event_journal",
+  {
+    id: idColumn<EventJournalId>(),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "restrict" }),
+    turnId: uuid("turn_id").$type<TurnId>()
+      .references(() => turns.id, { onDelete: "restrict" }),
+    seq: bigint("seq", { mode: "bigint" }).notNull(),   // monotonic per thread
+    eventType: text("event_type").notNull(),
+    payload: jsonbDefault("payload"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("event_journal_thread_seq_unique").on(t.threadId, t.seq),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="thread_user_state">
+export const threadUserState = pgTable(
+  "thread_user_state",
+  {
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.threadId, t.userId] })],  // composite PK
+);
+</script>
+
+<script type="text/plain" data-code="thread_documents">
+export const threadDocuments = pgTable(
+  "thread_documents",
+  {
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").$type<DocumentId>().notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull().default("editing"), // editing|reading|created
+    firstTouchedAt: timestamp("first_touched_at", { withTimezone: true })
+      .notNull().defaultNow(),
+    lastTouchedAt: timestamp("last_touched_at", { withTimezone: true })
+      .notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.threadId, t.documentId] })],  // composite PK
+);
+</script>
+
+<script type="text/plain" data-code="agent_definitions">
+export const agentDefinitions = pgTable(
+  "agent_definitions",
+  {
+    id: idColumn<AgentDefinitionId>(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    mode: text("mode").notNull().default("primary"),
+    sourceType: text("source_type").notNull().default("builtin"),
+    baseDefinitionId: uuid("base_definition_id").$type<AgentDefinitionId>(), // self-FK
+    sourcePackageId: text("source_package_id"),
+    config: jsonbDefault("config"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(), updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("agent_definitions_project_slug").on(t.projectId, t.slug),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="skills">
+export const skills = pgTable(
+  "skills",
+  {
+    id: idColumn<SkillId>(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    type: text("type").notNull().default("reference"),  // principle|guardrail|reference
+    modelInvocable: boolean("model_invocable").notNull().default(true),
+    userInvocable: boolean("user_invocable").notNull().default(true),
+    isGlobal: boolean("is_global").notNull().default(false),
+    content: text("content").notNull().default(""),
+    sourceType: text("source_type").notNull().default("builtin"),
+    baseSkillId: uuid("base_skill_id").$type<SkillId>(),   // self-FK
+    isModified: boolean("is_modified").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(), updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("skills_project_slug").on(t.projectId, t.slug)],
+);
+</script>
+
+<script type="text/plain" data-code="user_installed_skills">
+export const userInstalledSkills = pgTable(
+  "user_installed_skills",
+  {
+    id: idColumn<UserInstalledSkillId>(),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    type: text("type").notNull().default("reference"),
+    content: text("content").notNull().default(""),
+    sourceType: text("source_type").notNull().default("user"),
+    sourcePackageId: text("source_package_id"),
+    baseSkillId: uuid("base_skill_id").$type<UserInstalledSkillId>(),  // self-FK
+    isModified: boolean("is_modified").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(), updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("user_installed_skills_user_slug").on(t.userId, t.slug)],
+);
+</script>
+
+<script type="text/plain" data-code="agent_skills">
+export const agentSkills = pgTable(
+  "agent_skills",
+  {
+    agentDefinitionId: uuid("agent_definition_id").$type<AgentDefinitionId>().notNull()
+      .references(() => agentDefinitions.id, { onDelete: "cascade" }),
+    skillId: uuid("skill_id").$type<SkillId>().notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    loadingMode: text("loading_mode").notNull().default("available"), // preloaded|available
+    modelInvocable: boolean("model_invocable"),  // null = inherit from skill
+    userInvocable: boolean("user_invocable"),
+  },
+  (t) => [primaryKey({ columns: [t.agentDefinitionId, t.skillId] })], // composite PK
+);
+</script>
+
+<script type="text/plain" data-code="agent_subagents">
+export const agentSubagents = pgTable(
+  "agent_subagents",
+  {
+    parentAgentId: uuid("parent_agent_id").$type<AgentDefinitionId>().notNull()
+      .references(() => agentDefinitions.id, { onDelete: "cascade" }),
+    childAgentId: uuid("child_agent_id").$type<AgentDefinitionId>().notNull()
+      .references(() => agentDefinitions.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.parentAgentId, t.childAgentId] }),  // composite PK
+    check("agent_subagents_no_self", sql`${t.parentAgentId} != ${t.childAgentId}`),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="user_subscriptions">
+export const userSubscriptions = pgTable(
+  "user_subscriptions",
+  {
+    id: idColumn<UserSubscriptionId>(),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    plan: text("plan").notNull().default("pro"),
+    status: text("status").notNull(),  // active|past_due|cancelled|trialing
+    creditsPerPeriod: millicredits("credits_per_period").notNull(),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }).notNull(),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    createdAt: createdAt(), updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("user_subscriptions_active_user").on(t.userId)
+      .where(sql`${t.status} IN ('active', 'past_due', 'trialing')`),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="credit_lots">
+export const creditLots = pgTable(
+  "credit_lots",
+  {
+    id: idColumn<CreditLotId>(),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceType: text("source_type").notNull(),  // purchase|grant|subscription|debt
+    originalAmountMillicredits: millicredits("original_amount_millicredits").notNull(),
+    remainingMillicredits: millicredits("remaining_millicredits").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),  // nullable Date
+    stripeSessionId: text("stripe_session_id"),
+    grantReason: text("grant_reason"),
+    metadata: jsonbDefault("metadata"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("credit_lots_fifo_spend")
+      .on(t.userId, t.expiresAt.asc().nullsLast(), t.createdAt, t.id)
+      .where(sql`${t.remainingMillicredits} > 0`),   // FIFO consume order
+    uniqueIndex("credit_lots_debt_user").on(t.userId)
+      .where(sql`${t.sourceType} = 'debt'`),          // one debt lot per user
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="credit_transactions">
+export const creditTransactions = pgTable(
+  "credit_transactions",
+  {
+    id: idColumn<CreditTransactionId>(),
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    transactionType: text("transaction_type").notNull(), // purchase|grant|consumption|…
+    amountMillicredits: millicredits("amount_millicredits").notNull(),
+    lotId: uuid("lot_id").$type<CreditLotId>()
+      .references(() => creditLots.id, { onDelete: "set null" }),
+    consumptionGroupId: uuid("consumption_group_id"),
+    usageEventId: text("usage_event_id"),    // idempotency key for consumption
+    metadata: jsonbDefault("metadata"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("credit_transactions_nonzero", sql`${t.amountMillicredits} != 0`),
+    // consumption rows require consumption_group_id + usage_event_id
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="credit_balances">
+// VIEW — aggregates live credit_lots per user (not a table).
+export const creditBalances = pgView("credit_balances").as((qb) =>
+  qb.select({
+      userId: creditLots.userId,
+      totalBalanceMillicredits:
+        sql<number>`COALESCE(SUM(${creditLots.remainingMillicredits}), 0)`.as("total_balance_millicredits"),
+      grantBalanceMillicredits:
+        sql<number>`COALESCE(SUM(${creditLots.remainingMillicredits})
+          FILTER (WHERE ${creditLots.sourceType} = 'grant'), 0)`.as("grant_balance_millicredits"),
+      purchasedBalanceMillicredits: /* … FILTER 'purchase' … */ sql<number>``.as("purchased_balance_millicredits"),
+      debtBalanceMillicredits:     /* … FILTER 'debt'     … */ sql<number>``.as("debt_balance_millicredits"),
+    })
+    .from(creditLots)
+    .where(sql`${creditLots.expiresAt} IS NULL
+      OR ${creditLots.expiresAt} > NOW() OR ${creditLots.sourceType} = 'debt'`)
+    .groupBy(creditLots.userId),
+);
+</script>
+
+<script type="text/plain" data-code="document_yjs_checkpoints">
+export const documentYjsCheckpoints = pgTable(
+  "document_yjs_checkpoints",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),  // bigserial PK
+    documentId: uuid("document_id").$type<DocumentId>().notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    state: byteaColumn("state").notNull(),
+    stateVector: byteaColumn("state_vector").notNull(),
+    upToSeq: bigint("up_to_seq", { mode: "number" }).notNull(),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("document_yjs_checkpoints_document_id_desc").on(t.documentId, t.id.desc()),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="document_yjs_updates">
+export const documentYjsUpdates = pgTable(
+  "document_yjs_updates",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),  // bigserial PK
+    documentId: uuid("document_id").$type<DocumentId>().notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    updateData: byteaColumn("update_data").notNull(),
+    originType: text("origin_type"),
+    actorUserId: uuid("actor_user_id").$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    actorTurnId: uuid("actor_turn_id").$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    actorAgentRunId: uuid("actor_agent_run_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("document_yjs_updates_document_id").on(t.documentId, t.id)],
+);
+</script>
+
+<script type="text/plain" data-code="document_yjs_heads">
+export const documentYjsHeads = pgTable("document_yjs_heads", {
+  documentId: uuid("document_id").$type<DocumentId>().primaryKey()  // PK == FK
+    .references(() => documents.id, { onDelete: "cascade" }),
+  fragmentName: text("fragment_name").notNull().default("prosemirror"),
+  latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
+  latestStateVector: byteaColumn("latest_state_vector"),
+  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }), // FK in custom SQL
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+// document_yjs_heads.latest_checkpoint_id FK added in custom SQL
+</script>
+
+<script type="text/plain" data-code="document_restore_points">
+export const documentRestorePoints = pgTable("document_restore_points", {
+  id: idColumn<DocumentRestorePointId>(),
+  documentId: uuid("document_id").$type<DocumentId>().notNull()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  checkpointId: bigint("checkpoint_id", { mode: "number" })
+    .references(() => documentYjsCheckpoints.id),
+  upToSeq: bigint("up_to_seq", { mode: "number" }),
+  createdByUserId: uuid("created_by_user_id").$type<UserId>()
+    .references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+</script>
+
+<script type="text/plain" data-code="turn_document_touches">
+export const turnDocumentTouches = pgTable(
+  "turn_document_touches",
+  {
+    id: idColumn<TurnDocumentTouchId>(),
+    turnId: uuid("turn_id").$type<TurnId>().notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").$type<DocumentId>().notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    touchedAt: timestamp("touched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("turn_document_touches_turn_document").on(t.turnId, t.documentId),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="project_results">
+export const projectResults = pgTable(
+  "project_results",
+  {
+    id: idColumn<string>(),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "restrict" }),
+    sourcePath: text("source_path").notNull(),
+    resultsUri: text("results_uri").notNull(),
+    storageUrl: text("storage_url").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "restrict" }),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull()
+      .references(() => threads.id, { onDelete: "restrict" }),
+    turnId: uuid("turn_id").$type<TurnId>().notNull()
+      .references(() => turns.id, { onDelete: "restrict" }),
+    agentSlug: text("agent_slug").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("project_results_root_thread_idx").on(t.rootThreadId, t.createdAt.desc()),
+  ],
+);
+</script>
+
+<script type="text/plain" data-code="user_preferences">
+export const userPreferences = pgTable("user_preferences", {
+  userId: uuid("user_id").$type<UserId>().primaryKey()   // PK == FK to users
+    .references(() => users.id, { onDelete: "cascade" }),
+  preferences: jsonbDefault("preferences"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+</script>
+
+<script type="text/plain" data-code="user_project_favorites">
+export const userProjectFavorites = pgTable(
+  "user_project_favorites",
+  {
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] })],  // composite PK
+);
+</script>
+
+<script type="text/plain" data-code="project_user_preferences">
+export const projectUserPreferences = pgTable(
+  "project_user_preferences",
+  {
+    userId: uuid("user_id").$type<UserId>().notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").$type<ProjectId>().notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    threadGroupBy: text("thread_group_by").notNull().default("work"), // work|date|flat
+    pinnedThreadIds: text("pinned_thread_ids").array().notNull().default(sql`'{}'::text[]`),
+    defaultAgentSlug: text("default_agent_slug"),
+    autoResumeEnabled: boolean("auto_resume_enabled").notNull().default(true),
+    autoResumeTimeoutMs: integer("auto_resume_timeout_ms").notNull().default(270_000),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId],
+    name: "project_user_preferences_pk" })],   // composite PK
+);
+</script>
+
+<script type="text/plain" data-code="waitlist_emails">
+export const waitlistEmails = pgTable("waitlist_emails", {
+  id: serial("id").primaryKey(),               // serial PK
+  email: text("email").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+</script>
+
+<!-- ============================== App logic ============================== -->
+<script type="module">
+import { codeToHtml } from 'https://esm.sh/shiki@1';
+window.codeToHtml = codeToHtml;
+window.__shikiReady = true;
+</script>
+
+<script>
+const DARK = matchMedia('(prefers-color-scheme: dark)').matches;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: DARK ? 'dark' : 'default',
+  securityLevel: 'loose',
+  flowchart: { curve: 'basis', nodeSpacing: 55, rankSpacing: 70, useMaxWidth: false },
+});
+
+// Relative to this file's location (packages/database/.context/schema-map/) so
+// source labels resolve to the real schema files from the qi-layer home.
+const SRC = '../../src/schema';
+
+// ---- shared classDefs reused across diagrams ----
+const DEFS = [
+  'classDef stringTs stroke:#d97706,stroke-width:2px',
+  'classDef softdel stroke:#0ea5e9,stroke-width:1.5px',
+  'classDef viewNode stroke:#7c3aed,stroke-width:2px,stroke-dasharray:5 3',
+  'classDef ext stroke:#94a3b8,stroke-width:1px,stroke-dasharray:3 3,color:#94a3b8',
+].join('\n  ');
+
+const DIAGRAMS = {
+  identity: {
+    label: '1 · Identity & Projects',
+    code: `flowchart TD
+  ${DEFS}
+  users["users"]:::stringTs
+  projects["projects"]
+  works["works"]
+  context_sources["context_sources"]
+  folders["folders"]
+  documents["documents"]
+  projects -->|"user_id"| users
+  works -->|"project_id"| projects
+  works -->|"created_by_user_id"| users
+  context_sources -->|"project_id (xor)"| projects
+  context_sources -->|"work_id (xor)"| works
+  folders -->|"context_source_id"| context_sources
+  folders -. "parent_id (self)" .-> folders
+  documents -->|"context_source_id"| context_sources
+  documents -->|"folder_id"| folders
+  class projects,works,context_sources,folders,documents softdel
+  click users showDetail "users"
+  click projects showDetail "projects"
+  click works showDetail "works"
+  click context_sources showDetail "context_sources"
+  click folders showDetail "folders"
+  click documents showDetail "documents"`,
+  },
+  threads: {
+    label: '2 · Threads, Turns & Events',
+    code: `flowchart TD
+  ${DEFS}
+  threads["threads"]
+  thread_works[["thread_works"]]:::stringTs
+  turns["turns"]
+  model_responses["model_responses"]
+  turn_blocks["turn_blocks"]
+  event_journal["event_journal"]
+  thread_user_state[["thread_user_state"]]
+  thread_documents[["thread_documents"]]
+  turns -->|"thread_id"| threads
+  turns -. "parent_turn_id (self)" .-> turns
+  model_responses -->|"turn_id"| turns
+  turn_blocks -->|"turn_id"| turns
+  turn_blocks -->|"model_response_id"| model_responses
+  event_journal -->|"thread_id"| threads
+  event_journal -->|"turn_id"| turns
+  thread_user_state -->|"thread_id"| threads
+  thread_documents -->|"thread_id"| threads
+  thread_works -->|"thread_id + project_id"| threads
+  threads -. "parent_thread_id (self)" .-> threads
+  class threads softdel
+  click threads showDetail "threads"
+  click thread_works showDetail "thread_works"
+  click turns showDetail "turns"
+  click model_responses showDetail "model_responses"
+  click turn_blocks showDetail "turn_blocks"
+  click event_journal showDetail "event_journal"
+  click thread_user_state showDetail "thread_user_state"
+  click thread_documents showDetail "thread_documents"`,
+  },
+  billing: {
+    label: '3 · Billing & Credits',
+    code: `flowchart TD
+  ${DEFS}
+  usersExt["users"]:::ext
+  user_subscriptions["user_subscriptions"]
+  credit_lots["credit_lots"]
+  credit_transactions["credit_transactions"]
+  credit_balances(["credit_balances (view)"]):::viewNode
+  user_subscriptions -->|"user_id"| usersExt
+  credit_lots -->|"user_id"| usersExt
+  credit_transactions -->|"user_id"| usersExt
+  credit_transactions -->|"lot_id"| credit_lots
+  credit_balances -. "aggregates" .-> credit_lots
+  click usersExt showDetail "users"
+  click user_subscriptions showDetail "user_subscriptions"
+  click credit_lots showDetail "credit_lots"
+  click credit_transactions showDetail "credit_transactions"
+  click credit_balances showDetail "credit_balances"`,
+  },
+  packages: {
+    label: '4 · Agent Packages',
+    code: `flowchart TD
+  ${DEFS}
+  projectsExt["projects"]:::ext
+  usersExt["users"]:::ext
+  agent_definitions["agent_definitions"]
+  skills["skills"]
+  user_installed_skills["user_installed_skills"]
+  agent_skills[["agent_skills"]]
+  agent_subagents[["agent_subagents"]]
+  agent_definitions -->|"project_id"| projectsExt
+  skills -->|"project_id"| projectsExt
+  user_installed_skills -->|"user_id"| usersExt
+  agent_definitions -. "base_definition_id (self)" .-> agent_definitions
+  skills -. "base_skill_id (self)" .-> skills
+  agent_skills -->|"agent_definition_id"| agent_definitions
+  agent_skills -->|"skill_id"| skills
+  agent_subagents -->|"parent_agent_id"| agent_definitions
+  agent_subagents -->|"child_agent_id"| agent_definitions
+  click projectsExt showDetail "projects"
+  click usersExt showDetail "users"
+  click agent_definitions showDetail "agent_definitions"
+  click skills showDetail "skills"
+  click user_installed_skills showDetail "user_installed_skills"
+  click agent_skills showDetail "agent_skills"
+  click agent_subagents showDetail "agent_subagents"`,
+  },
+  collab: {
+    label: '5 · Collab (YJS) & Misc',
+    code: `flowchart TD
+  ${DEFS}
+  documentsExt["documents"]:::ext
+  usersExt["users"]:::ext
+  projectsExt["projects"]:::ext
+  document_yjs_checkpoints["document_yjs_checkpoints"]
+  document_yjs_updates["document_yjs_updates"]
+  document_yjs_heads["document_yjs_heads"]
+  document_restore_points["document_restore_points"]
+  turn_document_touches["turn_document_touches"]
+  project_results["project_results"]
+  user_preferences["user_preferences"]
+  user_project_favorites[["user_project_favorites"]]
+  project_user_preferences[["project_user_preferences"]]
+  waitlist_emails["waitlist_emails"]
+  document_yjs_checkpoints -->|"document_id"| documentsExt
+  document_yjs_updates -->|"document_id"| documentsExt
+  document_yjs_heads -->|"document_id"| documentsExt
+  document_restore_points -->|"document_id"| documentsExt
+  document_restore_points -->|"checkpoint_id"| document_yjs_checkpoints
+  turn_document_touches -->|"document_id"| documentsExt
+  project_results -->|"project_id"| projectsExt
+  user_preferences -->|"user_id"| usersExt
+  user_project_favorites -->|"user_id"| usersExt
+  project_user_preferences -->|"project_id"| projectsExt
+  click documentsExt showDetail "documents"
+  click usersExt showDetail "users"
+  click projectsExt showDetail "projects"
+  click document_yjs_checkpoints showDetail "document_yjs_checkpoints"
+  click document_yjs_updates showDetail "document_yjs_updates"
+  click document_yjs_heads showDetail "document_yjs_heads"
+  click document_restore_points showDetail "document_restore_points"
+  click turn_document_touches showDetail "turn_document_touches"
+  click project_results showDetail "project_results"
+  click user_preferences showDetail "user_preferences"
+  click user_project_favorites showDetail "user_project_favorites"
+  click project_user_preferences showDetail "project_user_preferences"
+  click waitlist_emails showDetail "waitlist_emails"`,
+  },
+};
+
+// ----------------------------- per-table detail -----------------------------
+const C = (name, type, note) => ({ name, type, note });
+const DETAIL = {
+  users: {
+    title: 'users', group: 'Identity & Projects', src: `${SRC}/users.ts:9-35`,
+    desc: 'App-owned identity projection. The internal uuid id is the join key everywhere; WorkOS is stored as external_id. Timestamps are mode:"string" (ISO strings, not Date) — one of only two such tables.',
+    cols: [C('id','uuid PK','defaultRandom()'), C('external_id','text','WorkOS credential, unique'), C('email','text','unique'), C('last_active_project_id','uuid','soft pointer, deliberately no FK'), C('created_at / updated_at','timestamptz','mode:"string" — returns ISO strings')],
+    rels: ['Referenced by nearly everything: projects, works, threads, credit_lots, subscriptions, preferences, etc.'],
+    flags: ['string-ts'],
+  },
+  projects: {
+    title: 'projects', group: 'Identity & Projects', src: `${SRC}/content.ts:30-59`,
+    desc: 'The primary writer primitive — a serial/book and everything scoped under it. Soft-deleted; partial unique indexes enforce one active slug and one personal project per user.',
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','onDelete cascade'), C('slug','text','unique per active user'), C('is_personal','boolean','one personal project per user'), C('settings','jsonb','ProjectSettings'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ users (user_id)', 'Parent of works, threads, context_sources, agent_definitions, skills, project_results'],
+    flags: ['soft-delete'],
+  },
+  works: {
+    title: 'works', group: 'Identity & Projects', src: `${SRC}/content.ts:61-91`,
+    desc: 'A work-scoped unit inside a project. Carries a composite unique (project_id, id) so thread_works can enforce same-project membership via composite FK.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('created_by_user_id','uuid FK → users','cascade'), C('visibility','text','private | shared'), C('persistence','text','persisted | ephemeral'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ projects (project_id)', '→ users (created_by_user_id)', 'Targeted by context_sources.work_id and thread_works composite FK'],
+    flags: ['soft-delete'],
+  },
+  context_sources: {
+    title: 'context_sources', group: 'Identity & Projects', src: `${SRC}/content.ts:94-145`,
+    desc: 'Root of a context filesystem. Scoped to EXACTLY ONE of project_id or work_id (CHECK-enforced XOR). Holds folders + documents trees.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','nullable (XOR)'), C('work_id','uuid FK → works','nullable (XOR)'), C('scope','text','project | work'), C('adapter_type','text','local | google_drive | …'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ projects OR works (exactly one)', 'Parent of folders and documents'],
+    flags: ['soft-delete'],
+  },
+  folders: {
+    title: 'folders', group: 'Identity & Projects', src: `${SRC}/content.ts:147-174`,
+    desc: 'Folder tree inside a context source. parent_id is a self-reference; the self-FK is added in migration SQL (deferred), not inline Drizzle. null parent = root.',
+    cols: [C('id','uuid PK',''), C('context_source_id','uuid FK → context_sources','cascade'), C('parent_id','uuid','self-FK (deferred, migration SQL)'), C('name','text','unique per parent (active)'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ context_sources (context_source_id)', '→ folders (parent_id, self, deferred)', 'Parent of documents'],
+    flags: ['soft-delete','deferred-fk'],
+  },
+  documents: {
+    title: 'documents', group: 'Identity & Projects', src: `${SRC}/content.ts:176-231`,
+    desc: 'Leaf documents. folder_id null = source root. updated_at::text is the CAS revision token used by ContextFS. GIN fts + trigram indexes back search.',
+    cols: [C('id','uuid PK',''), C('context_source_id','uuid FK → context_sources','cascade'), C('folder_id','uuid FK → folders','nullable = root'), C('file_type','text','markdown | python | … (CHECK)'), C('markdown_projection','text','fts/trgm indexed'), C('updated_at','timestamptz','Date mode; ::text used as CAS token'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ context_sources (context_source_id)', '→ folders (folder_id)', 'Source for document_yjs_*, thread_documents, turn_document_touches, document_restore_points'],
+    flags: ['soft-delete'],
+  },
+  threads: {
+    title: 'threads', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:37-123`,
+    desc: 'Agent conversation. next_seq + event_journal(thread_id, seq) give monotonic ordering. parent_thread_id / origin_turn_id / active_leaf_turn_id are deferred self/turn FKs (migration SQL). 13 CHECKs encode spawn/handoff/fork invariants.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('created_by_user_id','uuid FK → users','cascade'), C('kind','text','primary | subagent'), C('origin_type','text','spawn | handoff | fork'), C('next_seq','bigint','monotonic seq counter'), C('parent_thread_id / origin_turn_id / active_leaf_turn_id','uuid','deferred FKs'), C('deleted_at','timestamptz','soft delete')],
+    rels: ['→ projects (project_id)', '→ users (created_by_user_id)', '→ threads/turns (deferred self & origin FKs)', 'Parent of turns, event_journal, thread_works, thread_user_state, thread_documents'],
+    flags: ['soft-delete','deferred-fk'],
+  },
+  thread_works: {
+    title: 'thread_works', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:126-155`,
+    desc: 'M:N thread↔work membership with composite PK (thread_id, work_id). Composite FKs enforce both sides share the same project. Partial unique index = one primary work per thread. created_at is mode:"string".',
+    cols: [C('thread_id, work_id','uuid','composite PK'), C('project_id','uuid','part of both composite FKs'), C('is_primary','boolean','one primary per thread (partial unique)'), C('created_at','timestamptz','mode:"string"')],
+    rels: ['→ threads (project_id, thread_id) composite FK, cascade', '→ works (project_id, work_id) composite FK, restrict'],
+    flags: ['string-ts','composite-pk'],
+  },
+  turns: {
+    title: 'turns', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:157-205`,
+    desc: 'One agent/user turn within a thread. parent_turn_id self-FK (deferred) forms the turn tree; partial unique enforces a single root turn per thread. Carries token/cost/millicredit rollups.',
+    cols: [C('id','uuid PK',''), C('thread_id','uuid FK → threads','onDelete restrict'), C('parent_turn_id','uuid','self-FK (deferred)'), C('agent_definition_id','uuid FK → agent_definitions','set null'), C('role','text','user | assistant | system | compaction'), C('total_millicredits','bigint','cost rollup'), C('completed_at','timestamptz','nullable Date')],
+    rels: ['→ threads (thread_id)', '→ turns (parent_turn_id, self, deferred)', '→ agent_definitions (agent_definition_id)', 'Parent of model_responses, turn_blocks'],
+    flags: ['deferred-fk'],
+  },
+  model_responses: {
+    title: 'model_responses', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:207-245`,
+    desc: 'One provider call inside a turn (a turn can have several). Records provider/model, token usage, cost, pricing snapshot, latency. Unique on (turn_id, sequence).',
+    cols: [C('id','uuid PK',''), C('turn_id','uuid FK → turns','cascade'), C('sequence','integer','unique per turn'), C('provider / model','text',''), C('price_source','text','computed | provider_reported | unknown'), C('millicredits','bigint','cost'), C('completed_at','timestamptz','nullable Date')],
+    rels: ['→ turns (turn_id)', 'Referenced by turn_blocks.model_response_id (set null)'],
+    flags: [],
+  },
+  turn_blocks: {
+    title: 'turn_blocks', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:247-279`,
+    desc: 'Ordered content blocks of a turn (text, thinking, tool_use, tool_result, …). Unique on (turn_id, sequence). Optionally links the model_response that produced it.',
+    cols: [C('id','uuid PK',''), C('turn_id','uuid FK → turns','cascade'), C('model_response_id','uuid FK → model_responses','set null'), C('block_type','text','text | thinking | tool_use | … (CHECK)'), C('sequence','integer','unique per turn'), C('pruned','boolean','')],
+    rels: ['→ turns (turn_id)', '→ model_responses (model_response_id)'],
+    flags: [],
+  },
+  event_journal: {
+    title: 'event_journal', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:281-304`,
+    desc: 'Append-only per-thread event log. Unique (thread_id, seq) is the monotonicity guarantee; appends must be transactional with threads.next_seq bump.',
+    cols: [C('id','uuid PK',''), C('thread_id','uuid FK → threads','onDelete restrict'), C('turn_id','uuid FK → turns','restrict, nullable'), C('seq','bigint','unique per thread'), C('event_type','text',''), C('payload','jsonb','')],
+    rels: ['→ threads (thread_id)', '→ turns (turn_id)'],
+    flags: [],
+  },
+  thread_user_state: {
+    title: 'thread_user_state', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:306-320`,
+    desc: 'Per-user, per-thread UI state (e.g. last opened). Composite PK (thread_id, user_id).',
+    cols: [C('thread_id, user_id','uuid','composite PK'), C('last_opened_at','timestamptz','nullable Date')],
+    rels: ['→ threads (thread_id)', '→ users (user_id)'],
+    flags: ['composite-pk'],
+  },
+  thread_documents: {
+    title: 'thread_documents', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:322-344`,
+    desc: 'Which documents a thread touched and how. Composite PK (thread_id, document_id); relationship CHECK ∈ editing | reading | created.',
+    cols: [C('thread_id, document_id','uuid','composite PK'), C('relationship','text','editing | reading | created'), C('first_touched_at / last_touched_at','timestamptz','Date')],
+    rels: ['→ threads (thread_id)', '→ documents (document_id)'],
+    flags: ['composite-pk'],
+  },
+  agent_definitions: {
+    title: 'agent_definitions', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:24-55`,
+    desc: 'Per-project agent definitions. base_definition_id self-FK (custom SQL) links a customized agent to its package base. Unique slug per project.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('slug','text','unique per project'), C('mode','text','primary | …'), C('source_type','text','builtin | package | user'), C('base_definition_id','uuid','self-FK (custom SQL)'), C('enabled','boolean','')],
+    rels: ['→ projects (project_id)', '→ agent_definitions (base_definition_id, self)', 'Joined to skills via agent_skills; nests via agent_subagents; referenced by turns'],
+    flags: ['deferred-fk'],
+  },
+  skills: {
+    title: 'skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:57-95`,
+    desc: 'Per-project skills (principle | guardrail | reference). base_skill_id self-FK (custom SQL). is_global flags project-wide always-on skills.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('slug','text','unique per project'), C('type','text','principle | guardrail | reference'), C('is_global','boolean',''), C('source_type','text','builtin | package | user'), C('base_skill_id','uuid','self-FK (custom SQL)')],
+    rels: ['→ projects (project_id)', '→ skills (base_skill_id, self)', 'Joined to agents via agent_skills'],
+    flags: ['deferred-fk'],
+  },
+  user_installed_skills: {
+    title: 'user_installed_skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:97-123`,
+    desc: 'User-level (cross-project) installed skills. base_skill_id self-FK. Unique slug per user.',
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('slug','text','unique per user'), C('type','text',''), C('source_type','text','default user'), C('base_skill_id','uuid','self-FK')],
+    rels: ['→ users (user_id)', '→ user_installed_skills (base_skill_id, self)'],
+    flags: ['deferred-fk'],
+  },
+  agent_skills: {
+    title: 'agent_skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:125-147`,
+    desc: 'Junction: which skills an agent has and how they load. Composite PK (agent_definition_id, skill_id). Nullable invocable flags inherit from the skill when null.',
+    cols: [C('agent_definition_id, skill_id','uuid','composite PK'), C('loading_mode','text','preloaded | available'), C('model_invocable / user_invocable','boolean','nullable = inherit')],
+    rels: ['→ agent_definitions (agent_definition_id)', '→ skills (skill_id)'],
+    flags: ['composite-pk'],
+  },
+  agent_subagents: {
+    title: 'agent_subagents', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:149-165`,
+    desc: 'Self-join junction: which agents may spawn which subagents. Composite PK (parent_agent_id, child_agent_id); CHECK forbids self-reference.',
+    cols: [C('parent_agent_id, child_agent_id','uuid','composite PK, both FK → agent_definitions'), C('—','—','CHECK parent != child')],
+    rels: ['→ agent_definitions (parent_agent_id)', '→ agent_definitions (child_agent_id)'],
+    flags: ['composite-pk'],
+  },
+  user_subscriptions: {
+    title: 'user_subscriptions', group: 'Billing & Credits', src: `${SRC}/billing.ts:22-56`,
+    desc: 'Stripe subscription mirror. Partial unique index allows only one active/past_due/trialing subscription per user. Period bounds are Date-mode (typed comparators only — never raw Date in sql fragments).',
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('stripe_subscription_id','text','unique'), C('status','text','active | past_due | cancelled | trialing'), C('current_period_start / _end','timestamptz','Date mode'), C('credits_per_period','bigint millicredits','')],
+    rels: ['→ users (user_id)'],
+    flags: [],
+  },
+  credit_lots: {
+    title: 'credit_lots', group: 'Billing & Credits', src: `${SRC}/billing.ts:58-106`,
+    desc: 'Balance truth. Each lot has remaining millicredits; FIFO consumption order is the credit_lots_fifo_spend index. source_type ∈ purchase|grant|subscription|debt with one debt lot per user (partial unique).',
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('source_type','text','purchase | grant | subscription | debt'), C('remaining_millicredits','bigint','consumed FIFO'), C('expires_at','timestamptz','nullable Date'), C('grant_reason','text','signup | monthly_* …')],
+    rels: ['→ users (user_id)', 'Referenced by credit_transactions.lot_id; aggregated by credit_balances view'],
+    flags: [],
+  },
+  credit_transactions: {
+    title: 'credit_transactions', group: 'Billing & Credits', src: `${SRC}/billing.ts:108-147`,
+    desc: 'Immutable ledger of credit movements. Consumption rows require consumption_group_id + usage_event_id (idempotency). lot_id set null on lot delete.',
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('transaction_type','text','purchase | grant | consumption | expiration | refund'), C('amount_millicredits','bigint','CHECK != 0'), C('lot_id','uuid FK → credit_lots','set null'), C('usage_event_id','text','idempotency key')],
+    rels: ['→ users (user_id)', '→ credit_lots (lot_id)'],
+    flags: [],
+  },
+  credit_balances: {
+    title: 'credit_balances', group: 'Billing & Credits', src: `${SRC}/billing.ts:149-175`,
+    desc: 'A SQL VIEW (not a table) aggregating live credit_lots per user into total / grant / purchased / debt balances. Excludes expired lots (keeps debt).',
+    cols: [C('user_id','uuid','group key'), C('total_balance_millicredits','bigint','SUM remaining'), C('grant / purchased / debt _balance','bigint','FILTERed SUMs')],
+    rels: ['Reads credit_lots (no FK; it is a view)'],
+    flags: ['view'],
+  },
+  document_yjs_checkpoints: {
+    title: 'document_yjs_checkpoints', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:8-25`,
+    desc: 'Compacted YJS document state snapshots. bigserial id (sequence). Stores binary state + state_vector up to a sequence.',
+    cols: [C('id','bigserial PK',''), C('document_id','uuid FK → documents','cascade'), C('state / state_vector','bytea',''), C('up_to_seq','bigint','')],
+    rels: ['→ documents (document_id)', 'Referenced by document_restore_points.checkpoint_id and document_yjs_heads.latest_checkpoint_id'],
+    flags: [],
+  },
+  document_yjs_updates: {
+    title: 'document_yjs_updates', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:27-51`,
+    desc: 'Append-only YJS update log (bigserial sequence). Tracks the actor (user or agent turn) behind each edit.',
+    cols: [C('id','bigserial PK',''), C('document_id','uuid FK → documents','cascade'), C('update_data','bytea',''), C('actor_user_id','uuid FK → users','set null'), C('actor_turn_id','uuid FK → turns','set null')],
+    rels: ['→ documents (document_id)', '→ users (actor_user_id)', '→ turns (actor_turn_id)'],
+    flags: [],
+  },
+  document_yjs_heads: {
+    title: 'document_yjs_heads', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:53-63`,
+    desc: 'One head row per document (document_id is both PK and FK). Points at the latest update sequence / checkpoint. latest_checkpoint_id FK added in custom SQL.',
+    cols: [C('document_id','uuid PK = FK → documents','cascade'), C('fragment_name','text','default prosemirror'), C('latest_update_seq','bigint',''), C('latest_checkpoint_id','bigint','FK in custom SQL'), C('updated_at','timestamptz','Date')],
+    rels: ['→ documents (document_id, PK=FK)', '→ document_yjs_checkpoints (latest_checkpoint_id, custom SQL)'],
+    flags: ['deferred-fk'],
+  },
+  document_restore_points: {
+    title: 'document_restore_points', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:65-82`,
+    desc: 'Named restore points for a document, pinned to a checkpoint and/or sequence.',
+    cols: [C('id','uuid PK',''), C('document_id','uuid FK → documents','cascade'), C('checkpoint_id','bigint FK → document_yjs_checkpoints',''), C('created_by_user_id','uuid FK → users','set null')],
+    rels: ['→ documents (document_id)', '→ document_yjs_checkpoints (checkpoint_id)', '→ users (created_by_user_id)'],
+    flags: [],
+  },
+  turn_document_touches: {
+    title: 'turn_document_touches', group: 'Collab (YJS) & Misc', src: `${SRC}/provenance.ts:7-30`,
+    desc: 'Provenance: which turn touched which document (within which thread). Unique (turn_id, document_id).',
+    cols: [C('id','uuid PK',''), C('turn_id','uuid FK → turns','cascade'), C('document_id','uuid FK → documents','cascade'), C('thread_id','uuid FK → threads','cascade'), C('touched_at','timestamptz','Date')],
+    rels: ['→ turns (turn_id)', '→ documents (document_id)', '→ threads (thread_id)'],
+    flags: [],
+  },
+  project_results: {
+    title: 'project_results', group: 'Collab (YJS) & Misc', src: `${SRC}/results.ts:8-42`,
+    desc: 'Stored artifacts produced by agent runs. All FKs use onDelete restrict (results outlive casual deletes). Tracks both root and immediate thread/turn.',
+    cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','restrict'), C('root_thread_id','uuid FK → threads','restrict'), C('thread_id','uuid FK → threads','restrict'), C('turn_id','uuid FK → turns','restrict'), C('storage_url / results_uri','text','')],
+    rels: ['→ projects (project_id)', '→ threads (root_thread_id, thread_id)', '→ turns (turn_id)'],
+    flags: [],
+  },
+  user_preferences: {
+    title: 'user_preferences', group: 'Collab (YJS) & Misc', src: `${SRC}/user.ts:7-15`,
+    desc: 'One JSONB preferences blob per user. user_id is both PK and FK.',
+    cols: [C('user_id','uuid PK = FK → users','cascade'), C('preferences','jsonb',''), C('created_at / updated_at','timestamptz','Date')],
+    rels: ['→ users (user_id, PK=FK)'],
+    flags: [],
+  },
+  user_project_favorites: {
+    title: 'user_project_favorites', group: 'Collab (YJS) & Misc', src: `${SRC}/user.ts:17-31`,
+    desc: 'Junction of a user\'s favorited projects. Composite PK (user_id, project_id).',
+    cols: [C('user_id, project_id','uuid','composite PK, both FK'), C('created_at','timestamptz','Date')],
+    rels: ['→ users (user_id)', '→ projects (project_id)'],
+    flags: ['composite-pk'],
+  },
+  project_user_preferences: {
+    title: 'project_user_preferences', group: 'Collab (YJS) & Misc', src: `${SRC}/preferences.ts:16-48`,
+    desc: 'Per-user, per-project UI preferences (thread grouping, pinned threads, auto-resume). Composite PK (user_id, project_id).',
+    cols: [C('user_id, project_id','uuid','composite PK, both FK'), C('thread_group_by','text','work | date | flat'), C('pinned_thread_ids','text[]',''), C('auto_resume_timeout_ms','integer','default 270000, CHECK > 0')],
+    rels: ['→ users (user_id)', '→ projects (project_id)'],
+    flags: ['composite-pk'],
+  },
+  waitlist_emails: {
+    title: 'waitlist_emails', group: 'Collab (YJS) & Misc', src: `${SRC}/waitlist.ts:3-7`,
+    desc: 'Standalone marketing waitlist (used by apps/www). serial PK, unique email. No FKs.',
+    cols: [C('id','serial PK',''), C('email','text','unique'), C('created_at','timestamptz','Date')],
+    rels: ['None — standalone'],
+    flags: [],
+  },
+};
+
+const FLAG_LABEL = {
+  'string-ts': 'timestamp mode:"string"',
+  'soft-delete': 'soft delete (deleted_at)',
+  'composite-pk': 'composite PK',
+  'view': 'SQL view',
+  'deferred-fk': 'deferred / self FK',
+};
+const FLAG_STYLE = {
+  'string-ts': 'border-color:#d97706;color:#d97706',
+  'soft-delete': 'border-color:#0ea5e9;color:#0ea5e9',
+  'composite-pk': 'border-color:#64748b',
+  'view': 'border-color:#7c3aed;color:#7c3aed',
+  'deferred-fk': 'border-color:#64748b',
+};
+
+// raw code snippets keyed by table name
+const CODE = {};
+document.querySelectorAll('script[type="text/plain"][data-code]').forEach((el) => {
+  CODE[el.dataset.code] = el.textContent.trim();
+});
+
+// ----------------------------- rendering -----------------------------
+const stage = document.getElementById('stage');
+const viewport = document.getElementById('viewport');
+const rendered = {};
+let current = null;
+
+// Why each diagram group matters to a fiction writer (the end user).
+const GROUP_WHY = {
+  identity: 'A <b>Project</b> IS the writer\u2019s serial or book \u2014 the manuscript, the worldbuilding/research, and every AI chat all live under it. This group is the home for everything a writer owns; a personal project quietly catches quick \u201cjust start writing\u201d sessions.',
+  threads: 'The AI writing-assistant conversations \u2014 every message, model call, and content block \u2014 plus an append-only event log. That log is why a chapter\u2019s AI session can be replayed and recovered after a reload: the writer\u2019s work is never silently lost.',
+  billing: 'How AI help is paid for. <b>Credit lots</b> are the source of truth for balance, and FIFO spend (free credits first) keeps cost fair and predictable so a writer can lean on the AI without nasty surprises.',
+  packages: 'The narrative-craft capabilities the AI brings \u2014 the Muse / Writer / Spark <b>agents</b> and the <b>skills</b> (continuity, critique, pacing) they load \u2014 scoped per project so each serial gets its own tuned writing crew.',
+  collab: 'Real-time, keystroke-safe editing of the manuscript: two devices stay in sync and nothing is dropped, with named restore points and the small preference/provenance tables that make the workspace feel like the writer\u2019s own.',
+};
+
+function renderGroupIntro(key) {
+  const el = document.getElementById('group-intro');
+  el.innerHTML = `<span class="font-semibold">Why this matters to the writer:</span> <span class="muted">${GROUP_WHY[key] || ''}</span>`;
+}
+
+async function showGroup(key) {
+  current = key;
+  document.querySelectorAll('#tabs .tab').forEach((b) =>
+    b.setAttribute('aria-selected', String(b.dataset.key === key)));
+  renderGroupIntro(key);
+  if (!rendered[key]) {
+    const { svg, bindFunctions } = await mermaid.render('mmd-' + key, DIAGRAMS[key].code);
+    const div = document.createElement('div');
+    div.innerHTML = svg;
+    if (bindFunctions) bindFunctions(div);
+    rendered[key] = div;
+  }
+  stage.replaceChildren(rendered[key]);
+  resetView();
+}
+
+// Robust click delegation: mermaid's loose-mode `click` directive binding is
+// unreliable across CDN builds, so resolve the table key from the node id
+// (format: ...-flowchart-<nodeId>-<n>) and drive the panel directly.
+stage.addEventListener('click', (e) => {
+  if (moved) return;
+  const g = e.target.closest && e.target.closest('.node');
+  if (!g || !g.id) return;
+  const m = g.id.match(/-flowchart-(.+)-\d+$/);
+  if (!m) return;
+  const key = m[1].replace(/Ext$/, ''); // external context nodes map to canonical table
+  showDetail(key);
+});
+
+function buildTabs() {
+  const tabs = document.getElementById('tabs');
+  Object.entries(DIAGRAMS).forEach(([key, d]) => {
+    const b = document.createElement('button');
+    b.className = 'tab rounded-md px-3 py-1.5 whitespace-nowrap';
+    b.textContent = d.label;
+    b.dataset.key = key;
+    b.setAttribute('role', 'tab');
+    b.onclick = () => showGroup(key);
+    tabs.appendChild(b);
+  });
+}
+
+// ----------------------------- detail panel -----------------------------
+const panel = document.getElementById('panel');
+function openPanel() {
+  panel.classList.remove('translate-y-full', 'md:translate-x-full');
+}
+function closePanel() {
+  panel.classList.add('translate-y-full', 'md:translate-x-full');
+}
+document.getElementById('panel-close').onclick = closePanel;
+
+// Per-table writer-facing "why it exists / what it enables", distinct from the
+// technical purpose. Honest: pure-infra tables say so rather than inventing a story.
+const WHY = {
+  users: 'Your account. Everything you write hangs off this one identity, so signing in on a new device brings your whole library of serials with you.',
+  projects: 'A Project is one serial or book \u2014 open it and you\u2019re back in that world\u2019s manuscript, notes, and AI chats. The personal project is the catch-all for quick \u201cjust start writing\u201d ideas.',
+  works: 'A unit of work inside a project (an arc, a task the AI is helping on). It lets the AI scope its attention to what you\u2019re on right now instead of the entire 100-chapter serial.',
+  context_sources: 'The root of a \u201cdrive\u201d you organize \u2014 the manuscript, the worldbuilding KB, uploads. This is the backbone of \u201can AI that knows your world\u201d: each source is a place your files live.',
+  folders: 'The folders you make to keep a serial navigable \u2014 Arc 1, Characters, Magic System \u2014 instead of one flat pile of 100+ chapters.',
+  documents: 'An actual file: a chapter, a character sheet, a notes doc. This is what you write in and what the AI reads and edits. The full-text index is how \u201cfind where I mentioned the jade sword\u201d works.',
+  threads: 'One AI conversation \u2014 \u201cChapter 19 pacing\u201d, a brainstorm, the onboarding interview. Fork and handoff let you branch an idea or switch agents without losing the original thread.',
+  thread_works: 'Links a conversation to the work(s) it\u2019s about, marking one as primary. Lets a single chat address several parts of the book while still knowing its default scope. Mostly plumbing the writer never sees.',
+  turns: 'Every message \u2014 yours and the AI\u2019s \u2014 stored as a tree, so editing a past message branches a new direction instead of destroying the old one. Also records what each AI turn cost.',
+  model_responses: 'The raw provider call(s) behind one AI turn, with token counts and cost. This is what makes \u201cthis message cost X credits\u201d accurate and auditable.',
+  turn_blocks: 'The pieces of an AI turn you actually see \u2014 prose, thinking, \u201cediting your chapter\u201d actions. Ordering and pruning keep long sessions readable and cheap to re-send to the model.',
+  event_journal: 'An append-only log of everything that happened in a thread. This is how a chapter\u2019s AI session is replayed and recovered after a reload or crash \u2014 your work is never silently lost.',
+  thread_user_state: 'Remembers when you last opened a conversation, so you reopen exactly where you left off and can tell what\u2019s new since.',
+  thread_documents: 'Tracks which chapters a conversation touched and how (editing / reading / created). Powers \u201cwhat did this session change?\u201d and ties chat work back to the manuscript.',
+  agent_definitions: 'The AI collaborators themselves \u2014 Muse, Writer, Spark \u2014 configured per project. This is which writing partner you\u2019re talking to and what model and persona it uses.',
+  skills: 'Narrative-craft abilities an agent can load \u2014 continuity-checking, critique, pacing. Scoped per project so each serial\u2019s AI is tuned to that world\u2019s rules.',
+  user_installed_skills: 'Skills you carry across all your projects \u2014 your personal craft toolkit \u2014 rather than ones tied to a single serial.',
+  agent_skills: 'The wiring that says which skills an agent has and whether they\u2019re always-on or available on demand. Pure configuration behind the agent picker.',
+  agent_subagents: 'Defines which helpers an agent may delegate to \u2014 e.g. Muse spawning Critic and Continuity-checker. This is what powers the background helpers that check the AI against its own biases. Pure structure.',
+  user_subscriptions: 'Your Pro subscription state from Stripe. It unlocks the monthly credit allotment and the full creative orchestration (more helpers, deeper fan-out).',
+  credit_lots: 'The actual buckets of AI credits you hold \u2014 free monthly grant, subscription, purchased. FIFO spend (free expires first) is what makes AI spend fair and predictable.',
+  credit_transactions: 'The receipt history of every credit movement, so you can see exactly where your AI budget went. Idempotency keys mean one turn is never double-charged.',
+  credit_balances: 'A live total of your remaining credits plus the breakdown. It\u2019s what the always-visible balance in the UI reads from. A read-only convenience view.',
+  document_yjs_checkpoints: 'Compacted snapshots of a chapter\u2019s edit history. They keep reopening a long chapter fast and underpin restore points. Infrastructure behind seamless editing.',
+  document_yjs_updates: 'Every fine-grained edit to a chapter, tagged with who made it (you or which agent). This is how two devices editing the same chapter stay in sync, and how AI edits get attribution.',
+  document_yjs_heads: 'A bookmark to the latest synced state of each chapter, so a reopened editor jumps straight to current without replaying the whole history.',
+  document_restore_points: 'Named \u201csave points\u201d for a chapter, so you can confidently roll back to \u201cbefore the AI rewrote Act 2.\u201d',
+  turn_document_touches: 'Provenance: which AI turn touched which chapter. Powers \u201cshow me what this session changed\u201d and trustworthy AI attribution. Mostly behind the scenes.',
+  project_results: 'Stored artifacts an agent run produced (an exported draft, a generated file), kept with restrict-on-delete so results outlive a casual cleanup.',
+  user_preferences: 'Your personal settings blob \u2014 editor and app preferences that follow you everywhere.',
+  user_project_favorites: 'The projects you\u2019ve starred, so your most active serials surface first.',
+  project_user_preferences: 'Per-project view settings \u2014 how threads are grouped, which are pinned, auto-resume behavior \u2014 so each serial\u2019s workspace stays the way you like it.',
+  waitlist_emails: 'Landing-page waitlist signups. No connection to a writer\u2019s actual content \u2014 pure pre-launch infrastructure.',
+};
+
+async function showDetail(key) {
+  const d = DETAIL[key];
+  if (!d) return;
+  document.getElementById('panel-title').textContent = d.title;
+  // writer-facing "why"
+  const whyText = WHY[key];
+  const whyWrap = document.getElementById('panel-why');
+  if (whyText) {
+    document.getElementById('panel-why-text').textContent = whyText;
+    whyWrap.style.display = '';
+  } else {
+    whyWrap.style.display = 'none';
+  }
+  // reset scroll to top on open so long snippets start from the top
+  const scroller = document.getElementById('panel-scroll');
+  if (scroller) scroller.scrollTop = 0;
+  document.getElementById('panel-group').textContent = d.group +
+    (d.flags && d.flags.length ? '' : '');
+
+  // description + flag chips
+  const descEl = document.getElementById('panel-desc');
+  descEl.textContent = d.desc;
+
+  // source
+  document.getElementById('panel-src').innerHTML =
+    `<span class="src-link">${d.src}</span>`;
+
+  // flags rendered next to title group
+  const groupEl = document.getElementById('panel-group');
+  groupEl.innerHTML = `${d.group} ` + (d.flags || []).map((f) =>
+    `<span class="ml-1 inline-block rounded border px-1.5 py-0.5 text-[10px] align-middle" style="${FLAG_STYLE[f]||''}">${FLAG_LABEL[f]||f}</span>`).join(' ');
+
+  // columns
+  document.getElementById('panel-cols').innerHTML = (d.cols || []).map((c) =>
+    `<div class="surface-2 rounded-md px-2.5 py-1.5">
+       <span class="font-mono font-semibold">${c.name}</span>
+       <span class="muted font-mono text-xs"> · ${c.type}</span>
+       ${c.note ? `<div class="muted text-xs mt-0.5">${c.note}</div>` : ''}
+     </div>`).join('');
+
+  // relationships
+  document.getElementById('panel-rels').innerHTML = (d.rels || []).map((r) =>
+    `<li>${r}</li>`).join('');
+
+  // code
+  const codeEl = document.getElementById('panel-code');
+  const raw = CODE[key];
+  if (raw) {
+    if (window.__shikiReady && window.codeToHtml) {
+      try {
+        codeEl.innerHTML = await window.codeToHtml(raw, {
+          lang: 'typescript',
+          theme: DARK ? 'vitesse-dark' : 'vitesse-light',
+        });
+      } catch (e) {
+        codeEl.innerHTML = `<pre class="surface-2"><code>${escapeHtml(raw)}</code></pre>`;
+      }
+    } else {
+      codeEl.innerHTML = `<pre class="surface-2"><code>${escapeHtml(raw)}</code></pre>`;
+    }
+  } else {
+    codeEl.innerHTML = '<p class="muted text-xs">—</p>';
+  }
+  openPanel();
+}
+window.showDetail = showDetail;
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+// ----------------------------- pan & zoom -----------------------------
+let scale = 1, tx = 0, ty = 0, dragging = false, sx = 0, sy = 0, moved = false;
+const apply = () => { stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
+function resetView() { scale = 1; tx = 0; ty = 0; apply(); }
+window.resetView = resetView;
+document.getElementById('reset-view').onclick = resetView;
+
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const prev = scale;
+  scale = Math.min(3, Math.max(0.3, scale - e.deltaY * 0.0015));
+  // zoom toward cursor
+  const r = viewport.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  tx = cx - (cx - tx) * (scale / prev);
+  ty = cy - (cy - ty) * (scale / prev);
+  apply();
+}, { passive: false });
+
+const pts = new Map();
+let pinchDist = 0;
+viewport.addEventListener('pointerdown', (e) => {
+  pts.set(e.pointerId, e);
+  dragging = true; moved = false;
+  sx = e.clientX - tx; sy = e.clientY - ty;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!pts.has(e.pointerId)) {
+    if (!dragging) return;
+  } else {
+    pts.set(e.pointerId, e);
+  }
+  if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinchDist) {
+      scale = Math.min(3, Math.max(0.3, scale * (dist / pinchDist)));
+      apply();
+    }
+    pinchDist = dist;
+    moved = true;
+    return;
+  }
+  if (!dragging) return;
+  const nx = e.clientX - sx, ny = e.clientY - sy;
+  if (Math.abs(nx - tx) + Math.abs(ny - ty) > 3) moved = true;
+  tx = nx; ty = ny; apply();
+});
+window.addEventListener('pointerup', (e) => {
+  pts.delete(e.pointerId);
+  if (pts.size < 2) pinchDist = 0;
+  if (pts.size === 0) dragging = false;
+});
+
+// ----------------------------- legend -----------------------------
+document.getElementById('legend-toggle').onclick = () =>
+  document.getElementById('legend').classList.toggle('hidden');
+
+// ----------------------------- boot -----------------------------
+buildTabs();
+showGroup('identity');
+</script>
+</body>
+</html>

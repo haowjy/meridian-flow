@@ -70,5 +70,19 @@ independent, non-nested scope.
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend — see
-the audit map at `work/v3-fullstack-rebuild/audit/db-orientation.md` in the docs
-repo for the full column inventory and hazard list.
+the [schema map](schema-map.md) for the full column inventory and hazard list.
+
+## Schema map (regenerate-on-demand)
+
+A durable orientation map of the whole DB layer lives next to this file:
+
+- [`schema-map.md`](schema-map.md) — package layout, per-table column inventory,
+  relationships, and the timestamp-mode / `Date`-binding hazard list.
+- [`schema-map/index.html`](schema-map/index.html) — interactive ER view (open in
+  a browser; click any table for its purpose, columns, and source links).
+
+It is **regenerated on demand, not auto-maintained**. Each map records when it was
+last regenerated vs. when the DB layer source last changed
+(`git log -1 --date=short --format=%cd -- packages/database/src`). If the source
+is newer than the regen date, treat the map as stale and rebuild it from the
+current `src/schema/*.ts` definitions.
