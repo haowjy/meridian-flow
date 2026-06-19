@@ -1,7 +1,10 @@
 import type { Database } from "@meridian/database";
 import { userSubscriptions } from "@meridian/database/schema";
 import { and, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import {
   ACTIVE_SUBSCRIPTION_STATUSES,
   isMonotonicReplacement,
@@ -48,78 +51,84 @@ function monotonicUpdateWhere(input: SubscriptionUpsertInput) {
 export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore {
   return {
     async upsert(input: SubscriptionUpsertInput) {
-      const tx = activeDb(db);
-      const [existingRow] = await tx
-        .select()
-        .from(userSubscriptions)
-        .where(eq(userSubscriptions.stripeSubscriptionId, input.stripeSubscriptionId))
-        .limit(1);
-      const existing = existingRow ? toRecord(existingRow) : null;
-      if (existing && !isMonotonicReplacement(existing, input)) return existing;
-      const inputStart = new Date(input.currentPeriodStart);
-      if (input.status !== "cancelled") {
-        const [newerActiveForUser] = await tx
+      // Up to four statements (probe existing → guard a newer sibling →
+      // cancel superseded siblings → insert/update) must commit together: a
+      // crash mid-flow must never leave siblings cancelled with no replacement
+      // row. Mirrors credit-ledger.grant's transactional grant.
+      return runInDrizzleTransaction(db as never, async () => {
+        const tx = activeDb(db);
+        const [existingRow] = await tx
           .select()
           .from(userSubscriptions)
-          .where(
-            and(
-              eq(userSubscriptions.userId, input.userId),
-              inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
-              sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
-              gt(userSubscriptions.currentPeriodStart, inputStart),
-            ),
-          )
+          .where(eq(userSubscriptions.stripeSubscriptionId, input.stripeSubscriptionId))
           .limit(1);
-        if (newerActiveForUser) return toRecord(newerActiveForUser);
-      }
+        const existing = existingRow ? toRecord(existingRow) : null;
+        if (existing && !isMonotonicReplacement(existing, input)) return existing;
+        const inputStart = new Date(input.currentPeriodStart);
+        if (input.status !== "cancelled") {
+          const [newerActiveForUser] = await tx
+            .select()
+            .from(userSubscriptions)
+            .where(
+              and(
+                eq(userSubscriptions.userId, input.userId),
+                inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+                sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
+                gt(userSubscriptions.currentPeriodStart, inputStart),
+              ),
+            )
+            .limit(1);
+          if (newerActiveForUser) return toRecord(newerActiveForUser);
+        }
 
-      if (input.status !== "cancelled") {
-        await tx
-          .update(userSubscriptions)
-          .set({ status: "cancelled", updatedAt: new Date() })
-          .where(
-            and(
-              eq(userSubscriptions.userId, input.userId),
-              inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
-              sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
-              lte(userSubscriptions.currentPeriodStart, inputStart),
-            ),
-          );
-      }
+        if (input.status !== "cancelled") {
+          await tx
+            .update(userSubscriptions)
+            .set({ status: "cancelled", updatedAt: new Date() })
+            .where(
+              and(
+                eq(userSubscriptions.userId, input.userId),
+                inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+                sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
+                lte(userSubscriptions.currentPeriodStart, inputStart),
+              ),
+            );
+        }
 
-      const [row] = await tx
-        .insert(userSubscriptions)
-        .values({
-          userId: input.userId,
-          stripeSubscriptionId: input.stripeSubscriptionId,
-          stripeCustomerId: input.stripeCustomerId,
-          plan: input.plan,
-          status: input.status,
-          creditsPerPeriod: Number(input.creditsPerPeriod),
-          currentPeriodStart: new Date(input.currentPeriodStart),
-          currentPeriodEnd: new Date(input.currentPeriodEnd),
-          cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
-        })
-        .onConflictDoUpdate({
-          target: userSubscriptions.stripeSubscriptionId,
-          set: {
+        const [row] = await tx
+          .insert(userSubscriptions)
+          .values({
+            userId: input.userId,
+            stripeSubscriptionId: input.stripeSubscriptionId,
+            stripeCustomerId: input.stripeCustomerId,
+            plan: input.plan,
             status: input.status,
             creditsPerPeriod: Number(input.creditsPerPeriod),
             currentPeriodStart: new Date(input.currentPeriodStart),
             currentPeriodEnd: new Date(input.currentPeriodEnd),
             cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
-            updatedAt: new Date(),
-          },
-          where: monotonicUpdateWhere(input),
-        })
-        .returning();
+          })
+          .onConflictDoUpdate({
+            target: userSubscriptions.stripeSubscriptionId,
+            set: {
+              status: input.status,
+              creditsPerPeriod: Number(input.creditsPerPeriod),
+              currentPeriodStart: new Date(input.currentPeriodStart),
+              currentPeriodEnd: new Date(input.currentPeriodEnd),
+              cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+              updatedAt: new Date(),
+            },
+            where: monotonicUpdateWhere(input),
+          })
+          .returning();
 
-      if (!row) {
-        const current = await this.getByStripeSubscriptionId(input.stripeSubscriptionId);
-        if (current) return current;
-        throw new Error("Failed to upsert subscription");
-      }
-      return toRecord(row);
+        if (!row) {
+          const current = await this.getByStripeSubscriptionId(input.stripeSubscriptionId);
+          if (current) return current;
+          throw new Error("Failed to upsert subscription");
+        }
+        return toRecord(row);
+      });
     },
 
     async getByStripeSubscriptionId(stripeSubscriptionId) {
