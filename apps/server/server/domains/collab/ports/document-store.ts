@@ -39,14 +39,6 @@ export interface RestorePointRow {
   createdAt: string;
 }
 
-export interface CompactDocumentLogInput {
-  documentId: string;
-  pruneUpdatesThroughSeq: number;
-  pruneRowsCreatedBefore: string;
-  keepCheckpointIds: number[];
-  pruneCheckpointsThroughSeq: number;
-}
-
 export interface AppendUpdateInput {
   documentId: string;
   updateData: Uint8Array;
@@ -79,7 +71,6 @@ export interface DocumentStore {
   /** Updates only latestCheckpointId — avoids clobbering concurrent head advances. */
   setLatestCheckpointId(documentId: string, checkpointId: number): Promise<void>;
   appendUpdate(input: AppendUpdateInput): Promise<number>;
-  countUpdatesAfter(documentId: string, afterSeq: number): Promise<number>;
   listUpdatesAfter(documentId: string, afterSeq: number): Promise<UpdateRow[]>;
   insertCheckpoint(input: InsertCheckpointInput): Promise<number>;
   getLatestCheckpoint(documentId: string): Promise<CheckpointRow | null>;
@@ -88,5 +79,4 @@ export interface DocumentStore {
   insertRestorePoint(input: InsertRestorePointInput): Promise<RestorePointRow>;
   listRestorePoints(documentId: string): Promise<RestorePointRow[]>;
   getRestorePoint(id: string): Promise<RestorePointRow | null>;
-  compactDocumentLog(input: CompactDocumentLogInput): Promise<void>;
 }

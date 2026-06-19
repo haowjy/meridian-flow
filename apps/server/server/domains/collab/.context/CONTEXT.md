@@ -24,7 +24,7 @@ state has exactly one markdown rendering, and back.
 No node or mark may be added to the document schema without a lossless markdown
 serializer+parser pair. The structural spec lives in `@meridian/prosemirror-schema`
 (specs only); the markdown syntax lives in this domain's schema adapter
-(`domain/schemas.ts`). Adding a spec to the package without a serializer here is
+(`domain/mdx-bridge.ts`). Adding a spec to the package without a serializer here is
 a defect — it breaks the markdown-native guarantee.
 
 ### What lives where
