@@ -16,6 +16,13 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Server hardening (S6): made `@meridian/contracts/protocol` the canonical
+  billing wire types — the credit-ledger domain port now aliases
+  `CreditTransactionSummary`/`CreditBalanceBreakdown` to `BillingTransaction`/
+  `BillingBalanceResponse` instead of re-declaring field-for-field duplicates, so
+  the domain return shape and the HTTP response can't silently drift. Also fixed
+  the stale checkout fallback URL (`/settings/billing` → `/billing`) in
+  `billing-route.ts` and aligned its test.
 - Server hardening (S3): collapsed the 5-way nested ternary that chose the
   credit-lot `onConflictDoNothing` target/where (with the insert boilerplate
   repeated per arm) into one `resolveLotConflictGuard(src, input)` dispatcher and

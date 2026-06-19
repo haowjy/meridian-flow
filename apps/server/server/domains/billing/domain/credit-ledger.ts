@@ -1,4 +1,6 @@
 /** Credit ledger port consumed by runtime cost gates, billing APIs, and grant provisioning. */
+import type { BillingBalanceResponse, BillingTransaction } from "@meridian/contracts/protocol";
+
 export type CreditGrantSource = "manual" | "stripe" | "subscription";
 export interface CreditGrantInput {
   userId: string;
@@ -24,27 +26,11 @@ export interface CreditDebitInput {
   millicredits: string;
   usageEventId: string;
 }
-export interface CreditTransactionSummary {
-  id: string;
-  transactionType: string;
-  amountMillicredits: string;
-  sourceType: string | null;
-  reason: string | null;
-  usageEventId: string | null;
-  createdAt: string;
-  metadata: Record<string, unknown>;
-}
-export interface CreditBalanceBreakdown {
-  totalBalanceMillicredits: string;
-  grantBalanceMillicredits: string;
-  subscriptionBalanceMillicredits: string;
-  purchasedBalanceMillicredits: string;
-  debtBalanceMillicredits: string;
-  includedBudgetMillicredits: string;
-  includedUsedMillicredits: string;
-  includedUsagePercent: number | null;
-  canStartTurn: boolean;
-}
+// Wire-canonical: the credit ledger port speaks the billing protocol types
+// directly, so the domain return shape and the HTTP response can't drift apart
+// (they were previously field-for-field duplicates kept in sync by hand).
+export type CreditTransactionSummary = BillingTransaction;
+export type CreditBalanceBreakdown = BillingBalanceResponse;
 export interface FreeGrantStatus {
   signupGrantedAt: string | null;
   monthlyGranted: boolean;

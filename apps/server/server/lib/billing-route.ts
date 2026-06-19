@@ -211,7 +211,7 @@ export async function createBillingCheckoutSession(
 
   return {
     sessionId: session.id,
-    url: session.url || `${checkoutOrigin(input.body.successUrl)}/settings/billing`,
+    url: session.url || `${checkoutOrigin(input.body.successUrl)}/billing`,
     mode: session.mode,
     needsCredentials: session.needsCredentials,
   };
