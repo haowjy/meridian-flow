@@ -8,21 +8,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 
-import {
-  useProjectPreferences,
-  useUpdateProjectPreferences,
-} from "@/client/query/useProjectPreferences";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { AccountMenu } from "@/features/account/AccountMenu";
-import { cn } from "@/lib/utils";
-import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
-import { useCreateChat } from "../chat/use-create-chat";
-import { SidebarSectionLabel } from "../shell/SidebarSectionLabel";
-import { SCREENS, type ScreenKey, type ScreenMeta } from "../shell/screens";
-import { ThreadSearch, ViewMenu } from "../shell/ThreadListControls";
+import type { ScreenKey } from "../shell/screens";
+import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
 export type NavigationDrawerProps = {
   open: boolean;
@@ -43,15 +33,6 @@ export function NavigationDrawer({
   onSelectScreen,
   onSelectThread,
 }: NavigationDrawerProps) {
-  const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
-  const [threadSearch, setThreadSearch] = useState("");
-  const { preferences } = useProjectPreferences(projectId);
-  const updatePreferences = useUpdateProjectPreferences(projectId);
-  const { createChat, creating } = useCreateChat(projectId, (threadId) => {
-    onSelectThread(threadId);
-    onOpenChange(false);
-  });
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -112,104 +93,26 @@ export function NavigationDrawer({
               </Link>
             </div>
 
-            <div className="flex shrink-0 flex-col gap-1 px-3 py-3">
-              {SCREENS.map((screen) => (
-                <NavItem
-                  key={screen.key}
-                  screen={screen}
-                  active={screen.key === activeScreen}
-                  onClick={() => {
-                    onSelectScreen(screen.key);
-                    onOpenChange(false);
-                  }}
-                />
-              ))}
-            </div>
-
-            <div className="flex shrink-0 flex-col gap-1.5 border-t border-border-subtle px-3 py-3">
-              <div className="flex items-center">
-                <SidebarSectionLabel>
-                  <Trans>Chats</Trans>
-                </SidebarSectionLabel>
-                <button
-                  type="button"
-                  aria-label={t`New chat`}
-                  title={t`New chat`}
-                  disabled={creating}
-                  onClick={() => void createChat()}
-                  className="focus-ring ml-auto grid size-11 place-items-center rounded-md text-muted-foreground transition-colors active:scale-[0.98] hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-50"
-                >
-                  <span className="text-lg leading-none">+</span>
-                </button>
-              </div>
-              <div className="flex min-w-0 items-center gap-1.5">
-                <ThreadSearch value={threadSearch} onChange={setThreadSearch} />
-                <ViewMenu
-                  groupBy={preferences.threadGroupBy}
-                  groupByDisabled={updatePreferences.isPending}
-                  onGroupByChange={(threadGroupBy) => updatePreferences.mutate({ threadGroupBy })}
-                  filter={threadFilter}
-                  onFilterChange={setThreadFilter}
-                />
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1">
-              <ThreadPanel
-                projectId={projectId}
-                activeThreadId={activeThreadId}
-                onSelectThread={(threadId) => {
-                  onSelectThread(threadId);
-                  onOpenChange(false);
-                }}
-                transparent
-                hideHeader
-                groupBy={preferences.threadGroupBy}
-                filter={threadFilter}
-                searchQuery={threadSearch}
-                pinnedThreadIds={preferences.pinnedThreadIds}
-              />
-            </div>
-
-            <div
-              className="shrink-0 border-t border-border-subtle px-2 pt-2"
-              style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
-            >
-              <AccountMenu />
-            </div>
+            {/* Selecting a screen/thread (or creating a chat, which routes
+                through onSelectThread) also closes the drawer — a chrome
+                concern the shared body stays unaware of. */}
+            <WorkspaceNavBody
+              projectId={projectId}
+              activeScreen={activeScreen}
+              activeThreadId={activeThreadId}
+              onSelectScreen={(screen) => {
+                onSelectScreen(screen);
+                onOpenChange(false);
+              }}
+              onSelectThread={(threadId) => {
+                onSelectThread(threadId);
+                onOpenChange(false);
+              }}
+              presentation="phone"
+            />
           </nav>
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-function NavItem({
-  screen,
-  active,
-  onClick,
-}: {
-  screen: ScreenMeta;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const Icon = screen.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "focus-ring flex min-h-11 items-center gap-2.5 rounded-md px-2 text-left text-sm transition-colors active:scale-[0.98]",
-        active
-          ? "bg-sidebar-accent font-medium text-foreground"
-          : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-      )}
-    >
-      <span className="grid size-5 place-items-center text-muted-foreground">
-        <Icon className="size-4" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{screen.label}</span>
-    </button>
   );
 }
