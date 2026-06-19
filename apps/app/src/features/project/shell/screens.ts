@@ -7,10 +7,10 @@
  * placement and pane rendering never need fake destination fallbacks.
  */
 import type { LucideIcon } from "lucide-react";
-import { FolderTree, Home, MessageSquare, UploadCloud } from "lucide-react";
+import { FolderTree, Home, MessageSquare } from "lucide-react";
 
 /** Built-in workspace screens — every route-valid `?screen=` value. */
-export type ScreenKey = "home" | "chat" | "context" | "import";
+export type ScreenKey = "home" | "chat" | "context";
 
 export type ScreenMeta = {
   key: ScreenKey;
@@ -23,5 +23,4 @@ export const SCREENS: ScreenMeta[] = [
   { key: "home", label: "Home", icon: Home },
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "context", label: "Context", icon: FolderTree },
-  { key: "import", label: "Import", icon: UploadCloud },
 ];

@@ -83,12 +83,6 @@ export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
         "context-viewer": placement("center"),
         chat: placement("dock"),
       };
-    case "import":
-      return {
-        ...HIDDEN_PLACEMENT,
-        threads: placement("rail-l"),
-        chat: placement("dock"),
-      };
   }
 }
 

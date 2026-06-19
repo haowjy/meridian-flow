@@ -14,7 +14,6 @@ import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
-import { CorpusImportPanel } from "@/features/corpus-import/CorpusImportPanel";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import { useProjectThreadGroups } from "../data/dashboard-data";
@@ -54,9 +53,7 @@ export function MobileProject(props: ProjectViewProps) {
       <MobileTopBar
         activeScreen={props.activeScreen}
         activeThread={activeThread}
-        title={
-          props.resultsOpen ? t`Results` : props.activeScreen === "import" ? t`Import` : undefined
-        }
+        title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
           !props.resultsOpen && crumbs.length > 0 ? (
@@ -161,8 +158,6 @@ function renderActiveView(
           onCreateDone={onCreateDone}
         />
       );
-    case "import":
-      return <CorpusImportPanel projectId={props.projectId} compact />;
   }
 }
 
