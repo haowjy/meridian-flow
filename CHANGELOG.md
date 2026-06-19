@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (R1, step 2): relocated `rename()` out of the thread store.
+  Thread rename was a pure query-cache mutation with no store state living on
+  `ThreadStoreActions`. Moved it to a `useRenameThread` hook beside
+  `useProjectThreads` (`client/query/useRenameThread.ts`); `ChatThreadHeader`'s
+  inline rename uses the hook. Dropped `rename` from the store action surface,
+  the `selectThreadActions` selector, the `ThreadStoreActions` type, and the
+  controller-test action mock. No behavior change.
 - Frontend cleanup (R1, step 1): decoupled the thread store from React Query.
   Introduced a thin `ThreadCachePort` (`client/stores/thread-store/thread-cache.ts`)
   with `upsertThread` / `patchThread` / `invalidateThread`, backed by the existing

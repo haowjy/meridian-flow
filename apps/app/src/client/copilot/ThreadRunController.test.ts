@@ -97,7 +97,6 @@ function makeActions(): ThreadStoreActions {
 
   const actions = {
     turns: vi.fn((threadId: string) => turnsByThread[threadId]),
-    rename: vi.fn(),
     setStreamingThreadId: vi.fn(),
     ensureThread: vi.fn(),
     markHandoffPending: vi.fn(),

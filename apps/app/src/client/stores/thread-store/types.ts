@@ -93,7 +93,6 @@ export type ThreadStoreState = {
  */
 export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
-  rename(id: string, title: string): void;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
   markHandoffPending(threadId: string): void;
