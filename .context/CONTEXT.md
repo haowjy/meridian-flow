@@ -96,6 +96,57 @@ KB                   ← cross-cutting decisions, vocabulary, durable product do
 
 Agents should read `.context/` before raw source files when entering an area.
 
+## Context-URI scheme vocabulary
+
+Durable Project content vs ephemeral Work scratch:
+
+| Scheme | Scope | Lifecycle | Notes |
+|---|---|---|---|
+| `manuscript://` | project | durable | The book; one per Project. **Bare-path default.** |
+| `kb://` | project | durable | Agent KB + import target (`kb://imports/…`) |
+| `user://` | user (cross-project) | durable | Personal files |
+| `work://` | **work** (`<workId>` authority) | ephemeral | Agent working memory |
+| `uploads://` | **work** (`<workId>` authority) | ephemeral | Per-Work upload target |
+
+Bare paths default to `manuscript://`. Work-scoped URIs carry a `<workId>`
+authority; omitted authority resolves to the thread's primary Work.
+
+## Dev environment reference
+
+```bash
+pnpm dev              # start the stack (worktree-scoped tmux, defaults to --tailscale)
+pnpm dev:local        # localhost-only (no tailscale)
+pnpm dev:restart      # restart if stuck
+pnpm portless:list    # show live URLs
+```
+
+TLS for curl/node: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`
+
+### Postgres commands
+
+```bash
+pnpm dev:infra            # docker compose up
+pnpm bootstrap            # migrate + apply-functions (schema only)
+pnpm db:migrate           # apply Drizzle migrations
+pnpm db:apply-functions   # sync PL/pgSQL functions
+pnpm db:generate          # generate migration SQL from schema changes
+pnpm db:studio            # drizzle-kit studio
+pnpm db:reset             # drop/recreate public schema + re-migrate
+pnpm dev:infra:down       # stop the container
+```
+
+Full wipe: `pnpm dev:infra:down` + remove the `meridian-dev_meridian-postgres-data`
+Docker volume + `pnpm bootstrap`.
+
+`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54422/meridian`
+
+### E2e tests
+
+```bash
+NODE_EXTRA_CA_CERTS=~/.portless/ca.pem \
+  pnpm --filter @meridian/app exec playwright test -c e2e/playwright.auth.config.ts
+```
+
 ## Upstream parity mapping notes
 
 - Upstream `apps/web` is intentionally represented as `apps/www` in this repo, so exact-path audits should classify those paths as ported under the Meridian marketing app name rather than missing.
