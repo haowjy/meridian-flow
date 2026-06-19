@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F5): removed the double viewport lock on `/billing`.
+  `_authenticated.tsx` already owns the `app-frame` (`h-svh`/`overflow-hidden`)
+  and the Outlet wrapper, so `BillingPage` re-locking with its own inner
+  `app-frame` nested two `h-svh overflow-hidden` shells. The page now renders as
+  a single `app-scroll` region (matching `HomeView`/`HomeScreen`), one scroll
+  owner inside the layout-provided frame.
 - Frontend cleanup (F4): unified the duplicated credit-balance UI behind a new
   `CreditBalanceCard` (`features/billing/`) with `compact`|`full` variants. The
   settings Usage section composes the `compact` box and `/billing` composes the
