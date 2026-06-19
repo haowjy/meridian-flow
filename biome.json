@@ -20,7 +20,8 @@
       "!.codex",
       "!.pi",
       "!.opencode",
-      "!.cursor"
+      "!.cursor",
+      "!**/.context"
     ]
   },
   "formatter": {
