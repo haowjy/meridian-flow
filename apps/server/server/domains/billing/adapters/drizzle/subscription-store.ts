@@ -2,6 +2,10 @@ import type { Database } from "@meridian/database";
 import { userSubscriptions } from "@meridian/database/schema";
 import { and, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import {
+  ACTIVE_SUBSCRIPTION_STATUSES,
+  isMonotonicReplacement,
+} from "../../domain/subscription-policy.js";
 import type {
   SubscriptionRecord,
   SubscriptionStore,
@@ -25,21 +29,6 @@ function toRecord(row: typeof userSubscriptions.$inferSelect): SubscriptionRecor
     currentPeriodEnd: row.currentPeriodEnd.toISOString(),
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
   };
-}
-
-function isStaleSubscriptionUpdate(
-  existing: SubscriptionRecord | null,
-  input: SubscriptionUpsertInput,
-): boolean {
-  if (!existing) return false;
-  const existingStart = new Date(existing.currentPeriodStart).getTime();
-  const inputStart = new Date(input.currentPeriodStart).getTime();
-  if (Number.isFinite(existingStart) && Number.isFinite(inputStart) && inputStart < existingStart) {
-    return true;
-  }
-  return (
-    inputStart === existingStart && existing.status === "cancelled" && input.status !== "cancelled"
-  );
 }
 
 function monotonicUpdateWhere(input: SubscriptionUpsertInput) {
@@ -66,7 +55,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
         .where(eq(userSubscriptions.stripeSubscriptionId, input.stripeSubscriptionId))
         .limit(1);
       const existing = existingRow ? toRecord(existingRow) : null;
-      if (existing && isStaleSubscriptionUpdate(existing, input)) return existing;
+      if (existing && !isMonotonicReplacement(existing, input)) return existing;
       const inputStart = new Date(input.currentPeriodStart);
       if (input.status !== "cancelled") {
         const [newerActiveForUser] = await tx
@@ -75,7 +64,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
           .where(
             and(
               eq(userSubscriptions.userId, input.userId),
-              inArray(userSubscriptions.status, ["active", "past_due", "trialing"]),
+              inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
               sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
               gt(userSubscriptions.currentPeriodStart, inputStart),
             ),
@@ -91,7 +80,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
           .where(
             and(
               eq(userSubscriptions.userId, input.userId),
-              inArray(userSubscriptions.status, ["active", "past_due", "trialing"]),
+              inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
               sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
               lte(userSubscriptions.currentPeriodStart, inputStart),
             ),
