@@ -1,6 +1,6 @@
 import type { Database } from "@meridian/database";
 import { userSubscriptions } from "@meridian/database/schema";
-import { and, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -73,7 +73,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
               and(
                 eq(userSubscriptions.userId, input.userId),
                 inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
-                sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
+                ne(userSubscriptions.stripeSubscriptionId, input.stripeSubscriptionId),
                 gt(userSubscriptions.currentPeriodStart, inputStart),
               ),
             )
@@ -89,7 +89,7 @@ export function createDrizzleSubscriptionStore(db: Database): SubscriptionStore 
               and(
                 eq(userSubscriptions.userId, input.userId),
                 inArray(userSubscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
-                sql`${userSubscriptions.stripeSubscriptionId} <> ${input.stripeSubscriptionId}`,
+                ne(userSubscriptions.stripeSubscriptionId, input.stripeSubscriptionId),
                 lte(userSubscriptions.currentPeriodStart, inputStart),
               ),
             );

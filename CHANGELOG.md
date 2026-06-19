@@ -10,6 +10,10 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Server hardening (S5): replaced the residual raw
+  ``sql`${stripeSubscriptionId} <> ${id}``` comparators in the Drizzle
+  subscription store with the typed `ne(...)` operator, so the store uses one
+  canonical comparator style (matching the `gt`/`lt`/`lte`/`eq` Date fix).
 - Server hardening (S1): wrapped the Drizzle subscription `upsert` (probe →
   newer-sibling guard → cancel-superseded UPDATE → insert/update) in
   `runInDrizzleTransaction`, matching `credit-ledger.grant`. A crash mid-flow can
