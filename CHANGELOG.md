@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Test hardening (`tools/dev/dev-db.test.ts`): the `describe.skipIf(!DATABASE_URL)`
+  integration block parsed `new URL(adminUrl)` at collection time, so a missing
+  `DATABASE_URL` crashed the whole suite (`TypeError: Invalid URL`) instead of
+  skipping. Build the throwaway URL lazily inside the test so the skip is actually
+  protective.
 - Docs (DB knowledge layer): added `packages/database/.context/CONTEXT.md`
   (qi-layer expected it; only `AGENTS.md` + `README.md` existed). Records the
   timestamp `mode` policy (default `Date` via `_shared.ts`; only `mode:"string"`
