@@ -11,6 +11,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 
@@ -152,7 +153,7 @@ describe("AssistantTurn segment rendering", () => {
   it("marks reducer-produced partial read calls with partial block status", () => {
     const store = createThreadStore({
       now: Date.parse("2026-01-01T00:00:00.000Z"),
-      queryClient: new QueryClient(),
+      threadCache: createThreadCache(new QueryClient()),
     });
 
     applyAguiEventToStore(store.getState(), "thread_1", {

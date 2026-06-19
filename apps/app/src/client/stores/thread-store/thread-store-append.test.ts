@@ -12,6 +12,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { readProjectThreadList } from "@/client/query/project-thread-cache";
 
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
+import { createThreadCache } from "./thread-cache";
 import { createThreadStore } from "./thread-store";
 
 function thread(id: string): Thread {
@@ -49,7 +50,7 @@ function seedQueryClient(threads: Thread[] | null): QueryClient {
 }
 
 function createStore() {
-  return createThreadStore({ now: 0, queryClient });
+  return createThreadStore({ now: 0, threadCache: createThreadCache(queryClient) });
 }
 
 describe("ensureThread", () => {
@@ -86,7 +87,7 @@ describe("markPendingStream", () => {
 describe("applyThreadSnapshot", () => {
   it("keeps local turns during handoff when the server snapshot is still empty", () => {
     seedQueryClient([thread("handoff")]);
-    const store = createThreadStore({ now: 1, queryClient });
+    const store = createThreadStore({ now: 1, threadCache: createThreadCache(queryClient) });
     const local = buildOptimisticUserTurn({
       id: "turn_local_1",
       threadId: "handoff",

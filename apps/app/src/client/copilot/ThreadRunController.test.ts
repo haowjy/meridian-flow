@@ -13,6 +13,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ThreadStoreActions } from "@/client/stores";
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import type {
   ThreadTransport,
@@ -331,7 +332,7 @@ describe("ThreadRunController", () => {
 
   it("acknowledges the optimistic user turn before snapshot reconcile so one server-id user turn remains", async () => {
     const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, queryClient: new QueryClient() });
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
     const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       threadId: "thread_1",
@@ -482,7 +483,7 @@ describe("ThreadRunController", () => {
 
   it("keeps a waiting checkpoint turn when submit fails before the server accepts a new run", async () => {
     const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, queryClient: new QueryClient() });
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
     store.setState({ turnsByThread: { thread_1: [waitingCheckpointTurn] } });
     const appendUserMessageFn = vi.fn().mockRejectedValue(new Error("Turn already running"));
     const controller = new ThreadRunController({
