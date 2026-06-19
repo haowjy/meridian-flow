@@ -40,22 +40,6 @@ function ProtoIndex() {
         </a>
 
         <a
-          href="/proto/palette"
-          className="focus-ring group flex flex-col gap-3 rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/60 hover:bg-sidebar-accent/40"
-        >
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-headline-card font-semibold text-foreground">
-              Palette explorer (throwaway)
-            </span>
-            <span className="text-meta text-muted-foreground">/proto/palette</span>
-          </div>
-          <p className="text-[14px] leading-6 text-ink-muted">
-            Live-override the eight ground/chrome tokens to tune sidebar↔manuscript tonal
-            relationships. Disposable; copy the winning set into ink-jade.css.
-          </p>
-        </a>
-
-        <a
           href="/proto/spike-layout"
           className="focus-ring group flex flex-col gap-3 rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/60 hover:bg-sidebar-accent/40"
         >
