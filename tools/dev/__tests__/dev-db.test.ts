@@ -84,13 +84,17 @@ describe("dev-db", () => {
 describe.skipIf(!process.env.DATABASE_URL)("dev-db integration", () => {
   const adminUrl = process.env.DATABASE_URL as string;
   const throwawayDb = "meridian_dev_db_contract_test";
-  const throwawayUrl = (() => {
+  // Built lazily inside the test: `describe.skipIf` still runs the describe body
+  // at collection time, so parsing `adminUrl` here would crash the suite when
+  // DATABASE_URL is unset instead of skipping cleanly.
+  const buildThrowawayUrl = () => {
     const url = new URL(adminUrl);
     url.pathname = `/${throwawayDb}`;
     return url.toString();
-  })();
+  };
 
   it("creates a missing database and treats duplicate create as idempotent", async () => {
+    const throwawayUrl = buildThrowawayUrl();
     await dropDatabaseForUrl(throwawayUrl, []).catch(() => undefined);
     const first = await ensureDatabaseForUrl(throwawayUrl);
     expect(first).toEqual({ targetDb: throwawayDb, created: true });
