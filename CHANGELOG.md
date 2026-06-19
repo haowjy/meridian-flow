@@ -22,7 +22,8 @@
   now real, the account menu + ⌘, open it, and the Usage section shows the
   credit balance with a link to purchase. Billing purchase moved from
   `/settings/billing` to a standalone `/billing` route (links + checkout return
-  URLs updated).
+  URLs updated). Removed the redundant sidebar credit-balance badge (deleted
+  `CreditBalanceBadge`) — the balance now lives in the Usage section.
 - Dev infra preflight: `pnpm dev` now fails fast when `DATABASE_URL` is unset or
   the dev Postgres is unreachable, instead of booting the app servers (whose DB
   connections are lazy) and only surfacing the failure as a runtime `HTTPError`
