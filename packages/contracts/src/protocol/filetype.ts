@@ -192,7 +192,7 @@ export function documentFileTypeFor(input: {
  * Only text-editable filetypes have a schema type. Binary and custom filetypes
  * return `null` — they are not backed by Yjs documents.
  */
-export function schemaTypeForFiletype(ft: Filetype): YjsTrackedSchemaType | null {
+export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedSchemaType | null {
   switch (ft) {
     case "markdown":
       return "document";

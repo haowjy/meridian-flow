@@ -4,6 +4,7 @@
  * persistence, checkpoints, and shutdown drain.
  */
 import type { Hocuspocus } from "@hocuspocus/server";
+import { schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -148,19 +149,15 @@ class PersistenceQueues {
   }
 }
 
-function schemaTypeForFiletype(filetype: string): "document" | "code" {
-  return filetype === "markdown" ? "document" : "code";
-}
-
 function readAsMdx(document: Y.Doc, filetype = "markdown"): string {
-  const schemaType = schemaTypeForFiletype(filetype);
+  const schemaType = schemaTypeForFiletype(filetype) ?? "code";
   const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const root = yXmlFragmentToProseMirrorRootNode(fragment, getSchema(schemaType));
   return nodeToMdx(schemaType, root);
 }
 
 function writeDocFromMdx(document: Y.Doc, filetype: string, mdx: string): void {
-  const schemaType = schemaTypeForFiletype(filetype);
+  const schemaType = schemaTypeForFiletype(filetype) ?? "code";
   updateYFragment(
     document,
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),

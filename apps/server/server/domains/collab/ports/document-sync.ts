@@ -1,6 +1,7 @@
+import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
-export type SchemaType = "document" | "code";
+export type SchemaType = YjsTrackedSchemaType;
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }

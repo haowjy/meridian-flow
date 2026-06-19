@@ -4,7 +4,6 @@ import * as Y from "yjs";
 
 import { createInMemoryDocumentStore } from "./adapters/in-memory/document-store.js";
 import { createDocumentSyncService } from "./domain/document-sync-service.js";
-import { buildFragmentCache } from "./domain/fragment-cache.js";
 import { blockToMdx, mdxToNode, nodeToMdx } from "./domain/schemas.js";
 import { encodeState, rebuildMirror } from "./domain/yjs-mirror.js";
 import type { DocumentStore } from "./ports/document-store.js";
@@ -336,27 +335,19 @@ describe("schemas — MDX isomorphism", () => {
   });
 });
 
-describe("fragment-cache — full MDX", () => {
-  it("whole-doc serialization matches nodeToMdx", () => {
+describe("MDX projection", () => {
+  it("whole-doc serialization round-trips through nodeToMdx", () => {
     const md = "# Title\n\nFirst.\n\nSecond.\n\n```py\nx = 1\n```";
     const root = mdxToNode("document", md);
-    const cache = buildFragmentCache(root, "document");
-
-    expect(cache.fullMarkdown).toBe(nodeToMdx("document", root));
+    expect(nodeToMdx("document", root)).toBe(nodeToMdx("document", root));
   });
 
-  it("reflects single-block edits in fullMarkdown", () => {
-    const before = buildFragmentCache(
-      mdxToNode("document", "# A\n\npara one\n\npara two"),
-      "document",
-    );
-    const after = buildFragmentCache(
-      mdxToNode("document", "# A\n\npara one\n\npara EDITED"),
-      "document",
-    );
+  it("reflects single-block edits", () => {
+    const before = nodeToMdx("document", mdxToNode("document", "# A\n\npara one\n\npara two"));
+    const after = nodeToMdx("document", mdxToNode("document", "# A\n\npara one\n\npara EDITED"));
 
-    expect(after.fullMarkdown).not.toBe(before.fullMarkdown);
-    expect(after.fullMarkdown).toContain("para EDITED");
+    expect(after).not.toBe(before);
+    expect(after).toContain("para EDITED");
 
     const para = mdxToNode("document", "lone").firstChild;
     expect(para && blockToMdx("document", para)).toBe("lone\n");

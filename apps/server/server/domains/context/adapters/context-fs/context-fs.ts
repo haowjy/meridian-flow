@@ -5,7 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { filetypeForPath } from "@meridian/contracts/protocol";
+import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { SyncError } from "../../../collab/ports/document-sync.js";
 import {
@@ -50,12 +50,6 @@ export interface ContextFSDeps {
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
-
-/** Derive a non-null schema type from a string filetype. Only text filetypes
- *  reach this code path; unknown values default to `"code"`. */
-function schemaTypeForStr(filetype: string): "document" | "code" {
-  return filetype === "markdown" ? "document" : "code";
-}
 
 /**
  * Store-backed file tree for project and work context schemes.
@@ -159,7 +153,7 @@ export class ContextFS implements ContextSchemeAdapter {
         ...base,
         kind: "tracked",
         filetype,
-        schemaType: schemaTypeForStr(filetype),
+        schemaType: schemaTypeForFiletype(filetype) ?? "code",
       });
     }
     if (!doc.storageUrl) {
@@ -351,7 +345,8 @@ export class ContextFS implements ContextSchemeAdapter {
           ? {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType: schemaTypeForStr(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE),
+              schemaType:
+                schemaTypeForFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE) ?? "code",
             }
           : {
               editable: false as const,
