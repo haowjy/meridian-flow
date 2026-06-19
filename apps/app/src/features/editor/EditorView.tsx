@@ -14,12 +14,11 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, Extensions, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
-import { createEditorConfig, cursorColorForUser, type EditorUser } from "@/core/editor/config";
+import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
@@ -106,18 +105,6 @@ export function EditorView({
   ariaLabel,
   showCollaborationDecorations = true,
 }: EditorViewProps) {
-  const { user: authUser } = useAuth();
-  const resolvedUser = useMemo<EditorUser | undefined>(
-    () =>
-      user ??
-      (authUser
-        ? {
-            name: [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || "Anonymous",
-            color: cursorColorForUser(authUser.id),
-          }
-        : undefined),
-    [authUser?.id, authUser?.firstName, authUser?.lastName, user],
-  );
   const sessionRef = useRef<DocumentSession | null>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -197,7 +184,7 @@ export function EditorView({
             awareness: session.awareness,
             schemaType,
             cursorProvider: session.cursorProvider,
-            user: resolvedUser,
+            user,
             editable,
             autofocus: false,
             figureRenderContext: { projectId, documentId },
@@ -265,7 +252,7 @@ export function EditorView({
       projectId,
       schemaType,
       sessionVersion,
-      resolvedUser,
+      user,
       editable,
       ariaLabel,
       showCollaborationDecorations,
