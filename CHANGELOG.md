@@ -9,6 +9,12 @@
   the "never bind a JS `Date` into a raw `sql` fragment" invariant with the
   canonical typed-comparator and `::timestamptz` round-trip patterns, the
   migration workflow, and a pointer to the `apps/server` transaction model.
+- Docs (DB knowledge layer): corrected stale wording — `packages/database/AGENTS.md`
+  said migrations were "squashed to single baseline" but the journal now has a
+  baseline plus additive migrations (`0000_careless_rockslide` + `0001_tidy_siren`);
+  and `domains/billing/.context/CONTEXT.md` pointed at a `lib/` shared module for
+  the transaction helper whose real path is
+  `apps/server/server/shared/drizzle-transaction.ts`.
 - Frontend cleanup (R1, step 2): relocated `rename()` out of the thread store.
   Thread rename was a pure query-cache mutation with no store state living on
   `ThreadStoreActions`. Moved it to a `useRenameThread` hook beside
