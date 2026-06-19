@@ -1,5 +1,5 @@
 /**
- * App global stylesheet — imports the shared Warm Paper Tailwind theme,
+ * App global stylesheet — imports the shared Ink & Jade Tailwind theme,
  * declares project-only theme variables, and defines the app's reusable
  * utility primitives. Shared palette/type values live in design-tokens; layout
  * utilities stay here because only the project uses them.

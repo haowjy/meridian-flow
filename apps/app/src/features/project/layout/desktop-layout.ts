@@ -5,7 +5,7 @@
  * desktop geometry into the registry/grid/shell. Key decision: this file
  * co-locates the static grid template with the slot list while runtime width
  * CSS variable values remain owned by the shell. Slot className fully owns
- * the visual chrome — rails are flush warm-paper regions divided from the
+ * the visual chrome — rails are flush Quiet Pro sidebar regions divided from the
  * center by a hairline border (integrated, not floating) — so SlotGrid never
  * branches on slot kind.
  *
