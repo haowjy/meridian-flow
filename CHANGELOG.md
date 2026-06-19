@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Docs (DB knowledge layer): promoted the DB schema map from the docs-repo work
+  dir into the qi-layer as a durable, regenerate-on-demand artifact —
+  `packages/database/.context/schema-map.md` (orientation text) +
+  `schema-map/index.html` (interactive ER view). Converted all source links to
+  paths relative to the `.context/` home, added staleness metadata (map
+  regenerated 2026-06-18 vs. DB layer last changed 2026-06-16 `d864bab9`, derived
+  from `git log -1 -- packages/database/src`), and wired both into
+  `.context/CONTEXT.md` with the regenerate-on-demand convention.
+
 - Test hardening (`tools/dev/dev-db.test.ts`): the `describe.skipIf(!DATABASE_URL)`
   integration block parsed `new URL(adminUrl)` at collection time, so a missing
   `DATABASE_URL` crashed the whole suite (`TypeError: Invalid URL`) instead of
