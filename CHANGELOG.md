@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Docs (Ink & Jade knowledge capture): updated DESIGN.md, design-tokens/app/root
+  `.context`, and app AGENTS.md after the ink-jade-skin merge — Quiet Pro surfaces,
+  ThreadCachePort decoupling, settings overlay, and unified authenticated providers.
+
 - Frontend cleanup: dropped the placeholder Import workspace screen — removed
   `?screen=import` from nav (`SCREENS`), desktop `ImportPaneController`, phone
   import pane, `CorpusImportPanel`, and the unused corpus-upload client API.
