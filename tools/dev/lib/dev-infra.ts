@@ -12,6 +12,14 @@ export function ensureDevInfraUp(repoRoot: string): void {
   });
 }
 
+/** Thrown when the dev infra preflight fails; carries an actionable message. */
+export class DevInfraNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DevInfraNotReadyError";
+  }
+}
+
 /**
  * Fail-fast infra preflight shared by `pnpm dev` (and reusable by CI/bootstrap):
  * confirm every registered dev database URL is set and reachable before any app
@@ -19,8 +27,10 @@ export function ensureDevInfraUp(repoRoot: string): void {
  * instead of a runtime `HTTPError` on the first DB-touching request.
  *
  * Read-only — it never starts the container or creates databases (that stays an
- * explicit `pnpm dev:infra` / `pnpm bootstrap` step). On failure it prints the
- * actionable `formatPgError` hint and exits the process.
+ * explicit `pnpm dev:infra` / `pnpm bootstrap` step). On failure it throws a
+ * `DevInfraNotReadyError` carrying the actionable `formatPgError` hint (matching
+ * the throw-style of every `dev-db.ts` function, so this stays reusable by CI);
+ * the `dev-tmux.ts` entry point catches it and exits.
  */
 export async function assertDevInfraReady(): Promise<void> {
   applyDevEnvToProcess();
@@ -30,19 +40,18 @@ export async function assertDevInfraReady(): Promise<void> {
   );
 
   if (active.length === 0) {
-    console.error(
-      "✗ pnpm dev requires DATABASE_URL — did direnv load .envrc? try 'direnv allow', or copy .env.example to .env.",
+    throw new DevInfraNotReadyError(
+      "pnpm dev requires DATABASE_URL — did direnv load .envrc? try 'direnv allow', or copy .env.example to .env.",
     );
-    process.exit(1);
   }
 
   for (const { db, dbUrl } of active) {
     try {
       await pingDatabaseForUrl(dbUrl);
     } catch (err) {
-      console.error(`✗ dev infra check failed — ${db.label} unreachable:`);
-      console.error(`  ${formatPgError(err)}`);
-      process.exit(1);
+      throw new DevInfraNotReadyError(
+        `dev infra check failed — ${db.label} unreachable:\n  ${formatPgError(err)}`,
+      );
     }
   }
 }

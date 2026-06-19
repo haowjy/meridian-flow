@@ -16,6 +16,11 @@
   `presentation` prop carries the desktop↔phone touch/spacing differences, and
   "close the drawer on select" stays a wrapper concern via wrapped callbacks —
   mirroring the SettingsDialog/PhoneSettings split. Behavior unchanged.
+- Dev tooling (S7): `assertDevInfraReady` (`tools/dev/lib/dev-infra.ts`) now
+  throws a typed `DevInfraNotReadyError` instead of calling `process.exit`,
+  matching the throw-style of every `dev-db.ts` function and keeping the
+  "reusable by CI/bootstrap" claim honest. The `dev-tmux.ts` entry point's
+  existing `main().catch` prints the message and exits.
 - Server hardening (S4): the observability error serializer
   (`unknownToEventPayload`) now copies Postgres driver diagnostics
   (`code`, `severity`, `detail`, `hint`, `constraint`, `column`, `table`, and a
