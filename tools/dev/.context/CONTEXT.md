@@ -55,6 +55,8 @@ Worktrees share one dev database (`meridian`). `drop-db` refuses reserved/main-c
 Development is portless-first.
 
 - `pnpm dev` runs the stack through a worktree-scoped tmux session.
+- `pnpm dev --stop` stops only this worktree's dev tmux session(s) and prunes orphaned portless routes.
+- `pnpm dev --restart` recreates the worktree-scoped dev stack after the same targeted cleanup.
 - `pnpm portless:list` is the source of truth for live HTTPS app/server/www URLs.
 - Tests and smoke scripts should go through portless/TLS routes unless they intentionally start an isolated in-process smoke server.
 - Do not add raw localhost port assumptions to new dev tools.

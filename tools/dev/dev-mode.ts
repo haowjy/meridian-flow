@@ -8,6 +8,7 @@ interface ParseModeInput {
 export interface DevCliOptions {
   mode: DevMode;
   restart: boolean;
+  stop: boolean;
   print: boolean;
   preserveModeOnRestart: boolean;
   explicitModeFlag: boolean;
@@ -31,6 +32,7 @@ export function parseDevCliOptions({ argv, env = process.env }: ParseModeInput):
   return {
     mode: wantsFunnel ? "funnel" : optOutTailscale ? "local" : "tailscale",
     restart: argv.includes("--restart"),
+    stop: argv.includes("--stop"),
     print: argv.includes("--print") || env.DEV_TMUX_DRY === "1",
     preserveModeOnRestart: argv.includes("--preserve-mode"),
     explicitModeFlag:

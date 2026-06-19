@@ -26,6 +26,11 @@ describe("parseDevCliOptions", () => {
     expect(parsed.restart).toBe(true);
   });
 
+  it("parses stop flag", () => {
+    const parsed = parseDevCliOptions({ argv: ["--stop"], env: {} as NodeJS.ProcessEnv });
+    expect(parsed.stop).toBe(true);
+  });
+
   it("makes funnel win over --no-tailscale", () => {
     const parsed = parseDevCliOptions({
       argv: ["--no-tailscale", "--funnel"],

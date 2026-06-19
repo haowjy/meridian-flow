@@ -346,6 +346,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (cliOptions.stop) {
+    teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
+    console.log(`stopped · ${identity.sessionName}`);
+    return;
+  }
+
   // Fail fast if the dev database is unset or unreachable: the app servers boot
   // fine without Postgres (connections are lazy), so a stopped container would
   // otherwise only surface as a runtime HTTPError on the first DB-touching
