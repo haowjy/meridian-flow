@@ -131,11 +131,21 @@
      The pinned composer sits flush on the warm dock, so it leans on its border
      and a 1px hairline shadow rather than the heavy card drop shadow. */
   --shadow-input: 0 1px 2px rgba(26, 26, 23, 0.05);
-  --shadow-button: 0 3px 10px rgba(46, 125, 107, 0.24);
-  --shadow-mark: 0 4px 12px rgba(46, 125, 107, 0.22);
+  /* Jade-tinted lifts: derive from the jade mark token so jade is defined once
+     (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
+  --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-mark-from) 24%, transparent);
+  --shadow-mark: 0 4px 12px color-mix(in oklab, var(--color-mark-from) 22%, transparent);
 
-  --background-image-gradient-mark: linear-gradient(150deg, #2e7d6b 0%, #1c4f43 100%);
-  --background-image-gradient-avatar: linear-gradient(140deg, #5e9b88, #21655a);
+  --background-image-gradient-mark: linear-gradient(
+    150deg,
+    var(--color-mark-from) 0%,
+    var(--color-mark-to) 100%
+  );
+  --background-image-gradient-avatar: linear-gradient(
+    140deg,
+    var(--color-avatar-from),
+    var(--color-avatar-to)
+  );
 
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
