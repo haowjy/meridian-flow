@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+- Dev infra preflight: `pnpm dev` now fails fast when `DATABASE_URL` is unset or
+  the dev Postgres is unreachable, instead of booting the app servers (whose DB
+  connections are lazy) and only surfacing the failure as a runtime `HTTPError`
+  on the first DB-touching request. Restores the database-readiness gate that
+  was dropped when `dev-tmux.ts` was forked from voluma, reusing the existing
+  `formatPgError` hints (`pnpm dev:infra` / credentials / `pnpm bootstrap`). Adds
+  a read-only `pingDatabaseForUrl` probe and a shared `assertDevInfraReady`
+  (in `tools/dev/lib/dev-infra.ts`) so the same gate can back CI/bootstrap. The
+  check is read-only — it never starts the container or creates databases.
+
 ## Ink & Jade re-skin (2026-06-17, branch h/ink-jade-skin)
 
 - Grounds + chrome (Quiet Pro): replaced the cream "Warm Manuscript" surface

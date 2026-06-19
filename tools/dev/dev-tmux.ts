@@ -8,6 +8,7 @@ import {
 } from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
+import { assertDevInfraReady } from "./lib/dev-infra";
 import {
   formatDevRouteLines,
   getExpectedServicesForMode,
@@ -373,6 +374,12 @@ async function main(): Promise<void> {
     console.error("tmux is required but was not found on PATH. Install tmux and retry.");
     process.exit(1);
   }
+
+  // Fail fast if the dev database is unset or unreachable: the app servers boot
+  // fine without Postgres (connections are lazy), so a stopped container would
+  // otherwise only surface as a runtime HTTPError on the first DB-touching
+  // request, long after this script reports the session healthy.
+  await assertDevInfraReady();
 
   if (cliOptions.restart) {
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
