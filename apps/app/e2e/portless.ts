@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { branchToPortlessPrefix } from "../../../tools/dev/portless-prefix";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../..");
@@ -59,10 +60,5 @@ function currentBranchPrefix(): string | null {
     cwd: REPO_ROOT,
     encoding: "utf8",
   }).trim();
-  const prefix = branch
-    .split("/")
-    .filter(Boolean)
-    .at(-1)
-    ?.replace(/[^a-zA-Z0-9-]/g, "-");
-  return prefix || null;
+  return branchToPortlessPrefix(branch) ?? null;
 }
