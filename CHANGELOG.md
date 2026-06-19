@@ -223,6 +223,16 @@
   favorite. Updated the app/www imports, the package export, the renamed
   `UserPreferences.ui.theme` enum value, and the manifest theme color.
 
+## Editor cursor colors and cleanup (2026-06-19, branch h/mdx-manuscript)
+
+- Fixed CollaborationCaret "unsupported color format" warning: replaced
+  `var(--color-primary)` with concrete hex colors for cursor rendering.
+- Cursor colors are now assigned by join order from a rotating 8-color palette
+  (Google Docs style): each client picks the first palette color not already
+  claimed by another connected user via awareness state.
+- Deleted dead barrels, the skeleton agents domain export, stale project-shell
+  components, the legacy agent route, and unused re-exports.
+
 ## MDX manuscript format — schema narrowing (2026-06-18, branch h/mdx-manuscript)
 
 - Narrowed shared ProseMirror schema for markdown-representable subset: `image`
