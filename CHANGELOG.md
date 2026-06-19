@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F2): removed the throwaway `/proto/palette` explorer — its
+  route (`routes/proto.palette.tsx`), its `features/proto/palette/**` feature
+  (~736 LOC), and the proto-index link card. The chosen palette already lives
+  in `packages/design-tokens/src/ink-jade.css`, so the live-override explorer is
+  disposable. Route tree regenerated via the tanstackStart generator. The other
+  `/proto/*` experiments (persistent-surfaces, spike-layout) are untouched.
 - Frontend cleanup (F1): deleted the dead `AppShell` desktop-shell island
   (`components/app/AppShell.tsx`, `AppSidebar.tsx`, `ProjectListSection.tsx`,
   `ProjectRow.tsx`, `SidebarUndoPill.tsx`), its sole consumer the shadcn
