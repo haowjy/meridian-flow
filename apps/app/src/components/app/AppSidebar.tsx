@@ -9,7 +9,6 @@ import { t } from "@lingui/core/macro";
 import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
 import { AccountMenu } from "@/features/account/AccountMenu";
-import { CreditBalanceBadge } from "@/features/billing/CreditBalanceBadge";
 import { MeridianMark } from "./MeridianMark";
 import { NewProjectLink, ProjectListSection } from "./ProjectListSection";
 import { SidebarUndoPill } from "./SidebarUndoPill";
@@ -45,7 +44,6 @@ export function AppSidebar() {
       <SidebarUndoPill />
 
       <SidebarFooter className="border-t border-sidebar-border">
-        <CreditBalanceBadge />
         <AccountMenu />
       </SidebarFooter>
     </Sidebar>
