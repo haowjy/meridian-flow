@@ -34,19 +34,13 @@ a defect — it breaks the markdown-native guarantee.
 | Text, headings, styling, figures, math, tables | ProseMirror nodes/marks → markdown |
 | *Who* edited each span, and *when* | Yjs update-log origin tags (provenance metadata; not in the markdown body) |
 
-## Transport — custom Yjs WS, not Hocuspocus
+## Transport — Hocuspocus v4
 
-`DocumentSyncService` owns the live `Y.Doc` (cache, fragment cache, per-doc
-`chainLock`) and the durable append-only update log with origin/attribution. The
-WebSocket bridge is a thin composition-layer handler (`apps/server/server/lib/`
-`ws-yjs-handler.ts`, on `y-protocols` sync + awareness) that depends only on the
-injected `DocumentSyncTransport` port — not on domain internals. We deliberately
-did **not** adopt Hocuspocus, because it wants to own the `Y.Doc` lifecycle we
-already own and its `extension-database` cannot produce our per-update,
-attributed append-only log. Full rationale (source-verified against Hocuspocus
-v4.1.0) lives in the decision record — do not re-litigate without reading it:
-
-→ [Custom Yjs document-collaboration transport (not Hocuspocus)](https://github.com/meridian-bio/docs/blob/main/kb/decisions/yjs-document-collab-transport.md)
+Hocuspocus v4 owns the Y.Doc lifecycle and WebSocket transport
+(`domain/hocuspocus-collab-adapter.ts`). The adapter bridges Hocuspocus hooks
+to the domain's durable update log, checkpoint store, and markdown projection.
+Client connects via `HocuspocusProvider` with a shared
+`HocuspocusProviderWebsocket` singleton.
 
 ## Deferred (post-v1) — explicit non-goals
 
