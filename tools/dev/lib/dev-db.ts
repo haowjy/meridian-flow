@@ -80,6 +80,21 @@ function assertLocalDevPostgresEndpoint(databaseUrl: string, action: string): vo
   );
 }
 
+/**
+ * Read-only reachability probe: connect and `SELECT 1` without creating or
+ * mutating anything. Surfaces the same Postgres error codes (`ECONNREFUSED`,
+ * `3D000`, `28P01`) that `formatPgError` turns into actionable hints, so the
+ * dev preflight can fail fast before launching the app servers.
+ */
+export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
+  const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
+  try {
+    await sql`SELECT 1`;
+  } finally {
+    await sql.end();
+  }
+}
+
 /** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
