@@ -154,7 +154,6 @@ function definedTurnStatusPatch(patch: TurnStatusPatch): TurnStatusPatch {
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
-    rename: state.rename,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
     markHandoffPending: state.markHandoffPending,
@@ -191,14 +190,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
         turns(id: string) {
           return get().turnsByThread[id];
-        },
-
-        rename(id, title) {
-          const next = title.trim() ? title.trim() : null;
-          threadCache.patchThread(id, {
-            title: next,
-            updatedAt: new Date().toISOString(),
-          });
         },
 
         setStreamingThreadId(id, projectId = null) {
