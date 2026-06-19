@@ -60,6 +60,18 @@ describe("resolveSsrApiOrigin", () => {
     );
   });
 
+  it("uses same-origin app proxy for tailnet hosts", () => {
+    expect(
+      resolveSsrApiOrigin(
+        request({
+          host: "127.0.0.1:4379",
+          "x-forwarded-host": "pop-os.tail852a76.ts.net:8467",
+          "x-forwarded-proto": "https",
+        }),
+      ),
+    ).toBe("https://pop-os.tail852a76.ts.net:8467");
+  });
+
   it("does not invent a localhost origin outside dev when MERIDIAN_API_ORIGIN is missing", () => {
     process.env.NODE_ENV = "production";
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
