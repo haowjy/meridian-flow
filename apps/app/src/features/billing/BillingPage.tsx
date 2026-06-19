@@ -9,6 +9,7 @@ import {
 } from "@/client/query/useBilling";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { CreditBalanceCard } from "./CreditBalanceCard";
 import { creditsFromMillicredits } from "./format";
 
 function returnUrl(path: string): string {
@@ -62,28 +63,7 @@ export function BillingPage() {
           ) : null}
 
           <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-            <div className="surface-card p-5">
-              <p className="text-sm text-muted-foreground">
-                <Trans>Current balance</Trans>
-              </p>
-              <div className="mt-2 text-4xl font-semibold tracking-tight">
-                {balance.data
-                  ? creditsFromMillicredits(balance.data.totalBalanceMillicredits)
-                  : "—"}
-                <span className="ml-2 text-base font-normal text-muted-foreground">
-                  <Trans>credits</Trans>
-                </span>
-              </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.min(balance.data?.includedUsagePercent ?? 0, 100)}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                <Trans>Included usage: {balance.data?.includedUsagePercent ?? 0}% used.</Trans>
-              </p>
-            </div>
+            <CreditBalanceCard variant="full" />
 
             <div className="surface-card p-5">
               <p className="text-sm text-muted-foreground">
