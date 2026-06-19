@@ -42,8 +42,8 @@ describe("billing route core", () => {
       projectId,
       body: {
         entryId: "pack_starter",
-        successUrl: "https://app.localhost/settings/billing",
-        cancelUrl: "https://app.localhost/settings/billing",
+        successUrl: "https://app.localhost/billing",
+        cancelUrl: "https://app.localhost/billing",
       },
     });
 
