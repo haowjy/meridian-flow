@@ -69,10 +69,30 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 
 const lowlight = createLowlight(common);
 
+/** Visually distinct cursor colors for multi-user collaboration. */
+const CURSOR_COLORS = [
+  "#e06c75",
+  "#61afef",
+  "#e5c07b",
+  "#c678dd",
+  "#56b6c2",
+  "#d19a66",
+  "#98c379",
+  "#be5046",
+] as const;
+
 const DEFAULT_USER: EditorUser = {
   name: "Meridian Researcher",
-  color: "var(--color-primary)",
+  color: CURSOR_COLORS[4],
 };
+
+export function cursorColorForUser(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) | 0;
+  return CURSOR_COLORS[
+    ((hash % CURSOR_COLORS.length) + CURSOR_COLORS.length) % CURSOR_COLORS.length
+  ];
+}
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
   dropcursor: false,

@@ -84,7 +84,7 @@ export function SpikeEditorSurface({
       ...createEditorConfig({
         document: session.document,
         awareness: session.awareness,
-        user: { name: "Spike user", color: "var(--color-primary)" },
+        user: { name: "Spike user", color: "#2e7d6b" },
         editorProps: {
           attributes: {
             class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
