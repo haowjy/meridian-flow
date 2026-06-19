@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Frontend cleanup (F6): minor settings/composer tidies. `SettingsDialog` now
+  drives both the desktop rail and both presentations' section bodies from a
+  single `SECTION_CONTENT` map keyed by `SETTINGS_SECTIONS` (killed the
+  duplicated `profile|preferences|usage` triplets). Removed the never-set
+  `dividerBefore` field from `PhoneSettings`. Removed the no-op attach paperclip
+  from `Composer` (it was a visual placeholder with no upload wired) and updated
+  its now-stale doc comments. Added a comment at `_authenticated.tsx`'s
+  `<Outlet key={pathname}>` explaining the intentional per-route remount.
 - Frontend cleanup (F5): removed the double viewport lock on `/billing`.
   `_authenticated.tsx` already owns the `app-frame` (`h-svh`/`overflow-hidden`)
   and the Outlet wrapper, so `BillingPage` re-locking with its own inner

@@ -27,8 +27,6 @@ export type PhoneSettingsSectionItem = {
   section: SettingsSection;
   label: ReactNode;
   icon: LucideIcon;
-  /** Visual divider before this chip, used between section scopes. */
-  dividerBefore?: boolean;
 };
 
 export function PhoneSettingsContent({
@@ -135,25 +133,22 @@ function SectionChip({
   }, [isActive]);
 
   return (
-    <>
-      {item.dividerBefore ? <span className="h-6 w-px shrink-0 bg-border" aria-hidden /> : null}
-      <button
-        ref={ref}
-        type="button"
-        onClick={() => onSelect(item.section)}
-        aria-current={isActive ? "page" : undefined}
-        className={cn(
-          // scroll-mx matches the row's 0.75rem padding so scrollIntoView
-          // doesn't pin the chip flush against the viewport edge.
-          "focus-ring flex h-11 shrink-0 scroll-mx-3 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
-          isActive
-            ? "border-transparent bg-sidebar-accent font-medium text-foreground"
-            : "border-border-subtle text-muted-foreground",
-        )}
-      >
-        <Icon className="size-4 shrink-0" aria-hidden />
-        {item.label}
-      </button>
-    </>
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => onSelect(item.section)}
+      aria-current={isActive ? "page" : undefined}
+      className={cn(
+        // scroll-mx matches the row's 0.75rem padding so scrollIntoView
+        // doesn't pin the chip flush against the viewport edge.
+        "focus-ring flex h-11 shrink-0 scroll-mx-3 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
+        isActive
+          ? "border-transparent bg-sidebar-accent font-medium text-foreground"
+          : "border-border-subtle text-muted-foreground",
+      )}
+    >
+      <Icon className="size-4 shrink-0" aria-hidden />
+      {item.label}
+    </button>
   );
 }
