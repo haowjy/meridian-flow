@@ -1,3 +1,4 @@
+import { classifyActiveSibling, isMonotonicReplacement } from "../../domain/subscription-policy.js";
 import type {
   SubscriptionRecord,
   SubscriptionStore,
@@ -14,46 +15,17 @@ export function createInMemorySubscriptionStore(
   return {
     async upsert(input: SubscriptionUpsertInput) {
       const existing = records.get(input.stripeSubscriptionId) ?? null;
-      if (existing) {
-        const existingStart = new Date(existing.currentPeriodStart).getTime();
-        const inputStart = new Date(input.currentPeriodStart).getTime();
-        if (
-          (Number.isFinite(existingStart) &&
-            Number.isFinite(inputStart) &&
-            inputStart < existingStart) ||
-          (inputStart === existingStart &&
-            existing.status === "cancelled" &&
-            input.status !== "cancelled")
-        ) {
-          return existing;
-        }
-      }
-      const inputStart = new Date(input.currentPeriodStart).getTime();
-      if (input.status !== "cancelled") {
-        const newerActive = [...records.values()].find((record) => {
-          const recordStart = new Date(record.currentPeriodStart).getTime();
-          return (
-            record.userId === input.userId &&
-            record.stripeSubscriptionId !== input.stripeSubscriptionId &&
-            record.status !== "cancelled" &&
-            Number.isFinite(recordStart) &&
-            Number.isFinite(inputStart) &&
-            recordStart > inputStart
-          );
-        });
-        if (newerActive) return newerActive;
+      if (existing && !isMonotonicReplacement(existing, input)) {
+        return existing;
       }
 
+      const blocking = [...records.values()].find(
+        (record) => classifyActiveSibling(record, input) === "blocks",
+      );
+      if (blocking) return blocking;
+
       for (const [key, record] of records.entries()) {
-        const recordStart = new Date(record.currentPeriodStart).getTime();
-        if (
-          record.userId === input.userId &&
-          record.status !== "cancelled" &&
-          key !== input.stripeSubscriptionId &&
-          (!Number.isFinite(recordStart) ||
-            !Number.isFinite(inputStart) ||
-            recordStart <= inputStart)
-        ) {
+        if (classifyActiveSibling(record, input) === "cancel") {
           records.set(key, { ...record, status: "cancelled" });
         }
       }
