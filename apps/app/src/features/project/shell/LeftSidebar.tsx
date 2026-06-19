@@ -15,7 +15,6 @@ import {
 } from "@/client/query/useProjectPreferences";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { AccountMenu } from "@/features/account/AccountMenu";
-import { CreditBalanceBadge } from "@/features/billing/CreditBalanceBadge";
 import { cn } from "@/lib/utils";
 import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
 import { useCreateChat } from "../chat/use-create-chat";
@@ -137,7 +136,6 @@ export function LeftSidebar({
       </div>
 
       <div className="shrink-0 border-t border-border-subtle px-2 py-1.5">
-        <CreditBalanceBadge />
         <AccountMenu />
       </div>
     </nav>
