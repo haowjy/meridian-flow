@@ -3,7 +3,7 @@
  */
 import { DEFAULT_PROJECT_PREFERENCES } from "@meridian/contracts/preferences";
 import { describe, expect, it } from "vitest";
-import type { ProjectPreferencesRepository } from "../../ports/index.js";
+import type { ProjectPreferencesRepository } from "../../ports/project-preferences-repository.js";
 
 type PreferencesConformanceIds = {
   userId: string;

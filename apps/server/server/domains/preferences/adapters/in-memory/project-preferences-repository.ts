@@ -7,7 +7,7 @@ import {
   defaultProjectPreferences,
   mergeProjectPreferences,
 } from "../../domain.js";
-import type { ProjectPreferencesRepository } from "../../ports/index.js";
+import type { ProjectPreferencesRepository } from "../../ports/project-preferences-repository.js";
 
 function preferenceKey(userId: UserId, projectId: ProjectId): string {
   return `${userId}\u0000${projectId}`;

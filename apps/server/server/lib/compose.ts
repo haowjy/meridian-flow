@@ -4,7 +4,6 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 import type { Database } from "@meridian/database";
-import type { AgentPackageStore } from "../domains/agents/index.js";
 import { createDrizzleSubscriptionStore } from "../domains/billing/adapters/drizzle/subscription-store.js";
 import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
 import {
@@ -46,7 +45,7 @@ import {
   type MarsPackageFetcher,
   type PackageRepository,
 } from "../domains/packages/index.js";
-import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/index.js";
+import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
@@ -111,6 +110,8 @@ import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/th
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
+
+type AgentPackageStore = { readonly phase: "skeleton" };
 
 export type AppServices = {
   gateway: Gateway;
