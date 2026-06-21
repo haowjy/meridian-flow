@@ -1,64 +1,62 @@
-# collab — document spine
+# collab — server-side document infrastructure (cutover scaffolding)
 
-DocumentSyncService is the live document spine: the Yjs CRDT substrate plus the
-markdown bijection that every Meridian Flow rich document round-trips through.
+The Yjs sync engine, codec, apply, and undo logic have been extracted to
+`@meridian/agent-edit` (`packages/agent-edit/`). This domain holds the
+server-side residue that hasn't yet been re-homed or replaced.
 
-## Canonical-representation invariant
+## Current state (post-extraction, pre-cutover)
 
-Two representations, two different jobs — not competing sources of truth:
+| Concern | Location | Status |
+|---|---|---|
+| Codec (MDX/markdown ↔ PM) | `@meridian/agent-edit` codec layer | Extracted |
+| Resolver (block hash, find, scope) | `@meridian/agent-edit` resolver | Extracted |
+| 3-tier apply + echo | `@meridian/agent-edit` apply layer | Extracted |
+| Hot/cold undo + compaction | `@meridian/agent-edit` undo layer | Extracted |
+| Tool surface (`write()`) | `@meridian/agent-edit` tool layer | Extracted |
+| Port interfaces (UpdateJournal, etc.) | `@meridian/agent-edit` ports | Extracted |
+| Hocuspocus adapter | DELETED (extracted) | — |
+| mdx-bridge.ts | DELETED (superseded by codec) | — |
+| **Throwing stub facade** | `collab/index.ts` | **Temporary** (Step 9 cutover) |
+| **DocumentStore** port + adapters | `collab/ports/`, `collab/adapters/` | **Pre-existing**, being superseded |
+| **document-activity.ts** | `collab/domain/` | **Stays** (DB-side effects) |
 
-- **Markdown is the canonical *semantic* representation.** It is the meaning of
-  the document and the interchange format LLMs and humans read. Every editor
-  construct MUST round-trip losslessly to readable markdown.
-- **Yjs is the canonical *runtime/merge* representation.** It is the CRDT
-  substrate that merges concurrent edits without conflict and carries per-edit
-  provenance (origin tags in the update log). Markdown strings cannot be
-  3-way-merged; Yjs is what makes concurrent agent+human editing and attribution
-  possible.
+## Stable contracts (still here)
 
-The ProseMirror schema is the bijection that keeps them in sync: every Y.Doc
-state has exactly one markdown rendering, and back.
+### document-activity.ts
 
-### Schema rule (enforced at the adapter boundary)
+Two DB-side side effects triggered on document write:
+- `touchDocumentActivity` — updates `threadDocuments.lastTouchedAt`,
+  `works.updatedAt`, `projects.updatedAt`/`lastActivityAt`
+- `updateMarkdownProjection` — writes the canonical markdown string to
+  `documents.markdownProjection` for read-model access
 
-No node or mark may be added to the document schema without a lossless markdown
-serializer+parser pair. The structural spec lives in `@meridian/prosemirror-schema`
-(specs only); the markdown syntax lives in this domain's schema adapter
-(`domain/mdx-bridge.ts`). Adding a spec to the package without a serializer here is
-a defect — it breaks the markdown-native guarantee.
+These stay server-side; they are DB-specific projection effects, not agent-edit
+concerns. The Step 9 composition root calls them after each successful write.
 
-### What lives where
+### DocumentStore (`ca/ports/document-store.ts`)
 
-| Concern | Representation |
-|---|---|
-| Text, headings, styling, figures, math, tables | ProseMirror nodes/marks → markdown |
-| *Who* edited each span, and *when* | Yjs update-log origin tags (provenance metadata; not in the markdown body) |
+Row-level CRUD for Yjs updates, checkpoints, restore points. Being superseded
+by `UpdateJournal` from `@meridian/agent-edit`. Retained for the Step 9
+adapter (`drizzle-journal`) to delegate to.
 
-## Transport — Hocuspocus-owned live documents
+## Stale claims removed
 
-Live collaborative editing runs on **Hocuspocus** at `/ws/yjs`
-(`routes/ws/yjs.ts`). Hocuspocus owns the in-memory `Y.Doc` for connected
-clients; `hocuspocus-collab-adapter.ts` loads state from the durable update log,
-persists connection-originated updates with attribution, and debounces snapshot
-writes. The client uses `@hocuspocus/provider` via
-`hocuspocus-document-transport.ts`.
+The following claims in the previous docs were true before extraction but are
+now false — removed in this update:
+- **"DocumentSyncService is the live document spine"** — the service is now a
+  throwing stub. The live document spine lives in `@meridian/agent-edit`.
+- **"Transport is Hocuspocus v4"** — the Hocuspocus collab adapter was
+  deleted. The new `DocumentCoordinator` port is adapter-agnostic; the
+  Hocuspocus adapter lands in Step 9.
+- **"No node or mark without a lossless serializer+parser pair in
+  domain/mdx-bridge.ts"** — `mdx-bridge.ts` was deleted. The serializer lives
+  in `@meridian/agent-edit`'s codec registration system; the rule still holds
+  but at the package level.
+- **"The ProseMirror schema is the bijection"** — still architecturally true,
+  but the bijection now lives in the codec package, not here.
 
-`DocumentSyncService` retains a separate on-demand **mirror cache** for
-server-side markdown operations (`getOrCreateMirror`, `editFromMarkdown`,
-`applyUpdate`, checkpoints) — not a competing WebSocket owner. Facade
-`forgetMirror` unloads live Hocuspocus documents via `closeConnections`.
+## Cutover (Step 9)
 
-## Deferred (post-v1) — explicit non-goals
-
-Recorded so they are not built in a way that violates the invariant above:
-
-- **Comments & suggestions as first-class annotations.** When built, their
-  *content* must be markdown-representable (e.g. a MyST directive or
-  CriticMarkup-style inline markup) so an LLM reading the doc sees them; Yjs
-  tracks authorship and accept/reject.
-- **Per-annotation visibility scoping** (agent-visible / human-only /
-  agent-editable). This means the agent-facing markdown becomes a *filtered
-  projection* of the full document, not the raw doc. The read seam
-  (`readAsMarkdown` / `ContextPort.read`) takes no audience parameter today;
-  adding `{ audience }` later is a purely additive change. Design from
-  "it's a filtered projection," not a single global markdown string.
+See [`collab/AGENTS.md`](../AGENTS.md) for the cutover checklist. The
+`TODO(agent-edit)` markers in `collab/index.ts` and ~13 consumers are the
+exhaustive scope.
