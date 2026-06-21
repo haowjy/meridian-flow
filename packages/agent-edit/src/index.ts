@@ -15,6 +15,7 @@ export type {
   ApplyErrorCode,
   ApplyResult,
   ApplyTier,
+  ApplyTransactionOrigin,
   ConcurrentEditInfo,
   ConcurrentUpdate,
   ConcurrentUpdateOrigin,
@@ -66,7 +67,6 @@ export type {
   UpdateOrigin,
 } from "./ports/types.js";
 export type { UpdateJournal } from "./ports/update-journal.js";
-
 export type {
   ComponentRegistry,
   ComponentSpec,
@@ -101,3 +101,29 @@ export {
   resolveSearchScope,
   slugForHeadingText,
 } from "./resolver/scope.js";
+export type { CompactOnLoadOptions, CompactOnLoadResult } from "./undo/compaction.js";
+export { compactOnLoad } from "./undo/compaction.js";
+export type {
+  HotRedoOptions,
+  HotRedoResult,
+  HotUndoAddress,
+  HotUndoResult,
+  LiveThreadUndoManager,
+  LiveThreadUndoState,
+  UndoManagerRegistryOptions,
+  UndoStackMetadata,
+} from "./undo/manager-registry.js";
+export { createUndoManagerRegistry, UndoManagerRegistry } from "./undo/manager-registry.js";
+export type {
+  ReconstructionOptions,
+  RedoReconstructionResult,
+  TurnUpdateGroup,
+  UndoReconstructionResult,
+} from "./undo/reconstruction.js";
+export {
+  groupUpdatesByTurn,
+  reconstructRedoUpdate,
+  reconstructRedoUpdateFromSnapshot,
+  reconstructUndoUpdate,
+  reconstructUndoUpdateFromSnapshot,
+} from "./undo/reconstruction.js";

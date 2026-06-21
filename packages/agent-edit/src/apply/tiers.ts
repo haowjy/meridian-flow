@@ -19,6 +19,7 @@ import type {
   ApplyEditsOptions,
   ApplyErrorCode,
   ApplyResult,
+  ApplyTransactionOrigin,
   ResolvedEdit,
 } from "./types.js";
 
@@ -72,7 +73,7 @@ export function applyEdits(
   model: YProsemirrorDocumentModel,
   codec: Codec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
-  origin: AgentOrigin,
+  origin: ApplyTransactionOrigin,
   options: ApplyEditsOptions = {},
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
@@ -122,7 +123,7 @@ export function applyEdits(
     model,
     codec,
     (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
-    origin,
+    ownAgentOrigin(origin, options.ownActorTurnId),
     options.syncStateVector ?? beforeApplyStateVector,
     options.concurrentCollapseThreshold,
   );
@@ -147,6 +148,24 @@ export function applyEdits(
     deletedBlocks: [...accumulator.deletedHashes],
     appliedEdits: accumulator.applied,
   };
+}
+
+function ownAgentOrigin(
+  origin: ApplyTransactionOrigin,
+  ownActorTurnId: string | undefined,
+): AgentOrigin | undefined {
+  if (ownActorTurnId) return { type: "agent", actorTurnId: ownActorTurnId };
+  if (isAgentOrigin(origin)) return origin;
+  return undefined;
+}
+
+function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
+  return (
+    typeof origin === "object" &&
+    origin !== null &&
+    (origin as { type?: unknown }).type === "agent" &&
+    typeof (origin as { actorTurnId?: unknown }).actorTurnId === "string"
+  );
 }
 
 function preflightEdit(
