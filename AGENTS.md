@@ -264,9 +264,3 @@ See `internal/repository/postgres/connection.go`
 - **Frontend**: Vercel
 
 See `backend/CLAUDE.md` for backend deployment details.
-
-## Worktree discipline
-
-**Never switch the branch of a checkout you don't own** — it may be shared. Need
-another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
--b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
