@@ -449,7 +449,7 @@ CREATE TABLE "document_yjs_checkpoints" (
 CREATE TABLE "document_yjs_heads" (
 	"document_id" uuid PRIMARY KEY NOT NULL,
 	"fragment_name" text DEFAULT 'prosemirror' NOT NULL,
-	"schema_version" integer DEFAULT 1 NOT NULL,
+	"schema_version" integer DEFAULT 3 NOT NULL,
 	"latest_update_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_state_vector" "bytea",
 	"latest_checkpoint_id" bigint,

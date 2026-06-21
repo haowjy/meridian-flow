@@ -71,37 +71,19 @@ const customNodes = {
     defining: true,
   },
 
-  table: {
-    content: "table_row+",
-    group: "block",
-    isolating: true,
-  },
-
-  // GFM tables are first-row-header only; rows are homogeneous (no header columns).
-  table_row: {
-    content: "(table_header)+ | (table_cell)+",
-  },
-
-  table_cell: {
-    content: "inline*",
-    isolating: true,
-  },
-
-  table_header: {
-    content: "inline*",
-    isolating: true,
-  },
-
-  // TODO: LaTeX math rendering — see docs/kb/decisions/editor-math.md
-  math_display: {
+  jsx_leaf: {
+    attrs: { name: {}, props: { default: {} } },
     content: "text*",
-    marks: "",
     group: "block",
     code: true,
-    defining: true,
   },
 
-  // TODO: MyST figure directives — see docs/kb/decisions/editor-figures.md
+  jsx_container: {
+    attrs: { name: {}, props: { default: {} } },
+    content: "block+",
+    group: "block",
+  },
+
   figure: {
     group: "block",
     attrs: {
@@ -151,7 +133,7 @@ const customMarks = {
  * the old version. Lives here because this package owns the schema shape the
  * version tracks — client and server must import the same value.
  */
-export const COLLAB_SCHEMA_VERSION = 2;
+export const COLLAB_SCHEMA_VERSION = 3;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 
