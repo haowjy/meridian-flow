@@ -7,7 +7,7 @@ import {
   schemaTypeForFiletype,
   type ThreadUploadDocumentItem,
 } from "@meridian/contracts/protocol";
-import type { DocumentSyncPort } from "../../collab/ports/document-sync.js";
+import type { DocumentSyncPort } from "../../collab/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ThreadRepositories } from "../../threads/index.js";
