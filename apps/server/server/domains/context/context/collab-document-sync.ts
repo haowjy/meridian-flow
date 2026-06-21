@@ -4,8 +4,12 @@
  * mirror recovery) while system/import writes stay on the inner sync port.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentSyncFacade, DocumentWriteOrigin } from "../../collab/index.js";
-import type { DocumentSyncPort, SyncError } from "../../collab/ports/document-sync.js";
+import type {
+  DocumentSyncFacade,
+  DocumentSyncPort,
+  DocumentWriteOrigin,
+  SyncError,
+} from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
 

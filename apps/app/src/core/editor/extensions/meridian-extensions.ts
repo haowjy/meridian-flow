@@ -25,7 +25,6 @@ import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
-import { firstRowHeaderTablePlugin } from "./first-row-header-table";
 
 type RenderAttrs = Record<string, unknown>;
 
@@ -111,10 +110,6 @@ export const MeridianTable = Table.extend({
   content: "table_row+",
   group: "block",
   isolating: true,
-
-  addProseMirrorPlugins() {
-    return [...(this.parent?.() ?? []), firstRowHeaderTablePlugin()];
-  },
 
   addCommands() {
     return {

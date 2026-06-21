@@ -4,7 +4,7 @@
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { DocumentSyncPort } from "../../collab/ports/document-sync.js";
+import type { DocumentSyncPort } from "../../collab/index.js";
 import type {
   AdapterFault,
   AdapterFileRef,

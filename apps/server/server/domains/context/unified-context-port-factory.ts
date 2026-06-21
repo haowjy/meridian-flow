@@ -10,8 +10,8 @@
 
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
-import { createInMemoryDocumentSyncFacade } from "../collab/adapters/in-memory/document-sync-facade.js";
 import type { DocumentSyncFacade } from "../collab/index.js";
+import { createStubDocumentSyncFacade } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-store.js";
 import type { ContextCollabDocumentSync } from "./context/collab-document-sync.js";
@@ -31,7 +31,6 @@ import type {
 } from "./ports/context-port.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
-  findInMemoryDocumentProjection,
   getInMemoryContextTreeMutationStore,
   getInMemoryProjectContextStore,
   getInMemoryWorkContextStore,
@@ -246,12 +245,7 @@ export function createInMemoryUnifiedContextPortFactory(
   } = {},
 ): UnifiedContextPortFactory {
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
-  const documentSync =
-    options.documentSync ??
-    createInMemoryDocumentSyncFacade({
-      resolveDocumentProjection: (documentId) =>
-        findInMemoryDocumentProjection(registry, documentId),
-    });
+  const documentSync = options.documentSync ?? createStubDocumentSyncFacade();
   const entries = new Map<string, ContextPort>();
   const storeResolvers = createInMemoryStoreResolvers(registry);
 

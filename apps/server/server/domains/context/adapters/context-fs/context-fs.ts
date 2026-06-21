@@ -7,7 +7,7 @@
 
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { SyncError } from "../../../collab/ports/document-sync.js";
+import type { SyncError } from "../../../collab/index.js";
 import {
   type ContextCollabDocumentSync,
   editCollabMarkdown,
