@@ -1,1 +1,0 @@
-ALTER TABLE "document_yjs_heads" ADD COLUMN "schema_version" integer DEFAULT 1 NOT NULL;

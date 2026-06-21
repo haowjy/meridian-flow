@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781657716540,
-      "tag": "0000_careless_rockslide",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781667314741,
-      "tag": "0001_tidy_siren",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781768752926,
-      "tag": "0002_elite_smiling_tiger",
+      "when": 1782057536265,
+      "tag": "0000_bouncy_doctor_faustus",
       "breakpoints": true
     }
   ]
