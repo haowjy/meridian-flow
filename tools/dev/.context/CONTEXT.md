@@ -1,88 +1,66 @@
 # tools/dev — Dev tooling
 
-Local-dev-only utilities. Nothing here is loaded by the application runtime; tools are invoked by `pnpm` scripts, `.envrc`, or a developer shell.
+Local-dev-only utilities. Not loaded by the application runtime.
+
+**Onboarding:** [DEVELOPMENT.md](../../DEVELOPMENT.md). **Rules when editing this module:** [AGENTS.md](../AGENTS.md).
 
 ## What this module owns
 
-- **Environment loading** — `load-env.ts` reads root `.env` and reports missing required keys with setup guidance.
-- **Database readiness** — thin CLIs for ensuring, preparing, and dropping the active Postgres database URL used by this worktree.
-- **Drizzle schema application** — bootstrap runs migrations and applies PL/pgSQL functions from `@meridian/database`.
-- **Dev orchestration** — `dev-tmux.ts` starts the worktree-scoped tmux stack and portless routes; `dev-mode.ts` selects local/tailscale/funnel exposure modes.
-- **Portless route helpers** — `portless-routes.ts` and app e2e helpers discover the HTTPS `*.meridian.localhost` routes used in development.
+- **Environment resolution** — `lib/dev-env.ts` (`DEV_DATABASES`, worktree URL rewrite, `applyDevEnvToProcess`, `ensureDirenvAllowed`)
+- **Database admin** — `lib/dev-db.ts` (ensure/create/drop/reset against local Postgres)
+- **Infra lifecycle** — `lib/dev-infra.ts` + `docker-compose.yml` (`postgres:16` on `:54422`)
+- **Schema application** — `bootstrap.ts`, `prepare-db.ts` (migrate + `db:apply-functions`)
+- **Dev orchestration** — `dev-tmux.ts` (worktree-scoped tmux + portless routes)
 
 ## Directory layout
 
 ```
 tools/dev/
 ├── lib/
-│   ├── dev-env.ts             active env helpers + database URL resolution
-│   ├── dev-db.ts              CREATE/DROP/EXTENSION admin against local Postgres
-│   └── dev-infra.ts           docker compose lifecycle for postgres:16
-├── docker-compose.yml         local postgres:16 on host port 54422
-├── __tests__/                 vitest units for dev-mode, portless routes, session identity, etc.
-├── bootstrap.ts               pnpm bootstrap: migrate + apply-functions
-├── ensure-db.ts               validates/ensures active DATABASE_URL target
-├── prepare-db.ts              prepares active database before dev stack startup
-├── drop-db.ts                 guarded drop helper for active dev database
-├── reset-db.ts                schema reset (public + drizzle) + prepare-db
-├── load-env.ts                root .env loader + requireEnv helper
-├── print-worktree-env.ts      helper eval'd by .envrc to expose DATABASE_URL
-├── dev-tmux.ts                pnpm dev entrypoint; starts app/server/www through tmux
-├── dev-mode.ts                local/tailscale/funnel mode selection
-├── portless-routes.ts         portless route definitions and lookup
-├── session-identity.ts        worktree slug + tmux session naming
-└── tmux-session-store.ts      tmux metadata
+│   ├── dev-env.ts             DEV_DATABASES registry + worktree URL rewrite
+│   ├── dev-db.ts              CREATE/DROP/EXTENSION admin
+│   └── dev-infra.ts           docker compose lifecycle
+├── docker-compose.yml
+├── bootstrap.ts               pnpm bootstrap
+├── ensure-db.ts / prepare-db.ts / drop-db.ts / reset-db.ts
+├── print-worktree-env.ts      eval'd by .envrc
+├── dev-tmux.ts                pnpm dev
+├── portless-routes.ts / dev-mode.ts / session-identity.ts
+└── migration-lint.ts
 ```
 
-## Local database/auth contract
+## Environment contract
 
-Meridian v3 uses a plain `postgres:16` Docker container for local Postgres. Auth is WorkOS AuthKit.
+- **`DEV_DATABASES`** (`lib/dev-env.ts`) is the single registry — consumers iterate it; never hard-code a second DB env var.
+- Main-checkout **`.env`** is loaded via `loadMainEnvFile`; linked worktrees rewrite registered URLs to `<baseDbName>_<slug>` (idempotent; no silent fallback to shared `meridian`).
+- **`.envrc`** → `print-worktree-env.ts`; **`applyDevEnvToProcess`** applies the same rewrite for pnpm scripts.
 
-- Start infra with `pnpm dev:infra`.
-- Set `DATABASE_URL` in `.env` (see `.env.example`).
-- App schema is Drizzle-owned in `packages/database`.
-- `pnpm bootstrap` migrates and applies functions only. Dev identity is provisioned on first dev-login (`ensureUser`); first login auto-creates the personal project (voluma-style via `ensureDefaultBootstrap`). `WORKOS_DEV_LOGIN_USER_ID` is for e2e lookups.
+## Database contract
 
-### Reset vs full wipe
-
-Linked worktrees get isolated Postgres databases (`meridian_<slug>` on the same `:54422` server). The main checkout keeps bare `meridian` from `.env`. `drop-db` refuses reserved/main-checkout DB names — use schema reset instead of `DROP DATABASE` on `meridian`.
-
-- **Reset schema (normal):** `pnpm db:reset` — ensures Docker Postgres is up, drops/recreates `public` in the **active worktree database**, drops `drizzle` (migration journal), then runs `prepare-db` (extensions + migrate + apply-functions).
-- **Full wipe:** `pnpm dev:infra:down`, remove the `meridian-dev_meridian-postgres-data` Docker volume, then `pnpm bootstrap`.
+- One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
+- **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
+- **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
+- **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.
 
 ## Dev server contract
 
-Development is portless-first.
-
-- `pnpm dev` runs the stack through a worktree-scoped tmux session.
-- `pnpm dev --stop` stops only this worktree's dev tmux session(s) and prunes orphaned portless routes.
-- `pnpm dev --restart` recreates the worktree-scoped dev stack after the same targeted cleanup.
-- `pnpm portless:list` is the source of truth for live HTTPS app/server/www URLs.
-- Tests and smoke scripts should go through portless/TLS routes unless they intentionally start an isolated in-process smoke server.
-- Do not add raw localhost port assumptions to new dev tools.
+- Portless-first — `pnpm portless:list` is the URL source of truth; no raw localhost port assumptions in new dev tools.
+- `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` clean only this worktree's session and orphaned routes.
+- Smoke/e2e should use portless/TLS routes unless intentionally in-process.
 
 ## Migration tooling
 
-`migration-lint.ts` is a warning-first SQL scanner for generated Drizzle migrations. It flags risky deployed-Postgres patterns such as column renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, blocking index creation, and unconstrained deletes.
-
-Run:
-
-```bash
-pnpm db:migration-lint
-```
-
-Warnings do not currently block the pipeline; errors do.
+`migration-lint.ts` scans generated Drizzle SQL for risky production patterns (renames, drops, unsafe `SET NOT NULL`, etc.). Warnings are non-blocking; errors block.
 
 ## Conventions
 
-- Keep top-level scripts thin; put reusable logic in helpers.
-- Keep local infrastructure provider assumptions in dev tooling and composition roots, not domain code.
-- Use `new URL()` for URL transformations.
-- Prefer explicit setup errors over silent fallback.
-- Keep dev tooling aligned with Docker Postgres + Drizzle + portless.
+- Top-level scripts stay thin; reusable logic in `lib/`.
+- URL transforms use `new URL()` — no regex surgery on connection strings.
+- Explicit errors over silent fallback.
+- Provider assumptions stay in dev tooling, not domain code.
 
 ## Related documentation
 
-- [`DEVELOPMENT.md`](../../DEVELOPMENT.md)
+- [`DEVELOPMENT.md`](../../DEVELOPMENT.md) — env, worktrees, hooks, command reference
 - [`packages/database/README.md`](../../packages/database/README.md)
 - [`tests/smoke/README.md`](../../tests/smoke/README.md)

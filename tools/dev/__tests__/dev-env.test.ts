@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { describe, expect, it, vi } from "vitest";
 import * as devEnv from "../lib/dev-env";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+});
 
 describe("dev-env", () => {
   it("registers Meridian's local Postgres database", () => {
@@ -49,5 +55,24 @@ describe("dev-env", () => {
   it("treats worktree-scoped database names as droppable", async () => {
     const { isReservedDatabase } = await import("../lib/dev-db");
     expect(isReservedDatabase("meridian_thread-first-chat", ["meridian"])).toBe(false);
+  });
+
+  it("runs direnv allow when direnv is installed", () => {
+    const exec = vi.mocked(execFileSync);
+    exec.mockImplementationOnce(() => "");
+    devEnv.ensureDirenvAllowed("/tmp/meridian-flow");
+    expect(exec).toHaveBeenCalledWith("direnv", ["allow", "/tmp/meridian-flow"], {
+      stdio: "ignore",
+    });
+  });
+
+  it("skips direnv allow when direnv is not installed", () => {
+    const exec = vi.mocked(execFileSync);
+    exec.mockImplementationOnce(() => {
+      const err = new Error("not found") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    });
+    expect(() => devEnv.ensureDirenvAllowed("/tmp/meridian-flow")).not.toThrow();
   });
 });

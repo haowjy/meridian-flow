@@ -1,20 +1,50 @@
-# Development guide (v3 / meridian-collab)
+# Development guide (v3)
 
 Setup and day-to-day workflow for the TypeScript monorepo on branch `h/v3`.
 
 See also [AGENTS.md](AGENTS.md), [CHANGELOG.md](CHANGELOG.md), and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
 
-## First-time setup
+## Environment
+
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env` — [`.envrc`](.envrc) loads the main checkout file via `git-common-dir`, then rewrites `DATABASE_URL` to a worktree-scoped database (`meridian_<slug>` on the shared `:54422` Postgres server).
+
+Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv allow` when direnv is installed; re-enter the directory or run `direnv reload` if variables look stale.
+
+Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
+
+## First-time setup (main checkout)
 
 ```bash
 pnpm install
-cp .env.example .env
-pnpm dev:infra       # start postgres:16 Docker container
+cp .env.example .env          # fill in WorkOS keys, etc.
+pnpm dev:infra                # start postgres:16 Docker container (:54422)
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap       # migrate + apply-functions (schema only)
+pnpm bootstrap                # direnv allow + migrate + apply-functions
+pnpm dev
+pnpm portless:list
 ```
 
-`pnpm install` runs `prepare` → `lefthook install`. On a **git worktree** that often fails (see [Git hooks](#git-hooks-lefthook) below); run the `--reset-hooks-path` command once after install.
+## Linked worktree
+
+Feature work runs in a separate directory, not the main checkout. Create one:
+
+```bash
+git worktree add ../meridian-flow.worktrees/<slug> -b h/<branch>
+cd ../meridian-flow.worktrees/<slug>
+pnpm install
+pnpm exec lefthook install --reset-hooks-path   # once per worktree
+pnpm bootstrap                                  # scoped DB + migrate; skips if infra already up
+pnpm dev
+```
+
+| Concern | Behavior |
+|---------|----------|
+| `.env` | Loaded from main checkout (no copy into the worktree) |
+| `DATABASE_URL` | Rewritten to `meridian_<slug>` (main checkout keeps `meridian`) |
+| Postgres | One Docker container on `:54422`; each worktree gets its own database |
+| `pnpm dev:infra` | Shared — start once if Postgres is not already running |
+| Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
+| Commits | Run `git` from the worktree directory you edited in |
 
 ## Local database
 
@@ -27,47 +57,28 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm bootstrap` | Migrate + apply PL/pgSQL functions (no user/project seed) |
+| `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
 ## Git hooks (lefthook)
 
-This repo is often checked out as a **worktree** of `meridian` (`git worktree list`). The parent repo may set:
-
-```text
-core.hooksPath = /path/to/meridian/.git/hooks
-```
-
-Plain `lefthook install` (including via `pnpm install` / `prepare`) then refuses to install and prints a hint to reset the hooks path.
-
-**Use this once per worktree checkout** (from the repo root, e.g. `meridian-collab`):
+`pnpm install` runs `prepare` → `lefthook install`. When the parent repo sets `core.hooksPath` to another checkout's hooks directory, plain install fails — common on linked worktrees.
 
 ```bash
 pnpm exec lefthook install --reset-hooks-path
 ```
 
-That installs hooks for **this** worktree so commits run the checks in [lefthook.yml](lefthook.yml):
+Run once per checkout (main or worktree). Hooks in [lefthook.yml](lefthook.yml):
 
 | Hook | Runs |
 |------|------|
 | **pre-commit** | `pnpm biome check --staged` → `pnpm typecheck` |
 | **pre-push** | `pnpm --filter @meridian/database test` |
 
-Verify:
+Verify: `pnpm exec lefthook run pre-commit` / `pre-push`. Do **not** use `git commit --no-verify` unless explicitly approved.
 
-```bash
-pnpm exec lefthook run pre-commit
-pnpm exec lefthook run pre-push
-```
-
-Do **not** use `git commit --no-verify` unless explicitly approved.
-
-### If you are not on a worktree
-
-`pnpm exec lefthook install` (or `pnpm install` via `prepare`) is enough.
-
-## Commits, hooks, and step-by-step history
+## Commits and step-by-step history
 
 Branch history should replay verified work: **one plan phase or logical step → one commit**, with hooks green before the next step.
 
@@ -77,7 +88,7 @@ Branch history should replay verified work: **one plan phase or logical step →
 4. Add a matching bullet under [CHANGELOG.md](CHANGELOG.md) → `## [Unreleased]`.
 5. Start the next phase.
 
-Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase’s commit or an immediate follow-up.
+Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase's commit or an immediate follow-up.
 
 `git log --oneline` on `h/v3` should read like the plan: phase → verified commit → next phase.
 
@@ -94,7 +105,7 @@ pnpm check          # lint + typecheck + test
 
 ## Dev server
 
-Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment-portless).
+Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment).
 
 ```bash
 pnpm dev

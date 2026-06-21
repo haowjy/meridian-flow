@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Docs: consolidated local setup in `DEVELOPMENT.md`; slimmed
+  `tools/dev/.context/CONTEXT.md` to module contracts only; `AGENTS.md` points
+  to `DEVELOPMENT.md` for setup and `tools/dev/AGENTS.md` when editing dev tools.
+
+- Dev (`pnpm bootstrap`): run `direnv allow` automatically when direnv is
+  installed so linked worktrees trust `.envrc` without a manual step first.
+
 - Dev (worktree DB isolation): linked git worktrees rewrite `DATABASE_URL` to
   sibling databases on the local Postgres server (`meridian_<slug>`); the main
   checkout keeps bare `meridian`. `applyDevEnvToProcess`, `.envrc`, and
