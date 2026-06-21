@@ -268,8 +268,7 @@ See `backend/CLAUDE.md` for backend deployment details.
 ## Worktree discipline
 
 The primary checkout is shared — **never switch its branch**
-(`checkout`/`switch`/`stash`/commit-another-branch; any form, incl. `git -C`). A
-denied command is a stop signal; don't route around it.
+(`checkout`/`switch`/`stash`/commit-another-branch; any form, incl. `git -C`).
 
 Work on another branch in a worktree:
 
