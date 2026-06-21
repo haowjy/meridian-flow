@@ -8,7 +8,7 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
   serialize(text, attrs) {
     const href = String(attrs.href ?? "");
     const title = attrs.title == null ? "" : ` "${String(attrs.title).replaceAll('"', '\\"')}"`;
-    return `[${text}](${href}${title})`;
+    return `[${text.replaceAll("]", "\\]")}](${href}${title})`;
   },
 
   parse(ast) {

@@ -16,13 +16,12 @@ import {
   parseBlockAst,
   withRuntime,
 } from "./internal.js";
-import type {
-  Block,
-  BlockCodec,
-  Codec,
-  MarkCodec,
-  ParseContext,
-  SerializeContext,
+import type { Block, BlockCodec, Codec, CodecParseErrorLocation } from "./types.js";
+import {
+  CodecParseError,
+  type MarkCodec,
+  type ParseContext,
+  type SerializeContext,
 } from "./types.js";
 
 export interface CreateCodecOptions {
@@ -34,6 +33,14 @@ export interface CreateCodecOptions {
   mdx?: boolean;
   /** Node names that must have BlockCodec registrations for this preset. */
   requiredBlockNames?: readonly string[];
+  /** Require one BlockCodec for every schema node that serializes as document content. */
+  requireSchemaBlockCoverage?: boolean;
+}
+
+const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "hard_break"]);
+
+export function requiredBlockNamesForSchema(schema: Schema): string[] {
+  return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
 export function createCodec(options: CreateCodecOptions): Codec {
@@ -48,7 +55,11 @@ export function createCodec(options: CreateCodecOptions): Codec {
     if (!markMap.has(markName))
       throw new Error(`codec missing MarkCodec for schema mark "${markName}"`);
   }
-  for (const blockName of options.requiredBlockNames ?? []) {
+  const requiredBlockNames = new Set([
+    ...(options.requiredBlockNames ?? []),
+    ...(options.requireSchemaBlockCoverage ? requiredBlockNamesForSchema(schema) : []),
+  ]);
+  for (const blockName of requiredBlockNames) {
     if (!blockMap.has(blockName))
       throw new Error(`codec missing BlockCodec for schema node "${blockName}"`);
   }
@@ -62,8 +73,14 @@ export function createCodec(options: CreateCodecOptions): Codec {
     .use(remarkGfm)
     .use(options.remarkPlugins ?? []);
 
-  const parseMarkdown = (content: string): MdastRoot =>
-    parseProcessor.parse(preprocess(content)) as MdastRoot;
+  const parsePreparedMarkdown = (source: string): MdastRoot => {
+    try {
+      return parseProcessor.parse(source) as MdastRoot;
+    } catch (error) {
+      throw toCodecParseError(error);
+    }
+  };
+  const parseMarkdown = (content: string): MdastRoot => parsePreparedMarkdown(preprocess(content));
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
@@ -108,7 +125,7 @@ export function createCodec(options: CreateCodecOptions): Codec {
       const source = preprocess(content);
       const runtime = makeRuntime(source);
       const ctx = withRuntime<ParseContext>({ schema, components }, runtime);
-      const tree = demoteAutolinks(parseProcessor.parse(source) as MdastRoot);
+      const tree = demoteAutolinks(parsePreparedMarkdown(source));
       const parsed = tree.children
         .map((child) => parseBlockAst(child, ctx))
         .filter((node): node is PMNode => node !== null);
@@ -122,6 +139,39 @@ export function createCodec(options: CreateCodecOptions): Codec {
       return `${hash}|${displayBody}`;
     },
   };
+}
+
+function toCodecParseError(error: unknown): CodecParseError {
+  if (error instanceof CodecParseError) return error;
+  const location = parseErrorLocation(error);
+  const reason = parseErrorReason(error);
+  const where = location.line === undefined ? "" : ` at ${location.line}:${location.column ?? 1}`;
+  return new CodecParseError(`Could not parse markdown/MDX${where}: ${reason}`, location, error);
+}
+
+function parseErrorLocation(error: unknown): CodecParseErrorLocation {
+  const record = asRecord(error);
+  const place = asRecord(record?.place);
+  const start = asRecord(place?.start);
+  const line = numberValue(record?.line) ?? numberValue(start?.line);
+  const column = numberValue(record?.column) ?? numberValue(start?.column);
+  return { line, column };
+}
+
+function parseErrorReason(error: unknown): string {
+  const record = asRecord(error);
+  const reason = record?.reason;
+  if (typeof reason === "string" && reason.length > 0) return reason;
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  return "invalid syntax";
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 function uniqueCodecMap<T extends { name: string }>(

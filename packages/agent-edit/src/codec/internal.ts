@@ -236,29 +236,30 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
 }
 
 export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): MdastInline[] {
-  const out: MdastInline[] = [];
+  const tokens: InlineToken[] = [];
   node.forEach((child) => {
     switch (child.type.name) {
       case "text":
-        out.push(markedTextToMdast(child.text ?? "", child.marks, ctx));
+        tokens.push({ type: "text", value: child.text ?? "", marks: child.marks });
         break;
       case "hard_break":
-        out.push({ type: "break" });
+        tokens.push({ type: "break", marks: child.marks });
         break;
       case "image":
         ensureBlockCodecRegistered("image", ctx);
-        out.push({
+        tokens.push({
           type: "image",
           url: String(child.attrs.src ?? ""),
           alt: attrStringOrNull(child.attrs.alt),
           title: attrStringOrNull(child.attrs.title),
+          marks: child.marks,
         });
         break;
       default:
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
-  return out;
+  return inlineTokensToMdast(tokens, ctx);
 }
 
 export function parseInlineChildren(
@@ -274,39 +275,6 @@ export function parseInlineChildren(
         if (value.length > 0) out.push(ctx.schema.text(value, activeMarks));
         break;
       }
-      case "strong":
-        out.push(
-          ...parseInlineChildren(
-            inlineChildrenOf(child),
-            ctx,
-            addMark(activeMarks, "strong", child, ctx),
-          ),
-        );
-        break;
-      case "emphasis":
-        out.push(
-          ...parseInlineChildren(
-            inlineChildrenOf(child),
-            ctx,
-            addMark(activeMarks, "em", child, ctx),
-          ),
-        );
-        break;
-      case "inlineCode": {
-        const value = typeof child.value === "string" ? child.value : "";
-        if (value.length === 0) break;
-        out.push(ctx.schema.text(value, addMark(activeMarks, "code", child, ctx)));
-        break;
-      }
-      case "link":
-        out.push(
-          ...parseInlineChildren(
-            inlineChildrenOf(child),
-            ctx,
-            addMark(activeMarks, "link", child, ctx),
-          ),
-        );
-        break;
       case "break":
         out.push(ctx.schema.node("hard_break"));
         break;
@@ -317,12 +285,17 @@ export function parseInlineChildren(
         if (image) out.push(image);
         break;
       }
-      case "mdxJsxTextElement": {
-        const raw = rawTextForAst(child, ctx);
-        if (raw.length > 0) out.push(ctx.schema.text(raw, activeMarks));
-        break;
-      }
       default: {
+        const marked = addRegisteredMark(activeMarks, child, ctx);
+        if (marked) {
+          const value = inlineCodeValue(child);
+          if (value !== null) {
+            if (value.length > 0) out.push(ctx.schema.text(value, marked));
+          } else {
+            out.push(...parseInlineChildren(inlineChildrenOf(child), ctx, marked));
+          }
+          break;
+        }
         const raw = rawTextForAst(child, ctx);
         if (raw.length > 0) out.push(ctx.schema.text(raw, activeMarks));
         break;
@@ -467,7 +440,15 @@ export function registeredComponent(
 }
 
 export function invalidJsxFallback(ast: unknown, ctx: ParseContext): PMNode | null {
-  return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+  const raw = rawTextForAst(ast, ctx);
+  if (/\n\s*\n/.test(raw)) {
+    return ctx.schema.node(
+      "code_block",
+      { language: "mdx" },
+      raw.length > 0 ? [ctx.schema.text(raw)] : [],
+    );
+  }
+  return rawTextParagraph(raw, ctx);
 }
 
 export function isJsonValue(value: unknown): value is JsonValue {
@@ -530,61 +511,107 @@ function inlineChildrenOf(node: MdastInline): MdastInline[] {
   return Array.isArray(children) ? (children as MdastInline[]) : [];
 }
 
-function markedTextToMdast(
-  text: string,
-  marks: readonly Mark[],
-  ctx: SerializeContext,
-): MdastInline {
-  let node: MdastInline = { type: "text", value: text };
-  const order = ["code", "em", "strong", "link"];
-  const sorted = [...marks].sort((a, b) => order.indexOf(a.type.name) - order.indexOf(b.type.name));
-  for (const mark of sorted) {
-    ensureMarkCodecRegistered(mark.type.name, ctx);
-    switch (mark.type.name) {
-      case "strong":
-        node = { type: "strong", children: [node] };
-        break;
-      case "em":
-        node = { type: "emphasis", children: [node] };
-        break;
-      case "code":
-        node = { type: "inlineCode", value: text };
-        break;
-      case "link":
-        node = {
-          type: "link",
-          url: String(mark.attrs.href ?? ""),
-          title: attrStringOrNull(mark.attrs.title),
-          children: [node],
-        };
-        break;
-      default:
-        throw new Error(`pm->mdast: unsupported mark "${mark.type.name}"`);
+type InlineToken =
+  | (MdastText & { marks: readonly Mark[] })
+  | (MdastBreak & { marks: readonly Mark[] })
+  | (MdastImage & { marks: readonly Mark[] });
+
+function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeContext): MdastInline[] {
+  const out: MdastInline[] = [];
+
+  for (let index = 0; index < tokens.length; ) {
+    const token = tokens[index];
+    const mark = firstMark(token.marks);
+    if (!mark) {
+      out.push(tokenToMdast(token));
+      index++;
+      continue;
     }
+
+    const group: InlineToken[] = [];
+    while (index < tokens.length && hasMark(tokens[index], mark)) {
+      group.push(withoutMark(tokens[index], mark));
+      index++;
+    }
+
+    const codec = getRuntime(ctx).markMap.get(mark.type.name);
+    if (!codec) throw new Error(`pm->mdast: missing mark codec "${mark.type.name}"`);
+
+    // Inline code protects literal text; other marks wrap already-serialized child syntax.
+    const inner = mark.type.name === "code" ? plainText(group) : inlineMdastToMarkdown(group, ctx);
+    out.push(...inlineMarkdownToMdast(codec.serialize(inner, mark.attrs, ctx), ctx));
   }
-  return node;
+
+  return out;
 }
 
-function addMark(
+function firstMark(marks: readonly Mark[]): Mark | null {
+  return marks[0] ?? null;
+}
+
+function hasMark(token: InlineToken, mark: Mark): boolean {
+  return token.marks.some((candidate) => candidate.eq(mark));
+}
+
+function withoutMark<T extends InlineToken>(token: T, mark: Mark): T {
+  return { ...token, marks: token.marks.filter((candidate) => !candidate.eq(mark)) } as T;
+}
+
+function tokenToMdast(token: InlineToken): MdastInline {
+  const { marks: _marks, ...ast } = token;
+  return ast;
+}
+
+function inlineMdastToMarkdown(tokens: readonly InlineToken[], ctx: SerializeContext): string {
+  return trimOneTrailingNewline(
+    getRuntime(ctx).stringifyMarkdown({
+      type: "root",
+      children: [{ type: "paragraph", children: inlineTokensToMdast(tokens, ctx) }],
+    }),
+  );
+}
+
+function inlineMarkdownToMdast(markdown: string, ctx: SerializeContext): MdastInline[] {
+  if (markdown.length === 0) return [];
+  const root = getRuntime(ctx).parseMarkdown(markdown);
+  const paragraph = root.children[0];
+  if (root.children.length !== 1 || !isParagraph(paragraph)) {
+    throw new Error(`mark codec produced non-inline markdown: ${markdown}`);
+  }
+  return paragraph.children;
+}
+
+function plainText(tokens: readonly InlineToken[]): string {
+  return tokens
+    .map((token) => {
+      switch (token.type) {
+        case "text":
+          return token.value;
+        case "break":
+          return "\n";
+        case "image":
+          return token.alt ?? "";
+        default:
+          return "";
+      }
+    })
+    .join("");
+}
+
+function addRegisteredMark(
   activeMarks: readonly Mark[],
-  name: "strong" | "em" | "code" | "link",
   ast: unknown,
   ctx: ParseContext,
-): readonly Mark[] {
+): readonly Mark[] | null {
   const runtime = getRuntime(ctx);
-  const codec = runtime.markMap.get(name);
-  if (!codec) throw new Error(`mdast->pm: missing mark codec "${name}"`);
-  const attrs = codec.parse(ast, ctx);
-  if (attrs === null) throw new Error(`mdast->pm: mark codec "${name}" rejected matching AST`);
-  const markType = ctx.schema.marks[name];
-  if (!markType) throw new Error(`schema missing mark "${name}"`);
-  return markType.create(attrs).addToSet([...activeMarks]);
-}
-
-function ensureMarkCodecRegistered(name: string, ctx: SerializeContext): void {
-  if (!getRuntime(ctx).markMap.has(name)) {
-    throw new Error(`pm->mdast: missing mark codec "${name}"`);
+  for (const codec of runtime.markMap.values()) {
+    const attrs = codec.parse(ast, ctx);
+    if (attrs === null) continue;
+    const markType = ctx.schema.marks[codec.name];
+    if (!markType) throw new Error(`schema missing mark "${codec.name}"`);
+    return markType.create(attrs).addToSet([...activeMarks]);
   }
+  return null;
 }
 
 function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {
@@ -595,6 +622,16 @@ function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {
 
 function attrStringOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
+}
+
+function inlineCodeValue(ast: unknown): string | null {
+  const record = asRecord(ast);
+  if (record?.type !== "inlineCode") return null;
+  return typeof record.value === "string" ? record.value : "";
+}
+
+function trimOneTrailingNewline(value: string): string {
+  return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
 function parseAttributeValue(
