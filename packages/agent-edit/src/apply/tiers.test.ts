@@ -1,0 +1,433 @@
+// Behavioral coverage for tier routing, update replay fidelity, and echo.
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { describe, expect, it } from "vitest";
+import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import * as Y from "yjs";
+
+import { mdxCodec } from "../codec/presets/mdx.js";
+import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
+import { applyEdits } from "./tiers.js";
+import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
+
+const schema = buildDocumentSchema();
+const codec = mdxCodec({ schema });
+const baseModel = yProsemirrorModel(schema);
+const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
+
+describe("applyEdits tier routing", () => {
+  it("routes plain text within one mark context to Tier 1", () => {
+    const doc = createDoc("Alpha sword.");
+    const { model, calls } = recordingModel();
+    const [block] = model.getBlocks(doc);
+
+    const result = applyEdits(
+      doc,
+      model,
+      codec,
+      textEdit(block, { start: 6, end: 11 }, "blade"),
+      origin,
+    );
+
+    expectOk(result);
+    expect(calls).toEqual([1]);
+    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
+    expect(model.getText(block)).toBe("Alpha blade.");
+    expect(result.ok && result.echo).toEqual([]);
+    expectNoOrphanedElements(doc);
+  });
+
+  it("routes text-only edits inside an existing mark run to Tier 1 and preserves marks", () => {
+    const doc = createDoc("Alpha **sword**.");
+    const { model, calls } = recordingModel();
+    const [block] = model.getBlocks(doc);
+
+    const result = applyEdits(
+      doc,
+      model,
+      codec,
+      textEdit(block, { start: 6, end: 11 }, "blade"),
+      origin,
+    );
+
+    expectOk(result);
+    expect(calls).toEqual([1]);
+    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
+    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expectNoOrphanedElements(doc);
+  });
+
+  it("routes formatting changes to Tier 2", () => {
+    const doc = createDoc("Alpha sword.");
+    const { model, calls } = recordingModel();
+    const [block] = model.getBlocks(doc);
+
+    const result = applyEdits(
+      doc,
+      model,
+      codec,
+      textEdit(block, { start: 6, end: 11 }, "**blade**"),
+      origin,
+    );
+
+    expectOk(result);
+    expect(calls).toEqual([2]);
+    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
+    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expectNoOrphanedElements(doc);
+  });
+
+  it("routes mark-boundary-crossing text edits to Tier 2", () => {
+    const doc = createDoc("A **bold** plain");
+    const { model, calls } = recordingModel();
+    const [block] = model.getBlocks(doc);
+
+    const result = applyEdits(
+      doc,
+      model,
+      codec,
+      textEdit(block, { start: 5, end: 8 }, "X"),
+      origin,
+    );
+
+    expectOk(result);
+    expect(calls).toEqual([2]);
+    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
+    expect(model.getText(block)).toBe("A bolXlain");
+    expectNoOrphanedElements(doc);
+  });
+
+  it("routes inserts and deletes to Tier 3", () => {
+    const doc = createDoc("Alpha\n\nBeta");
+    const { model, calls } = recordingModel();
+    const [alpha, beta] = model.getBlocks(doc);
+
+    const insert = applyEdits(
+      doc,
+      model,
+      codec,
+      {
+        documentId: "doc-1",
+        file: "chapter.md",
+        kind: "insert",
+        after: alpha,
+        newText: "Inserted",
+      },
+      origin,
+    );
+    expectOk(insert);
+
+    const del = applyEdits(
+      doc,
+      model,
+      codec,
+      { documentId: "doc-1", file: "chapter.md", kind: "delete", element: beta },
+      origin,
+    );
+    expectOk(del);
+
+    expect(calls).toEqual([3, 3]);
+    expect(insert.ok && insert.appliedEdits?.map((edit) => edit.tier)).toEqual([3]);
+    expect(del.ok && del.appliedEdits?.map((edit) => edit.tier)).toEqual([3]);
+    expect(blockTexts(doc)).toEqual(["Alpha", "Inserted"]);
+    expectNoOrphanedElements(doc);
+  });
+});
+
+describe("applyEdits update fidelity", () => {
+  it.each([
+    [
+      "Tier 1 text",
+      "Alpha sword.",
+      (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
+      1,
+    ],
+    [
+      "Tier 2 formatting",
+      "Alpha sword.",
+      (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "**blade**"),
+      2,
+    ],
+    [
+      "Tier 3 insert",
+      "Alpha\n\nBeta",
+      (doc: Y.Doc): ResolvedEdit => ({
+        documentId: "doc-1",
+        file: "chapter.md",
+        kind: "insert",
+        after: baseModel.getBlocks(doc)[0],
+        newText: "Inserted",
+      }),
+      3,
+    ],
+    [
+      "Tier 3 delete",
+      "Alpha\n\nBeta",
+      (doc: Y.Doc): ResolvedEdit => ({
+        documentId: "doc-1",
+        file: "chapter.md",
+        kind: "delete",
+        element: baseModel.getBlocks(doc)[1],
+      }),
+      3,
+    ],
+  ] satisfies Array<
+    [string, string, (doc: Y.Doc) => ResolvedEdit, ApplyTier]
+  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, makeEdit, tier) => {
+    const doc = createDoc(markdown, 1);
+    doc.clientID = 2;
+    const fresh = cloneDoc(doc, 9);
+    const prevVector = Y.encodeStateVector(doc);
+
+    const result = applyEdits(doc, baseModel, codec, makeEdit(doc), origin);
+
+    expectOk(result);
+    expect(result.ok && result.appliedEdits?.[0]?.tier).toBe(tier);
+    const update = Y.encodeStateAsUpdate(doc, prevVector);
+    Y.applyUpdate(fresh, update);
+    expect(documentJson(fresh)).toEqual(documentJson(doc));
+    expectNoOrphanedElements(doc);
+  });
+
+  it("uses the explicit agent origin for local transactions", () => {
+    const doc = createDoc("Alpha sword.");
+    const [block] = baseModel.getBlocks(doc);
+    const origins: unknown[] = [];
+    doc.on("afterTransaction", (transaction) => origins.push(transaction.origin));
+
+    const result = applyEdits(
+      doc,
+      baseModel,
+      codec,
+      textEdit(block, { start: 6, end: 11 }, "blade"),
+      origin,
+    );
+
+    expectOk(result);
+    expect(origins).toContain(origin);
+  });
+});
+
+describe("applyEdits preflight safety", () => {
+  it("detects same-turn references to a deleted block before mutating", () => {
+    const doc = createDoc("Alpha\n\nBeta");
+    const [alpha] = baseModel.getBlocks(doc);
+    const before = documentJson(doc);
+
+    const result = applyEdits(
+      doc,
+      baseModel,
+      codec,
+      [
+        { documentId: "doc-1", file: "chapter.md", kind: "delete", element: alpha },
+        textEdit(alpha, { start: 0, end: 5 }, "Changed"),
+      ],
+      origin,
+    );
+
+    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(documentJson(doc)).toEqual(before);
+  });
+
+  it("applies multiple same-block Tier 1 replacements back-to-front", () => {
+    const doc = createDoc("sword and sword");
+    const [block] = baseModel.getBlocks(doc);
+
+    const result = applyEdits(
+      doc,
+      baseModel,
+      codec,
+      [
+        textEdit(block, { start: 0, end: 5 }, "axe"),
+        textEdit(block, { start: 10, end: 15 }, "axe"),
+      ],
+      origin,
+    );
+
+    expectOk(result);
+    expect(blockTexts(doc)).toEqual(["axe and axe"]);
+  });
+});
+
+describe("applyEdits echo and concurrent edits", () => {
+  it("suppresses echo and lists a non-overlapping concurrent human edit", () => {
+    const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
+    const local = cloneDoc(live, 2);
+    const syncStateVector = Y.encodeStateVector(local);
+    const remoteHash = baseModel.getBlockId(baseModel.getBlocks(local)[3]);
+    const remoteUpdate = remoteTextUpdate(live, 3, { from: 0, to: 5 }, "Omega", {
+      type: "human",
+      userId: "user-1",
+    });
+    const [localAlpha] = baseModel.getBlocks(local);
+
+    const result = applyEdits(
+      local,
+      baseModel,
+      codec,
+      textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
+      origin,
+      {
+        syncStateVector,
+        concurrentUpdates: [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      },
+    );
+
+    expectOk(result);
+    expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
+    expect(result.ok && result.echo).toEqual([]);
+    expect(blockTexts(local)).toEqual([
+      "Alpha blade.",
+      "Beta waits.",
+      "Gamma waits.",
+      "Omega waits.",
+    ]);
+    expectNoOrphanedElements(local);
+  });
+
+  it("shows a full echo when a concurrent human edit touches the agent hunk", () => {
+    const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
+    const local = cloneDoc(live, 2);
+    const syncStateVector = Y.encodeStateVector(local);
+    const [localAlpha] = baseModel.getBlocks(local);
+    const alphaHash = baseModel.getBlockId(localAlpha);
+    const remoteUpdate = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", {
+      type: "human",
+      userId: "user-1",
+    });
+
+    const result = applyEdits(
+      local,
+      baseModel,
+      codec,
+      textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
+      origin,
+      {
+        syncStateVector,
+        concurrentUpdates: [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      },
+    );
+
+    expectOk(result);
+    expect(result.ok && result.concurrentEdits?.human).toEqual([alphaHash]);
+    expect(result.ok && result.echo).toHaveLength(1);
+    expect(result.ok && result.echo[0]?.mode).toBe("full");
+    expect(
+      result.ok && result.echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`)),
+    ).toBe(true);
+    expectNoOrphanedElements(local);
+  });
+});
+
+function createDoc(markdown: string, clientID = 1): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = clientID;
+  const parsed = codec.parse(markdown);
+  const root = schema.node("doc", null, parsed.blocks);
+  prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+  return doc;
+}
+
+function cloneDoc(source: Y.Doc, clientID: number): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = clientID;
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  doc.clientID = clientID;
+  return doc;
+}
+
+function textEdit(
+  element: Y.XmlElement,
+  span: { start: number; end: number },
+  newText: string,
+): ResolvedEdit {
+  return { documentId: "doc-1", file: "chapter.md", kind: "text", element, span, newText };
+}
+
+function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[] } {
+  const calls: ApplyTier[] = [];
+  const base = yProsemirrorModel(schema);
+  return {
+    calls,
+    model: {
+      ...base,
+      applyTextEdit(doc, block, span, newText) {
+        calls.push(1);
+        base.applyTextEdit(doc, block, span, newText);
+      },
+      applyBlockDiff(doc, block, replacement) {
+        calls.push(2);
+        base.applyBlockDiff(doc, block, replacement);
+      },
+      insertBlocks(doc, after, parsed) {
+        calls.push(3);
+        return base.insertBlocks(doc, after, parsed);
+      },
+      deleteBlock(doc, block) {
+        calls.push(3);
+        base.deleteBlock(doc, block);
+      },
+    },
+  };
+}
+
+function remoteTextUpdate(
+  doc: Y.Doc,
+  blockIndex: number,
+  span: { from: number; to: number },
+  newText: string,
+  transactionOrigin: unknown,
+): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  const block = baseModel.getBlocks(doc)[blockIndex];
+  doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function blockTexts(doc: Y.Doc): string[] {
+  return baseModel.getBlocks(doc).map((block) => baseModel.getText(block));
+}
+
+function documentJson(doc: Y.Doc): unknown {
+  return schema
+    .node(
+      "doc",
+      null,
+      baseModel.getBlocks(doc).map((block) => baseModel.toProsemirrorBlock(doc, block)),
+    )
+    .toJSON();
+}
+
+function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) throw new Error(result.error.message);
+}
+
+function expectNoOrphanedElements(doc: Y.Doc): void {
+  const reachable = new Set<Y.XmlElement>();
+  const visit = (value: Y.XmlElement | Y.XmlFragment | Y.XmlText) => {
+    if (value instanceof Y.XmlElement) reachable.add(value);
+    if (value instanceof Y.XmlText) return;
+    for (const child of value.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+
+  for (const element of liveXmlElementsInStore(doc)) {
+    expect(reachable.has(element)).toBe(true);
+  }
+}
+
+function liveXmlElementsInStore(doc: Y.Doc): Y.XmlElement[] {
+  const elements: Y.XmlElement[] = [];
+  const store = (doc as unknown as { store: { clients: Map<number, unknown[]> } }).store;
+  for (const structs of store.clients.values()) {
+    for (const struct of structs) {
+      const item = struct as { deleted?: boolean; content?: { type?: unknown } };
+      if (item.deleted === true) continue;
+      const type = item.content?.type;
+      if (type instanceof Y.XmlElement) elements.push(type);
+    }
+  }
+  return elements;
+}

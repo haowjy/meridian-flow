@@ -35,6 +35,37 @@ export type EditResolutionErrorCode =
 
 export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "internal_error";
 
+export type ApplyTier = 1 | 2 | 3;
+
+export interface AgentOrigin {
+  type: "agent";
+  actorTurnId: string;
+}
+
+export type ConcurrentUpdateOrigin =
+  | AgentOrigin
+  | { type: "human"; userId?: string }
+  | { type: "system" };
+
+export interface ConcurrentUpdate {
+  update: Uint8Array;
+  origin: ConcurrentUpdateOrigin;
+}
+
+export interface ApplyEditsOptions {
+  /** State vector from the actor's last explicit sync (V_sync); defaults to the pre-apply doc vector. */
+  syncStateVector?: Uint8Array;
+  /** Re-sync updates from other actors, applied after local edits and before echo computation. */
+  concurrentUpdates?: readonly ConcurrentUpdate[];
+  concurrentCollapseThreshold?: number;
+}
+
+export interface AppliedEditSummary {
+  kind: ResolvedEdit["kind"];
+  tier: ApplyTier;
+  blockIds: string[];
+}
+
 export interface ApplyEchoHunk {
   mode: "suppressed" | "truncated" | "full";
   blocks: string[];
@@ -57,6 +88,7 @@ export type ApplyResult =
       concurrentEdits?: ConcurrentEditInfo;
       changedBlocks?: string[];
       deletedBlocks?: string[];
+      appliedEdits?: AppliedEditSummary[];
     }
   | {
       ok: false;

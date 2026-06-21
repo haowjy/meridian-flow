@@ -140,7 +140,7 @@ export function deleteBlock(doc: Y.Doc, block: Y.XmlElement): void {
 }
 
 function collectText(type: Y.XmlElement | Y.XmlText): string {
-  if (type instanceof Y.XmlText) return type.toString();
+  if (type instanceof Y.XmlText) return yTextPlainText(type);
   return type
     .toArray()
     .map((child) =>
@@ -149,12 +149,18 @@ function collectText(type: Y.XmlElement | Y.XmlText): string {
     .join("");
 }
 
+function yTextPlainText(text: Y.XmlText): string {
+  return (text.toDelta() as Array<{ insert?: unknown }>)
+    .map((delta) => (typeof delta.insert === "string" ? delta.insert : ""))
+    .join("");
+}
+
 function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   const segments: TextSegment[] = [];
   let offset = 0;
   const visit = (type: Y.XmlElement | Y.XmlText) => {
     if (type instanceof Y.XmlText) {
-      const length = type.toString().length;
+      const length = type.length;
       segments.push({ text: type, start: offset, length });
       offset += length;
       return;
