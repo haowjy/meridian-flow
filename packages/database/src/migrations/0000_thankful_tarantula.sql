@@ -456,6 +456,20 @@ CREATE TABLE "document_yjs_heads" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "document_yjs_reversals" (
+	"id" bigserial PRIMARY KEY NOT NULL,
+	"document_id" uuid NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"turn_id" uuid NOT NULL,
+	"status" text NOT NULL,
+	"undo_update_seq" bigint NOT NULL,
+	"expires_at" timestamp with time zone,
+	"reversed_at" timestamp with time zone,
+	"reversed_by_user_id" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_yjs_reversals_status_valid" CHECK ("document_yjs_reversals"."status" IN ('active', 'reversed', 'reconciled', 'expired'))
+);
+--> statement-breakpoint
 CREATE TABLE "document_yjs_updates" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"document_id" uuid NOT NULL,
@@ -518,6 +532,9 @@ ALTER TABLE "document_restore_points" ADD CONSTRAINT "document_restore_points_ch
 ALTER TABLE "document_restore_points" ADD CONSTRAINT "document_restore_points_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_checkpoints" ADD CONSTRAINT "document_yjs_checkpoints_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_turn_id_turns_id_fk" FOREIGN KEY ("actor_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -579,5 +596,7 @@ CREATE INDEX "project_results_project_created_idx" ON "project_results" USING bt
 CREATE INDEX "project_results_root_thread_idx" ON "project_results" USING btree ("root_thread_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "users_last_active_project_idx" ON "users" USING btree ("last_active_project_id");--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
+CREATE UNIQUE INDEX "document_yjs_reversals_document_thread_turn" ON "document_yjs_reversals" USING btree ("document_id","thread_id","turn_id");--> statement-breakpoint
+CREATE INDEX "document_yjs_reversals_document_thread" ON "document_yjs_reversals" USING btree ("document_id","thread_id");--> statement-breakpoint
 CREATE INDEX "document_yjs_updates_document_id" ON "document_yjs_updates" USING btree ("document_id","id");--> statement-breakpoint
 CREATE VIEW "public"."credit_balances" AS (select "user_id", COALESCE(SUM("remaining_millicredits"), 0) as "total_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'grant'), 0) as "grant_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'purchase'), 0) as "purchased_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'debt'), 0) as "debt_balance_millicredits" from "credit_lots" where "credit_lots"."expires_at" IS NULL OR "credit_lots"."expires_at" > NOW() OR "credit_lots"."source_type" = 'debt' group by "credit_lots"."user_id");

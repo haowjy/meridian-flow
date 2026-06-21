@@ -1,18 +1,29 @@
-import type { DocumentId, DocumentRestorePointId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  DocumentRestorePointId,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  check,
   index,
   integer,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, idColumn } from "./_shared";
-import { turns } from "./agent-threads";
+import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
+
+type ReversalStatus = "active" | "reversed" | "reconciled" | "expired";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -57,6 +68,43 @@ export const documentYjsUpdates = pgTable(
     createdAt: createdAt(),
   },
   (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
+);
+
+export const documentYjsReversals = pgTable(
+  "document_yjs_reversals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    status: text("status").$type<ReversalStatus>().notNull(),
+    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedByUserId: text("reversed_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("document_yjs_reversals_document_thread_turn").on(
+      table.documentId,
+      table.threadId,
+      table.turnId,
+    ),
+    index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
+    check(
+      "document_yjs_reversals_status_valid",
+      sql`${table.status} IN ('active', 'reversed', 'reconciled', 'expired')`,
+    ),
+  ],
 );
 
 export const documentYjsHeads = pgTable("document_yjs_heads", {
