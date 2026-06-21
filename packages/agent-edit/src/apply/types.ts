@@ -42,6 +42,8 @@ export interface AgentOrigin {
   actorTurnId: string;
 }
 
+export type ApplyTransactionOrigin = unknown;
+
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
   | { type: "human"; userId?: string }
@@ -53,6 +55,8 @@ export interface ConcurrentUpdate {
 }
 
 export interface ApplyEditsOptions {
+  /** Actor turn id used only to ignore this actor's own re-sync updates; never embedded in transaction origin. */
+  ownActorTurnId?: string;
   /** State vector from the actor's last explicit sync (V_sync); defaults to the pre-apply doc vector. */
   syncStateVector?: Uint8Array;
   /** Re-sync updates from other actors, applied after local edits and before echo computation. */
