@@ -1,6 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # Throwaway demo playground for @meridian/agent-edit (see demo/README.md).
+  - 'packages/agent-edit/demo/playground'
 
 catalog:
   typescript: ^6.0.3
