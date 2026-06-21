@@ -100,6 +100,77 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
+  it("appends unanchored inserts and handles explicit start and end anchors", async () => {
+    const noAnchorCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
+    await noAnchorCtx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    const noAnchor = await noAnchorCtx.core.write(
+      { command: "insert", file: "chapter.md", content: "Four\n\nFive" },
+      context,
+    );
+
+    expect(noAnchor).toContain("status: success");
+    const expectedEndOrder = ["One", "Two", "Three", "Four", "Five"];
+    expect(blockTexts(noAnchorCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
+    expect(
+      renderedBlockBodies(
+        await noAnchorCtx.core.write({ command: "view", file: "chapter.md" }, context),
+      ),
+    ).toEqual(expectedEndOrder);
+
+    const beforeFirstCtx = harness({ "chapter.md": "Alpha\n\nBeta" });
+    await beforeFirstCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    const firstHash = hashAt(beforeFirstCtx.liveDoc("chapter.md"), 0);
+
+    const beforeFirst = await beforeFirstCtx.core.write(
+      { command: "insert", file: "chapter.md", content: "Start A\n\nStart B", before: firstHash },
+      context,
+    );
+
+    expect(beforeFirst).toContain("status: success");
+    const expectedStartOrder = ["Start A", "Start B", "Alpha", "Beta"];
+    expect(blockTexts(beforeFirstCtx.liveDoc("chapter.md"))).toEqual(expectedStartOrder);
+    expect(
+      renderedBlockBodies(
+        await beforeFirstCtx.core.write({ command: "view", file: "chapter.md" }, context),
+      ),
+    ).toEqual(expectedStartOrder);
+
+    const afterLastCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
+    await afterLastCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    const lastHash = hashAt(afterLastCtx.liveDoc("chapter.md"), 2);
+
+    const afterLast = await afterLastCtx.core.write(
+      { command: "insert", file: "chapter.md", content: "Four\n\nFive", after: lastHash },
+      context,
+    );
+
+    expect(afterLast).toContain("status: success");
+    expect(blockTexts(afterLastCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
+    expect(
+      renderedBlockBodies(
+        await afterLastCtx.core.write({ command: "view", file: "chapter.md" }, context),
+      ),
+    ).toEqual(expectedEndOrder);
+
+    const emptyCtx = harness();
+    emptyCtx.coordinator.createEmpty("empty.md");
+    await emptyCtx.core.write({ command: "view", file: "empty.md" }, context);
+
+    const emptyInsert = await emptyCtx.core.write(
+      { command: "insert", file: "empty.md", content: "Only block" },
+      context,
+    );
+
+    expect(emptyInsert).toContain("status: success");
+    expect(blockTexts(emptyCtx.liveDoc("empty.md"))).toEqual(["Only block"]);
+    expect(
+      renderedBlockBodies(
+        await emptyCtx.core.write({ command: "view", file: "empty.md" }, context),
+      ),
+    ).toEqual(["Only block"]);
+  });
+
   it("replaces text, formatting, and deletes through replace(content='')", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nDelete me." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -177,6 +248,114 @@ describe("write tool dispatch", () => {
 
     expect(inserted).toContain("status: success");
     expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual(["Alpha starts", "ends! Omega"]);
+  });
+
+  it("views around windows with radius three and clamps at document edges", async () => {
+    const ctx = harness({ "chapter.md": numberedBlocks(9) });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const middleHash = hashAt(ctx.liveDoc("chapter.md"), 4);
+    const nearStartHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const nearEndHash = hashAt(ctx.liveDoc("chapter.md"), 7);
+
+    const middle = await ctx.core.write(
+      { command: "view", file: "chapter.md", around: middleHash },
+      context,
+    );
+    const middleWithHashPrefix = await ctx.core.write(
+      { command: "view", file: "chapter.md", around: `#${middleHash}` },
+      context,
+    );
+    const nearStart = await ctx.core.write(
+      { command: "view", file: "chapter.md", around: nearStartHash },
+      context,
+    );
+    const nearEnd = await ctx.core.write(
+      { command: "view", file: "chapter.md", around: nearEndHash },
+      context,
+    );
+
+    expect(renderedBlockBodies(middle)).toEqual([
+      "Block 2",
+      "Block 3",
+      "Block 4",
+      "Block 5",
+      "Block 6",
+      "Block 7",
+      "Block 8",
+    ]);
+    expect(middleWithHashPrefix).toBe(middle);
+    expect(renderedBlockBodies(nearStart)).toEqual([
+      "Block 1",
+      "Block 2",
+      "Block 3",
+      "Block 4",
+      "Block 5",
+    ]);
+    expect(renderedBlockBodies(nearEnd)).toEqual([
+      "Block 5",
+      "Block 6",
+      "Block 7",
+      "Block 8",
+      "Block 9",
+    ]);
+  });
+
+  it("scopes find-based replace and insert to around windows", async () => {
+    const replaceCtx = harness({ "chapter.md": aroundNeedleBlocks() });
+    await replaceCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    const replaceAround = hashAt(replaceCtx.liveDoc("chapter.md"), 4);
+
+    const replaced = await replaceCtx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "changed",
+        find: "needle",
+        around: replaceAround,
+      },
+      context,
+    );
+
+    expect(replaced).toContain("status: success");
+    expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual([
+      "Block 1 needle",
+      "Block 2",
+      "Block 3",
+      "Block 4",
+      "Block 5 changed",
+      "Block 6",
+      "Block 7",
+      "Block 8",
+      "Block 9 needle",
+    ]);
+
+    const insertCtx = harness({ "chapter.md": aroundNeedleBlocks() });
+    await insertCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    const insertAround = hashAt(insertCtx.liveDoc("chapter.md"), 4);
+
+    const inserted = await insertCtx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "!",
+        find: "needle",
+        around: insertAround,
+      },
+      context,
+    );
+
+    expect(inserted).toContain("status: success");
+    expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual([
+      "Block 1 needle",
+      "Block 2",
+      "Block 3",
+      "Block 4",
+      "Block 5 needle!",
+      "Block 6",
+      "Block 7",
+      "Block 8",
+      "Block 9 needle",
+    ]);
   });
 
   it("keeps find-based replacement reachable through file fragments", async () => {
@@ -320,6 +499,34 @@ describe("write tool dispatch", () => {
     );
     expect(invalid).toContain("status: invalid_write");
     expect(invalid).toContain("insert requires non-empty content");
+  });
+
+  it("returns invalid_write for invalid around scope combinations", async () => {
+    const ctx = harness({ "chapter.md": aroundNeedleBlocks() });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const inHash = hashAt(ctx.liveDoc("chapter.md"), 4);
+    const aroundHash = hashAt(ctx.liveDoc("chapter.md"), 5);
+
+    const bothScopes = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "changed",
+        find: "needle",
+        in: inHash,
+        around: aroundHash,
+      },
+      context,
+    );
+    expect(bothScopes).toContain("status: invalid_write");
+    expect(bothScopes).toContain("`in` and `around` are mutually exclusive scope parameters");
+
+    const aroundWithoutFind = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "changed", around: aroundHash },
+      context,
+    );
+    expect(aroundWithoutFind).toContain("status: invalid_write");
+    expect(aroundWithoutFind).toContain("`around` only scopes find-based replace commands");
   });
 
   it("maps typed missing documents differently from transient coordinator failures", async () => {
@@ -480,6 +687,29 @@ function hashAt(doc: Y.Doc, index: number): string {
 
 function blockTexts(doc: Y.Doc): string[] {
   return model.getBlocks(doc).map((block) => model.getText(block));
+}
+
+function renderedBlockBodies(output: string): string[] {
+  if (!output) return [];
+  return output.split("\n").map((line) => line.replace(/^[0-9a-f]{4,}\|/, ""));
+}
+
+function numberedBlocks(count: number): string {
+  return Array.from({ length: count }, (_, index) => `Block ${index + 1}`).join("\n\n");
+}
+
+function aroundNeedleBlocks(): string {
+  return [
+    "Block 1 needle",
+    "Block 2",
+    "Block 3",
+    "Block 4",
+    "Block 5 needle",
+    "Block 6",
+    "Block 7",
+    "Block 8",
+    "Block 9 needle",
+  ].join("\n\n");
 }
 
 function humanText(

@@ -47,6 +47,36 @@ describe("resolveWrite", () => {
     expect(beforeFirst.kind === "insert" ? beforeFirst.after : "unexpected").toBeUndefined();
   });
 
+  it("defaults unanchored inserts to after the last block", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const [alpha, , gamma] = model.getBlocks(doc);
+
+    const noAnchor = expectOk(resolve(doc, { command: "insert", content: "Delta\n\nEpsilon" }));
+    expect(noAnchor).toHaveLength(1);
+    expect(noAnchor[0]).toMatchObject({ kind: "insert", newText: "Delta\n\nEpsilon" });
+    expect(noAnchor[0].kind === "insert" ? noAnchor[0].after : null).toBe(gamma);
+
+    const beforeFirst = expectOk(
+      resolve(doc, { command: "insert", content: "Start", before: model.getBlockId(alpha) }),
+    );
+    expect(beforeFirst).toHaveLength(1);
+    expect(beforeFirst[0].kind === "insert" ? beforeFirst[0].after : "unexpected").toBeUndefined();
+
+    const afterLast = expectOk(
+      resolve(doc, { command: "insert", content: "End", after: model.getBlockId(gamma) }),
+    );
+    expect(afterLast).toHaveLength(1);
+    expect(afterLast[0].kind === "insert" ? afterLast[0].after : null).toBe(gamma);
+
+    const emptyDocInsert = expectOk(
+      resolve(createEmptyDoc(), { command: "insert", content: "Only" }),
+    );
+    expect(emptyDocInsert).toHaveLength(1);
+    expect(
+      emptyDocInsert[0].kind === "insert" ? emptyDocInsert[0].after : "unexpected",
+    ).toBeUndefined();
+  });
+
   it("decomposes all=true find matches left-to-right", () => {
     const doc = createDoc("sword one\n\nsword two");
     const blocks = model.getBlocks(doc);
@@ -174,6 +204,81 @@ describe("resolveWrite", () => {
     expect(byHash[0].kind === "text" ? byHash[0].element : null).toBe(arenaParagraph);
   });
 
+  it("scopes find-based writes to the around window", () => {
+    const doc = createDoc(aroundNeedleDoc());
+    const blocks = model.getBlocks(doc);
+    const around = model.getBlockId(blocks[4]);
+
+    const replace = expectOk(
+      resolve(doc, { command: "replace", content: "changed", find: "needle", around }),
+    );
+    expect(replace).toHaveLength(1);
+    expect(replace[0]).toMatchObject({
+      kind: "text",
+      element: blocks[4],
+      span: { start: "Block 5 ".length, end: "Block 5 needle".length },
+      newText: "changed",
+    });
+
+    const insert = expectOk(
+      resolve(doc, { command: "insert", content: "!", find: "needle", around }),
+    );
+    expect(insert).toHaveLength(1);
+    expect(insert[0]).toMatchObject({
+      kind: "text",
+      element: blocks[4],
+      span: { start: "Block 5 needle".length, end: "Block 5 needle".length },
+      newText: "!",
+    });
+  });
+
+  it("rejects invalid around scope combinations", () => {
+    const doc = createDoc("Alpha needle\n\nBeta needle");
+    const blocks = model.getBlocks(doc);
+    const firstHash = model.getBlockId(blocks[0]);
+    const secondHash = model.getBlockId(blocks[1]);
+
+    expect(
+      resolve(doc, {
+        command: "replace",
+        content: "changed",
+        find: "needle",
+        in: firstHash,
+        around: secondHash,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_write",
+        message: "`in` and `around` are mutually exclusive scope parameters",
+      },
+    });
+    expect(
+      resolve(doc, {
+        command: "insert",
+        content: "!",
+        find: "needle",
+        in: firstHash,
+        around: secondHash,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_write",
+        message: "`in` and `around` are mutually exclusive scope parameters",
+      },
+    });
+    expect(
+      resolve(doc, { command: "replace", content: "changed", around: firstHash }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_write",
+        message: "`around` only scopes find-based replace commands",
+      },
+    });
+  });
+
   it("returns representative resolution errors", () => {
     const doc = createDoc("sword one\n\nsword two");
     const [first, second] = model.getBlocks(doc);
@@ -207,6 +312,26 @@ function createDoc(markdown: string): Y.Doc {
   const root = schema.node("doc", null, parsed.blocks);
   prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
   return doc;
+}
+
+function createEmptyDoc(): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  return doc;
+}
+
+function aroundNeedleDoc(): string {
+  return [
+    "Block 1 needle",
+    "Block 2",
+    "Block 3",
+    "Block 4",
+    "Block 5 needle",
+    "Block 6",
+    "Block 7",
+    "Block 8",
+    "Block 9 needle",
+  ].join("\n\n");
 }
 
 function resolve(
