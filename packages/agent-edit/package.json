@@ -15,6 +15,7 @@
     "@meridian/prosemirror-schema": "workspace:*",
     "prosemirror-model": "^1.25.9",
     "remark-gfm": "^4.0.1",
+    "remark-mdx": "^3.1.1",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
     "unified": "^11.0.5",

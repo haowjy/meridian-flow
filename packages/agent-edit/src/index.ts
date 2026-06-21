@@ -1,5 +1,9 @@
 // Port interfaces and shared types for the agent editing core.
 
+export { createCodec } from "./codec/create-codec.js";
+export { markdownCodec } from "./codec/presets/markdown.js";
+export { mdxCodec } from "./codec/presets/mdx.js";
+
 export type {
   Block,
   BlockCodec,
