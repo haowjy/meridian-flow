@@ -267,14 +267,6 @@ See `backend/CLAUDE.md` for backend deployment details.
 
 ## Worktree discipline
 
-The primary checkout is shared — **never switch its branch**
-(`checkout`/`switch`/`stash`/commit-another-branch; any form, incl. `git -C`).
-
-Work on another branch in a worktree:
-
-```bash
-git worktree add ../meridian-flow.worktrees/<name> -b <branch> origin/main
-```
-
-Push from the worktree. Pass `--task-dir ../meridian-flow.worktrees/<name>` to
-every spawn so agents edit there, not the shared checkout.
+**Never switch the branch of a checkout you don't own** — it may be shared. Need
+another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
+-b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
