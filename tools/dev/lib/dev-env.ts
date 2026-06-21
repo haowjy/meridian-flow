@@ -106,6 +106,18 @@ function resolveWorktreeDatabaseUrl(repoRoot: string, baseUrl: string): string {
   return applyWorktreeDatabaseRewrite(baseUrl, expectedDbName);
 }
 
+/** Trust repo-root `.envrc` when direnv is installed (no-op otherwise). */
+export function ensureDirenvAllowed(repoRoot: string): void {
+  try {
+    execFileSync("direnv", ["allow", repoRoot], { stdio: "ignore" });
+    console.log("bootstrap: direnv allow — .envrc trusted for this checkout");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") return;
+    console.warn(`bootstrap: direnv allow skipped (${err.message})`);
+  }
+}
+
 export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void {
   const mainEnv = loadMainEnvFile(repoRoot);
   for (const [key, value] of Object.entries(mainEnv)) {

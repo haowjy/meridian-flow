@@ -84,8 +84,7 @@ ports by hand, or probe `ws://127.0.0.1:<port>`. Run `pnpm dev` to start;
 `pnpm portless:list` for live URLs. Postgres is a plain `postgres:16` Docker
 container; `DATABASE_URL` is the only seam.
 
-See [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md) for commands
-and setup.
+**Local setup:** [DEVELOPMENT.md](DEVELOPMENT.md). **Editing `tools/dev`:** [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
 ## Build and test
 
@@ -98,8 +97,7 @@ create a verifiable history trail where each step is independently reviewable an
 revertible. After each self-contained change that passes checks
 (typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
 (This governs local commit cadence; opening PRs and pushing remain separate,
-deliberate decisions.) Hooks + worktree `lefthook install`: see
-[DEVELOPMENT.md](DEVELOPMENT.md).
+deliberate decisions.)
 
 ## Cross-repo linking
 

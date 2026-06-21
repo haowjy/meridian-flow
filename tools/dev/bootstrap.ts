@@ -1,10 +1,11 @@
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { ensureDatabaseForUrl, ensureExtensionsForUrl } from "./lib/dev-db.ts";
-import { applyDevEnvToProcess, DEV_DATABASES } from "./lib/dev-env.ts";
+import { applyDevEnvToProcess, DEV_DATABASES, ensureDirenvAllowed } from "./lib/dev-env.ts";
 import { ensureDevInfraUp } from "./lib/dev-infra.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
+ensureDirenvAllowed(repoRoot);
 applyDevEnvToProcess(repoRoot);
 
 const NEXT_STEP = "Next: log in via dev-login; identity is provisioned on first sign-in";
