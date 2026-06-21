@@ -45,9 +45,9 @@ Meridian v3 uses a plain `postgres:16` Docker container for local Postgres. Auth
 
 ### Reset vs full wipe
 
-Worktrees share one dev database (`meridian`). `drop-db` refuses reserved/main-checkout DB names — that guard stays; use schema reset instead of `DROP DATABASE`.
+Linked worktrees get isolated Postgres databases (`meridian_<slug>` on the same `:54422` server). The main checkout keeps bare `meridian` from `.env`. `drop-db` refuses reserved/main-checkout DB names — use schema reset instead of `DROP DATABASE` on `meridian`.
 
-- **Reset schema (normal):** `pnpm db:reset` — ensures Docker Postgres is up, drops/recreates `public`, drops `drizzle` (migration journal), then runs `prepare-db` (extensions + migrate + apply-functions).
+- **Reset schema (normal):** `pnpm db:reset` — ensures Docker Postgres is up, drops/recreates `public` in the **active worktree database**, drops `drizzle` (migration journal), then runs `prepare-db` (extensions + migrate + apply-functions).
 - **Full wipe:** `pnpm dev:infra:down`, remove the `meridian-dev_meridian-postgres-data` Docker volume, then `pnpm bootstrap`.
 
 ## Dev server contract

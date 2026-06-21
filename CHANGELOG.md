@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Dev (worktree DB isolation): linked git worktrees rewrite `DATABASE_URL` to
+  sibling databases on the local Postgres server (`meridian_<slug>`); the main
+  checkout keeps bare `meridian`. `applyDevEnvToProcess`, `.envrc`, and
+  `bootstrap` apply the rewrite so migrations and `db:reset` are worktree-scoped.
+
 - Docs (app comments): retarget stale Warm Paper file-header comments in
   `globals.css` and `desktop-layout.ts` to Ink & Jade / Quiet Pro wording.
 
