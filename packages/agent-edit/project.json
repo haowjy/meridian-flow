@@ -1,0 +1,35 @@
+{
+  "name": "@meridian/agent-edit",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/agent-edit/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/agent-edit",
+        "command": "pnpm run build"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/agent-edit",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/agent-edit",
+        "command": "vitest run --passWithNoTests"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

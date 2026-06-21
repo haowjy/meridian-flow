@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: scaffold `@meridian/agent-edit` with port interfaces
+  (`UpdateJournal`, `DocumentCoordinator`, `ActorSessionStore`, `Codec`,
+  `DocumentModel`, `ComponentSpec`) — types only, no implementations yet.
+
 - Docs: consolidated local setup in `DEVELOPMENT.md`; slimmed
   `tools/dev/.context/CONTEXT.md` to module contracts only; `AGENTS.md` points
   to `DEVELOPMENT.md` for setup and `tools/dev/AGENTS.md` when editing dev tools.
