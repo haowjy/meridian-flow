@@ -1,10 +1,23 @@
 // Port interfaces and shared types for the agent editing core.
 
+export {
+  applyConcurrentUpdates,
+  computeEcho,
+  diffSnapshots,
+  snapshotBlocks,
+} from "./apply/echo.js";
+export { applyEdits } from "./apply/tiers.js";
 export type {
+  AgentOrigin,
+  AppliedEditSummary,
   ApplyEchoHunk,
+  ApplyEditsOptions,
   ApplyErrorCode,
   ApplyResult,
+  ApplyTier,
   ConcurrentEditInfo,
+  ConcurrentUpdate,
+  ConcurrentUpdateOrigin,
   EditResolutionErrorCode,
   ResolvedEdit,
   ResolvedSpan,
