@@ -208,6 +208,8 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
   const [after, setAfter] = useState("");
   const [before, setBefore] = useState("");
   const [inHash, setInHash] = useState("");
+  const [around, setAround] = useState("");
+  const [all, setAll] = useState(false);
   const [turnId, setTurnId] = useState("");
   const [viewFormat, setViewFormat] = useState<"full" | "outline">("full");
 
@@ -223,6 +225,8 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
       after,
       before,
       inHash,
+      around,
+      all,
       viewFormat,
     });
     if (!command) return;
@@ -256,18 +260,29 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
       </div>
 
       {kind === "view" && (
-        <div className="row">
-          <label>
-            format
-            <select
-              value={viewFormat}
-              onChange={(e) => setViewFormat(e.target.value as "full" | "outline")}
-            >
-              <option value="full">full</option>
-              <option value="outline">outline</option>
-            </select>
-          </label>
-        </div>
+        <>
+          <div className="row">
+            <label>
+              format
+              <select
+                value={viewFormat}
+                onChange={(e) => setViewFormat(e.target.value as "full" | "outline")}
+              >
+                <option value="full">full</option>
+                <option value="outline">outline</option>
+              </select>
+            </label>
+          </div>
+          <div className="row">
+            <HashPickerInput label="in" value={inHash} onChange={setInHash} options={hashOptions} />
+            <HashPickerInput
+              label="around"
+              value={around}
+              onChange={setAround}
+              options={hashOptions}
+            />
+          </div>
+        </>
       )}
 
       {(kind === "create" || kind === "insert" || kind === "replace") && (
@@ -287,15 +302,43 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
       )}
 
       {kind === "insert" && (
-        <div className="row">
-          <HashPickerInput label="after" value={after} onChange={setAfter} options={hashOptions} />
-          <HashPickerInput
-            label="before"
-            value={before}
-            onChange={setBefore}
-            options={hashOptions}
-          />
-        </div>
+        <>
+          <div className="row">
+            <HashPickerInput
+              label="after"
+              value={after}
+              onChange={setAfter}
+              options={hashOptions}
+            />
+            <HashPickerInput
+              label="before"
+              value={before}
+              onChange={setBefore}
+              options={hashOptions}
+            />
+          </div>
+          <div className="row">
+            <label>
+              find
+              <input
+                value={find}
+                onChange={(e) => setFind(e.target.value)}
+                placeholder="text to find"
+              />
+            </label>
+            <HashPickerInput label="in" value={inHash} onChange={setInHash} options={hashOptions} />
+            <HashPickerInput
+              label="around"
+              value={around}
+              onChange={setAround}
+              options={hashOptions}
+            />
+            <label>
+              all
+              <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+            </label>
+          </div>
+        </>
       )}
 
       {kind === "replace" && (
@@ -309,6 +352,16 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
             />
           </label>
           <HashPickerInput label="in" value={inHash} onChange={setInHash} options={hashOptions} />
+          <HashPickerInput
+            label="around"
+            value={around}
+            onChange={setAround}
+            options={hashOptions}
+          />
+          <label>
+            all
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+          </label>
         </div>
       )}
 
@@ -358,6 +411,8 @@ function buildCommand(input: {
   after: string;
   before: string;
   inHash: string;
+  around: string;
+  all: boolean;
   viewFormat: "full" | "outline";
 }): WriteCommand | null {
   const { kind, docId } = input;
@@ -365,15 +420,25 @@ function buildCommand(input: {
     case "create":
       return { command: "create", file: docId, content: input.content };
     case "view":
-      return { command: "view", file: docId, format: input.viewFormat };
+      return {
+        command: "view",
+        file: docId,
+        format: input.viewFormat,
+        ...(input.inHash ? { in: input.inHash } : {}),
+        ...(input.around ? { around: input.around } : {}),
+      };
     case "insert": {
-      if (!input.after && !input.before) return null;
+      // No-anchor insert is valid — the package appends at the end of the doc.
       const cmd: WriteCommand = {
         command: "insert",
         file: docId,
         content: input.content,
         ...(input.after ? { after: input.after } : {}),
         ...(input.before ? { before: input.before } : {}),
+        ...(input.find ? { find: input.find } : {}),
+        ...(input.inHash ? { in: input.inHash } : {}),
+        ...(input.around ? { around: input.around } : {}),
+        ...(input.all ? { all: true } : {}),
       } as WriteCommand;
       return cmd;
     }
@@ -384,6 +449,8 @@ function buildCommand(input: {
         content: input.content,
         ...(input.find ? { find: input.find } : {}),
         ...(input.inHash ? { in: input.inHash } : {}),
+        ...(input.around ? { around: input.around } : {}),
+        ...(input.all ? { all: true } : {}),
       } as WriteCommand;
       return cmd;
     }
@@ -401,6 +468,8 @@ function describeCommand(command: WriteCommand): string {
   if ("after" in command && command.after) parts.push(`after=${command.after}`);
   if ("before" in command && command.before) parts.push(`before=${command.before}`);
   if ("in" in command && command.in) parts.push(`in=${command.in}`);
+  if ("around" in command && command.around) parts.push(`around=${command.around}`);
+  if ("all" in command && command.all) parts.push("all=true");
   return `${parts.join(" ")})`;
 }
 
