@@ -1,6 +1,6 @@
 // Port interfaces and shared types for the agent editing core.
 
-export { createCodec } from "./codec/create-codec.js";
+export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";
 export { markdownCodec } from "./codec/presets/markdown.js";
 export { mdxCodec } from "./codec/presets/mdx.js";
 
@@ -16,6 +16,7 @@ export type {
   SerializeContext,
   Span,
 } from "./codec/types.js";
+export { CodecParseError } from "./codec/types.js";
 export type { DocumentModel } from "./model/types.js";
 export type {
   ActorSession,

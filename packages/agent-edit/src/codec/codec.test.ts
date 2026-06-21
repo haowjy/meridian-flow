@@ -3,8 +3,15 @@ import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 
 import type { ComponentRegistry } from "../registry/component-registry.js";
-import { markdownCodec, markdownRequiredBlockNames } from "./presets/markdown.js";
-import { mdxCodec, mdxRequiredBlockNames } from "./presets/mdx.js";
+import { createCodec, requiredBlockNamesForSchema } from "./create-codec.js";
+import {
+  markdownBlockCodecs,
+  markdownCodec,
+  markdownMarkCodecs,
+  markdownRequiredBlockNames,
+} from "./presets/markdown.js";
+import { mdxBlockCodecs, mdxCodec, mdxRequiredBlockNames } from "./presets/mdx.js";
+import { CodecParseError } from "./types.js";
 
 const schema = buildDocumentSchema();
 const components = {
@@ -55,6 +62,10 @@ function blocksOf(doc: PMNode): PMNode[] {
   return [...doc.content.content];
 }
 
+function sorted(names: readonly string[]): string[] {
+  return [...names].sort();
+}
+
 function expectStable(codec: ReturnType<typeof mdxCodec>, input: string): void {
   const first = codec.parse(input).blocks;
   const serialized = codec.serialize(first);
@@ -74,10 +85,53 @@ describe("codec presets", () => {
 
   it("registers every fiction-schema node handled by the MDX codec", () => {
     const codec = mdxCodec({ schema, components });
-    expect(codec.blocks.map((block) => block.name).sort()).toEqual(
-      [...mdxRequiredBlockNames].sort(),
-    );
+    const schemaRequiredBlocks = sorted(requiredBlockNamesForSchema(schema));
+    expect(sorted(mdxRequiredBlockNames)).toEqual(schemaRequiredBlocks);
+    expect(sorted(codec.blocks.map((block) => block.name))).toEqual(schemaRequiredBlocks);
     expect(codec.marks.map((mark) => mark.name).sort()).toEqual(["code", "em", "link", "strong"]);
+  });
+
+  it("fails creation when schema-derived block coverage is incomplete", () => {
+    expect(() =>
+      createCodec({
+        schema,
+        blocks: mdxBlockCodecs.filter((block) => block.name !== "figure"),
+        marks: markdownMarkCodecs,
+        requireSchemaBlockCoverage: true,
+      }),
+    ).toThrow('codec missing BlockCodec for schema node "figure"');
+  });
+
+  it("dispatches inline parse and serialize through registered mark codecs", () => {
+    const customSerializeCodec = createCodec({
+      schema,
+      blocks: markdownBlockCodecs,
+      marks: markdownMarkCodecs.map((mark) =>
+        mark.name === "strong"
+          ? {
+              ...mark,
+              serialize(text, _attrs, _ctx) {
+                return `[${text}](https://custom.example)`;
+              },
+            }
+          : mark,
+      ),
+      requiredBlockNames: markdownRequiredBlockNames,
+    });
+    expect(customSerializeCodec.serialize([paragraph(t("x", [m("strong")]))])).toBe(
+      "[x](https://custom.example)\n",
+    );
+
+    const customParseCodec = createCodec({
+      schema,
+      blocks: markdownBlockCodecs,
+      marks: markdownMarkCodecs.map((mark) =>
+        mark.name === "strong" ? { ...mark, parse: () => null } : mark,
+      ),
+      requiredBlockNames: markdownRequiredBlockNames,
+    });
+    const parsed = customParseCodec.parse("**x**").blocks[0];
+    expect(parsed?.firstChild?.marks).toHaveLength(0);
   });
 });
 
@@ -98,6 +152,15 @@ describe("markdown codec round-trip corpus", () => {
         "line two with ![a sword](img/sword.png) here.",
       ].join("\n"),
     );
+  });
+
+  it("stabilizes strong spans containing nested emphasis boundaries", () => {
+    expectStable(codec, "Intro with **bold _em_** tail");
+    expectStable(codec, "Intro with **bold *em*** tail");
+  });
+
+  it("stabilizes link labels containing closing brackets", () => {
+    expectStable(codec, "[a\\]b](https://x.test)");
   });
 
   it("stabilizes lists, blockquotes, thematic breaks, and ordered-list starts", () => {
@@ -211,6 +274,10 @@ describe("mdx codec round-trip corpus", () => {
     expectStable(codec, '<Badge tone="warn">caution **marked**</Badge>');
   });
 
+  it("stabilizes JSX leaf inline children with nested marks", () => {
+    expectStable(codec, '<Badge tone="warn">before **bold _em_** after</Badge>');
+  });
+
   it("stabilizes JSX containers with block children and nested object props", () => {
     expectStable(
       codec,
@@ -238,6 +305,30 @@ describe("mdx codec round-trip corpus", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.type.name).toBe("paragraph");
     expect(blocks[0]?.textContent).toBe("<StatBlock value={compute()} />");
+  });
+
+  it("degrades multiline invalid JSX to a stable raw code block", () => {
+    const input = ["<Panel title={compute()}>", "", "para", "", "</Panel>"].join("\n");
+    const blocks = codec.parse(input).blocks;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.type.name).toBe("code_block");
+    expect(blocks[0]?.attrs.language).toBe("mdx");
+    expect(blocks[0]?.textContent).toBe(input);
+    expectStable(codec, input);
+  });
+
+  it("throws a typed codec error for syntactically invalid JSX expressions", () => {
+    expect(() => codec.parse("<StatBlock value={{foo: }} />")).toThrow(CodecParseError);
+    try {
+      codec.parse("<StatBlock value={{foo: }} />");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CodecParseError);
+      expect(error).toMatchObject({
+        line: 1,
+        column: 25,
+      });
+      expect((error as Error).message).toContain("Could not parse expression with acorn");
+    }
   });
 
   it("round-trips the full surviving fiction node set", () => {
