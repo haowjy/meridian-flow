@@ -66,7 +66,7 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .references(() => documents.id, { onDelete: "cascade" }),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
   /** Must stay aligned with COLLAB_SCHEMA_VERSION in @meridian/prosemirror-schema. */
-  schemaVersion: integer("schema_version").notNull().default(1),
+  schemaVersion: integer("schema_version").notNull().default(3),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
   latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),

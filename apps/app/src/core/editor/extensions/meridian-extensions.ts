@@ -1,7 +1,7 @@
 /**
  * meridian-extensions — the project's customized TipTap node/mark extensions.
  *
- * Subclasses the base TipTap nodes/marks (lists, code, link, image, math, hard
+ * Subclasses the base TipTap nodes/marks (lists, code, link, image, hard
  * break, and the custom figure node with its React node view) to match the
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
@@ -18,10 +18,6 @@ import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
-import { Table } from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
@@ -59,11 +55,6 @@ export const MeridianListItem = ListItem.extend({
 
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
-});
-
-export const MeridianTableRow = TableRow.extend({
-  name: "table_row",
-  content: "(table_header)+ | (table_cell)+",
 });
 
 // ─── Customized extensions ──────────────────────────────────────────
@@ -105,45 +96,6 @@ export const MeridianOrderedList = OrderedList.extend({
   },
 });
 
-export const MeridianTable = Table.extend({
-  name: "table",
-  content: "table_row+",
-  group: "block",
-  isolating: true,
-
-  addCommands() {
-    return {
-      ...this.parent?.(),
-      toggleHeaderColumn: () => () => false,
-      toggleHeaderRow: () => () => false,
-      toggleHeaderCell: () => () => false,
-      mergeCells: () => () => false,
-      splitCell: () => () => false,
-      mergeOrSplit: () => () => false,
-    };
-  },
-}).configure({ resizable: false });
-
-export const MeridianTableCell = TableCell.extend({
-  name: "table_cell",
-  content: "inline*",
-  isolating: true,
-
-  addAttributes() {
-    return {};
-  },
-});
-
-export const MeridianTableHeader = TableHeader.extend({
-  name: "table_header",
-  content: "inline*",
-  isolating: true,
-
-  addAttributes() {
-    return {};
-  },
-});
-
 export const MeridianImage = Image.extend({
   marks: "",
 
@@ -158,25 +110,7 @@ export const MeridianImage = Image.extend({
 
 // ─── Meridian-only extensions ─────────────────────────────────────────
 // Node types not in TipTap's standard library.
-// TODO: math_display — needs proper KaTeX/MathJax rendering integration
 // TODO: figure — needs full MyST directive support, currently renders via FigureNodeView
-
-export const MeridianMathDisplay = Node.create({
-  name: "math_display",
-  group: "block",
-  content: "text*",
-  marks: "",
-  code: true,
-  defining: true,
-
-  parseHTML() {
-    return [{ tag: "pre[data-type='math-display']" }];
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return ["pre", mergeAttributes(HTMLAttributes, { "data-type": "math-display" }), ["code", 0]];
-  },
-});
 
 export const MeridianFigure = Node.create<{ projectId?: string; documentId?: string }>({
   name: "figure",

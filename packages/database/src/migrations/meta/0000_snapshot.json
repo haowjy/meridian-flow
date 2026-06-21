@@ -1,5 +1,5 @@
 {
-  "id": "2aeff52d-49cc-4953-883e-68aa68b5ca8d",
+  "id": "a1bdcf47-1c3a-43f9-9b7d-c15b1c75d129",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4286,7 +4286,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 1
+          "default": 3
         },
         "latest_update_seq": {
           "name": "latest_update_seq",

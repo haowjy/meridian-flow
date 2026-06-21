@@ -13,57 +13,13 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Editor, JSONContent } from "@tiptap/core";
-import {
-  Bold,
-  Code,
-  FunctionSquare,
-  Heading1,
-  ImageUp,
-  Italic,
-  Link,
-  List,
-  Table2,
-} from "lucide-react";
+import type { Editor } from "@tiptap/core";
+import { Bold, Code, Heading1, ImageUp, Italic, Link, List } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-function tableContent(): JSONContent {
-  return {
-    type: "table",
-    content: [
-      {
-        type: "table_row",
-        content: [
-          {
-            type: "table_header",
-            content: [{ type: "text", text: "A" }],
-          },
-          {
-            type: "table_header",
-            content: [{ type: "text", text: "B" }],
-          },
-        ],
-      },
-      {
-        type: "table_row",
-        content: [
-          {
-            type: "table_cell",
-            content: [{ type: "text", text: "1" }],
-          },
-          {
-            type: "table_cell",
-            content: [{ type: "text", text: "2" }],
-          },
-        ],
-      },
-    ],
-  };
-}
 
 export type EditorToolbarProps = {
   editor: Editor | null;
@@ -164,29 +120,6 @@ export function EditorToolbar({
           }
         >
           <Link className="size-3.5" aria-hidden />
-        </ToolbarButton>
-        <ToolbarButton
-          label={t`Math block`}
-          disabled={!editor}
-          onClick={() =>
-            editor
-              ?.chain()
-              .focus()
-              .insertContent({
-                type: "math_display",
-                content: [{ type: "text", text: "E = mc^2" }],
-              })
-              .run()
-          }
-        >
-          <FunctionSquare className="size-3.5" aria-hidden />
-        </ToolbarButton>
-        <ToolbarButton
-          label={t`Table`}
-          disabled={!editor}
-          onClick={() => editor?.chain().focus().insertContent(tableContent()).run()}
-        >
-          <Table2 className="size-3.5" aria-hidden />
         </ToolbarButton>
         <ToolbarButton
           label={t`Upload figure`}
