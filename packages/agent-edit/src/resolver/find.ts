@@ -13,14 +13,31 @@ export interface FindContext {
 }
 
 export interface FindMatch {
+  kind: "single-block";
   element: Y.XmlElement;
   span: { start: number; end: number };
   absoluteStart: number;
   absoluteEnd: number;
 }
 
+export interface CrossBlockFindMatch {
+  kind: "cross-block";
+  elements: Y.XmlElement[];
+  startIndex: number;
+  endIndex: number;
+  rangeSource: string;
+  matchStart: number;
+  matchEnd: number;
+  endElement: Y.XmlElement;
+  endSpan: { start: number; end: number };
+  absoluteStart: number;
+  absoluteEnd: number;
+}
+
+export type TextFindMatch = FindMatch | CrossBlockFindMatch;
+
 export type FindResult =
-  | { ok: true; matches: FindMatch[] }
+  | { ok: true; matches: TextFindMatch[] }
   | {
       ok: false;
       code: "not_found" | "ambiguous_match" | "invalid_write";
@@ -30,6 +47,7 @@ export type FindResult =
 
 interface SerializedBlockEntry {
   block: Y.XmlElement;
+  index: number;
   body: string;
   flatText: string;
   start: number;
@@ -62,11 +80,12 @@ export function findTextMatches(
 
   const resolved = matches.map((match) => resolveMatch(entries, match.start, match.end));
   if (resolved.some((match) => match === null)) {
-    return invalid(
-      "Cross-block find matches are not supported by this resolver implementation yet",
-    );
+    return invalid("Could not map find match to editable block spans");
   }
-  return { ok: true, matches: resolved.filter((match): match is FindMatch => match !== null) };
+  return {
+    ok: true,
+    matches: resolved.filter((match): match is TextFindMatch => match !== null),
+  };
 }
 
 export function serializeBlockBody(ctx: FindContext, block: Y.XmlElement): string {
@@ -89,6 +108,7 @@ function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBl
     const body = serializeBlockBody(ctx, block);
     const entry = {
       block,
+      index: scope.startIndex + index,
       body,
       flatText: ctx.model.getText(block),
       start: cursor,
@@ -140,14 +160,64 @@ function resolveMatch(
   entries: readonly SerializedBlockEntry[],
   start: number,
   end: number,
-): FindMatch | null {
-  const entry = entries.find((candidate) => start >= candidate.start && end <= candidate.end);
-  if (!entry) return null;
+): TextFindMatch | null {
+  const firstIndex = entries.findIndex((entry) => start <= entry.end && end > entry.start);
+  const lastIndex = findLastIndex(entries, (entry) => start < entry.end && end >= entry.start);
+  if (firstIndex < 0 || lastIndex < firstIndex) return null;
+  const entry = entries[firstIndex];
+  if (firstIndex !== lastIndex || start < entry.start || end > entry.end) {
+    return resolveCrossBlockMatch(entries.slice(firstIndex, lastIndex + 1), start, end);
+  }
   const localStart = start - entry.start;
   const localEnd = end - entry.start;
   const span = serializedOffsetsToFlatSpan(entry, localStart, localEnd);
   if (!span) return null;
-  return { element: entry.block, span, absoluteStart: start, absoluteEnd: end };
+  return {
+    kind: "single-block",
+    element: entry.block,
+    span,
+    absoluteStart: start,
+    absoluteEnd: end,
+  };
+}
+
+function resolveCrossBlockMatch(
+  entries: readonly SerializedBlockEntry[],
+  start: number,
+  end: number,
+): CrossBlockFindMatch | null {
+  const first = entries[0];
+  const last = entries.at(-1);
+  if (!first || !last || entries.length < 2) return null;
+  const rangeSource = entries.map((entry) => entry.body).join("\n\n");
+  const matchStart = start - first.start;
+  const matchEnd = end - first.start;
+  if (matchStart < 0 || matchEnd < matchStart || matchEnd > rangeSource.length) return null;
+
+  const endLocal = Math.min(Math.max(end - last.start, 0), last.body.length);
+  const endSpan = serializedOffsetsToFlatSpan(last, endLocal, endLocal);
+  if (!endSpan) return null;
+
+  return {
+    kind: "cross-block",
+    elements: entries.map((entry) => entry.block),
+    startIndex: first.index,
+    endIndex: last.index,
+    rangeSource,
+    matchStart,
+    matchEnd,
+    endElement: last.block,
+    endSpan,
+    absoluteStart: start,
+    absoluteEnd: end,
+  };
+}
+
+function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return index;
+  }
+  return -1;
 }
 
 function serializedOffsetsToFlatSpan(

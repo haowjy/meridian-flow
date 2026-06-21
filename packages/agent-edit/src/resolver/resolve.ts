@@ -4,7 +4,7 @@ import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import { type Codec, CodecParseError, type ParsedContent } from "../codec/types.js";
 import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import { lookupBlockHash } from "./block-hash.js";
-import { findTextMatches, serializePmBlockBody } from "./find.js";
+import { findTextMatches, serializePmBlockBody, type TextFindMatch } from "./find.js";
 import {
   type BlockScope,
   headingLevel,
@@ -104,14 +104,7 @@ function resolveInsert(
     if (!found.ok) return findError(found);
     return {
       ok: true,
-      edits: found.matches.map((match) => ({
-        documentId: params.documentId,
-        file: params.filePath,
-        kind: "text",
-        element: match.element,
-        span: { start: match.span.end, end: match.span.end },
-        newText: params.content,
-      })),
+      edits: found.matches.map((match) => insertionEditForMatch(params, match)),
     };
   }
 
@@ -150,17 +143,7 @@ function resolveReplace(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return {
-      ok: true,
-      edits: found.matches.map((match) => ({
-        documentId: params.documentId,
-        file: params.filePath,
-        kind: "text",
-        element: match.element,
-        span: match.span,
-        newText: params.content,
-      })),
-    };
+    return replaceFindMatches(ctx, params, found.matches);
   }
 
   if (params.around !== undefined) {
@@ -258,6 +241,84 @@ function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteR
       element,
     })),
   };
+}
+
+function insertionEditForMatch(params: NormalizedParams, match: TextFindMatch): ResolvedEdit {
+  if (match.kind === "cross-block") {
+    return {
+      documentId: params.documentId,
+      file: params.filePath,
+      kind: "text",
+      element: match.endElement,
+      span: { start: match.endSpan.end, end: match.endSpan.end },
+      newText: params.content,
+    };
+  }
+  return {
+    documentId: params.documentId,
+    file: params.filePath,
+    kind: "text",
+    element: match.element,
+    span: { start: match.span.end, end: match.span.end },
+    newText: params.content,
+  };
+}
+
+function replaceFindMatches(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  matches: readonly TextFindMatch[],
+): ResolveWriteResult {
+  const edits: ResolvedEdit[] = [];
+  for (const match of matches) {
+    if (match.kind === "single-block") {
+      edits.push({
+        documentId: params.documentId,
+        file: params.filePath,
+        kind: "text",
+        element: match.element,
+        span: match.span,
+        newText: params.content,
+      });
+      continue;
+    }
+
+    const replacedSource =
+      match.rangeSource.slice(0, match.matchStart) +
+      params.content +
+      match.rangeSource.slice(match.matchEnd);
+    const parsed = parseReplacementRange(ctx, replacedSource);
+    if (!parsed.ok) return parsed;
+    const lowered = replaceScope(
+      ctx,
+      params,
+      {
+        kind: "range",
+        blocks: match.elements,
+        startIndex: match.startIndex,
+        endIndex: match.endIndex,
+      },
+      parsed.parsed,
+    );
+    if (!lowered.ok) return lowered;
+    edits.push(...lowered.edits);
+  }
+  return { ok: true, edits };
+}
+
+function parseReplacementRange(
+  ctx: ConcreteResolveContext,
+  source: string,
+): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
+  if (source.length === 0) return { ok: true, parsed: { blocks: [] } };
+  try {
+    return { ok: true, parsed: ctx.codec.parse(source) };
+  } catch (cause) {
+    if (cause instanceof CodecParseError) {
+      return error("invalid_write", cause.message, { line: cause.line, column: cause.column });
+    }
+    return error("invalid_write", cause instanceof Error ? cause.message : String(cause));
+  }
 }
 
 function replaceScope(

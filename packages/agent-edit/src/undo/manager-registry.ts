@@ -215,14 +215,19 @@ export class UndoManagerRegistry {
     }
 
     setMutationClientId(entry.doc, address.mutationClientId);
-    entry.undoManager.stopCapturing();
-    entry.currentDeleteFilterStackItem = stackItem;
-    let popped: UndoStackItemLike | null;
-    try {
-      popped = entry.undoManager.undo();
-    } finally {
-      entry.currentDeleteFilterStackItem = null;
+    let popped: UndoStackItemLike | null = null;
+    let current = entry.undoManager.undoStack.at(-1) ?? null;
+    while (current && stackMetadata(current).turnId === actualTurnId) {
       entry.undoManager.stopCapturing();
+      entry.currentDeleteFilterStackItem = current;
+      try {
+        popped = entry.undoManager.undo();
+      } finally {
+        entry.currentDeleteFilterStackItem = null;
+        entry.undoManager.stopCapturing();
+      }
+      if (!popped) break;
+      current = entry.undoManager.undoStack.at(-1) ?? null;
     }
     if (!popped) return { ok: false, status: "no_undo", docId, threadId };
     entry.lastUsedAt = this.now();
@@ -243,15 +248,21 @@ export class UndoManagerRegistry {
     const stackItem = entry.undoManager.redoStack.at(-1) ?? null;
     if (!stackItem) return { ok: false, status: "no_redo", docId, threadId };
 
+    const actualTurnId = stackMetadata(stackItem).turnId;
     setMutationClientId(entry.doc, options.mutationClientId);
-    entry.undoManager.stopCapturing();
-    entry.currentDeleteFilterStackItem = stackItem;
-    let popped: UndoStackItemLike | null;
-    try {
-      popped = entry.undoManager.redo();
-    } finally {
-      entry.currentDeleteFilterStackItem = null;
+    let popped: UndoStackItemLike | null = null;
+    let current = entry.undoManager.redoStack.at(-1) ?? null;
+    while (current && stackMetadata(current).turnId === actualTurnId) {
       entry.undoManager.stopCapturing();
+      entry.currentDeleteFilterStackItem = current;
+      try {
+        popped = entry.undoManager.redo();
+      } finally {
+        entry.currentDeleteFilterStackItem = null;
+        entry.undoManager.stopCapturing();
+      }
+      if (!popped) break;
+      current = entry.undoManager.redoStack.at(-1) ?? null;
     }
     if (!popped) return { ok: false, status: "no_redo", docId, threadId };
     entry.lastUsedAt = this.now();
@@ -260,7 +271,7 @@ export class UndoManagerRegistry {
       status: "redone",
       docId,
       threadId,
-      turnId: stackMetadata(popped).turnId,
+      turnId: actualTurnId,
       undoDepth: entry.undoManager.undoStack.length,
       redoDepth: entry.undoManager.redoStack.length,
     };

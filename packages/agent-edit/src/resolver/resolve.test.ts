@@ -61,6 +61,43 @@ describe("resolveWrite", () => {
     expect(edits[1].kind === "text" ? edits[1].element : null).toBe(blocks[1]);
   });
 
+  it("decomposes two-block find replacements into boundary text plus structural delete", () => {
+    const doc = createDoc("Alpha starts\n\nends Omega");
+    const [alpha, omega] = model.getBlocks(doc);
+
+    const edits = expectOk(
+      resolve(doc, { command: "replace", content: "middle", find: "starts\n\nends" }),
+    );
+
+    expect(edits.map((edit) => edit.kind)).toEqual(["text", "delete"]);
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      element: alpha,
+      span: { start: 0, end: "Alpha starts".length },
+      newText: "Alpha middle Omega",
+    });
+    expect(edits[1].kind === "delete" ? edits[1].element : null).toBe(omega);
+  });
+
+  it("decomposes three-block find deletion into boundary text plus middle deletes", () => {
+    const doc = createDoc("Before X\n\nMiddle\n\nY After");
+    const [before, middle, after] = model.getBlocks(doc);
+
+    const edits = expectOk(
+      resolve(doc, { command: "replace", content: "", find: "X\n\nMiddle\n\nY" }),
+    );
+
+    expect(edits.map((edit) => edit.kind)).toEqual(["text", "delete", "delete"]);
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      element: before,
+      span: { start: 0, end: "Before X".length },
+      newText: "Before  After",
+    });
+    expect(edits[1].kind === "delete" ? edits[1].element : null).toBe(middle);
+    expect(edits[2].kind === "delete" ? edits[2].element : null).toBe(after);
+  });
+
   it("matches find text with NFC normalization while preserving original spans", () => {
     const doc = createDoc("cafe\u0301 sword");
 
