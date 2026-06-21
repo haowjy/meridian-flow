@@ -21,7 +21,8 @@
       "!.pi",
       "!.opencode",
       "!.cursor",
-      "!**/.context"
+      "!**/.context",
+      "!packages/agent-edit/demo/**/*.html"
     ]
   },
   "formatter": {
