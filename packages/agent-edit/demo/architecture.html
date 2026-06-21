@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@meridian/agent-edit — As-Built Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import { codeToHtml } from 'https://esm.sh/shiki@1';
+  window.codeToHtml = codeToHtml;
+  window.dispatchEvent(new Event('shiki-ready'));
+</script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface-2: #f9fafb;
+    --border: #e1e4e8;
+    --border-strong: #cbd2d9;
+    --text: #1f2328;
+    --text-muted: #57606a;
+    --text-soft: #7b8794;
+    --accent: #2b5d9b;
+    --accent-soft: #e3edf9;
+    --tier1: #1f7a45;
+    --tier2: #b46a00;
+    --tier3: #8b2a55;
+    --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1419;
+      --surface: #161b22;
+      --surface-2: #1c2128;
+      --border: #30363d;
+      --border-strong: #444c56;
+      --text: #e6edf3;
+      --text-muted: #9ba8b5;
+      --text-soft: #768390;
+      --accent: #58a6ff;
+      --accent-soft: #1d2a3d;
+      --tier1: #57b06f;
+      --tier2: #e0a256;
+      --tier3: #d472a0;
+      --warn: #e0a256;
+    }
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  .stage-wrap {
+    background: var(--surface);
+    background-image:
+      radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--border) 60%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    touch-action: none;
+    user-select: none;
+    min-height: 540px;
+  }
+  .stage {
+    transform-origin: 0 0;
+    transition: transform 60ms ease-out;
+    padding: 32px;
+    display: inline-block;
+    will-change: transform;
+  }
+  .mermaid svg { max-width: none !important; height: auto !important; }
+  .mermaid .node rect, .mermaid .node polygon, .mermaid .node circle, .mermaid .node ellipse,
+  .mermaid .node path {
+    cursor: pointer;
+  }
+  /* Highlight load-bearing nodes (write-entry, ResolvedEdit) without solid fills so dark mode reads */
+  .mermaid .node.flagged rect,
+  .mermaid .node.flagged polygon,
+  .mermaid .node.flagged path {
+    stroke: var(--warn) !important;
+    stroke-width: 2.5px !important;
+  }
+  #panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    height: 72vh;
+    max-height: 72vh;
+    background: var(--surface);
+    border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -16px 40px -16px rgba(15, 23, 42, 0.18);
+    transform: translateY(100%);
+    transition: transform 240ms cubic-bezier(.2,.7,.2,1);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #panel.open { transform: translateY(0); }
+  @media (min-width: 1024px) {
+    #panel {
+      inset: 0 0 0 auto;
+      width: 38rem;
+      max-width: 50vw;
+      height: 100vh;
+      max-height: 100vh;
+      transform: translateX(100%);
+      border-top: none;
+      border-left: 1px solid var(--border-strong);
+      box-shadow: -16px 0 40px -16px rgba(15, 23, 42, 0.18);
+    }
+    #panel.open { transform: translateX(0); }
+  }
+  #panel header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  #panel .body {
+    overflow: auto;
+    padding: 16px 18px 32px;
+    flex: 1;
+  }
+  #panel pre {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+  }
+  .pill.tier1 { color: var(--tier1); border-color: color-mix(in oklab, var(--tier1) 40%, var(--border-strong)); }
+  .pill.tier2 { color: var(--tier2); border-color: color-mix(in oklab, var(--tier2) 40%, var(--border-strong)); }
+  .pill.tier3 { color: var(--tier3); border-color: color-mix(in oklab, var(--tier3) 40%, var(--border-strong)); }
+  .pill.warn  { color: var(--warn);  border-color: color-mix(in oklab, var(--warn) 40%, var(--border-strong)); }
+  .src-link {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+  .src-link:hover { border-bottom-color: var(--accent); }
+  .tab-btn {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  }
+  .legend-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-right: 14px;
+  }
+  .legend-key .swatch {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1.5px solid var(--text-muted);
+  }
+  .legend-key .swatch.flagged { border-color: var(--warn); border-width: 2.5px; }
+  details > summary { cursor: pointer; user-select: none; }
+  .v1-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .v1-card h4 { font-size: 13.5px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
+  .v1-card p  { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+  .v1-card code { font-size: 11.5px; }
+</style>
+</head>
+<body class="min-h-screen">
+  <header class="max-w-screen-2xl mx-auto px-4 sm:px-6 pt-6 pb-3">
+    <div class="flex flex-wrap items-baseline gap-3">
+      <h1 class="text-xl sm:text-2xl font-semibold tracking-tight">
+        <code class="mono text-[0.95em]">@meridian/agent-edit</code>
+        <span class="text-[var(--text-muted)] font-normal">— as-built architecture</span>
+      </h1>
+      <span class="pill warn">branch <code>h/agent-edit-tools</code></span>
+    </div>
+    <p class="text-sm text-[var(--text-muted)] mt-2 max-w-3xl">
+      Interactive map of the shipped code under <code>packages/agent-edit/src/</code>. Click any
+      node for its purpose, contract, and a real snippet linked back to the source file.
+      The package is logic plus port interfaces only; transports, storage, and editor UI live
+      in deployment adapters.
+    </p>
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <button class="tab-btn active" data-diagram="overview">Overview</button>
+      <button class="tab-btn" data-diagram="write">write() pipeline</button>
+      <button class="tab-btn" data-diagram="undo">Undo: hot + cold</button>
+      <button class="tab-btn" data-diagram="v1">v1 simplifications</button>
+    </div>
+    <div class="mt-3 text-xs">
+      <span class="legend-key"><span class="swatch"></span>module</span>
+      <span class="legend-key"><span class="swatch flagged"></span>load-bearing seam</span>
+      <span class="legend-key">tap a node for detail</span>
+    </div>
+  </header>
+
+  <main class="max-w-screen-2xl mx-auto px-4 sm:px-6 pb-6">
+    <section id="stage-overview" class="stage-wrap" data-stage>
+      <div class="stage">
+        <div class="mermaid">
+flowchart TB
+  classDef seam stroke-width:2.5px,stroke:#b45309
+  subgraph host ["Host / deployment adapters (NOT in the package)"]
+    direction LR
+    journal_adapter["Postgres / SQLite journal\nimpl UpdateJournal"]
+    coord_adapter["Hocuspocus / mutex\nimpl DocumentCoordinator"]
+    actor_adapter["MCP / WS session map\nimpl ActorSessionStore"]
+  end
+  subgraph pkg ["@meridian/agent-edit — pure logic + ports"]
+    direction TB
+    entry["createAgentEditCore<br/>write • recover • compact"]:::seam
+    ports["ports/<br/>UpdateJournal, DocumentCoordinator, ActorSessionStore"]
+    tool["tool/write.ts<br/>6 commands • plain-text replies"]:::seam
+    codec["codec/<br/>BlockCodec + MarkCodec on unified/remark"]
+    model["model/y-prosemirror<br/>blocks, fragments, Y.Doc shape"]
+    resolver["resolver/<br/>find • scope • block-hash → ResolvedEdit"]:::seam
+    apply["apply/tiers<br/>3-tier preflight + transact"]
+    undo["undo/<br/>hot UndoManager + cold reconstruction"]
+  end
+  host -. config-driven DI .-> entry
+  entry --> tool
+  tool --> resolver
+  tool --> codec
+  resolver --> apply
+  apply --> model
+  tool --> undo
+  tool --> ports
+  ports --> journal_adapter
+  ports --> coord_adapter
+  ports --> actor_adapter
+
+  click entry showDetail "entry"
+  click ports showDetail "ports"
+  click tool showDetail "tool"
+  click codec showDetail "codec"
+  click model showDetail "model"
+  click resolver showDetail "resolver"
+  click apply showDetail "apply"
+  click undo showDetail "undo"
+        </div>
+      </div>
+    </section>
+
+    <section id="stage-write" class="stage-wrap hidden" data-stage>
+      <div class="stage">
+        <div class="mermaid">
+flowchart TB
+  classDef seam stroke-width:2.5px,stroke:#b45309
+  caller(["LLM tool call<br/>write({ command, file, ... })"]):::seam
+  dispatch["write.ts dispatch<br/>view | create | insert | replace | undo | redo"]
+  session["resolve ActorSession<br/>via ActorSessionStore"]
+  coord["coordinator.withDocument(docId)<br/>exclusive Y.Doc"]
+  beginTurn["registry.beginTurn(...)<br/>stopCapturing — split stack item"]
+  resolve["resolveWrite(ctx, params)<br/>find / scope / block-hash"]:::seam
+  edits[["ResolvedEdit[]<br/>kind = text | insert | delete"]]:::seam
+  apply["applyEdits()<br/>preflight all → doc.transact()"]
+  journal["journal.append(docId, update, meta)"]
+  echo["computeEcho()<br/>+ concurrent-edit detection"]
+  reply(["plain-text WriteResult<br/>status line + echo / view"])
+  endTurn["registry.endTurn(...)<br/>stopCapturing — next turn = new item"]
+
+  caller --> dispatch --> session --> coord --> beginTurn --> resolve --> edits --> apply --> journal --> echo --> reply
+  apply -. capture under agent origin .-> endTurn
+
+  click caller showDetail "writeEntry"
+  click dispatch showDetail "tool"
+  click session showDetail "actorSession"
+  click coord showDetail "coordPort"
+  click beginTurn showDetail "beginTurn"
+  click resolve showDetail "resolver"
+  click edits showDetail "resolvedEdit"
+  click apply showDetail "tiers"
+  click journal showDetail "journalAppend"
+  click echo showDetail "echo"
+  click reply showDetail "writeResult"
+  click endTurn showDetail "endTurn"
+        </div>
+      </div>
+    </section>
+
+    <section id="stage-undo" class="stage-wrap hidden" data-stage>
+      <div class="stage">
+        <div class="mermaid">
+flowchart LR
+  classDef seam stroke-width:2.5px,stroke:#b45309
+  subgraph hot ["HOT — live, in-memory"]
+    direction TB
+    reg["UndoManagerRegistry<br/>keyed (docId, threadId)"]
+    origin["stable Symbol origin<br/>per (doc, thread)"]
+    um["Y.UndoManager<br/>captureTimeout: Infinity"]
+    stack["stack items<br/>turnId / threadId / docId meta"]
+    delFilter["deleteFilter<br/>preserve human edits in agent containers"]
+    reg --> origin --> um --> stack
+    um --> delFilter
+  end
+  subgraph cold ["COLD — journal reconstruction (authoritative)"]
+    direction TB
+    journal[(UpdateJournal<br/>checkpoint + ordered updates)]
+    group["groupUpdatesByTurn()<br/>per-turn token Symbols"]
+    rebuild["reconstructUndoUpdate()<br/>replay → fresh UM → undo → bytes"]
+    persist["journal.persistReversal()<br/>atomic: undo update + ReversalRecord"]
+    journal --> group --> rebuild --> persist
+  end
+  parity{{"INVARIANT<br/>hot/cold byte-identical undo for same turn"}}:::seam
+  hot -. live cache .- parity
+  cold -. authoritative .- parity
+
+  click reg showDetail "registry"
+  click origin showDetail "originSymbol"
+  click um showDetail "yUndoManager"
+  click stack showDetail "stackMeta"
+  click delFilter showDetail "deleteFilter"
+  click journal showDetail "journalPort"
+  click group showDetail "groupTurns"
+  click rebuild showDetail "reconstruct"
+  click persist showDetail "persistReversal"
+  click parity showDetail "parity"
+        </div>
+      </div>
+    </section>
+
+    <section id="stage-v1" class="hidden" data-stage>
+      <div class="max-w-3xl mx-auto py-2">
+        <h2 class="text-base font-semibold mb-1">v1 simplifications</h2>
+        <p class="text-sm text-[var(--text-muted)] mb-4">
+          Deliberately deferred — the seams are clean for these to land later without
+          rewrites. Each links to where the deferral is documented in code.
+        </p>
+        <div class="v1-card">
+          <h4>Tool versioning <span class="pill warn">GH #68</span></h4>
+          <p>No version pinning. Pure resolvers and a stable <code>ResolvedEdit</code> keep the
+          apply layer version-agnostic until a v2 exists.</p>
+        </div>
+        <div class="v1-card">
+          <h4>Durable cold-redo <code>ReversalRecord</code> lookup</h4>
+          <p>Package computes the undo update; the server adapter (Step 9) owns durable storage
+          and retrieval. <code>persistReversal()</code> is the port seam.</p>
+        </div>
+        <div class="v1-card">
+          <h4>View auto-budget / truncation</h4>
+          <p><code>view</code> returns full content. Thread-level context management is not yet
+          built; expect an <code>auto</code>/<code>outline</code> heuristic later.</p>
+        </div>
+        <div class="v1-card">
+          <h4>Generic concurrent attribution</h4>
+          <p><code>ConcurrentEditInfo</code> reports <code>human</code> vs <code>agent</code>
+          buckets only. Individual actor names are a server-adapter concern.</p>
+        </div>
+        <div class="v1-card">
+          <h4>Create-on-empty-doc</h4>
+          <p>The <code>DocumentCoordinator</code> port has no <code>create</code> method.
+          <code>create</code> builds content into the local Y.Doc directly.</p>
+        </div>
+        <div class="v1-card">
+          <h4>Multi-document turn reversal</h4>
+          <p>Each document's undo runs independently — no turn-level coordination across
+          documents yet.</p>
+        </div>
+        <div class="v1-card">
+          <h4>Cross-block <code>find</code> — actually supported</h4>
+          <p>Strings containing <code>\n\n</code> are lowered structurally in the resolver and
+          routed to Tier 2 + Tier 3.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside id="panel" role="dialog" aria-modal="false" aria-labelledby="panel-title">
+    <header>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h2 id="panel-title" class="text-base font-semibold truncate"></h2>
+          <span id="panel-pill" class="pill"></span>
+        </div>
+        <p id="panel-files" class="text-xs text-[var(--text-muted)] mt-1 break-all"></p>
+      </div>
+      <button id="panel-close" class="px-3 py-1 rounded-md border border-[var(--border)] text-sm hover:bg-[var(--surface-2)]" aria-label="Close detail">Close</button>
+    </header>
+    <div class="body">
+      <p id="panel-desc" class="text-sm leading-relaxed text-[var(--text)] mb-3"></p>
+      <div id="panel-extra" class="text-xs text-[var(--text-muted)] mb-3"></div>
+      <div id="panel-code"></div>
+    </div>
+  </aside>
+
+<script>
+  const GH = "https://github.com/haowjy/meridian-flow/blob/h/agent-edit-tools/packages/agent-edit";
+
+  function srcLink(path, line) {
+    const anchor = line ? `#L${line}` : "";
+    const label = line ? `${path}:${line}` : path;
+    return `<a class="src-link" href="${GH}/${path}${anchor}" target="_blank" rel="noopener">${label}</a>`;
+  }
+
+  const DETAIL = {
+    // --- Overview nodes -----------------------------------------------------
+    entry: {
+      title: "createAgentEditCore(options)",
+      pill: "entry point",
+      desc: "Composition root for the package. Wires journal + coordinator + codec + model into the three public methods every deployment uses: write() (the only mutation entry), recover() (replay missing updates on startup), and compact() (fold old updates into a checkpoint on first load).",
+      files: [["src/index.ts", 14]],
+      lang: "typescript",
+      code: `export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
+  const tool = createWriteTool(options);
+  return {
+    write: tool.write,
+    recover: tool.recover,
+    compact: (docId, before) =>
+      compactOnLoad(options.journal, { docId, before, registry: tool.registry }),
+  };
+}`,
+    },
+    ports: {
+      title: "ports/ — the deployment seam",
+      pill: "port interfaces",
+      desc: "Four port interfaces plus shared types. UpdateJournal is the one hard port every deployment MUST implement (durable append, checkpoint, atomic persistReversal). DocumentCoordinator owns exclusive Y.Doc access. ActorSessionStore is optional — falls back to an in-memory map. types.ts carries UpdateOrigin, UpdateMeta, PersistedUpdate, ReversalRecord, ReversalStatus.",
+      files: [
+        ["src/ports/update-journal.ts"],
+        ["src/ports/document-coordinator.ts"],
+        ["src/ports/actor-session-store.ts"],
+        ["src/ports/types.ts"],
+      ],
+      lang: "typescript",
+      code: `export interface UpdateJournal {
+  append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+  read(docId: string, opts?: { since?: number; until?: number }): Promise<JournalSnapshot>;
+  checkpoint(docId: string, state: Uint8Array): Promise<void>;
+  compact(docId: string, before: Date): Promise<CompactionResult>;
+  // Atomic: undo bytes + reversal record land together or neither is visible.
+  persistReversal(docId: string, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;
+}`,
+    },
+    tool: {
+      title: "tool/write.ts — write(command=…)",
+      pill: "only mutation entry",
+      desc: "Single public mutation surface. Six commands: create | view | insert | replace | undo | redo. Returns plain-text strings to the LLM (status line, echo, concurrent edits, or view content). WriteContext carries session/threadId/turnId — hidden from the LLM, supplied by the host.",
+      files: [["src/tool/write.ts", 152], ["src/tool/types.ts", 4]],
+      lang: "typescript",
+      code: `export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
+
+export type WriteErrorStatus =
+  | "not_found" | "ambiguous_match" | "invalid_write"
+  | "document_not_found" | "partial_failure" | "internal_error";
+
+// WriteResult is just plain text. The LLM never parses JSON.
+export type WriteResult = string;`,
+    },
+    codec: {
+      title: "codec/ — markdown/MDX ⇄ PM nodes",
+      pill: "format adapter",
+      desc: "BlockCodec/MarkCodec registration over unified+remark. createCodec validates schema coverage and pins remark-stringify options for canonical round-trip output. Two presets ship: markdown (9 blocks, 4 marks) and mdx (adds figure / jsx_leaf / jsx_container, requires full schema coverage). serializeBlock prefixes hash for echo/view.",
+      files: [
+        ["src/codec/create-codec.ts", 47],
+        ["src/codec/types.ts"],
+        ["src/codec/presets/markdown.ts"],
+        ["src/codec/presets/mdx.ts"],
+      ],
+      lang: "typescript",
+      code: `export function markdownCodec(options: CodecPresetOptions = {}) {
+  return createCodec({
+    ...options,
+    blocks: markdownBlockCodecs, // paragraph, heading, code_block, lists, blockquote, image, hr
+    marks: markdownMarkCodecs,   // strong, em, code, link
+    requiredBlockNames: markdownRequiredBlockNames,
+  });
+}
+
+export function mdxCodec(options: CodecPresetOptions = {}) {
+  return createCodec({
+    ...options,
+    blocks: mdxBlockCodecs, // figure + jsx_container + jsx_leaf + markdown blocks
+    marks: markdownMarkCodecs,
+    mdx: true,
+    remarkPlugins: [remarkMdx],
+    requireSchemaBlockCoverage: true,
+  });
+}`,
+    },
+    model: {
+      title: "model/y-prosemirror — DocumentModel impl",
+      pill: "Y.Doc shape",
+      desc: "What a 'block' means in Yjs. v1 ships y-prosemirror only: top-level Y.XmlElement children of the shared XmlFragment. Carries the 3-tier mutation primitives (applyTextEdit Tier 1, applyBlockDiff/insertBlocks/deleteBlock Tier 2/3). Last-block edge case: deleting the only remaining block clears text instead of structurally deleting — preserves ProseMirror's doc(block+) invariant.",
+      files: [["src/model/y-prosemirror.ts", 28], ["src/model/types.ts"]],
+      lang: "typescript",
+      code: `export function yProsemirrorModel(schema = buildDocumentSchema()): YProsemirrorDocumentModel {
+  return {
+    schema,
+    getBlocks(doc)           { return getTopLevelXmlBlocks(doc); },
+    getBlockId(block)        { return getBlockHash(block); }, // CRDT-item-id derived
+    getText(block)           { return collectText(block); },
+    applyTextEdit(_d, b, span, newText) { applyTextEdit(b, span, newText); }, // Tier 1
+    insertBlocks(doc, after, parsed)    { return insertBlocks(doc, after, parsed); }, // Tier 3
+    deleteBlock(doc, block)             { deleteBlock(doc, block); },                 // Tier 3
+    applyBlockDiff(doc, block, repl)    { applyBlockDiff(doc, block, repl); },        // Tier 2
+    toProsemirrorBlock(doc, block)      { return toProsemirrorBlock(doc, block, schema); },
+  };
+}`,
+    },
+    resolver: {
+      title: "resolver/ — params → ResolvedEdit[]",
+      pill: "load-bearing seam",
+      desc: "Pure functions that turn a write command into the stable ResolvedEdit discriminated union (text | insert | delete). Composed of: block-hash (FNV-1a 64 over CRDT clientID+clock, stable under edits), find (exact match + NFC, single-block and cross-block), scope (block range, section by heading slug, around radius). Returns a typed error code, never throws on resolution failure.",
+      files: [
+        ["src/resolver/resolve.ts", 59],
+        ["src/resolver/block-hash.ts", 45],
+        ["src/resolver/find.ts"],
+        ["src/resolver/scope.ts"],
+      ],
+      lang: "typescript",
+      code: `export function resolveWrite(
+  ctx: ResolveWriteContext,
+  params: ResolveWriteParams,
+): ResolveWriteResult {
+  if (!ctx.doc) return error("document_not_found", \`File not found: \${params.file}\`);
+  if (params.content === undefined) return error("invalid_write", "content is required");
+  const normalized = normalizeParams(params);
+  const contentCheck = validateContent({ ...ctx, doc: ctx.doc }, normalized);
+  if (!contentCheck.ok) return contentCheck;
+  switch (normalized.command) {
+    case "insert":  return resolveInsert (concreteCtx, normalized, contentCheck.parsed);
+    case "replace": return resolveReplace(concreteCtx, normalized, contentCheck.parsed);
+  }
+}`,
+    },
+    apply: {
+      title: "apply/tiers.ts — 3-tier preflight + transact",
+      pill: "preflight discipline",
+      desc: "Two phases. Phase 1 (read-only): validate every reference is still live, parse content, compute offsets, decide tier. Phase 2 (inside doc.transact()): apply pre-computed operations. Tier 1 = Y.XmlText char-level delete+insert (same mark context). Tier 2 = per-block updateYFragment (mark boundary or formatting change). Tier 3 = fragment-level insert/delete. validateNoSameTurnTombstones guards against same-turn references to deleted blocks.",
+      files: [["src/apply/tiers.ts", 73], ["src/apply/types.ts"]],
+      lang: "typescript",
+      code: `export function applyEdits(
+  doc: Y.Doc, model, codec,
+  edits: ResolvedEdit | readonly ResolvedEdit[],
+  origin: ApplyTransactionOrigin,
+  options: ApplyEditsOptions = {},
+): ApplyResult {
+  // ... preflight every edit, then:
+  for (let index = 0; index < editList.length; index += 1) {
+    const planned = preflightEdit(doc, model, codec, editList[index]); // read-only
+    if (!planned.ok) return applyError(planned.code, planned.message, planned.details, { committedEdits });
+    const group = collectTierOneGroup(...);
+    doc.transact(() => executePlans(doc, model, group.plans, accumulator), origin);
+    committedEdits += group.plans.length;
+  }
+  // computeEcho() + applyConcurrentUpdates() → ApplyResult
+}`,
+    },
+    undo: {
+      title: "undo/ — hot + cold paths",
+      pill: "hot/cold parity",
+      desc: "manager-registry: live Y.UndoManager per (docId, threadId), stable Symbol origin per pair, captureTimeout: Infinity, explicit stopCapturing at turn boundaries. reconstruction: replay journal under fresh per-turn Symbol tokens, build a fresh UndoManager, run undo(), extract bytes. compaction: fold old updates older than cutoff into a checkpoint via journal.compact. delete-filter: preserve human-owned descendants when undoing an agent-created container.",
+      files: [
+        ["src/undo/manager-registry.ts", 99],
+        ["src/undo/reconstruction.ts"],
+        ["src/undo/compaction.ts"],
+        ["src/undo/delete-filter.ts"],
+      ],
+      lang: "typescript",
+      code: `entry.undoManager = new Y.UndoManager(fragment, {
+  trackedOrigins: new Set([origin]),       // the stable per-thread Symbol
+  captureTimeout: Number.POSITIVE_INFINITY, // no auto-merge — explicit split only
+  deleteFilter: (item) => shouldDeleteUndoItem(item, entry.currentDeleteFilterStackItem),
+});`,
+    },
+
+    // --- write() pipeline nodes --------------------------------------------
+    writeEntry: {
+      title: "write({ command, file, ... })",
+      pill: "LLM-facing surface",
+      desc: "The ONLY public mutation entry. Plain-text response (status line + echo / view / concurrent edits). All low-level mutators (applyTextEdit, insertBlocks, deleteBlock) stay private behind this seam.",
+      files: [["src/tool/types.ts", 4], ["src/tool/write.ts", 152]],
+      lang: "typescript",
+      code: `export type WriteFunction =
+  (command: WriteCommand, context?: WriteContext) => Promise<WriteResult>;
+
+// WriteCommand = CreateCommand | ViewCommand | InsertCommand
+//              | ReplaceCommand | UndoCommand | RedoCommand`,
+    },
+    actorSession: {
+      title: "ActorSession resolution",
+      pill: "stable identity",
+      desc: "WriteContext can carry session (direct), externalId (resolved through ActorSessionStore), or sessionId/threadId (server-local convenience). Without an ActorSessionStore, the tool falls back to defaultSessionId/defaultThreadId. The package operates only on ActorSession internally; transport bindings live in adapters.",
+      files: [["src/ports/actor-session-store.ts"], ["src/tool/write.ts", 47]],
+      lang: "typescript",
+      code: `export interface ActorSession {
+  id: string;
+  threadId: string;
+  documents: Map<string, ActorSessionDocumentState>;
+}
+
+export interface WriteContext {
+  session?: ActorSession;
+  externalId?: string;
+  sessionId?: string;
+  threadId?: string;
+  turnId?: string;
+}`,
+    },
+    coordPort: {
+      title: "coordinator.withDocument(docId, fn)",
+      pill: "exclusive Y.Doc",
+      desc: "Serializes concurrent callers for the same docId. Different documents run concurrently. DocumentNotFoundError → write returns document_not_found; other rejections are runtime failures and surface as internal_error.",
+      files: [["src/ports/document-coordinator.ts", 20]],
+      lang: "typescript",
+      code: `export interface DocumentCoordinator {
+  withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
+  // Idempotent: replay persisted-but-unapplied updates on startup or recovery.
+  recover(docId: string): Promise<void>;
+}`,
+    },
+    beginTurn: {
+      title: "registry.beginTurn(doc, thread, turn)",
+      pill: "stack-item split",
+      desc: "Calls stopCapturing() on the live UndoManager so the next Yjs ops form a NEW stack item under this turn. Without this explicit split, all turns merge into one (captureTimeout is Infinity).",
+      files: [["src/undo/manager-registry.ts", 169]],
+      lang: "typescript",
+      code: `beginTurn(docId, threadId, doc, turnId): LiveThreadUndoManager {
+  const entry = this.requireLiveEntry(docId, threadId, doc);
+  if (entry.activeTurnId && entry.activeTurnId !== turnId) {
+    throw new Error(\`Cannot begin turn \${turnId}; turn \${entry.activeTurnId} is still active\`);
+  }
+  entry.activeTurnId = turnId;
+  entry.undoManager.stopCapturing();   // <-- turn boundary
+  return publicEntry(entry);
+}`,
+    },
+    endTurn: {
+      title: "registry.endTurn(doc, thread, turn)",
+      pill: "stack-item split",
+      desc: "Ends the active turn and calls stopCapturing() so the NEXT turn lands in its own stack item. Each write() call is its own Yjs transaction; undoing a turn reverses ALL of that turn's writes together (grouped by turnId in stack-item meta).",
+      files: [["src/undo/manager-registry.ts", 183]],
+      lang: "typescript",
+      code: `endTurn(docId, threadId, turnId?): LiveThreadUndoState {
+  const entry = this.entries.get(registryKey(docId, threadId));
+  if (turnId && entry.activeTurnId && entry.activeTurnId !== turnId) {
+    throw new Error(\`Cannot end turn \${turnId}; active turn is \${entry.activeTurnId}\`);
+  }
+  entry.undoManager.stopCapturing();   // <-- next turn = next stack item
+  entry.activeTurnId = undefined;
+  return stateForEntry(entry);
+}`,
+    },
+    resolvedEdit: {
+      title: "ResolvedEdit — the stable apply seam",
+      pill: "load-bearing seam",
+      desc: "Discriminated union the resolver emits and the apply layer consumes. Carries live Y.XmlElement references — must NEVER escape the call that created it or cross process/doc boundaries. This shape is what makes the package version-agnostic above the resolver.",
+      files: [["src/apply/types.ts", 9]],
+      lang: "typescript",
+      code: `export type ResolvedEdit = { documentId: string; file: string } & (
+  | { kind: "text";   element: Y.XmlElement; span: ResolvedSpan; newText: string }
+  | { kind: "insert"; after?: Y.XmlElement;  newText: string }
+  | { kind: "delete"; element: Y.XmlElement }
+);`,
+    },
+    tiers: {
+      title: "applyEdits() — 3-tier path",
+      pill: "preflight before mutate",
+      desc: "Phase 1 (read-only): preflight every edit, parse content, decide Tier 1/2/3, group adjacent Tier 1 edits on the same block. Phase 2: doc.transact(() => executePlans(...), origin). Tier 1 reuses Y.XmlText runs; Tier 2 uses updateYFragment; Tier 3 inserts/deletes top-level Y.XmlElement children.",
+      files: [["src/apply/tiers.ts", 73], ["src/apply/types.ts", 38]],
+      lang: "typescript",
+      code: `type PlannedEdit =
+  | { kind: "text";   tier: 1; edit; span: Span; blockId: string }        // Y.XmlText ops
+  | { kind: "text";   tier: 2; edit; replacement: PMNode; blockId: string } // updateYFragment
+  | { kind: "insert"; tier: 3; edit; parsed: ParsedContent }
+  | { kind: "delete"; tier: 3; edit; blockId: string; removesBlock: boolean };`,
+    },
+    journalAppend: {
+      title: "journal.append(docId, update, meta)",
+      pill: "durable append",
+      desc: "Monotonic per-document seq. meta.origin is serialized (\\\"agent:<turnId>\\\" | \\\"human:<userId>\\\" | \\\"system\\\"). meta.actorTurnId groups updates into undo units when present. Adapter rejects if meta.seq doesn't match the next expected sequence.",
+      files: [["src/ports/update-journal.ts", 7], ["src/ports/types.ts", 11]],
+      lang: "typescript",
+      code: `export interface UpdateMeta {
+  origin: string;          // "agent:<turnId>" | "human:<userId>" | "system"
+  actorTurnId?: string;    // groups updates into undo units when present
+  seq: number;             // monotonic per document
+}`,
+    },
+    echo: {
+      title: "computeEcho() + concurrent detection",
+      pill: "post-merge reporting",
+      desc: "snapshotBlocks captures hash + serialized body before and after. computeEcho diffs them into ApplyEchoHunks (suppressed | truncated | full). applyConcurrentUpdates merges other actors' resync updates and reports human vs agent buckets; collapses when too many (default 5).",
+      files: [["src/apply/echo.ts", 42], ["src/apply/echo.ts", 124]],
+      lang: "typescript",
+      code: `export interface ApplyEchoHunk {
+  mode: "suppressed" | "truncated" | "full";
+  blocks: string[];
+}
+
+export interface ConcurrentEditInfo {
+  human: string[];
+  agent: string[];
+  collapsed?: boolean;
+  reviewCommand?: string;
+}`,
+    },
+    writeResult: {
+      title: "Plain-text WriteResult",
+      pill: "no JSON to the LLM",
+      desc: "Tool results are strings the LLM reads directly: a status line, the echo of changed blocks (with hash prefixes from serializeBlock), concurrent-edit notices, or view content. WriteStatus = success | <error> | undo/redo outcome.",
+      files: [["src/tool/types.ts", 95]],
+      lang: "typescript",
+      code: `export type UndoRedoOutcome =
+  | "reversed" | "reconciled" | "partial"
+  | "nothing_to_undo" | "nothing_to_redo" | "expired";
+
+export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+
+// Tool results are plain text strings.
+export type WriteResult = string;`,
+    },
+
+    // --- Undo diagram nodes ------------------------------------------------
+    registry: {
+      title: "UndoManagerRegistry",
+      pill: "per (doc, thread)",
+      desc: "Live keyed registry. getThreadOrigin returns a stable Symbol identity even after evicting the UM; getOrCreate (re)builds the UM bound to that origin when the next turn starts. evictIdle / evictThread / evictDocument cap memory.",
+      files: [["src/undo/manager-registry.ts", 104]],
+      lang: "typescript",
+      code: `export class UndoManagerRegistry {
+  private readonly origins = new Map<string, symbol>();
+  private readonly entries = new Map<string, LiveEntry>();
+  getThreadOrigin(docId, threadId): symbol { /* stable Symbol per (doc, thread) */ }
+  getOrCreate(docId, threadId, doc): LiveThreadUndoManager { /* binds UM to origin */ }
+  beginTurn(docId, threadId, doc, turnId): LiveThreadUndoManager { /* stopCapturing */ }
+  endTurn(docId, threadId, turnId?): LiveThreadUndoState   { /* stopCapturing */ }
+}`,
+    },
+    originSymbol: {
+      title: "Stable Symbol origin",
+      pill: "Y.UndoManager invariant",
+      desc: "The Yjs UndoManager tracks origins by object identity. A FRESH Symbol per turn would break tracking; the same Symbol per (doc, thread) means every turn from that thread is captured even after the UM is rebuilt.",
+      files: [["src/undo/manager-registry.ts", 112]],
+      lang: "typescript",
+      code: `getThreadOrigin(docId: string, threadId: string): symbol {
+  const key = registryKey(docId, threadId);
+  let origin = this.origins.get(key);
+  if (!origin) {
+    origin = Symbol(\`thread-\${threadId}\`); // same object across all turns
+    this.origins.set(key, origin);
+  }
+  return origin;
+}`,
+    },
+    yUndoManager: {
+      title: "Y.UndoManager — hot path",
+      pill: "captureTimeout: Infinity",
+      desc: "Bound to the per-thread Symbol via trackedOrigins. captureTimeout: Infinity disables Yjs's auto-merge; turn boundaries are made explicit by stopCapturing() in beginTurn/endTurn. deleteFilter protects user-owned descendants of agent-created containers.",
+      files: [["src/undo/manager-registry.ts", 167]],
+      lang: "typescript",
+      code: `entry.undoManager = new Y.UndoManager(fragment, {
+  trackedOrigins: new Set([origin]),
+  captureTimeout: Number.POSITIVE_INFINITY,
+  deleteFilter: (item) => shouldDeleteUndoItem(item, entry.currentDeleteFilterStackItem),
+});`,
+    },
+    stackMeta: {
+      title: "Stack-item turn metadata",
+      pill: "groups writes by turn",
+      desc: "Each Yjs stack item carries { docId, threadId, turnId } in meta. undoLatest pops every stack item whose turnId matches the top — that's how a single agent turn's many write() calls undo together.",
+      files: [["src/undo/manager-registry.ts", 218]],
+      lang: "typescript",
+      code: `let popped = null;
+let current = entry.undoManager.undoStack.at(-1) ?? null;
+while (current && stackMetadata(current).turnId === actualTurnId) {
+  entry.undoManager.stopCapturing();
+  entry.currentDeleteFilterStackItem = current;
+  popped = entry.undoManager.undo();
+  current = entry.undoManager.undoStack.at(-1) ?? null;
+}`,
+    },
+    deleteFilter: {
+      title: "deleteFilter — preserve human content",
+      pill: "human-in-agent-container",
+      desc: "Without this, Yjs would delete an agent-created XmlElement even when a human later typed inside it. The filter skips deleting container type-items that still own live content outside the stack item being undone; agent-owned text inside still deletes.",
+      files: [["src/undo/delete-filter.ts", 36]],
+      lang: "typescript",
+      code: `/**
+ * Yjs would otherwise delete an agent-created XmlElement even when a human later
+ * typed inside it. Skip deleting container type-items that now own live content
+ * outside the stack item being undone; the agent-owned text inside still deletes.
+ */
+export function shouldDeleteUndoItem(item, currentStackItem): boolean { /* ... */ }`,
+    },
+    journalPort: {
+      title: "UpdateJournal — the cold ground truth",
+      pill: "ordered + durable",
+      desc: "Read(checkpoint + updates by seq) drives reconstruction. compact() folds old updates; persistReversal() atomically writes the undo update bytes AND the ReversalRecord together — neither is visible to readers without the other.",
+      files: [["src/ports/update-journal.ts", 7]],
+      lang: "typescript",
+      code: `read(docId, opts?: { since?: number; until?: number }): Promise<JournalSnapshot>;
+checkpoint(docId, state: Uint8Array): Promise<void>;
+compact(docId, before: Date): Promise<CompactionResult>;
+persistReversal(docId, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;`,
+    },
+    groupTurns: {
+      title: "groupUpdatesByTurn()",
+      pill: "per-turn token Symbols",
+      desc: "Walks the journal in seq order and groups consecutive updates by actorTurnId. Each group gets its own fresh Symbol token in the reconstruction pass — that's how the cold path lets the new UndoManager isolate the target turn from everything before/after.",
+      files: [["src/undo/reconstruction.ts", 269]],
+      lang: "typescript",
+      code: `export function groupUpdatesByTurn(updates: readonly PersistedUpdate[]): TurnUpdateGroup[] {
+  // groups consecutive updates with the same meta.actorTurnId
+  // returns [{ turnId, updates, firstSeq, lastSeq }, ...]
+}`,
+    },
+    reconstruct: {
+      title: "reconstructUndoUpdate()",
+      pill: "authoritative",
+      desc: "Build a fresh Y.Doc, replay checkpoint + non-target updates under nonTargetOriginToken, replay target turn under targetOriginToken inside a fresh UndoManager that tracks only the target token, call undo(), encode the resulting update under undoClientId for byte parity with the hot path.",
+      files: [["src/undo/reconstruction.ts", 87]],
+      lang: "typescript",
+      code: `export function reconstructUndoUpdateFromSnapshot(...): UndoReconstructionResult {
+  // replay checkpoint + non-target updates under nonTargetOriginToken
+  // replay target turn under targetOriginToken inside a fresh UndoManager
+  // undo(), encode under undoClientId — byte-parity with the hot path
+}`,
+    },
+    persistReversal: {
+      title: "journal.persistReversal()",
+      pill: "atomic",
+      desc: "One transaction writes both the undo update bytes (so they survive journal compaction) and the ReversalRecord (status, threadId, turnId, undoUpdateSeq). Either both land or neither — readers never see one without the other.",
+      files: [["src/ports/update-journal.ts", 33], ["src/ports/types.ts", 64], ["src/tool/write.ts", 446]],
+      lang: "typescript",
+      code: `export interface ReversalRecord {
+  documentId: string;
+  turnId: string;
+  threadId: string;
+  status: ReversalStatus; // "active" | "reversed" | "reconciled" | "expired"
+  undoUpdateSeq: number;  // sequence of the persisted undo update
+  expiresAt?: Date;
+  reversedAt?: Date;
+  reversedByUserId?: string;
+}`,
+    },
+    parity: {
+      title: "INVARIANT — hot/cold byte parity",
+      pill: "load-bearing",
+      desc: "Both paths must produce byte-identical undo updates for the same turn sequence. Enforced by tests in undo.test.ts. Lifecycle: the hot UM is a performance cache; the journal + cold reconstruction is the authoritative model. The mutationClientId knob lets either path mint Items under the same fresh Yjs clientID so the bytes match.",
+      files: [["src/undo/manager-registry.ts", 396], ["src/undo/reconstruction.ts", 309]],
+      lang: "typescript",
+      code: `// Hot/cold byte parity requires both paths to mint undo Items under the same
+// fresh clientID. Hot: registry.undoLatest({ mutationClientId }). Cold:
+// reconstructUndoUpdate({ undoClientId: mutationClientId }).
+function setMutationClientId(doc: Y.Doc, clientId: number | undefined): void {
+  if (clientId === undefined || doc.clientID === clientId) return;
+  doc.clientID = clientId;
+}`,
+    },
+  };
+
+  function buildFilesHtml(files) {
+    if (!files || files.length === 0) return "";
+    return files.map(([path, line]) => `<span>${srcLink(path, line)}</span>`).join("&nbsp;·&nbsp;");
+  }
+
+  const panel = document.getElementById("panel");
+  const titleEl = document.getElementById("panel-title");
+  const pillEl = document.getElementById("panel-pill");
+  const filesEl = document.getElementById("panel-files");
+  const descEl = document.getElementById("panel-desc");
+  const codeEl = document.getElementById("panel-code");
+
+  async function showDetail(key) {
+    const d = DETAIL[key];
+    if (!d) {
+      console.warn("no detail for key:", key);
+      return;
+    }
+    titleEl.textContent = d.title;
+    pillEl.textContent = d.pill || "";
+    pillEl.style.display = d.pill ? "inline-block" : "none";
+    filesEl.innerHTML = buildFilesHtml(d.files);
+    descEl.textContent = d.desc || "";
+    codeEl.innerHTML = "<pre><code>" + escapeHtml(d.code || "") + "</code></pre>";
+    if (window.codeToHtml && d.code) {
+      try {
+        const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'github-dark' : 'github-light';
+        codeEl.innerHTML = await window.codeToHtml(d.code, { lang: d.lang || "typescript", theme });
+        const pre = codeEl.querySelector("pre");
+        if (pre) {
+          pre.style.background = "var(--surface-2)";
+          pre.style.border = "1px solid var(--border)";
+          pre.style.borderRadius = "8px";
+          pre.style.padding = "12px";
+          pre.style.overflowX = "auto";
+          pre.style.fontSize = "12.5px";
+          pre.style.lineHeight = "1.5";
+        }
+      } catch (err) {
+        console.warn("shiki render failed:", err);
+      }
+    }
+    panel.classList.add("open");
+  }
+  window.showDetail = showDetail;
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  document.getElementById("panel-close").addEventListener("click", () => panel.classList.remove("open"));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") panel.classList.remove("open"); });
+
+  // Tab switching
+  const tabs = document.querySelectorAll("[data-diagram]");
+  const stages = document.querySelectorAll("[data-stage]");
+  tabs.forEach((btn) => btn.addEventListener("click", () => {
+    tabs.forEach((b) => b.classList.toggle("active", b === btn));
+    const key = btn.dataset.diagram;
+    stages.forEach((stage) => stage.classList.toggle("hidden", stage.id !== `stage-${key}`));
+    panel.classList.remove("open");
+    // reset transform for visible stage
+    requestAnimationFrame(resetVisibleStage);
+  }));
+
+  // Mermaid init + render
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+    securityLevel: 'loose', // required for click callbacks
+    flowchart: { curve: 'basis', nodeSpacing: 50, rankSpacing: 60, useMaxWidth: false },
+  });
+  (async () => {
+    await mermaid.run({ querySelector: '.mermaid' });
+    // After render, mark flagged nodes for stroke emphasis (Mermaid v11 puts classDef on node groups)
+    document.querySelectorAll('.mermaid g.node').forEach((n) => {
+      if ([...n.classList].some((c) => c.includes('seam'))) n.classList.add('flagged');
+    });
+    setupPanZoomForAll();
+  })();
+
+  // Pan & zoom per stage
+  const stageState = new WeakMap();
+  function setupPanZoomForAll() {
+    document.querySelectorAll('.stage-wrap').forEach((wrap) => {
+      const stage = wrap.querySelector('.stage');
+      if (!stage) return;
+      const state = { scale: 1, tx: 0, ty: 0, dragging: false, sx: 0, sy: 0, pts: new Map(), pinchDist: 0, moved: false };
+      stageState.set(wrap, { stage, state });
+      const apply = () => stage.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+      wrap.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const before = state.scale;
+        state.scale = Math.min(3, Math.max(0.3, state.scale - e.deltaY * 0.001));
+        // zoom toward cursor
+        const rect = wrap.getBoundingClientRect();
+        const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+        state.tx -= (cx - state.tx) * (state.scale / before - 1);
+        state.ty -= (cy - state.ty) * (state.scale / before - 1);
+        apply();
+      }, { passive: false });
+      wrap.addEventListener('pointerdown', (e) => {
+        state.pts.set(e.pointerId, e);
+        if (state.pts.size === 1) {
+          state.dragging = true;
+          state.moved = false;
+          state.sx = e.clientX - state.tx;
+          state.sy = e.clientY - state.ty;
+        }
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!state.pts.has(e.pointerId)) return;
+        state.pts.set(e.pointerId, e);
+        if (state.pts.size === 2) {
+          const [a, b] = [...state.pts.values()];
+          const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          if (state.pinchDist) {
+            state.scale = Math.min(3, Math.max(0.3, state.scale * (d / state.pinchDist)));
+            apply();
+          }
+          state.pinchDist = d;
+        } else if (state.dragging && state.pts.size === 1) {
+          const ntx = e.clientX - state.sx;
+          const nty = e.clientY - state.sy;
+          if (Math.abs(ntx - state.tx) + Math.abs(nty - state.ty) > 4) state.moved = true;
+          state.tx = ntx; state.ty = nty;
+          apply();
+        }
+      });
+      window.addEventListener('pointerup', (e) => {
+        state.pts.delete(e.pointerId);
+        if (state.pts.size < 2) state.pinchDist = 0;
+        if (state.pts.size === 0) {
+          state.dragging = false;
+          // suppress click that would have followed a drag
+          if (state.moved) {
+            const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+            wrap.addEventListener('click', swallow, { capture: true, once: true });
+          }
+        }
+      });
+    });
+  }
+  function resetVisibleStage() {
+    document.querySelectorAll('.stage-wrap').forEach((wrap) => {
+      if (wrap.classList.contains('hidden')) return;
+      const st = stageState.get(wrap);
+      if (!st) return;
+      st.state.scale = 1; st.state.tx = 0; st.state.ty = 0;
+      st.stage.style.transform = 'translate(0px, 0px) scale(1)';
+    });
+  }
+
+  // Re-render Mermaid when color scheme flips so theme matches
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => location.reload());
+</script>
+</body>
+</html>
