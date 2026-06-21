@@ -1,0 +1,228 @@
+// In-memory fake server ports for the throwaway agent-edit demo harness.
+import {
+  type CompactionResult,
+  type DocumentCoordinator,
+  DocumentNotFoundError,
+  type JournalSnapshot,
+  type PersistedUpdate,
+  type ReversalRecord,
+  type UpdateJournal,
+  type UpdateMeta,
+} from "@meridian/agent-edit";
+import * as Y from "yjs";
+
+interface StoredUpdate extends PersistedUpdate {
+  storedAt: Date;
+}
+
+interface StoredReversal {
+  record: ReversalRecord;
+  storedAt: Date;
+}
+
+interface JournalEntry {
+  checkpoint: Uint8Array | null;
+  updates: StoredUpdate[];
+  nextSeq: number;
+  reversals: Map<string, StoredReversal>;
+}
+
+const EMPTY_UPDATE_LENGTH = 2;
+
+export class InMemoryJournal implements UpdateJournal {
+  private readonly data = new Map<string, JournalEntry>();
+
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
+  async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
+    return this.appendInternal(docId, update, meta, this.now());
+  }
+
+  async read(
+    docId: string,
+    opts: { since?: number; until?: number } = {},
+  ): Promise<JournalSnapshot> {
+    const entry = this.entry(docId);
+    const updates = entry.updates
+      .filter(
+        (update) =>
+          (opts.since === undefined || update.seq >= opts.since) &&
+          (opts.until === undefined || update.seq <= opts.until),
+      )
+      .sort((left, right) => left.seq - right.seq)
+      .map(stripStoredFields);
+
+    return {
+      checkpoint: entry.checkpoint ? copyBytes(entry.checkpoint) : null,
+      updates,
+    };
+  }
+
+  async checkpoint(docId: string, state: Uint8Array): Promise<void> {
+    this.entry(docId).checkpoint = copyBytes(state);
+  }
+
+  async compact(docId: string, before: Date): Promise<CompactionResult> {
+    const entry = this.entry(docId);
+    const foldable = entry.updates.filter((update) => update.storedAt < before);
+    const foldedSeqs = new Set(foldable.map((update) => update.seq));
+
+    if (foldable.length > 0) {
+      const doc = new Y.Doc({ gc: false });
+      if (entry.checkpoint) Y.applyUpdate(doc, entry.checkpoint);
+      for (const update of foldable.sort((left, right) => left.seq - right.seq)) {
+        Y.applyUpdate(doc, update.update);
+      }
+      entry.checkpoint = Y.encodeStateAsUpdate(doc);
+      entry.updates = entry.updates.filter((update) => !foldedSeqs.has(update.seq));
+    }
+
+    let reversalsExpired = 0;
+    for (const stored of entry.reversals.values()) {
+      const shouldExpire =
+        foldedSeqs.has(stored.record.undoUpdateSeq) ||
+        (stored.record.expiresAt !== undefined && stored.record.expiresAt <= before);
+      if (!shouldExpire || stored.record.status === "expired") continue;
+      stored.record = { ...stored.record, status: "expired" };
+      reversalsExpired += 1;
+    }
+
+    return { updatesFolded: foldable.length, reversalsExpired };
+  }
+
+  async persistReversal(
+    docId: string,
+    undoUpdate: Uint8Array,
+    record: ReversalRecord,
+  ): Promise<void> {
+    const storedAt = this.now();
+    const seq = this.appendInternal(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
+    record.undoUpdateSeq = seq;
+
+    const entry = this.entry(docId);
+    entry.reversals.set(reversalKey(docId, record.turnId), {
+      record: { ...record, undoUpdateSeq: seq },
+      storedAt,
+    });
+  }
+
+  reversalRecords(docId: string): ReversalRecord[] {
+    return [...this.entry(docId).reversals.values()].map((stored) => ({ ...stored.record }));
+  }
+
+  private appendInternal(
+    docId: string,
+    update: Uint8Array,
+    meta: UpdateMeta,
+    storedAt: Date,
+  ): number {
+    const entry = this.entry(docId);
+    const seq = entry.nextSeq;
+    if (meta.seq !== 0 && meta.seq !== seq) {
+      throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
+    }
+
+    entry.nextSeq += 1;
+    entry.updates.push({
+      seq,
+      update: copyBytes(update),
+      meta: { ...meta, seq },
+      storedAt,
+    });
+    return seq;
+  }
+
+  private entry(docId: string): JournalEntry {
+    let entry = this.data.get(docId);
+    if (!entry) {
+      entry = { checkpoint: null, updates: [], nextSeq: 1, reversals: new Map() };
+      this.data.set(docId, entry);
+    }
+    return entry;
+  }
+}
+
+export class InMemoryCoordinator implements DocumentCoordinator {
+  private readonly docs = new Map<string, Y.Doc>();
+  private readonly locks = new Map<string, Promise<void>>();
+  private nextClientId = 1000;
+
+  constructor(private readonly journal: UpdateJournal) {}
+
+  async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+    return this.lock(docId, async () => fn(this.getOrCreate(docId)));
+  }
+
+  async recover(docId: string): Promise<void> {
+    await this.withDocument(docId, async (doc) => {
+      const snapshot = await this.journal.read(docId);
+      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
+      for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
+    });
+  }
+
+  requireDocument(docId: string): Y.Doc {
+    const doc = this.docs.get(docId);
+    if (!doc) throw new DocumentNotFoundError(docId);
+    return doc;
+  }
+
+  async applyHumanUpdate(
+    docId: string,
+    userId: string,
+    mutate: (doc: Y.Doc) => void,
+  ): Promise<number | null> {
+    return this.withDocument(docId, async (doc) => {
+      const beforeVector = Y.encodeStateVector(doc);
+      doc.transact(() => mutate(doc), { type: "human", userId });
+      const update = Y.encodeStateAsUpdate(doc, beforeVector);
+      if (!hasYjsUpdate(update)) return null;
+      return this.journal.append(docId, update, { origin: `human:${userId}`, seq: 0 });
+    });
+  }
+
+  private getOrCreate(docId: string): Y.Doc {
+    let doc = this.docs.get(docId);
+    if (!doc) {
+      doc = new Y.Doc({ gc: false });
+      doc.clientID = this.nextClientId;
+      this.nextClientId += 1;
+      this.docs.set(docId, doc);
+    }
+    return doc;
+  }
+
+  private async lock<T>(docId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(docId) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.locks.set(docId, tail);
+    tail.finally(() => {
+      if (this.locks.get(docId) === tail) this.locks.delete(docId);
+    });
+    return run;
+  }
+}
+
+function stripStoredFields(update: StoredUpdate): PersistedUpdate {
+  return {
+    seq: update.seq,
+    update: copyBytes(update.update),
+    meta: { ...update.meta },
+  };
+}
+
+function copyBytes(bytes: Uint8Array): Uint8Array {
+  return new Uint8Array(bytes);
+}
+
+function reversalKey(docId: string, turnId: string): string {
+  return `${docId}\u0000${turnId}`;
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > EMPTY_UPDATE_LENGTH;
+}
