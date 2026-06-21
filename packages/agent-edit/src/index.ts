@@ -1,4 +1,24 @@
 // Port interfaces and shared types for the agent editing core.
+import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
+import { type CompactOnLoadResult, compactOnLoad } from "./undo/compaction.js";
+
+export interface AgentEditCoreOptions extends CreateWriteToolOptions {}
+
+export interface AgentEditCore {
+  write: ReturnType<typeof createWriteTool>["write"];
+  recover: ReturnType<typeof createWriteTool>["recover"];
+  compact(docId: string, before: Date): Promise<CompactOnLoadResult>;
+}
+
+export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
+  const tool = createWriteTool(options);
+  return {
+    write: tool.write,
+    recover: tool.recover,
+    compact: (docId, before) =>
+      compactOnLoad(options.journal, { docId, before, registry: tool.registry }),
+  };
+}
 
 export {
   applyConcurrentUpdates,
@@ -101,6 +121,24 @@ export {
   resolveSearchScope,
   slugForHeadingText,
 } from "./resolver/scope.js";
+export type {
+  CreateCommand,
+  InsertCommand,
+  RedoCommand,
+  ReplaceCommand,
+  UndoCommand,
+  UndoRedoOutcome,
+  ViewCommand,
+  ViewFormat,
+  WriteCommand,
+  WriteContext,
+  WriteErrorStatus,
+  WriteFunction,
+  WriteResult,
+  WriteStatus,
+} from "./tool/types.js";
+export type { CreateWriteToolOptions, WriteTool } from "./tool/write.js";
+export { createWriteTool } from "./tool/write.js";
 export type { CompactOnLoadOptions, CompactOnLoadResult } from "./undo/compaction.js";
 export { compactOnLoad } from "./undo/compaction.js";
 export type {
