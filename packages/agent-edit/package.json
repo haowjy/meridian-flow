@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "demo": "tsx demo/harness.ts"
   },
   "dependencies": {
     "@meridian/prosemirror-schema": "workspace:*",
