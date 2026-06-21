@@ -43,6 +43,11 @@ export interface LiveThreadUndoState {
   activeTurnId?: string;
   undoStack: UndoStackMetadata[];
   redoStack: UndoStackMetadata[];
+  fallback?: {
+    reason: "undo_depth_cap";
+    undoDepth: number;
+    cap: number;
+  };
 }
 
 export type HotUndoAddress =
@@ -93,6 +98,7 @@ interface LiveEntry {
   activeTurnId?: string;
   lastUsedAt: number;
   currentDeleteFilterStackItem: UndoStackItemLike | null;
+  pendingDestroy?: LiveThreadUndoState["fallback"];
 }
 
 /** Registry keyed by (docId, threadId), with stable Symbol origins per key. */
@@ -179,7 +185,12 @@ export class UndoManagerRegistry {
     entry.undoManager.stopCapturing();
     entry.activeTurnId = undefined;
     entry.lastUsedAt = this.now();
-    return this.getState(docId, threadId) as LiveThreadUndoState;
+    const state = stateForEntry(entry);
+    if (entry.pendingDestroy) {
+      const key = registryKey(docId, threadId);
+      this.destroyEntry(key, entry, { keepOrigin: true });
+    }
+    return state;
   }
 
   undoLatest(
@@ -258,13 +269,7 @@ export class UndoManagerRegistry {
   getState(docId: string, threadId: string): LiveThreadUndoState | null {
     const entry = this.entries.get(registryKey(docId, threadId));
     if (!entry) return null;
-    return {
-      docId,
-      threadId,
-      activeTurnId: entry.activeTurnId,
-      undoStack: entry.undoManager.undoStack.map(stackMetadata),
-      redoStack: entry.undoManager.redoStack.map(stackMetadata),
-    };
+    return stateForEntry(entry);
   }
 
   hasActiveDocument(docId: string): boolean {
@@ -357,8 +362,11 @@ export class UndoManagerRegistry {
 
   private enforceUndoDepthCap(entry: LiveEntry): void {
     if (entry.undoManager.undoStack.length <= this.undoDepthCap) return;
-    const key = registryKey(entry.docId, entry.threadId);
-    this.destroyEntry(key, entry, { keepOrigin: true });
+    entry.pendingDestroy = {
+      reason: "undo_depth_cap",
+      undoDepth: entry.undoManager.undoStack.length,
+      cap: this.undoDepthCap,
+    };
   }
 
   private destroyEntry(key: string, entry: LiveEntry, options: { keepOrigin: boolean }): void {
@@ -394,6 +402,17 @@ function publicEntry(entry: LiveEntry): LiveThreadUndoManager {
     undoManager: entry.undoManager,
     undoDepth: entry.undoManager.undoStack.length,
     redoDepth: entry.undoManager.redoStack.length,
+  };
+}
+
+function stateForEntry(entry: LiveEntry): LiveThreadUndoState {
+  return {
+    docId: entry.docId,
+    threadId: entry.threadId,
+    activeTurnId: entry.activeTurnId,
+    undoStack: entry.undoManager.undoStack.map(stackMetadata),
+    redoStack: entry.undoManager.redoStack.map(stackMetadata),
+    fallback: entry.pendingDestroy,
   };
 }
 

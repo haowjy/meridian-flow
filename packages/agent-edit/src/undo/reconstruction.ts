@@ -33,7 +33,13 @@ export interface UndoReconstructionResult {
   nonTargetOriginToken: symbol;
 }
 
-export interface RedoReconstructionResult {
+export type RedoReconstructionResult =
+  | RedoReconstructionAppliedResult
+  | RedoReconstructionNoRedoResult;
+
+export interface RedoReconstructionAppliedResult {
+  ok: true;
+  status: "redone";
   docId: string;
   turnId: string;
   redoUpdate: Uint8Array;
@@ -44,6 +50,29 @@ export interface RedoReconstructionResult {
   redoStackDepthBeforeRedo: number;
   undoStackDepthAfterRedo: number;
 }
+
+export interface RedoReconstructionNoRedoResult {
+  ok: false;
+  status: "no_redo";
+  docId: string;
+  turnId: string;
+  undoUpdateSeq: number;
+  reason: "forward_update_after_undo" | "empty_redo_stack";
+  blockingUpdateSeq?: number;
+  blockingUpdateOrigin?: string;
+  blockingUpdateActorTurnId?: string;
+}
+
+export type RedoEligibility =
+  | { ok: true }
+  | {
+      ok: false;
+      status: "no_redo";
+      reason: "forward_update_after_undo";
+      blockingUpdateSeq: number;
+      blockingUpdateOrigin: string;
+      blockingUpdateActorTurnId?: string;
+    };
 
 export async function reconstructUndoUpdate(
   journal: UpdateJournal,
@@ -138,6 +167,10 @@ export function reconstructRedoUpdateFromSnapshot(
       `Undo update seq ${options.undoUpdateSeq} must be after target turn ${options.turnId}`,
     );
   }
+  const eligibility = evaluateRedoEligibility(snapshot.updates, {
+    undoUpdateSeq: undoUpdate.seq,
+  });
+  if (!eligibility.ok) return noRedoResult(options, eligibility);
 
   const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
     untilSeqExclusive: target.firstSeq,
@@ -185,15 +218,24 @@ export function reconstructRedoUpdateFromSnapshot(
 
   const beforeRedoStateVector = Y.encodeStateVector(doc);
   const redoStackDepthBeforeRedo = um.redoStack.length;
+  if (redoStackDepthBeforeRedo === 0) {
+    return noRedoResult(options, { ok: false, status: "no_redo", reason: "empty_redo_stack" });
+  }
   currentStackItem = um.redoStack.at(-1) ?? null;
+  let popped: UndoStackItemLike | null;
   try {
-    um.redo();
+    popped = um.redo();
   } finally {
     currentStackItem = null;
     um.stopCapturing();
   }
+  if (!popped) {
+    return noRedoResult(options, { ok: false, status: "no_redo", reason: "empty_redo_stack" });
+  }
   const redoUpdate = Y.encodeStateAsUpdate(doc, beforeRedoStateVector);
   return {
+    ok: true,
+    status: "redone",
     docId: options.docId,
     turnId: options.turnId,
     redoUpdate,
@@ -203,6 +245,24 @@ export function reconstructRedoUpdateFromSnapshot(
     afterRedoStateVector: Y.encodeStateVector(doc),
     redoStackDepthBeforeRedo,
     undoStackDepthAfterRedo: um.undoStack.length,
+  };
+}
+
+export function evaluateRedoEligibility(
+  updates: readonly PersistedUpdate[],
+  options: { undoUpdateSeq: number },
+): RedoEligibility {
+  const blockingUpdate = updates.find(
+    (update) => update.seq > options.undoUpdateSeq && isForwardUpdate(update),
+  );
+  if (!blockingUpdate) return { ok: true };
+  return {
+    ok: false,
+    status: "no_redo",
+    reason: "forward_update_after_undo",
+    blockingUpdateSeq: blockingUpdate.seq,
+    blockingUpdateOrigin: blockingUpdate.meta.origin,
+    blockingUpdateActorTurnId: blockingUpdate.meta.actorTurnId,
   };
 }
 
@@ -261,4 +321,36 @@ function replayUpdateWithOrigin(doc: Y.Doc, update: PersistedUpdate, origin: sym
   doc.transact(() => {
     Y.applyUpdate(doc, update.update);
   }, origin);
+}
+
+function noRedoResult(
+  options: { docId: string; turnId: string; undoUpdateSeq: number },
+  failure:
+    | Exclude<RedoEligibility, { ok: true }>
+    | { ok: false; status: "no_redo"; reason: "empty_redo_stack" },
+): RedoReconstructionNoRedoResult {
+  return {
+    ok: false,
+    status: "no_redo",
+    docId: options.docId,
+    turnId: options.turnId,
+    undoUpdateSeq: options.undoUpdateSeq,
+    reason: failure.reason,
+    blockingUpdateSeq:
+      failure.reason === "forward_update_after_undo" ? failure.blockingUpdateSeq : undefined,
+    blockingUpdateOrigin:
+      failure.reason === "forward_update_after_undo" ? failure.blockingUpdateOrigin : undefined,
+    blockingUpdateActorTurnId:
+      failure.reason === "forward_update_after_undo"
+        ? failure.blockingUpdateActorTurnId
+        : undefined,
+  };
+}
+
+function isForwardUpdate(update: PersistedUpdate): boolean {
+  return update.meta.actorTurnId !== undefined || isForwardOrigin(update.meta.origin);
+}
+
+function isForwardOrigin(origin: string): boolean {
+  return origin.startsWith("agent:") || origin.startsWith("human:");
 }

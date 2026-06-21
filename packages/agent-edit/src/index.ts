@@ -116,11 +116,13 @@ export type {
 export { createUndoManagerRegistry, UndoManagerRegistry } from "./undo/manager-registry.js";
 export type {
   ReconstructionOptions,
+  RedoEligibility,
   RedoReconstructionResult,
   TurnUpdateGroup,
   UndoReconstructionResult,
 } from "./undo/reconstruction.js";
 export {
+  evaluateRedoEligibility,
   groupUpdatesByTurn,
   reconstructRedoUpdate,
   reconstructRedoUpdateFromSnapshot,

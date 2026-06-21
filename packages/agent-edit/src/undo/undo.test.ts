@@ -16,7 +16,12 @@ import type {
 } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { compactOnLoad } from "./compaction.js";
-import { createUndoManagerRegistry, type UndoManagerRegistry } from "./manager-registry.js";
+import {
+  createUndoManagerRegistry,
+  type UndoManagerRegistry,
+  type UndoManagerRegistryOptions,
+} from "./manager-registry.js";
+import type { RedoReconstructionResult } from "./reconstruction.js";
 import {
   groupUpdatesByTurn,
   reconstructRedoUpdateFromSnapshot,
@@ -69,6 +74,31 @@ describe("UndoManagerRegistry hot path", () => {
     });
 
     expect(ctx.registry.getState(DOC_ID, THREAD_A)?.redoStack).toEqual([]);
+  });
+
+  it("completes a turn after undo-depth cap expiry and leaves cold fallback available", () => {
+    const ctx = createScenario("Alpha sword.", { undoDepthCap: 0 });
+    ctx.registry.beginTurn(DOC_ID, THREAD_A, ctx.doc, "capped-turn");
+    capture(ctx, { origin: "agent:capped-turn", actorTurnId: "capped-turn" }, () => {
+      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
+    });
+
+    const endState = ctx.registry.endTurn(DOC_ID, THREAD_A, "capped-turn");
+
+    expect(endState.fallback).toEqual({ reason: "undo_depth_cap", undoDepth: 1, cap: 0 });
+    expect(ctx.registry.getState(DOC_ID, THREAD_A)).toBeNull();
+    expect(
+      ctx.registry.undoLatest(DOC_ID, THREAD_A, { scope: "turn", turnId: "capped-turn" }),
+    ).toMatchObject({ ok: false, status: "no_manager" });
+
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+      docId: DOC_ID,
+      turnId: "capped-turn",
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldDoc, cold.undoUpdate);
+    expect(blockTexts(coldDoc)).toEqual(["Alpha sword."]);
   });
 
   it("preserves human text inside an agent-inserted paragraph when undoing hot", () => {
@@ -182,12 +212,112 @@ describe("hot/cold parity", () => {
       undoUpdateSeq: undoSeq,
       undoClientId: REVERSAL_CLIENT_ID,
     });
+    expectRedoOk(coldRedo);
     const coldRedoDoc = cloneDoc(afterUndoDoc, LIVE_CLIENT_ID);
     Y.applyUpdate(coldRedoDoc, coldRedo.redoUpdate);
 
     expect(coldRedo.redoStackDepthBeforeRedo).toBe(1);
     expect(Array.from(coldRedo.redoUpdate)).toEqual(Array.from(hotRedoUpdate));
     expect(documentBytes(coldRedoDoc)).toEqual(documentBytes(ctx.doc));
+  });
+
+  it("rejects cold redo after a new forward edit clears the hot redo stack", () => {
+    const ctx = createScenario("Alpha sword.\n\nBeta waits.");
+    agentTurn(ctx, THREAD_A, "old-turn", () => {
+      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
+    });
+
+    const preHotUndoVector = Y.encodeStateVector(ctx.doc);
+    const hotUndo = ctx.registry.undoLatest(DOC_ID, THREAD_A, {
+      scope: "turn",
+      turnId: "old-turn",
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotUndo).toMatchObject({ ok: true, turnId: "old-turn", redoDepth: 1 });
+    const undoSeq = ctx.journal.appendSync(Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector), {
+      origin: "system",
+      seq: 0,
+    });
+
+    agentTurn(ctx, THREAD_A, "new-turn", () => {
+      applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "marches");
+    });
+
+    const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldRedo = reconstructRedoUpdateFromSnapshot(ctx.journal.snapshot(), {
+      docId: DOC_ID,
+      turnId: "old-turn",
+      undoUpdateSeq: undoSeq,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+
+    expect(hotRedo).toMatchObject({ ok: false, status: "no_redo" });
+    expect(coldRedo).toMatchObject({
+      ok: false,
+      status: "no_redo",
+      reason: "forward_update_after_undo",
+      blockingUpdateSeq: undoSeq + 1,
+      blockingUpdateOrigin: "agent:new-turn",
+      blockingUpdateActorTurnId: "new-turn",
+    });
+  });
+
+  it("matches hot/cold bytes, JSON, markdown, and redo for human text inside an agent paragraph", () => {
+    const ctx = createScenario("Alpha");
+    agentTurn(ctx, THREAD_A, "insert", () => {
+      applyAgentInsert(ctx, THREAD_A, 0, "Agent seed");
+    });
+    humanText(ctx, 1, { from: 10, to: 10 }, " + human");
+
+    const preUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    const preHotUndoVector = Y.encodeStateVector(ctx.doc);
+    const hotUndo = ctx.registry.undoLatest(DOC_ID, THREAD_A, {
+      scope: "turn",
+      turnId: "insert",
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotUndo).toMatchObject({ ok: true, turnId: "insert", redoDepth: 1 });
+    const hotUndoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector);
+
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+      docId: DOC_ID,
+      turnId: "insert",
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldDoc = cloneDoc(preUndoDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldDoc, cold.undoUpdate);
+
+    expect(Array.from(cold.undoUpdate)).toEqual(Array.from(hotUndoUpdate));
+    expect(documentBytes(coldDoc)).toEqual(documentBytes(ctx.doc));
+    expect(documentJson(coldDoc)).toEqual(documentJson(ctx.doc));
+    expect(serializeDoc(coldDoc)).toBe(serializeDoc(ctx.doc));
+
+    const journalWithUndo = ctx.journal.clone();
+    const undoSeq = journalWithUndo.appendSync(cold.undoUpdate, { origin: "system", seq: 0 });
+    const afterUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    const preHotRedoVector = Y.encodeStateVector(ctx.doc);
+    const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotRedo).toMatchObject({ ok: true, turnId: "insert" });
+    const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotRedoVector);
+
+    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(), {
+      docId: DOC_ID,
+      turnId: "insert",
+      undoUpdateSeq: undoSeq,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    expectRedoOk(coldRedo);
+    const coldRedoDoc = cloneDoc(afterUndoDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldRedoDoc, coldRedo.redoUpdate);
+
+    expect(Array.from(coldRedo.redoUpdate)).toEqual(Array.from(hotRedoUpdate));
+    expect(documentBytes(coldRedoDoc)).toEqual(documentBytes(ctx.doc));
+    expect(documentJson(coldRedoDoc)).toEqual(documentJson(ctx.doc));
+    expect(serializeDoc(coldRedoDoc)).toBe(serializeDoc(ctx.doc));
   });
 
   it("uses fresh cold-path tokens for each reconstruction", () => {
@@ -410,11 +540,14 @@ class MemoryJournal implements UpdateJournal {
   }
 }
 
-function createScenario(markdown: string): ScenarioContext {
+function createScenario(
+  markdown: string,
+  registryOptions: UndoManagerRegistryOptions = {},
+): ScenarioContext {
   const doc = createDoc(markdown, LIVE_CLIENT_ID);
   return {
     doc,
-    registry: createUndoManagerRegistry(),
+    registry: createUndoManagerRegistry(registryOptions),
     journal: new MemoryJournal(Y.encodeStateAsUpdate(doc)),
   };
 }
@@ -537,6 +670,14 @@ function textEdit(
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {
   expect(result).toMatchObject({ ok: true });
   if (!result.ok) throw new Error(result.error.message);
+}
+
+function expectRedoOk(
+  result: RedoReconstructionResult,
+): asserts result is Extract<RedoReconstructionResult, { ok: true }> {
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok)
+    throw new Error(`Expected cold redo bytes, got ${result.status}:${result.reason}`);
 }
 
 function blockTexts(doc: Y.Doc): string[] {
