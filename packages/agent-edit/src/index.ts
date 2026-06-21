@@ -20,13 +20,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
-export {
-  applyConcurrentUpdates,
-  computeEcho,
-  diffSnapshots,
-  snapshotBlocks,
-} from "./apply/echo.js";
-export { applyEdits } from "./apply/tiers.js";
+export { computeEcho, diffSnapshots, snapshotBlocks } from "./apply/echo.js";
 export type {
   AgentOrigin,
   AppliedEditSummary,
@@ -62,11 +56,7 @@ export { CodecParseError } from "./codec/types.js";
 export type { DocumentModel } from "./model/types.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export {
-  applyBlockDiff,
-  applyTextEdit,
-  deleteBlock,
   fragmentOf,
-  insertBlocks,
   prosemirrorRootOf,
   toProsemirrorBlock,
   yProsemirrorModel,
@@ -77,6 +67,10 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type { DocumentCoordinator } from "./ports/document-coordinator.js";
+export {
+  DocumentNotFoundError,
+  isDocumentNotFoundError,
+} from "./ports/document-coordinator.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -102,7 +96,13 @@ export {
   isLiveXmlElement,
   lookupBlockHash,
 } from "./resolver/block-hash.js";
-export type { FindContext, FindMatch, FindResult } from "./resolver/find.js";
+export type {
+  CrossBlockFindMatch,
+  FindContext,
+  FindMatch,
+  FindResult,
+  TextFindMatch,
+} from "./resolver/find.js";
 export { findTextMatches, serializeBlockBody, serializePmBlockBody } from "./resolver/find.js";
 export type {
   ResolveWriteContext,

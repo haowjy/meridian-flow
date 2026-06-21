@@ -3,8 +3,10 @@ import * as Y from "yjs";
 
 import {
   applyConcurrentUpdates,
+  type BlockSnapshot,
   type ConcurrentDetectionResult,
   computeEcho,
+  diffSnapshots,
   snapshotBlocks,
 } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
@@ -17,7 +19,10 @@ import type {
 import type { Codec, ParsedContent } from "../codec/types.js";
 import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import {
+  type DocumentCoordinator,
+  isDocumentNotFoundError,
+} from "../ports/document-coordinator.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
@@ -82,6 +87,35 @@ interface ApplySuccessResponseInput {
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
 }
+
+interface SyncedMutationSummary {
+  echo: ApplyEchoHunk[];
+  concurrentEdits?: ConcurrentEditInfo;
+  reconciled: boolean;
+}
+
+interface LocalMutationSyncInput {
+  docId: string;
+  commandName: WriteCommand["command"];
+  runtime: RuntimeDocumentState;
+  update: Uint8Array;
+  afterOwnVector: Uint8Array;
+  liveOrigin: ConcurrentUpdateOrigin;
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
+  ownTurnId?: string;
+}
+
+type ReversalResult =
+  | {
+      ok: true;
+      status: UndoRedoOutcome;
+      turnId: string;
+      sync?: SyncedMutationSummary;
+    }
+  | { ok: false; response: WriteResult };
 
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 const EMPTY_UPDATE_LENGTH = 2;
@@ -269,29 +303,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     await options.journal.append(address.filePath, ownUpdate, agentMeta(turnId));
 
-    const concurrentUpdate = await mergeOwnUpdateAndCaptureConcurrent(
-      address.filePath,
-      ownUpdate,
+    const syncedMutation = await syncAfterLocalMutation({
+      docId: address.filePath,
+      commandName: command.command,
+      runtime,
+      update: ownUpdate,
       afterOwnVector,
-      turnId,
-    );
-    const concurrent = applyConcurrent(runtime, concurrentUpdate, afterOwnVector, turnId);
-    const after = snapshotBlocks(runtime.doc, options.model, options.codec);
-    const echo = computeEcho({
+      liveOrigin: agentUpdateOrigin(turnId),
       before,
-      after,
-      agentTouchedHashes: new Set(applied.changedBlocks ?? []),
-      agentDeletedHashes: new Set(applied.deletedBlocks ?? []),
+      touchedHashes: new Set(applied.changedBlocks ?? []),
+      deletedHashes: new Set(applied.deletedBlocks ?? []),
       structuralChange: hasStructuralChange(applied),
-      concurrentTouchedHashes: concurrent.touchedHashes,
+      ownTurnId: turnId,
     });
+    if (!syncedMutation.ok) return syncedMutation.response;
 
     runtime.undoStack.push(turnId);
     runtime.redoStack = [];
     markSynced(session, address.filePath, runtime);
     return formatApplySuccess({
-      echo,
-      concurrentEdits: concurrent.info,
+      echo: syncedMutation.summary.echo,
+      concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
     });
   }
@@ -312,16 +344,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     let applied = 0;
     let lastOutcome: UndoRedoOutcome | null = null;
     const appliedTurns: string[] = [];
+    const echo: ApplyEchoHunk[] = [];
+    const concurrentEdits: ConcurrentEditInfo[] = [];
+    let sawReconcile = false;
     const limit = count.all ? Number.POSITIVE_INFINITY : count.count;
 
     while (applied < limit) {
       const result =
         direction === "undo"
-          ? await undoOne(address.filePath, session, runtime)
-          : await redoOne(address.filePath, session, runtime);
+          ? await undoOne(address.filePath, session, runtime, command.command)
+          : await redoOne(address.filePath, session, runtime, command.command);
+      if (!result.ok) return result.response;
       if (result.status === "nothing_to_undo" || result.status === "nothing_to_redo") {
         if (applied === 0) return status(result.status);
-        lastOutcome = count.all ? "reversed" : "partial";
+        lastOutcome = count.all ? (sawReconcile ? "reconciled" : "reversed") : "partial";
         break;
       }
       if (result.status === "expired") {
@@ -329,18 +365,26 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         lastOutcome = "partial";
         break;
       }
-      if (result.status !== "reversed") {
+      if (result.status !== "reversed" && result.status !== "reconciled") {
         lastOutcome = result.status;
         break;
       }
+      if (result.status === "reconciled") sawReconcile = true;
+      if (result.sync) {
+        echo.push(...result.sync.echo);
+        if (result.sync.concurrentEdits) concurrentEdits.push(result.sync.concurrentEdits);
+      }
       applied += 1;
       appliedTurns.push(result.turnId);
+      markSynced(session, address.filePath, runtime);
     }
 
-    markSynced(session, address.filePath, runtime);
-    const outcome = lastOutcome ?? "reversed";
+    const outcome = lastOutcome ?? (sawReconcile ? "reconciled" : "reversed");
     const lines = [`status: ${outcome}`];
     if (appliedTurns.length > 0) lines.push("", `${direction}: ${appliedTurns.join(", ")}`);
+    const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+    if (echoLines.length > 0) lines.push("", ...echoLines);
+    for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));
     return lines.join("\n");
   }
 
@@ -348,7 +392,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     session: ActorSession,
     runtime: RuntimeDocumentState,
-  ): Promise<{ status: UndoRedoOutcome; turnId: string }> {
+    commandName: WriteCommand["command"],
+  ): Promise<ReversalResult> {
+    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const hot = registry.undoLatest(docId, session.threadId);
     let turnId: string | undefined;
@@ -358,13 +404,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       turnId = hot.turnId;
       update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
-      return { status: "partial", turnId: hot.actualTurnId ?? hot.expectedTurnId ?? "unknown" };
+      return {
+        ok: true,
+        status: "partial",
+        turnId: hot.actualTurnId ?? hot.expectedTurnId ?? "unknown",
+      };
     }
 
     if (!turnId || !update) {
       const coldTurnId =
         runtime.undoStack.at(-1) ?? (await latestJournalTurn(docId, session.threadId));
-      if (!coldTurnId) return { status: "nothing_to_undo", turnId: "" };
+      if (!coldTurnId) return { ok: true, status: "nothing_to_undo", turnId: "" };
       try {
         const cold = await reconstructUndoUpdate(options.journal, docId, coldTurnId, {
           undoClientId: options.undoClientId,
@@ -373,9 +423,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         update = cold.undoUpdate;
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       } catch (_cause) {
-        return { status: "expired", turnId: coldTurnId };
+        return { ok: true, status: "expired", turnId: coldTurnId };
       }
     }
+    const afterOwnVector = Y.encodeStateVector(runtime.doc);
+    const ownDiff = diffSnapshots(
+      before,
+      snapshotBlocks(runtime.doc, options.model, options.codec),
+    );
 
     const record: ReversalRecord = {
       documentId: docId,
@@ -389,17 +444,36 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         : {}),
     };
     await options.journal.persistReversal(docId, update, record);
-    await applyUpdateToLive(docId, update, { type: "system" });
+    const sync = await syncAfterLocalMutation({
+      docId,
+      commandName,
+      runtime,
+      update,
+      afterOwnVector,
+      liveOrigin: { type: "system" },
+      before,
+      touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
+      deletedHashes: ownDiff.deleted,
+      structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
+    });
+    if (!sync.ok) return { ok: false, response: sync.response };
     popIfTop(runtime.undoStack, turnId);
     runtime.redoStack.push({ turnId, undoUpdateSeq: record.undoUpdateSeq || undefined });
-    return { status: "reversed", turnId };
+    return {
+      ok: true,
+      status: sync.summary.reconciled ? "reconciled" : "reversed",
+      turnId,
+      sync: sync.summary,
+    };
   }
 
   async function redoOne(
     docId: string,
     session: ActorSession,
     runtime: RuntimeDocumentState,
-  ): Promise<{ status: UndoRedoOutcome; turnId: string }> {
+    commandName: WriteCommand["command"],
+  ): Promise<ReversalResult> {
+    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const hot = registry.redoLatest(docId, session.threadId);
     let turnId: string | undefined;
@@ -409,12 +483,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       turnId = hot.turnId;
       update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     } else if (hot.status !== "no_manager" && hot.status !== "no_redo") {
-      return { status: "partial", turnId: "unknown" };
+      return { ok: true, status: "partial", turnId: "unknown" };
     }
 
     if (!turnId || !update) {
       const redoTarget = runtime.redoStack.at(-1);
-      if (!redoTarget?.undoUpdateSeq) return { status: "nothing_to_redo", turnId: "" };
+      if (!redoTarget?.undoUpdateSeq) return { ok: true, status: "nothing_to_redo", turnId: "" };
       const cold = await reconstructRedoUpdate(
         options.journal,
         docId,
@@ -422,17 +496,39 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         redoTarget.undoUpdateSeq,
         { undoClientId: options.undoClientId },
       );
-      if (!cold.ok) return { status: "nothing_to_redo", turnId: redoTarget.turnId };
+      if (!cold.ok) return { ok: true, status: "nothing_to_redo", turnId: redoTarget.turnId };
       turnId = redoTarget.turnId;
       update = cold.redoUpdate;
       Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
+    const afterOwnVector = Y.encodeStateVector(runtime.doc);
+    const ownDiff = diffSnapshots(
+      before,
+      snapshotBlocks(runtime.doc, options.model, options.codec),
+    );
 
     await options.journal.append(docId, update, { origin: "system", seq: 0 });
-    await applyUpdateToLive(docId, update, { type: "system" });
+    const sync = await syncAfterLocalMutation({
+      docId,
+      commandName,
+      runtime,
+      update,
+      afterOwnVector,
+      liveOrigin: { type: "system" },
+      before,
+      touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
+      deletedHashes: ownDiff.deleted,
+      structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
+    });
+    if (!sync.ok) return { ok: false, response: sync.response };
     popIfTop(runtime.redoStack, turnId);
     runtime.undoStack.push(turnId);
-    return { status: "reversed", turnId };
+    return {
+      ok: true,
+      status: sync.summary.reconciled ? "reconciled" : "reversed",
+      turnId,
+      sync: sync.summary,
+    };
   }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -483,35 +579,54 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return { ok: true, stateVector: state.stateVector };
   }
 
-  async function mergeOwnUpdateAndCaptureConcurrent(
-    docId: string,
-    ownUpdate: Uint8Array,
-    afterOwnVector: Uint8Array,
-    turnId: string,
-  ): Promise<Uint8Array | null> {
-    let concurrentUpdate: Uint8Array | null = null;
-    await options.coordinator.withDocument(docId, async (liveDoc) => {
-      concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, afterOwnVector);
-      Y.applyUpdate(liveDoc, ownUpdate, agentUpdateOrigin(turnId));
+  async function syncAfterLocalMutation(
+    input: LocalMutationSyncInput,
+  ): Promise<{ ok: true; summary: SyncedMutationSummary } | { ok: false; response: WriteResult }> {
+    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
+    if (typeof concurrentUpdate === "string") return { ok: false, response: concurrentUpdate };
+    const concurrent = applyConcurrent(
+      input.runtime,
+      concurrentUpdate,
+      input.afterOwnVector,
+      input.ownTurnId,
+    );
+    const after = snapshotBlocks(input.runtime.doc, options.model, options.codec);
+    const echo = computeEcho({
+      before: input.before,
+      after,
+      agentTouchedHashes: input.touchedHashes,
+      agentDeletedHashes: input.deletedHashes,
+      structuralChange: input.structuralChange,
+      concurrentTouchedHashes: concurrent.touchedHashes,
     });
-    return concurrentUpdate;
+    return {
+      ok: true,
+      summary: {
+        echo,
+        concurrentEdits: concurrent.info,
+        reconciled: echo.some((hunk) => hunk.mode === "full"),
+      },
+    };
   }
 
-  async function applyUpdateToLive(
-    docId: string,
-    update: Uint8Array,
-    origin: ConcurrentUpdateOrigin,
-  ): Promise<void> {
-    await options.coordinator.withDocument(docId, async (liveDoc) => {
-      Y.applyUpdate(liveDoc, update, origin);
+  async function mergeUpdateAndCaptureConcurrent(
+    input: LocalMutationSyncInput,
+  ): Promise<Uint8Array | null | WriteResult> {
+    let concurrentUpdate: Uint8Array | null = null;
+    const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
+      concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
+      Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+      return null;
     });
+    if (typeof response === "string") return response;
+    return concurrentUpdate;
   }
 
   function applyConcurrent(
     runtime: RuntimeDocumentState,
     update: Uint8Array | null,
     afterOwnVector: Uint8Array,
-    turnId: string,
+    turnId: string | undefined,
   ): ConcurrentDetectionResult {
     if (!update || !hasYjsUpdate(update)) return { touchedHashes: new Set() };
     return applyConcurrentUpdates(
@@ -519,7 +634,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       options.model,
       options.codec,
       [{ update, origin: { type: "human" } }],
-      agentUpdateOrigin(turnId),
+      turnId ? agentUpdateOrigin(turnId) : undefined,
       afterOwnVector,
     );
   }
@@ -531,8 +646,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<T | WriteResult | null> {
     try {
       return await options.coordinator.withDocument(docId, async (doc) => fn(doc));
-    } catch (_cause) {
-      return documentNotFound(commandName, docId);
+    } catch (cause) {
+      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
+      throw cause;
     }
   }
 
@@ -729,8 +845,12 @@ function popIfTop(
 ): void {
   const last = stack.at(-1);
   if (typeof last === "string") {
-    if (last === value) stack.pop();
+    while (stack.at(-1) === value) stack.pop();
     return;
   }
-  if (last?.turnId === value) stack.pop();
+  let item = stack.at(-1);
+  while (item && typeof item !== "string" && item.turnId === value) {
+    stack.pop();
+    item = stack.at(-1);
+  }
 }
