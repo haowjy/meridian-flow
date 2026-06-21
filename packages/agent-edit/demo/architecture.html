@@ -263,14 +263,14 @@ flowchart TB
   ports --> coord_adapter
   ports --> actor_adapter
 
-  click entry showDetail "entry"
-  click ports showDetail "ports"
-  click tool showDetail "tool"
-  click codec showDetail "codec"
-  click model showDetail "model"
-  click resolver showDetail "resolver"
-  click apply showDetail "apply"
-  click undo showDetail "undo"
+  click entry call showDetail("entry")
+  click ports call showDetail("ports")
+  click tool call showDetail("tool")
+  click codec call showDetail("codec")
+  click model call showDetail("model")
+  click resolver call showDetail("resolver")
+  click apply call showDetail("apply")
+  click undo call showDetail("undo")
         </div>
       </div>
     </section>
@@ -280,13 +280,13 @@ flowchart TB
         <div class="mermaid">
 flowchart TB
   classDef seam stroke-width:2.5px,stroke:#b45309
-  caller(["LLM tool call<br/>write({ command, file, ... })"]):::seam
-  dispatch["write.ts dispatch<br/>view | create | insert | replace | undo | redo"]
+  caller(["LLM tool call<br/>write(command, file, ...)"]):::seam
+  dispatch["write.ts dispatch<br/>view · create · insert · replace · undo · redo"]
   session["resolve ActorSession<br/>via ActorSessionStore"]
   coord["coordinator.withDocument(docId)<br/>exclusive Y.Doc"]
   beginTurn["registry.beginTurn(...)<br/>stopCapturing — split stack item"]
   resolve["resolveWrite(ctx, params)<br/>find / scope / block-hash"]:::seam
-  edits[["ResolvedEdit[]<br/>kind = text | insert | delete"]]:::seam
+  edits[["ResolvedEdit array<br/>kind = text · insert · delete"]]:::seam
   apply["applyEdits()<br/>preflight all → doc.transact()"]
   journal["journal.append(docId, update, meta)"]
   echo["computeEcho()<br/>+ concurrent-edit detection"]
@@ -296,18 +296,18 @@ flowchart TB
   caller --> dispatch --> session --> coord --> beginTurn --> resolve --> edits --> apply --> journal --> echo --> reply
   apply -. capture under agent origin .-> endTurn
 
-  click caller showDetail "writeEntry"
-  click dispatch showDetail "tool"
-  click session showDetail "actorSession"
-  click coord showDetail "coordPort"
-  click beginTurn showDetail "beginTurn"
-  click resolve showDetail "resolver"
-  click edits showDetail "resolvedEdit"
-  click apply showDetail "tiers"
-  click journal showDetail "journalAppend"
-  click echo showDetail "echo"
-  click reply showDetail "writeResult"
-  click endTurn showDetail "endTurn"
+  click caller call showDetail("writeEntry")
+  click dispatch call showDetail("tool")
+  click session call showDetail("actorSession")
+  click coord call showDetail("coordPort")
+  click beginTurn call showDetail("beginTurn")
+  click resolve call showDetail("resolver")
+  click edits call showDetail("resolvedEdit")
+  click apply call showDetail("tiers")
+  click journal call showDetail("journalAppend")
+  click echo call showDetail("echo")
+  click reply call showDetail("writeResult")
+  click endTurn call showDetail("endTurn")
         </div>
       </div>
     </section>
@@ -336,19 +336,19 @@ flowchart LR
     journal --> group --> rebuild --> persist
   end
   parity{{"INVARIANT<br/>hot/cold byte-identical undo for same turn"}}:::seam
-  hot -. live cache .- parity
-  cold -. authoritative .- parity
+  stack -. live cache .-> parity
+  persist -. authoritative .-> parity
 
-  click reg showDetail "registry"
-  click origin showDetail "originSymbol"
-  click um showDetail "yUndoManager"
-  click stack showDetail "stackMeta"
-  click delFilter showDetail "deleteFilter"
-  click journal showDetail "journalPort"
-  click group showDetail "groupTurns"
-  click rebuild showDetail "reconstruct"
-  click persist showDetail "persistReversal"
-  click parity showDetail "parity"
+  click reg call showDetail("registry")
+  click origin call showDetail("originSymbol")
+  click um call showDetail("yUndoManager")
+  click stack call showDetail("stackMeta")
+  click delFilter call showDetail("deleteFilter")
+  click journal call showDetail("journalPort")
+  click group call showDetail("groupTurns")
+  click rebuild call showDetail("reconstruct")
+  click persist call showDetail("persistReversal")
+  click parity call showDetail("parity")
         </div>
       </div>
     </section>
@@ -955,15 +955,6 @@ function setMutationClientId(doc: Y.Doc, clientId: number | undefined): void {
     securityLevel: 'loose', // required for click callbacks
     flowchart: { curve: 'basis', nodeSpacing: 50, rankSpacing: 60, useMaxWidth: false },
   });
-  (async () => {
-    await mermaid.run({ querySelector: '.mermaid' });
-    // After render, mark flagged nodes for stroke emphasis (Mermaid v11 puts classDef on node groups)
-    document.querySelectorAll('.mermaid g.node').forEach((n) => {
-      if ([...n.classList].some((c) => c.includes('seam'))) n.classList.add('flagged');
-    });
-    setupPanZoomForAll();
-  })();
-
   // Pan & zoom per stage
   const stageState = new WeakMap();
   function setupPanZoomForAll() {
@@ -1035,6 +1026,48 @@ function setMutationClientId(doc: Y.Doc, clientId: number | undefined): void {
       st.stage.style.transform = 'translate(0px, 0px) scale(1)';
     });
   }
+
+  // Wire pan/zoom BEFORE running Mermaid: a parse failure in one diagram must
+  // not block setupPanZoomForAll from registering listeners for the others.
+  (async () => {
+    setupPanZoomForAll();
+    // Render diagrams one at a time so a parse failure on one tab doesn't
+    // abort the others (mermaid.run aborts the batch on the first throw).
+    // The non-active stages start `.hidden` (display: none), which makes
+    // Mermaid's layout measurements collapse to 0 and the SVG falls back to
+    // a 16×16 viewBox. Temporarily make every stage measurable during render.
+    const stagesEl = document.querySelectorAll('.stage-wrap');
+    const offscreen = [];
+    stagesEl.forEach((s) => {
+      if (s.classList.contains('hidden')) {
+        offscreen.push(s);
+        s.classList.remove('hidden');
+        s.style.position = 'absolute';
+        s.style.left = '-99999px';
+        s.style.top = '0';
+        s.style.visibility = 'hidden';
+      }
+    });
+    for (const node of document.querySelectorAll('.mermaid')) {
+      try {
+        await mermaid.run({ nodes: [node] });
+      } catch (err) {
+        console.warn('mermaid.run failed for node:', node.parentElement?.parentElement?.id, err);
+      }
+    }
+    // Restore the offscreen stages to their hidden state.
+    offscreen.forEach((s) => {
+      s.style.position = '';
+      s.style.left = '';
+      s.style.top = '';
+      s.style.visibility = '';
+      s.classList.add('hidden');
+    });
+    // After render, mark flagged nodes for stroke emphasis (Mermaid v11 puts classDef on node groups)
+    document.querySelectorAll('.mermaid g.node').forEach((n) => {
+      if ([...n.classList].some((c) => c.includes('seam'))) n.classList.add('flagged');
+    });
+  })();
 
   // Re-render Mermaid when color scheme flips so theme matches
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => location.reload());
