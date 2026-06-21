@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { resolveSessionIdentity } from "../session-identity";
+import { validateDbName } from "./dev-db";
 
 export interface DevDatabase {
   readonly envVar: string;
@@ -14,8 +16,9 @@ export interface DevDatabase {
 
 /**
  * Meridian Flow keeps a single-registry dev-tool contract against local
- * postgres:16 (Docker). Worktrees share one dev database — no per-worktree
- * DATABASE_URL rewrite.
+ * postgres:16 (Docker). Linked worktrees rewrite registered DB URLs to sibling
+ * databases on the same server (`<baseDbName>_<slug>`); the main checkout keeps
+ * the bare name from `.env`.
  */
 export const DEV_DATABASES: readonly DevDatabase[] = [
   {
@@ -55,16 +58,64 @@ export function resolveMainCheckoutRoot(repoRoot: string): string {
   return path.dirname(path.isAbsolute(commonDir) ? commonDir : path.resolve(repoRoot, commonDir));
 }
 
+export function isMainCheckout(repoRoot: string): boolean {
+  const mainRoot = resolveMainCheckoutRoot(repoRoot);
+  return realpathSync(repoRoot) === realpathSync(mainRoot);
+}
+
 export function loadMainEnvFile(repoRoot: string): Record<string, string> {
   const envPath = path.join(resolveMainCheckoutRoot(repoRoot), ".env");
   if (!existsSync(envPath)) return {};
   return parseEnv(readFileSync(envPath, "utf8"));
 }
 
+function databaseNameFromUrl(databaseUrl: string): string {
+  const name = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, ""));
+  if (!name) throw new Error("DATABASE_URL has no database name");
+  return name;
+}
+
+/** Build the per-worktree Postgres database name from the main-checkout base name. */
+export function resolveWorktreeDatabaseName(baseDbName: string, slug: string): string {
+  const name = `${baseDbName}_${slug}`;
+  validateDbName(name);
+  return name;
+}
+
+/** Rewrite a URL to the expected worktree database name; idempotent when already scoped. */
+export function applyWorktreeDatabaseRewrite(baseUrl: string, expectedDbName: string): string {
+  const currentDb = databaseNameFromUrl(baseUrl);
+  if (currentDb === expectedDbName) return baseUrl;
+  const url = new URL(baseUrl);
+  url.pathname = `/${expectedDbName}`;
+  return url.toString();
+}
+
+function resolveWorktreeDatabaseUrl(repoRoot: string, baseUrl: string): string {
+  const mainEnv = loadMainEnvFile(repoRoot);
+  const mainBaseUrl = mainEnv.DATABASE_URL ?? baseUrl;
+  const baseDbName = databaseNameFromUrl(mainBaseUrl);
+
+  const identity = resolveSessionIdentity({
+    branchName: runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    detachedHeadRef: runGit(repoRoot, ["rev-parse", "--short", "HEAD"]),
+    repoRootRealpath: realpathSync(repoRoot),
+  });
+
+  const expectedDbName = resolveWorktreeDatabaseName(baseDbName, identity.slug);
+  return applyWorktreeDatabaseRewrite(baseUrl, expectedDbName);
+}
+
 export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void {
   const mainEnv = loadMainEnvFile(repoRoot);
   for (const [key, value] of Object.entries(mainEnv)) {
     if (process.env[key] === undefined) process.env[key] = value;
+  }
+
+  for (const db of DEV_DATABASES) {
+    const baseUrl = mainEnv[db.envVar] ?? process.env[db.envVar];
+    if (!baseUrl) continue;
+    process.env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
   }
 }
 
@@ -76,9 +127,11 @@ export function assertRequiredBaseUrl(db: DevDatabase, value: string | undefined
   );
 }
 
-/** Local dev uses a single shared DATABASE_URL — no worktree rewrite. */
-export function resolveDatabaseUrl(input: { baseUrl: string }): string {
-  return input.baseUrl;
+/** Main checkout keeps the base URL; linked worktrees scope to `<baseDbName>_<slug>`. */
+export function resolveDatabaseUrl(input: { baseUrl: string; repoRoot?: string }): string {
+  const repoRoot = input.repoRoot ?? resolveCurrentRepoRoot();
+  if (isMainCheckout(repoRoot)) return input.baseUrl;
+  return resolveWorktreeDatabaseUrl(repoRoot, input.baseUrl);
 }
 
 export function resolveMainDatabaseNames(repoRoot: string): string[] {
@@ -87,7 +140,7 @@ export function resolveMainDatabaseNames(repoRoot: string): string[] {
     const value = env[db.envVar];
     if (!value) return [];
     try {
-      return [decodeURIComponent(new URL(value).pathname.replace(/^\//, ""))].filter(Boolean);
+      return [databaseNameFromUrl(value)];
     } catch {
       return [];
     }
