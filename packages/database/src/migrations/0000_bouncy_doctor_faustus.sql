@@ -1,4 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
 CREATE TABLE "agent_definitions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"project_id" uuid NOT NULL,
@@ -396,7 +395,6 @@ CREATE TABLE "project_results" (
 CREATE TABLE "user_preferences" (
 	"user_id" uuid PRIMARY KEY NOT NULL,
 	"preferences" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"onboarding_state" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -416,7 +414,9 @@ CREATE TABLE "users" (
 	"avatar_url" text,
 	"last_active_project_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "users_external_id_unique" UNIQUE("external_id"),
+	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
 CREATE TABLE "waitlist_emails" (
@@ -449,6 +449,7 @@ CREATE TABLE "document_yjs_checkpoints" (
 CREATE TABLE "document_yjs_heads" (
 	"document_id" uuid PRIMARY KEY NOT NULL,
 	"fragment_name" text DEFAULT 'prosemirror' NOT NULL,
+	"schema_version" integer DEFAULT 1 NOT NULL,
 	"latest_update_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_state_vector" "bytea",
 	"latest_checkpoint_id" bigint,
@@ -520,15 +521,6 @@ ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_document_id_
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_turn_id_turns_id_fk" FOREIGN KEY ("actor_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "folders" ADD CONSTRAINT "folders_parent_id_folders_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."folders"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "threads" ADD CONSTRAINT "threads_parent_thread_id_threads_id_fk" FOREIGN KEY ("parent_thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "threads" ADD CONSTRAINT "threads_origin_turn_id_turns_id_fk" FOREIGN KEY ("origin_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "threads" ADD CONSTRAINT "threads_active_leaf_turn_id_turns_id_fk" FOREIGN KEY ("active_leaf_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "turns" ADD CONSTRAINT "turns_parent_turn_id_turns_id_fk" FOREIGN KEY ("parent_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_definitions" ADD CONSTRAINT "agent_definitions_base_definition_id_agent_definitions_id_fk" FOREIGN KEY ("base_definition_id") REFERENCES "public"."agent_definitions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "skills" ADD CONSTRAINT "skills_base_skill_id_skills_id_fk" FOREIGN KEY ("base_skill_id") REFERENCES "public"."skills"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "user_installed_skills" ADD CONSTRAINT "user_installed_skills_base_skill_id_user_installed_skills_id_fk" FOREIGN KEY ("base_skill_id") REFERENCES "public"."user_installed_skills"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk" FOREIGN KEY ("latest_checkpoint_id") REFERENCES "public"."document_yjs_checkpoints"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_definitions_project_slug" ON "agent_definitions" USING btree ("project_id","slug");--> statement-breakpoint
 CREATE INDEX "agent_definitions_project_sort_enabled" ON "agent_definitions" USING btree ("project_id","sort_order") WHERE "agent_definitions"."enabled" = true;--> statement-breakpoint
 CREATE INDEX "agent_definitions_project_mode_enabled" ON "agent_definitions" USING btree ("project_id","mode") WHERE "agent_definitions"."enabled" = true;--> statement-breakpoint
@@ -583,119 +575,9 @@ CREATE INDEX "works_created_by_active" ON "works" USING btree ("created_by_user_
 CREATE UNIQUE INDEX "turn_document_touches_turn_document" ON "turn_document_touches" USING btree ("turn_id","document_id");--> statement-breakpoint
 CREATE INDEX "turn_document_touches_document_touched" ON "turn_document_touches" USING btree ("document_id","touched_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "turn_document_touches_turn" ON "turn_document_touches" USING btree ("turn_id");--> statement-breakpoint
-CREATE INDEX "project_results_project_created_idx" ON "project_results" USING btree ("project_id","created_at" DESC);--> statement-breakpoint
-CREATE INDEX "project_results_root_thread_idx" ON "project_results" USING btree ("root_thread_id","created_at" DESC);--> statement-breakpoint
-CREATE UNIQUE INDEX "users_external_id_unique" ON "users" USING btree ("external_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "users_email_unique" ON "users" USING btree ("email");--> statement-breakpoint
+CREATE INDEX "project_results_project_created_idx" ON "project_results" USING btree ("project_id","created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "project_results_root_thread_idx" ON "project_results" USING btree ("root_thread_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "users_last_active_project_idx" ON "users" USING btree ("last_active_project_id");--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "document_yjs_updates_document_id" ON "document_yjs_updates" USING btree ("document_id","id");--> statement-breakpoint
-CREATE VIEW "public"."credit_balances" AS (select "user_id", COALESCE(SUM("remaining_millicredits"), 0) as "total_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'grant'), 0) as "grant_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'purchase'), 0) as "purchased_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'debt'), 0) as "debt_balance_millicredits" from "credit_lots" where "credit_lots"."expires_at" IS NULL OR "credit_lots"."expires_at" > NOW() OR "credit_lots"."source_type" = 'debt' group by "credit_lots"."user_id");--> statement-breakpoint
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE OR REPLACE FUNCTION validate_parent_turn_same_thread()
-RETURNS TRIGGER AS $$
-DECLARE
-  v_parent_thread_id UUID;
-BEGIN
-  IF NEW.parent_turn_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT thread_id INTO v_parent_thread_id
-  FROM turns
-  WHERE id = NEW.parent_turn_id;
-
-  IF v_parent_thread_id IS NOT NULL AND v_parent_thread_id != NEW.thread_id THEN
-    RAISE EXCEPTION 'parent_turn_id must reference a turn in the same thread';
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE OR REPLACE FUNCTION validate_parent_turn_links_same_thread()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM turns child
-    JOIN turns parent ON parent.id = child.parent_turn_id
-    WHERE child.thread_id != parent.thread_id
-  ) THEN
-    RAISE EXCEPTION 'parent_turn_id must reference a turn in the same thread';
-  END IF;
-
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE OR REPLACE FUNCTION validate_active_leaf_same_thread()
-RETURNS TRIGGER AS $$
-DECLARE
-  v_leaf_thread_id UUID;
-BEGIN
-  IF NEW.active_leaf_turn_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT thread_id INTO v_leaf_thread_id
-  FROM turns
-  WHERE id = NEW.active_leaf_turn_id;
-
-  IF v_leaf_thread_id IS NOT NULL AND v_leaf_thread_id != NEW.id THEN
-    RAISE EXCEPTION 'active_leaf_turn_id must reference a turn in the same thread';
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE OR REPLACE FUNCTION validate_active_leaf_is_leaf()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM threads th
-    LEFT JOIN turns leaf ON leaf.id = th.active_leaf_turn_id
-    WHERE th.active_leaf_turn_id IS NOT NULL
-      AND (
-        leaf.id IS NULL
-        OR leaf.thread_id != th.id
-        OR EXISTS (
-          SELECT 1
-          FROM turns child
-          WHERE child.parent_turn_id = th.active_leaf_turn_id
-        )
-      )
-  ) THEN
-    RAISE EXCEPTION 'active_leaf_turn_id must reference a leaf turn in the same thread';
-  END IF;
-
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE OR REPLACE FUNCTION validate_purchase_lot_subscription()
-RETURNS TRIGGER AS $$
-BEGIN
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;--> statement-breakpoint
-CREATE TRIGGER projects_updated_at BEFORE UPDATE ON "projects" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER folders_updated_at BEFORE UPDATE ON "folders" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER documents_updated_at BEFORE UPDATE ON "documents" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER context_sources_updated_at BEFORE UPDATE ON "context_sources" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER threads_updated_at BEFORE UPDATE ON "threads" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER agent_definitions_updated_at BEFORE UPDATE ON "agent_definitions" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER skills_updated_at BEFORE UPDATE ON "skills" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER user_installed_skills_updated_at BEFORE UPDATE ON "user_installed_skills" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER user_subscriptions_updated_at BEFORE UPDATE ON "user_subscriptions" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER user_preferences_updated_at BEFORE UPDATE ON "user_preferences" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();--> statement-breakpoint
-CREATE TRIGGER turns_validate_parent_same_thread BEFORE INSERT OR UPDATE OF thread_id, parent_turn_id ON "turns" FOR EACH ROW EXECUTE FUNCTION validate_parent_turn_same_thread();--> statement-breakpoint
-CREATE TRIGGER threads_validate_active_leaf_same_thread BEFORE INSERT OR UPDATE OF active_leaf_turn_id ON "threads" FOR EACH ROW EXECUTE FUNCTION validate_active_leaf_same_thread();--> statement-breakpoint
-CREATE CONSTRAINT TRIGGER turns_validate_parent_links_same_thread AFTER INSERT OR UPDATE OF thread_id, parent_turn_id ON "turns" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_parent_turn_links_same_thread();--> statement-breakpoint
-CREATE CONSTRAINT TRIGGER threads_validate_active_leaf_is_leaf AFTER INSERT OR UPDATE OF active_leaf_turn_id ON "threads" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_active_leaf_is_leaf();--> statement-breakpoint
-CREATE CONSTRAINT TRIGGER turns_validate_active_leaf_is_leaf AFTER INSERT OR UPDATE OF thread_id, parent_turn_id ON "turns" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_active_leaf_is_leaf();--> statement-breakpoint
-CREATE CONSTRAINT TRIGGER credit_lots_validate_purchase_subscription AFTER INSERT OR UPDATE ON "credit_lots" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_purchase_lot_subscription();
+CREATE VIEW "public"."credit_balances" AS (select "user_id", COALESCE(SUM("remaining_millicredits"), 0) as "total_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'grant'), 0) as "grant_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'purchase'), 0) as "purchased_balance_millicredits", COALESCE(SUM("remaining_millicredits") FILTER (WHERE "source_type" = 'debt'), 0) as "debt_balance_millicredits" from "credit_lots" where "credit_lots"."expires_at" IS NULL OR "credit_lots"."expires_at" > NOW() OR "credit_lots"."source_type" = 'debt' group by "credit_lots"."user_id");
