@@ -56,8 +56,7 @@ async function collectEvents(
 }
 
 describe("smoke: in-process turn", () => {
-  // TODO(agent-edit): re-enable/rewrite after Step 9 cutover wires @meridian/agent-edit
-  it.skip("runs read through wired ContextPort tools and persists the turn lifecycle", async () => {
+  it("runs read through wired ContextPort tools and persists the turn lifecycle", async () => {
     const gateway = createScriptedGateway([
       {
         content: [

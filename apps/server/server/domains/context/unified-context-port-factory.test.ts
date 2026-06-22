@@ -11,8 +11,7 @@ import { createInMemoryUnifiedContextPortFactory } from "./unified-context-port-
 
 const USER = "00000000-0000-4000-8000-000000000303" as UserId;
 
-// TODO(agent-edit): re-enable/rewrite after Step 9 cutover wires @meridian/agent-edit
-describe.skip("createInMemoryUnifiedContextPortFactory", () => {
+describe("createInMemoryUnifiedContextPortFactory", () => {
   it("routes manuscript reads and writes through project-scoped ContextFS", async () => {
     const factory = createInMemoryUnifiedContextPortFactory();
     const port = factory.forProject("project_1", "user_1");

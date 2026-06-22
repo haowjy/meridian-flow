@@ -72,6 +72,8 @@ type SetMarkdownResult = {
   meta: UpdateMeta;
 };
 
+type EditMarkdownResult = SetMarkdownResult & { beforeMarkdown: string };
+
 type PendingAppend = {
   documentId: string;
   startedAt: number;
@@ -199,14 +201,12 @@ function createFacade(deps: {
     }
   }
 
-  async function setMarkdown(
+  function parseMarkdown(
     documentId: DocumentId,
     markdown: string,
-    origin: RuntimeOrigin,
-  ): Promise<Result<SetMarkdownResult, SyncError>> {
-    let parsed: ReturnType<typeof codec.parse>;
+  ): Result<ReturnType<typeof codec.parse>, SyncError> {
     try {
-      parsed = codec.parse(markdown);
+      return Ok(codec.parse(markdown));
     } catch (cause) {
       return Err({
         code: "corrupt_state",
@@ -214,31 +214,71 @@ function createFacade(deps: {
         message: cause instanceof Error ? cause.message : String(cause),
       });
     }
+  }
+
+  async function replaceLiveDocumentMarkdown(
+    documentId: DocumentId,
+    liveDoc: Y.Doc,
+    parsed: ReturnType<typeof codec.parse>,
+    origin: RuntimeOrigin,
+  ): Promise<Result<SetMarkdownResult, SyncError>> {
+    const draft = new Y.Doc({ gc: false });
+    Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
+    const beforeVector = Y.encodeStateVector(draft);
+    const yjsOrigin = yjsTransactionOrigin(origin);
+    draft.transact(() => {
+      const fragment = fragmentOf(draft);
+      if (fragment.length > 0) fragment.delete(0, fragment.length);
+      model.insertBlocks(draft, null, parsed);
+    }, yjsOrigin);
+    const update = Y.encodeStateAsUpdate(draft, beforeVector);
+    const meta = metaForOrigin(origin);
+    const seq = await deps.journal.append(documentId, update, meta);
+    Y.applyUpdate(liveDoc, update, yjsOrigin);
+    return Ok({
+      documentId,
+      markdown: serializeDoc(draft),
+      updateSeq: seq,
+      updateData: update,
+      meta: { ...meta, seq },
+    });
+  }
+
+  async function setMarkdown(
+    documentId: DocumentId,
+    markdown: string,
+    origin: RuntimeOrigin,
+  ): Promise<Result<SetMarkdownResult, SyncError>> {
+    const parsed = parseMarkdown(documentId, markdown);
+    if (!parsed.ok) return parsed;
 
     await deps.lifecycle.ensureDocument(documentId);
 
     try {
+      return await deps.coordinator.withDocument(documentId, (liveDoc) =>
+        replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin),
+      );
+    } catch (cause) {
+      if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
+      throw cause;
+    }
+  }
+
+  async function editMarkdown(
+    documentId: DocumentId,
+    transform: (markdown: string) => string,
+    origin: RuntimeOrigin,
+  ): Promise<Result<EditMarkdownResult, SyncError>> {
+    await deps.lifecycle.ensureDocument(documentId);
+
+    try {
       return await deps.coordinator.withDocument(documentId, async (liveDoc) => {
-        const draft = new Y.Doc({ gc: false });
-        Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
-        const beforeVector = Y.encodeStateVector(draft);
-        const yjsOrigin = yjsTransactionOrigin(origin);
-        draft.transact(() => {
-          const fragment = fragmentOf(draft);
-          if (fragment.length > 0) fragment.delete(0, fragment.length);
-          model.insertBlocks(draft, null, parsed);
-        }, yjsOrigin);
-        const update = Y.encodeStateAsUpdate(draft, beforeVector);
-        const meta = metaForOrigin(origin);
-        const seq = await deps.journal.append(documentId, update, meta);
-        Y.applyUpdate(liveDoc, update, yjsOrigin);
-        return Ok({
-          documentId,
-          markdown: serializeDoc(draft),
-          updateSeq: seq,
-          updateData: update,
-          meta: { ...meta, seq },
-        });
+        const beforeMarkdown = serializeDoc(liveDoc);
+        const parsed = parseMarkdown(documentId, transform(beforeMarkdown));
+        if (!parsed.ok) return parsed;
+
+        const result = await replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin);
+        return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
       });
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
@@ -451,15 +491,12 @@ function createFacade(deps: {
     },
 
     async editDocument(input) {
-      const before = await readMarkdown(input.documentId);
-      if (!before.ok) throwSyncError(before.error);
-      const result = await setMarkdown(
-        input.documentId,
-        input.transform(before.value),
-        input.origin,
-      );
+      const result = await editMarkdown(input.documentId, input.transform, input.origin);
       if (!result.ok) throwSyncError(result.error);
-      return { ...documentWriteResult(result.value, input.origin), beforeMarkdown: before.value };
+      return {
+        ...documentWriteResult(result.value, input.origin),
+        beforeMarkdown: result.value.beforeMarkdown,
+      };
     },
 
     async getLastUpdateAttribution(documentId) {
