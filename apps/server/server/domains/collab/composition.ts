@@ -200,11 +200,28 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
-  ): Promise<Result<{ documentId: DocumentId; markdown: string }, SyncError>> {
-    const read = await readMarkdown(documentId);
-    if (!read.ok) return read;
-    await runDocumentWriteHook({ documentId, threadId, markdown: read.value });
-    return Ok({ documentId, markdown: read.value });
+  ): Promise<void> {
+    try {
+      const read = await readMarkdown(documentId);
+      if (!read.ok) {
+        emitProjectionRefreshFailure({
+          documentId,
+          threadId,
+          payload: {
+            code: read.error.code,
+            message: syncErrorMessage(read.error),
+          },
+        });
+        return;
+      }
+      await runDocumentWriteHook({ documentId, threadId, markdown: read.value });
+    } catch (cause) {
+      emitProjectionRefreshFailure({
+        documentId,
+        threadId,
+        payload: unknownToEventPayload(cause),
+      });
+    }
   }
 
   async function runDocumentWriteHook(
@@ -230,6 +247,24 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         },
       });
     }
+  }
+
+  function emitProjectionRefreshFailure(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId;
+    payload: Record<string, unknown>;
+  }): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.document_write",
+      name: "projection_refresh.failed",
+      payload: {
+        documentId: input.documentId,
+        threadId: input.threadId ?? null,
+        ...input.payload,
+      },
+    });
   }
 
   function parseMarkdown(
