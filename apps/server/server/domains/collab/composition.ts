@@ -60,7 +60,12 @@ type CheckpointRecord = {
 };
 
 export type CollabFacadeStore = {
-  createCheckpoint(docId: string, state: Uint8Array, reason: string): Promise<string>;
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
   getCheckpoint(id: string): Promise<CheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<CheckpointRecord[]>;
   latestUpdate(docId: string): Promise<JournalUpdate | null>;
@@ -346,6 +351,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     };
   }
 
+  async function latestUpdateSeq(documentId: string): Promise<number> {
+    return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
+  }
+
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
       const pending = [...pendingAppends.values()].filter(
@@ -458,10 +467,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async checkpoint(documentId, reason) {
       try {
-        const state = await deps.coordinator.withDocument(documentId, async (doc) =>
-          Y.encodeStateAsUpdate(doc),
-        );
-        return Ok(await deps.store.createCheckpoint(documentId, state, reason));
+        const { state, upToSeq } = await deps.coordinator.withDocument(documentId, async (doc) => {
+          const upToSeq = await latestUpdateSeq(documentId);
+          // upToSeq must be ≤ the updates reflected in state; any later
+          // update is replayed after the checkpoint, which is safe in Yjs.
+          return { state: Y.encodeStateAsUpdate(doc), upToSeq };
+        });
+        return Ok(await deps.store.createCheckpoint(documentId, state, reason, upToSeq));
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         throw cause;
@@ -555,7 +567,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async storeHocuspocusDocument(documentId, document) {
       await drainPending(documentId);
-      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document));
+      const upToSeq = await latestUpdateSeq(documentId);
+      // upToSeq must be ≤ the updates reflected in state; appends after this
+      // point are intentionally replayed when the document reloads.
+      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
     },
 
     drainHocuspocusPersistence() {
@@ -570,7 +585,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
 function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
   return {
-    createCheckpoint: (docId, state, reason) => journal.createCheckpoint(docId, state, reason),
+    createCheckpoint: (docId, state, reason, upToSeq) =>
+      journal.createCheckpoint(docId, state, reason, upToSeq),
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),

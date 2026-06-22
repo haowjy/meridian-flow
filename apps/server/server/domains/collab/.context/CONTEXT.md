@@ -67,8 +67,10 @@ The WS route calls the collab domain hooks:
 - `loadHocuspocusDocument` replays checkpoint + updates via `loadDocumentState`.
 - `persistConnectionUpdate` appends the connection update to the journal outside
   the coordinator; pending appends are tracked by document.
-- `storeHocuspocusDocument` drains pending appends for that document, then writes
-  a checkpoint from `Y.encodeStateAsUpdate(document)`.
+- `storeHocuspocusDocument` drains pending appends for that document, captures
+  the latest persisted update seq, then writes a checkpoint from
+  `Y.encodeStateAsUpdate(document)`. The seq is captured before encoding so a
+  concurrent append is replayed instead of hidden by the checkpoint.
 - `drainHocuspocusPersistence` waits for tracked appends. Metrics report pending
   depth, oldest pending age, failed/dropped append count, live docs, and open
   Hocuspocus connections.

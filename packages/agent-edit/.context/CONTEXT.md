@@ -7,6 +7,11 @@ The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
 `persistReversal` (atomically persist undo update + reversal record). Ordered
 by monotonic seq per document. Every adapter implements this.
 
+Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
+state is allowed to hide from replay. It must not be higher than what the state
+contains; replaying an already-included update is idempotent, but skipping one
+is durable data loss.
+
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
 for the same docId (KeyedMutex on server, process-level lock on desktop).
