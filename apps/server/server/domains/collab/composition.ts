@@ -1,11 +1,10 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
-import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
+import type { Hocuspocus } from "@hocuspocus/server";
 import {
   type AgentEditCore,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
-  fragmentOf,
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
   mdxCodec,
@@ -17,7 +16,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { Err, Ok, type Result } from "../../shared/result.js";
+import { Err, Ok } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -29,15 +28,16 @@ import {
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import {
+  createMarkdownDocumentEngine,
+  type RuntimeOrigin,
+  syncErrorMessage,
+} from "./domain/markdown-document.js";
 import type {
   CheckpointInfo,
   CollabDomain,
   CollabPersistenceMetrics,
   DocumentWriteHook,
-  DocumentWriteOrigin,
-  DocumentWriteResult,
-  PersistedUpdate,
-  SyncError,
   UpdateOrigin,
 } from "./index.js";
 
@@ -78,18 +78,6 @@ export type CollabFacadeDeps = {
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
 };
-
-type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
-
-type SetMarkdownResult = {
-  documentId: DocumentId;
-  markdown: string;
-  updateSeq: number;
-  updateData: Uint8Array;
-  meta: UpdateMeta;
-};
-
-type EditMarkdownResult = SetMarkdownResult & { beforeMarkdown: string };
 
 type PendingAppend = {
   documentId: string;
@@ -164,45 +152,22 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const droppedByDocument = new Map<string, number>();
   let nextPendingId = 1;
 
-  function serializeDoc(doc: Y.Doc): string {
-    const blocks = model.getBlocks(doc);
-    if (blocks.length === 0) return "";
-    return codec.serialize(blocks.map((block) => model.toProsemirrorBlock(doc, block)));
-  }
-
-  function syncErrorMessage(error: SyncError): string {
-    switch (error.code) {
-      case "not_found":
-        return `Document not found: ${error.documentId}`;
-      case "checkpoint_not_found":
-        return `Checkpoint not found: ${error.checkpointId}`;
-      case "corrupt_state":
-        return error.message;
-    }
-  }
-
-  function throwSyncError(error: SyncError): never {
-    throw new Error(syncErrorMessage(error));
-  }
-
-  async function readMarkdown(documentId: string): Promise<Result<string, SyncError>> {
-    try {
-      const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-        serializeDoc(doc),
-      );
-      return Ok(markdown);
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-      throw cause;
-    }
-  }
+  const markdownDocuments = createMarkdownDocumentEngine({
+    codec,
+    model,
+    journal: deps.journal,
+    coordinator: deps.coordinator,
+    lifecycle: deps.lifecycle,
+    metaForOrigin,
+    afterWrite: runDocumentWriteHook,
+  });
 
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
   ): Promise<void> {
     try {
-      const read = await readMarkdown(documentId);
+      const read = await markdownDocuments.readAsMarkdown(documentId);
       if (!read.ok) {
         emitProjectionRefreshFailure({
           documentId,
@@ -265,128 +230,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         ...input.payload,
       },
     });
-  }
-
-  function parseMarkdown(
-    documentId: DocumentId,
-    markdown: string,
-  ): Result<ReturnType<typeof codec.parse>, SyncError> {
-    try {
-      return Ok(codec.parse(markdown));
-    } catch (cause) {
-      return Err({
-        code: "corrupt_state",
-        documentId,
-        message: cause instanceof Error ? cause.message : String(cause),
-      });
-    }
-  }
-
-  async function replaceLiveDocumentMarkdown(
-    documentId: DocumentId,
-    liveDoc: Y.Doc,
-    parsed: ReturnType<typeof codec.parse>,
-    origin: RuntimeOrigin,
-  ): Promise<Result<SetMarkdownResult, SyncError>> {
-    const draft = new Y.Doc({ gc: false });
-    Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
-    const beforeVector = Y.encodeStateVector(draft);
-    const yjsOrigin = yjsTransactionOrigin(origin);
-    draft.transact(() => {
-      const fragment = fragmentOf(draft);
-      if (fragment.length > 0) fragment.delete(0, fragment.length);
-      model.insertBlocks(draft, null, parsed);
-    }, yjsOrigin);
-    const update = Y.encodeStateAsUpdate(draft, beforeVector);
-    const meta = metaForOrigin(origin);
-    const seq = await deps.journal.append(documentId, update, meta);
-    Y.applyUpdate(liveDoc, update, yjsOrigin);
-    return Ok({
-      documentId,
-      markdown: serializeDoc(draft),
-      updateSeq: seq,
-      updateData: update,
-      meta: { ...meta, seq },
-    });
-  }
-
-  async function setMarkdown(
-    documentId: DocumentId,
-    markdown: string,
-    origin: RuntimeOrigin,
-    threadId?: ThreadId,
-  ): Promise<Result<SetMarkdownResult, SyncError>> {
-    const parsed = parseMarkdown(documentId, markdown);
-    if (!parsed.ok) return parsed;
-
-    await deps.lifecycle.ensureDocument(documentId);
-
-    try {
-      const result = await deps.coordinator.withDocument(documentId, (liveDoc) =>
-        replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin),
-      );
-      if (result.ok) {
-        await runDocumentWriteHook({
-          documentId: result.value.documentId,
-          threadId,
-          markdown: result.value.markdown,
-        });
-      }
-      return result;
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-      throw cause;
-    }
-  }
-
-  async function editMarkdown(
-    documentId: DocumentId,
-    transform: (markdown: string) => string,
-    origin: RuntimeOrigin,
-    threadId?: ThreadId,
-  ): Promise<Result<EditMarkdownResult, SyncError>> {
-    await deps.lifecycle.ensureDocument(documentId);
-
-    try {
-      const result = await deps.coordinator.withDocument(documentId, async (liveDoc) => {
-        const beforeMarkdown = serializeDoc(liveDoc);
-        const parsed = parseMarkdown(documentId, transform(beforeMarkdown));
-        if (!parsed.ok) return parsed;
-
-        const result = await replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin);
-        return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
-      });
-      if (result.ok) {
-        await runDocumentWriteHook({
-          documentId: result.value.documentId,
-          threadId,
-          markdown: result.value.markdown,
-        });
-      }
-      return result;
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-      throw cause;
-    }
-  }
-
-  function persistedUpdate(result: SetMarkdownResult): PersistedUpdate {
-    return { updateSeq: result.updateSeq, updateData: result.updateData };
-  }
-
-  function documentWriteResult(
-    result: SetMarkdownResult,
-    origin: DocumentWriteOrigin,
-  ): DocumentWriteResult {
-    return {
-      documentId: result.documentId,
-      markdown: result.markdown,
-      updateSeq: result.updateSeq,
-      updateData: Buffer.from(result.updateData),
-      originType: origin.type,
-      actorTurnId: origin.type === "agent" ? origin.actorTurnId : null,
-      actorUserId: origin.type === "user" ? origin.actorUserId : null,
-    };
   }
 
   async function latestUpdateSeq(documentId: string): Promise<number> {
@@ -470,7 +313,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     readAsMarkdown(documentId) {
-      return readMarkdown(documentId);
+      return markdownDocuments.readAsMarkdown(documentId);
     },
 
     refreshDocumentProjection(input) {
@@ -478,8 +321,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async writeFromMarkdown(documentId, markdown, origin) {
-      const result = await setMarkdown(documentId as DocumentId, markdown, origin);
-      return result.ok ? Ok(persistedUpdate(result.value)) : result;
+      return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
     },
 
     async checkpoint(documentId, reason) {
@@ -505,11 +347,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       try {
         const restored = new Y.Doc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
-        const result = await setMarkdown(
-          documentId as DocumentId,
-          serializeDoc(restored),
-          SYSTEM_ORIGIN,
-        );
+        const result = await markdownDocuments.setMarkdown({
+          documentId: documentId as DocumentId,
+          markdown: markdownDocuments.serializeDoc(restored),
+          origin: SYSTEM_ORIGIN,
+        });
         if (!result.ok) return result;
         return Ok(undefined);
       } catch (cause) {
@@ -535,28 +377,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async writeDocument(input) {
-      const result = await setMarkdown(
-        input.documentId,
-        input.markdown,
-        input.origin,
-        input.threadId,
-      );
-      if (!result.ok) throwSyncError(result.error);
-      return documentWriteResult(result.value, input.origin);
+      return markdownDocuments.writeDocument(input);
     },
 
     async editDocument(input) {
-      const result = await editMarkdown(
-        input.documentId,
-        input.transform,
-        input.origin,
-        input.threadId,
-      );
-      if (!result.ok) throwSyncError(result.error);
-      return {
-        ...documentWriteResult(result.value, input.origin),
-        beforeMarkdown: result.value.beforeMarkdown,
-      };
+      return markdownDocuments.editDocument(input);
     },
 
     async getLastUpdateAttribution(documentId) {
@@ -608,10 +433,6 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
   };
-}
-
-function yjsTransactionOrigin(origin: RuntimeOrigin): TransactionOrigin {
-  return { source: "local", context: { origin } };
 }
 
 function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {
