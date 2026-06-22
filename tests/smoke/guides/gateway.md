@@ -11,6 +11,7 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 | `DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
 | `ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
 | `OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
+| `OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
 
@@ -59,7 +60,7 @@ curl -sS "${BASE}/health" | jq .
 
 **Description:** With no real provider keys (or `MODEL_PROVIDER=mock`), the server starts an in-process OpenAI-compatible mock. Proves the adapter pipeline without external network.
 
-**Setup:** Ensure `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, and `OPENAI_API_KEY` are unset or dev placeholders (`dev-*`). Restart the server.
+**Setup:** Ensure provider API keys are unset or dev placeholders (`dev-*`). Restart the server.
 
 ```bash
 curl -sS "${BASE}/health" | jq .

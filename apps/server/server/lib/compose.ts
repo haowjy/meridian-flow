@@ -203,6 +203,18 @@ export async function createProductionAppPorts(input: {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
   const { gateway } = await createGatewayFromEnv(environment, {
+    onInfo: (info) => {
+      emitEvent(eventSink, {
+        level: "info",
+        source: "gateway",
+        name: "gateway.resolved",
+        payload: {
+          message: info.message,
+          provider: info.provider,
+          model: info.model ?? null,
+        },
+      });
+    },
     onWarning: (span) => {
       emitEvent(eventSink, {
         level: "warn",

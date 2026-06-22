@@ -9,7 +9,7 @@
  */
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { createGateway } from "../create-gateway.js";
-import type { TraceSpan } from "../domain/index.js";
+import type { ProviderConfig, TraceSpan } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
 import {
   buildProviderConfigs,
@@ -22,6 +22,39 @@ export interface GatewayFromEnv {
   gateway: Gateway;
   /** Closes the in-process mock server when one was started for this instance. */
   cleanup?: () => Promise<void>;
+}
+
+export interface GatewayStartupInfo {
+  provider: string;
+  model?: string;
+  message: string;
+}
+
+function resolveDefaultProvider(
+  providers: ProviderConfig[],
+  defaultModel: string | undefined,
+): string | undefined {
+  if (!defaultModel) return providers[0]?.id;
+  return (
+    providers.find((provider) => provider.models.some((model) => model.id === defaultModel))?.id ??
+    providers[0]?.id
+  );
+}
+
+function formatGatewayStartupInfo(
+  providers: ProviderConfig[],
+  defaultModel: string | undefined,
+): GatewayStartupInfo {
+  const provider = resolveDefaultProvider(providers, defaultModel) ?? "unknown";
+  const message =
+    provider === "mock" || !defaultModel
+      ? `gateway: ${provider}`
+      : `gateway: ${provider}/${defaultModel}`;
+  return {
+    provider,
+    model: defaultModel,
+    message,
+  };
 }
 
 /**
@@ -37,7 +70,11 @@ export interface GatewayFromEnv {
  */
 export async function createGatewayFromEnv(
   env: GatewayEnvInput,
-  options?: { mockBaseUrl?: string; onWarning?: (span: TraceSpan) => void },
+  options?: {
+    mockBaseUrl?: string;
+    onWarning?: (span: TraceSpan) => void;
+    onInfo?: (info: GatewayStartupInfo) => void;
+  },
 ): Promise<GatewayFromEnv> {
   let cleanup: (() => Promise<void>) | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
@@ -52,9 +89,17 @@ export async function createGatewayFromEnv(
     providers.push(mockProviderConfig(baseUrl));
   }
 
+  const gatewayOptions = defaultGatewayOptions(providers, registryDefaultModel);
+  const startupInfo = formatGatewayStartupInfo(providers, gatewayOptions.defaultModel);
+  if (options?.onInfo) {
+    options.onInfo(startupInfo);
+  } else {
+    console.info(startupInfo.message);
+  }
+
   const gateway = createGateway({
     providers,
-    ...defaultGatewayOptions(providers, registryDefaultModel),
+    ...gatewayOptions,
     attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
     onWarning: options?.onWarning,
   });

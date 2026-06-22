@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "auth:setup": "tsx e2e/auth.setup.ts",
-    "test:e2e:auth": "playwright test -c e2e/playwright.auth.config.ts",
+    "test:e2e:auth": "MODEL_PROVIDER=mock playwright test -c e2e/playwright.auth.config.ts",
     "test:e2e:chat-smoke": "playwright test -c e2e/playwright.chat-smoke.config.ts",
     "test:e2e:mobile-shell": "playwright test -c e2e/playwright.mobile-shell.config.ts",
     "verify:process-disclosure": "tsx e2e/verify-process-disclosure.mts",

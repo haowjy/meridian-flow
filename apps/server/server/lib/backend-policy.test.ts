@@ -24,10 +24,10 @@ describe("resolveProvider", () => {
       resolveProvider({
         override: undefined,
         backends: "local",
-        local: "mock",
-        live: "auto",
+        local: "local",
+        live: "cloud",
       }),
-    ).toBe("mock");
+    ).toBe("local");
   });
 
   it("uses the live default when override is unset and backends is live", () => {
@@ -46,7 +46,6 @@ describe("resolveBackends", () => {
   it("resolves local defaults when the umbrella is unset", () => {
     expect(resolveBackends({})).toEqual({
       backends: "local",
-      model: "auto",
       objectStore: "local",
       event: "local",
     });
@@ -55,14 +54,12 @@ describe("resolveBackends", () => {
   it("resolves live defaults for retained provider seams", () => {
     expect(resolveBackends({ MERIDIAN_BACKENDS: "live" })).toEqual({
       backends: "live",
-      model: "auto",
       objectStore: "s3",
       event: "local",
     });
   });
 
   it.each([
-    ["MODEL_PROVIDER", "anthropic", "model", "anthropic"],
     ["OBJECT_STORE_PROVIDER", "s3", "objectStore", "s3"],
     ["EVENT_PROVIDER", "noop", "event", "noop"],
   ] as const)("per-service override %s wins over umbrella", (overrideKey, overrideValue, resolvedKey, expected) => {

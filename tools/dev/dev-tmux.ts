@@ -1,10 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  buildProviderApiKeyGuardShell,
-  resolveAppEnvPassthroughKeys,
-} from "./dev-app-env-passthrough";
+import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { assertDevInfraReady } from "./lib/dev-infra";
@@ -112,7 +109,7 @@ function appEnvPassthroughExports(): string {
 }
 
 function envSourcePreamble(): string {
-  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}${buildProviderApiKeyGuardShell()}`;
+  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}`;
 }
 
 function portlessCommandBody(mode: DevMode): string {
