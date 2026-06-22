@@ -23,6 +23,7 @@ import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
+import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
@@ -47,6 +48,7 @@ import type {
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
+  lifecycle?: DocumentLifecycle;
   codec: Codec;
   model: YProsemirrorDocumentModel;
   undoRegistry?: UndoManagerRegistry;
@@ -209,23 +211,24 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (address.fragment) {
       return status("invalid_write", "create does not accept a #fragment in file.");
     }
+    if (!options.lifecycle) {
+      return status("invalid_write", "document creation is not supported by this deployment");
+    }
 
     const runtime = runtimeFor(session, address.filePath);
-    if (
-      session.documents.has(address.filePath) ||
-      options.model.getBlocks(runtime.doc).length > 0
-    ) {
+    if (options.model.getBlocks(runtime.doc).length > 0) {
       return status("invalid_write", `File already exists: ${address.filePath}`);
     }
+    const parsed = parseForCommand(command.content ?? "");
+    if (!parsed.ok) return status("invalid_write", parsed.message);
+
+    await options.lifecycle.ensureDocument(address.filePath);
     const liveCheck = await withLive(address.filePath, command.command, (liveDoc) =>
       options.model.getBlocks(liveDoc).length > 0
         ? status("invalid_write", `File already exists: ${address.filePath}`)
         : null,
     );
     if (typeof liveCheck === "string") return liveCheck;
-
-    const parsed = parseForCommand(command.content ?? "");
-    if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const turnId = nextTurnId(session, address.filePath, runtime, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
