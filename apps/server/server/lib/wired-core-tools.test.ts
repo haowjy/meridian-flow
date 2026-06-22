@@ -3,7 +3,7 @@
  * schemas to context/collab-backed handlers and record document-touch side effects.
  */
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../domains/billing/index.js";
 import { createInMemoryCollabDomain } from "../domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../domains/context/index.js";
@@ -33,19 +33,30 @@ import {
 } from "../domains/threads/index.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
-function wiredTestGraph(input: { works?: ReturnType<typeof createInMemoryWorkRepository> } = {}) {
-  const documentSync = createInMemoryCollabDomain();
+type WiredTestGraphOptions = {
+  works?: ReturnType<typeof createInMemoryWorkRepository>;
+  documentSync?: ReturnType<typeof createInMemoryCollabDomain>;
+  toolDocumentSync?: Pick<
+    ReturnType<typeof createInMemoryCollabDomain>,
+    "agentEdit" | "refreshDocumentProjection"
+  >;
+  eventSink?: ReturnType<typeof createInMemoryEventSink>;
+};
+
+function wiredTestGraph(input: WiredTestGraphOptions = {}) {
+  const documentSync = input.documentSync ?? createInMemoryCollabDomain();
   const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
   const repos = createInMemoryRepositories(input.works ? { works: input.works } : undefined);
+  const eventSink = input.eventSink ?? createInMemoryEventSink();
   const registrations = createWiredCoreToolRegistrations({
     threads: repos.threads,
     contextPorts,
-    documentSync,
+    documentSync: input.toolDocumentSync ?? documentSync,
     threadWorks: repos.threadWorks,
     documentTouches: repos.documentTouches,
-    eventSink: createInMemoryEventSink(),
+    eventSink,
   });
-  return { documentSync, contextPorts, repos, registrations };
+  return { documentSync, contextPorts, repos, registrations, eventSink };
 }
 
 function buildRegistrations() {
@@ -72,6 +83,50 @@ async function waitForJournalEvent(
       throw new Error(`timed out waiting for journal event ${type}`);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+}
+
+async function wiredWriteHarness(input: WiredTestGraphOptions = {}) {
+  const graph = wiredTestGraph(input);
+  const thread = await graph.repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const executor = createToolExecutor(createToolRegistry({ registrations: graph.registrations }));
+  const port = graph.contextPorts.forProject("project-1", "user-1");
+
+  async function write(id: string, args: Record<string, unknown>, turnId = "turn-write") {
+    return executor.executeTool(
+      { id, name: "write", arguments: args },
+      {
+        signal: new AbortController().signal,
+        threadId: thread.id,
+        turnId,
+        agentSlug: null,
+      },
+    );
+  }
+
+  return { ...graph, thread, executor, port, write };
+}
+
+type WriteExecutionResult = Awaited<
+  ReturnType<Awaited<ReturnType<typeof wiredWriteHarness>>["write"]>
+>;
+
+function stringOutput(result: WriteExecutionResult): string {
+  expect(result.isError).toBeUndefined();
+  expect(typeof result.output).toBe("string");
+  return result.output as string;
+}
+
+function errorMessage(result: WriteExecutionResult): string {
+  expect(result.isError).toBe(true);
+  expect(result.output).toMatchObject({ code: "tool_error" });
+  return (result.output as { message: string }).message;
+}
+
+function firstHashContaining(viewOutput: string, text: string): string {
+  const line = viewOutput.split("\n").find((candidate) => candidate.includes(text));
+  const hash = line?.split("|", 1)[0];
+  if (!hash) throw new Error(`missing block hash for ${text} in:\n${viewOutput}`);
+  return hash;
 }
 
 function askUserGateway(): Gateway & { getRequests(): GenerateRequest[] } {
@@ -309,7 +364,9 @@ describe("createWiredCoreToolRegistrations", () => {
         input: { command: "insert", path: "kb://story.md", content: "Gamma arrives." },
       },
       { id: "call-undo", input: { command: "undo", path: "kb://story.md" } },
+      { id: "call-view-after-undo", input: { command: "view", path: "kb://story.md" } },
       { id: "call-redo", input: { command: "redo", path: "kb://story.md" } },
+      { id: "call-view-after-redo", input: { command: "view", path: "kb://story.md" } },
     ]);
     const eventWriter = createInMemoryEventJournalWriter();
     const creditLedger = createInMemoryCreditLedger();
@@ -345,18 +402,42 @@ describe("createWiredCoreToolRegistrations", () => {
       (turn) => turn.role === "assistant",
     );
     if (!assistantTurn) throw new Error("missing assistant turn");
-    const toolOutputs = (await repos.blocks.listByTurn(assistantTurn.id))
+    const toolResults = (await repos.blocks.listByTurn(assistantTurn.id))
       .filter((block) => block.blockType === "tool_result")
       .sort((a, b) => a.sequence - b.sequence)
-      .map((block) => (block.content as { output?: unknown }).output);
+      .map((block) => block.content as { toolCallId?: string; output?: unknown });
+    const outputByCallId = new Map(
+      toolResults.map((result) => [result.toolCallId, result.output] as const),
+    );
+    const outputFor = (toolCallId: string): string => {
+      const output = outputByCallId.get(toolCallId);
+      expect(typeof output).toBe("string");
+      return output as string;
+    };
 
-    expect(toolOutputs).toHaveLength(6);
-    expect(toolOutputs.every((output) => typeof output === "string")).toBe(true);
-    expect(toolOutputs[0]).toContain("status: success");
-    expect(toolOutputs[1]).toContain("Alpha sword.");
-    expect(toolOutputs[2]).toContain("status: success");
-    expect(toolOutputs[3]).toContain("Gamma arrives");
-    expect(toolOutputs[4]).toContain("status: reversed");
+    expect([...outputByCallId.keys()]).toEqual([
+      "call-create",
+      "call-view",
+      "call-replace",
+      "call-insert",
+      "call-undo",
+      "call-view-after-undo",
+      "call-redo",
+      "call-view-after-redo",
+    ]);
+    expect(outputFor("call-create")).toContain("status: success");
+    expect(outputFor("call-view")).toContain("Alpha sword.");
+    expect(outputFor("call-replace")).toContain("status: success");
+    expect(outputFor("call-insert")).toContain("Gamma arrives");
+    expect(outputFor("call-undo")).toContain("status: reversed");
+    const afterUndo = outputFor("call-view-after-undo");
+    expect(afterUndo).not.toContain("Alpha blade.");
+    expect(afterUndo).not.toContain("Gamma arrives.");
+    expect(outputFor("call-redo")).toContain("status: reversed");
+    const afterRedo = outputFor("call-view-after-redo");
+    expect(afterRedo).toContain("Alpha blade.");
+    expect(afterRedo).not.toContain("Alpha sword.");
+    expect(afterRedo).toContain("Gamma arrives.");
 
     const read = await contextPorts.forProject(project.id, "user-1").read("kb://story.md");
     expect(read.ok).toBe(true);
@@ -370,6 +451,167 @@ describe("createWiredCoreToolRegistrations", () => {
     const touches = await repos.documentTouches.listByThread(thread.id);
     expect(touches).toHaveLength(1);
     expect(touches[0]).toMatchObject({ turnId: assistantTurn.id });
+  });
+
+  it("does not status-sniff write(command=view) document content", async () => {
+    const baseDocumentSync = createInMemoryCollabDomain();
+    const rawBody = "status: not_found\n\nThis is valid prose.";
+    const { port, write } = await wiredWriteHarness({
+      documentSync: baseDocumentSync,
+      toolDocumentSync: {
+        agentEdit: () => ({
+          ...baseDocumentSync.agentEdit(),
+          write: async () => rawBody,
+        }),
+        refreshDocumentProjection: baseDocumentSync.refreshDocumentProjection,
+      },
+    });
+    await port.write("kb://status-body.md", rawBody, { origin: { type: "system" } });
+
+    const result = await write("call-view-status-body", {
+      command: "view",
+      path: "kb://status-body.md",
+    });
+
+    expect(result).toEqual({
+      toolCallId: "call-view-status-body",
+      output: rawBody,
+    });
+  });
+
+  it("surfaces ambiguous replace as a tool error through the wired handler", async () => {
+    const { port, write } = await wiredWriteHarness();
+    await port.write("kb://ambiguous.md", "sword one\n\nsword two", {
+      origin: { type: "system" },
+    });
+    stringOutput(
+      await write("call-view-ambiguous", { command: "view", path: "kb://ambiguous.md" }),
+    );
+
+    const message = errorMessage(
+      await write("call-replace-ambiguous", {
+        command: "replace",
+        path: "kb://ambiguous.md",
+        find: "sword",
+        content: "blade",
+      }),
+    );
+
+    expect(message).toContain("status: ambiguous_match");
+    expect(message).toContain("Found 2 matches");
+  });
+
+  it.each([
+    "insert",
+    "replace",
+  ] as const)("rejects write(command=%s) without content before dispatch", async (command) => {
+    const { write } = await wiredWriteHarness();
+
+    const message = errorMessage(
+      await write(`call-${command}-missing-content`, {
+        command,
+        path: "kb://missing-content.md",
+        ...(command === "replace" ? { find: "needle" } : {}),
+      }),
+    );
+
+    expect(message).toBe("content is required");
+  });
+
+  it("surfaces create on an existing document as a tool error", async () => {
+    const { port, write } = await wiredWriteHarness();
+    await port.write("kb://existing.md", "Existing draft.", { origin: { type: "system" } });
+
+    const message = errorMessage(
+      await write("call-create-existing", {
+        command: "create",
+        path: "kb://existing.md",
+        content: "Replacement draft.",
+      }),
+    );
+
+    expect(message).toContain("status: invalid_write");
+    expect(message).toContain("File already exists");
+  });
+
+  it("routes view and replace through #fragment document addresses", async () => {
+    const { port, write } = await wiredWriteHarness();
+    await port.write("kb://fragment.md", "Alpha target.\n\nBeta safe.", {
+      origin: { type: "system" },
+    });
+    const fullView = stringOutput(
+      await write("call-view-fragment-source", { command: "view", path: "kb://fragment.md" }),
+    );
+    const alphaHash = firstHashContaining(fullView, "Alpha target.");
+
+    const fragmentView = stringOutput(
+      await write("call-view-fragment", {
+        command: "view",
+        path: `kb://fragment.md#${alphaHash}`,
+      }),
+    );
+    expect(fragmentView).toContain("Alpha target.");
+    expect(fragmentView).not.toContain("Beta safe.");
+
+    const replace = stringOutput(
+      await write("call-replace-fragment", {
+        command: "replace",
+        path: `kb://fragment.md#${alphaHash}`,
+        find: "target",
+        content: "changed",
+      }),
+    );
+    expect(replace).toContain("status: success");
+
+    const read = await port.read("kb://fragment.md");
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value.content).toContain("Alpha changed.");
+      expect(read.value.content).toContain("Beta safe.");
+      expect(read.value.content).not.toContain("Alpha target.");
+    }
+  });
+
+  it("returns mutation success when projection refresh fails after commit", async () => {
+    const baseDocumentSync = createInMemoryCollabDomain();
+    const eventSink = createInMemoryEventSink();
+    const refreshDocumentProjection = vi.fn(async () => {
+      throw new Error("projection database unavailable");
+    });
+    const { port, write } = await wiredWriteHarness({
+      documentSync: baseDocumentSync,
+      toolDocumentSync: {
+        agentEdit: () => baseDocumentSync.agentEdit(),
+        refreshDocumentProjection,
+      },
+      eventSink,
+    });
+
+    const create = stringOutput(
+      await write("call-create-refresh-fails", {
+        command: "create",
+        path: "kb://refresh-failure.md",
+        content: "Committed despite refresh failure.",
+      }),
+    );
+
+    expect(create).toContain("status: success");
+    expect(refreshDocumentProjection).toHaveBeenCalledTimes(1);
+    const read = await port.read("kb://refresh-failure.md");
+    expect(read).toMatchObject({
+      ok: true,
+      value: { content: expect.stringContaining("Committed despite refresh failure.") },
+    });
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        source: "lib.wired-core-tools",
+        name: "document_projection_refresh.unhandled_failure",
+        payload: expect.objectContaining({
+          message: "projection database unavailable",
+        }),
+      }),
+    );
   });
 
   it("validates ask_user choice options and resolves free-text through checkpoint context", async () => {
