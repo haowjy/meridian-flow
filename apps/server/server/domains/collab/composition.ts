@@ -1,7 +1,6 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
-  createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -156,13 +155,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const codec = mdxCodec({ schema });
   const model = yProsemirrorModel(schema);
-  const core = createAgentEditCore({
-    journal: deps.journal,
-    coordinator: deps.coordinator,
-    lifecycle: deps.lifecycle,
-    codec,
-    model,
-  });
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   let nextPendingId = 1;
@@ -181,10 +173,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         return `Checkpoint not found: ${error.checkpointId}`;
       case "corrupt_state":
         return error.message;
-      case "edit_not_found":
-        return `Edit text not found: ${error.oldText}`;
-      case "ambiguous_edit":
-        return `Edit text is ambiguous (${error.matchCount} matches): ${error.oldText}`;
     }
   }
 
@@ -427,39 +415,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return readMarkdown(documentId);
     },
 
-    async editFromMarkdown(documentId, oldText, newText, origin) {
-      const context = writeContextForOrigin(origin);
-      const viewed = await core.write(
-        { command: "view", file: documentId, format: "full" },
-        context,
-      );
-      const viewStatus = statusOf(viewed);
-      if (viewStatus === "document_not_found") return Err({ code: "not_found", documentId });
-      if (viewStatus && viewStatus !== "success") {
-        return Err({ code: "edit_not_found", oldText });
-      }
-
-      const edited = await core.write(
-        { command: "replace", file: documentId, find: oldText, content: newText },
-        context,
-      );
-      const status = statusOf(edited);
-      if (status === "success") {
-        const latest = await deps.store.latestUpdate(documentId);
-        return Ok(latest ? { updateSeq: latest.seq, updateData: latest.update } : null);
-      }
-      if (status === "document_not_found") return Err({ code: "not_found", documentId });
-      if (status === "ambiguous_match") {
-        return Err({
-          code: "ambiguous_edit",
-          oldText,
-          matchCount: matchCountFromResponse(edited),
-        });
-      }
-      if (status === "not_found") return Err({ code: "edit_not_found", oldText });
-      throw new Error(edited);
-    },
-
     async writeFromMarkdown(documentId, markdown, origin) {
       const result = await setMarkdown(documentId as DocumentId, markdown, origin);
       return result.ok ? Ok(persistedUpdate(result.value)) : result;
@@ -593,15 +548,6 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
   };
 }
 
-function statusOf(response: string): string | null {
-  return response.match(/^status: ([^\n]+)/)?.[1] ?? null;
-}
-
-function matchCountFromResponse(response: string): number {
-  const parsed = Number(response.match(/Found (\d+) matches/)?.[1] ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function yjsTransactionOrigin(origin: RuntimeOrigin): TransactionOrigin {
   return { source: "local", context: { origin } };
 }
@@ -621,19 +567,6 @@ function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {
       : { origin: "system", seq: 0 };
   }
   return { origin: "system", seq: 0 };
-}
-
-function writeContextForOrigin(origin: UpdateOrigin): {
-  sessionId: string;
-  threadId: string;
-  turnId?: string;
-} {
-  const meta = metaForOrigin(origin);
-  return {
-    sessionId: meta.origin,
-    threadId: meta.actorTurnId ?? meta.origin,
-    ...(meta.actorTurnId ? { turnId: meta.actorTurnId } : {}),
-  };
 }
 
 function attributionFromMeta(meta: UpdateMeta): {
