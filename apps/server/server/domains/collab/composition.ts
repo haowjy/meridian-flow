@@ -18,11 +18,7 @@ import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
-import {
-  createDrizzleCollabFacadeStore,
-  createServerDocumentLifecycle,
-} from "./adapters/drizzle-facade-store.js";
-import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
+import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -102,15 +98,13 @@ type PendingAppend = {
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  const journal = createDrizzleJournal(deps.db);
+  const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
     return boundHocuspocus;
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
-  const lifecycle = createServerDocumentLifecycle(deps.db, journal);
-  const store = createDrizzleCollabFacadeStore(deps.db);
 
   return createFacade({
     journal,
