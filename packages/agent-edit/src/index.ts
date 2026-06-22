@@ -71,6 +71,7 @@ export {
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
+export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   CompactionResult,
   JournalSnapshot,

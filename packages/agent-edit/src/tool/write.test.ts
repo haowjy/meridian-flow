@@ -7,6 +7,7 @@ import { mdxCodec } from "../codec/presets/mdx.js";
 import { createAgentEditCore } from "../index.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type DocumentCoordinator, DocumentNotFoundError } from "../ports/document-coordinator.js";
+import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -59,6 +60,53 @@ describe("write tool dispatch", () => {
     expect(result).toContain("status: success");
     expect(result).toContain("|# Draft");
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
+  });
+
+  it("creates a new file through DocumentLifecycle and persists the journal update", async () => {
+    const ctx = harness();
+
+    const result = await ctx.core.write(
+      { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
+      context,
+    );
+
+    expect(result).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "view", file: "new.md" }, context)),
+    ).toEqual(["# Draft", "Opening line."]);
+
+    const snapshot = await ctx.journal.read("new.md");
+    expect(snapshot.checkpoint).toBeNull();
+    expect(snapshot.updates).toHaveLength(1);
+    const replayed = new Y.Doc({ gc: false });
+    for (const update of snapshot.updates) Y.applyUpdate(replayed, update.update);
+    expect(blockTexts(replayed)).toEqual(["Draft", "Opening line."]);
+  });
+
+  it("rejects create for an existing non-empty file", async () => {
+    const ctx = harness({ "chapter.md": "Already here." });
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Replacement." },
+      context,
+    );
+
+    expect(result).toContain("status: invalid_write");
+    expect(result).toContain("File already exists: chapter.md");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
+  });
+
+  it("returns a clean unsupported error when create has no lifecycle", async () => {
+    const ctx = harness({}, { lifecycle: false });
+
+    const result = await ctx.core.write(
+      { command: "create", file: "new.md", content: "Draft." },
+      context,
+    );
+
+    expect(result).toContain("status: invalid_write");
+    expect(result).toContain("document creation is not supported by this deployment");
   });
 
   it("inserts by block hash, by find, and deduplicates tool_use_id", async () => {
@@ -548,19 +596,39 @@ describe("write tool dispatch", () => {
 
 function harness(
   initialDocs: Record<string, string> = {},
-  options: { undoRegistry?: ReturnType<typeof createUndoManagerRegistry> } = {},
+  options: {
+    undoRegistry?: ReturnType<typeof createUndoManagerRegistry>;
+    lifecycle?: boolean;
+  } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
+  const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
-  const core = createAgentEditCore({ journal, coordinator, codec, model, ...options });
+  const core = createAgentEditCore({
+    journal,
+    coordinator,
+    ...(options.lifecycle === false ? {} : { lifecycle }),
+    codec,
+    model,
+    undoRegistry: options.undoRegistry,
+  });
   return {
     core,
     coordinator,
+    lifecycle,
     journal,
     liveDoc: (docId: string) => coordinator.require(docId),
   };
+}
+
+class MemoryDocumentLifecycle implements DocumentLifecycle {
+  constructor(private readonly coordinator: MemoryCoordinator) {}
+
+  async ensureDocument(docId: string): Promise<void> {
+    this.coordinator.ensureEmpty(docId);
+  }
 }
 
 class MemoryCoordinator implements DocumentCoordinator {
@@ -574,6 +642,12 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 
   createEmpty(docId: string): Y.Doc {
+    return this.ensureEmpty(docId);
+  }
+
+  ensureEmpty(docId: string): Y.Doc {
+    const existing = this.docs.get(docId);
+    if (existing) return existing;
     const doc = new Y.Doc({ gc: false });
     doc.clientID = 100 + this.docs.size;
     this.docs.set(docId, doc);

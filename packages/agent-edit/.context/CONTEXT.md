@@ -13,6 +13,15 @@ for the same docId (KeyedMutex on server, process-level lock on desktop).
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
 
+### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
+Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
+brings a live document into existence so `DocumentCoordinator.withDocument(docId)`
+can subsequently grant exclusive access. It must create only when missing and
+must not clobber existing content. The package keeps the contract generic:
+plain `docId: string`, no auth, URI schemes, storage, or collaboration-server
+types. `write(command="create")` requires this optional port; deployments that
+do not support creation get `invalid_write` instead of a thrown not-found.
+
 ### Codec (`src/codec/types.ts` — interface, `src/codec/create-codec.ts` — assembly)
 Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
 inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
@@ -105,9 +114,6 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
-- **`create` via coordinator empty-doc** not yet supported. The
-  `DocumentCoordinator` port has no `create` method — `create` builds
-  content in the local Y.Doc without going through the coordinator.
 - **Multi-document turn reversal** not yet implemented. Each document's
   undo runs independently; no turn-level coordination across documents.
 - **Cross-block `find`** (find string containing `\n\n`) supported via
@@ -115,7 +121,8 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
 
 ## Testing
 
-85 tests across the package (all pass). Key coverage areas: block-hash
+95 tests across the package (all pass). Key coverage areas: block-hash
 stability, codec round-trip, resolver with cross-block find, 3-tier apply
 preflight + edge cases, echo computation, hot+cold undo (8-case reconcile
-matrix + Q2b interleaved multi-agent + hot/cold parity), compact-on-load.
+matrix + Q2b interleaved multi-agent + hot/cold parity), create lifecycle,
+compact-on-load.
