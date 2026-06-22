@@ -66,10 +66,10 @@ export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitPreparedMove(
     prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+  ): Promise<Result<AdapterMoveResult, AdapterFault>>;
   commitPreparedDelete(
     token: ContextLocationToken,
-  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+  ): Promise<Result<AdapterDeleteResult, AdapterFault>>;
 }
 
 /**

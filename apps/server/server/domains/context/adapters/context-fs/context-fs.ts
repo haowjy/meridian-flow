@@ -381,24 +381,22 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async commitPreparedMove(
     prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+  ): Promise<Result<AdapterMoveResult, AdapterFault>> {
     const committed = await this.mutationStore.commitMove(prepared);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       path: prepared.destinationPath,
-      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
     });
   }
 
   private async commitPreparedDelete(
     token: ContextLocationToken,
-  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+  ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
     const committed = await this.mutationStore.commitDelete(token);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       deletedNodeId: committed.value.deletedNodeId,
-      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
     });
   }
 }
