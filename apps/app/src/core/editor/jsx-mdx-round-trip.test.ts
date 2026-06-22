@@ -68,12 +68,12 @@ describe("JSX MDX editor round-trip", () => {
     editor.commands.setContent(renderedHtml, { emitUpdate: true });
 
     const editorDoc = editor.schema.nodeFromJSON(editor.getJSON());
-    expect(renderedHtml).toContain('data-type="jsx_leaf"');
-    expect(renderedHtml).toContain('data-type="jsx_container"');
-    expect(document.querySelector("[data-type='jsx_leaf']")?.textContent).toContain("caution text");
-    expect(document.querySelector("[data-type='jsx_container']")?.textContent).toContain(
-      "Inside bold text.",
-    );
+    const renderedBadge = renderedComponent(renderedHtml, "Badge");
+    const renderedPanel = renderedComponent(renderedHtml, "Panel");
+    expect(propNamesFromElement(renderedBadge)).toEqual(["tone"]);
+    expect(propNamesFromElement(renderedPanel)).toEqual(["meta", "title"]);
+    expect(renderedBadge.textContent).toContain("caution text");
+    expect(renderedPanel.textContent).toContain("Inside bold text.");
     expect(editorDoc.toJSON()).toEqual(parsedDoc.toJSON());
     expect(editorDoc.child(0).type.name).toBe("jsx_leaf");
     expect(editorDoc.child(1).type.name).toBe("jsx_container");
@@ -82,8 +82,20 @@ describe("JSX MDX editor round-trip", () => {
     const reparsedDoc = docFrom(codec.parse(serialized).blocks);
 
     expect(reparsedDoc.toJSON()).toEqual(parsedDoc.toJSON());
-    expect(serialized).toContain('<Badge tone="warn">caution text</Badge>');
-    expect(serialized).toContain('<Panel meta={{"nested":{"hp":10}}} title="Stats">');
+    const reparsedBadge = reparsedDoc.child(0);
+    const reparsedPanel = reparsedDoc.child(1);
+    expectJsxComponent(reparsedBadge, {
+      type: "jsx_leaf",
+      name: "Badge",
+      propNames: ["tone"],
+    });
+    expect(propsOf(reparsedBadge)).toMatchObject({ tone: "warn" });
+    expectJsxComponent(reparsedPanel, {
+      type: "jsx_container",
+      name: "Panel",
+      propNames: ["meta", "title"],
+    });
+    expect(propsOf(reparsedPanel)).toMatchObject({ meta: { nested: { hp: 10 } }, title: "Stats" });
   });
 });
 
@@ -93,6 +105,42 @@ function docFrom(blocks: readonly PMNode[]): PMNode {
 
 function blocksOf(doc: PMNode): PMNode[] {
   return [...doc.content.content];
+}
+
+function renderedComponent(html: string, name: string): Element {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const element = [...parsed.querySelectorAll("[data-name]")].find(
+    (candidate) => candidate.getAttribute("data-name") === name,
+  );
+  if (!element) throw new Error(`Missing rendered JSX component ${name}`);
+  return element;
+}
+
+function propNamesFromElement(element: Element): string[] {
+  const props = JSON.parse(element.getAttribute("data-props") ?? "{}") as unknown;
+  return propNamesOf(props);
+}
+
+function expectJsxComponent(
+  node: PMNode,
+  expected: { type: "jsx_leaf" | "jsx_container"; name: string; propNames: string[] },
+): void {
+  expect(node.type.name).toBe(expected.type);
+  expect(node.attrs.name).toBe(expected.name);
+  expect(propNamesOf(node.attrs.props)).toEqual(expected.propNames);
+}
+
+function propsOf(node: PMNode): Record<string, unknown> {
+  const props = node.attrs.props;
+  if (!props || typeof props !== "object" || Array.isArray(props)) {
+    throw new Error(`Expected object props for ${node.type.name}`);
+  }
+  return props as Record<string, unknown>;
+}
+
+function propNamesOf(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value).sort();
 }
 
 function mountEditor(): Editor {
