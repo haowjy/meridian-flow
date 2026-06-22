@@ -12,6 +12,10 @@ export interface DevDatabase {
   readonly extensions?: readonly string[];
   readonly postMigrateScript?: string;
   readonly optional?: boolean;
+  /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
+  readonly migrationsDir?: string;
+  /** Command shown in the drift error to bring the DB back in sync. */
+  readonly resetHint?: string;
 }
 
 /**
@@ -27,6 +31,8 @@ export const DEV_DATABASES: readonly DevDatabase[] = [
     postMigrateScript: "pnpm db:apply-functions",
     label: "Meridian local Postgres",
     extensions: ["pg_trgm"],
+    migrationsDir: "packages/database/src/migrations",
+    resetHint: "pnpm db:reset",
   },
 ];
 
