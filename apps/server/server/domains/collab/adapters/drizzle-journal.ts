@@ -267,7 +267,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
             undoUpdateSeq,
             expiresAt: record.expiresAt ?? null,
             reversedAt: record.reversedAt ?? null,
-            reversedByUserId: record.reversedByUserId ?? null,
+            reversedByUserId: asUserId(record.reversedByUserId) ?? null,
           })
           .onConflictDoUpdate({
             target: [
@@ -280,7 +280,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
               undoUpdateSeq,
               expiresAt: record.expiresAt ?? null,
               reversedAt: record.reversedAt ?? null,
-              reversedByUserId: record.reversedByUserId ?? null,
+              reversedByUserId: asUserId(record.reversedByUserId) ?? null,
             },
           });
       });

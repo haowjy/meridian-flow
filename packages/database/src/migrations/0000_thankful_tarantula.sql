@@ -465,10 +465,12 @@ CREATE TABLE "document_yjs_reversals" (
 	"undo_update_seq" bigint NOT NULL,
 	"expires_at" timestamp with time zone,
 	"reversed_at" timestamp with time zone,
-	"reversed_by_user_id" text,
+	"reversed_by_user_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_yjs_reversals_status_valid" CHECK ("document_yjs_reversals"."status" IN ('active', 'reversed', 'reconciled', 'expired'))
 );
+--> statement-breakpoint
+-- undo_update_seq intentionally has no FK: compaction can delete the undo update row after expiring reversal metadata.
 --> statement-breakpoint
 CREATE TABLE "document_yjs_updates" (
 	"id" bigserial PRIMARY KEY NOT NULL,
@@ -535,6 +537,7 @@ ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_document_id_
 ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" ADD CONSTRAINT "document_yjs_reversals_reversed_by_user_id_users_id_fk" FOREIGN KEY ("reversed_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_actor_turn_id_turns_id_fk" FOREIGN KEY ("actor_turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
