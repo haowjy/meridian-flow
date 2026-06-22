@@ -21,8 +21,29 @@ import OrderedList from "@tiptap/extension-ordered-list";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
+import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 
 type RenderAttrs = Record<string, unknown>;
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePropsAttr(value: string | null): JsonRecord {
+  if (!value) return {};
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isJsonRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function renderPropsAttr(value: unknown): string {
+  return JSON.stringify(isJsonRecord(value) ? value : {});
+}
 
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
@@ -111,6 +132,87 @@ export const MeridianImage = Image.extend({
 // ─── Meridian-only extensions ─────────────────────────────────────────
 // Node types not in TipTap's standard library.
 // TODO: figure — needs full MyST directive support, currently renders via FigureNodeView
+
+export const MeridianJsxLeaf = Node.create({
+  name: "jsx_leaf",
+  group: "block",
+  content: "text*",
+  code: true,
+
+  addAttributes() {
+    return {
+      name: {
+        default: undefined,
+        isRequired: true,
+        parseHTML: (element) => element.getAttribute("data-name"),
+        renderHTML: (attrs) => ({
+          "data-name": typeof attrs.name === "string" ? attrs.name : "",
+        }),
+      },
+      props: {
+        default: {},
+        parseHTML: (element) => parsePropsAttr(element.getAttribute("data-props")),
+        renderHTML: (attrs) => ({
+          "data-props": renderPropsAttr(attrs.props),
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-type='jsx_leaf']" }];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(JsxLeafNodeView);
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "jsx_leaf" }),
+      ["span", { "data-role": "jsx-leaf-content" }, 0],
+    ];
+  },
+});
+
+export const MeridianJsxContainer = Node.create({
+  name: "jsx_container",
+  group: "block",
+  content: "block+",
+
+  addAttributes() {
+    return {
+      name: {
+        default: undefined,
+        isRequired: true,
+        parseHTML: (element) => element.getAttribute("data-name"),
+        renderHTML: (attrs) => ({
+          "data-name": typeof attrs.name === "string" ? attrs.name : "",
+        }),
+      },
+      props: {
+        default: {},
+        parseHTML: (element) => parsePropsAttr(element.getAttribute("data-props")),
+        renderHTML: (attrs) => ({
+          "data-props": renderPropsAttr(attrs.props),
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-type='jsx_container']" }];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(JsxContainerNodeView);
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "jsx_container" }), 0];
+  },
+});
 
 export const MeridianFigure = Node.create<{ projectId?: string; documentId?: string }>({
   name: "figure",

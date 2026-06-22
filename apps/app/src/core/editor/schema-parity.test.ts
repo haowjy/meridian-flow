@@ -89,8 +89,7 @@ function markShape(mark: { spec: unknown }): MarkShape {
 }
 
 describe("TipTap editor schema parity", () => {
-  // jsx_leaf/jsx_container TipTap extensions land in Step 10; until then parity is server-only.
-  it.skip("structurally matches the server document schema", () => {
+  it("structurally matches the server document schema", () => {
     const ydoc = new Y.Doc();
     const awareness = new Awareness(ydoc);
     const tiptapSchema = getSchema(createEditorExtensions({ document: ydoc, awareness }));
