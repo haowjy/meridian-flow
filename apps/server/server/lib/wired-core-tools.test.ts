@@ -1,14 +1,17 @@
 /**
  * Wired core-tool tests: verify production tool registrations bind core tool
- * schemas to ContextPort-backed handlers and record document-touch side effects.
+ * schemas to context/collab-backed handlers and record document-touch side effects.
  */
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../domains/billing/index.js";
+import { createInMemoryCollabDomain } from "../domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../domains/context/index.js";
-import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { createInMemoryWorkRepository } from "../domains/projects/index.js";
+import {
+  createInMemoryProjectRepository,
+  createInMemoryWorkRepository,
+} from "../domains/projects/index.js";
 import { gatewayStubDefaults } from "../domains/runtime/gateway/test-gateway.js";
 import {
   CORE_TOOL_NAMES,
@@ -18,6 +21,7 @@ import {
   createToolRegistry,
   type Gateway,
   type GenerateRequest,
+  type GenerateResult,
   type OrchestratorEvent,
   type StreamEvent,
   type ToolHandler,
@@ -29,15 +33,23 @@ import {
 } from "../domains/threads/index.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
-function buildRegistrations() {
-  const repos = createInMemoryRepositories();
-  return createWiredCoreToolRegistrations({
+function wiredTestGraph(input: { works?: ReturnType<typeof createInMemoryWorkRepository> } = {}) {
+  const documentSync = createInMemoryCollabDomain();
+  const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
+  const repos = createInMemoryRepositories(input.works ? { works: input.works } : undefined);
+  const registrations = createWiredCoreToolRegistrations({
     threads: repos.threads,
-    contextPorts: createInMemoryUnifiedContextPortFactory(),
+    contextPorts,
+    documentSync,
     threadWorks: repos.threadWorks,
     documentTouches: repos.documentTouches,
     eventSink: createInMemoryEventSink(),
   });
+  return { documentSync, contextPorts, repos, registrations };
+}
+
+function buildRegistrations() {
+  return wiredTestGraph().registrations;
 }
 
 async function collectEvents(
@@ -124,6 +136,54 @@ function askUserGateway(): Gateway & { getRequests(): GenerateRequest[] } {
   };
 }
 
+function scriptedToolGateway(
+  toolCalls: Array<{ id: string; input: Record<string, unknown> }>,
+): Gateway & { getRequests(): GenerateRequest[] } {
+  let call = 0;
+  const requests: GenerateRequest[] = [];
+  function toolUse(callInput: { id: string; input: Record<string, unknown> }): GenerateResult {
+    return {
+      content: [
+        {
+          type: "tool_use",
+          toolCallId: callInput.id,
+          toolName: "write",
+          input: callInput.input,
+        },
+      ],
+      toolCalls: [],
+      finishReason: "tool_use",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "stub-model",
+      provider: "stub",
+    };
+  }
+  return {
+    ...gatewayStubDefaults,
+    getRequests: () => requests,
+    async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+      requests.push(request);
+      const next = toolCalls[call++];
+      yield {
+        type: "end",
+        result: next
+          ? toolUse(next)
+          : {
+              content: [{ type: "text", text: "done" }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+      };
+    },
+    async generate() {
+      throw new Error("not used in this test");
+    },
+  };
+}
+
 describe("createWiredCoreToolRegistrations", () => {
   it("returns the runnable canonical core tools", () => {
     const exposed = buildRegistrations().map((registration) => registration.definition.name);
@@ -133,10 +193,12 @@ describe("createWiredCoreToolRegistrations", () => {
   it("registry exposes the wired core set", async () => {
     const registry = createToolRegistry({ registrations: buildRegistrations() });
     expect(registry.getDefinitions().map((tool) => tool.name)).toEqual([...CORE_TOOL_NAMES]);
+    expect(registry.getRegistration("read")).toBeUndefined();
+    expect(registry.getRegistration("edit")).toBeUndefined();
 
-    const wiredRead = registry.getRegistration("read");
-    if (wiredRead?.execution.type !== "server") throw new Error("missing wired read handler");
-    const readResult = await (wiredRead.execution.handler as ToolHandler)(
+    const wiredWrite = registry.getRegistration("write");
+    if (wiredWrite?.execution.type !== "server") throw new Error("missing wired write handler");
+    const writeResult = await (wiredWrite.execution.handler as ToolHandler)(
       {},
       {
         signal: new AbortController().signal,
@@ -145,9 +207,9 @@ describe("createWiredCoreToolRegistrations", () => {
         agentSlug: null,
       },
     );
-    expect(readResult).toEqual({
+    expect(writeResult).toEqual({
       isError: true,
-      output: meridianErrorFromTool("path is required"),
+      output: meridianErrorFromTool("command is required"),
     });
   });
 
@@ -172,7 +234,7 @@ describe("createWiredCoreToolRegistrations", () => {
 
   it("executes search through the unified thread port", async () => {
     const works = createInMemoryWorkRepository();
-    const repos = createInMemoryRepositories({ works });
+    const { contextPorts, repos, registrations } = wiredTestGraph({ works });
     const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
     const work = await works.create({
       projectId: "project_1",
@@ -180,8 +242,7 @@ describe("createWiredCoreToolRegistrations", () => {
       title: "Book 1",
     });
     await repos.threadWorks.addMembership(thread.id, work.id, true);
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
-    const port = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
+    const port = contextPorts.forWork(work.id, "project_1", "user_1", new Set([work.id]));
     await port.write("kb://protocols/blot.md", "western blot needle\nwash membrane", {
       origin: { type: "system" },
     });
@@ -189,17 +250,7 @@ describe("createWiredCoreToolRegistrations", () => {
       origin: { type: "system" },
     });
 
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: unifiedFactory,
-          threadWorks: repos.threadWorks,
-          documentTouches: repos.documentTouches,
-          eventSink: createInMemoryEventSink(),
-        }),
-      }),
-    );
+    const executor = createToolExecutor(createToolRegistry({ registrations }));
 
     const result = await executor.executeTool(
       { id: "call-search", name: "search", arguments: { query: "needle", uri: "kb://" } },
@@ -222,171 +273,108 @@ describe("createWiredCoreToolRegistrations", () => {
     });
   });
 
-  it("routes bootstrap manuscript writes through the unified thread port", async () => {
-    const works = createInMemoryWorkRepository();
-    const repos = createInMemoryRepositories({ works });
-    const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
-    const work = await works.create({
-      projectId: "project_1",
-      createdByUserId: "user_1",
-      title: "Book 1",
+  it("runs write(command=...) through a real orchestrator turn", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Tool Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const documentSync = createInMemoryCollabDomain();
+    const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
+    const registrations = createWiredCoreToolRegistrations({
+      threads: repos.threads,
+      contextPorts,
+      documentSync,
+      threadWorks: repos.threadWorks,
+      documentTouches: repos.documentTouches,
+      eventSink: createInMemoryEventSink(),
     });
-    await repos.threadWorks.addMembership(thread.id, work.id, true);
-    const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
-
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: unifiedFactory,
-          threadWorks: repos.threadWorks,
-          documentTouches: repos.documentTouches,
-          eventSink: createInMemoryEventSink(),
-        }),
+    const toolRegistry = createToolRegistry({ registrations });
+    const executor = createToolExecutor(toolRegistry);
+    const gateway = scriptedToolGateway([
+      {
+        id: "call-create",
+        input: {
+          command: "create",
+          path: "kb://story.md",
+          content: "# Chapter\n\nAlpha sword.\n\nBeta waits.",
+        },
+      },
+      { id: "call-view", input: { command: "view", path: "kb://story.md" } },
+      {
+        id: "call-replace",
+        input: { command: "replace", path: "kb://story.md", find: "sword", content: "blade" },
+      },
+      {
+        id: "call-insert",
+        input: { command: "insert", path: "kb://story.md", content: "Gamma arrives." },
+      },
+      { id: "call-undo", input: { command: "undo", path: "kb://story.md" } },
+      { id: "call-redo", input: { command: "redo", path: "kb://story.md" } },
+    ]);
+    const eventWriter = createInMemoryEventJournalWriter();
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const orchestrator = createOrchestrator(
+      createTestOrchestratorDeps({
+        gateway,
+        toolExecutor: executor,
+        toolRegistry,
+        repos,
+        eventWriter,
+        checkpointRegistry: createCheckpointRegistry(),
+        creditLedger,
       }),
     );
 
-    const result = await executor.executeTool(
-      {
-        id: "call-write-manuscript",
-        name: "write",
-        arguments: { path: MANUSCRIPT_URI, content: "chapter content" },
-      },
-      {
-        signal: new AbortController().signal,
+    const events = await collectEvents(
+      await orchestrator.runTurn({
         threadId: thread.id,
-        turnId: turn.id,
-        agentSlug: "agent-one",
-      },
+        userText: "Edit the story.",
+        tools: executor.getDefinitions?.(),
+      }),
     );
 
-    expect(result).toEqual({
-      toolCallId: "call-write-manuscript",
-      output: {
-        path: MANUSCRIPT_URI,
-        bytesWritten: Buffer.byteLength("chapter content", "utf8"),
-      },
-    });
+    expect(events.some((event) => event.type === "turn.completed")).toBe(true);
+    const assistantTurn = (await repos.turns.listByThread(thread.id)).find(
+      (turn) => turn.role === "assistant",
+    );
+    if (!assistantTurn) throw new Error("missing assistant turn");
+    const toolOutputs = (await repos.blocks.listByTurn(assistantTurn.id))
+      .filter((block) => block.blockType === "tool_result")
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((block) => (block.content as { output?: unknown }).output);
 
-    const read = await unifiedFactory
-      .forWork(work.id, "project_1", "user_1", new Set([work.id]))
-      .read(MANUSCRIPT_URI);
+    expect(toolOutputs).toHaveLength(6);
+    expect(toolOutputs.every((output) => typeof output === "string")).toBe(true);
+    expect(toolOutputs[0]).toContain("status: success");
+    expect(toolOutputs[1]).toContain("Alpha sword.");
+    expect(toolOutputs[2]).toContain("status: success");
+    expect(toolOutputs[3]).toContain("Gamma arrives");
+    expect(toolOutputs[4]).toContain("status: reversed");
+
+    const read = await contextPorts.forProject(project.id, "user-1").read("kb://story.md");
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("chapter content\n");
+    if (read.ok) {
+      expect(read.value.content).toContain("Alpha blade.");
+      expect(read.value.content).not.toContain("Alpha sword.");
+      expect(read.value.content).toContain("Gamma arrives.");
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     const touches = await repos.documentTouches.listByThread(thread.id);
     expect(touches).toHaveLength(1);
-    expect(touches[0]).toMatchObject({ turnId: turn.id });
-  });
-
-  it("routes work:// writes through the unified thread port", async () => {
-    const works = createInMemoryWorkRepository();
-    const repos = createInMemoryRepositories({ works });
-    const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
-    const work = await works.create({
-      projectId: "project_1",
-      createdByUserId: "user_1",
-      title: "Book 1",
-    });
-    await repos.threadWorks.addMembership(thread.id, work.id, true);
-    const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
-
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: unifiedFactory,
-          threadWorks: repos.threadWorks,
-          documentTouches: repos.documentTouches,
-          eventSink: createInMemoryEventSink(),
-        }),
-      }),
-    );
-
-    await executor.executeTool(
-      {
-        id: "call-write-notes",
-        name: "write",
-        arguments: { path: "work://notes.md", content: "scratchpad" },
-      },
-      {
-        signal: new AbortController().signal,
-        threadId: thread.id,
-        turnId: turn.id,
-        agentSlug: "agent-one",
-      },
-    );
-
-    const workPort = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
-    const read = await workPort.read("work://notes.md");
-    expect(read.ok).toBe(true);
-    if (read.ok) expect(read.value.content).toBe("scratchpad\n");
-  });
-
-  it("records document touches after reads and writes via unified kb://", async () => {
-    const works = createInMemoryWorkRepository();
-    const repos = createInMemoryRepositories({ works });
-    const thread = await repos.threads.create({ userId: "user_1", projectId: "project_1" });
-    const work = await works.create({
-      projectId: "project_1",
-      createdByUserId: "user_1",
-      title: "Book 1",
-    });
-    await repos.threadWorks.addMembership(thread.id, work.id, true);
-    const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: unifiedFactory,
-          threadWorks: repos.threadWorks,
-          documentTouches: repos.documentTouches,
-          eventSink: createInMemoryEventSink(),
-        }),
-      }),
-    );
-
-    await executor.executeTool(
-      { id: "call-write", name: "write", arguments: { path: "kb://notes.md", content: "hello" } },
-      {
-        signal: new AbortController().signal,
-        threadId: thread.id,
-        turnId: turn.id,
-        agentSlug: "agent-one",
-      },
-    );
-    await executor.executeTool(
-      { id: "call-read", name: "read", arguments: { path: "kb://notes.md" } },
-      {
-        signal: new AbortController().signal,
-        threadId: thread.id,
-        turnId: turn.id,
-        agentSlug: "agent-one",
-      },
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const touches = await repos.documentTouches.listByThread(thread.id);
-    expect(touches).toHaveLength(1);
-    expect(touches[0]).toMatchObject({ turnId: turn.id });
+    expect(touches[0]).toMatchObject({ turnId: assistantTurn.id });
   });
 
   it("validates ask_user choice options and resolves free-text through checkpoint context", async () => {
-    const repos = createInMemoryRepositories();
-    const executor = createToolExecutor(
-      createToolRegistry({
-        registrations: createWiredCoreToolRegistrations({
-          threads: repos.threads,
-          contextPorts: createInMemoryUnifiedContextPortFactory(),
-          threadWorks: repos.threadWorks,
-          eventSink: createInMemoryEventSink(),
-        }),
-      }),
-    );
+    const { repos, registrations } = wiredTestGraph();
+    const executor = createToolExecutor(createToolRegistry({ registrations }));
 
     const checkpointCalls: Array<{ request: unknown; timeoutMs?: number }> = [];
     const updates: Array<{ checkpointId: string; props: unknown }> = [];
@@ -410,6 +398,7 @@ describe("createWiredCoreToolRegistrations", () => {
         updates.push({ checkpointId, props });
       },
     };
+    void repos;
 
     await expect(
       executor.executeTool(
@@ -484,13 +473,15 @@ describe("createWiredCoreToolRegistrations", () => {
     const repos = createInMemoryRepositories();
     const eventWriter = createInMemoryEventJournalWriter();
     const checkpointRegistry = createCheckpointRegistry();
-    const portFactory = createInMemoryUnifiedContextPortFactory();
+    const documentSync = createInMemoryCollabDomain();
+    const portFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
     const gateway = askUserGateway();
     const executor = createToolExecutor(
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: portFactory,
+          documentSync,
           threadWorks: repos.threadWorks,
           documentTouches: repos.documentTouches,
           eventSink: createInMemoryEventSink(),

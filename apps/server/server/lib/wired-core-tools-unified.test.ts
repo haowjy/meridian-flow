@@ -2,6 +2,7 @@
  * Wired core tools: unified manuscript:// routing through contextPortForThread.
  */
 import { describe, expect, it } from "vitest";
+import { createInMemoryCollabDomain } from "../domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../domains/context/index.js";
 import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
@@ -23,12 +24,14 @@ describe("unified manuscript routing in wired-core-tools", () => {
     await repos.threadWorks.addMembership(thread.id, work.id, true);
     const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
 
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
+    const documentSync = createInMemoryCollabDomain();
+    const unifiedFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
     const executor = createToolExecutor(
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: unifiedFactory,
+          documentSync,
           threadWorks: repos.threadWorks,
           eventSink: createInMemoryEventSink(),
         }),
@@ -39,7 +42,11 @@ describe("unified manuscript routing in wired-core-tools", () => {
       {
         id: "call-write-unified-manuscript",
         name: "write",
-        arguments: { path: UNIFIED_MANUSCRIPT_URI, content: "unified chapter" },
+        arguments: {
+          command: "create",
+          path: UNIFIED_MANUSCRIPT_URI,
+          content: "unified chapter",
+        },
       },
       {
         signal: new AbortController().signal,
@@ -51,10 +58,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
 
     expect(result).toEqual({
       toolCallId: "call-write-unified-manuscript",
-      output: {
-        path: UNIFIED_MANUSCRIPT_URI,
-        bytesWritten: Buffer.byteLength("unified chapter", "utf8"),
-      },
+      output: expect.stringContaining("status: success"),
     });
 
     const port = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
@@ -75,7 +79,8 @@ describe("unified manuscript routing in wired-core-tools", () => {
     });
     await repos.threadWorks.addMembership(thread.id, work.id, true);
 
-    const unifiedFactory = createInMemoryUnifiedContextPortFactory();
+    const documentSync = createInMemoryCollabDomain();
+    const unifiedFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
     const port = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
     await port.write("manuscript://chapter-1.md", "needle in manuscript", {
       origin: { type: "system" },
@@ -89,6 +94,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: unifiedFactory,
+          documentSync,
           threadWorks: repos.threadWorks,
           eventSink: createInMemoryEventSink(),
         }),

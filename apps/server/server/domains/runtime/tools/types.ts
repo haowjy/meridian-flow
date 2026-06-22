@@ -117,6 +117,8 @@ export interface ToolExecutor {
  */
 export interface ToolHandlerContext {
   signal: AbortSignal;
+  /** Current tool-call id, forwarded to handlers that need idempotency keys. */
+  toolCallId?: string;
   threadId: string;
   turnId: string;
   /** Mars agent slug from Thread.currentAgent; null when the thread has no bound agent. */

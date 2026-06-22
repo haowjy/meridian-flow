@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../server/domains/billing/index.js";
+import { createInMemoryCollabDomain } from "../../server/domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../../server/domains/context/index.js";
 import { createInMemoryEventSink } from "../../server/domains/observability/index.js";
 import { createInMemoryProjectRepository } from "../../server/domains/projects/index.js";
@@ -24,7 +25,6 @@ import { createWiredCoreToolRegistrations } from "../../server/lib/wired-core-to
 
 const FILE_URI = "kb://notes.md";
 const FILE_CONTENT = "Smoke test seed content";
-const EXPECTED_READ_OUTPUT = `1|${FILE_CONTENT}\n2|`;
 
 function createScriptedGateway(
   results: GenerateResult[],
@@ -56,15 +56,15 @@ async function collectEvents(
 }
 
 describe("smoke: in-process turn", () => {
-  it("runs read through wired ContextPort tools and persists the turn lifecycle", async () => {
+  it("runs write view through wired ContextPort tools and persists the turn lifecycle", async () => {
     const gateway = createScriptedGateway([
       {
         content: [
           {
             type: "tool_use",
-            toolCallId: "call-read-smoke",
-            toolName: "read",
-            input: { path: FILE_URI },
+            toolCallId: "call-view-smoke",
+            toolName: "write",
+            input: { command: "view", path: FILE_URI },
           },
         ],
         toolCalls: [],
@@ -74,7 +74,7 @@ describe("smoke: in-process turn", () => {
         provider: "mock",
       },
       {
-        content: [{ type: "text", text: `File says: ${EXPECTED_READ_OUTPUT}` }],
+        content: [{ type: "text", text: `File says: ${FILE_CONTENT}` }],
         toolCalls: [],
         finishReason: "end_turn",
         usage: { inputTokens: 14, outputTokens: 7 },
@@ -87,7 +87,8 @@ describe("smoke: in-process turn", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "smoke-user", title: "Smoke" });
     const thread = await repos.threads.create({ userId: "smoke-user", projectId: project.id });
-    const contextPorts = createInMemoryUnifiedContextPortFactory();
+    const documentSync = createInMemoryCollabDomain();
+    const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
     const writeResult = await contextPorts
       .forProject(project.id, project.userId)
       .write(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
@@ -97,6 +98,7 @@ describe("smoke: in-process turn", () => {
       registrations: createWiredCoreToolRegistrations({
         threads: repos.threads,
         contextPorts,
+        documentSync,
         threadWorks: repos.threadWorks,
         documentTouches: repos.documentTouches,
         eventSink: createInMemoryEventSink(),
@@ -129,7 +131,7 @@ describe("smoke: in-process turn", () => {
     expect(gateway.getStreamCallCount()).toBe(2);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "tool.result", toolCallId: "call-read-smoke" }),
+        expect.objectContaining({ type: "tool.result", toolCallId: "call-view-smoke" }),
         expect.objectContaining({ type: "turn.completed" }),
       ]),
     );
@@ -142,8 +144,8 @@ describe("smoke: in-process turn", () => {
     const blocks = await repos.blocks.listByTurn(assistantTurn?.id ?? "missing");
     const toolResultBlock = blocks.find((block) => block.blockType === "tool_result");
     expect(toolResultBlock?.content).toMatchObject({
-      toolCallId: "call-read-smoke",
-      output: EXPECTED_READ_OUTPUT,
+      toolCallId: "call-view-smoke",
+      output: expect.stringContaining(FILE_CONTENT),
     });
   });
 });

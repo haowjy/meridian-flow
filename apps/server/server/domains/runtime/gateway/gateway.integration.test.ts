@@ -103,10 +103,11 @@ describe("model-gateway openai-compatible pipeline", () => {
     inputSchema: {
       type: "object",
       properties: {
+        command: { type: "string" },
         path: { type: "string" },
         content: { type: "string" },
       },
-      required: ["path", "content"],
+      required: ["command", "path"],
     },
   };
 
@@ -128,6 +129,7 @@ describe("model-gateway openai-compatible pipeline", () => {
       expect(end.result.toolCalls).toHaveLength(1);
       expect(end.result.toolCalls[0]?.name).toBe("write");
       expect(end.result.toolCalls[0]?.arguments).toEqual({
+        command: "create",
         path: "manuscript://chapter-1.md",
         content: `# Chapter 1\n\nAcknowledged: ${triggerMessage}`,
       });
@@ -217,6 +219,7 @@ describe("model-gateway openai-compatible pipeline", () => {
             toolCallId: "call_mock_write_1",
             toolName: "write",
             input: {
+              command: "create",
               path: "manuscript://chapter-1.md",
               content: `# Chapter 1\n\nAcknowledged: ${triggerMessage}`,
             },

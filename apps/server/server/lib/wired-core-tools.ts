@@ -1,7 +1,8 @@
 /**
  * Core-tool wiring: binds runtime core tool registrations to concrete handlers
- * backed by Meridian context and thread services.
+ * backed by Meridian context, collab, and thread services.
  */
+import type { WriteCommand, WriteResult } from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   checkpointRequestFromAskUser,
@@ -11,16 +12,13 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { CollabDomain, SyncError } from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
-import type {
-  ContextError,
-  ContextPort,
-  WriteProvenance,
-} from "../domains/context/ports/context-port.js";
+import type { ContextError, ContextPort } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
 import {
   type EventSink,
@@ -33,12 +31,6 @@ import {
   type ToolHandlerContext,
   type ToolRegistration,
 } from "../domains/runtime/index.js";
-import {
-  applyEditRanges,
-  formatWithLineNumbers,
-  resolveEditRanges,
-  truncateForRead,
-} from "../domains/runtime/tools/core-handlers/index.js";
 import type {
   ThreadRepository,
   ThreadWorksRepository,
@@ -50,12 +42,55 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
+  documentSync: Pick<CollabDomain, "agentEdit" | "refreshDocumentProjection">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
+type WriteToolInput = {
+  command: WriteCommand["command"];
+  path: string;
+  content?: string;
+  find?: string;
+  in?: string;
+  around?: string;
+  after?: string;
+  before?: string;
+  all?: boolean;
+  last?: number;
+  format?: "auto" | "full" | "outline";
+};
+
+type ResolvedDocumentAddress = {
+  documentId: string;
+  file: string;
+};
+
+const WRITE_COMMANDS = new Set<WriteCommand["command"]>([
+  "create",
+  "view",
+  "insert",
+  "replace",
+  "undo",
+  "redo",
+]);
+const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
+  "create",
+  "insert",
+  "replace",
+  "undo",
+  "redo",
+]);
+const WRITE_ERROR_STATUSES = new Set([
+  "not_found",
+  "ambiguous_match",
+  "invalid_write",
+  "document_not_found",
+  "partial_failure",
+  "internal_error",
+]);
 
 function toolError(error: ContextError | { message: string }): ToolErrorOutput {
   if ("code" in error && typeof error.code === "string") {
@@ -103,44 +138,211 @@ function recordTouchInBackground(
   });
 }
 
-function withTouchRecording(
-  port: ContextPort,
-  deps: ToolWiringDeps,
-  ctx: ToolHandlerContext,
-): ContextPort {
+function syncErrorMessage(error: SyncError): string {
+  switch (error.code) {
+    case "not_found":
+      return `Document not found: ${error.documentId}`;
+    case "checkpoint_not_found":
+      return `Checkpoint not found: ${error.checkpointId}`;
+    case "corrupt_state":
+      return error.message;
+  }
+}
+
+function asRecord(input: unknown): Record<string, unknown> | null {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : null;
+}
+
+function optionalString(
+  input: Record<string, unknown>,
+  key: keyof WriteToolInput,
+): string | ToolErrorOutput | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return toolError({ message: `${String(key)} must be a string` });
+  return value;
+}
+
+function optionalBoolean(
+  input: Record<string, unknown>,
+  key: keyof WriteToolInput,
+): boolean | ToolErrorOutput | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") return toolError({ message: `${String(key)} must be a boolean` });
+  return value;
+}
+
+function optionalPositiveInteger(
+  input: Record<string, unknown>,
+  key: keyof WriteToolInput,
+): number | ToolErrorOutput | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return toolError({ message: `${String(key)} must be a positive integer` });
+  }
+  return value;
+}
+
+function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
+  const record = asRecord(input);
+  if (!record) return toolError({ message: "write input must be an object" });
+
+  const { command, path } = record;
+  if (typeof command !== "string" || !WRITE_COMMANDS.has(command as WriteCommand["command"])) {
+    return toolError({ message: "command is required" });
+  }
+  if (typeof path !== "string" || path.length === 0) {
+    return toolError({ message: "path is required" });
+  }
+
+  const content = optionalString(record, "content");
+  if (isToolError(content)) return content;
+  const find = optionalString(record, "find");
+  if (isToolError(find)) return find;
+  const inScope = optionalString(record, "in");
+  if (isToolError(inScope)) return inScope;
+  const around = optionalString(record, "around");
+  if (isToolError(around)) return around;
+  const after = optionalString(record, "after");
+  if (isToolError(after)) return after;
+  const before = optionalString(record, "before");
+  if (isToolError(before)) return before;
+  const all = optionalBoolean(record, "all");
+  if (isToolError(all)) return all;
+  const last = optionalPositiveInteger(record, "last");
+  if (isToolError(last)) return last;
+  const format = optionalString(record, "format");
+  if (isToolError(format)) return format;
+  if (format !== undefined && !["auto", "full", "outline"].includes(format)) {
+    return toolError({ message: "format must be auto, full, or outline" });
+  }
+
+  if ((command === "insert" || command === "replace") && content === undefined) {
+    return toolError({ message: "content is required" });
+  }
+
   return {
-    stat: (uri) => port.stat(uri),
-    async read(uri) {
-      const result = await port.read(uri);
-      if (result.ok) recordTouchInBackground(deps, result.value.documentId, ctx);
-      return result;
-    },
-    async write(uri, content, options) {
-      const result = await port.write(uri, content, options);
-      if (result.ok) recordTouchInBackground(deps, result.value.documentId, ctx);
-      return result;
-    },
-    async edit(uri, transform, options) {
-      const result = await port.edit(uri, transform, options);
-      if (result.ok) recordTouchInBackground(deps, result.value.documentId, ctx);
-      return result;
-    },
-    list: (uri) => port.list(uri),
-    mkdir: (uri, options) => port.mkdir(uri, options),
-    search: (query, uri) => port.search(query, uri),
-    writeBinary: (uri, options) => port.writeBinary(uri, options),
-    move: (source, destination, options) => port.move(source, destination, options),
-    delete: (uri, options) => port.delete(uri, options),
+    command: command as WriteCommand["command"],
+    path,
+    content,
+    find,
+    in: inScope,
+    around,
+    after,
+    before,
+    all,
+    last,
+    format: format as WriteToolInput["format"],
   };
 }
 
-function agentOrigin(ctx: ToolHandlerContext): WriteProvenance {
+function isToolError(value: unknown): value is ToolErrorOutput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "isError" in value &&
+    (value as { isError?: boolean }).isError === true
+  );
+}
+
+function splitFragment(path: string): { basePath: string; fragment?: string } {
+  const marker = path.indexOf("#");
+  if (marker === -1) return { basePath: path };
+  return { basePath: path.slice(0, marker), fragment: path.slice(marker + 1) };
+}
+
+function fileForDocument(documentId: string, fragment?: string): string {
+  return fragment ? `${documentId}#${fragment}` : documentId;
+}
+
+async function resolveDocumentAddress(
+  port: ContextPort,
+  input: WriteToolInput,
+): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
+  const { basePath, fragment } = splitFragment(input.path);
+  if (input.command === "create") {
+    if (fragment) return toolError({ message: "create does not accept a #fragment in path" });
+    const ensured = await port.ensureTrackedDocument(basePath);
+    if (!ensured.ok) return toolError(ensured.error);
+    return {
+      documentId: ensured.value.documentId,
+      file: fileForDocument(ensured.value.documentId, fragment),
+    };
+  }
+
+  const ref = await port.stat(basePath);
+  if (!ref.ok) return toolError(ref.error);
+  if (ref.value.kind !== "tracked") {
+    return toolError({ message: `Cannot ${input.command} binary file: ${input.path}` });
+  }
+  if (!ref.value.documentId) {
+    return toolError({ message: `Document id missing for ${input.path}` });
+  }
   return {
-    type: "agent",
-    agentSlug: ctx.agentSlug ?? "unknown",
-    threadId: ctx.threadId,
-    turnId: ctx.turnId,
+    documentId: ref.value.documentId,
+    file: fileForDocument(ref.value.documentId, fragment),
   };
+}
+
+function buildAgentWriteCommand(
+  input: WriteToolInput,
+  file: string,
+  toolUseId: string | undefined,
+): WriteCommand {
+  switch (input.command) {
+    case "create":
+      return { command: "create", file, content: input.content, tool_use_id: toolUseId };
+    case "view":
+      return {
+        command: "view",
+        file,
+        in: input.in,
+        around: input.around,
+        format: input.format,
+        tool_use_id: toolUseId,
+      };
+    case "insert":
+      return {
+        command: "insert",
+        file,
+        content: input.content ?? "",
+        find: input.find,
+        in: input.in,
+        around: input.around,
+        after: input.after,
+        before: input.before,
+        all: input.all,
+        tool_use_id: toolUseId,
+      };
+    case "replace":
+      return {
+        command: "replace",
+        file,
+        content: input.content ?? "",
+        find: input.find,
+        in: input.in,
+        around: input.around,
+        all: input.all,
+        tool_use_id: toolUseId,
+      };
+    case "undo":
+      return { command: "undo", file, last: input.last, all: input.all, tool_use_id: toolUseId };
+    case "redo":
+      return { command: "redo", file, last: input.last, all: input.all, tool_use_id: toolUseId };
+  }
+}
+
+function writeStatus(result: WriteResult): string | null {
+  return result.match(/^status:\s*([a-z_]+)/)?.[1] ?? null;
+}
+
+function isAgentWriteError(result: WriteResult): boolean {
+  const status = writeStatus(result);
+  return status !== null && WRITE_ERROR_STATUSES.has(status);
 }
 
 async function askUserHandler(input: unknown, ctx: CheckpointToolHandlerContext) {
@@ -159,53 +361,35 @@ async function askUserHandler(input: unknown, ctx: CheckpointToolHandlerContext)
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   return createCoreToolRegistrations({
-    read: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path } = input as { path?: string };
-      if (!path) return toolError({ message: "path is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
-      if ("isError" in portOrError) return portOrError;
-      const port = withTouchRecording(portOrError, deps, ctx);
-      const result = await port.read(path);
-      if (!result.ok) return toolError(result.error);
-      return formatWithLineNumbers(truncateForRead(result.value.content));
-    },
-    edit: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path, edits } = input as {
-        path?: string;
-        edits?: Array<{ oldText: string; newText: string }>;
-      };
-      if (!path) return toolError({ message: "path is required" });
-      if (!edits?.length) return toolError({ message: "edits is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
-      if ("isError" in portOrError) return portOrError;
-      const port = withTouchRecording(portOrError, deps, ctx);
-      let rangeError: { message: string } | null = null;
-      const editResult = await port.edit(
-        path,
-        (content) => {
-          const rangesOrError = resolveEditRanges(content, edits);
-          if ("message" in rangesOrError) {
-            rangeError = rangesOrError;
-            return content;
-          }
-          return applyEditRanges(content, rangesOrError);
-        },
-        { origin: agentOrigin(ctx) },
-      );
-      if (rangeError) return toolError(rangeError);
-      if (!editResult.ok) return toolError(editResult.error);
-      return { path, appliedEdits: edits.length };
-    },
     write: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path, content } = input as { path?: string; content?: string };
-      if (!path) return toolError({ message: "path is required" });
-      if (content === undefined) return toolError({ message: "content is required" });
+      const parsed = parseWriteToolInput(input);
+      if (isToolError(parsed)) return parsed;
+
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
-      const port = withTouchRecording(portOrError, deps, ctx);
-      const result = await port.write(path, content, { origin: agentOrigin(ctx) });
-      if (!result.ok) return toolError(result.error);
-      return { path, bytesWritten: Buffer.byteLength(content, "utf8") };
+
+      const address = await resolveDocumentAddress(portOrError, parsed);
+      if (isToolError(address)) return address;
+
+      const result = await deps.documentSync
+        .agentEdit()
+        .write(buildAgentWriteCommand(parsed, address.file, ctx.toolCallId), {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          tool_use_id: ctx.toolCallId,
+        });
+      if (isAgentWriteError(result)) return toolError({ message: result });
+
+      recordTouchInBackground(deps, address.documentId, ctx);
+      if (MUTATING_WRITE_COMMANDS.has(parsed.command)) {
+        const refreshed = await deps.documentSync.refreshDocumentProjection({
+          documentId: address.documentId,
+          threadId: ctx.threadId,
+        });
+        if (!refreshed.ok) return toolError({ message: syncErrorMessage(refreshed.error) });
+      }
+      return result;
     },
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };

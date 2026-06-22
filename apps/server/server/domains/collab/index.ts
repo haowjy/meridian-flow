@@ -1,5 +1,6 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
+import type { AgentEditCore } from "@meridian/agent-edit";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
@@ -50,6 +51,11 @@ export type DocumentWriteHook = (event: {
   at: Date;
 }) => Promise<void>;
 
+export type ProjectionRefreshResult = {
+  documentId: DocumentId;
+  markdown: string;
+};
+
 export type CollabPersistenceMetrics = {
   queues: Array<{
     documentId: string;
@@ -76,7 +82,13 @@ export type CollabTransport = {
 };
 
 export type CollabDomain = CollabTransport & {
+  agentEdit(): AgentEditCore;
+  ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
+  refreshDocumentProjection(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId;
+  }): Promise<Result<ProjectionRefreshResult, SyncError>>;
   writeFromMarkdown(
     documentId: string,
     markdown: string,

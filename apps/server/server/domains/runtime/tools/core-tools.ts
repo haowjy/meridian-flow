@@ -13,7 +13,7 @@ import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import type { ToolRegistration } from "./types.js";
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "edit", "write", "list", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "list", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -30,81 +30,67 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "read",
-        description:
-          "Read a file and return its contents with line numbers. Files larger than 1MB are truncated.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description:
-                "File path or URI to read. Supported schemes include work:// for project workspace documents.",
-            },
-          },
-          required: ["path"],
-          additionalProperties: false,
-        },
-      },
-      execution: { type: "server", handler: handlers.read },
-      timeoutMs: 30_000,
-    },
-    {
-      source: "core",
-      definition: {
-        type: "function",
-        name: "edit",
-        description:
-          "Edit a file with exact text replacements. Each edit replaces one oldText with one newText. All edits in one call are applied atomically. You must have read the file first.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: { type: "string", description: "File path or URI to edit." },
-            edits: {
-              type: "array",
-              description:
-                "Array of edit operations. All applied atomically. Must target non-overlapping regions.",
-              items: {
-                type: "object",
-                properties: {
-                  oldText: {
-                    type: "string",
-                    description: "Exact text to replace. Must match current file content exactly.",
-                  },
-                  newText: { type: "string", description: "Replacement text." },
-                },
-                required: ["oldText", "newText"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["path", "edits"],
-          additionalProperties: false,
-        },
-      },
-      execution: { type: "server", handler: handlers.edit },
-      sequential: true,
-      // sequential: edit is a mutation — must not interleave with reads of the same file.
-      timeoutMs: 30_000,
-    },
-    {
-      source: "core",
-      definition: {
-        type: "function",
         name: "write",
         description:
-          "Create a new file or overwrite an existing file with the given content. Use this for creating new files. For modifying existing files, prefer the edit tool.",
+          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a document; insert to add content; replace to replace or delete content; undo and redo to reverse or reapply this thread's document writes.",
+        // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
+        // (WriteCommand). The chat layer uses `path` for context URIs; the
+        // server handler resolves it to the package `file`/document id.
         inputSchema: {
           type: "object",
           properties: {
+            command: {
+              type: "string",
+              enum: ["create", "view", "insert", "replace", "undo", "redo"],
+              description: "Command to run: create, view, insert, replace, undo, or redo.",
+            },
             path: {
               type: "string",
               description:
-                "File path or URI to write. Supported schemes include work:// for project workspace documents.",
+                "Context URI or bare manuscript path for the document. May include a #fragment for view/section targeting.",
             },
-            content: { type: "string", description: "The full file content to write." },
+            content: {
+              type: "string",
+              description:
+                "Markdown content. Optional initial content for create; required for insert and replace; empty string deletes in replace.",
+            },
+            find: {
+              type: "string",
+              description: "Exact text to find for find-based insert/replace. Not a regex.",
+            },
+            in: {
+              type: "string",
+              description:
+                "View range, replace target, or find scope (for example a block hash, hash range, or #section).",
+            },
+            around: {
+              type: "string",
+              description: "Fuzzy scope around a known block hash for view/find operations.",
+            },
+            after: {
+              type: "string",
+              description: "Insert block content after this block hash.",
+            },
+            before: {
+              type: "string",
+              description: "Insert block content before this block hash.",
+            },
+            all: {
+              type: "boolean",
+              description: "Apply to all matches for find, or undo/redo all available turns.",
+            },
+            last: {
+              type: "integer",
+              minimum: 1,
+              description: "Number of recent turns to undo or redo.",
+            },
+            format: {
+              type: "string",
+              enum: ["auto", "full", "outline"],
+              description: "View output format. Defaults to auto.",
+            },
           },
-          required: ["path", "content"],
+          required: ["command", "path"],
           additionalProperties: false,
         },
       },
@@ -118,7 +104,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "list",
         description:
-          "List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before reading specific files.",
+          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="view").',
         inputSchema: {
           type: "object",
           properties: {
@@ -141,7 +127,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description:
-          "Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before reading them.",
+          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="view").',
         inputSchema: {
           type: "object",
           properties: {

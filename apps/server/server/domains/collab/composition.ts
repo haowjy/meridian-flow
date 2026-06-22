@@ -1,6 +1,8 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
+  type AgentEditCore,
+  createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -96,6 +98,7 @@ type PendingAppend = {
 };
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
+const AGENT_EDIT_UNDO_CLIENT_ID = 9_999;
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
@@ -149,6 +152,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const codec = mdxCodec({ schema });
   const model = yProsemirrorModel(schema);
+  const agentEditCore: AgentEditCore = createAgentEditCore({
+    journal: deps.journal,
+    coordinator: deps.coordinator,
+    lifecycle: deps.lifecycle,
+    codec,
+    model,
+    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+  });
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   let nextPendingId = 1;
@@ -184,6 +195,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
       throw cause;
     }
+  }
+
+  async function refreshDocumentProjection(
+    documentId: DocumentId,
+    threadId?: ThreadId,
+  ): Promise<Result<{ documentId: DocumentId; markdown: string }, SyncError>> {
+    const read = await readMarkdown(documentId);
+    if (!read.ok) return read;
+    await runDocumentWriteHook({ documentId, threadId, markdown: read.value });
+    return Ok({ documentId, markdown: read.value });
   }
 
   async function runDocumentWriteHook(
@@ -405,8 +426,20 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   }
 
   return {
+    agentEdit() {
+      return agentEditCore;
+    },
+
+    ensureDocument(documentId) {
+      return deps.lifecycle.ensureDocument(documentId);
+    },
+
     readAsMarkdown(documentId) {
       return readMarkdown(documentId);
+    },
+
+    refreshDocumentProjection(input) {
+      return refreshDocumentProjection(input.documentId, input.threadId);
     },
 
     async writeFromMarkdown(documentId, markdown, origin) {

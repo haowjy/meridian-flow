@@ -76,22 +76,19 @@ represented as a fully-typed slot:
 
 ## Tool wiring
 
-`createProductionAppPorts()` constructs the runtime tool registry with `{ db, contextPorts, threads, threadWorks }`; `composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete registry currently lives in `domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool algorithms.
+`createProductionAppPorts()` constructs the runtime tool registry with `{ db, contextPorts, documentSync, threads, threadWorks }`; `composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete registry currently lives in `domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool algorithms.
 
-Context-backed handlers resolve the legacy thread-scoped context port with
-`contextPorts.forThread(ctx)`. The factory consumes `threadId` and `userId`;
-the caller also carries `assistantTurnId` for agent attribution. That port still
-only supports the bootstrap manuscript URI, `work://manuscript/chapter-1.md`;
-the richer router/`ContextFS` primitives exported from `domains/context` are
-available for future wiring but are not yet the production tool path.
+Context-backed handlers resolve the active thread to the unified
+`ContextPort` with `resolveThreadContext(...)` + `contextPortForThread(...)`.
+Document edits then cross into the collab domain's `@meridian/agent-edit` core;
+URI parsing and document-row creation stay server-side so the package remains
+free of Meridian URI schemes and database concerns.
 
 | Tool | Backend |
 |---|---|
-| `read` | `ContextPortFactory.forThread(ctx).readDocument(uri)` → markdown + document id. |
-| `edit` | `editDocument({ uri, transform, origin: { type: "agent", actorTurnId } })`; current edit actions append text. |
-| `write` | `writeDocument({ uri, markdown, origin: { type: "agent", actorTurnId } })`. |
-| `list` | Returns the single required manuscript URI for the current vertical slice. |
-| `search` | Reads the manuscript document and performs a case-insensitive substring search. |
+| `write` | Command grammar (`create` / `view` / `insert` / `replace` / `undo` / `redo`). Handler resolves the context URI to a tracked document id, calls `CollabDomain.agentEdit().write(...)`, returns the package's plain-text `WriteResult`, and refreshes the markdown projection after mutating commands. |
+| `list` | Lists the resolved unified `ContextPort` path/URI. |
+| `search` | Searches the resolved unified `ContextPort` scope. |
 | `ask_user` | Creates a checkpoint component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership

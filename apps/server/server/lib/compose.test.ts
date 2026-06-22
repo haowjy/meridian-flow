@@ -18,10 +18,14 @@ describe("createInMemoryAppServices", () => {
     const services = createInMemoryAppServices();
 
     expect(services.toolRegistry.getDefinitions()).toEqual([]);
-    expect(services.toolRegistry.getRegistration("read")).toBeUndefined();
+    expect(services.toolRegistry.getRegistration("write")).toBeUndefined();
     await expect(
       services.toolExecutor.executeTool(
-        { id: "call-1", name: "read", arguments: { path: "kb://notes.md" } },
+        {
+          id: "call-1",
+          name: "write",
+          arguments: { command: "view", path: "kb://notes.md" },
+        },
         {
           signal: new AbortController().signal,
           threadId: "thread-1",

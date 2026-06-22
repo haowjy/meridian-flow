@@ -327,6 +327,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
+    documentSync: ports.documentSync,
     threadWorks: ports.threadRepos.threadWorks,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
