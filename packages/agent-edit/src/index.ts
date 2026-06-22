@@ -135,7 +135,7 @@ export type {
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
-  WriteResult,
+  WriteOutcome,
   WriteStatus,
 } from "./tool/types.js";
 export type { CreateWriteToolOptions, WriteTool } from "./tool/write.js";
