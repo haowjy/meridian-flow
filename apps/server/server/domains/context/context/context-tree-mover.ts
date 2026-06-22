@@ -7,7 +7,6 @@
  */
 
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { DocumentSyncPort } from "../../collab/index.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type {
   ContextError,
@@ -61,11 +60,6 @@ export interface ContextTreeDispatch {
   canonical: string;
 }
 
-export interface ContextTreeMoverDeps {
-  /** Mirrors are cache state keyed by documentId; durable rows move in stores. */
-  documentSync?: DocumentSyncPort;
-}
-
 function basename(path: string): string {
   const segments = path.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? "";
@@ -86,12 +80,6 @@ function joinPath(...parts: string[]): string {
 
 /** Coordinates ContextFS tree mutations without owning durable state. */
 export class ContextTreeMover {
-  private readonly documentSync: DocumentSyncPort | undefined;
-
-  constructor(deps: ContextTreeMoverDeps = {}) {
-    this.documentSync = deps.documentSync;
-  }
-
   async move(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
@@ -117,9 +105,6 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    for (const documentId of result.value.invalidatedDocumentIds) {
-      this.documentSync?.forgetMirror?.(documentId);
-    }
     return Ok({ movedNodeId: result.value.movedNodeId });
   }
 
@@ -142,9 +127,6 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    for (const documentId of result.value.invalidatedDocumentIds) {
-      this.documentSync?.forgetMirror?.(documentId);
-    }
     return Ok(undefined);
   }
 

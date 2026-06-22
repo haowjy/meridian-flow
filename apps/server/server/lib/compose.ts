@@ -17,9 +17,9 @@ import { createPaymentProviderFromEnv } from "../domains/billing/payment-provide
 import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import {
+  type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
-  type DocumentSyncService,
 } from "../domains/collab/index.js";
 import {
   createCheckpointArtifactFlush,
@@ -128,7 +128,7 @@ export type AppServices = {
   hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
-  documentSync: DocumentSyncService;
+  documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -167,7 +167,7 @@ export type ProductionAppPorts = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   eventSink: EventSink;
-  documentSync: DocumentSyncService;
+  documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   runtimeTools: RuntimeToolRegistry;
   projects: ProjectBootstrapRepository;
@@ -464,7 +464,7 @@ export function createInMemoryAppServices(): AppServices {
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
 
-  const documentSync: DocumentSyncService = createInMemoryCollabDomain();
+  const documentSync: CollabDomain = createInMemoryCollabDomain();
 
   const inMemoryThreadEventHub: ThreadEventHub = {
     publishPersistedEvent() {},

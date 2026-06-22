@@ -9,9 +9,8 @@ import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/prot
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { SyncError } from "../../../collab/index.js";
 import {
-  type ContextCollabDocumentSync,
+  type ContextCollabDomain,
   editCollabMarkdown,
-  ensureCollabMirror,
   writeCollabMarkdown,
 } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
@@ -42,7 +41,7 @@ import type {
 export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
-  documentSync: ContextCollabDocumentSync;
+  documentSync: ContextCollabDomain;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
 }
@@ -57,8 +56,8 @@ const DEFAULT_EDITABLE_FILETYPE = "markdown";
  * single-node persistence to a {@link ContextDocumentStore}.
  *
  * Content is Yjs-canonical: folder tree and `markdown_projection` stay in the
- * store, but read/write content flows through DocumentSyncService. The store's
- * markdown is only a seed/search projection cache.
+ * store, but read/write content flows through the collab domain. The store's
+ * markdown is only a search/listing projection cache.
  *
  * v1 semantics are last-write-wins:
  * `ensureFolderId` find-then-create and the store's find-then-upsert are not
@@ -73,7 +72,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
-  private readonly documentSync: ContextCollabDocumentSync;
+  private readonly documentSync: ContextCollabDomain;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -93,7 +92,7 @@ export class ContextFS implements ContextSchemeAdapter {
       case "not_found":
         return {
           code: "io_error",
-          message: `Yjs mirror not found for document: ${error.documentId}`,
+          message: `Yjs document not found: ${error.documentId}`,
         };
       case "checkpoint_not_found":
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
@@ -190,10 +189,6 @@ export class ContextFS implements ContextSchemeAdapter {
       };
     }
 
-    const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
-    const mirror = await ensureCollabMirror(this.documentSync, doc.id, doc.markdown, filetype);
-    if (!mirror.ok) return mirror;
-
     const read = await this.documentSync.readAsMarkdown(doc.id);
     if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
     return Ok({ content: read.value, documentId: doc.id });
@@ -219,8 +214,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const write = await writeCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      seedMarkdown: doc.markdown,
-      filetype: doc.filetype ?? filetype,
       content,
       provenance: options?.origin,
     });
@@ -269,8 +262,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const edited = await editCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      seedMarkdown: doc.markdown,
-      filetype,
       transform,
       provenance: options?.origin,
     });
