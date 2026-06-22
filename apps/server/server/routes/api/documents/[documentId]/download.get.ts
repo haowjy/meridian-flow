@@ -1,18 +1,38 @@
 import { createError, defineEventHandler, getRouterParam, sendRedirect, setHeader } from "nitro/h3";
+import type { MarkdownDocumentStore } from "../../../../domains/collab/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../../../domains/storage/index.js";
+import type { AppServices } from "../../../../lib/app.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 export function attachmentFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
+
+type DocumentDownloadRouteServices = {
+  documentAccess: AppServices["documentAccess"];
+  uploadDocuments: AppServices["uploadDocuments"];
+  objectStore: AppServices["objectStore"];
+  documentSync: MarkdownDocumentStore;
+};
+
+function selectDocumentDownloadRouteServices(app: AppServices): DocumentDownloadRouteServices {
+  return {
+    documentAccess: app.documentAccess,
+    uploadDocuments: app.uploadDocuments,
+    objectStore: app.objectStore,
+    documentSync: app.documentSync,
+  };
+}
+
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
+  const services = selectDocumentDownloadRouteServices(app);
   const documentId = getRouterParam(event, "documentId") ?? "";
-  if (!(await app.documentAccess.canAccessDocument(user.userId, documentId)))
+  if (!(await services.documentAccess.canAccessDocument(user.userId, documentId)))
     throw createError({ statusCode: 404, message: "Document not found" });
-  const document = await app.uploadDocuments.getDocument(documentId);
+  const document = await services.uploadDocuments.getDocument(documentId);
   if (!document) throw createError({ statusCode: 404, message: "Document not found" });
   if (!document.storageUrl) {
-    const read = await app.documentSync.readAsMarkdown(documentId);
+    const read = await services.documentSync.readAsMarkdown(documentId);
     const markdown = read.ok ? read.value : document.markdownProjection;
     setHeader(event, "Content-Type", "text/markdown; charset=utf-8");
     setHeader(
@@ -24,7 +44,7 @@ export default defineEventHandler(async (event) => {
   }
   const key = objectStoreKeyFromStorageUrl(document.storageUrl);
   if (!key) throw createError({ statusCode: 500, message: "Document storage URL is invalid" });
-  const signed = await app.objectStore.getSignedUrl(key);
+  const signed = await services.objectStore.getSignedUrl(key);
   if (!signed.ok)
     throw createError({
       statusCode: signed.error.code === "not_found" ? 404 : 502,

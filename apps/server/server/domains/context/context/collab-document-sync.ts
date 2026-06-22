@@ -5,18 +5,13 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
-  CollabDomain,
   DocumentWriteOrigin,
+  MarkdownDocumentStore,
   SyncError,
   UpdateOrigin,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
-
-export type ContextCollabDomain = Pick<
-  CollabDomain,
-  "ensureDocument" | "readAsMarkdown" | "writeFromMarkdown" | "writeDocument" | "editDocument"
->;
 
 export type CollabMarkdownResult =
   | { ok: true; markdown: string; updateSeq?: number }
@@ -77,7 +72,7 @@ function thrownFault(error: unknown): AdapterFault {
 }
 
 export async function writeCollabMarkdown(input: {
-  documentSync: ContextCollabDomain;
+  documentSync: MarkdownDocumentStore;
   documentId: string;
   content: string;
   provenance?: WriteProvenance;
@@ -112,7 +107,7 @@ export async function writeCollabMarkdown(input: {
 }
 
 export async function editCollabMarkdown(input: {
-  documentSync: ContextCollabDomain;
+  documentSync: MarkdownDocumentStore;
   documentId: string;
   transform: (markdown: string) => string;
   provenance?: WriteProvenance;

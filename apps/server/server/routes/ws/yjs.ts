@@ -7,7 +7,7 @@ import {
 } from "@hocuspocus/server";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { defineWebSocketHandler } from "nitro";
-import type { UpdateOrigin } from "../../domains/collab/index.js";
+import type { CollabTransport, UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
@@ -32,7 +32,10 @@ type YjsRoutePeer = {
   _hocuspocus?: HocuspocusConnection;
 };
 
-type YjsRouteServices = Pick<AppServices, "documentAccess" | "documentSync">;
+type YjsRouteServices = {
+  documentAccess: AppServices["documentAccess"];
+  documentSync: CollabTransport;
+};
 
 let hocuspocusPromise: Promise<Hocuspocus> | null = null;
 let acceptingConnections = true;
@@ -128,13 +131,14 @@ export async function drainYjsCollabPersistence(): Promise<void> {
   const hocuspocus = await getYjsHocuspocus();
   hocuspocus.closeConnections();
   const app = await getApp();
+  const documentSync: CollabTransport = app.documentSync;
   emitEvent(app.eventSink, {
     level: "info",
     source: "collab.hocuspocus",
     name: "persistence_queue.drain",
-    payload: app.documentSync.getPersistenceQueueMetrics(),
+    payload: documentSync.getPersistenceQueueMetrics(),
   });
-  await app.documentSync.drainHocuspocusPersistence();
+  await documentSync.drainHocuspocusPersistence();
 }
 
 export default defineWebSocketHandler(() => ({
