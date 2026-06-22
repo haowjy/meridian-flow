@@ -8,6 +8,7 @@ import {
   type PersistedUpdate,
   type ReversalRecord,
   type UpdateJournal,
+  type UpdateMeta,
 } from "@meridian/agent-edit";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
@@ -62,6 +63,18 @@ export function createInMemoryJournal(): InMemoryJournal {
     return existing;
   }
 
+  function appendPersisted(docId: string, update: Uint8Array, meta: UpdateMeta): number {
+    const current = entry(docId);
+    const seq = current.nextSeq++;
+    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
+    current.updates.push({
+      seq,
+      update: new Uint8Array(update),
+      meta: { ...meta, seq },
+    });
+    return seq;
+  }
+
   async function createCheckpoint(
     docId: string,
     state: Uint8Array,
@@ -84,15 +97,7 @@ export function createInMemoryJournal(): InMemoryJournal {
 
   return {
     async append(docId, update, meta) {
-      const current = entry(docId);
-      const seq = current.nextSeq++;
-      if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
-      current.updates.push({
-        seq,
-        update: new Uint8Array(update),
-        meta: { ...meta, seq },
-      });
-      return seq;
+      return appendPersisted(docId, update, meta);
     },
 
     async read(docId, opts = {}): Promise<JournalSnapshot> {
@@ -126,9 +131,23 @@ export function createInMemoryJournal(): InMemoryJournal {
     },
 
     async persistReversal(docId, undoUpdate, record) {
-      const seq = await this.append(docId, undoUpdate, { origin: "system", seq: 0 });
+      const seq = appendPersisted(docId, undoUpdate, { origin: "system", seq: 0 });
       record.undoUpdateSeq = seq;
       entry(docId).reversals.push({ ...record });
+    },
+
+    async persistRedo(docId, redoUpdate, ref, meta) {
+      const current = entry(docId);
+      const index = current.reversals.findIndex(
+        (record) =>
+          record.threadId === ref.threadId &&
+          record.turnId === ref.turnId &&
+          record.status === "reversed",
+      );
+      if (index === -1) return { consumed: false };
+      const seq = appendPersisted(docId, redoUpdate, meta);
+      current.reversals[index] = { ...current.reversals[index], status: "redone" };
+      return { consumed: true, seq };
     },
 
     async readReversals(docId, opts = {}) {
@@ -139,13 +158,6 @@ export function createInMemoryJournal(): InMemoryJournal {
             (opts.status === undefined || opts.status.includes(record.status)),
         )
         .map((record) => ({ ...record }));
-    },
-
-    async markReversalStatus(docId, turnId, status) {
-      const current = entry(docId);
-      current.reversals = current.reversals.map((record) =>
-        record.turnId === turnId ? { ...record, status } : record,
-      );
     },
 
     createCheckpoint,

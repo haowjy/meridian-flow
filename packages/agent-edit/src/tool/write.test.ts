@@ -526,6 +526,63 @@ describe("write tool dispatch", () => {
     expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
   });
 
+  it("consumes durable redo once across concurrent restarted sessions", async () => {
+    const turnId = "thread-a:chapter.md:turn-concurrent-redo";
+    const initial = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await initial.core.write({ command: "view", file: "chapter.md" }, context);
+    await initial.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId },
+    );
+    expect(await initial.core.write({ command: "undo", file: "chapter.md" }, context)).toContain(
+      "status: reversed",
+    );
+    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+
+    const coreA = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coreB = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+
+    expect(await coreA.write({ command: "view", file: "chapter.md" }, context)).toContain(
+      "Alpha sword.",
+    );
+    expect(await coreB.write({ command: "view", file: "chapter.md" }, context)).toContain(
+      "Alpha sword.",
+    );
+
+    const redoA = await coreA.write({ command: "redo", file: "chapter.md" }, context);
+    expect(redoA).toContain("status: reversed");
+    const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
+    expect(redoB).toBe("status: nothing_to_redo");
+
+    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+    expect(
+      await initial.journal.readReversals("chapter.md", {
+        threadId: context.threadId,
+        status: ["redone"],
+      }),
+    ).toMatchObject([{ turnId, status: "redone" }]);
+    expect(
+      await initial.journal.readReversals("chapter.md", {
+        threadId: context.threadId,
+        status: ["reversed"],
+      }),
+    ).toEqual([]);
+  });
+
   it("re-syncs undo and redo before marking the snapshot synced", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -774,11 +831,7 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
-    const entry = this.entry(docId);
-    const seq = entry.nextSeq++;
-    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
-    entry.updates.push({ seq, update, meta: { ...meta, seq } });
-    return seq;
+    return this.appendSync(docId, update, meta);
   }
 
   async read(
@@ -821,9 +874,28 @@ class MemoryJournal implements UpdateJournal {
     undoUpdate: Uint8Array,
     record: ReversalRecord,
   ): Promise<void> {
-    const seq = await this.append(docId, undoUpdate, { origin: "system", seq: 0 });
+    const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 });
     record.undoUpdateSeq = seq;
     this.entry(docId).reversals.push({ ...record });
+  }
+
+  async persistRedo(
+    docId: string,
+    redoUpdate: Uint8Array,
+    ref: { threadId: string; turnId: string },
+    meta: UpdateMeta,
+  ): Promise<{ consumed: boolean; seq?: number }> {
+    const entry = this.entry(docId);
+    const index = entry.reversals.findIndex(
+      (record) =>
+        record.threadId === ref.threadId &&
+        record.turnId === ref.turnId &&
+        record.status === "reversed",
+    );
+    if (index === -1) return { consumed: false };
+    const seq = this.appendSync(docId, redoUpdate, meta);
+    entry.reversals[index] = { ...entry.reversals[index], status: "redone" };
+    return { consumed: true, seq };
   }
 
   clone(): MemoryJournal {
@@ -857,13 +929,6 @@ class MemoryJournal implements UpdateJournal {
       .map((record) => ({ ...record }));
   }
 
-  async markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void> {
-    const entry = this.entry(docId);
-    entry.reversals = entry.reversals.map((record) =>
-      record.turnId === turnId ? { ...record, status } : record,
-    );
-  }
-
   private entry(docId: string): {
     checkpoint: Uint8Array | null;
     checkpointUpToSeq: number;
@@ -877,6 +942,14 @@ class MemoryJournal implements UpdateJournal {
       this.data.set(docId, entry);
     }
     return entry;
+  }
+
+  private appendSync(docId: string, update: Uint8Array, meta: UpdateMeta): number {
+    const entry = this.entry(docId);
+    const seq = entry.nextSeq++;
+    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
+    entry.updates.push({ seq, update, meta: { ...meta, seq } });
+    return seq;
   }
 }
 
