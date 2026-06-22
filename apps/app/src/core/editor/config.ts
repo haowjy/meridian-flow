@@ -24,6 +24,8 @@ import {
   MeridianHardBreak,
   MeridianHorizontalRule,
   MeridianImage,
+  MeridianJsxContainer,
+  MeridianJsxLeaf,
   MeridianLink,
   MeridianListItem,
   MeridianOrderedList,
@@ -225,6 +227,8 @@ export function createEditorExtensions({
     MeridianHorizontalRule,
     MeridianCodeBlockLowlight.configure({ lowlight }),
     MeridianImage,
+    MeridianJsxLeaf,
+    MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: figureRenderContext?.projectId,
       documentId: figureRenderContext?.documentId,
