@@ -1,73 +1,82 @@
-# collab — server-side document infrastructure (cutover scaffolding)
+# collab — server-side document infrastructure
 
-The Yjs sync engine, codec, apply, and undo logic have been extracted to
-`@meridian/agent-edit` (`packages/agent-edit/`). This domain holds the
-server-side residue that hasn't yet been re-homed or replaced.
+The Yjs editing engine lives in `@meridian/agent-edit` (`packages/agent-edit/`).
+This server domain supplies concrete persistence/transport adapters and keeps a
+temporary `DocumentSyncFacade` for existing context, upload, route, and WS
+callers.
 
-## Current state (post-extraction, pre-cutover)
+## Current shape
 
 | Concern | Location | Status |
 |---|---|---|
-| Codec (MDX/markdown ↔ PM) | `@meridian/agent-edit` codec layer | Extracted |
-| Resolver (block hash, find, scope) | `@meridian/agent-edit` resolver | Extracted |
-| 3-tier apply + echo | `@meridian/agent-edit` apply layer | Extracted |
-| Hot/cold undo + compaction | `@meridian/agent-edit` undo layer | Extracted |
-| Tool surface (`write()`) | `@meridian/agent-edit` tool layer | Extracted |
-| Port interfaces (UpdateJournal, etc.) | `@meridian/agent-edit` ports | Extracted |
-| Hocuspocus coordinator | `collab/adapters/hocuspocus-coordinator.ts` | Added, not wired |
-| mdx-bridge.ts | DELETED (superseded by codec) | — |
-| **Throwing stub facade** | `collab/index.ts` | **Temporary** (Step 9 cutover) |
-| **UpdateJournal + loader adapters** | `collab/adapters/drizzle-journal.ts`, `document-loader.ts` | Added, not wired |
-| **DocumentStore** port + adapters | `collab/ports/`, `collab/adapters/drizzle/`, `collab/adapters/in-memory/` | **Pre-existing**, being superseded |
-| **document-activity.ts** | `collab/domain/` | **Stays** (DB-side effects) |
+| Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
+| Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
+| Facade compatibility | `collab/index.ts`, `collab/composition.ts` | Real adapter, temporary API |
+| Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` |
+| Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
+| Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
+| Lifecycle/checkpoint facade ops | `collab/adapters/drizzle-facade-store.ts` | Server-only DB helpers |
+| In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
+| Old document store | `collab/ports/`, `collab/adapters/drizzle/`, `collab/adapters/in-memory/document-store.ts` | Kept until facade deletion pass |
 
-## Stable contracts (still here)
+## Facade behavior
 
-### document-activity.ts
+### Full-document SET
 
-Two DB-side side effects triggered on document write:
-- `touchDocumentActivity` — updates `threadDocuments.lastTouchedAt`,
-  `works.updatedAt`, `projects.updatedAt`/`lastActivityAt`
-- `updateMarkdownProjection` — writes the canonical markdown string to
-  `documents.markdownProjection` for read-model access
+`writeFromMarkdown` and `writeDocument` intentionally do not add a package
+`set` command. The server helper parses markdown with the package codec, clones
+the live Y.Doc into a draft, deletes the ProseMirror fragment contents, inserts
+the parsed blocks through the package model, appends the resulting Yjs update to
+the journal, then applies that update to the live doc. Mutating the draft before
+append keeps the live doc from advancing if persistence fails.
 
-These stay server-side; they are DB-specific projection effects, not agent-edit
-concerns. The Step 9 composition root calls them after each successful write.
+### Reads
 
-### DocumentStore (`ca/ports/document-store.ts`)
+`readAsMarkdown` is a thin codec/model read under `DocumentCoordinator` access.
+It serializes raw markdown without block-hash view prefixes.
 
-Row-level CRUD for Yjs updates, checkpoints, restore points. Being superseded
-by `UpdateJournal` from `@meridian/agent-edit`. Retained for the Step 9
-adapter (`drizzle-journal`) to delegate to.
+### Lifecycle
 
-### Agent-edit adapters
+`createServerDocumentLifecycle.ensureDocument(docId)` upserts the
+`document_yjs_heads` row and creates an empty Yjs checkpoint when the journal has
+no state. The Yjs tables FK to `documents.id`; callers are expected to create the
+`documents` row before ensuring collab state.
 
-- `drizzle-journal.ts` implements `UpdateJournal` over the v3 Yjs journal tables.
-- `document-loader.ts` is the pure journal → encoded Yjs state rebuild helper.
-  Hocuspocus `onLoadDocument` must call this when the WS route is rewired.
-- `hocuspocus-coordinator.ts` implements `DocumentCoordinator` with Hocuspocus
-  direct connections plus `KeyedMutex` per-doc serialization. It depends on the
-  same loader for existence checks and idempotent recovery.
+### Origin translation
 
-## Stale claims removed
+Facade origins remain collab-shaped:
 
-The following claims in the previous docs were true before extraction but are
-now false — removed in this update:
-- **"DocumentSyncService is the live document spine"** — the service is now a
-  throwing stub. The live document spine lives in `@meridian/agent-edit`.
-- **"Transport is Hocuspocus v4"** — the old all-in-one Hocuspocus collab
-  adapter was deleted. The replacement is split: `@meridian/agent-edit` owns
-  the tool core, and this domain owns thin Hocuspocus/journal adapters that are
-  still awaiting composition-root and WS wiring.
-- **"No node or mark without a lossless serializer+parser pair in
-  domain/mdx-bridge.ts"** — `mdx-bridge.ts` was deleted. The serializer lives
-  in `@meridian/agent-edit`'s codec registration system; the rule still holds
-  but at the package level.
-- **"The ProseMirror schema is the bijection"** — still architecturally true,
-  but the bijection now lives in the codec package, not here.
+- `{ type: "agent", actorTurnId }` → `agent:<turnId>` with `actorTurnId`
+- `{ type: "user", userId/actorUserId }` → `human:<userId>`
+- `{ type: "import", userId, ... }` → `human:<userId>`; if imports later become
+  userless, map them to `system`
+- `{ type: "system" }` → `system`
 
-## Cutover (Step 9)
+Attribution maps package `human:<userId>` back to facade/API `originType:
+"user"`.
 
-See [`collab/AGENTS.md`](../AGENTS.md) for the cutover checklist. The
-`TODO(agent-edit)` markers in `collab/index.ts` and ~13 consumers are the
-exhaustive scope.
+### Hocuspocus persistence
+
+The WS route calls the facade hooks:
+
+- `loadHocuspocusDocument` replays checkpoint + updates via `loadDocumentState`.
+- `persistConnectionUpdate` appends the connection update to the journal outside
+  the coordinator; pending appends are tracked by document.
+- `storeHocuspocusDocument` drains pending appends for that document, then writes
+  a checkpoint from `Y.encodeStateAsUpdate(document)`.
+- `drainHocuspocusPersistence` waits for tracked appends. Metrics report pending
+  depth, oldest pending age, failed/dropped append count, live docs, and open
+  Hocuspocus connections.
+
+## Stable server-side helpers
+
+`document-activity.ts` contains DB side effects for document writes:
+`touchDocumentActivity` and `updateMarkdownProjection`. They remain outside the
+package because they update Meridian read models and project/work activity.
+
+## Deferred cutover work
+
+- Rewire consumers from `DocumentSyncFacade` to package/core-facing ports.
+- Delete mirror method names and the old row-level `DocumentStore` once no
+  consumer depends on them.
+- Re-enable the `TODO(agent-edit)` skipped tests after consumer rewiring.

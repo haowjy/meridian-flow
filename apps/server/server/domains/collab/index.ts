@@ -1,22 +1,10 @@
-/**
- * Collab facade — stubbed during agent-edit extraction (Step 1).
- * TODO(agent-edit): replace with @meridian/agent-edit composition root.
- */
+/** Collab facade types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import type { Database } from "@meridian/database";
 import type * as Y from "yjs";
-import type { DocumentAccessPort } from "../../lib/document-access.js";
 import type { Result } from "../../shared/result.js";
-import type { EventSink } from "../observability/index.js";
 import type { createDrizzleDocumentStore } from "./adapters/drizzle/document-store.js";
-
-const STUB_MESSAGE = "Old collab code deleted — waiting for agent-edit package";
-
-function collabStub(): never {
-  throw new Error(STUB_MESSAGE);
-}
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -138,42 +126,9 @@ export interface DocumentSyncServiceOptions {
   compaction?: false;
 }
 
-function stubDocumentSyncPort(): DocumentSyncFacade {
-  const stub = () => collabStub();
-  return {
-    getOrCreateMirror: stub,
-    forgetMirror: stub,
-    readAsMarkdown: stub,
-    editFromMarkdown: stub,
-    writeFromMarkdown: stub,
-    checkpoint: stub,
-    restore: stub,
-    listCheckpoints: stub,
-    writeDocument: stub,
-    editDocument: stub,
-    bindHocuspocus: stub,
-    loadHocuspocusDocument: stub,
-    persistConnectionUpdate: stub,
-    storeHocuspocusDocument: stub,
-    drainHocuspocusPersistence: stub,
-    getPersistenceQueueMetrics: stub,
-    getLastUpdateAttribution: stub,
-  };
-}
-
-export function createStubDocumentSyncFacade(): DocumentSyncFacade {
-  // TODO(agent-edit): replace with @meridian/agent-edit in-memory adapter
-  return stubDocumentSyncPort();
-}
-
-export function createDocumentSyncService(_deps: {
-  db: Database;
-  documentAccess: DocumentAccessPort & {
-    requireOwnedDocument(documentId: DocumentId, userId: UserId): Promise<void>;
-  };
-  eventSink?: EventSink;
-  options?: DocumentSyncServiceOptions;
-}): DocumentSyncFacade {
-  // TODO(agent-edit): replace with @meridian/agent-edit
-  return stubDocumentSyncPort();
-}
+export {
+  createCollabDomain,
+  createDocumentSyncService,
+  createInMemoryCollabDomain,
+  createStubDocumentSyncFacade,
+} from "./composition.js";
