@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { formatPgError, pingDatabaseForUrl } from "./dev-db";
-import { applyDevEnvToProcess, DEV_DATABASES } from "./dev-env";
+import { formatPgError, pingDatabaseForUrl, readAppliedMigrationHashes } from "./dev-db";
+import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./dev-env";
+import { describeMigrationDrift, readExpectedMigrationHashes } from "./migration-state";
 
 /** Start the local postgres:16 container and wait until healthy. */
 export function ensureDevInfraUp(repoRoot: string): void {
@@ -33,7 +34,8 @@ export class DevInfraNotReadyError extends Error {
  * the `dev-tmux.ts` entry point catches it and exits.
  */
 export async function assertDevInfraReady(): Promise<void> {
-  applyDevEnvToProcess();
+  const repoRoot = resolveCurrentRepoRoot();
+  applyDevEnvToProcess(repoRoot);
 
   const active = DEV_DATABASES.map((db) => ({ db, dbUrl: process.env[db.envVar] })).filter(
     (entry): entry is { db: (typeof DEV_DATABASES)[number]; dbUrl: string } => Boolean(entry.dbUrl),
@@ -53,5 +55,41 @@ export async function assertDevInfraReady(): Promise<void> {
         `dev infra check failed — ${db.label} unreachable:\n  ${formatPgError(err)}`,
       );
     }
+
+    await assertMigrationsCurrent(repoRoot, db, dbUrl);
+  }
+}
+
+/**
+ * Fail fast when a live dev database has drifted from the repo's migration
+ * baseline. Without this, a worktree DB stamped from an older/squashed baseline
+ * boots happily and only breaks later inside feature code (e.g. a missing column
+ * surfacing as an opaque "database error" in chat). Best-effort: a check that
+ * cannot run (no migrations dir configured, query failure) does not block dev.
+ */
+async function assertMigrationsCurrent(
+  repoRoot: string,
+  db: (typeof DEV_DATABASES)[number],
+  dbUrl: string,
+): Promise<void> {
+  if (!db.migrationsDir) return;
+
+  const expected = readExpectedMigrationHashes(path.join(repoRoot, db.migrationsDir));
+  let applied: string[] | null;
+  try {
+    applied = await readAppliedMigrationHashes(dbUrl);
+  } catch {
+    // Diagnostic only — never let a drift probe failure block dev startup.
+    return;
+  }
+
+  const drift = describeMigrationDrift({
+    label: db.label,
+    expected,
+    applied,
+    resetHint: db.resetHint ?? db.migrateScript,
+  });
+  if (drift) {
+    throw new DevInfraNotReadyError(`dev infra check failed — ${drift}`);
   }
 }
