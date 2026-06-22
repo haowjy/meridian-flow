@@ -51,11 +51,6 @@ export type DocumentWriteHook = (event: {
   at: Date;
 }) => Promise<void>;
 
-export type ProjectionRefreshResult = {
-  documentId: DocumentId;
-  markdown: string;
-};
-
 export type CollabPersistenceMetrics = {
   queues: Array<{
     documentId: string;
@@ -85,10 +80,7 @@ export type CollabDomain = CollabTransport & {
   agentEdit(): AgentEditCore;
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  refreshDocumentProjection(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId;
-  }): Promise<Result<ProjectionRefreshResult, SyncError>>;
+  refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
   writeFromMarkdown(
     documentId: string,
     markdown: string,

@@ -12,7 +12,7 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { CollabDomain, SyncError } from "../domains/collab/index.js";
+import type { CollabDomain } from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -83,6 +83,7 @@ const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
   "undo",
   "redo",
 ]);
+const STATUS_ENVELOPED_WRITE_COMMANDS = MUTATING_WRITE_COMMANDS;
 const WRITE_ERROR_STATUSES = new Set([
   "not_found",
   "ambiguous_match",
@@ -136,17 +137,6 @@ function recordTouchInBackground(
       },
     });
   });
-}
-
-function syncErrorMessage(error: SyncError): string {
-  switch (error.code) {
-    case "not_found":
-      return `Document not found: ${error.documentId}`;
-    case "checkpoint_not_found":
-      return `Checkpoint not found: ${error.checkpointId}`;
-    case "corrupt_state":
-      return error.message;
-  }
 }
 
 function asRecord(input: unknown): Record<string, unknown> | null {
@@ -340,9 +330,43 @@ function writeStatus(result: WriteResult): string | null {
   return result.match(/^status:\s*([a-z_]+)/)?.[1] ?? null;
 }
 
-function isAgentWriteError(result: WriteResult): boolean {
+function isAgentWriteError(command: WriteCommand["command"], result: WriteResult): boolean {
+  // agent-edit currently returns WriteResult as plain text. Until it exposes a
+  // structured success/error channel, only status-sniff commands whose success
+  // shape is always status-enveloped; view success is raw document content.
+  if (!STATUS_ENVELOPED_WRITE_COMMANDS.has(command)) return false;
   const status = writeStatus(result);
   return status !== null && WRITE_ERROR_STATUSES.has(status);
+}
+
+async function refreshProjectionAfterCommittedWrite(
+  deps: ToolWiringDeps,
+  address: ResolvedDocumentAddress,
+  ctx: ToolHandlerContext,
+): Promise<void> {
+  try {
+    await deps.documentSync.refreshDocumentProjection({
+      documentId: address.documentId,
+      threadId: ctx.threadId,
+    });
+  } catch (error) {
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "lib.wired-core-tools",
+      name: "document_projection_refresh.unhandled_failure",
+      correlation: {
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        runId: ctx.turnId,
+      },
+      payload: {
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        documentId: address.documentId,
+        ...unknownToEventPayload(error),
+      },
+    });
+  }
 }
 
 async function askUserHandler(input: unknown, ctx: CheckpointToolHandlerContext) {
@@ -379,15 +403,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           turnId: ctx.turnId,
           tool_use_id: ctx.toolCallId,
         });
-      if (isAgentWriteError(result)) return toolError({ message: result });
+      if (isAgentWriteError(parsed.command, result)) return toolError({ message: result });
 
       recordTouchInBackground(deps, address.documentId, ctx);
       if (MUTATING_WRITE_COMMANDS.has(parsed.command)) {
-        const refreshed = await deps.documentSync.refreshDocumentProjection({
-          documentId: address.documentId,
-          threadId: ctx.threadId,
-        });
-        if (!refreshed.ok) return toolError({ message: syncErrorMessage(refreshed.error) });
+        await refreshProjectionAfterCommittedWrite(deps, address, ctx);
       }
       return result;
     },
