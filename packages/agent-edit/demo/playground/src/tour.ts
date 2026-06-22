@@ -96,7 +96,7 @@ async function step(
 ) {
   try {
     const response = await env.core.write(command, context ?? env.defaultContext);
-    log(label, response, !response.startsWith("status: error"));
+    log(label, response.text, !response.isError);
   } catch (cause) {
     log(label, String(cause), false);
   }

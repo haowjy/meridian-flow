@@ -2,6 +2,7 @@
 import {
   type CompactionResult,
   type DocumentCoordinator,
+  type DocumentLifecycle,
   DocumentNotFoundError,
   type JournalSnapshot,
   type PersistedUpdate,
@@ -176,7 +177,7 @@ export class InMemoryJournal implements UpdateJournal {
   }
 }
 
-export class InMemoryCoordinator implements DocumentCoordinator {
+export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecycle {
   private readonly docs = new Map<string, Y.Doc>();
   private readonly locks = new Map<string, Promise<void>>();
   private nextClientId = 1000;
@@ -193,6 +194,10 @@ export class InMemoryCoordinator implements DocumentCoordinator {
       if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
       for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
     });
+  }
+
+  async ensureDocument(docId: string): Promise<void> {
+    this.getOrCreate(docId);
   }
 
   requireDocument(docId: string): Y.Doc {

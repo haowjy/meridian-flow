@@ -54,6 +54,7 @@ function createEnvironment(journal = new InMemoryJournal(), coordinator?: InMemo
     core: createAgentEditCore({
       journal,
       coordinator: fakeServer,
+      lifecycle: fakeServer,
       codec,
       model,
       defaultSessionId: "demo-session",
@@ -73,9 +74,9 @@ async function scenarioCreate(env: DemoEnvironment, docId: string) {
     },
     defaultContext,
   );
-  print("write(create) result", result);
+  print("write(create) result", result.text);
   printBlocks("live doc", await blocks(env, docId));
-  assert(result.includes("status: success"), "create should succeed");
+  assert(result.text.includes("status: success"), "create should succeed");
   assert((await blocks(env, docId)).length === 3, "create should produce three blocks");
 }
 
@@ -85,15 +86,18 @@ async function scenarioView(env: DemoEnvironment, docId: string) {
     { command: "view", file: docId, format: "full" },
     defaultContext,
   );
-  print("write(view, full)", full);
+  print("write(view, full)", full.text);
   const outline = await env.core.write(
     { command: "view", file: docId, format: "outline" },
     defaultContext,
   );
-  print("write(view, outline)", outline);
+  print("write(view, outline)", outline.text);
   printBlocks("hash index", await blocks(env, docId));
-  assert(/^([0-9a-f]{4,})\|# Chapter/m.test(full), "full view should include block hashes");
-  assert(outline.includes('write(command="view"'), "outline should include drill-down command");
+  assert(/^([0-9a-f]{4,})\|# Chapter/m.test(full.text), "full view should include block hashes");
+  assert(
+    outline.text.includes('write(command="view"'),
+    "outline should include drill-down command",
+  );
 }
 
 async function scenarioInsert(env: DemoEnvironment, docId: string) {
@@ -109,7 +113,7 @@ async function scenarioInsert(env: DemoEnvironment, docId: string) {
     },
     defaultContext,
   );
-  print(`write(insert after ${firstParagraph.hash})`, result);
+  print(`write(insert after ${firstParagraph.hash})`, result.text);
   printBlocks("live doc", await blocks(env, docId));
   assert(
     (await plainTexts(env, docId)).includes("A foxfire lantern flared to life."),
@@ -123,7 +127,7 @@ async function scenarioReplace(env: DemoEnvironment, docId: string) {
     { command: "replace", file: docId, find: "sword", content: "blade" },
     defaultContext,
   );
-  print('write(replace find "sword" -> "blade")', result);
+  print('write(replace find "sword" -> "blade")', result.text);
   printBlocks("live doc", await blocks(env, docId));
   assert((await rendered(env, docId)).includes("The blade hummed"), "find replace should apply");
 }
@@ -138,10 +142,10 @@ async function scenarioDelete(env: DemoEnvironment, docId: string) {
     defaultContext,
   );
   const after = await blocks(env, docId);
-  print(`write(replace in ${inserted.hash}, content="")`, result);
+  print(`write(replace in ${inserted.hash}, content="")`, result.text);
   print(`block count: ${before.length} -> ${after.length}`, "");
   printBlocks("live doc", after);
-  assert(result.includes("deleted:"), "delete should report the deleted hash");
+  assert(result.text.includes("deleted:"), "delete should report the deleted hash");
   assert(after.length === before.length - 1, "block count should drop by one");
 }
 
@@ -156,10 +160,10 @@ async function scenarioCrossBlockFind(env: DemoEnvironment, docId: string) {
     },
     defaultContext,
   );
-  print("write(replace cross-block find)", result);
+  print("write(replace cross-block find)", result.text);
   printBlocks("live doc", await blocks(env, docId));
   const text = await rendered(env, docId);
-  assert(result.includes("status: success"), "cross-block replace should succeed");
+  assert(result.text.includes("status: success"), "cross-block replace should succeed");
   assert(
     text.includes("old shrine as moonlight pooled"),
     "cross-block replacement should merge text",
@@ -187,21 +191,21 @@ async function scenarioMultiWriteTurn() {
     { command: "replace", file: docId, find: "sword", content: "blade" },
     turnContext,
   );
-  print("write(insert, turnId=demo-turn-two-writes)", insert);
-  print("write(replace, same turnId)", replace);
+  print("write(insert, turnId=demo-turn-two-writes)", insert.text);
+  print("write(replace, same turnId)", replace.text);
   printBlocks("after two writes", await blocks(env, docId));
 
   const undo = await env.core.write({ command: "undo", file: docId }, defaultContext);
-  print("write(undo)", undo);
+  print("write(undo)", undo.text);
   printBlocks("after undo", await blocks(env, docId));
-  assert(undo.includes("undo: demo-turn-two-writes"), "undo should target the shared turn id");
+  assert(undo.text.includes("undo: demo-turn-two-writes"), "undo should target the shared turn id");
   assert(
     equal(await plainTexts(env, docId), ["Alpha sword.", "Omega."]),
     "undo should reverse both writes in the turn",
   );
 
   const redo = await env.core.write({ command: "redo", file: docId }, defaultContext);
-  print("write(redo)", redo);
+  print("write(redo)", redo.text);
   printBlocks("after redo", await blocks(env, docId));
   assert(
     equal(await plainTexts(env, docId), ["Alpha blade.", "Inserted in the same turn.", "Omega."]),
@@ -230,10 +234,16 @@ async function scenarioConcurrentReconciled() {
     { command: "replace", file: docId, find: "sword", content: "blade" },
     defaultContext,
   );
-  print('write(replace stale snapshot find "sword" -> "blade")', result);
+  print('write(replace stale snapshot find "sword" -> "blade")', result.text);
   printBlocks("merged live doc", await blocks(env, docId));
-  assert(result.includes("status: success"), "agent replace should still succeed after human edit");
-  assert(result.includes("concurrent edits:"), "result should report the concurrent human edit");
+  assert(
+    result.text.includes("status: success"),
+    "agent replace should still succeed after human edit",
+  );
+  assert(
+    result.text.includes("concurrent edits:"),
+    "result should report the concurrent human edit",
+  );
   assert(
     (await rendered(env, docId)).includes("Human note: Alpha waits."),
     "human edit should survive merge",
@@ -255,7 +265,7 @@ async function scenarioHotColdParity() {
   );
   const hotUndo = await env.core.write({ command: "undo", file: hotDoc }, defaultContext);
   const hotRendered = await rendered(env, hotDoc);
-  print("hot path undo", hotUndo);
+  print("hot path undo", hotUndo.text);
   print("hot rendered", hotRendered);
 
   await env.core.write({ command: "create", file: coldDoc, content: initial }, defaultContext);
@@ -272,7 +282,7 @@ async function scenarioHotColdParity() {
     defaultContext,
   );
   const coldRendered = await rendered(env, coldDoc);
-  print("cold path undo (fresh core/session registry)", coldUndo);
+  print("cold path undo (fresh core/session registry)", coldUndo.text);
   print("cold rendered", coldRendered);
 
   if (hotRendered === coldRendered) {
@@ -280,8 +290,8 @@ async function scenarioHotColdParity() {
   } else {
     print("hot/cold parity DIFF", diffLines(hotRendered, coldRendered));
   }
-  assert(hotUndo.includes("status: reversed"), "hot undo should reverse the edit");
-  assert(coldUndo.includes("status: reversed"), "cold undo should reverse the edit");
+  assert(hotUndo.text.includes("status: reversed"), "hot undo should reverse the edit");
+  assert(coldUndo.text.includes("status: reversed"), "cold undo should reverse the edit");
   assert(hotRendered === coldRendered, "hot and cold undo should leave identical rendered text");
 }
 

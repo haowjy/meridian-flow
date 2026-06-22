@@ -101,8 +101,8 @@ export function App() {
     const ctx = turnId ? { ...env.defaultContext, turnId } : env.defaultContext;
     try {
       const response = await env.core.write(command, ctx);
-      appendLog(label, response, !response.startsWith("status: error"));
-      return response;
+      appendLog(label, response.text, !response.isError);
+      return response.text;
     } catch (cause) {
       appendLog(label, String(cause), false);
       return String(cause);
