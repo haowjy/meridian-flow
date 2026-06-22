@@ -10,11 +10,10 @@
 
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
-import type { CollabDomain } from "../collab/index.js";
+import type { MarkdownDocumentStore } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-store.js";
-import type { ContextCollabDomain } from "./context/collab-document-sync.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
@@ -102,7 +101,7 @@ const emptyWorkScopedAdapter: ContextSchemeAdapter = {
 function contextFsAdapter(deps: {
   store: ContextDocumentStore;
   mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
-  documentSync: ContextCollabDomain;
+  documentSync: MarkdownDocumentStore;
   scheme: ContextScheme;
 }): ContextSchemeAdapter {
   return new ContextFS(deps);
@@ -112,7 +111,7 @@ function buildProjectContextFsAdapters(
   projectId: string,
   userId: string,
   storeResolvers: ContextStoreResolvers,
-  documentSync: ContextCollabDomain,
+  documentSync: MarkdownDocumentStore,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
@@ -133,7 +132,7 @@ function buildProjectContextFsAdapters(
 function buildWorkScopedContextFsAdapters(
   workId: string,
   storeResolvers: ContextStoreResolvers,
-  documentSync: ContextCollabDomain,
+  documentSync: MarkdownDocumentStore,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
@@ -170,7 +169,7 @@ type ContextPortBuildScope =
 function buildUnifiedContextPort(input: {
   scope: ContextPortBuildScope;
   storeResolvers: ContextStoreResolvers;
-  documentSync: ContextCollabDomain;
+  documentSync: MarkdownDocumentStore;
 }): ContextPort {
   const { scope, storeResolvers, documentSync } = input;
   const adapters = buildProjectContextFsAdapters(
@@ -242,7 +241,7 @@ function cacheKey(projectId: string, userId: string): string {
 
 export function createInMemoryUnifiedContextPortFactory(
   options: {
-    documentSync?: ContextCollabDomain;
+    documentSync?: MarkdownDocumentStore;
     storeRegistry?: InMemoryUnifiedContextStoreRegistry;
   } = {},
 ): UnifiedContextPortFactory {
@@ -281,7 +280,7 @@ export function createInMemoryUnifiedContextPortFactory(
 
 export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
-  documentSync: CollabDomain;
+  documentSync: MarkdownDocumentStore;
 }): UnifiedContextPortFactory {
   const entries = new Map<string, ContextPort>();
   const storeResolvers = createProductionStoreResolvers(options.db);

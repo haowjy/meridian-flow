@@ -7,12 +7,8 @@
 
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { SyncError } from "../../../collab/index.js";
-import {
-  type ContextCollabDomain,
-  editCollabMarkdown,
-  writeCollabMarkdown,
-} from "../../context/collab-document-sync.js";
+import type { MarkdownDocumentStore, SyncError } from "../../../collab/index.js";
+import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
   AdapterDeleteResult,
@@ -41,7 +37,7 @@ import type {
 export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
-  documentSync: ContextCollabDomain;
+  documentSync: MarkdownDocumentStore;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
 }
@@ -72,7 +68,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
-  private readonly documentSync: ContextCollabDomain;
+  private readonly documentSync: MarkdownDocumentStore;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),

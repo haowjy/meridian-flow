@@ -7,7 +7,7 @@ import {
   schemaTypeForFiletype,
   type ThreadUploadDocumentItem,
 } from "@meridian/contracts/protocol";
-import type { CollabDomain } from "../../collab/index.js";
+import type { MarkdownDocumentStore } from "../../collab/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ThreadRepositories } from "../../threads/index.js";
@@ -52,7 +52,7 @@ export interface ThreadUploadImportService {
 export interface ThreadUploadImportServiceDeps {
   repos: ThreadRepositories;
   uploadDocuments: ThreadUploadDocumentStore;
-  documentSync: Pick<CollabDomain, "readAsMarkdown" | "writeFromMarkdown">;
+  documentSync: MarkdownDocumentStore;
   objectStore: ObjectStorePort;
   generateId?: () => string;
   eventSink: EventSink;

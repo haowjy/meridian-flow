@@ -10,8 +10,12 @@ the update journal, and the live-document coordinator.
 - **Domain types** (`index.ts`) — `CollabDomain`, update origins, checkpoint
   metadata, write results, and Hocuspocus persistence metrics.
 - **Composition** (`composition.ts`) — builds the codec/model, translates
-  Meridian origins to journal meta, implements full-document SET, checkpoint /
-  restore, Hocuspocus hooks, and in-memory/prod factory wiring.
+  Meridian origins to journal meta, wires the markdown-document engine, handles
+  checkpoint / restore, Hocuspocus hooks, and in-memory/prod factory wiring.
+- **Full-document markdown engine** (`domain/markdown-document.ts`) —
+  server-side read/SET/edit orchestration over the package codec/model, journal,
+  and coordinator. This is not part of the `@meridian/agent-edit` public mutation
+  surface.
 - **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`, server lifecycle, checkpoints, latest
   attribution), `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`

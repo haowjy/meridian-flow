@@ -76,19 +76,18 @@ export type CollabTransport = {
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
-export type CollabDomain = CollabTransport & {
+export type AgentEditAccess = {
   agentEdit(): AgentEditCore;
+};
+
+export type MarkdownDocumentStore = {
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
   writeFromMarkdown(
     documentId: string,
     markdown: string,
     origin: UpdateOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
-  restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
-  listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
     markdown: string;
@@ -101,6 +100,19 @@ export type CollabDomain = CollabTransport & {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
+};
+
+export type DocumentProjectionRefresher = {
+  refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
+};
+
+export type DocumentCheckpoints = {
+  checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
+  restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
+  listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
+};
+
+export type DocumentAttribution = {
   getLastUpdateAttribution(documentId: DocumentId): Promise<{
     originType: string | null;
     actorTurnId: TurnId | null;
@@ -108,5 +120,12 @@ export type CollabDomain = CollabTransport & {
     updateSeq: number | null;
   }>;
 };
+
+export type CollabDomain = CollabTransport &
+  AgentEditAccess &
+  MarkdownDocumentStore &
+  DocumentProjectionRefresher &
+  DocumentCheckpoints &
+  DocumentAttribution;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";

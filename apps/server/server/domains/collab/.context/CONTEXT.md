@@ -10,7 +10,8 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 |---|---|---|
 | Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
-| Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade over package codec/model plus journal/coordinator |
+| Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade wiring over package codec/model plus journal/coordinator |
+| Full-document markdown SET/read | `collab/domain/markdown-document.ts` | Server-side engine over package primitives; not package public API |
 | Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal`, lifecycle, checkpoint, and latest-update helpers |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
@@ -22,11 +23,12 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 ### Full-document SET
 
 `writeFromMarkdown` and `writeDocument` intentionally do not add a package
-`set` command. The server helper parses markdown with the package codec, clones
-the live Y.Doc into a draft, deletes the ProseMirror fragment contents, inserts
-the parsed blocks through the package model, appends the resulting Yjs update to
-the journal, then applies that update to the live doc. Mutating the draft before
-append keeps the live doc from advancing if persistence fails.
+`set` command. `domain/markdown-document.ts` parses markdown with the package
+codec, clones the live Y.Doc into a draft, deletes the ProseMirror fragment
+contents, inserts the parsed blocks through the package model, appends the
+resulting Yjs update to the journal, then applies that update to the live doc.
+Mutating the draft before append keeps the live doc from advancing if
+persistence fails.
 
 After a full-document write has appended to the journal and applied to the live
 Y.Doc, `setMarkdown` / `editMarkdown` fire the injected document-write hook. The

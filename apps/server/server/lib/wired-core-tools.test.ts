@@ -7,6 +7,7 @@ import type { WriteOutcome } from "@meridian/agent-edit";
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../domains/billing/index.js";
+import type { AgentEditAccess, DocumentProjectionRefresher } from "../domains/collab/index.js";
 import { createInMemoryCollabDomain } from "../domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
@@ -38,10 +39,7 @@ import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 type WiredTestGraphOptions = {
   works?: ReturnType<typeof createInMemoryWorkRepository>;
   documentSync?: ReturnType<typeof createInMemoryCollabDomain>;
-  toolDocumentSync?: Pick<
-    ReturnType<typeof createInMemoryCollabDomain>,
-    "agentEdit" | "refreshDocumentProjection"
-  >;
+  toolDocumentSync?: AgentEditAccess & DocumentProjectionRefresher;
   eventSink?: ReturnType<typeof createInMemoryEventSink>;
 };
 

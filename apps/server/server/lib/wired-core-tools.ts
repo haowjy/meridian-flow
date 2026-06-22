@@ -12,7 +12,7 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { CollabDomain } from "../domains/collab/index.js";
+import type { AgentEditAccess, DocumentProjectionRefresher } from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -42,7 +42,7 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: Pick<CollabDomain, "agentEdit" | "refreshDocumentProjection">;
+  documentSync: AgentEditAccess & DocumentProjectionRefresher;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
