@@ -2,7 +2,7 @@
  * Core-tool wiring: binds runtime core tool registrations to concrete handlers
  * backed by Meridian context, collab, and thread services.
  */
-import type { WriteCommand, WriteResult } from "@meridian/agent-edit";
+import type { WriteCommand } from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   checkpointRequestFromAskUser,
@@ -68,29 +68,12 @@ type ResolvedDocumentAddress = {
   file: string;
 };
 
-const WRITE_COMMANDS = new Set<WriteCommand["command"]>([
-  "create",
-  "view",
-  "insert",
-  "replace",
-  "undo",
-  "redo",
-]);
 const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
   "insert",
   "replace",
   "undo",
   "redo",
-]);
-const STATUS_ENVELOPED_WRITE_COMMANDS = MUTATING_WRITE_COMMANDS;
-const WRITE_ERROR_STATUSES = new Set([
-  "not_found",
-  "ambiguous_match",
-  "invalid_write",
-  "document_not_found",
-  "partial_failure",
-  "internal_error",
 ]);
 
 function toolError(error: ContextError | { message: string }): ToolErrorOutput {
@@ -182,7 +165,7 @@ function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
   if (!record) return toolError({ message: "write input must be an object" });
 
   const { command, path } = record;
-  if (typeof command !== "string" || !WRITE_COMMANDS.has(command as WriteCommand["command"])) {
+  if (typeof command !== "string" || !isWriteCommandName(command)) {
     return toolError({ message: "command is required" });
   }
   if (typeof path !== "string" || path.length === 0) {
@@ -216,7 +199,7 @@ function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
   }
 
   return {
-    command: command as WriteCommand["command"],
+    command,
     path,
     content,
     find,
@@ -228,6 +211,20 @@ function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
     last,
     format: format as WriteToolInput["format"],
   };
+}
+
+function isWriteCommandName(command: string): command is WriteCommand["command"] {
+  switch (command) {
+    case "create":
+    case "view":
+    case "insert":
+    case "replace":
+    case "undo":
+    case "redo":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput {
@@ -326,19 +323,6 @@ function buildAgentWriteCommand(
   }
 }
 
-function writeStatus(result: WriteResult): string | null {
-  return result.match(/^status:\s*([a-z_]+)/)?.[1] ?? null;
-}
-
-function isAgentWriteError(command: WriteCommand["command"], result: WriteResult): boolean {
-  // agent-edit currently returns WriteResult as plain text. Until it exposes a
-  // structured success/error channel, only status-sniff commands whose success
-  // shape is always status-enveloped; view success is raw document content.
-  if (!STATUS_ENVELOPED_WRITE_COMMANDS.has(command)) return false;
-  const status = writeStatus(result);
-  return status !== null && WRITE_ERROR_STATUSES.has(status);
-}
-
 async function refreshProjectionAfterCommittedWrite(
   deps: ToolWiringDeps,
   address: ResolvedDocumentAddress,
@@ -395,7 +379,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const address = await resolveDocumentAddress(portOrError, parsed);
       if (isToolError(address)) return address;
 
-      const result = await deps.documentSync
+      const outcome = await deps.documentSync
         .agentEdit()
         .write(buildAgentWriteCommand(parsed, address.file, ctx.toolCallId), {
           sessionId: ctx.threadId,
@@ -403,13 +387,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           turnId: ctx.turnId,
           tool_use_id: ctx.toolCallId,
         });
-      if (isAgentWriteError(parsed.command, result)) return toolError({ message: result });
+      if (outcome.isError) return toolError({ message: outcome.text });
 
       recordTouchInBackground(deps, address.documentId, ctx);
       if (MUTATING_WRITE_COMMANDS.has(parsed.command)) {
         await refreshProjectionAfterCommittedWrite(deps, address, ctx);
       }
-      return result;
+      return outcome.text;
     },
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };

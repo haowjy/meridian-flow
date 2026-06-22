@@ -18,7 +18,7 @@ import type {
 } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { createUndoManagerRegistry } from "../undo/manager-registry.js";
-import type { WriteContext } from "./types.js";
+import type { WriteContext, WriteOutcome, WriteStatus } from "./types.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
@@ -32,22 +32,25 @@ describe("write tool dispatch", () => {
 
     const full = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
 
-    expect(full).toMatch(/^[0-9a-f]{4}\|# Chapter/m);
-    expect(full).toContain("|Alpha sword.");
+    expectOutcome(full, "success");
+    expect(outcomeText(full)).toMatch(/^[0-9a-f]{4}\|# Chapter/m);
+    expect(outcomeText(full)).toContain("|Alpha sword.");
 
     const headingHash = hashAt(ctx.liveDoc("chapter.md"), 2);
     const section = await ctx.core.write(
       { command: "view", file: `chapter.md#${headingHash}` },
       context,
     );
-    expect(section).toContain("|## Arena");
-    expect(section).toContain("|Beta waits.");
+    expect(outcomeText(section)).toContain("|## Arena");
+    expect(outcomeText(section)).toContain("|Beta waits.");
 
     const outline = await ctx.core.write(
       { command: "view", file: "chapter.md", format: "outline" },
       context,
     );
-    expect(outline).toContain(`write(command="view", file="chapter.md#${headingHash}")`);
+    expect(outcomeText(outline)).toContain(
+      `write(command="view", file="chapter.md#${headingHash}")`,
+    );
   });
 
   it("creates a document with initial content", async () => {
@@ -59,8 +62,9 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(result).toContain("status: success");
-    expect(result).toContain("|# Draft");
+    expect(outcomeText(result)).toContain("status: success");
+    expectOutcome(result, "success");
+    expect(outcomeText(result)).toContain("|# Draft");
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
   });
 
@@ -72,7 +76,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(result).toContain("status: success");
+    expect(outcomeText(result)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
     expect(
       renderedBlockBodies(await ctx.core.write({ command: "view", file: "new.md" }, context)),
@@ -94,8 +98,9 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(result).toContain("status: invalid_write");
-    expect(result).toContain("File already exists: chapter.md");
+    expect(outcomeText(result)).toContain("status: invalid_write");
+    expectOutcome(result, "invalid_write", true);
+    expect(outcomeText(result)).toContain("File already exists: chapter.md");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
   });
 
@@ -107,8 +112,8 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(result).toContain("status: invalid_write");
-    expect(result).toContain("document creation is not supported by this deployment");
+    expect(outcomeText(result)).toContain("status: invalid_write");
+    expect(outcomeText(result)).toContain("document creation is not supported by this deployment");
   });
 
   it("inserts by block hash, by find, and deduplicates tool_use_id", async () => {
@@ -121,8 +126,8 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(byHash).toContain("status: success");
-    expect(byHash).toContain("Inserted scene.");
+    expect(outcomeText(byHash)).toContain("status: success");
+    expect(outcomeText(byHash)).toContain("Inserted scene.");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Inserted scene.", "Omega."]);
 
     const first = await ctx.core.write(
@@ -147,6 +152,7 @@ describe("write tool dispatch", () => {
     );
 
     expect(replay).toBe(first);
+    expectOutcome(first, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
@@ -159,7 +165,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(noAnchor).toContain("status: success");
+    expect(outcomeText(noAnchor)).toContain("status: success");
     const expectedEndOrder = ["One", "Two", "Three", "Four", "Five"];
     expect(blockTexts(noAnchorCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
@@ -177,7 +183,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(beforeFirst).toContain("status: success");
+    expect(outcomeText(beforeFirst)).toContain("status: success");
     const expectedStartOrder = ["Start A", "Start B", "Alpha", "Beta"];
     expect(blockTexts(beforeFirstCtx.liveDoc("chapter.md"))).toEqual(expectedStartOrder);
     expect(
@@ -195,7 +201,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(afterLast).toContain("status: success");
+    expect(outcomeText(afterLast)).toContain("status: success");
     expect(blockTexts(afterLastCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
       renderedBlockBodies(
@@ -212,7 +218,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(emptyInsert).toContain("status: success");
+    expect(outcomeText(emptyInsert)).toContain("status: success");
     expect(blockTexts(emptyCtx.liveDoc("empty.md"))).toEqual(["Only block"]);
     expect(
       renderedBlockBodies(
@@ -229,14 +235,14 @@ describe("write tool dispatch", () => {
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
     );
-    expect(text).toBe("status: success");
+    expect(outcomeText(text)).toBe("status: success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha blade.");
 
     const formatted = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "**blade**", find: "blade" },
       context,
     );
-    expect(formatted).toBe("status: success");
+    expect(outcomeText(formatted)).toBe("status: success");
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain("Alpha **blade**.");
 
     const deleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
@@ -245,8 +251,8 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(deletion).toContain("status: success");
-    expect(deletion).toContain(`deleted: ${deleteHash}`);
+    expect(outcomeText(deletion)).toContain("status: success");
+    expect(outcomeText(deletion)).toContain(`deleted: ${deleteHash}`);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
@@ -264,7 +270,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(replaced).toContain("status: success");
+    expect(outcomeText(replaced)).toContain("status: success");
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Alpha middle Omega"]);
 
     const deleteCtx = harness({ "chapter.md": "Before X\n\nMiddle\n\nY After" });
@@ -280,7 +286,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(deleted).toContain("status: success");
+    expect(outcomeText(deleted)).toContain("status: success");
     expect(blockTexts(deleteCtx.liveDoc("chapter.md"))).toEqual(["Before  After"]);
 
     const insertCtx = harness({ "chapter.md": "Alpha starts\n\nends Omega" });
@@ -296,7 +302,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(inserted).toContain("status: success");
+    expect(outcomeText(inserted)).toContain("status: success");
     expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual(["Alpha starts", "ends! Omega"]);
   });
 
@@ -333,7 +339,7 @@ describe("write tool dispatch", () => {
       "Block 7",
       "Block 8",
     ]);
-    expect(middleWithHashPrefix).toBe(middle);
+    expect(outcomeText(middleWithHashPrefix)).toBe(outcomeText(middle));
     expect(renderedBlockBodies(nearStart)).toEqual([
       "Block 1",
       "Block 2",
@@ -366,7 +372,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(replaced).toContain("status: success");
+    expect(outcomeText(replaced)).toContain("status: success");
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual([
       "Block 1 needle",
       "Block 2",
@@ -394,7 +400,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(inserted).toContain("status: success");
+    expect(outcomeText(inserted)).toContain("status: success");
     expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual([
       "Block 1 needle",
       "Block 2",
@@ -418,7 +424,7 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(result).toBe("status: success");
+    expect(outcomeText(result)).toBe("status: success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Arena",
       "blade here",
@@ -437,11 +443,13 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    expect(undo).toContain("status: reversed");
+    expect(outcomeText(undo)).toContain("status: reversed");
+    expectOutcome(undo, "reversed");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(redo).toContain("status: reversed");
+    expect(outcomeText(redo)).toContain("status: reversed");
+    expectOutcome(redo, "reversed");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
@@ -457,7 +465,7 @@ describe("write tool dispatch", () => {
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
 
       const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-      expect(undo).toContain("status: reversed");
+      expect(outcomeText(undo)).toContain("status: reversed");
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
       const [reversal] = await ctx.journal.readReversals("chapter.md", {
@@ -476,7 +484,7 @@ describe("write tool dispatch", () => {
     const coldJournal = hot.journal.clone();
 
     const hotRedo = await hot.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(hotRedo).toContain("status: reversed");
+    expect(outcomeText(hotRedo)).toContain("status: reversed");
     const hotTexts = blockTexts(hot.liveDoc("chapter.md"));
     const hotBytes = documentBytes(hot.liveDoc("chapter.md"));
 
@@ -488,12 +496,12 @@ describe("write tool dispatch", () => {
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
-    expect(await restarted.write({ command: "view", file: "chapter.md" }, context)).toContain(
-      "Alpha sword.",
-    );
+    expect(
+      outcomeText(await restarted.write({ command: "view", file: "chapter.md" }, context)),
+    ).toContain("Alpha sword.");
 
     const coldRedo = await restarted.write({ command: "redo", file: "chapter.md" }, context);
-    expect(coldRedo).toContain("status: reversed");
+    expect(outcomeText(coldRedo)).toContain("status: reversed");
     expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
     expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
 
@@ -521,7 +529,7 @@ describe("write tool dispatch", () => {
     await secondRestart.write({ command: "view", file: "chapter.md" }, context);
 
     const doubleRedo = await secondRestart.write({ command: "redo", file: "chapter.md" }, context);
-    expect(doubleRedo).toBe("status: nothing_to_redo");
+    expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo");
     expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
     expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
   });
@@ -534,9 +542,9 @@ describe("write tool dispatch", () => {
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       { ...context, turnId },
     );
-    expect(await initial.core.write({ command: "undo", file: "chapter.md" }, context)).toContain(
-      "status: reversed",
-    );
+    expect(
+      outcomeText(await initial.core.write({ command: "undo", file: "chapter.md" }, context)),
+    ).toContain("status: reversed");
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
     const coreA = createAgentEditCore({
@@ -556,17 +564,17 @@ describe("write tool dispatch", () => {
       undoClientId: REVERSAL_CLIENT_ID,
     });
 
-    expect(await coreA.write({ command: "view", file: "chapter.md" }, context)).toContain(
-      "Alpha sword.",
-    );
-    expect(await coreB.write({ command: "view", file: "chapter.md" }, context)).toContain(
-      "Alpha sword.",
-    );
+    expect(
+      outcomeText(await coreA.write({ command: "view", file: "chapter.md" }, context)),
+    ).toContain("Alpha sword.");
+    expect(
+      outcomeText(await coreB.write({ command: "view", file: "chapter.md" }, context)),
+    ).toContain("Alpha sword.");
 
     const redoA = await coreA.write({ command: "redo", file: "chapter.md" }, context);
-    expect(redoA).toContain("status: reversed");
+    expect(outcomeText(redoA)).toContain("status: reversed");
     const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
-    expect(redoB).toBe("status: nothing_to_redo");
+    expect(outcomeText(redoB)).toBe("status: nothing_to_redo");
 
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
     expect(
@@ -593,14 +601,14 @@ describe("write tool dispatch", () => {
     humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human ");
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    expect(undo).toContain("status: reconciled");
+    expect(outcomeText(undo)).toContain("status: reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword."]);
 
     const followup = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "Writer", find: "Human" },
       context,
     );
-    expect(followup).toContain("status: success");
+    expect(outcomeText(followup)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Writer Alpha sword."]);
 
     const redoCtx = harness({ "chapter.md": "Alpha sword." });
@@ -613,14 +621,14 @@ describe("write tool dispatch", () => {
     humanText(redoCtx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human ");
 
     const redo = await redoCtx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(redo).toContain("status: reconciled");
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(blockTexts(redoCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
 
     const redoFollowup = await redoCtx.core.write(
       { command: "replace", file: "chapter.md", content: "Writer", find: "Human" },
       context,
     );
-    expect(redoFollowup).toContain("status: success");
+    expect(outcomeText(redoFollowup)).toContain("status: success");
     expect(blockTexts(redoCtx.liveDoc("chapter.md"))).toEqual(["Writer Alpha blade."]);
   });
 
@@ -646,8 +654,8 @@ describe("write tool dispatch", () => {
 
       const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
 
-      expect(undo).toContain("status: reversed");
-      expect(undo).toContain("undo: turn-with-two-writes");
+      expect(outcomeText(undo)).toContain("status: reversed");
+      expect(outcomeText(undo)).toContain("undo: turn-with-two-writes");
       return blockTexts(ctx.liveDoc("chapter.md"));
     }
 
@@ -671,22 +679,25 @@ describe("write tool dispatch", () => {
       { command: "insert", file: "chapter.md", content: "x", after: "deadbeef" },
       context,
     );
-    expect(missing).toContain("status: not_found");
-    expect(missing).toContain('write(command="view", file="chapter.md")');
+    expect(outcomeText(missing)).toContain("status: not_found");
+    expectOutcome(missing, "not_found", true);
+    expect(outcomeText(missing)).toContain('write(command="view", file="chapter.md")');
 
     const ambiguous = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
     );
-    expect(ambiguous).toContain("status: ambiguous_match");
-    expect(ambiguous).toContain("Found 2 matches");
+    expect(outcomeText(ambiguous)).toContain("status: ambiguous_match");
+    expectOutcome(ambiguous, "ambiguous_match", true);
+    expect(outcomeText(ambiguous)).toContain("Found 2 matches");
 
     const invalid = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "" },
       context,
     );
-    expect(invalid).toContain("status: invalid_write");
-    expect(invalid).toContain("insert requires non-empty content");
+    expect(outcomeText(invalid)).toContain("status: invalid_write");
+    expectOutcome(invalid, "invalid_write", true);
+    expect(outcomeText(invalid)).toContain("insert requires non-empty content");
   });
 
   it("returns invalid_write for invalid around scope combinations", async () => {
@@ -706,15 +717,19 @@ describe("write tool dispatch", () => {
       },
       context,
     );
-    expect(bothScopes).toContain("status: invalid_write");
-    expect(bothScopes).toContain("`in` and `around` are mutually exclusive scope parameters");
+    expect(outcomeText(bothScopes)).toContain("status: invalid_write");
+    expect(outcomeText(bothScopes)).toContain(
+      "`in` and `around` are mutually exclusive scope parameters",
+    );
 
     const aroundWithoutFind = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "changed", around: aroundHash },
       context,
     );
-    expect(aroundWithoutFind).toContain("status: invalid_write");
-    expect(aroundWithoutFind).toContain("`around` only scopes find-based replace commands");
+    expect(outcomeText(aroundWithoutFind)).toContain("status: invalid_write");
+    expect(outcomeText(aroundWithoutFind)).toContain(
+      "`around` only scopes find-based replace commands",
+    );
   });
 
   it("maps typed missing documents differently from transient coordinator failures", async () => {
@@ -722,15 +737,17 @@ describe("write tool dispatch", () => {
 
     const missing = await missingCtx.core.write({ command: "view", file: "missing.md" }, context);
 
-    expect(missing).toContain("status: document_not_found");
+    expect(outcomeText(missing)).toContain("status: document_not_found");
+    expectOutcome(missing, "document_not_found", true);
 
     const failingCtx = harness({ "chapter.md": "Alpha." });
     failingCtx.coordinator.failWith(new Error("database unavailable"));
 
     const transient = await failingCtx.core.write({ command: "view", file: "chapter.md" }, context);
 
-    expect(transient).toContain("status: internal_error");
-    expect(transient).toContain("database unavailable");
+    expect(outcomeText(transient)).toContain("status: internal_error");
+    expectOutcome(transient, "internal_error", true);
+    expect(outcomeText(transient)).toContain("database unavailable");
   });
 });
 
@@ -978,9 +995,19 @@ function blockTexts(doc: Y.Doc): string[] {
   return model.getBlocks(doc).map((block) => model.getText(block));
 }
 
-function renderedBlockBodies(output: string): string[] {
-  if (!output) return [];
-  return output.split("\n").map((line) => line.replace(/^[0-9a-f]{4,}\|/, ""));
+function outcomeText(output: string | WriteOutcome): string {
+  return typeof output === "string" ? output : output.text;
+}
+
+function expectOutcome(outcome: WriteOutcome, status: WriteStatus, isError = false): void {
+  expect(outcome.status).toBe(status);
+  expect(outcome.isError).toBe(isError);
+}
+
+function renderedBlockBodies(output: string | WriteOutcome): string[] {
+  const rendered = outcomeText(output);
+  if (!rendered) return [];
+  return rendered.split("\n").map((line) => line.replace(/^[0-9a-f]{4,}\|/, ""));
 }
 
 function numberedBlocks(count: number): string {

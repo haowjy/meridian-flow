@@ -41,9 +41,12 @@ import type {
   UndoRedoOutcome,
   ViewCommand,
   WriteCommand,
+  WriteCommandName,
   WriteContext,
+  WriteErrorStatus,
   WriteFunction,
-  WriteResult,
+  WriteOutcome,
+  WriteStatus,
 } from "./types.js";
 
 export interface CreateWriteToolOptions {
@@ -119,7 +122,12 @@ type ReversalResult =
       turnId: string;
       sync?: SyncedMutationSummary;
     }
-  | { ok: false; response: WriteResult };
+  | { ok: false; response: InternalWriteResult };
+
+interface InternalWriteResult {
+  status: WriteStatus;
+  text: string;
+}
 
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 const EMPTY_UPDATE_LENGTH = 2;
@@ -128,7 +136,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const localSessions = new Map<string, ActorSession>();
-  const idempotency = new Map<string, WriteResult>();
+  const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
 
   const write: WriteFunction = async (command, context = {}) => {
@@ -140,11 +148,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       if (cached !== undefined) return cached;
     }
 
-    const response = await dispatch(command, session, context).catch((cause: unknown) =>
+    const result = await dispatch(command, session, context).catch((cause: unknown) =>
       internalError(cause),
     );
-    if (cacheKey) remember(cacheKey, response);
-    return response;
+    const outcome = toOutcome(command.command, result);
+    if (cacheKey) remember(cacheKey, outcome);
+    return outcome;
   };
 
   return {
@@ -157,7 +166,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     command: WriteCommand,
     session: ActorSession,
     context: WriteContext,
-  ): Promise<WriteResult> {
+  ): Promise<InternalWriteResult> {
     switch (command.command) {
       case "view":
         return view(command, session);
@@ -188,7 +197,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return session;
   }
 
-  async function view(command: ViewCommand, session: ActorSession): Promise<WriteResult> {
+  async function view(command: ViewCommand, session: ActorSession): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
@@ -199,16 +208,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const selection = selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
     if (command.format === "outline") {
-      return renderOutline(runtime.doc, selection.blocks, address.filePath);
+      return success(renderOutline(runtime.doc, selection.blocks, address.filePath));
     }
-    return renderBlocks(runtime.doc, selection.blocks);
+    return success(renderBlocks(runtime.doc, selection.blocks));
   }
 
   async function create(
     command: Extract<WriteCommand, { command: "create" }>,
     session: ActorSession,
     context: WriteContext,
-  ): Promise<WriteResult> {
+  ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     if (address.fragment) {
@@ -231,7 +240,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         ? status("invalid_write", `File already exists: ${address.filePath}`)
         : null,
     );
-    if (typeof liveCheck === "string") return liveCheck;
+    if (isInternalWriteResult(liveCheck)) return liveCheck;
 
     const turnId = nextTurnId(session, address.filePath, runtime, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
@@ -255,7 +264,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       Y.applyUpdate(liveDoc, update, agentUpdateOrigin(turnId));
       return null;
     });
-    if (typeof liveResult === "string") return liveResult;
+    if (isInternalWriteResult(liveResult)) return liveResult;
 
     runtime.undoStack.push(turnId);
     runtime.redoStack = [];
@@ -269,7 +278,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     command: Extract<WriteCommand, { command: "insert" | "replace" }>,
     session: ActorSession,
     context: WriteContext,
-  ): Promise<WriteResult> {
+  ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
@@ -338,7 +347,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     command: UndoCommand | RedoCommand,
     session: ActorSession,
     direction: "undo" | "redo",
-  ): Promise<WriteResult> {
+  ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
@@ -391,7 +400,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
     if (echoLines.length > 0) lines.push("", ...echoLines);
     for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));
-    return lines.join("\n");
+    return result(outcome, lines.join("\n"));
   }
 
   async function undoOne(
@@ -534,7 +543,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       registry.evictThread(docId, session.threadId);
       if (locallyApplied) {
         const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
-        if (typeof restored === "string") return { ok: false, response: restored };
+        if (isInternalWriteResult(restored)) return { ok: false, response: restored };
       }
       return { ok: true, status: "nothing_to_redo", turnId: redoTarget.turnId };
     }
@@ -576,14 +585,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
-  ): Promise<WriteResult | null> {
+  ): Promise<InternalWriteResult | null> {
     const response = await withLive(docId, commandName, (liveDoc) => {
       const restored = new Y.Doc({ gc: false });
       Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
       runtime.doc = restored;
       return null;
     });
-    if (typeof response === "string") return response;
+    if (isInternalWriteResult(response)) return response;
     markSynced(session, docId, runtime);
     return null;
   }
@@ -608,13 +617,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
-  ): Promise<{ ok: true } | { ok: false; response: WriteResult }> {
+  ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     const response = await withLive(docId, commandName, async (liveDoc) => {
       const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
       if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
       return null;
     });
-    if (typeof response === "string") return { ok: false, response };
+    if (isInternalWriteResult(response)) return { ok: false, response };
     if (shouldRehydrateRedoStack(runtime)) {
       runtime.redoStack = await rehydrateRedoStack({
         journal: options.journal,
@@ -638,7 +647,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   function requireSynced(
     session: ActorSession,
     docId: string,
-  ): { ok: true; stateVector: Uint8Array } | { ok: false; response: WriteResult } {
+  ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult } {
     const state = session.documents.get(docId);
     if (!state) {
       return {
@@ -655,9 +664,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
-  ): Promise<{ ok: true; summary: SyncedMutationSummary } | { ok: false; response: WriteResult }> {
+  ): Promise<
+    { ok: true; summary: SyncedMutationSummary } | { ok: false; response: InternalWriteResult }
+  > {
     const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
-    if (typeof concurrentUpdate === "string") return { ok: false, response: concurrentUpdate };
+    if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
     const concurrent = applyConcurrent(
       input.runtime,
       concurrentUpdate,
@@ -685,14 +696,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   async function mergeUpdateAndCaptureConcurrent(
     input: LocalMutationSyncInput,
-  ): Promise<Uint8Array | null | WriteResult> {
+  ): Promise<Uint8Array | null | InternalWriteResult> {
     let concurrentUpdate: Uint8Array | null = null;
     const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
       concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
       Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
       return null;
     });
-    if (typeof response === "string") return response;
+    if (isInternalWriteResult(response)) return response;
     return concurrentUpdate;
   }
 
@@ -716,8 +727,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   async function withLive<T>(
     docId: string,
     commandName: WriteCommand["command"],
-    fn: (doc: Y.Doc) => Promise<T | WriteResult | null> | T | WriteResult | null,
-  ): Promise<T | WriteResult | null> {
+    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
+  ): Promise<T | InternalWriteResult | null> {
     try {
       return await options.coordinator.withDocument(docId, async (doc) => fn(doc));
     } catch (cause) {
@@ -752,8 +763,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       .at(-1)?.turnId;
   }
 
-  function remember(cacheKey: string, response: WriteResult): void {
-    idempotency.set(cacheKey, response);
+  function remember(cacheKey: string, outcome: WriteOutcome): void {
+    idempotency.set(cacheKey, outcome);
     while (idempotency.size > maxIdempotencyEntries) {
       const oldest = idempotency.keys().next().value;
       if (oldest === undefined) break;
@@ -834,7 +845,7 @@ function parseFileAddress(
   return fragment === undefined ? { ok: true, filePath } : { ok: true, filePath, fragment };
 }
 
-function formatApplySuccess(input: ApplySuccessResponseInput): WriteResult {
+function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
   const lines = ["status: success"];
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
     lines.push("", `deleted: ${input.deletedBlocks.join(", ")}`);
@@ -842,7 +853,7 @@ function formatApplySuccess(input: ApplySuccessResponseInput): WriteResult {
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
   if (echoLines.length > 0) lines.push("", ...echoLines);
   if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
-  return lines.join("\n");
+  return result("success", lines.join("\n"));
 }
 
 function formatConcurrent(info: ConcurrentEditInfo): string[] {
@@ -853,7 +864,11 @@ function formatConcurrent(info: ConcurrentEditInfo): string[] {
   return lines;
 }
 
-function errorResponse(code: string, message: string, filePath: string): WriteResult {
+function errorResponse(
+  code: WriteErrorStatus,
+  message: string,
+  filePath: string,
+): InternalWriteResult {
   const needsView = code === "not_found" && !message.includes('write(command="view"');
   return status(
     code,
@@ -861,7 +876,10 @@ function errorResponse(code: string, message: string, filePath: string): WriteRe
   );
 }
 
-function documentNotFound(commandName: WriteCommand["command"], filePath: string): WriteResult {
+function documentNotFound(
+  commandName: WriteCommand["command"],
+  filePath: string,
+): InternalWriteResult {
   if (commandName === "view") {
     return status(
       "document_not_found",
@@ -871,13 +889,51 @@ function documentNotFound(commandName: WriteCommand["command"], filePath: string
   return status("document_not_found", "File not found. View the project to find the right path.");
 }
 
-function status(code: string, message?: string): WriteResult {
-  return message ? `status: ${code}\n\n${message}` : `status: ${code}`;
+function status(code: WriteStatus, message?: string): InternalWriteResult {
+  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
 }
 
-function internalError(cause: unknown): WriteResult {
+function success(text: string): InternalWriteResult {
+  return result("success", text);
+}
+
+function result(status: WriteStatus, text: string): InternalWriteResult {
+  return { status, text };
+}
+
+function internalError(cause: unknown): InternalWriteResult {
   const reason = cause instanceof Error && cause.message ? ` ${cause.message}` : "";
   return status("internal_error", `Retry — transient edit system failure.${reason}`);
+}
+
+function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
+  return {
+    command,
+    status: result.status,
+    isError: isWriteErrorStatus(result.status),
+    text: result.text,
+  };
+}
+
+function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
+  return (
+    status === "not_found" ||
+    status === "ambiguous_match" ||
+    status === "invalid_write" ||
+    status === "document_not_found" ||
+    status === "partial_failure" ||
+    status === "internal_error"
+  );
+}
+
+function isInternalWriteResult(value: unknown): value is InternalWriteResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    "text" in value &&
+    typeof (value as InternalWriteResult).text === "string"
+  );
 }
 
 function commandCount(

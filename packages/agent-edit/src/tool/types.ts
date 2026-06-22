@@ -90,8 +90,14 @@ export type UndoRedoOutcome =
 
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
-/** Tool results are plain text strings: status line, echo, concurrent edits, or view content. */
-export type WriteResult = string;
+/** Structured tool result with the exact LLM-facing text kept separate from host status. */
+export interface WriteOutcome {
+  command: WriteCommandName;
+  status: WriteStatus;
+  isError: boolean;
+  /** The exact LLM-facing text: status line, echo, concurrent edits, or view content. */
+  text: string;
+}
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
@@ -109,4 +115,7 @@ export interface WriteContext {
   tool_use_id?: string;
 }
 
-export type WriteFunction = (command: WriteCommand, context?: WriteContext) => Promise<WriteResult>;
+export type WriteFunction = (
+  command: WriteCommand,
+  context?: WriteContext,
+) => Promise<WriteOutcome>;

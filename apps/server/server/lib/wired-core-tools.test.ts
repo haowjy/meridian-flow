@@ -2,6 +2,8 @@
  * Wired core-tool tests: verify production tool registrations bind core tool
  * schemas to context/collab-backed handlers and record document-touch side effects.
  */
+
+import type { WriteOutcome } from "@meridian/agent-edit";
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../domains/billing/index.js";
@@ -57,6 +59,10 @@ function wiredTestGraph(input: WiredTestGraphOptions = {}) {
     eventSink,
   });
   return { documentSync, contextPorts, repos, registrations, eventSink };
+}
+
+function writeOutcome(text: string): WriteOutcome {
+  return { command: "view", status: "success", isError: false, text };
 }
 
 function buildRegistrations() {
@@ -461,7 +467,7 @@ describe("createWiredCoreToolRegistrations", () => {
       toolDocumentSync: {
         agentEdit: () => ({
           ...baseDocumentSync.agentEdit(),
-          write: async () => rawBody,
+          write: async () => writeOutcome(rawBody),
         }),
         refreshDocumentProjection: baseDocumentSync.refreshDocumentProjection,
       },
