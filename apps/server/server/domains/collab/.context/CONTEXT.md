@@ -14,10 +14,11 @@ server-side residue that hasn't yet been re-homed or replaced.
 | Hot/cold undo + compaction | `@meridian/agent-edit` undo layer | Extracted |
 | Tool surface (`write()`) | `@meridian/agent-edit` tool layer | Extracted |
 | Port interfaces (UpdateJournal, etc.) | `@meridian/agent-edit` ports | Extracted |
-| Hocuspocus adapter | DELETED (extracted) | — |
+| Hocuspocus coordinator | `collab/adapters/hocuspocus-coordinator.ts` | Added, not wired |
 | mdx-bridge.ts | DELETED (superseded by codec) | — |
 | **Throwing stub facade** | `collab/index.ts` | **Temporary** (Step 9 cutover) |
-| **DocumentStore** port + adapters | `collab/ports/`, `collab/adapters/` | **Pre-existing**, being superseded |
+| **UpdateJournal + loader adapters** | `collab/adapters/drizzle-journal.ts`, `document-loader.ts` | Added, not wired |
+| **DocumentStore** port + adapters | `collab/ports/`, `collab/adapters/drizzle/`, `collab/adapters/in-memory/` | **Pre-existing**, being superseded |
 | **document-activity.ts** | `collab/domain/` | **Stays** (DB-side effects) |
 
 ## Stable contracts (still here)
@@ -39,15 +40,25 @@ Row-level CRUD for Yjs updates, checkpoints, restore points. Being superseded
 by `UpdateJournal` from `@meridian/agent-edit`. Retained for the Step 9
 adapter (`drizzle-journal`) to delegate to.
 
+### Agent-edit adapters
+
+- `drizzle-journal.ts` implements `UpdateJournal` over the v3 Yjs journal tables.
+- `document-loader.ts` is the pure journal → encoded Yjs state rebuild helper.
+  Hocuspocus `onLoadDocument` must call this when the WS route is rewired.
+- `hocuspocus-coordinator.ts` implements `DocumentCoordinator` with Hocuspocus
+  direct connections plus `KeyedMutex` per-doc serialization. It depends on the
+  same loader for existence checks and idempotent recovery.
+
 ## Stale claims removed
 
 The following claims in the previous docs were true before extraction but are
 now false — removed in this update:
 - **"DocumentSyncService is the live document spine"** — the service is now a
   throwing stub. The live document spine lives in `@meridian/agent-edit`.
-- **"Transport is Hocuspocus v4"** — the Hocuspocus collab adapter was
-  deleted. The new `DocumentCoordinator` port is adapter-agnostic; the
-  Hocuspocus adapter lands in Step 9.
+- **"Transport is Hocuspocus v4"** — the old all-in-one Hocuspocus collab
+  adapter was deleted. The replacement is split: `@meridian/agent-edit` owns
+  the tool core, and this domain owns thin Hocuspocus/journal adapters that are
+  still awaiting composition-root and WS wiring.
 - **"No node or mark without a lossless serializer+parser pair in
   domain/mdx-bridge.ts"** — `mdx-bridge.ts` was deleted. The serializer lives
   in `@meridian/agent-edit`'s codec registration system; the rule still holds

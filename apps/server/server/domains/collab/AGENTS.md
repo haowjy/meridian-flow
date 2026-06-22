@@ -11,9 +11,11 @@ presently holds:
 - **Server-side helpers** — `domain/document-activity.ts` (touch timestamps,
   markdown projection update). Stays server-side — these are DB-side effects, not
   agent-edit concerns.
-- **Adapters** — `adapters/drizzle/document-store.ts` and
-  `adapters/in-memory/document-store.ts`. These are the old row-level store; the
-  new `UpdateJournal` adapter lands in Step 9.
+- **Adapters** — old row-level stores remain under `adapters/drizzle/` and
+  `adapters/in-memory/`. Step 9 also added the first agent-edit adapters:
+  `drizzle-journal.ts` (`UpdateJournal`), `document-loader.ts` (journal → Yjs
+  state), and `hocuspocus-coordinator.ts` (`DocumentCoordinator`). They are not
+  wired into the composition root or WS route yet.
 - **Ports** — `ports/document-store.ts` (old `DocumentStore` interface). Being
   superseded by `UpdateJournal` from `@meridian/agent-edit`.
 
@@ -21,8 +23,8 @@ presently holds:
 
 `TODO(agent-edit)` markers throughout the codebase:
 1. Delete the `DocumentSync*` facade bridge from `index.ts`.
-2. Install real adapters: `@meridian/agent-edit` + Hocuspocus coordinator +
-   Drizzle journal + composition root in `server/lib/app.ts`.
+2. Wire the real adapters (`@meridian/agent-edit`, Drizzle journal,
+   Hocuspocus coordinator) into the composition root in `server/lib/app.ts`.
 3. Rewire the ~13 consumers to `@meridian/agent-edit`'s `write()` surface.
 4. Replace `createInMemoryAppServices` Hocuspocus no-ops with real in-memory
    agent-edit adapters or explicit throws.
