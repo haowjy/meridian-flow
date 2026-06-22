@@ -16,6 +16,7 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
 | Lifecycle/checkpoint ops | `collab/adapters/drizzle-facade-store.ts` | Server-only DB helpers |
 | In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
+| Document write read models | `collab/domain/document-activity.ts` | Production post-write hook for activity/projection |
 
 ## Domain behavior
 
@@ -27,6 +28,13 @@ the live Y.Doc into a draft, deletes the ProseMirror fragment contents, inserts
 the parsed blocks through the package model, appends the resulting Yjs update to
 the journal, then applies that update to the live doc. Mutating the draft before
 append keeps the live doc from advancing if persistence fails.
+
+After a full-document write has appended to the journal and applied to the live
+Y.Doc, `setMarkdown` / `editMarkdown` fire the injected document-write hook. The
+production hook updates document activity rollups and `documents.markdownProjection`.
+It is awaited so callers see fresh read models when the hook succeeds, but hook
+failures are logged through `EventSink` and do not fail or roll back the
+committed journal write.
 
 ### Reads
 
@@ -64,14 +72,16 @@ The WS route calls the collab domain hooks:
 - `drainHocuspocusPersistence` waits for tracked appends. Metrics report pending
   depth, oldest pending age, failed/dropped append count, live docs, and open
   Hocuspocus connections.
+- Connection-update appends are collaborative keystroke persistence, not
+  document-level write events, so they do not fire the activity/projection hook.
 
 ## Stable server-side helpers
 
 `document-activity.ts` contains DB helpers for document write read models:
-`touchDocumentActivity` and `updateMarkdownProjection`. The post-write hook that
-invokes them is intentionally deferred to a later pass.
+`touchDocumentActivity` and `updateMarkdownProjection`. `createCollabDomain`
+wires them through the facade document-write hook; the in-memory collab domain
+passes no hook.
 
 ## Deferred cutover work
 
-- Wire the document-activity post-write hook.
 - Keep schema-parity and TipTap extension work in the package cutover plan.

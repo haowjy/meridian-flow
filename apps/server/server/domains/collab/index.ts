@@ -45,6 +45,13 @@ export type DocumentWriteResult = {
   actorUserId: UserId | null;
 };
 
+export type DocumentWriteHook = (event: {
+  documentId: DocumentId;
+  threadId?: ThreadId;
+  markdown: string;
+  at: Date;
+}) => Promise<void>;
+
 export type CollabPersistenceMetrics = {
   queues: Array<{
     documentId: string;

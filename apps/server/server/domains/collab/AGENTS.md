@@ -17,9 +17,9 @@ the update journal, and the live-document coordinator.
   (journal → Yjs state), `drizzle-facade-store.ts` (server lifecycle,
   checkpoints, latest attribution), and `in-memory/agent-edit.ts` (test/app
   fakes).
-- **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for a
-  later post-write activity/projection hook; these are server read-model side
-  effects, not agent-edit package concerns.
+- **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for the
+  post-write activity/projection hook; these are server read-model side effects,
+  not agent-edit package concerns.
 
 ## Rules
 
@@ -30,7 +30,8 @@ the update journal, and the live-document coordinator.
   `system`.
 - Hocuspocus connection updates append directly to the journal and are tracked
   for drain/metrics; the coordinator is for exclusive live-doc access, not WS
-  lifecycle persistence.
+  lifecycle persistence. These connection-update appends do not fire the
+  document-level activity/projection hook.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc and serializes
   through the package codec/model. Context/storage projections are caches for
   listing and search, not a second live-document owner.
