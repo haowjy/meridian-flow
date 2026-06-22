@@ -1,7 +1,7 @@
 // Authoritative cold-path undo/redo reconstruction from the persisted Yjs journal.
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
+import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import type { JournalSnapshot, PersistedUpdate } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { shouldDeleteUndoItem, type UndoStackItemLike } from "./delete-filter.js";

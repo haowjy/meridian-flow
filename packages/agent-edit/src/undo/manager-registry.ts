@@ -1,7 +1,7 @@
 // Live UndoManager registry for hot-path per-thread reversal.
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
+import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import { shouldDeleteUndoItem, type UndoStackItemLike } from "./delete-filter.js";
 
 const TURN_ID_META = "turnId";

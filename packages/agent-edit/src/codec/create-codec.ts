@@ -1,4 +1,3 @@
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -27,7 +26,7 @@ import {
 export interface CreateCodecOptions {
   blocks: readonly BlockCodec[];
   marks: readonly MarkCodec[];
-  schema?: Schema;
+  schema: Schema;
   components?: ComponentRegistry;
   remarkPlugins?: PluggableList;
   mdx?: boolean;
@@ -44,7 +43,7 @@ export function requiredBlockNamesForSchema(schema: Schema): string[] {
 }
 
 export function createCodec(options: CreateCodecOptions): Codec {
-  const schema = options.schema ?? buildDocumentSchema();
+  const schema = options.schema;
   const components = options.components;
   const blocks = [...options.blocks];
   const marks = [...options.marks];
