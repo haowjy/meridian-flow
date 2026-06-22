@@ -131,6 +131,23 @@ export function createInMemoryJournal(): InMemoryJournal {
       entry(docId).reversals.push({ ...record });
     },
 
+    async readReversals(docId, opts = {}) {
+      return entry(docId)
+        .reversals.filter(
+          (record) =>
+            (opts.threadId === undefined || record.threadId === opts.threadId) &&
+            (opts.status === undefined || opts.status.includes(record.status)),
+        )
+        .map((record) => ({ ...record }));
+    },
+
+    async markReversalStatus(docId, turnId, status) {
+      const current = entry(docId);
+      current.reversals = current.reversals.map((record) =>
+        record.turnId === turnId ? { ...record, status } : record,
+      );
+    },
+
     createCheckpoint,
 
     async getCheckpoint(id) {

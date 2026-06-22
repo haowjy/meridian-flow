@@ -12,6 +12,7 @@ import type {
   JournalSnapshot,
   PersistedUpdate,
   ReversalRecord,
+  ReversalStatus,
   UpdateMeta,
 } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
@@ -465,6 +466,7 @@ class MemoryJournal implements UpdateJournal {
   checkpointBytes: Uint8Array | null;
   checkpointUpToSeq = 0;
   updates: PersistedUpdate[] = [];
+  reversals: ReversalRecord[] = [];
   nextSeq = 1;
   compactCalls = 0;
 
@@ -545,6 +547,26 @@ class MemoryJournal implements UpdateJournal {
   ): Promise<void> {
     const seq = this.appendSync(undoUpdate, { origin: "system", seq: 0 });
     record.undoUpdateSeq = seq;
+    this.reversals.push({ ...record });
+  }
+
+  async readReversals(
+    _docId: string,
+    opts: { threadId?: string; status?: ReversalStatus[] } = {},
+  ): Promise<ReversalRecord[]> {
+    return this.reversals
+      .filter(
+        (record) =>
+          (opts.threadId === undefined || record.threadId === opts.threadId) &&
+          (opts.status === undefined || opts.status.includes(record.status)),
+      )
+      .map((record) => ({ ...record }));
+  }
+
+  async markReversalStatus(_docId: string, turnId: string, status: ReversalStatus): Promise<void> {
+    this.reversals = this.reversals.map((record) =>
+      record.turnId === turnId ? { ...record, status } : record,
+    );
   }
 }
 

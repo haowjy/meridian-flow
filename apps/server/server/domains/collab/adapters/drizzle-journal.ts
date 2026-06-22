@@ -3,6 +3,8 @@
 import type {
   JournalSnapshot,
   PersistedUpdate,
+  ReversalRecord,
+  ReversalStatus,
   UpdateJournal,
   UpdateMeta,
 } from "@meridian/agent-edit";
@@ -14,7 +16,7 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
-import { and, asc, desc, eq, gt, gte, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 
 type JournalDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
@@ -79,6 +81,19 @@ function mapUpdate(row: typeof documentYjsUpdates.$inferSelect): PersistedUpdate
       ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
       seq: row.id,
     },
+  };
+}
+
+function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRecord {
+  return {
+    documentId: row.documentId,
+    threadId: row.threadId,
+    turnId: row.turnId,
+    status: row.status,
+    undoUpdateSeq: row.undoUpdateSeq,
+    ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
+    ...(row.reversedAt ? { reversedAt: row.reversedAt } : {}),
+    ...(row.reversedByUserId ? { reversedByUserId: row.reversedByUserId } : {}),
   };
 }
 
@@ -286,6 +301,36 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       });
       if (undoUpdateSeq === undefined) throw new Error("Failed to persist reversal update");
       record.undoUpdateSeq = undoUpdateSeq;
+    },
+
+    async readReversals(docId, opts = {}) {
+      const conditions = [eq(documentYjsReversals.documentId, asDocumentId(docId))];
+      if (opts.threadId !== undefined) {
+        conditions.push(eq(documentYjsReversals.threadId, asThreadId(opts.threadId)));
+      }
+      if (opts.status !== undefined && opts.status.length === 0) return [];
+      if (opts.status !== undefined) {
+        conditions.push(inArray(documentYjsReversals.status, opts.status as ReversalStatus[]));
+      }
+
+      const rows = await db
+        .select()
+        .from(documentYjsReversals)
+        .where(and(...conditions))
+        .orderBy(asc(documentYjsReversals.reversedAt), asc(documentYjsReversals.undoUpdateSeq));
+      return rows.map(mapReversal);
+    },
+
+    async markReversalStatus(docId, turnId, status) {
+      await db
+        .update(documentYjsReversals)
+        .set({ status })
+        .where(
+          and(
+            eq(documentYjsReversals.documentId, asDocumentId(docId)),
+            eq(documentYjsReversals.turnId, asTurnId(turnId)),
+          ),
+        );
     },
   };
 }

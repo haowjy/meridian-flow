@@ -41,7 +41,7 @@ export interface CompactionResult {
   reversalsExpired: number;
 }
 
-export type ReversalStatus = "active" | "reversed" | "reconciled" | "expired";
+export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 
 /**
  * Durable metadata linking an agent turn to its persisted undo update.

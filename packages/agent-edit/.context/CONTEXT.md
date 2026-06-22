@@ -4,8 +4,10 @@
 
 ### UpdateJournal (`src/ports/update-journal.ts`)
 The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
-`persistReversal` (atomically persist undo update + reversal record). Ordered
-by monotonic seq per document. Every adapter implements this.
+`persistReversal` (atomically persist undo update + reversal record),
+`readReversals` (durable redo lookup), and `markReversalStatus` (consume a
+reversal after redo). Ordered by monotonic seq per document. Every adapter
+implements this.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
@@ -78,8 +80,13 @@ across all turns — Yjs origin tracking uses object identity).
 
 **Cold path** — reconstruction from `UpdateJournal` when UndoManager is gone.
 Replay checkpoint + updates, assign per-turn `Symbol` tokens, create fresh
-UndoManager, replay target turn with tracked token, undo, extract bytes.
-Authoritative model; hot path is a performance cache.
+UndoManager, replay target turn with tracked token, undo/redo, extract bytes.
+Authoritative model; hot path is a performance cache. Redo survives process
+restart by rehydrating `runtime.redoStack` from `ReversalRecord` rows with
+`status: "reversed"` during the first `view` sync for that `(session, doc,
+thread)`. Rehydration filters expired records and records made stale by later
+forward agent/human updates; successful redo marks the record `status:
+"redone"` so a second restart cannot replay it again.
 
 **Hot/cold parity:** both paths must produce byte-identical undo results for
 the same turn sequence. Enforced by tests (`undo.test.ts`).
@@ -112,9 +119,6 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
 - **Tool versioning** deferred (GH issue #68). Seam kept clean — pure
   resolvers, stable `ResolvedEdit`, version-agnostic apply layer. No version
   pinning until a v2 exists.
-- **Durable cold-redo `ReversalRecord` lookup** deferred to server adapter
-  (Step 9). Package computes the undo update; the adapter stores and
-  retrieves records.
 - **View auto-budget/truncation** deferred. Current `view` returns full
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent

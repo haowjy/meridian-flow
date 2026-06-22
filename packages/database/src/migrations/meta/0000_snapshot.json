@@ -4493,7 +4493,7 @@
       "checkConstraints": {
         "document_yjs_reversals_status_valid": {
           "name": "document_yjs_reversals_status_valid",
-          "value": "\"document_yjs_reversals\".\"status\" IN ('active', 'reversed', 'reconciled', 'expired')"
+          "value": "\"document_yjs_reversals\".\"status\" IN ('active', 'reversed', 'redone', 'reconciled', 'expired')"
         }
       },
       "isRLSEnabled": false

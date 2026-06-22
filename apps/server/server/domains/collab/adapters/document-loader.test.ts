@@ -35,6 +35,12 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async persistReversal(): Promise<void> {}
+
+  async readReversals() {
+    return [];
+  }
+
+  async markReversalStatus(): Promise<void> {}
 }
 
 describe("loadDocumentState", () => {

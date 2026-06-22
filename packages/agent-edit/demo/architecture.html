@@ -447,7 +447,7 @@ flowchart LR
     ports: {
       title: "ports/ — the deployment seam",
       pill: "port interfaces",
-      desc: "Four port interfaces plus shared types. UpdateJournal is the one hard port every deployment MUST implement (durable append, checkpoint, atomic persistReversal). DocumentCoordinator owns exclusive Y.Doc access. ActorSessionStore is optional — falls back to an in-memory map. types.ts carries UpdateOrigin, UpdateMeta, PersistedUpdate, ReversalRecord, ReversalStatus.",
+      desc: "Four port interfaces plus shared types. UpdateJournal is the one hard port every deployment MUST implement (durable append, checkpoint, atomic persistReversal, reversal lookup/status transition). DocumentCoordinator owns exclusive Y.Doc access. ActorSessionStore is optional — falls back to an in-memory map. types.ts carries UpdateOrigin, UpdateMeta, PersistedUpdate, ReversalRecord, ReversalStatus.",
       files: [
         ["src/ports/update-journal.ts"],
         ["src/ports/document-coordinator.ts"],
@@ -462,6 +462,8 @@ flowchart LR
   compact(docId: string, before: Date): Promise<CompactionResult>;
   // Atomic: undo bytes + reversal record land together or neither is visible.
   persistReversal(docId: string, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;
+  readReversals(docId: string, opts?: { threadId?: string; status?: ReversalStatus[] }): Promise<ReversalRecord[]>;
+  markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void>;
 }`,
     },
     tool: {
@@ -819,13 +821,15 @@ export function shouldDeleteUndoItem(item, currentStackItem): boolean { /* ... *
     journalPort: {
       title: "UpdateJournal — the cold ground truth",
       pill: "ordered + durable",
-      desc: "Read(checkpoint + updates by seq) drives reconstruction. compact() folds old updates; persistReversal() atomically writes the undo update bytes AND the ReversalRecord together — neither is visible to readers without the other.",
+      desc: "Read(checkpoint + updates by seq) drives reconstruction. compact() folds old updates; persistReversal() atomically writes the undo update bytes AND the ReversalRecord together; readReversals() rehydrates durable redo after restart; markReversalStatus() consumes redone records.",
       files: [["src/ports/update-journal.ts", 7]],
       lang: "typescript",
       code: `read(docId, opts?: { since?: number; until?: number }): Promise<JournalSnapshot>;
 checkpoint(docId, state: Uint8Array): Promise<void>;
 compact(docId, before: Date): Promise<CompactionResult>;
-persistReversal(docId, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;`,
+persistReversal(docId, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;
+readReversals(docId, opts?: { threadId?: string; status?: ReversalStatus[] }): Promise<ReversalRecord[]>;
+markReversalStatus(docId, turnId: string, status: ReversalStatus): Promise<void>;`,
     },
     groupTurns: {
       title: "groupUpdatesByTurn()",
@@ -860,7 +864,7 @@ persistReversal(docId, undoUpdate: Uint8Array, record: ReversalRecord): Promise<
   documentId: string;
   turnId: string;
   threadId: string;
-  status: ReversalStatus; // "active" | "reversed" | "reconciled" | "expired"
+  status: ReversalStatus; // "active" | "reversed" | "redone" | "reconciled" | "expired"
   undoUpdateSeq: number;  // sequence of the persisted undo update
   expiresAt?: Date;
   reversedAt?: Date;

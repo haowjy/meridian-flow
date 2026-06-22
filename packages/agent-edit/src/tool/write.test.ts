@@ -13,6 +13,7 @@ import type {
   JournalSnapshot,
   PersistedUpdate,
   ReversalRecord,
+  ReversalStatus,
   UpdateMeta,
 } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
@@ -23,6 +24,7 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const context: WriteContext = { sessionId: "session-a", threadId: "thread-a" };
+const REVERSAL_CLIENT_ID = 9_999;
 
 describe("write tool dispatch", () => {
   it("views block-hashed document content and scoped outline sections", async () => {
@@ -443,6 +445,87 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
+  it("rehydrates durable redo after restart and marks it redone", async () => {
+    const turnId = "thread-a:chapter.md:turn-restart-redo";
+
+    async function writeThenUndo(ctx: ReturnType<typeof harness>) {
+      await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+        { ...context, turnId },
+      );
+      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+
+      const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+      expect(undo).toContain("status: reversed");
+      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+
+      const [reversal] = await ctx.journal.readReversals("chapter.md", {
+        threadId: context.threadId,
+        status: ["reversed"],
+      });
+      expect(reversal).toMatchObject({ turnId, status: "reversed" });
+      expect(reversal?.undoUpdateSeq).toBeGreaterThan(0);
+    }
+
+    const hot = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeThenUndo(hot);
+    const coldCoordinator = new MemoryCoordinator({});
+    coldCoordinator.docs.set("chapter.md", cloneDoc(hot.liveDoc("chapter.md")));
+    const coldLifecycle = new MemoryDocumentLifecycle(coldCoordinator);
+    const coldJournal = hot.journal.clone();
+
+    const hotRedo = await hot.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(hotRedo).toContain("status: reversed");
+    const hotTexts = blockTexts(hot.liveDoc("chapter.md"));
+    const hotBytes = documentBytes(hot.liveDoc("chapter.md"));
+
+    const restarted = createAgentEditCore({
+      journal: coldJournal,
+      coordinator: coldCoordinator,
+      lifecycle: coldLifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(await restarted.write({ command: "view", file: "chapter.md" }, context)).toContain(
+      "Alpha sword.",
+    );
+
+    const coldRedo = await restarted.write({ command: "redo", file: "chapter.md" }, context);
+    expect(coldRedo).toContain("status: reversed");
+    expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
+    expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
+
+    expect(
+      await coldJournal.readReversals("chapter.md", {
+        threadId: context.threadId,
+        status: ["reversed"],
+      }),
+    ).toEqual([]);
+    expect(
+      await coldJournal.readReversals("chapter.md", {
+        threadId: context.threadId,
+        status: ["redone"],
+      }),
+    ).toMatchObject([{ turnId, status: "redone" }]);
+
+    const secondRestart = createAgentEditCore({
+      journal: coldJournal,
+      coordinator: coldCoordinator,
+      lifecycle: coldLifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    await secondRestart.write({ command: "view", file: "chapter.md" }, context);
+
+    const doubleRedo = await secondRestart.write({ command: "redo", file: "chapter.md" }, context);
+    expect(doubleRedo).toBe("status: nothing_to_redo");
+    expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
+    expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
+  });
+
   it("re-syncs undo and redo before marking the snapshot synced", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -599,6 +682,7 @@ function harness(
   options: {
     undoRegistry?: ReturnType<typeof createUndoManagerRegistry>;
     lifecycle?: boolean;
+    undoClientId?: number;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -613,6 +697,7 @@ function harness(
     codec,
     model,
     undoRegistry: options.undoRegistry,
+    undoClientId: options.undoClientId,
   });
   return {
     core,
@@ -741,6 +826,44 @@ class MemoryJournal implements UpdateJournal {
     this.entry(docId).reversals.push({ ...record });
   }
 
+  clone(): MemoryJournal {
+    const copy = new MemoryJournal();
+    for (const [docId, entry] of this.data) {
+      copy.data.set(docId, {
+        checkpoint: entry.checkpoint ? new Uint8Array(entry.checkpoint) : null,
+        checkpointUpToSeq: entry.checkpointUpToSeq,
+        nextSeq: entry.nextSeq,
+        updates: entry.updates.map((update) => ({
+          seq: update.seq,
+          update: new Uint8Array(update.update),
+          meta: { ...update.meta },
+        })),
+        reversals: entry.reversals.map((record) => ({ ...record })),
+      });
+    }
+    return copy;
+  }
+
+  async readReversals(
+    docId: string,
+    opts: { threadId?: string; status?: ReversalStatus[] } = {},
+  ): Promise<ReversalRecord[]> {
+    return this.entry(docId)
+      .reversals.filter(
+        (record) =>
+          (opts.threadId === undefined || record.threadId === opts.threadId) &&
+          (opts.status === undefined || opts.status.includes(record.status)),
+      )
+      .map((record) => ({ ...record }));
+  }
+
+  async markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void> {
+    const entry = this.entry(docId);
+    entry.reversals = entry.reversals.map((record) =>
+      record.turnId === turnId ? { ...record, status } : record,
+    );
+  }
+
   private entry(docId: string): {
     checkpoint: Uint8Array | null;
     checkpointUpToSeq: number;
@@ -763,6 +886,12 @@ function createDoc(markdown: string, clientID: number): Y.Doc {
   const root = schema.node("doc", null, codec.parse(markdown).blocks);
   prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
   doc.clientID = clientID;
+  return doc;
+}
+
+function cloneDoc(source: Y.Doc): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
   return doc;
 }
 
@@ -817,4 +946,8 @@ function humanText(
 
 function serializeDoc(doc: Y.Doc): string {
   return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
+}
+
+function documentBytes(doc: Y.Doc): number[] {
+  return Array.from(Y.encodeStateAsUpdate(doc));
 }

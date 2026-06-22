@@ -467,7 +467,7 @@ CREATE TABLE "document_yjs_reversals" (
 	"reversed_at" timestamp with time zone,
 	"reversed_by_user_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_yjs_reversals_status_valid" CHECK ("document_yjs_reversals"."status" IN ('active', 'reversed', 'reconciled', 'expired'))
+	CONSTRAINT "document_yjs_reversals_status_valid" CHECK ("document_yjs_reversals"."status" IN ('active', 'reversed', 'redone', 'reconciled', 'expired'))
 );
 --> statement-breakpoint
 -- undo_update_seq intentionally has no FK: compaction can delete the undo update row after expiring reversal metadata.
