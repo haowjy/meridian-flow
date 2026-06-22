@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -24,6 +24,21 @@ import {
 } from "@/features/project/context/context-files-store";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
+
+// Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
+// so the entire feature (and its lazy chunk) is dead-code-eliminated from
+// production builds. Off by default in dev; toggle with ?debug=1 / ⌘⌃D, then
+// Alt+click any turn/block to inspect its record. See features/debug.
+const DebugOverlay =
+  import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
+    ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
+    : null;
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
+    )
+  : null;
 
 /**
  * Decide where to send an UNAUTHENTICATED request, server-side.
@@ -112,6 +127,16 @@ function AuthenticatedLayout() {
                 </div>
               </div>
               <SettingsDialog />
+              {DebugOverlay ? (
+                <Suspense fallback={null}>
+                  <DebugOverlay />
+                </Suspense>
+              ) : null}
+              {ReactQueryDevtools ? (
+                <Suspense fallback={null}>
+                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                </Suspense>
+              ) : null}
             </MeridianCopilotProvider>
           </TransportProvider>
         </ThreadStoreProvider>
