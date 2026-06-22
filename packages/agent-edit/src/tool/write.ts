@@ -34,6 +34,7 @@ import {
   reconstructRedoUpdate,
   reconstructUndoUpdate,
 } from "../undo/reconstruction.js";
+import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
   UndoCommand,
@@ -77,6 +78,7 @@ interface RuntimeDocumentState {
   turnCounter: number;
   undoStack: string[];
   redoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
+  redoStackRehydrated: boolean;
 }
 
 interface FileAddress {
@@ -529,6 +531,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
     });
     if (!sync.ok) return { ok: false, response: sync.response };
+    await options.journal.markReversalStatus(docId, turnId, "redone");
     popIfTop(runtime.redoStack, turnId);
     runtime.undoStack.push(turnId);
     return {
@@ -548,6 +551,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       turnCounter: 0,
       undoStack: [],
       redoStack: [],
+      redoStackRehydrated: false,
     };
     runtimeDocs.set(key, runtime);
     return runtime;
@@ -565,8 +569,24 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       return null;
     });
     if (typeof response === "string") return { ok: false, response };
+    if (shouldRehydrateRedoStack(runtime)) {
+      runtime.redoStack = await rehydrateRedoStack({
+        journal: options.journal,
+        docId,
+        threadId: session.threadId,
+      });
+      runtime.redoStackRehydrated = true;
+    }
     markSynced(session, docId, runtime);
     return { ok: true };
+  }
+
+  function shouldRehydrateRedoStack(runtime: RuntimeDocumentState): boolean {
+    return (
+      !runtime.redoStackRehydrated &&
+      runtime.undoStack.length === 0 &&
+      runtime.redoStack.length === 0
+    );
   }
 
   function requireSynced(

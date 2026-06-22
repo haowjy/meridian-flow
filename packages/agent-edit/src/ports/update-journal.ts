@@ -1,4 +1,10 @@
-import type { CompactionResult, JournalSnapshot, ReversalRecord, UpdateMeta } from "./types.js";
+import type {
+  CompactionResult,
+  JournalSnapshot,
+  ReversalRecord,
+  ReversalStatus,
+  UpdateMeta,
+} from "./types.js";
 
 /**
  * Ordered Yjs update journal — the foundation every deployment implements.
@@ -39,4 +45,16 @@ export interface UpdateJournal {
    * Both must land together or neither is visible to readers.
    */
   persistReversal(docId: string, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;
+
+  /**
+   * Read durable reversal records for a document, optionally scoped by thread and status.
+   * Returned records should be suitable for redo-stack rehydration after live state is lost.
+   */
+  readReversals(
+    docId: string,
+    opts?: { threadId?: string; status?: ReversalStatus[] },
+  ): Promise<ReversalRecord[]>;
+
+  /** Mark a persisted reversal record consumed or otherwise transitioned. */
+  markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void>;
 }

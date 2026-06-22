@@ -6,6 +6,7 @@ import {
   type JournalSnapshot,
   type PersistedUpdate,
   type ReversalRecord,
+  type ReversalStatus,
   type UpdateJournal,
   type UpdateMeta,
 } from "@meridian/agent-edit";
@@ -100,10 +101,34 @@ export class InMemoryJournal implements UpdateJournal {
     record.undoUpdateSeq = seq;
 
     const entry = this.entry(docId);
-    entry.reversals.set(reversalKey(docId, record.turnId), {
+    entry.reversals.set(reversalKey(docId, record.threadId, record.turnId), {
       record: { ...record, undoUpdateSeq: seq },
       storedAt,
     });
+  }
+
+  async readReversals(
+    docId: string,
+    opts: { threadId?: string; status?: ReversalStatus[] } = {},
+  ): Promise<ReversalRecord[]> {
+    return [...this.entry(docId).reversals.values()]
+      .map((stored) => stored.record)
+      .filter(
+        (record) =>
+          (opts.threadId === undefined || record.threadId === opts.threadId) &&
+          (opts.status === undefined || opts.status.includes(record.status)),
+      )
+      .map((record) => ({ ...record }));
+  }
+
+  async markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void> {
+    for (const [key, stored] of this.entry(docId).reversals) {
+      if (stored.record.turnId !== turnId) continue;
+      this.entry(docId).reversals.set(key, {
+        ...stored,
+        record: { ...stored.record, status },
+      });
+    }
   }
 
   reversalRecords(docId: string): ReversalRecord[] {
@@ -219,8 +244,8 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-function reversalKey(docId: string, turnId: string): string {
-  return `${docId}\u0000${turnId}`;
+function reversalKey(docId: string, threadId: string, turnId: string): string {
+  return `${docId}\u0000${threadId}\u0000${turnId}`;
 }
 
 function hasYjsUpdate(update: Uint8Array): boolean {

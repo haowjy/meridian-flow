@@ -23,7 +23,7 @@ import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
 
-type ReversalStatus = "active" | "reversed" | "reconciled" | "expired";
+type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -107,7 +107,7 @@ export const documentYjsReversals = pgTable(
     index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
     check(
       "document_yjs_reversals_status_valid",
-      sql`${table.status} IN ('active', 'reversed', 'reconciled', 'expired')`,
+      sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
     ),
   ],
 );

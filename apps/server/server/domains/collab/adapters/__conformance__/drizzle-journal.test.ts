@@ -5,6 +5,7 @@ import {
   DocumentNotFoundError,
   mdxCodec,
   reconstructUndoUpdateFromSnapshot,
+  type UpdateJournal,
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
@@ -375,13 +376,78 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(blockTexts(coldDoc)).toEqual(blockTexts(liveDoc));
       expect(documentBytes(coldDoc)).toEqual(documentBytes(liveDoc));
     });
+
+    it("rehydrates redo from reversal records after live doc recovery", async () => {
+      const journal = createDrizzleJournal(db);
+      const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+
+      const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
+      const core = createAgentEditCore({
+        journal,
+        coordinator,
+        codec,
+        model,
+        undoClientId: REVERSAL_CLIENT_ID,
+      });
+      const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
+
+      expect(await core.write({ command: "view", file: DOC_ID }, context)).toContain(
+        "Alpha sword.",
+      );
+      expect(
+        await core.write(
+          { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
+          { ...context, turnId: TURN_A },
+        ),
+      ).toContain("status: success");
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
+
+      const undo = await core.write({ command: "undo", file: DOC_ID }, context);
+      expect(undo).toContain("status: reversed");
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
+      const [reversal] = await journal.readReversals(DOC_ID, {
+        threadId: THREAD_ID,
+        status: ["reversed"],
+      });
+      expect(reversal).toMatchObject({ turnId: TURN_A, status: "reversed" });
+      expect(reversal?.undoUpdateSeq).toBeGreaterThan(0);
+
+      coordinator.discard(DOC_ID);
+      await core.recover(DOC_ID);
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
+
+      const restarted = createAgentEditCore({
+        journal,
+        coordinator,
+        codec,
+        model,
+        undoClientId: REVERSAL_CLIENT_ID,
+      });
+      expect(await restarted.write({ command: "view", file: DOC_ID }, context)).toContain(
+        "Alpha sword.",
+      );
+
+      const redo = await restarted.write({ command: "redo", file: DOC_ID }, context);
+      expect(redo).toContain("status: reversed");
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
+      expect(
+        await journal.readReversals(DOC_ID, { threadId: THREAD_ID, status: ["reversed"] }),
+      ).toEqual([]);
+      expect(
+        await journal.readReversals(DOC_ID, { threadId: THREAD_ID, status: ["redone"] }),
+      ).toMatchObject([{ turnId: TURN_A, status: "redone" }]);
+    });
   });
 }
 
 class MemoryCoordinator implements DocumentCoordinator {
   private readonly docs = new Map<string, Y.Doc>();
 
-  constructor(entries: Iterable<readonly [string, Y.Doc]>) {
+  constructor(
+    entries: Iterable<readonly [string, Y.Doc]>,
+    private readonly journal?: UpdateJournal,
+  ) {
     for (const [docId, doc] of entries) this.docs.set(docId, doc);
   }
 
@@ -395,7 +461,21 @@ class MemoryCoordinator implements DocumentCoordinator {
     return fn(this.require(docId));
   }
 
-  async recover(_docId: string): Promise<void> {}
+  discard(docId: string): void {
+    this.docs.delete(docId);
+  }
+
+  async recover(docId: string): Promise<void> {
+    if (!this.journal) return;
+    let doc = this.docs.get(docId);
+    if (!doc) {
+      doc = new Y.Doc({ gc: false });
+      this.docs.set(docId, doc);
+    }
+    const snapshot = await this.journal.read(docId);
+    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
+    for (const update of snapshot.updates) Y.applyUpdate(doc, update.update, { type: "system" });
+  }
 }
 
 function appendText(doc: Y.Doc, value: string): Uint8Array {
