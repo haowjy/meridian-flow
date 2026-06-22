@@ -1,6 +1,7 @@
-/** Drizzle-backed UpdateJournal adapter for persisted Yjs document updates. */
+/** Drizzle-backed collab persistence for Yjs updates, checkpoints, and lifecycle. */
 
 import type {
+  DocumentLifecycle,
   JournalSnapshot,
   PersistedUpdate,
   ReversalRecord,
@@ -22,6 +23,33 @@ import * as Y from "yjs";
 type JournalDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
 type OriginType = "agent" | "human" | "system";
+type UpdateMetaMode = "journal" | "latest";
+
+export type FacadeCheckpointRecord = {
+  id: string;
+  documentId: string;
+  state: Uint8Array;
+  reason: string;
+  createdAt: string;
+};
+
+export type CollabFacadeStore = {
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
+  getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
+  listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
+  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+};
+
+export type DrizzleCollabPersistence = {
+  journal: UpdateJournal;
+  lifecycle: DocumentLifecycle;
+  store: CollabFacadeStore;
+};
 
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
@@ -66,21 +94,45 @@ function parseOrigin(meta: UpdateMeta): {
   throw new Error(`Invalid update origin: ${meta.origin}`);
 }
 
-function originFromRow(row: typeof documentYjsUpdates.$inferSelect): string {
-  if (row.originType === "agent") return `agent:${row.actorTurnId ?? "unknown"}`;
-  if (row.originType === "human") return `human:${row.actorUserId ?? "unknown"}`;
-  return "system";
+function metaFromUpdateRow(
+  row: typeof documentYjsUpdates.$inferSelect,
+  mode: UpdateMetaMode,
+): UpdateMeta {
+  if (row.originType === "agent") {
+    const originActor = row.actorTurnId ?? (mode === "journal" ? "unknown" : undefined);
+    if (originActor) {
+      return {
+        origin: `agent:${originActor}`,
+        ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        seq: row.id,
+      };
+    }
+  }
+  if (row.originType === "human" || (mode === "latest" && row.originType === "user")) {
+    const originActor = row.actorUserId ?? (mode === "journal" ? "unknown" : undefined);
+    if (originActor) {
+      return {
+        origin: `human:${originActor}`,
+        ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        seq: row.id,
+      };
+    }
+  }
+  return {
+    origin: "system",
+    ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+    seq: row.id,
+  };
 }
 
-function mapUpdate(row: typeof documentYjsUpdates.$inferSelect): PersistedUpdate {
+function mapUpdate(
+  row: typeof documentYjsUpdates.$inferSelect,
+  mode: UpdateMetaMode = "journal",
+): PersistedUpdate {
   return {
     seq: row.id,
     update: toBytes(row.updateData),
-    meta: {
-      origin: originFromRow(row),
-      ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
-      seq: row.id,
-    },
+    meta: metaFromUpdateRow(row, mode),
   };
 }
 
@@ -107,6 +159,40 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
+async function upsertHead(
+  db: JournalDb,
+  documentId: string,
+  input: {
+    latestUpdateSeq?: number;
+    latestStateVector?: Uint8Array | null;
+    latestCheckpointId?: number | null;
+  } = {},
+): Promise<void> {
+  await db
+    .insert(documentYjsHeads)
+    .values({
+      documentId: asDocumentId(documentId),
+      latestUpdateSeq: input.latestUpdateSeq ?? 0,
+      latestStateVector: input.latestStateVector ? toBuffer(input.latestStateVector) : null,
+      latestCheckpointId: input.latestCheckpointId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: documentYjsHeads.documentId,
+      set: {
+        ...(input.latestUpdateSeq !== undefined ? { latestUpdateSeq: input.latestUpdateSeq } : {}),
+        ...(input.latestStateVector !== undefined
+          ? {
+              latestStateVector: input.latestStateVector ? toBuffer(input.latestStateVector) : null,
+            }
+          : {}),
+        ...(input.latestCheckpointId !== undefined
+          ? { latestCheckpointId: input.latestCheckpointId }
+          : {}),
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
 async function insertCheckpoint(
   db: JournalDb,
   documentId: string,
@@ -127,23 +213,11 @@ async function insertCheckpoint(
     .returning({ id: documentYjsCheckpoints.id });
   if (!row) throw new Error("Failed to insert Yjs checkpoint");
 
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId: asDocumentId(documentId),
-      latestUpdateSeq: upToSeq,
-      latestStateVector: toBuffer(stateVector),
-      latestCheckpointId: row.id,
-    })
-    .onConflictDoUpdate({
-      target: documentYjsHeads.documentId,
-      set: {
-        latestUpdateSeq: upToSeq,
-        latestStateVector: toBuffer(stateVector),
-        latestCheckpointId: row.id,
-        updatedAt: sql`now()`,
-      },
-    });
+  await upsertHead(db, documentId, {
+    latestUpdateSeq: upToSeq,
+    latestStateVector: stateVector,
+    latestCheckpointId: row.id,
+  });
 
   return row.id;
 }
@@ -169,6 +243,16 @@ async function appendUpdate(
   return row.id;
 }
 
+function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeCheckpointRecord {
+  return {
+    id: String(row.id),
+    documentId: row.documentId,
+    state: toBytes(row.state),
+    reason: row.reason ?? "checkpoint",
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export function createDrizzleJournal(db: JournalDb): UpdateJournal {
   return {
     async append(docId, update, meta) {
@@ -192,7 +276,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
 
       return {
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
-        updates: rows.map(mapUpdate),
+        updates: rows.map((row) => mapUpdate(row)),
       };
     },
 
@@ -332,5 +416,72 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
           ),
         );
     },
+  };
+}
+
+export function createServerDocumentLifecycle(
+  db: JournalDb,
+  journal: UpdateJournal,
+): DocumentLifecycle {
+  return {
+    async ensureDocument(docId) {
+      await upsertHead(db, docId);
+      const snapshot = await journal.read(docId);
+      if (snapshot.checkpoint || snapshot.updates.length > 0) return;
+
+      // The Yjs tables FK to documents.id; callers must create the documents row first.
+      const emptyDoc = new Y.Doc({ gc: false });
+      await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc), 0);
+    },
+  };
+}
+
+export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore {
+  return {
+    async createCheckpoint(docId, state, reason, upToSeq) {
+      return db.transaction(async (tx) => {
+        const checkpointId = await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, reason);
+        return String(checkpointId);
+      });
+    },
+
+    async getCheckpoint(id) {
+      const checkpointId = Number(id);
+      if (!Number.isSafeInteger(checkpointId)) return null;
+      const [row] = await db
+        .select()
+        .from(documentYjsCheckpoints)
+        .where(eq(documentYjsCheckpoints.id, checkpointId))
+        .limit(1);
+      return row ? mapCheckpoint(row) : null;
+    },
+
+    async listCheckpoints(docId) {
+      const rows = await db
+        .select()
+        .from(documentYjsCheckpoints)
+        .where(eq(documentYjsCheckpoints.documentId, asDocumentId(docId)))
+        .orderBy(desc(documentYjsCheckpoints.id));
+      return rows.map(mapCheckpoint);
+    },
+
+    async latestUpdate(docId) {
+      const [row] = await db
+        .select()
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
+        .orderBy(desc(documentYjsUpdates.id))
+        .limit(1);
+      return row ? mapUpdate(row, "latest") : null;
+    },
+  };
+}
+
+export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPersistence {
+  const journal = createDrizzleJournal(db);
+  return {
+    journal,
+    lifecycle: createServerDocumentLifecycle(db, journal),
+    store: createDrizzleCollabFacadeStore(db),
   };
 }

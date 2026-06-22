@@ -12,11 +12,10 @@ the update journal, and the live-document coordinator.
 - **Composition** (`composition.ts`) — builds the codec/model, translates
   Meridian origins to journal meta, implements full-document SET, checkpoint /
   restore, Hocuspocus hooks, and in-memory/prod factory wiring.
-- **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`),
-  `hocuspocus-coordinator.ts` (`DocumentCoordinator`), `document-loader.ts`
-  (journal → Yjs state), `drizzle-facade-store.ts` (server lifecycle,
-  checkpoints, latest attribution), and `in-memory/agent-edit.ts` (test/app
-  fakes).
+- **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`, server lifecycle, checkpoints, latest
+  attribution), `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
+  `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
+  (test/app fakes).
 - **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for the
   post-write activity/projection hook; these are server read-model side effects,
   not agent-edit package concerns.

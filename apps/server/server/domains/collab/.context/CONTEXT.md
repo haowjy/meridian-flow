@@ -11,10 +11,9 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
 | Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade over package codec/model plus journal/coordinator |
-| Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` |
+| Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal`, lifecycle, checkpoint, and latest-update helpers |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
-| Lifecycle/checkpoint ops | `collab/adapters/drizzle-facade-store.ts` | Server-only DB helpers |
 | In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
 | Document write read models | `collab/domain/document-activity.ts` | Production post-write hook for activity/projection |
 
