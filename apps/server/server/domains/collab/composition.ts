@@ -2,6 +2,8 @@
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCore,
+  type DocumentCoordinator,
+  type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
@@ -10,12 +12,12 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import type { DocumentId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
-import { type EventSink, emitEvent } from "../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import {
   createDrizzleCollabFacadeStore,
@@ -29,16 +31,20 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import type {
   CheckpointInfo,
   CollabDomain,
   CollabPersistenceMetrics,
+  DocumentWriteHook,
   DocumentWriteOrigin,
   DocumentWriteResult,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
 } from "./index.js";
+
+export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
@@ -53,11 +59,22 @@ type CheckpointRecord = {
   createdAt: string;
 };
 
-type FacadeStore = {
+export type CollabFacadeStore = {
   createCheckpoint(docId: string, state: Uint8Array, reason: string): Promise<string>;
   getCheckpoint(id: string): Promise<CheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<CheckpointRecord[]>;
   latestUpdate(docId: string): Promise<JournalUpdate | null>;
+};
+
+export type CollabFacadeDeps = {
+  journal: UpdateJournal;
+  coordinator: DocumentCoordinator;
+  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  store: CollabFacadeStore;
+  hocuspocus(): Hocuspocus | null;
+  bindHocuspocus(instance: Hocuspocus): void;
+  eventSink?: EventSink;
+  documentWriteHook?: DocumentWriteHook;
 };
 
 type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -101,6 +118,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       boundHocuspocus = instance;
     },
     eventSink: deps.eventSink,
+    documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
+      const results = await Promise.allSettled([
+        touchDocumentActivity(deps.db, documentId, threadId, at),
+        updateMarkdownProjection(deps.db, documentId, markdown, at),
+      ]);
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+    },
   });
 }
 
@@ -122,15 +147,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 }
 
-function createFacade(deps: {
-  journal: UpdateJournal;
-  coordinator: ReturnType<typeof createHocuspocusCoordinator>;
-  lifecycle: { ensureDocument(docId: string): Promise<void> };
-  store: FacadeStore;
-  hocuspocus(): Hocuspocus | null;
-  bindHocuspocus(instance: Hocuspocus): void;
-  eventSink?: EventSink;
-}): CollabDomain {
+export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const codec = mdxCodec({ schema });
   const model = yProsemirrorModel(schema);
@@ -182,6 +199,31 @@ function createFacade(deps: {
     }
   }
 
+  async function runDocumentWriteHook(
+    event: Omit<Parameters<DocumentWriteHook>[0], "at">,
+  ): Promise<void> {
+    if (!deps.documentWriteHook) return;
+    const hookEvent = { ...event, at: new Date() };
+    try {
+      // The journal/live-doc write is the source of truth. The read-model hook is
+      // awaited for freshness, but its failure is logged and never turns the
+      // committed write into an error.
+      await deps.documentWriteHook(hookEvent);
+    } catch (cause) {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "error",
+        source: "collab.document_write",
+        name: "post_write_hook.failed",
+        payload: {
+          documentId: hookEvent.documentId,
+          threadId: hookEvent.threadId ?? null,
+          ...unknownToEventPayload(cause),
+        },
+      });
+    }
+  }
+
   function parseMarkdown(
     documentId: DocumentId,
     markdown: string,
@@ -229,6 +271,7 @@ function createFacade(deps: {
     documentId: DocumentId,
     markdown: string,
     origin: RuntimeOrigin,
+    threadId?: ThreadId,
   ): Promise<Result<SetMarkdownResult, SyncError>> {
     const parsed = parseMarkdown(documentId, markdown);
     if (!parsed.ok) return parsed;
@@ -236,9 +279,17 @@ function createFacade(deps: {
     await deps.lifecycle.ensureDocument(documentId);
 
     try {
-      return await deps.coordinator.withDocument(documentId, (liveDoc) =>
+      const result = await deps.coordinator.withDocument(documentId, (liveDoc) =>
         replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin),
       );
+      if (result.ok) {
+        await runDocumentWriteHook({
+          documentId: result.value.documentId,
+          threadId,
+          markdown: result.value.markdown,
+        });
+      }
+      return result;
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
       throw cause;
@@ -249,11 +300,12 @@ function createFacade(deps: {
     documentId: DocumentId,
     transform: (markdown: string) => string,
     origin: RuntimeOrigin,
+    threadId?: ThreadId,
   ): Promise<Result<EditMarkdownResult, SyncError>> {
     await deps.lifecycle.ensureDocument(documentId);
 
     try {
-      return await deps.coordinator.withDocument(documentId, async (liveDoc) => {
+      const result = await deps.coordinator.withDocument(documentId, async (liveDoc) => {
         const beforeMarkdown = serializeDoc(liveDoc);
         const parsed = parseMarkdown(documentId, transform(beforeMarkdown));
         if (!parsed.ok) return parsed;
@@ -261,6 +313,14 @@ function createFacade(deps: {
         const result = await replaceLiveDocumentMarkdown(documentId, liveDoc, parsed.value, origin);
         return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
       });
+      if (result.ok) {
+        await runDocumentWriteHook({
+          documentId: result.value.documentId,
+          threadId,
+          markdown: result.value.markdown,
+        });
+      }
+      return result;
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
       throw cause;
@@ -446,13 +506,23 @@ function createFacade(deps: {
     },
 
     async writeDocument(input) {
-      const result = await setMarkdown(input.documentId, input.markdown, input.origin);
+      const result = await setMarkdown(
+        input.documentId,
+        input.markdown,
+        input.origin,
+        input.threadId,
+      );
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
 
     async editDocument(input) {
-      const result = await editMarkdown(input.documentId, input.transform, input.origin);
+      const result = await editMarkdown(
+        input.documentId,
+        input.transform,
+        input.origin,
+        input.threadId,
+      );
       if (!result.ok) throwSyncError(result.error);
       return {
         ...documentWriteResult(result.value, input.origin),
@@ -498,7 +568,7 @@ function createFacade(deps: {
   };
 }
 
-function inMemoryStore(journal: InMemoryJournal): FacadeStore {
+function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
   return {
     createCheckpoint: (docId, state, reason) => journal.createCheckpoint(docId, state, reason),
     getCheckpoint: (id) => journal.getCheckpoint(id),
