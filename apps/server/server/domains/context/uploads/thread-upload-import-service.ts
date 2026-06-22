@@ -30,7 +30,7 @@ const TEXT_MIME_SUFFIXES = ["+json", "+xml", "+yaml", "+yml"];
 
 export type ThreadUploadImportErrorCode =
   | "object_store_error"
-  | "mirror_error"
+  | "collab_error"
   | "repository_error";
 export interface ThreadUploadImportError {
   code: ThreadUploadImportErrorCode;
@@ -194,13 +194,13 @@ export function createThreadUploadImportService(
               );
               if (!write.ok)
                 throw new UploadImportFailure(
-                  "mirror_error",
+                  "collab_error",
                   errorMessage(write.error, "Failed to seed upload document"),
                 );
               const read = await deps.documentSync.readAsMarkdown(documentId);
               if (!read.ok)
                 throw new UploadImportFailure(
-                  "mirror_error",
+                  "collab_error",
                   errorMessage(read.error, "Failed to read upload document"),
                 );
               await deps.uploadDocuments.updateMarkdownProjection(documentId, read.value);
