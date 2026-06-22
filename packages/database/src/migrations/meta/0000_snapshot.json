@@ -4387,7 +4387,7 @@
         },
         "reversed_by_user_id": {
           "name": "reversed_by_user_id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -4475,6 +4475,15 @@
           "columnsFrom": ["turn_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "document_yjs_reversals_reversed_by_user_id_users_id_fk": {
+          "name": "document_yjs_reversals_reversed_by_user_id_users_id_fk",
+          "tableFrom": "document_yjs_reversals",
+          "tableTo": "users",
+          "columnsFrom": ["reversed_by_user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
