@@ -399,7 +399,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<ReversalResult> {
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const hot = registry.undoLatest(docId, session.threadId);
+    const hot = registry.undoLatest(docId, session.threadId, {
+      scope: "file",
+      mutationClientId: options.undoClientId,
+    });
     let turnId: string | undefined;
     let update: Uint8Array | undefined;
 
@@ -478,7 +481,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<ReversalResult> {
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const hot = registry.redoLatest(docId, session.threadId);
+    const hot = registry.redoLatest(docId, session.threadId, {
+      mutationClientId: options.undoClientId,
+    });
     let turnId: string | undefined;
     let update: Uint8Array | undefined;
 

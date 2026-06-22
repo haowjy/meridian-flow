@@ -17,6 +17,7 @@
     "@anthropic-ai/sdk": "catalog:",
     "@aws-sdk/client-s3": "^3.1062.0",
     "@aws-sdk/s3-request-presigner": "^3.1062.0",
+    "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
