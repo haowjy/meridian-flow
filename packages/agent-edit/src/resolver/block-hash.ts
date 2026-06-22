@@ -1,5 +1,5 @@
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 
 const DEFAULT_HASH_LENGTH = 4;
 const FNV_64_OFFSET = 0xcbf29ce484222325n;

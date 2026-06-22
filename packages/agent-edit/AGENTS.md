@@ -37,8 +37,9 @@ different coordinators (Hocuspocus, in-process mutex), different
 
 ## v1 scope
 
-y-prosemirror document model only. MDX and markdown codecs built in. Fiction
-schema (14 nodes, 4 marks) from `@meridian/prosemirror-schema`.
+y-prosemirror document model only. MDX and markdown codecs built in. Hosts pass
+their ProseMirror schema explicitly; Meridian server composes the package with
+the fiction schema from `@meridian/prosemirror-schema`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts, architecture, invariants.
 → [system shape](https://github.com/haowjy/meridian-flow-docs/blob/main/work/verify-reversal-e2e/design/agent-edit-system-shape.md)

@@ -34,12 +34,15 @@ Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
 inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
 owns the PM-mapping dispatch. `serialize`/`parse` are the two directions.
 Pinned unified stringify options for canonical round-trip output. Concrete:
-`presets/markdown.ts`, `presets/mdx.ts`.
+`presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
+ProseMirror `Schema`; the package has no default Meridian schema.
 
 ### DocumentModel (`src/model/types.ts` — interface, `src/model/y-prosemirror.js` — v1 impl)
 What "block" means in Yjs. Carries the 3-tier apply implementation: `getBlocks`,
 `getBlockId` (hash from CRDT item ID), `getText`, `applyTextEdit` (Tier 1/2),
 `insertBlocks` (Tier 3), `deleteBlock` (Tier 3). v1 is y-prosemirror only.
+`yProsemirrorModel(schema)` is explicit; the server composition root supplies
+Meridian's fiction schema.
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent

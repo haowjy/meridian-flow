@@ -17,7 +17,7 @@ import { codeMarkCodec, emMarkCodec, linkMarkCodec, strongMarkCodec } from "../m
 import type { BlockCodec, MarkCodec } from "../types.js";
 
 export interface CodecPresetOptions {
-  schema?: Schema;
+  schema: Schema;
   components?: ComponentRegistry;
 }
 
@@ -52,7 +52,7 @@ export const markdownRequiredBlockNames = [
   "horizontal_rule",
 ] as const;
 
-export function markdownCodec(options: CodecPresetOptions = {}) {
+export function markdownCodec(options: CodecPresetOptions) {
   return createCodec({
     ...options,
     blocks: markdownBlockCodecs,

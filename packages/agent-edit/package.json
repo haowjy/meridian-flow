@@ -13,7 +13,6 @@
     "demo": "tsx demo/harness.ts"
   },
   "dependencies": {
-    "@meridian/prosemirror-schema": "workspace:*",
     "prosemirror-model": "^1.25.9",
     "remark-gfm": "^4.0.1",
     "remark-mdx": "^3.1.1",
@@ -24,6 +23,7 @@
     "yjs": "13.6.31"
   },
   "devDependencies": {
+    "@meridian/prosemirror-schema": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -1,10 +1,10 @@
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 
 import type { ParsedContent, Span } from "../codec/types.js";
 import { getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
+import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 import type { DocumentModel } from "./types.js";
 
 interface TextSegment {
@@ -21,9 +21,7 @@ export type YProsemirrorDocumentModel = DocumentModel<Y.XmlElement> & {
   toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): PMNode;
 };
 
-export function yProsemirrorModel(
-  schema: Schema = buildDocumentSchema(),
-): YProsemirrorDocumentModel {
+export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
   return {
     schema,
 
@@ -65,15 +63,11 @@ export function fragmentOf(doc: Y.Doc): Y.XmlFragment {
   return doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
 }
 
-export function prosemirrorRootOf(doc: Y.Doc, schema: Schema = buildDocumentSchema()): PMNode {
+export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }
 
-export function toProsemirrorBlock(
-  doc: Y.Doc,
-  block: Y.XmlElement,
-  schema: Schema = buildDocumentSchema(),
-): PMNode {
+export function toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement, schema: Schema): PMNode {
   const blocks = getTopLevelXmlBlocks(doc);
   const index = blocks.indexOf(block);
   if (index < 0) throw new Error("Y.XmlElement is not a top-level block in this document");
