@@ -482,42 +482,70 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     commandName: WriteCommand["command"],
   ): Promise<ReversalResult> {
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    const hot = registry.redoLatest(docId, session.threadId, {
-      mutationClientId: options.undoClientId,
-    });
-    let turnId: string | undefined;
-    let update: Uint8Array | undefined;
+    const redoTarget = runtime.redoStack.at(-1);
+    if (!redoTarget?.undoUpdateSeq) return { ok: true, status: "nothing_to_redo", turnId: "" };
 
-    if (hot.ok) {
-      turnId = hot.turnId;
-      update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    } else if (hot.status !== "no_manager" && hot.status !== "no_redo") {
-      return { ok: true, status: "partial", turnId: "unknown" };
+    let update: Uint8Array | undefined;
+    let locallyApplied = false;
+    const hotRedoTurn = registry.getState(docId, session.threadId)?.redoStack.at(-1)?.turnId;
+    if (hotRedoTurn === redoTarget.turnId) {
+      const beforeVector = Y.encodeStateVector(runtime.doc);
+      const hot = registry.redoLatest(docId, session.threadId, {
+        mutationClientId: options.undoClientId,
+      });
+      if (hot.ok) {
+        update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
+        locallyApplied = true;
+      }
     }
 
-    if (!turnId || !update) {
-      const redoTarget = runtime.redoStack.at(-1);
-      if (!redoTarget?.undoUpdateSeq) return { ok: true, status: "nothing_to_redo", turnId: "" };
+    if (!update) {
       const cold = await reconstructRedoUpdate(
         options.journal,
         docId,
         redoTarget.turnId,
         redoTarget.undoUpdateSeq,
         { undoClientId: options.undoClientId },
-      );
-      if (!cold.ok) return { ok: true, status: "nothing_to_redo", turnId: redoTarget.turnId };
-      turnId = redoTarget.turnId;
+      ).catch(() => null);
+      if (!cold?.ok) {
+        popIfTop(runtime.redoStack, redoTarget.turnId);
+        registry.evictThread(docId, session.threadId);
+        return { ok: true, status: "nothing_to_redo", turnId: redoTarget.turnId };
+      }
       update = cold.redoUpdate;
-      Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
+
+    let consumed: { consumed: boolean; seq?: number };
+    try {
+      consumed = await options.journal.persistRedo(
+        docId,
+        update,
+        { threadId: session.threadId, turnId: redoTarget.turnId },
+        { origin: "system", seq: 0 },
+      );
+    } catch (cause) {
+      if (locallyApplied) await restoreRuntimeFromLive(session, docId, runtime, commandName);
+      registry.evictThread(docId, session.threadId);
+      throw cause;
+    }
+    if (!consumed.consumed) {
+      popIfTop(runtime.redoStack, redoTarget.turnId);
+      registry.evictThread(docId, session.threadId);
+      if (locallyApplied) {
+        const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
+        if (typeof restored === "string") return { ok: false, response: restored };
+      }
+      return { ok: true, status: "nothing_to_redo", turnId: redoTarget.turnId };
+    }
+
+    const turnId = redoTarget.turnId;
+    if (!locallyApplied) Y.applyUpdate(runtime.doc, update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownDiff = diffSnapshots(
       before,
       snapshotBlocks(runtime.doc, options.model, options.codec),
     );
 
-    await options.journal.append(docId, update, { origin: "system", seq: 0 });
     const sync = await syncAfterLocalMutation({
       docId,
       commandName,
@@ -531,8 +559,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
     });
     if (!sync.ok) return { ok: false, response: sync.response };
-    await options.journal.markReversalStatus(docId, turnId, "redone");
     popIfTop(runtime.redoStack, turnId);
+    if (!locallyApplied) registry.evictThread(docId, session.threadId);
     runtime.undoStack.push(turnId);
     return {
       ok: true,
@@ -540,6 +568,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       turnId,
       sync: sync.summary,
     };
+  }
+
+  async function restoreRuntimeFromLive(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+    commandName: WriteCommand["command"],
+  ): Promise<WriteResult | null> {
+    const response = await withLive(docId, commandName, (liveDoc) => {
+      const restored = new Y.Doc({ gc: false });
+      Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+      runtime.doc = restored;
+      return null;
+    });
+    if (typeof response === "string") return response;
+    markSynced(session, docId, runtime);
+    return null;
   }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {

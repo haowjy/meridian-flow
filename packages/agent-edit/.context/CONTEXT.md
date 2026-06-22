@@ -5,9 +5,9 @@
 ### UpdateJournal (`src/ports/update-journal.ts`)
 The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
 `persistReversal` (atomically persist undo update + reversal record),
-`readReversals` (durable redo lookup), and `markReversalStatus` (consume a
-reversal after redo). Ordered by monotonic seq per document. Every adapter
-implements this.
+`persistRedo` (atomically consume a doc+thread+turn reversal and append redo
+bytes), and `readReversals` (durable redo lookup). Ordered by monotonic seq per
+document. Every adapter implements this.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
@@ -85,8 +85,10 @@ Authoritative model; hot path is a performance cache. Redo survives process
 restart by rehydrating `runtime.redoStack` from `ReversalRecord` rows with
 `status: "reversed"` during the first `view` sync for that `(session, doc,
 thread)`. Rehydration filters expired records and records made stale by later
-forward agent/human updates; successful redo marks the record `status:
-"redone"` so a second restart cannot replay it again.
+forward agent/human updates. Redo consumption is authoritative at persist time:
+`persistRedo()` rechecks the doc+thread+turn reversal is still `status:
+"reversed"` inside the append transaction, marks it `status: "redone"`, and
+returns `consumed: false` without appending when another session already used it.
 
 **Hot/cold parity:** both paths must produce byte-identical undo results for
 the same turn sequence. Enforced by tests (`undo.test.ts`).

@@ -107,6 +107,25 @@ export class InMemoryJournal implements UpdateJournal {
     });
   }
 
+  async persistRedo(
+    docId: string,
+    redoUpdate: Uint8Array,
+    ref: { threadId: string; turnId: string },
+    meta: UpdateMeta,
+  ): Promise<{ consumed: boolean; seq?: number }> {
+    const key = reversalKey(docId, ref.threadId, ref.turnId);
+    const stored = this.entry(docId).reversals.get(key);
+    if (stored?.record.status !== "reversed") return { consumed: false };
+
+    const storedAt = this.now();
+    const seq = this.appendInternal(docId, redoUpdate, meta, storedAt);
+    this.entry(docId).reversals.set(key, {
+      ...stored,
+      record: { ...stored.record, status: "redone" },
+    });
+    return { consumed: true, seq };
+  }
+
   async readReversals(
     docId: string,
     opts: { threadId?: string; status?: ReversalStatus[] } = {},
@@ -119,16 +138,6 @@ export class InMemoryJournal implements UpdateJournal {
           (opts.status === undefined || opts.status.includes(record.status)),
       )
       .map((record) => ({ ...record }));
-  }
-
-  async markReversalStatus(docId: string, turnId: string, status: ReversalStatus): Promise<void> {
-    for (const [key, stored] of this.entry(docId).reversals) {
-      if (stored.record.turnId !== turnId) continue;
-      this.entry(docId).reversals.set(key, {
-        ...stored,
-        record: { ...stored.record, status },
-      });
-    }
   }
 
   reversalRecords(docId: string): ReversalRecord[] {

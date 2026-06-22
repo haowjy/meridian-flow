@@ -45,7 +45,8 @@ export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "
 
 /**
  * Durable metadata linking an agent turn to its persisted undo update.
- * Written atomically with the undo update via UpdateJournal.persistReversal.
+ * Written atomically with the undo update via UpdateJournal.persistReversal and
+ * consumed atomically with the redo update via UpdateJournal.persistRedo.
  */
 export interface ReversalRecord {
   documentId: string;

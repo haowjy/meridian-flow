@@ -550,6 +550,24 @@ class MemoryJournal implements UpdateJournal {
     this.reversals.push({ ...record });
   }
 
+  async persistRedo(
+    _docId: string,
+    redoUpdate: Uint8Array,
+    ref: { threadId: string; turnId: string },
+    meta: UpdateMeta,
+  ): Promise<{ consumed: boolean; seq?: number }> {
+    const index = this.reversals.findIndex(
+      (record) =>
+        record.threadId === ref.threadId &&
+        record.turnId === ref.turnId &&
+        record.status === "reversed",
+    );
+    if (index === -1) return { consumed: false };
+    const seq = this.appendSync(redoUpdate, meta);
+    this.reversals[index] = { ...this.reversals[index], status: "redone" };
+    return { consumed: true, seq };
+  }
+
   async readReversals(
     _docId: string,
     opts: { threadId?: string; status?: ReversalStatus[] } = {},
@@ -561,12 +579,6 @@ class MemoryJournal implements UpdateJournal {
           (opts.status === undefined || opts.status.includes(record.status)),
       )
       .map((record) => ({ ...record }));
-  }
-
-  async markReversalStatus(_docId: string, turnId: string, status: ReversalStatus): Promise<void> {
-    this.reversals = this.reversals.map((record) =>
-      record.turnId === turnId ? { ...record, status } : record,
-    );
   }
 }
 

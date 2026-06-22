@@ -387,6 +387,40 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       record.undoUpdateSeq = undoUpdateSeq;
     },
 
+    async persistRedo(docId, redoUpdate, ref, meta) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        const [reversal] = await txDb
+          .select({ status: documentYjsReversals.status })
+          .from(documentYjsReversals)
+          .where(
+            and(
+              eq(documentYjsReversals.documentId, asDocumentId(docId)),
+              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
+              eq(documentYjsReversals.turnId, asTurnId(ref.turnId)),
+            ),
+          )
+          .for("update")
+          .limit(1);
+
+        if (reversal?.status !== "reversed") return { consumed: false };
+
+        const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
+        await txDb
+          .update(documentYjsReversals)
+          .set({ status: "redone" })
+          .where(
+            and(
+              eq(documentYjsReversals.documentId, asDocumentId(docId)),
+              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
+              eq(documentYjsReversals.turnId, asTurnId(ref.turnId)),
+            ),
+          );
+
+        return { consumed: true, seq };
+      });
+    },
+
     async readReversals(docId, opts = {}) {
       const conditions = [eq(documentYjsReversals.documentId, asDocumentId(docId))];
       if (opts.threadId !== undefined) {
@@ -403,18 +437,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
         .where(and(...conditions))
         .orderBy(asc(documentYjsReversals.reversedAt), asc(documentYjsReversals.undoUpdateSeq));
       return rows.map(mapReversal);
-    },
-
-    async markReversalStatus(docId, turnId, status) {
-      await db
-        .update(documentYjsReversals)
-        .set({ status })
-        .where(
-          and(
-            eq(documentYjsReversals.documentId, asDocumentId(docId)),
-            eq(documentYjsReversals.turnId, asTurnId(turnId)),
-          ),
-        );
     },
   };
 }

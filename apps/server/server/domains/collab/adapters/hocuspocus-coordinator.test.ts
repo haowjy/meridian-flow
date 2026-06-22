@@ -51,11 +51,13 @@ class MemoryJournal implements UpdateJournal {
 
   async persistReversal(): Promise<void> {}
 
+  async persistRedo() {
+    return { consumed: false };
+  }
+
   async readReversals() {
     return [];
   }
-
-  async markReversalStatus(): Promise<void> {}
 
   private entry(docId: string) {
     const existing = this.entries.get(docId);

@@ -294,6 +294,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await journal.read(DOC_ID)).updates.map((update) => update.seq)).toEqual([
         record.undoUpdateSeq,
       ]);
+
+      const redoUpdate = appendText(doc, " Redo");
+      const redo = await journal.persistRedo(
+        DOC_ID,
+        redoUpdate,
+        { threadId: THREAD_ID, turnId: TURN_E },
+        { origin: "system", seq: 0 },
+      );
+      expect(redo.consumed).toBe(true);
+      expect(redo.seq).toBeGreaterThan(record.undoUpdateSeq);
+      expect(
+        await journal.readReversals(DOC_ID, { threadId: THREAD_ID, status: ["redone"] }),
+      ).toMatchObject([{ turnId: TURN_E, status: "redone" }]);
+
+      const idsAfterRedo = await updateIds();
+      await expect(
+        journal.persistRedo(
+          DOC_ID,
+          redoUpdate,
+          { threadId: THREAD_ID, turnId: TURN_E },
+          { origin: "system", seq: 0 },
+        ),
+      ).resolves.toEqual({ consumed: false });
+      await expect(
+        journal.persistRedo(
+          DOC_ID,
+          redoUpdate,
+          { threadId: MISSING_THREAD_ID, turnId: TURN_E },
+          { origin: "system", seq: 0 },
+        ),
+      ).resolves.toEqual({ consumed: false });
+      expect(await updateIds()).toEqual(idsAfterRedo);
     });
 
     it("replays updates appended after checkpoint state was captured", async () => {
