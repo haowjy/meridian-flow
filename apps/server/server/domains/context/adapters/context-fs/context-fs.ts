@@ -98,13 +98,6 @@ export class ContextFS implements ContextSchemeAdapter {
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
         return { code: "io_error", message: error.message };
-      case "edit_not_found":
-        return { code: "io_error", message: `Edit text not found: ${error.oldText}` };
-      case "ambiguous_edit":
-        return {
-          code: "io_error",
-          message: `Edit text is ambiguous (${error.matchCount} matches): ${error.oldText}`,
-        };
     }
   }
 

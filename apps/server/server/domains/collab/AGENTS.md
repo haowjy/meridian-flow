@@ -9,7 +9,7 @@ the update journal, and the live-document coordinator.
 
 - **Domain types** (`index.ts`) — `CollabDomain`, update origins, checkpoint
   metadata, write results, and Hocuspocus persistence metrics.
-- **Composition** (`composition.ts`) — builds the codec/model/core, translates
+- **Composition** (`composition.ts`) — builds the codec/model, translates
   Meridian origins to journal meta, implements full-document SET, checkpoint /
   restore, Hocuspocus hooks, and in-memory/prod factory wiring.
 - **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`),

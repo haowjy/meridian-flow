@@ -16,9 +16,7 @@ export type UpdateOrigin =
 export type SyncError =
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
-  | { code: "corrupt_state"; documentId: string; message: string }
-  | { code: "edit_not_found"; oldText: string }
-  | { code: "ambiguous_edit"; oldText: string; matchCount: number };
+  | { code: "corrupt_state"; documentId: string; message: string };
 
 export interface CheckpointInfo {
   id: string;
@@ -79,12 +77,6 @@ export type CollabTransport = {
 
 export type CollabDomain = CollabTransport & {
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  editFromMarkdown(
-    documentId: string,
-    oldText: string,
-    newText: string,
-    origin: UpdateOrigin,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeFromMarkdown(
     documentId: string,
     markdown: string,
