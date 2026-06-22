@@ -4,7 +4,6 @@
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { DocumentSyncPort } from "../../collab/index.js";
 import type {
   AdapterFault,
   AdapterFileRef,
@@ -38,8 +37,6 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (workId: string) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
-  /** Injected for cross-scheme move mirror eviction. */
-  documentSync?: DocumentSyncPort;
 }
 
 interface Dispatch extends ContextTreeDispatch {
@@ -133,7 +130,7 @@ async function callAdapter<T>(
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
-  const treeMover = new ContextTreeMover({ documentSync: deps.documentSync });
+  const treeMover = new ContextTreeMover();
 
   function authorityAllowed(workId: string): boolean {
     return deps.allowedAuthorities?.has(workId) ?? false;

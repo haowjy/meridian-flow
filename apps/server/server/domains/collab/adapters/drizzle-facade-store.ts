@@ -1,4 +1,4 @@
-/** Drizzle helpers for server-only DocumentSync facade operations. */
+/** Drizzle helpers for server-only collab domain lifecycle operations. */
 import type {
   DocumentLifecycle,
   PersistedUpdate,

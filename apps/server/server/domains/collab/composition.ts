@@ -1,4 +1,4 @@
-/** Composition root for the server DocumentSync facade over @meridian/agent-edit. */
+/** Composition root for the server collab domain over @meridian/agent-edit. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCore,
@@ -14,7 +14,6 @@ import type { DocumentId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { DocumentAccessPort } from "../../lib/document-access.js";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -32,9 +31,8 @@ import {
 } from "./adapters/in-memory/agent-edit.js";
 import type {
   CheckpointInfo,
+  CollabDomain,
   CollabPersistenceMetrics,
-  DocumentSyncFacade,
-  DocumentSyncServiceOptions,
   DocumentWriteOrigin,
   DocumentWriteResult,
   PersistedUpdate,
@@ -82,7 +80,7 @@ type PendingAppend = {
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
-export function createCollabDomain(deps: CollabDomainDeps): DocumentSyncFacade {
+export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const journal = createDrizzleJournal(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
@@ -106,7 +104,7 @@ export function createCollabDomain(deps: CollabDomainDeps): DocumentSyncFacade {
   });
 }
 
-export function createInMemoryCollabDomain(): DocumentSyncFacade {
+export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
@@ -124,23 +122,6 @@ export function createInMemoryCollabDomain(): DocumentSyncFacade {
   });
 }
 
-export function createStubDocumentSyncFacade(): DocumentSyncFacade {
-  return createInMemoryCollabDomain();
-}
-
-export function createDocumentSyncService(deps: {
-  db: Database;
-  documentAccess: DocumentAccessPort & {
-    requireOwnedDocument(documentId: DocumentId, userId: UserId): Promise<void>;
-  };
-  eventSink?: EventSink;
-  options?: DocumentSyncServiceOptions;
-}): DocumentSyncFacade {
-  void deps.documentAccess;
-  void deps.options;
-  return createCollabDomain({ db: deps.db, eventSink: deps.eventSink });
-}
-
 function createFacade(deps: {
   journal: UpdateJournal;
   coordinator: ReturnType<typeof createHocuspocusCoordinator>;
@@ -149,7 +130,7 @@ function createFacade(deps: {
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
-}): DocumentSyncFacade {
+}): CollabDomain {
   const schema = buildDocumentSchema();
   const codec = mdxCodec({ schema });
   const model = yProsemirrorModel(schema);
@@ -373,26 +354,6 @@ function createFacade(deps: {
   }
 
   return {
-    async getOrCreateMirror(documentId, initialContent) {
-      await deps.lifecycle.ensureDocument(documentId);
-      try {
-        const isEmpty = await deps.coordinator.withDocument(
-          documentId,
-          async (doc) => model.getBlocks(doc).length === 0,
-        );
-        if (isEmpty) {
-          const seeded = await setMarkdown(documentId as DocumentId, initialContent, SYSTEM_ORIGIN);
-          if (!seeded.ok) return seeded;
-        }
-        return Ok(documentId);
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-        throw cause;
-      }
-    },
-
-    forgetMirror() {},
-
     readAsMarkdown(documentId) {
       return readMarkdown(documentId);
     },

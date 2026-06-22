@@ -1,20 +1,22 @@
 /**
- * Collab-aware document sync helpers for ContextFS: routes agent/human writes
- * through the DocumentSync facade (validateAgentTurn, touch activity, corrupt-
- * mirror recovery) while system/import writes stay on the inner sync port.
+ * Collab-backed markdown helpers for ContextFS. The adapter keeps ContextFS
+ * provenance vocabulary out of the collab domain while routing agent/human
+ * writes through the richer write APIs that return attribution metadata.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
-  DocumentSyncFacade,
-  DocumentSyncPort,
+  CollabDomain,
   DocumentWriteOrigin,
   SyncError,
+  UpdateOrigin,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
 
-export type ContextCollabDocumentSync = DocumentSyncPort &
-  Partial<Pick<DocumentSyncFacade, "writeDocument" | "editDocument">>;
+export type ContextCollabDomain = Pick<
+  CollabDomain,
+  "readAsMarkdown" | "writeFromMarkdown" | "writeDocument" | "editDocument"
+>;
 
 export type CollabMarkdownResult =
   | { ok: true; markdown: string; updateSeq?: number }
@@ -25,7 +27,7 @@ function syncFault(error: SyncError): AdapterFault {
     case "not_found":
       return {
         code: "io_error",
-        message: `Yjs mirror not found for document: ${error.documentId}`,
+        message: `Yjs document not found: ${error.documentId}`,
       };
     case "checkpoint_not_found":
       return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
@@ -51,6 +53,22 @@ function provenanceToWriteOrigin(provenance: WriteProvenance): DocumentWriteOrig
   return null;
 }
 
+function provenanceToUpdateOrigin(provenance: WriteProvenance | undefined): UpdateOrigin {
+  if (!provenance) return { type: "system" };
+  if (provenance.type === "agent") return { type: "agent", actorTurnId: provenance.turnId };
+  if (provenance.type === "human") return { type: "user", userId: provenance.userId };
+  if (provenance.type === "import") {
+    return {
+      type: "import",
+      userId: provenance.userId,
+      source: provenance.source,
+      filename: provenance.filename,
+      sourceId: provenance.sourceId,
+    };
+  }
+  return { type: "system" };
+}
+
 function threadIdFromProvenance(provenance: WriteProvenance | undefined): ThreadId | undefined {
   if (provenance?.type === "agent" || provenance?.type === "human") {
     return provenance.threadId;
@@ -58,29 +76,23 @@ function threadIdFromProvenance(provenance: WriteProvenance | undefined): Thread
   return undefined;
 }
 
-export async function ensureCollabMirror(
-  documentSync: ContextCollabDocumentSync,
-  documentId: string,
-  markdown: string,
-  filetype: string,
-): Promise<{ ok: true } | { ok: false; error: AdapterFault }> {
-  const mirror = await documentSync.getOrCreateMirror(documentId, markdown, filetype);
-  if (!mirror.ok) return { ok: false, error: syncFault(mirror.error) };
-  return { ok: true };
+function thrownFault(error: unknown): AdapterFault {
+  return {
+    code: "io_error",
+    message: error instanceof Error ? error.message : String(error),
+  };
 }
 
 export async function writeCollabMarkdown(input: {
-  documentSync: ContextCollabDocumentSync;
+  documentSync: ContextCollabDomain;
   documentId: string;
-  seedMarkdown: string;
-  filetype: string;
   content: string;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
-  const { documentSync, documentId, seedMarkdown, filetype, content, provenance } = input;
+  const { documentSync, documentId, content, provenance } = input;
   const collabOrigin = provenance ? provenanceToWriteOrigin(provenance) : null;
 
-  if (collabOrigin && documentSync.writeDocument) {
+  if (collabOrigin) {
     try {
       const result = await documentSync.writeDocument({
         documentId,
@@ -90,57 +102,32 @@ export async function writeCollabMarkdown(input: {
       });
       return { ok: true, markdown: result.markdown, updateSeq: result.updateSeq };
     } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "io_error",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
+      return { ok: false, error: thrownFault(error) };
     }
   }
-
-  const mirror = await ensureCollabMirror(documentSync, documentId, seedMarkdown, filetype);
-  if (!mirror.ok) return mirror;
 
   const write = await documentSync.writeFromMarkdown(
     documentId,
     content,
-    provenance
-      ? provenance.type === "agent"
-        ? { type: "agent", actorTurnId: provenance.turnId }
-        : provenance.type === "human"
-          ? { type: "user", userId: provenance.userId }
-          : provenance.type === "import"
-            ? {
-                type: "import",
-                userId: provenance.userId,
-                source: provenance.source,
-                filename: provenance.filename,
-                sourceId: provenance.sourceId,
-              }
-            : { type: "system" }
-      : { type: "system" },
+    provenanceToUpdateOrigin(provenance),
   );
   if (!write.ok) return { ok: false, error: syncFault(write.error) };
 
   const readBack = await documentSync.readAsMarkdown(documentId);
   if (!readBack.ok) return { ok: false, error: syncFault(readBack.error) };
-  return { ok: true, markdown: readBack.value };
+  return { ok: true, markdown: readBack.value, updateSeq: write.value?.updateSeq };
 }
 
 export async function editCollabMarkdown(input: {
-  documentSync: ContextCollabDocumentSync;
+  documentSync: ContextCollabDomain;
   documentId: string;
-  seedMarkdown: string;
-  filetype: string;
   transform: (markdown: string) => string;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
-  const { documentSync, documentId, seedMarkdown, filetype, transform, provenance } = input;
+  const { documentSync, documentId, transform, provenance } = input;
   const collabOrigin = provenance ? provenanceToWriteOrigin(provenance) : null;
 
-  if (collabOrigin && documentSync.editDocument) {
+  if (collabOrigin) {
     try {
       const result = await documentSync.editDocument({
         documentId,
@@ -150,44 +137,21 @@ export async function editCollabMarkdown(input: {
       });
       return { ok: true, markdown: result.markdown, updateSeq: result.updateSeq };
     } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "io_error",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
+      return { ok: false, error: thrownFault(error) };
     }
   }
 
-  const mirror = await ensureCollabMirror(documentSync, documentId, seedMarkdown, filetype);
-  if (!mirror.ok) return mirror;
-
-  const readBack = await documentSync.readAsMarkdown(documentId);
-  if (!readBack.ok) return { ok: false, error: syncFault(readBack.error) };
+  const before = await documentSync.readAsMarkdown(documentId);
+  if (!before.ok) return { ok: false, error: syncFault(before.error) };
 
   const write = await documentSync.writeFromMarkdown(
     documentId,
-    transform(readBack.value),
-    provenance
-      ? provenance.type === "agent"
-        ? { type: "agent", actorTurnId: provenance.turnId }
-        : provenance.type === "human"
-          ? { type: "user", userId: provenance.userId }
-          : provenance.type === "import"
-            ? {
-                type: "import",
-                userId: provenance.userId,
-                source: provenance.source,
-                filename: provenance.filename,
-                sourceId: provenance.sourceId,
-              }
-            : { type: "system" }
-      : { type: "system" },
+    transform(before.value),
+    provenanceToUpdateOrigin(provenance),
   );
   if (!write.ok) return { ok: false, error: syncFault(write.error) };
 
   const after = await documentSync.readAsMarkdown(documentId);
   if (!after.ok) return { ok: false, error: syncFault(after.error) };
-  return { ok: true, markdown: after.value };
+  return { ok: true, markdown: after.value, updateSeq: write.value?.updateSeq };
 }

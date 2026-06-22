@@ -1,9 +1,8 @@
 # collab — server-side document infrastructure
 
 The Yjs editing engine lives in `@meridian/agent-edit` (`packages/agent-edit/`).
-This server domain supplies concrete persistence/transport adapters and keeps a
-temporary `DocumentSyncFacade` for existing context, upload, route, and WS
-callers.
+This server domain supplies concrete persistence/transport adapters and exposes a
+`CollabDomain` for context, upload, route, and WS callers.
 
 ## Current shape
 
@@ -11,15 +10,14 @@ callers.
 |---|---|---|
 | Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
-| Facade compatibility | `collab/index.ts`, `collab/composition.ts` | Real adapter, temporary API |
+| Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Real adapter over package core |
 | Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
-| Lifecycle/checkpoint facade ops | `collab/adapters/drizzle-facade-store.ts` | Server-only DB helpers |
+| Lifecycle/checkpoint ops | `collab/adapters/drizzle-facade-store.ts` | Server-only DB helpers |
 | In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
-| Old document store | `collab/ports/`, `collab/adapters/drizzle/`, `collab/adapters/in-memory/document-store.ts` | Kept until facade deletion pass |
 
-## Facade behavior
+## Domain behavior
 
 ### Full-document SET
 
@@ -44,20 +42,19 @@ no state. The Yjs tables FK to `documents.id`; callers are expected to create th
 
 ### Origin translation
 
-Facade origins remain collab-shaped:
+Public origins remain collab-shaped:
 
 - `{ type: "agent", actorTurnId }` → `agent:<turnId>` with `actorTurnId`
 - `{ type: "user", userId/actorUserId }` → `human:<userId>`
-- `{ type: "import", userId, ... }` → `human:<userId>`; if imports later become
-  userless, map them to `system`
+- `{ type: "import", userId, ... }` → `human:<userId>`; userless imports map to
+  `system`
 - `{ type: "system" }` → `system`
 
-Attribution maps package `human:<userId>` back to facade/API `originType:
-"user"`.
+Attribution maps package `human:<userId>` back to API `originType: "user"`.
 
 ### Hocuspocus persistence
 
-The WS route calls the facade hooks:
+The WS route calls the collab domain hooks:
 
 - `loadHocuspocusDocument` replays checkpoint + updates via `loadDocumentState`.
 - `persistConnectionUpdate` appends the connection update to the journal outside
@@ -70,13 +67,11 @@ The WS route calls the facade hooks:
 
 ## Stable server-side helpers
 
-`document-activity.ts` contains DB side effects for document writes:
-`touchDocumentActivity` and `updateMarkdownProjection`. They remain outside the
-package because they update Meridian read models and project/work activity.
+`document-activity.ts` contains DB helpers for document write read models:
+`touchDocumentActivity` and `updateMarkdownProjection`. The post-write hook that
+invokes them is intentionally deferred to a later pass.
 
 ## Deferred cutover work
 
-- Rewire consumers from `DocumentSyncFacade` to package/core-facing ports.
-- Delete mirror method names and the old row-level `DocumentStore` once no
-  consumer depends on them.
-- Re-enable the `TODO(agent-edit)` skipped tests after consumer rewiring.
+- Wire the document-activity post-write hook.
+- Keep schema-parity and TipTap extension work in the package cutover plan.
