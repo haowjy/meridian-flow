@@ -40,8 +40,6 @@ function resolvedSkill(overrides: Partial<ResolvedSkill> = {}): ResolvedSkill {
 
 const coreHandler = async () => ({ ok: true });
 const coreRegistrations = createCoreToolRegistrations({
-  read: coreHandler,
-  edit: coreHandler,
   write: coreHandler,
   list: coreHandler,
   search: coreHandler,

@@ -58,6 +58,10 @@ class TestContextPort implements ContextPort {
     return ok({});
   }
 
+  async ensureTrackedDocument() {
+    return ok({ documentId: "doc-1", created: false });
+  }
+
   async edit() {
     return ok({});
   }

@@ -105,6 +105,8 @@ export interface WriteContext {
   threadId?: string;
   /** Host turn id for undo metadata; cross-call turn grouping is completed above this API later. */
   turnId?: string;
+  /** Host/tool-call idempotency key. Replays return the original plain-text response. */
+  tool_use_id?: string;
 }
 
 export type WriteFunction = (command: WriteCommand, context?: WriteContext) => Promise<WriteResult>;

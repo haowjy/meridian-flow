@@ -15,7 +15,7 @@ import type { WriteProvenance } from "../ports/context-port.js";
 
 export type ContextCollabDomain = Pick<
   CollabDomain,
-  "readAsMarkdown" | "writeFromMarkdown" | "writeDocument" | "editDocument"
+  "ensureDocument" | "readAsMarkdown" | "writeFromMarkdown" | "writeDocument" | "editDocument"
 >;
 
 export type CollabMarkdownResult =

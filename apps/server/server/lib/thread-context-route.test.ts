@@ -33,6 +33,10 @@ class RecordingContextPort implements ContextPort {
     };
   }
 
+  async ensureTrackedDocument() {
+    return { ok: true as const, value: { documentId: "doc-1", created: false } };
+  }
+
   async edit() {
     return { ok: true as const, value: { documentId: "doc-1" } };
   }

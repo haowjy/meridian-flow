@@ -133,7 +133,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   const write: WriteFunction = async (command, context = {}) => {
     const session = await resolveSession(context);
-    const cacheKey = command.tool_use_id ? `${session.id}\u0000${command.tool_use_id}` : undefined;
+    const toolUseId = command.tool_use_id ?? context.tool_use_id;
+    const cacheKey = toolUseId ? `${session.id}\u0000${toolUseId}` : undefined;
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
       if (cached !== undefined) return cached;

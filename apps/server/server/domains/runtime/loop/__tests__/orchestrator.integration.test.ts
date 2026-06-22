@@ -1561,7 +1561,7 @@ describe("runtime loop integration", () => {
             type: "tool_use",
             toolCallId: "call-write-denied",
             toolName: "write",
-            input: { path: "kb://notes.md", content: "x" },
+            input: { command: "create", path: "kb://notes.md", content: "x" },
           },
         ],
         toolCalls: [],
@@ -1730,13 +1730,13 @@ describe("runtime loop integration", () => {
             type: "tool_use",
             toolCallId: "call-write",
             toolName: "write",
-            input: { path: "kb://notes.md", content: "x" },
+            input: { command: "create", path: "kb://notes.md", content: "x" },
           },
           {
             type: "tool_use",
-            toolCallId: "call-read",
-            toolName: "read",
-            input: { path: "kb://notes.md" },
+            toolCallId: "call-list",
+            toolName: "list",
+            input: { path: "kb://" },
           },
         ],
         toolCalls: [],
@@ -1774,7 +1774,7 @@ describe("runtime loop integration", () => {
     const events = await collectEvents(
       await orchestrator.runTurn({
         threadId: thread.id,
-        userText: "write and read",
+        userText: "write and list",
         tools: [
           {
             type: "function",
@@ -1784,15 +1784,15 @@ describe("runtime loop integration", () => {
           },
           {
             type: "function",
-            name: "read",
-            description: "Read file",
+            name: "list",
+            description: "List files",
             inputSchema: { type: "object" },
           },
         ],
       }),
     );
 
-    expect(executedTools).toEqual(["read"]);
+    expect(executedTools).toEqual(["list"]);
     expect(executedTools).not.toContain("write");
 
     const denied = events.find((e) => e.type === "permission.denied");

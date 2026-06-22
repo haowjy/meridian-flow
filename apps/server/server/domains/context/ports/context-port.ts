@@ -35,6 +35,11 @@ export interface ContextWriteResult {
   updateSeq?: number;
 }
 
+export interface ContextEnsureTrackedDocumentResult {
+  documentId: string;
+  created: boolean;
+}
+
 interface BaseListEntry {
   uri: string;
   documentId?: string;
@@ -164,6 +169,12 @@ export interface ContextPort {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
+
+  /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
+  ensureTrackedDocument(
+    uri: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
   /**
    * Atomically read, transform, and write tracked text content under the
