@@ -16,7 +16,11 @@ import {
 import { createPaymentProviderFromEnv } from "../domains/billing/payment-provider-factory.js";
 import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
-import { createDocumentSyncService, type DocumentSyncService } from "../domains/collab/index.js";
+import {
+  createCollabDomain,
+  createInMemoryCollabDomain,
+  type DocumentSyncService,
+} from "../domains/collab/index.js";
 import {
   createCheckpointArtifactFlush,
   createDrizzleFigureDocumentRepository,
@@ -214,7 +218,7 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const documentSync = createDocumentSyncService({ db, documentAccess, eventSink });
+  const documentSync = createCollabDomain({ db, eventSink });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -460,50 +464,7 @@ export function createInMemoryAppServices(): AppServices {
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
 
-  const documentSync: DocumentSyncService = {
-    async writeDocument() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async editDocument() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    bindHocuspocus() {},
-    async loadHocuspocusDocument() {
-      return undefined;
-    },
-    persistConnectionUpdate() {},
-    async storeHocuspocusDocument() {},
-    async drainHocuspocusPersistence() {},
-    getPersistenceQueueMetrics() {
-      return { queues: [], liveDocumentCount: 0, openConnectionCount: 0 };
-    },
-
-    async getLastUpdateAttribution() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    forgetMirror() {},
-    async getOrCreateMirror() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async readAsMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async editFromMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async writeFromMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async checkpoint() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async restore() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async listCheckpoints() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-  };
+  const documentSync: DocumentSyncService = createInMemoryCollabDomain();
 
   const inMemoryThreadEventHub: ThreadEventHub = {
     publishPersistedEvent() {},
@@ -601,7 +562,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
-    contextPorts: createInMemoryUnifiedContextPortFactory(),
+    contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     projects: {
       async findPersonalProjectId() {
         return null;
