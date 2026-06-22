@@ -160,7 +160,8 @@ function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
 
 function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFacadeStore {
   return {
-    createCheckpoint: (docId, state, reason) => journal.createCheckpoint(docId, state, reason),
+    createCheckpoint: (docId, state, reason, upToSeq) =>
+      journal.createCheckpoint(docId, state, reason, upToSeq),
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),

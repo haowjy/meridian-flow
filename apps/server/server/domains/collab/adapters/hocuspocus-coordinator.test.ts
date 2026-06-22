@@ -19,7 +19,7 @@ const DOC_ID = "doc.md";
 class MemoryJournal implements UpdateJournal {
   private readonly entries = new Map<
     string,
-    { checkpoint: Uint8Array | null; updates: PersistedUpdate[] }
+    { checkpoint: Uint8Array | null; checkpointUpToSeq: number; updates: PersistedUpdate[] }
   >();
 
   async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
@@ -32,12 +32,17 @@ class MemoryJournal implements UpdateJournal {
   async read(docId: string) {
     const entry = this.entries.get(docId);
     return entry
-      ? { checkpoint: entry.checkpoint, updates: [...entry.updates] }
+      ? {
+          checkpoint: entry.checkpoint,
+          updates: entry.updates.filter((update) => update.seq > entry.checkpointUpToSeq),
+        }
       : { checkpoint: null, updates: [] };
   }
 
-  async checkpoint(docId: string, state: Uint8Array): Promise<void> {
-    this.entry(docId).checkpoint = state;
+  async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
+    const entry = this.entry(docId);
+    entry.checkpoint = state;
+    entry.checkpointUpToSeq = upToSeq;
   }
 
   async compact() {
@@ -49,7 +54,7 @@ class MemoryJournal implements UpdateJournal {
   private entry(docId: string) {
     const existing = this.entries.get(docId);
     if (existing) return existing;
-    const created = { checkpoint: null, updates: [] };
+    const created = { checkpoint: null, checkpointUpToSeq: 0, updates: [] };
     this.entries.set(docId, created);
     return created;
   }
@@ -141,7 +146,7 @@ describe("createHocuspocusCoordinator", () => {
     const journal = new MemoryJournal();
     const persisted = new Y.Doc({ gc: false });
     persisted.getText("body").insert(0, "Alpha");
-    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(persisted));
+    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(persisted), 0);
 
     const live = new Y.Doc({ gc: false });
     const docs = new Map([[DOC_ID, live]]);

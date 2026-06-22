@@ -22,8 +22,11 @@ export interface UpdateJournal {
   /**
    * Write a checkpoint (full Y.Doc encoded state).
    * Replaces the previous checkpoint for this document; does not delete retained updates.
+   *
+   * upToSeq must be ≤ the updates reflected in state; excess replays are
+   * idempotent, but claiming a higher seq would permanently skip updates.
    */
-  checkpoint(docId: string, state: Uint8Array): Promise<void>;
+  checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
 
   /**
    * Fold updates older than cutoff into a checkpoint and expire reversal records.

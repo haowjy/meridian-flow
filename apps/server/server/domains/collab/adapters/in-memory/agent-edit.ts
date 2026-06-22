@@ -23,13 +23,20 @@ export type InMemoryCheckpointRecord = {
 
 type JournalEntry = {
   checkpoint: Uint8Array | null;
+  checkpointUpToSeq: number;
+  nextSeq: number;
   updates: PersistedUpdate[];
   reversals: ReversalRecord[];
   checkpoints: InMemoryCheckpointRecord[];
 };
 
 export type InMemoryJournal = UpdateJournal & {
-  createCheckpoint(docId: string, state: Uint8Array, reason: string): Promise<string>;
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
   getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
@@ -42,7 +49,14 @@ export function createInMemoryJournal(): InMemoryJournal {
   function entry(docId: string): JournalEntry {
     let existing = data.get(docId);
     if (!existing) {
-      existing = { checkpoint: null, updates: [], reversals: [], checkpoints: [] };
+      existing = {
+        checkpoint: null,
+        checkpointUpToSeq: 0,
+        nextSeq: 1,
+        updates: [],
+        reversals: [],
+        checkpoints: [],
+      };
       data.set(docId, existing);
     }
     return existing;
@@ -52,6 +66,7 @@ export function createInMemoryJournal(): InMemoryJournal {
     docId: string,
     state: Uint8Array,
     reason: string,
+    upToSeq: number,
   ): Promise<string> {
     const record: InMemoryCheckpointRecord = {
       id: String(nextCheckpointId++),
@@ -62,6 +77,7 @@ export function createInMemoryJournal(): InMemoryJournal {
     };
     const current = entry(docId);
     current.checkpoint = record.state;
+    current.checkpointUpToSeq = upToSeq;
     current.checkpoints.push(record);
     return record.id;
   }
@@ -69,7 +85,7 @@ export function createInMemoryJournal(): InMemoryJournal {
   return {
     async append(docId, update, meta) {
       const current = entry(docId);
-      const seq = current.updates.length + 1;
+      const seq = current.nextSeq++;
       if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
       current.updates.push({
         seq,
@@ -85,24 +101,27 @@ export function createInMemoryJournal(): InMemoryJournal {
         checkpoint: current.checkpoint,
         updates: current.updates.filter(
           (update) =>
+            update.seq > current.checkpointUpToSeq &&
             (opts.since === undefined || update.seq >= opts.since) &&
             (opts.until === undefined || update.seq <= opts.until),
         ),
       };
     },
 
-    async checkpoint(docId, state) {
-      await createCheckpoint(docId, state, "checkpoint");
+    async checkpoint(docId, state, upToSeq) {
+      await createCheckpoint(docId, state, "checkpoint", upToSeq);
     },
 
     async compact(docId, _before): Promise<CompactionResult> {
       const current = entry(docId);
       const doc = new Y.Doc({ gc: false });
       if (current.checkpoint) Y.applyUpdate(doc, current.checkpoint);
-      for (const update of current.updates) Y.applyUpdate(doc, update.update);
-      const updatesFolded = current.updates.length;
-      await createCheckpoint(docId, Y.encodeStateAsUpdate(doc), "compact");
-      current.updates = [];
+      const retained = current.updates.filter((update) => update.seq > current.checkpointUpToSeq);
+      for (const update of retained) Y.applyUpdate(doc, update.update);
+      const updatesFolded = retained.length;
+      const upToSeq = retained.at(-1)?.seq ?? current.checkpointUpToSeq;
+      await createCheckpoint(docId, Y.encodeStateAsUpdate(doc), "compact", upToSeq);
+      current.updates = current.updates.filter((update) => update.seq > upToSeq);
       return { updatesFolded, reversalsExpired: 0 };
     },
 

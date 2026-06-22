@@ -20,7 +20,12 @@ export type FacadeCheckpointRecord = {
 };
 
 export type CollabFacadeStore = {
-  createCheckpoint(docId: string, state: Uint8Array, reason: string): Promise<string>;
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
   getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
@@ -36,14 +41,6 @@ function toBytes(buffer: Buffer): Uint8Array {
 
 function toBuffer(bytes: Uint8Array): Buffer {
   return Buffer.from(bytes);
-}
-
-async function maxUpdateSeq(db: FacadeDb, documentId: string): Promise<number> {
-  const [row] = await db
-    .select({ maxSeq: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
-  return row?.maxSeq ?? 0;
 }
 
 async function upsertHead(
@@ -120,17 +117,16 @@ export function createServerDocumentLifecycle(
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
       const emptyDoc = new Y.Doc({ gc: false });
-      await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc));
+      await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc), 0);
     },
   };
 }
 
 export function createDrizzleCollabFacadeStore(db: FacadeDb): CollabFacadeStore {
   return {
-    async createCheckpoint(docId, state, reason) {
+    async createCheckpoint(docId, state, reason, upToSeq) {
       return db.transaction(async (tx) => {
         const txDb = tx as FacadeDb;
-        const upToSeq = await maxUpdateSeq(txDb, docId);
         const stateVector = Y.encodeStateVectorFromUpdate(state);
         const [row] = await txDb
           .insert(documentYjsCheckpoints)

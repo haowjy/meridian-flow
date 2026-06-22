@@ -463,7 +463,9 @@ interface MatrixCase {
 
 class MemoryJournal implements UpdateJournal {
   checkpointBytes: Uint8Array | null;
+  checkpointUpToSeq = 0;
   updates: PersistedUpdate[] = [];
+  nextSeq = 1;
   compactCalls = 0;
 
   constructor(checkpoint: Uint8Array | null) {
@@ -471,7 +473,7 @@ class MemoryJournal implements UpdateJournal {
   }
 
   appendSync(update: Uint8Array, meta: Omit<UpdateMeta, "seq"> & { seq?: number }): number {
-    const seq = this.updates.length + 1;
+    const seq = this.nextSeq++;
     if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
     this.updates.push({ seq, update, meta: { ...meta, seq } });
     return seq;
@@ -493,6 +495,7 @@ class MemoryJournal implements UpdateJournal {
       checkpoint: this.checkpointBytes,
       updates: this.updates.filter(
         (update) =>
+          update.seq > this.checkpointUpToSeq &&
           (opts.since === undefined || update.seq >= opts.since) &&
           (opts.until === undefined || update.seq <= opts.until),
       ),
@@ -512,21 +515,26 @@ class MemoryJournal implements UpdateJournal {
       update: new Uint8Array(update.update),
       meta: { ...update.meta },
     }));
+    copy.checkpointUpToSeq = this.checkpointUpToSeq;
+    copy.nextSeq = this.nextSeq;
     return copy;
   }
 
-  async checkpoint(_docId: string, state: Uint8Array): Promise<void> {
+  async checkpoint(_docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
     this.checkpointBytes = state;
+    this.checkpointUpToSeq = upToSeq;
   }
 
   async compact(_docId: string, _before: Date): Promise<CompactionResult> {
     this.compactCalls += 1;
-    const folded = this.updates.length;
+    const retained = this.updates.filter((update) => update.seq > this.checkpointUpToSeq);
+    const folded = retained.length;
     const doc = new Y.Doc({ gc: false });
     if (this.checkpointBytes) Y.applyUpdate(doc, this.checkpointBytes);
-    for (const update of this.updates) Y.applyUpdate(doc, update.update);
+    for (const update of retained) Y.applyUpdate(doc, update.update);
     this.checkpointBytes = Y.encodeStateAsUpdate(doc);
-    this.updates = [];
+    this.checkpointUpToSeq = retained.at(-1)?.seq ?? this.checkpointUpToSeq;
+    this.updates = this.updates.filter((update) => update.seq > this.checkpointUpToSeq);
     return { updatesFolded: folded, reversalsExpired: folded > 0 ? 1 : 0 };
   }
 

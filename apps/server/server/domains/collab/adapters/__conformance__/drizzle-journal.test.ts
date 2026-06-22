@@ -202,7 +202,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(initial.updates[2]?.meta).toEqual({ origin: "system", seq: seqC });
 
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc));
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), seqC);
       const afterCheckpoint = await journal.read(DOC_ID);
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
@@ -295,10 +295,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("replays updates appended after checkpoint state was captured", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+
+      const updateA = appendText(doc, "Alpha");
+      const seqA = await journal.append(DOC_ID, updateA, {
+        origin: `agent:${TURN_A}`,
+        actorTurnId: TURN_A,
+        seq: 0,
+      });
+      const checkpointState = Y.encodeStateAsUpdate(doc);
+
+      const updateB = appendText(doc, " Beta");
+      const seqB = await journal.append(DOC_ID, updateB, {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+
+      await journal.checkpoint(DOC_ID, checkpointState, seqA);
+
+      const snapshot = await journal.read(DOC_ID);
+      expect(snapshot.checkpoint).toBeInstanceOf(Uint8Array);
+      expect(snapshot.updates.map((update) => update.seq)).toEqual([seqB]);
+      expect(textFromSnapshot(snapshot.checkpoint, snapshot.updates)).toBe("Alpha Beta");
+    });
+
     it("preserves hot/cold undo parity through createAgentEditCore", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.\n\nBeta waits.", LIVE_CLIENT_ID);
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc));
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
 
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]]);
       const core = createAgentEditCore({

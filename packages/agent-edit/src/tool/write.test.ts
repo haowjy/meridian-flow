@@ -675,7 +675,13 @@ class MemoryCoordinator implements DocumentCoordinator {
 class MemoryJournal implements UpdateJournal {
   private readonly data = new Map<
     string,
-    { checkpoint: Uint8Array | null; updates: PersistedUpdate[]; reversals: ReversalRecord[] }
+    {
+      checkpoint: Uint8Array | null;
+      checkpointUpToSeq: number;
+      nextSeq: number;
+      updates: PersistedUpdate[];
+      reversals: ReversalRecord[];
+    }
   >();
 
   setCheckpoint(docId: string, checkpoint: Uint8Array): void {
@@ -684,7 +690,7 @@ class MemoryJournal implements UpdateJournal {
 
   async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
     const entry = this.entry(docId);
-    const seq = entry.updates.length + 1;
+    const seq = entry.nextSeq++;
     if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
     entry.updates.push({ seq, update, meta: { ...meta, seq } });
     return seq;
@@ -699,24 +705,29 @@ class MemoryJournal implements UpdateJournal {
       checkpoint: entry.checkpoint,
       updates: entry.updates.filter(
         (update) =>
+          update.seq > entry.checkpointUpToSeq &&
           (opts.since === undefined || update.seq >= opts.since) &&
           (opts.until === undefined || update.seq <= opts.until),
       ),
     };
   }
 
-  async checkpoint(docId: string, state: Uint8Array): Promise<void> {
-    this.entry(docId).checkpoint = state;
+  async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
+    const entry = this.entry(docId);
+    entry.checkpoint = state;
+    entry.checkpointUpToSeq = upToSeq;
   }
 
   async compact(docId: string, _before: Date): Promise<CompactionResult> {
     const entry = this.entry(docId);
     const doc = new Y.Doc({ gc: false });
     if (entry.checkpoint) Y.applyUpdate(doc, entry.checkpoint);
-    for (const update of entry.updates) Y.applyUpdate(doc, update.update);
-    const updatesFolded = entry.updates.length;
+    const retained = entry.updates.filter((update) => update.seq > entry.checkpointUpToSeq);
+    for (const update of retained) Y.applyUpdate(doc, update.update);
+    const updatesFolded = retained.length;
     entry.checkpoint = Y.encodeStateAsUpdate(doc);
-    entry.updates = [];
+    entry.checkpointUpToSeq = retained.at(-1)?.seq ?? entry.checkpointUpToSeq;
+    entry.updates = entry.updates.filter((update) => update.seq > entry.checkpointUpToSeq);
     return { updatesFolded, reversalsExpired: 0 };
   }
 
@@ -732,12 +743,14 @@ class MemoryJournal implements UpdateJournal {
 
   private entry(docId: string): {
     checkpoint: Uint8Array | null;
+    checkpointUpToSeq: number;
+    nextSeq: number;
     updates: PersistedUpdate[];
     reversals: ReversalRecord[];
   } {
     let entry = this.data.get(docId);
     if (!entry) {
-      entry = { checkpoint: null, updates: [], reversals: [] };
+      entry = { checkpoint: null, checkpointUpToSeq: 0, nextSeq: 1, updates: [], reversals: [] };
       this.data.set(docId, entry);
     }
     return entry;

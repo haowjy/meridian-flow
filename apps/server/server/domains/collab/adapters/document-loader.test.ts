@@ -9,6 +9,7 @@ const DOC_ID = "doc.md";
 
 class MemoryJournal implements UpdateJournal {
   private checkpointState: Uint8Array | null = null;
+  private checkpointUpToSeq = 0;
   private readonly updates: PersistedUpdate[] = [];
 
   async append(_docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
@@ -18,11 +19,15 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async read() {
-    return { checkpoint: this.checkpointState, updates: [...this.updates] };
+    return {
+      checkpoint: this.checkpointState,
+      updates: this.updates.filter((update) => update.seq > this.checkpointUpToSeq),
+    };
   }
 
-  async checkpoint(_docId: string, state: Uint8Array): Promise<void> {
+  async checkpoint(_docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
     this.checkpointState = state;
+    this.checkpointUpToSeq = upToSeq;
   }
 
   async compact() {
@@ -41,7 +46,7 @@ describe("loadDocumentState", () => {
     const journal = new MemoryJournal();
     const source = new Y.Doc({ gc: false });
     source.getText("body").insert(0, "Alpha");
-    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(source));
+    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(source), 0);
 
     const before = Y.encodeStateVector(source);
     source.getText("body").insert(5, " Beta");

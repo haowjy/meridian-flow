@@ -92,14 +92,6 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
-async function maxUpdateSeq(db: JournalDb, documentId: string): Promise<number> {
-  const [row] = await db
-    .select({ maxSeq: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
-  return row?.maxSeq ?? 0;
-}
-
 async function insertCheckpoint(
   db: JournalDb,
   documentId: string,
@@ -189,9 +181,10 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       };
     },
 
-    async checkpoint(docId, state) {
+    async checkpoint(docId, state, upToSeq) {
       await db.transaction(async (tx) => {
-        const upToSeq = await maxUpdateSeq(tx as JournalDb, docId);
+        // upToSeq must be ≤ the updates reflected in state; replaying extra
+        // updates is idempotent, but skipping one loses durable document data.
         await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, "checkpoint");
       });
     },
