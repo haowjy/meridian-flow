@@ -7,7 +7,8 @@ import type { GatewayConfig, ModelInfo, ProviderConfig } from "../domain/index.j
 import { buildFromRegistry, MODEL_REGISTRY } from "./registry.js";
 
 export interface GatewayEnvInput {
-  MODEL_PROVIDER?: "mock" | "anthropic" | "openai" | "auto" | string;
+  /** Only "mock" has behavior; all other values are ignored so the registry decides. */
+  MODEL_PROVIDER?: string;
   MODEL_CALL_TIMEOUT_MS?: number;
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

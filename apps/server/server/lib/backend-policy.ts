@@ -8,20 +8,17 @@
  */
 
 export type BackendTier = "local" | "live";
-export type ModelProvider = "mock" | "anthropic" | "openai" | "auto";
 export type ObjectStoreProvider = "local" | "s3";
 export type EventProvider = "none" | "noop" | "local";
 
 export type BackendEnv = {
   MERIDIAN_BACKENDS?: BackendTier;
-  MODEL_PROVIDER?: ModelProvider;
   OBJECT_STORE_PROVIDER?: ObjectStoreProvider;
   EVENT_PROVIDER?: EventProvider;
 };
 
 export type ResolvedBackends = {
   backends: BackendTier;
-  model: ModelProvider;
   objectStore: ObjectStoreProvider;
   event: EventProvider;
 };
@@ -45,15 +42,6 @@ export function resolveBackends(env: BackendEnv): ResolvedBackends {
   const backends = resolveBackendTier(env.MERIDIAN_BACKENDS);
   return {
     backends,
-    // MODEL_PROVIDER=auto uses real provider keys when present and falls back
-    // to the in-process mock gateway locally. Live-mode validation happens in
-    // startup-guards.ts so this resolver stays pure.
-    model: resolveProvider({
-      override: env.MODEL_PROVIDER,
-      backends,
-      local: "auto",
-      live: "auto",
-    }),
     objectStore: resolveProvider({
       override: env.OBJECT_STORE_PROVIDER,
       backends,

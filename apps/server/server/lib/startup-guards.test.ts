@@ -6,10 +6,6 @@ const TEST_BASE_ENV: ApiStartupEnv = {
   NODE_ENV: "development",
   APP_ENV: "dev",
   DATABASE_URL: "postgresql://meridian:meridian@localhost:54422/postgres",
-  MODEL_PROVIDER: "openai",
-  backends: "local",
-  ANTHROPIC_API_KEY: undefined,
-  OPENAI_API_KEY: "sk-openai-real",
   OBJECT_STORE_PROVIDER: "local",
   S3_ACCESS_KEY: undefined,
   S3_SECRET_KEY: undefined,
@@ -46,49 +42,6 @@ describe("evaluateApiStartupGuards", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.warnings).toContainEqual(
       expect.stringContaining("API_REPLICA_COUNT > 1 requires durable event/log coordination"),
-    );
-  });
-
-  it("fails when live + MODEL_PROVIDER=auto has no real provider key", () => {
-    const result = evaluateApiStartupGuards(
-      withOverrides({
-        backends: "live",
-        MODEL_PROVIDER: "auto",
-        OPENAI_API_KEY: "dev-openai-key",
-        ANTHROPIC_API_KEY: undefined,
-      }),
-    );
-    expect(result.errors).toContainEqual(
-      expect.stringContaining("MODEL_PROVIDER=auto requires at least one real provider key"),
-    );
-  });
-
-  it("allows local + MODEL_PROVIDER=auto without a real key", () => {
-    const result = evaluateApiStartupGuards(
-      withOverrides({
-        backends: "local",
-        MODEL_PROVIDER: "auto",
-        OPENAI_API_KEY: "dev-openai-key",
-        ANTHROPIC_API_KEY: undefined,
-      }),
-    );
-    expect(result.errors).not.toContainEqual(
-      expect.stringContaining("MODEL_PROVIDER=auto requires at least one real provider key"),
-    );
-  });
-
-  it("accepts live MODEL_PROVIDER=auto when only DEEPSEEK_API_KEY is real", () => {
-    const result = evaluateApiStartupGuards(
-      withOverrides({
-        backends: "live",
-        MODEL_PROVIDER: "auto",
-        ANTHROPIC_API_KEY: undefined,
-        OPENAI_API_KEY: "dev-openai-key",
-        DEEPSEEK_API_KEY: "sk-deepseek-real",
-      }),
-    );
-    expect(result.errors).not.toContainEqual(
-      expect.stringContaining("MODEL_PROVIDER=auto requires at least one real provider key"),
     );
   });
 
@@ -162,8 +115,6 @@ describe("evaluateApiStartupGuards", () => {
         NODE_ENV: "production",
         APP_ENV: "production",
         API_REPLICA_COUNT: 1,
-        MODEL_PROVIDER: "openai",
-        OPENAI_API_KEY: "sk-openai-real",
         WORKOS_API_KEY: "workos_live_ci_value",
         WORKOS_CLIENT_ID: "client_live_ci_value",
         WORKOS_COOKIE_PASSWORD: "production-cookie-password-32-chars-min",
