@@ -635,7 +635,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         treePathSegments(targetParentPath),
       );
 
-      const invalidatedDocumentIds: string[] = [];
       const now = this.nextTimestamp();
       if (input.source.kind === "file") {
         if (targetToken?.kind === "file") {
@@ -646,23 +645,19 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
           this.markMutatorWrite();
-          invalidatedDocumentIds.push(targetRow.id);
         }
         const { name, extension } = parseFilename(targetBasename);
         await this.runBeforeDestructiveWrite();
         const sourceRow = this.backing.documents.get(input.source.nodeId);
         if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
         if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
-        if (sourceRow.contextSourceId !== input.destinationSourceId) {
-          invalidatedDocumentIds.push(sourceRow.id);
-        }
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
         sourceRow.updatedAt = this.nextTimestamp();
         this.markMutatorWrite();
-        return Ok({ movedNodeId: sourceRow.id, invalidatedDocumentIds });
+        return Ok({ movedNodeId: sourceRow.id });
       }
 
       const root = this.backing.folders.get(input.source.nodeId);
@@ -689,10 +684,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.updatedAt = this.nextTimestamp();
       }
       this.markMutatorWrite();
-      if (input.source.sourceId !== input.destinationSourceId) {
-        invalidatedDocumentIds.push(...movedDocumentIds);
-      }
-      return Ok({ movedNodeId: movedRoot.id, invalidatedDocumentIds });
+      return Ok({ movedNodeId: movedRoot.id });
     });
   }
 
@@ -712,7 +704,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.deletedAt = now;
         doc.updatedAt = now;
         this.markMutatorWrite();
-        return Ok({ deletedNodeId: doc.id, invalidatedDocumentIds: [doc.id] });
+        return Ok({ deletedNodeId: doc.id });
       }
       const folder = this.backing.folders.get(token.nodeId);
       if (!folder || folder.deletedAt !== null) return Err({ code: "stale_source" });
@@ -729,7 +721,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       folderNow.deletedAt = now;
       folderNow.updatedAt = now;
       this.markMutatorWrite();
-      return Ok({ deletedNodeId: folderNow.id, invalidatedDocumentIds: [] });
+      return Ok({ deletedNodeId: folderNow.id });
     });
   }
 }

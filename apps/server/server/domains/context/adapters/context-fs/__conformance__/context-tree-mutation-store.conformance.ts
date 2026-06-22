@@ -60,7 +60,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(moved).toEqual({
         ok: true,
-        value: { movedNodeId: doc.id, invalidatedDocumentIds: [] },
+        value: { movedNodeId: doc.id },
       });
       expect(await h.mutationStore.inspect(h.sourceA, "draft.md")).toBeNull();
       expect(await h.mutationStore.inspect(h.sourceA, "archive/final.md")).toMatchObject({
@@ -103,7 +103,7 @@ export function describeContextTreeMutationStoreConformance(
     it("overwrites only the expected occupied file target", async () => {
       const h = await harness();
       const sourceDoc = await write(h.storeA, "draft.md", "draft");
-      const targetDoc = await write(h.storeB, "final.md", "old");
+      await write(h.storeB, "final.md", "old");
       const source = await h.mutationStore.inspect(h.sourceA, "draft.md");
       const target = await h.mutationStore.inspect(h.sourceB, "final.md");
       if (!source || !target) throw new Error("expected source and target tokens");
@@ -114,7 +114,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(moved).toEqual({
         ok: true,
-        value: { movedNodeId: sourceDoc.id, invalidatedDocumentIds: [targetDoc.id, sourceDoc.id] },
+        value: { movedNodeId: sourceDoc.id },
       });
       expect(await h.mutationStore.inspect(h.sourceB, "final.md")).toMatchObject({
         nodeId: sourceDoc.id,
@@ -140,7 +140,7 @@ export function describeContextTreeMutationStoreConformance(
       expect(await h.mutationStore.inspect(h.sourceA, "draft.md")).toMatchObject({ kind: "file" });
     });
 
-    it("moves a subtree across sources and invalidates contained documents", async () => {
+    it("moves a subtree across sources", async () => {
       const h = await harness();
       const doc = await write(h.storeA, "tree/child/qc.md", "nested");
       const source = await h.mutationStore.inspect(h.sourceA, "tree");
@@ -150,7 +150,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(moved).toEqual({
         ok: true,
-        value: { movedNodeId: source.nodeId, invalidatedDocumentIds: [doc.id] },
+        value: { movedNodeId: source.nodeId },
       });
       expect(await h.mutationStore.inspect(h.sourceA, "tree/child/qc.md")).toBeNull();
       expect(await h.mutationStore.inspect(h.sourceB, "incoming/tree/child/qc.md")).toMatchObject({
@@ -211,7 +211,7 @@ export function describeContextTreeMutationStoreConformance(
       });
     });
 
-    it("moves a directory within the same source without invalidating mirrors", async () => {
+    it("moves a directory within the same source", async () => {
       const h = await harness();
       const doc = await write(h.storeA, "tree/child/qc.md", "nested");
       const source = await h.mutationStore.inspect(h.sourceA, "tree");
@@ -221,7 +221,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(moved).toEqual({
         ok: true,
-        value: { movedNodeId: source.nodeId, invalidatedDocumentIds: [] },
+        value: { movedNodeId: source.nodeId },
       });
       expect(await h.mutationStore.inspect(h.sourceA, "tree/child/qc.md")).toBeNull();
       expect(await h.mutationStore.inspect(h.sourceA, "archive/tree/child/qc.md")).toMatchObject({
@@ -253,7 +253,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(await h.mutationStore.commitDelete(token)).toEqual({
         ok: true,
-        value: { deletedNodeId: folder, invalidatedDocumentIds: [] },
+        value: { deletedNodeId: folder },
       });
       expect(await h.mutationStore.inspect(h.sourceA, "empty")).toBeNull();
     });
@@ -266,7 +266,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(await h.mutationStore.commitDelete(token)).toEqual({
         ok: true,
-        value: { deletedNodeId: doc.id, invalidatedDocumentIds: [doc.id] },
+        value: { deletedNodeId: doc.id },
       });
       expect(await h.mutationStore.commitDelete(token)).toEqual({
         ok: false,
@@ -368,13 +368,13 @@ export function describeContextTreeMutationStoreConformance(
         await h.mutationStore.commitMove(prepared(fileToken, h.sourceA, "moved-fresh.md")),
       ).toEqual({
         ok: true,
-        value: { movedNodeId: doc.id, invalidatedDocumentIds: [] },
+        value: { movedNodeId: doc.id },
       });
       expect(
         await h.mutationStore.commitMove(prepared(folderToken, h.sourceA, "moved-leaf")),
       ).toEqual({
         ok: true,
-        value: { movedNodeId: folderToken.nodeId, invalidatedDocumentIds: [] },
+        value: { movedNodeId: folderToken.nodeId },
       });
 
       const movedFileToken = await h.mutationStore.inspect(h.sourceA, "moved-fresh.md");
@@ -398,7 +398,7 @@ export function describeContextTreeMutationStoreConformance(
 
       expect(moved).toEqual({
         ok: true,
-        value: { movedNodeId: source.nodeId, invalidatedDocumentIds: [doc.id] },
+        value: { movedNodeId: source.nodeId },
       });
       expect(await h.mutationStore.inspect(h.sourceB, "import/bundle/note.md")).toMatchObject({
         nodeId: doc.id,
