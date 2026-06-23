@@ -116,4 +116,18 @@ describe("mdx-bridge", () => {
       { text: " after", code: false },
     ]);
   });
+
+  it("rejects unsupported MDX components", () => {
+    expect(() => mdxToDoc("<Unknown />")).toThrow();
+  });
+
+  it("rejects expression and spread Figure attributes", () => {
+    expect(() => mdxToDoc("<Figure src={value} />")).toThrow();
+    expect(() => mdxToDoc("<Figure {...props} />")).toThrow();
+  });
+
+  it("rejects unknown Figure attributes and non-empty children", () => {
+    expect(() => mdxToDoc('<Figure src="map.png" unknown="x" />')).toThrow();
+    expect(() => mdxToDoc('<Figure src="map.png">caption</Figure>')).toThrow();
+  });
 });
