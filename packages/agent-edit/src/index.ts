@@ -9,6 +9,10 @@ export interface AgentEditCore {
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
+  getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
+  undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
+  redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
+  invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
   compact(docId: string, before: Date): Promise<CompactOnLoadResult>;
 }
 
@@ -19,6 +23,10 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     recover: tool.recover,
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
+    getAvailability: tool.getAvailability,
+    undoTurn: tool.undoTurn,
+    redoTurn: tool.redoTurn,
+    invalidateThread: tool.invalidateThread,
     compact: (docId, before) =>
       compactOnLoad(options.journal, { docId, before, registry: tool.registry }),
   };
@@ -54,6 +62,7 @@ export {
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
+export type { ActiveTurnSummary, MutationStore } from "./ports/mutation-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -81,6 +90,8 @@ export type {
   ReplaceCommand,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
+  TurnRedoResult,
+  TurnUndoResult,
   UndoCommand,
   UndoRedoOutcome,
   ViewCommand,
@@ -92,6 +103,7 @@ export type {
   WriteOutcome,
   WriteStatus,
 } from "./tool/types.js";
+export type { UndoAvailability } from "./undo/availability.js";
 export type { CompactOnLoadOptions, CompactOnLoadResult } from "./undo/compaction.js";
 export { compactOnLoad } from "./undo/compaction.js";
 export type {

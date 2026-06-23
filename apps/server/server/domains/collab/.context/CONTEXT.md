@@ -12,7 +12,7 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
 | Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade wiring over package codec/model plus journal/coordinator |
 | Full-document markdown SET/read | `collab/domain/markdown-document.ts` | Server-side engine over package primitives; not package public API |
-| Journal persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal`, lifecycle, checkpoint, and latest-update helpers |
+| Journal/mutation persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal`, `MutationStore`, lifecycle, checkpoint, and latest-update helpers |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
 | In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |

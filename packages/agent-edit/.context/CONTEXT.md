@@ -18,6 +18,16 @@ state is allowed to hide from replay. It must not be higher than what the state
 contains; replaying an already-included update is idempotent, but skipping one
 is durable data loss.
 
+### MutationStore (`src/ports/mutation-store.ts`)
+Query-only port over durable agent mutation metadata. The journal write side
+still owns atomic mutation creation/status flips (`appendBatch`,
+`persistReversal`, `persistRedo`); `MutationStore` answers only the questions
+the core needs after those writes: the latest active turn for a
+`(documentId, threadId)` pair and active per-turn summaries with each turn's
+earliest `createdSeq`. Availability uses that earliest retained sequence to
+distinguish "active and still undoable" from active metadata whose forward
+updates were compacted away.
+
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
 for the same docId (KeyedMutex on server, process-level lock on desktop).
@@ -58,9 +68,17 @@ only. Optional — falls back to a local in-memory map when omitted.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`, `compact()`,
-`commitResponse(responseId)`, and `rollbackResponse(responseId)`. Host runtimes
-that pass `WriteContext.responseId` must call exactly one of the response
-lifecycle methods after the model response finishes or is cancelled.
+`commitResponse(responseId)`, `rollbackResponse(responseId)`,
+`getAvailability(docId, threadId)`, `undoTurn(docId, threadId)`,
+`redoTurn(docId, threadId)`, and `invalidateThread(docId, threadId)`. Host
+runtimes that pass `WriteContext.responseId` must call exactly one of the
+response lifecycle methods after the model response finishes or is cancelled.
+`getAvailability` is the source of truth for whether turn-level undo/redo will
+attempt work: undo requires active mutation metadata plus retained forward
+journal rows; redo requires a retained reversed record/update and the existing
+linear-redo eligibility check. `invalidateThread` evicts cached runtime state
+and the hot `UndoManager` for a document/thread so the next access rebuilds from
+the live document and journal.
 
 ## Architecture
 
@@ -122,9 +140,9 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
   parse. Repeated serialize → parse cycles produce identical output.
 - **Hot/cold parity.** Live `um.undo()` and reconstructed `undo()` produce
   identical document state for the same turn.
-- **Write() is the only public mutation entry.** Low-level mutators
+- **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
-  root — only through the tool surface.
+  root; callers mutate through `write()` or the turn-level undo/redo seams.
 - **Coordinator/runtime failures → `internal_error`**, not
   `document_not_found`. Only document-missing from the coordinator is
   `document_not_found`.
