@@ -678,19 +678,20 @@ class MemoryJournal implements UpdateJournal {
   async persistRedo(
     _docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string },
+    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
     const index = this.reversals.findIndex(
       (record) =>
         record.threadId === ref.threadId &&
         record.turnId === ref.turnId &&
+        record.undoUpdateSeq === ref.undoUpdateSeq &&
         record.status === "reversed",
     );
     if (index === -1) return { consumed: false };
     const seq = this.appendSync(redoUpdate, meta);
     this.reversals[index] = { ...this.reversals[index], status: "redone" };
-    this.reactivateMutations(_docId, ref.threadId, ref.turnId);
+    this.reactivateMutations(_docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
     return { consumed: true, seq };
   }
 
@@ -738,6 +739,7 @@ class MemoryJournal implements UpdateJournal {
       if (record.documentId !== docId || record.threadId !== threadId || record.turnId !== turnId) {
         continue;
       }
+      if (record.status !== "active") continue;
       record.status = "reversed";
       record.undoUpdateSeq = undoUpdateSeq;
       record.reversedAt = reversedAt;
@@ -745,11 +747,17 @@ class MemoryJournal implements UpdateJournal {
     }
   }
 
-  private reactivateMutations(docId: string, threadId: string, turnId: string): void {
+  private reactivateMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+  ): void {
     for (const record of this.mutations) {
       if (record.documentId !== docId || record.threadId !== threadId || record.turnId !== turnId) {
         continue;
       }
+      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
       record.status = "active";
       delete record.undoUpdateSeq;
       delete record.reversedAt;

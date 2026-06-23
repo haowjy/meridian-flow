@@ -131,6 +131,11 @@ export type WriteProvenance =
 
 export interface ContextWriteOptions {
   origin?: WriteProvenance;
+  /**
+   * Create only the context row for a tracked document; the caller must ensure
+   * the live Y.Doc before committed content is applied.
+   */
+  deferDocumentSync?: boolean;
 }
 
 export interface ContextMoveOptions extends ContextWriteOptions {

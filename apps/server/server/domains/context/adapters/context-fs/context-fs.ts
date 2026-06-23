@@ -223,7 +223,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   async ensureTrackedDocument(
     path: string,
-    _options?: ContextWriteOptions,
+    options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) {
@@ -242,7 +242,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
-    await this.documentSync.ensureDocument(doc.id);
+    if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
     return Ok({ documentId: doc.id, created: !existing });
   }
 

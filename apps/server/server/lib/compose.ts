@@ -320,10 +320,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const checkpointRegistry = createCheckpointRegistry();
   const toolRegistry = createToolRegistry();
+  const responseWrites = createAgentEditResponseWriteLifecycle({
+    documentSync: ports.documentSync,
+    eventSink: ports.eventSink,
+  });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
+    responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
@@ -414,10 +419,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
-    responseWrites: createAgentEditResponseWriteLifecycle({
-      documentSync: ports.documentSync,
-      eventSink: ports.eventSink,
-    }),
+    responseWrites,
   });
   runTurnProxy.bind(orchestrator);
 

@@ -978,6 +978,11 @@ async function* generateEvents(
             return;
           }
         }
+        if (input.signal?.aborted) {
+          await rollbackActiveResponse();
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          return;
+        }
         await deps.responseWrites.commitResponse(responseId, {
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,

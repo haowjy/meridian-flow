@@ -51,15 +51,21 @@ function wiredTestGraph(input: WiredTestGraphOptions = {}) {
   const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
   const repos = createInMemoryRepositories(input.works ? { works: input.works } : undefined);
   const eventSink = input.eventSink ?? createInMemoryEventSink();
+  const toolDocumentSync = input.toolDocumentSync ?? documentSync;
+  const responseWrites = createAgentEditResponseWriteLifecycle({
+    documentSync: toolDocumentSync,
+    eventSink,
+  });
   const registrations = createWiredCoreToolRegistrations({
     threads: repos.threads,
     contextPorts,
-    documentSync: input.toolDocumentSync ?? documentSync,
+    documentSync: toolDocumentSync,
+    responseWrites,
     threadWorks: repos.threadWorks,
     documentTouches: repos.documentTouches,
     eventSink,
   });
-  return { documentSync, contextPorts, repos, registrations, eventSink };
+  return { documentSync, contextPorts, repos, registrations, eventSink, responseWrites };
 }
 
 function writeOutcome(text: string): WriteOutcome {
@@ -383,13 +389,16 @@ describe("createWiredCoreToolRegistrations", () => {
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
     const documentSync = createInMemoryCollabDomain();
     const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
+    const eventSink = createInMemoryEventSink();
+    const responseWrites = createAgentEditResponseWriteLifecycle({ documentSync, eventSink });
     const registrations = createWiredCoreToolRegistrations({
       threads: repos.threads,
       contextPorts,
       documentSync,
+      responseWrites,
       threadWorks: repos.threadWorks,
       documentTouches: repos.documentTouches,
-      eventSink: createInMemoryEventSink(),
+      eventSink,
     });
     const toolRegistry = createToolRegistry({ registrations });
     const executor = createToolExecutor(toolRegistry);
@@ -434,10 +443,7 @@ describe("createWiredCoreToolRegistrations", () => {
         eventWriter,
         checkpointRegistry: createCheckpointRegistry(),
         creditLedger,
-        responseWrites: createAgentEditResponseWriteLifecycle({
-          documentSync,
-          eventSink: createInMemoryEventSink(),
-        }),
+        responseWrites,
       }),
     );
 
@@ -520,11 +526,16 @@ describe("createWiredCoreToolRegistrations", () => {
       refreshDocumentProjection,
     };
     const eventSink = createInMemoryEventSink();
+    const responseWrites = createAgentEditResponseWriteLifecycle({
+      documentSync: toolDocumentSync,
+      eventSink,
+    });
     const toolRegistry = createToolRegistry({
       registrations: createWiredCoreToolRegistrations({
         threads: repos.threads,
         contextPorts,
         documentSync: toolDocumentSync,
+        responseWrites,
         threadWorks: repos.threadWorks,
         documentTouches: repos.documentTouches,
         eventSink,
@@ -562,10 +573,7 @@ describe("createWiredCoreToolRegistrations", () => {
         eventWriter: createInMemoryEventJournalWriter(),
         checkpointRegistry: createCheckpointRegistry(),
         creditLedger,
-        responseWrites: createAgentEditResponseWriteLifecycle({
-          documentSync: toolDocumentSync,
-          eventSink,
-        }),
+        responseWrites,
       }),
     );
 
@@ -588,6 +596,51 @@ describe("createWiredCoreToolRegistrations", () => {
       expect(read.value.content).toContain("Beta.");
       expect(read.value.content).toContain("Gamma.");
     }
+  });
+
+  it("deletes a newly tracked path when a staged create rolls back", async () => {
+    const { documentSync, executor, port, responseWrites, thread } = await wiredWriteHarness();
+
+    const result = await executor.executeTool(
+      {
+        id: "call-staged-create",
+        name: "write",
+        arguments: {
+          command: "create",
+          path: "kb://phantom.md",
+          content: "# Draft\n\nOpening line.",
+        },
+      },
+      {
+        signal: new AbortController().signal,
+        threadId: thread.id,
+        turnId: "turn-staged-create-rollback",
+        responseId: "response-staged-create-rollback",
+        agentSlug: null,
+      },
+    );
+
+    expect(stringOutput(result)).toContain("status: success");
+    const statBeforeRollback = await port.stat("kb://phantom.md");
+    expect(statBeforeRollback).toMatchObject({ ok: true });
+    if (!statBeforeRollback.ok) throw new Error("expected staged path");
+    const { documentId } = statBeforeRollback.value;
+    if (!documentId) throw new Error("expected staged document id");
+    await expect(documentSync.readAsMarkdown(documentId)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+
+    await responseWrites.rollbackResponse("response-staged-create-rollback");
+
+    await expect(port.stat("kb://phantom.md")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    await expect(documentSync.readAsMarkdown(documentId)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
   });
 
   it("does not status-sniff write(command=view) document content", async () => {
@@ -855,15 +908,17 @@ describe("createWiredCoreToolRegistrations", () => {
     const documentSync = createInMemoryCollabDomain();
     const portFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
     const gateway = askUserGateway();
+    const eventSink = createInMemoryEventSink();
     const executor = createToolExecutor(
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: portFactory,
           documentSync,
+          responseWrites: createAgentEditResponseWriteLifecycle({ documentSync, eventSink }),
           threadWorks: repos.threadWorks,
           documentTouches: repos.documentTouches,
-          eventSink: createInMemoryEventSink(),
+          eventSink,
         }),
       }),
     );

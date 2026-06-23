@@ -286,6 +286,8 @@ async function reverseMutationsForTurn(
   db: JournalDb,
   input: { documentId: string; threadId: string; turnId: string; undoUpdateSeq: number; at: Date },
 ): Promise<void> {
+  // Status flips are scoped to rows touched by this reversal. Cold reconstruction
+  // still targets turnId journal rows; finer w-id-targeted reconstruction is deferred.
   await db
     .update(agentEditMutations)
     .set({
@@ -299,13 +301,14 @@ async function reverseMutationsForTurn(
         eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
         eq(agentEditMutations.threadId, asThreadId(input.threadId)),
         eq(agentEditMutations.turnId, asTurnId(input.turnId)),
+        eq(agentEditMutations.status, "active"),
       ),
     );
 }
 
 async function reactivateMutationsForTurn(
   db: JournalDb,
-  input: { documentId: string; threadId: string; turnId: string },
+  input: { documentId: string; threadId: string; turnId: string; undoUpdateSeq: number },
 ): Promise<void> {
   await db
     .update(agentEditMutations)
@@ -320,6 +323,8 @@ async function reactivateMutationsForTurn(
         eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
         eq(agentEditMutations.threadId, asThreadId(input.threadId)),
         eq(agentEditMutations.turnId, asTurnId(input.turnId)),
+        eq(agentEditMutations.status, "reversed"),
+        eq(agentEditMutations.undoUpdateSeq, input.undoUpdateSeq),
       ),
     );
 }
@@ -507,6 +512,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
               eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
               eq(documentYjsReversals.turnId, asTurnId(ref.turnId)),
+              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           )
           .for("update")
@@ -523,12 +529,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
               eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
               eq(documentYjsReversals.turnId, asTurnId(ref.turnId)),
+              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           );
         await reactivateMutationsForTurn(txDb, {
           documentId: docId,
           threadId: ref.threadId,
           turnId: ref.turnId,
+          undoUpdateSeq: ref.undoUpdateSeq,
         });
 
         return { consumed: true, seq };
