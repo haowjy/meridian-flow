@@ -12,10 +12,7 @@ import type {
 import type { Codec } from "../codec/types.js";
 import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
-import {
-  type DocumentCoordinator,
-  isDocumentNotFoundError,
-} from "../ports/document-coordinator.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
@@ -29,18 +26,15 @@ import {
 } from "../undo/availability.js";
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
+import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
-import {
-  documentNotFound,
-  type InternalWriteResult,
-  isInternalWriteResult,
-} from "./internal-result.js";
+import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import {
   createMutationCommit,
   type JournaledUpdate,
   type SyncedMutationSummary,
 } from "./mutation-commit.js";
-import { rehydrateRedoStack } from "./redo-rehydration.js";
+import { createRuntimeStore, type RuntimeDocumentState } from "./runtime-store.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
@@ -94,16 +88,6 @@ export interface WriteTool {
   invalidateThread(docId: string, threadId: string): void;
 }
 
-interface RuntimeDocumentState {
-  doc: Y.Doc;
-  session: ActorSession;
-  threadId: string;
-  turnCounter: number;
-  undoStack: string[];
-  redoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
-  redoStackRehydrated: boolean;
-}
-
 interface FileAddress {
   filePath: string;
   fragment?: string;
@@ -151,13 +135,9 @@ type ReversalResult =
   | { ok: false; response: InternalWriteResult };
 
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
-const EMPTY_UPDATE_LENGTH = 2;
-
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
-  const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const responseBuffers = new Map<string, ResponseBuffer>();
-  const docsNeedingRecovery = new Set<string>();
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
@@ -169,6 +149,24 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
   });
+  const runtimeStore = createRuntimeStore({
+    coordinator: options.coordinator,
+    journal: options.journal,
+    registry,
+    model: options.model,
+    codec: options.codec,
+  });
+  const {
+    attachRuntime,
+    evictResponseRuntimes,
+    evictRuntime,
+    markSynced,
+    recoverCommittedResponseProjection,
+    requireSynced,
+    restoreRuntimeFromLive,
+    runtimeFor,
+    syncLocalFromLive,
+  } = runtimeStore;
 
   const write: WriteFunction = async (command, context = {}) => {
     const session = await resolveSession(context);
@@ -491,10 +489,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const stagedCreate = context.responseId !== undefined;
     if (!stagedCreate) await options.lifecycle.ensureDocument(address.filePath);
-    const liveCheck = await mutationCommit.withLive(address.filePath, command.command, (liveDoc) =>
-      options.model.getBlocks(liveDoc).length > 0
-        ? status("invalid_write", `File already exists: ${address.filePath}`)
-        : null,
+    const liveCheck = await withLiveDocument(
+      options.coordinator,
+      address.filePath,
+      command.command,
+      (liveDoc) =>
+        options.model.getBlocks(liveDoc).length > 0
+          ? status("invalid_write", `File already exists: ${address.filePath}`)
+          : null,
     );
     const missingLiveForStagedCreate =
       stagedCreate && isInternalWriteResult(liveCheck) && liveCheck.status === "document_not_found";
@@ -980,101 +982,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     };
   }
 
-  async function restoreRuntimeFromLive(
-    session: ActorSession,
-    docId: string,
-    runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-    restoreOptions: { recoverFromJournal?: boolean } = {},
-  ): Promise<InternalWriteResult | null> {
-    if (restoreOptions.recoverFromJournal || docsNeedingRecovery.has(docId)) {
-      try {
-        await options.coordinator.recover(docId);
-        docsNeedingRecovery.delete(docId);
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
-        throw cause;
-      }
-    }
-    const response = await mutationCommit.withLive(docId, commandName, (liveDoc) => {
-      const restored = new Y.Doc({ gc: false });
-      Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
-      runtime.doc = restored;
-      return null;
-    });
-    if (isInternalWriteResult(response)) return response;
-    markSynced(session, docId, runtime);
-    return null;
-  }
-
-  async function recoverLiveDocsFromJournal(
-    docBuffers: readonly ResponseDocumentBuffer[],
-  ): Promise<void> {
-    const seen = new Set<string>();
-    for (const docBuffer of docBuffers) {
-      if (seen.has(docBuffer.docId)) continue;
-      seen.add(docBuffer.docId);
-      await options.coordinator.recover(docBuffer.docId);
-      docsNeedingRecovery.delete(docBuffer.docId);
-    }
-  }
-
-  async function recoverCommittedResponseProjection(
-    docBuffers: readonly ResponseDocumentBuffer[],
-  ): Promise<void> {
-    await recoverLiveDocsFromJournal(docBuffers);
-    for (const docBuffer of docBuffers) {
-      registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
-      const restored = await restoreRuntimeFromLive(
-        docBuffer.session,
-        docBuffer.docId,
-        docBuffer.runtime,
-        docBuffer.commandName,
-      );
-      if (isInternalWriteResult(restored)) throw new Error(restored.text);
-      attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-    }
-  }
-
-  function attachRuntime(
-    session: ActorSession,
-    docId: string,
-    runtime: RuntimeDocumentState,
-  ): void {
-    docsNeedingRecovery.delete(docId);
-    runtimeDocs.set(runtimeKey(session, docId), runtime);
-    markSynced(session, docId, runtime);
-  }
-
-  function evictResponseRuntimes(
-    docBuffers: readonly ResponseDocumentBuffer[],
-    evictOptions: { needsRecovery?: boolean } = {},
-  ): void {
-    for (const docBuffer of docBuffers) {
-      evictRuntime(docBuffer.session, docBuffer.docId, evictOptions);
-    }
-  }
-
-  function evictRuntime(
-    session: ActorSession,
-    docId: string,
-    evictOptions: { needsRecovery?: boolean } = {},
-  ): void {
-    runtimeDocs.delete(runtimeKey(session, docId));
-    session.documents.delete(docId);
-    registry.evictThread(docId, session.threadId);
-    if (evictOptions.needsRecovery) docsNeedingRecovery.add(docId);
-  }
-
   function invalidateThread(docId: string, threadId: string): void {
     dropResponseBuffersForThread(docId, threadId);
-    for (const [key, runtime] of [...runtimeDocs]) {
-      if (runtime.threadId !== threadId) continue;
-      if (!key.endsWith(`\u0000${docId}`)) continue;
-      runtimeDocs.delete(key);
-      runtime.session.documents.delete(docId);
-    }
-    docsNeedingRecovery.add(docId);
+    runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
     registry.evictThread(docId, threadId);
   }
 
@@ -1104,91 +1014,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return [...buffer.docs.values()].some(
       (docBuffer) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit,
     );
-  }
-
-  function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
-    const key = runtimeKey(session, docId);
-    const existing = runtimeDocs.get(key);
-    if (existing) return existing;
-    const runtime: RuntimeDocumentState = {
-      doc: new Y.Doc({ gc: false }),
-      session,
-      threadId: session.threadId,
-      turnCounter: 0,
-      undoStack: [],
-      redoStack: [],
-      redoStackRehydrated: false,
-    };
-    runtimeDocs.set(key, runtime);
-    return runtime;
-  }
-
-  async function syncLocalFromLive(
-    session: ActorSession,
-    docId: string,
-    runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-  ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
-    if (docsNeedingRecovery.has(docId)) {
-      try {
-        await options.coordinator.recover(docId);
-        docsNeedingRecovery.delete(docId);
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) {
-          return { ok: false, response: documentNotFound(commandName, docId) };
-        }
-        throw cause;
-      }
-    }
-    const response = await mutationCommit.withLive(docId, commandName, async (liveDoc) => {
-      const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
-      if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
-      return null;
-    });
-    if (isInternalWriteResult(response)) return { ok: false, response };
-    if (shouldRehydrateRedoStack(runtime)) {
-      runtime.redoStack = await rehydrateRedoStack({
-        journal: options.journal,
-        docId,
-        threadId: session.threadId,
-      });
-      runtime.redoStackRehydrated = true;
-    }
-    markSynced(session, docId, runtime);
-    return { ok: true };
-  }
-
-  function shouldRehydrateRedoStack(runtime: RuntimeDocumentState): boolean {
-    return (
-      !runtime.redoStackRehydrated &&
-      runtime.undoStack.length === 0 &&
-      runtime.redoStack.length === 0
-    );
-  }
-
-  function requireSynced(
-    session: ActorSession,
-    docId: string,
-  ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult } {
-    const state = session.documents.get(docId);
-    if (!state) {
-      return {
-        ok: false,
-        response: errorResponse(
-          "not_found",
-          `No synced snapshot for ${docId}. Run write(command="view", file="${docId}") to re-sync.`,
-          docId,
-        ),
-      };
-    }
-    return { ok: true, stateVector: state.stateVector };
-  }
-
-  function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
-    session.documents.set(docId, {
-      stateVector: Y.encodeStateVector(runtime.doc),
-      turnCount: runtime.undoStack.length,
-    });
   }
 
   function nextTurnId(
@@ -1303,10 +1128,6 @@ function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolea
   return result.appliedEdits?.some((edit) => edit.kind !== "text") ?? false;
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
-}
-
 function responseCommitError(
   responseId: string,
   journalCommitted: boolean,
@@ -1400,10 +1221,6 @@ function agentMeta(turnId: string): UpdateMeta {
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
-}
-
-function runtimeKey(session: ActorSession, docId: string): string {
-  return `${session.id}\u0000${docId}`;
 }
 
 function popIfTop(stack: string[], value: string): void;

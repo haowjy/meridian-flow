@@ -11,10 +11,7 @@ import {
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
-import {
-  type DocumentCoordinator,
-  isDocumentNotFoundError,
-} from "../ports/document-coordinator.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
@@ -22,11 +19,8 @@ import type {
   UpdateJournal,
 } from "../ports/update-journal.js";
 import type { UndoManagerRegistry } from "../undo/manager-registry.js";
-import {
-  documentNotFound,
-  type InternalWriteResult,
-  isInternalWriteResult,
-} from "./internal-result.js";
+import { withLiveDocument } from "./coordinator.js";
+import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { WriteCommand } from "./types.js";
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -110,11 +104,6 @@ export interface MutationCommit {
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
   ): SyncedMutationSummary;
-  withLive<T>(
-    docId: string,
-    commandName: WriteCommand["command"],
-    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
-  ): Promise<T | InternalWriteResult | null>;
 }
 
 export function createMutationCommit(deps: {
@@ -133,7 +122,6 @@ export function createMutationCommit(deps: {
     mergeCommittedUpdatesToLive,
     applyConcurrent,
     summarizeMutationEcho,
-    withLive,
   };
 
   async function syncAfterLocalMutation(
@@ -280,11 +268,16 @@ export function createMutationCommit(deps: {
     liveOrigin: ConcurrentUpdateOrigin;
   }): Promise<Uint8Array | null | InternalWriteResult> {
     let concurrentUpdate: Uint8Array | null = null;
-    const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
-      concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
-      Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-      return null;
-    });
+    const response = await withLiveDocument(
+      coordinator,
+      input.docId,
+      input.commandName,
+      async (liveDoc) => {
+        concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
+        Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+        return null;
+      },
+    );
     if (isInternalWriteResult(response)) return response;
     return concurrentUpdate;
   }
@@ -304,19 +297,6 @@ export function createMutationCommit(deps: {
       turnId ? agentUpdateOrigin(turnId) : undefined,
       afterOwnVector,
     );
-  }
-
-  async function withLive<T>(
-    docId: string,
-    commandName: WriteCommand["command"],
-    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
-  ): Promise<T | InternalWriteResult | null> {
-    try {
-      return await coordinator.withDocument(docId, async (doc) => fn(doc));
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
-      throw cause;
-    }
   }
 }
 
