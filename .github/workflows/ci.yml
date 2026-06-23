@@ -1,11 +1,19 @@
 name: CI
 
 on:
+  # PRs into main or any h/** integration branch get verified on the way in.
   pull_request:
     branches: [main, "h/**"]
+  # Push CI only on mainline branches; feature/integration branch work is
+  # covered by its pull_request, so we avoid a duplicate run per push.
   push:
-    branches: [main, "h/**"]
+    branches: [main, "h/v3"]
   workflow_call:
+
+# Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
