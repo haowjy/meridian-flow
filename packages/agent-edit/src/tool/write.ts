@@ -1102,14 +1102,35 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     for (const [index, result] of results.entries()) {
       if (result.wId === undefined) continue;
       const entry = entries[index];
-      if (!entry?.mutation) continue;
-      registry.attachNextWId(
+      if (!entry?.mutation) {
+        surfaceWIdAttachFailure(
+          `Journal returned w-id ${result.wId} for batch entry ${index}, but that entry has no mutation metadata.`,
+        );
+        continue;
+      }
+      const attached = registry.attachNextWId(
         entry.docId,
         entry.mutation.threadId,
         entry.mutation.turnId,
         result.wId,
       );
+      if (!attached && registry.getState(entry.docId, entry.mutation.threadId)) {
+        // Missing hot managers are valid for cold-path fallback and response
+        // retries after staged runtimes were invalidated; durable mutation rows
+        // are still authoritative. An active manager with no matching item is drift.
+        surfaceWIdAttachFailure(
+          `Failed to attach committed w-id ${result.wId} to undo stack for document ${entry.docId}, thread ${entry.mutation.threadId}, turn ${entry.mutation.turnId}.`,
+        );
+      }
     }
+  }
+
+  function surfaceWIdAttachFailure(message: string): void {
+    if (process.env.NODE_ENV === "production") {
+      console.error(message);
+      return;
+    }
+    throw new Error(message);
   }
 
   async function mergeCommittedUpdatesToLive(

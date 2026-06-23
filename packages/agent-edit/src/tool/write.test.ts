@@ -302,6 +302,21 @@ describe("write tool dispatch", () => {
     expect(ctx.journal.mutationRecords("chapter.md")[0]?.reversedBy).toBeUndefined();
   });
 
+  it("surfaces committed w-id attachment drift in dev and test", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    ctx.undoRegistry.attachNextWId = () => false;
+
+    const result = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-attach-drift" },
+    );
+
+    expectOutcome(result, "internal_error", true);
+    expect(outcomeText(result)).toContain("Failed to attach committed w-id 1");
+    expect(outcomeText(result)).toContain("turn-attach-drift");
+  });
+
   it("rolls back staged response writes and restores the runtime doc from live", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -1166,6 +1181,7 @@ class MemoryJournal implements UpdateJournal {
       checkpoint: Uint8Array | null;
       checkpointUpToSeq: number;
       nextSeq: number;
+      nextWIdByThread: Map<string, number>;
       updates: PersistedUpdate[];
       reversals: ReversalRecord[];
       mutations: StoredMutation[];
@@ -1294,6 +1310,7 @@ class MemoryJournal implements UpdateJournal {
         checkpoint: entry.checkpoint ? new Uint8Array(entry.checkpoint) : null,
         checkpointUpToSeq: entry.checkpointUpToSeq,
         nextSeq: entry.nextSeq,
+        nextWIdByThread: new Map(entry.nextWIdByThread),
         updates: entry.updates.map((update) => ({
           seq: update.seq,
           update: new Uint8Array(update.update),
@@ -1323,6 +1340,7 @@ class MemoryJournal implements UpdateJournal {
     checkpoint: Uint8Array | null;
     checkpointUpToSeq: number;
     nextSeq: number;
+    nextWIdByThread: Map<string, number>;
     updates: PersistedUpdate[];
     reversals: ReversalRecord[];
     mutations: StoredMutation[];
@@ -1333,6 +1351,7 @@ class MemoryJournal implements UpdateJournal {
         checkpoint: null,
         checkpointUpToSeq: 0,
         nextSeq: 1,
+        nextWIdByThread: new Map(),
         updates: [],
         reversals: [],
         mutations: [],
@@ -1361,13 +1380,8 @@ class MemoryJournal implements UpdateJournal {
     createdSeq: number,
   ): number {
     const entry = this.entry(docId);
-    const wId =
-      Math.max(
-        0,
-        ...entry.mutations
-          .filter((record) => record.documentId === docId && record.threadId === threadId)
-          .map((record) => record.wId),
-      ) + 1;
+    const wId = entry.nextWIdByThread.get(threadId) ?? 1;
+    entry.nextWIdByThread.set(threadId, wId + 1);
     entry.mutations.push({
       wId,
       documentId: docId,
