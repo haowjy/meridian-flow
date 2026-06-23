@@ -10,6 +10,7 @@ import {
   expectNoInternalIds,
   expectOutcome,
   hashAt,
+  humanText,
   outcomeText,
 } from "./test-support/assertions.js";
 import type { MemoryJournal } from "./test-support/recording-journal.js";
@@ -21,6 +22,7 @@ import {
   REVERSAL_CLIENT_ID,
   THREAD_ID,
 } from "./test-support/write-tool-harness.js";
+import type { WriteOutcome } from "./types.js";
 
 describe("turn reversal", () => {
   it("flips mutation status when undoing and redoing a turn", async () => {
@@ -394,71 +396,135 @@ describe("turn reversal", () => {
     ).toBe("status: nothing_to_redo");
   });
 
-  it("formats undo and redo responses without internal UUIDs and with fresh undo hashes", async () => {
-    const ctx = harness({
-      "chapter.md":
-        "Beta waits in the clearing, sword drawn.\n\nThe wind carries the scent of rain.",
-    });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    const originalHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+  const noInternalIdCases: NoInternalIdCase[] = [
+    {
+      label: "full undo",
+      setup: () => deletedBlockScenario("turn-response-format-undo"),
+      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
+      assertExtra: ({ originalHash }, text) => {
+        const lines = text.split("\n");
+        expect(lines.slice(0, 4)).toEqual(["status: reversed", "", "undo: 1 edit(s)", ""]);
+        expect(lines[4]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
+        expect(lines[4]?.split("|")[0]).not.toBe(originalHash);
+      },
+    },
+    {
+      label: "full redo",
+      setup: async () => {
+        const state = await deletedBlockScenario("turn-response-format-redo");
+        await state.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+        return state;
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
+      assertExtra: (_state, text) => {
+        expect(text.split("\n").slice(0, 4)).toEqual([
+          "status: reversed",
+          "",
+          "redo: 1 edit(s)",
+          "",
+        ]);
+      },
+    },
+    {
+      label: "partial undo",
+      setup: () => simpleReplaceScenario("turn-partial-format-undo"),
+      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context),
+      assertExtra: (_state, text) => {
+        expect(text).toContain("status: partial");
+        expect(text).toContain("undo: 1 edit(s)");
+      },
+    },
+    {
+      label: "partial redo",
+      setup: async () => {
+        const state = await simpleReplaceScenario("turn-partial-format-redo");
+        await state.ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
+        return state;
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md", last: 2 }, context),
+      assertExtra: (_state, text) => {
+        expect(text).toContain("status: partial");
+        expect(text).toContain("redo: 1 edit(s)");
+      },
+    },
+    {
+      label: "expired redo",
+      setup: async () => {
+        const state = await simpleReplaceScenario("turn-expired-format", {
+          retention: { reversalWindowMs: -1 },
+        });
+        await state.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+        return state;
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
+      assertExtra: (_state, text) => {
+        expect(text).toBe("status: nothing_to_redo");
+      },
+    },
+    {
+      label: "reconciled undo",
+      setup: async () => {
+        const state = await simpleReplaceScenario("turn-reconciled-undo");
+        humanText(state.ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human ");
+        return state;
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
+      assertExtra: ({ ctx }, text) => {
+        expect(text).toContain("status: reconciled");
+        expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword."]);
+      },
+    },
+    {
+      label: "reconciled redo",
+      setup: async () => {
+        const state = await simpleReplaceScenario("turn-reconciled-redo");
+        await state.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+        humanText(state.ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human ");
+        return state;
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
+      assertExtra: ({ ctx }, text) => {
+        expect(text).toContain("status: reconciled");
+        expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
+      },
+    },
+    {
+      label: "multi-write same turn",
+      setup: async () => {
+        const ctx = harness({ "chapter.md": "Alpha sword.\n\nOmega." });
+        const turnContext = { ...context, turnId: "turn-with-two-writes" };
+        await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+        const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+        await ctx.core.write(
+          { command: "insert", file: "chapter.md", content: "Inserted.", after: alphaHash },
+          turnContext,
+        );
+        await ctx.core.write(
+          { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+          turnContext,
+        );
+        return { ctx };
+      },
+      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
+      assertExtra: ({ ctx }, text) => {
+        expect(text).toContain("status: reversed");
+        expect(text).toContain("undo: 1 edit(s)");
+        expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Omega."]);
+      },
+    },
+  ];
 
-    await ctx.core.write(
-      { command: "replace", file: `chapter.md#${originalHash}`, content: "" },
-      { ...context, turnId: "turn-response-format" },
-    );
+  it.each(noInternalIdCases)("does not leak internal ids in $label", async ({
+    setup,
+    run,
+    assertExtra,
+  }) => {
+    const state = await setup();
+    const output = await run(state);
+    const text = outcomeText(output);
 
-    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    const undoLines = outcomeText(undo).split("\n");
-
-    expect(undoLines.slice(0, 4)).toEqual(["status: reversed", "", "undo: 1 edit(s)", ""]);
-    expect(undoLines[4]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
-    expect(undoLines[4]?.split("|")[0]).not.toBe(originalHash);
-    expectNoInternalIds(outcomeText(undo));
-
-    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redo).split("\n").slice(0, 4)).toEqual([
-      "status: reversed",
-      "",
-      "redo: 1 edit(s)",
-      "",
-    ]);
-    expectNoInternalIds(outcomeText(redo));
-  });
-
-  it("formats partial undo and redo responses without internal IDs", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      { ...context, turnId: "turn-partial-format" },
-    );
-
-    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
-
-    expect(outcomeText(undo)).toContain("status: partial");
-    expect(outcomeText(undo)).toContain("undo: 1 edit(s)");
-    expectNoInternalIds(outcomeText(undo));
-
-    const redo = await ctx.core.write({ command: "redo", file: "chapter.md", last: 2 }, context);
-
-    expect(outcomeText(redo)).toContain("status: partial");
-    expect(outcomeText(redo)).toContain("redo: 1 edit(s)");
-    expectNoInternalIds(outcomeText(redo));
-  });
-
-  it("filters expired redo records without leaking internal IDs", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." }, { retention: { reversalWindowMs: -1 } });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      { ...context, turnId: "turn-expired-format" },
-    );
-    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-
-    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-
-    expect(outcomeText(redo)).toBe("status: nothing_to_redo");
-    expectNoInternalIds(outcomeText(redo));
+    expectNoInternalIds(text);
+    await assertExtra?.(state, text);
   });
 
   it("exposes user turn undo and redo seams by document and thread", async () => {
@@ -525,7 +591,6 @@ describe("turn reversal", () => {
 
       expect(undoText).toContain("status: reversed");
       expect(undoText).toContain("undo: 1 edit(s)");
-      expect(undoText).not.toContain("turn-with-two-writes");
       return blockTexts(ctx.liveDoc("chapter.md"));
     }
 
@@ -541,6 +606,46 @@ describe("turn reversal", () => {
     expect(cold).toEqual(hot);
   });
 });
+
+type NoInternalIdState = {
+  ctx: ReturnType<typeof harness>;
+  originalHash?: string;
+};
+
+type NoInternalIdCase = {
+  label: string;
+  setup: () => Promise<NoInternalIdState>;
+  run: (state: NoInternalIdState) => Promise<string | WriteOutcome>;
+  assertExtra?: (state: NoInternalIdState, text: string) => void | Promise<void>;
+};
+
+async function deletedBlockScenario(turnId: string): Promise<NoInternalIdState> {
+  const ctx = harness({
+    "chapter.md": "Beta waits in the clearing, sword drawn.\n\nThe wind carries the scent of rain.",
+  });
+  await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+  const originalHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+  await ctx.core.write(
+    { command: "replace", file: `chapter.md#${originalHash}`, content: "" },
+    { ...context, turnId },
+  );
+
+  return { ctx, originalHash };
+}
+
+async function simpleReplaceScenario(
+  turnId: string,
+  options?: Parameters<typeof harness>[1],
+): Promise<NoInternalIdState> {
+  const ctx = harness({ "chapter.md": "Alpha sword." }, options);
+  await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+  await ctx.core.write(
+    { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+    { ...context, turnId },
+  );
+  return { ctx };
+}
 
 function journalWithMissingMutationTarget(
   journal: MemoryJournal,
