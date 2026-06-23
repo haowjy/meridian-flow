@@ -7,6 +7,7 @@ import { shouldDeleteUndoItem, type UndoStackItemLike } from "./delete-filter.js
 const TURN_ID_META = "turnId";
 const THREAD_ID_META = "threadId";
 const DOC_ID_META = "docId";
+const W_ID_META = "wId";
 
 type UndoStackItemEvent = {
   stackItem: UndoStackItemLike;
@@ -35,6 +36,7 @@ export interface UndoStackMetadata {
   turnId?: string;
   docId?: string;
   threadId?: string;
+  wId?: number;
 }
 
 export interface LiveThreadUndoState {
@@ -283,6 +285,18 @@ export class UndoManagerRegistry {
     return stateForEntry(entry);
   }
 
+  attachNextWId(docId: string, threadId: string, turnId: string, wId: number): boolean {
+    const entry = this.entries.get(registryKey(docId, threadId));
+    if (!entry) return false;
+    for (const stackItem of entry.undoManager.undoStack) {
+      const metadata = stackMetadata(stackItem);
+      if (metadata.turnId !== turnId || metadata.wId !== undefined) continue;
+      writeMetadata(stackItem, { ...metadata, wId });
+      return true;
+    }
+    return false;
+  }
+
   hasActiveDocument(docId: string): boolean {
     for (const entry of this.entries.values()) if (entry.docId === docId) return true;
     return false;
@@ -431,6 +445,7 @@ function writeMetadata(stackItem: UndoStackItemLike, metadata: UndoStackMetadata
   if (metadata.turnId !== undefined) stackItem.meta.set(TURN_ID_META, metadata.turnId);
   if (metadata.threadId !== undefined) stackItem.meta.set(THREAD_ID_META, metadata.threadId);
   if (metadata.docId !== undefined) stackItem.meta.set(DOC_ID_META, metadata.docId);
+  if (metadata.wId !== undefined) stackItem.meta.set(W_ID_META, metadata.wId);
 }
 
 function stackMetadata(stackItem: UndoStackItemLike): UndoStackMetadata {
@@ -438,11 +453,16 @@ function stackMetadata(stackItem: UndoStackItemLike): UndoStackMetadata {
     turnId: stringMeta(stackItem.meta.get(TURN_ID_META)),
     threadId: stringMeta(stackItem.meta.get(THREAD_ID_META)),
     docId: stringMeta(stackItem.meta.get(DOC_ID_META)),
+    wId: numberMeta(stackItem.meta.get(W_ID_META)),
   };
 }
 
 function stringMeta(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function numberMeta(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
 }
 
 function registryKey(docId: string, threadId: string): string {

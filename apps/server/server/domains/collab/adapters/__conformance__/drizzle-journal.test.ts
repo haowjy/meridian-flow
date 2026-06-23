@@ -46,6 +46,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       contextSources,
+      agentEditMutations,
       documentYjsCheckpoints,
       documentYjsHeads,
       documentYjsReversals,
@@ -68,6 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function truncateAll(): Promise<void> {
       await truncateDrizzleTables(db, [
+        agentEditMutations,
         documentYjsReversals,
         documentYjsHeads,
         documentYjsUpdates,
@@ -152,6 +154,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documentYjsUpdates.documentId, DOC_ID))
         .orderBy(asc(documentYjsUpdates.id));
       return rows.map((row) => row.id);
+    }
+
+    async function mutationRows() {
+      return db
+        .select({
+          wId: agentEditMutations.wId,
+          documentId: agentEditMutations.documentId,
+          threadId: agentEditMutations.threadId,
+          turnId: agentEditMutations.turnId,
+          status: agentEditMutations.status,
+          createdSeq: agentEditMutations.createdSeq,
+          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
+          reversedBy: agentEditMutations.reversedBy,
+        })
+        .from(agentEditMutations)
+        .where(eq(agentEditMutations.documentId, DOC_ID))
+        .orderBy(asc(agentEditMutations.wId));
     }
 
     beforeEach(async () => {
@@ -336,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const updateA = appendText(doc, "Alpha");
       const updateB = appendText(doc, " Beta");
 
-      const seqs = await journal.appendBatch([
+      const results = await journal.appendBatch([
         {
           docId: DOC_ID,
           update: updateA,
@@ -348,8 +367,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
         },
       ]);
+      const seqs = results.map((result) => result.seq);
 
-      expect(seqs).toHaveLength(2);
+      expect(results).toHaveLength(2);
+      expect(results.every((result) => result.wId === undefined)).toBe(true);
       expect((await journal.read(DOC_ID)).updates.map((update) => update.seq)).toEqual(seqs);
       const idsBeforeFailure = await updateIds();
       const updateC = appendText(doc, " Gamma");
@@ -370,6 +391,59 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]),
       ).rejects.toThrow();
       expect(await updateIds()).toEqual(idsBeforeFailure);
+    });
+
+    it("mints mutation w-ids atomically with journal batches", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+
+      const first = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(doc, "Alpha"),
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_A },
+        },
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Beta"),
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_B },
+        },
+      ]);
+      expect(first.map((result) => result.wId)).toEqual([1, 2]);
+
+      const second = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Gamma"),
+          meta: { origin: `agent:${TURN_C}`, actorTurnId: TURN_C, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_C },
+        },
+      ]);
+      expect(second.map((result) => result.wId)).toEqual([3]);
+
+      expect(await mutationRows()).toMatchObject([
+        { wId: 1, turnId: TURN_A, status: "active", createdSeq: first[0]?.seq },
+        { wId: 2, turnId: TURN_B, status: "active", createdSeq: first[1]?.seq },
+        { wId: 3, turnId: TURN_C, status: "active", createdSeq: second[0]?.seq },
+      ]);
+
+      const idsBeforeFailure = await updateIds();
+      await expect(
+        journal.appendBatch([
+          {
+            docId: DOC_ID,
+            update: appendText(doc, " Rolled back"),
+            meta: { origin: `agent:${TURN_D}`, actorTurnId: TURN_D, seq: 0 },
+            mutation: { threadId: MISSING_THREAD_ID, turnId: TURN_D },
+          },
+        ]),
+      ).rejects.toThrow();
+
+      expect(await updateIds()).toEqual(idsBeforeFailure);
+      expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3]);
     });
 
     it("replays updates appended after checkpoint state was captured", async () => {
@@ -478,10 +552,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
+      expect(await mutationRows()).toMatchObject([
+        { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null },
+      ]);
 
       const undo = await core.write({ command: "undo", file: DOC_ID }, context);
       expect(undo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
+      expect(await mutationRows()).toMatchObject([
+        { turnId: TURN_A, status: "reversed", wId: 1, reversedBy: "agent" },
+      ]);
       const [reversal] = await journal.readReversals(DOC_ID, {
         threadId: THREAD_ID,
         status: ["reversed"],
@@ -507,6 +587,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const redo = await restarted.write({ command: "redo", file: DOC_ID }, context);
       expect(redo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
+      expect(await mutationRows()).toMatchObject([
+        { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null, reversedBy: null },
+      ]);
       expect(
         await journal.readReversals(DOC_ID, { threadId: THREAD_ID, status: ["reversed"] }),
       ).toEqual([]);

@@ -3,6 +3,8 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import {
   DocumentNotFoundError,
+  type JournalBatchAppendEntry,
+  type JournalBatchAppendResult,
   type PersistedUpdate,
   type UpdateJournal,
   type UpdateMeta,
@@ -30,13 +32,14 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async appendBatch(
-    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
-  ): Promise<number[]> {
-    const seqs: number[] = [];
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]> {
+    const results: JournalBatchAppendResult[] = [];
     for (const batchEntry of entries) {
-      seqs.push(await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta));
+      const seq = await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta);
+      results.push({ seq });
     }
-    return seqs;
+    return results;
   }
 
   async read(docId: string) {

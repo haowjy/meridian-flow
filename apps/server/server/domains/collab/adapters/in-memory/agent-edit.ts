@@ -4,6 +4,8 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   DocumentNotFoundError,
+  type JournalBatchAppendEntry,
+  type JournalBatchAppendResult,
   type JournalSnapshot,
   type PersistedUpdate,
   type ReversalRecord,
@@ -28,7 +30,21 @@ type JournalEntry = {
   nextSeq: number;
   updates: PersistedUpdate[];
   reversals: ReversalRecord[];
+  mutations: StoredMutation[];
   checkpoints: InMemoryCheckpointRecord[];
+};
+
+type StoredMutation = {
+  wId: number;
+  documentId: string;
+  threadId: string;
+  turnId: string;
+  status: "active" | "reversed";
+  createdSeq: number;
+  undoUpdateSeq?: number;
+  createdAt: Date;
+  reversedAt?: Date;
+  reversedBy?: "user" | "agent";
 };
 
 export type InMemoryJournal = UpdateJournal & {
@@ -56,6 +72,7 @@ export function createInMemoryJournal(): InMemoryJournal {
         nextSeq: 1,
         updates: [],
         reversals: [],
+        mutations: [],
         checkpoints: [],
       };
       data.set(docId, existing);
@@ -76,8 +93,8 @@ export function createInMemoryJournal(): InMemoryJournal {
   }
 
   function appendBatchPersisted(
-    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
-  ): number[] {
+    entries: readonly JournalBatchAppendEntry[],
+  ): JournalBatchAppendResult[] {
     const nextSeqByDoc = new Map<string, number>();
     for (const batchEntry of entries) {
       const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? entry(batchEntry.docId).nextSeq;
@@ -86,9 +103,72 @@ export function createInMemoryJournal(): InMemoryJournal {
       }
       nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
     }
-    return entries.map((batchEntry) =>
-      appendPersisted(batchEntry.docId, batchEntry.update, batchEntry.meta),
-    );
+    const createdAt = new Date();
+    return entries.map((batchEntry) => {
+      const seq = appendPersisted(batchEntry.docId, batchEntry.update, batchEntry.meta);
+      if (!batchEntry.mutation) return { seq };
+      const wId = appendMutation(
+        batchEntry.docId,
+        batchEntry.mutation.threadId,
+        batchEntry.mutation.turnId,
+        seq,
+        createdAt,
+      );
+      return { seq, wId };
+    });
+  }
+
+  function appendMutation(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    createdSeq: number,
+    createdAt: Date,
+  ): number {
+    const current = entry(docId);
+    const wId =
+      Math.max(
+        0,
+        ...current.mutations
+          .filter((record) => record.documentId === docId && record.threadId === threadId)
+          .map((record) => record.wId),
+      ) + 1;
+    current.mutations.push({
+      wId,
+      documentId: docId,
+      threadId,
+      turnId,
+      status: "active",
+      createdSeq,
+      createdAt,
+    });
+    return wId;
+  }
+
+  function reverseMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+    reversedAt: Date,
+  ): void {
+    for (const record of entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "reversed";
+      record.undoUpdateSeq = undoUpdateSeq;
+      record.reversedAt = reversedAt;
+      record.reversedBy = "agent";
+    }
+  }
+
+  function reactivateMutations(docId: string, threadId: string, turnId: string): void {
+    for (const record of entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "active";
+      delete record.undoUpdateSeq;
+      delete record.reversedAt;
+      delete record.reversedBy;
+    }
   }
 
   async function createCheckpoint(
@@ -154,6 +234,7 @@ export function createInMemoryJournal(): InMemoryJournal {
       const seq = appendPersisted(docId, undoUpdate, { origin: "system", seq: 0 });
       record.undoUpdateSeq = seq;
       entry(docId).reversals.push({ ...record });
+      reverseMutations(docId, record.threadId, record.turnId, seq, record.reversedAt ?? new Date());
     },
 
     async persistRedo(docId, redoUpdate, ref, meta) {
@@ -167,6 +248,7 @@ export function createInMemoryJournal(): InMemoryJournal {
       if (index === -1) return { consumed: false };
       const seq = appendPersisted(docId, redoUpdate, meta);
       current.reversals[index] = { ...current.reversals[index], status: "redone" };
+      reactivateMutations(docId, ref.threadId, ref.turnId);
       return { consumed: true, seq };
     },
 

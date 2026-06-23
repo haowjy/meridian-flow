@@ -12,6 +12,7 @@ import type {
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  agentEditMutations,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversals,
@@ -243,6 +244,72 @@ async function appendUpdate(
   return row.id;
 }
 
+async function appendMutation(
+  db: JournalDb,
+  input: { documentId: string; threadId: string; turnId: string; createdSeq: number },
+): Promise<number> {
+  const [row] = await db
+    .insert(agentEditMutations)
+    .values({
+      wId: sql<number>`(
+        SELECT COALESCE(MAX(${agentEditMutations.wId}), 0) + 1
+        FROM ${agentEditMutations}
+        WHERE ${agentEditMutations.documentId} = ${asDocumentId(input.documentId)}
+          AND ${agentEditMutations.threadId} = ${asThreadId(input.threadId)}
+      )`,
+      documentId: asDocumentId(input.documentId),
+      threadId: asThreadId(input.threadId),
+      turnId: asTurnId(input.turnId),
+      status: "active",
+      createdSeq: input.createdSeq,
+    })
+    .returning({ wId: agentEditMutations.wId });
+  if (!row) throw new Error("Failed to insert agent edit mutation");
+  return row.wId;
+}
+
+async function reverseMutationsForTurn(
+  db: JournalDb,
+  input: { documentId: string; threadId: string; turnId: string; undoUpdateSeq: number; at: Date },
+): Promise<void> {
+  await db
+    .update(agentEditMutations)
+    .set({
+      status: "reversed",
+      undoUpdateSeq: input.undoUpdateSeq,
+      reversedAt: input.at,
+      reversedBy: "agent",
+    })
+    .where(
+      and(
+        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
+        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
+        eq(agentEditMutations.turnId, asTurnId(input.turnId)),
+      ),
+    );
+}
+
+async function reactivateMutationsForTurn(
+  db: JournalDb,
+  input: { documentId: string; threadId: string; turnId: string },
+): Promise<void> {
+  await db
+    .update(agentEditMutations)
+    .set({
+      status: "active",
+      undoUpdateSeq: null,
+      reversedAt: null,
+      reversedBy: null,
+    })
+    .where(
+      and(
+        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
+        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
+        eq(agentEditMutations.turnId, asTurnId(input.turnId)),
+      ),
+    );
+}
+
 function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeCheckpointRecord {
   return {
     id: String(row.id),
@@ -263,11 +330,20 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       if (entries.length === 0) return [];
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
-        const seqs: number[] = [];
+        const results: Array<{ seq: number; wId?: number }> = [];
         for (const entry of entries) {
-          seqs.push(await appendUpdate(txDb, entry.docId, entry.update, entry.meta));
+          const seq = await appendUpdate(txDb, entry.docId, entry.update, entry.meta);
+          const wId = entry.mutation
+            ? await appendMutation(txDb, {
+                documentId: entry.docId,
+                threadId: entry.mutation.threadId,
+                turnId: entry.mutation.turnId,
+                createdSeq: seq,
+              })
+            : undefined;
+          results.push(wId === undefined ? { seq } : { seq, wId });
         }
-        return seqs;
+        return results;
       });
     },
 
@@ -394,6 +470,13 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
               reversedByUserId: asUserId(record.reversedByUserId) ?? null,
             },
           });
+        await reverseMutationsForTurn(txDb, {
+          documentId: docId,
+          threadId: record.threadId,
+          turnId: record.turnId,
+          undoUpdateSeq,
+          at: record.reversedAt ?? new Date(),
+        });
       });
       if (undoUpdateSeq === undefined) throw new Error("Failed to persist reversal update");
       record.undoUpdateSeq = undoUpdateSeq;
@@ -428,6 +511,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
               eq(documentYjsReversals.turnId, asTurnId(ref.turnId)),
             ),
           );
+        await reactivateMutationsForTurn(txDb, {
+          documentId: docId,
+          threadId: ref.threadId,
+          turnId: ref.turnId,
+        });
 
         return { consumed: true, seq };
       });
