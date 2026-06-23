@@ -3,8 +3,13 @@ import type * as Y from "yjs";
 import type { ParsedContent, Span } from "../codec/types.js";
 
 /**
- * Pluggable document model — carries block semantics and apply routing.
- * The y-prosemirror implementation lives in model/y-prosemirror.ts (Step 5).
+ * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
+ * This is the intended swap point for eventually editing non-ProseMirror Yjs
+ * documents — but that is NOT YET realized: today the only implementation is
+ * y-prosemirror (`model/y-prosemirror.ts`) and the apply core still calls
+ * ProseMirror-specific operations (schema-aware parse via the codec, Tier-2 block
+ * diff), so full content-model swappability is deferred. Keep this generic over
+ * `Block` so the seam stays viable; see deferred GH issue #70 (generic Yjs edit core).
  */
 export interface DocumentModel<Block> {
   /** Get all top-level blocks from the Yjs document. */

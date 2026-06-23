@@ -30,10 +30,20 @@ adapters or in the MCP distribution package.
 
 ## The invariant
 
-Every deployment implements `UpdateJournal`. Everything else is pluggable:
-different codecs, different document models (y-prosemirror, plain Y.Text),
-different coordinators (Hocuspocus, in-process mutex), different
-`ActorSessionStore` implementations.
+The Yjs CRDT machinery is generic and reusable on any `Y.Doc`: updates, native
+`Y.UndoManager` undo/redo + the reversal journal, idempotency, concurrent-edit
+detection, and the host infra ports (`UpdateJournal`, `DocumentCoordinator`,
+`DocumentLifecycle`, `ActorSessionStore`, codecs, coordinators — Hocuspocus /
+in-process mutex). None of that needs ProseMirror.
+
+The **content editing model is ProseMirror today** — the `write` command grammar
+edits a block-structured markdown document represented as y-prosemirror. Making
+the content model swappable so the library can edit non-ProseMirror Yjs documents
+is an **intended future direction, deferred** (GH issue #70, "generic Yjs edit
+core"). The seams for it exist (`Codec`, `DocumentModel<Block>`) but are not yet
+fully realized — the apply core still calls ProseMirror-specific operations, so
+y-prosemirror is the only working implementation. Do not over-claim it as done;
+do not delete the seams.
 
 ## v1 scope
 
