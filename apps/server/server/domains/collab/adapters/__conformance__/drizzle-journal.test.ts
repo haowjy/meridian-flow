@@ -21,6 +21,7 @@ const USER_ID = "00000000-0000-4000-8000-000000000201";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000202";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000203";
 const DOC_ID = "00000000-0000-4000-8000-000000000204";
+const MISSING_DOC_ID = "00000000-0000-4000-8000-0000000002fe";
 const THREAD_ID = "00000000-0000-4000-8000-000000000205";
 const TURN_A = "00000000-0000-4000-8000-000000000206";
 const TURN_B = "00000000-0000-4000-8000-000000000207";
@@ -326,6 +327,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toEqual({ consumed: false });
       expect(await updateIds()).toEqual(idsAfterRedo);
+    });
+
+    it("appends journal batches in one transaction", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+      const updateA = appendText(doc, "Alpha");
+      const updateB = appendText(doc, " Beta");
+
+      const seqs = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: updateA,
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+        },
+        {
+          docId: DOC_ID,
+          update: updateB,
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+        },
+      ]);
+
+      expect(seqs).toHaveLength(2);
+      expect((await journal.read(DOC_ID)).updates.map((update) => update.seq)).toEqual(seqs);
+      const idsBeforeFailure = await updateIds();
+      const updateC = appendText(doc, " Gamma");
+      const updateD = appendText(doc, " Delta");
+
+      await expect(
+        journal.appendBatch([
+          {
+            docId: DOC_ID,
+            update: updateC,
+            meta: { origin: `agent:${TURN_C}`, actorTurnId: TURN_C, seq: 0 },
+          },
+          {
+            docId: MISSING_DOC_ID,
+            update: updateD,
+            meta: { origin: `agent:${TURN_D}`, actorTurnId: TURN_D, seq: 0 },
+          },
+        ]),
+      ).rejects.toThrow();
+      expect(await updateIds()).toEqual(idsBeforeFailure);
     });
 
     it("replays updates appended after checkpoint state was captured", async () => {

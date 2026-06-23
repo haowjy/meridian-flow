@@ -1,5 +1,11 @@
 import type { CompactionResult, JournalSnapshot, ReversalRecord, UpdateMeta } from "./types.js";
 
+export interface JournalBatchAppendEntry {
+  docId: string;
+  update: Uint8Array;
+  meta: UpdateMeta;
+}
+
 /**
  * Ordered Yjs update journal — the foundation every deployment implements.
  * Adapters guarantee durable append order, checkpoint storage, and atomic reversal writes.
@@ -11,6 +17,12 @@ export interface UpdateJournal {
    * Rejects when seq in meta does not match the next expected sequence.
    */
   append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+
+  /**
+   * Append multiple Yjs updates in one all-or-nothing transaction.
+   * Returns assigned sequence numbers in the same order as entries.
+   */
+  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<number[]>;
 
   /**
    * Read checkpoint plus updates in sequence order.

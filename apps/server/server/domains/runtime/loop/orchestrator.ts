@@ -704,6 +704,15 @@ async function* generateEvents(
   // Local state: accumulate turns + blocks to avoid re-reading the entire
   // thread from the DB on every tool-loop iteration.
   let currentAssistantTurn: Turn = assistantTurn;
+  let activeResponseId: string | undefined;
+
+  async function rollbackActiveResponse(): Promise<void> {
+    if (!activeResponseId) return;
+    const responseId = activeResponseId;
+    activeResponseId = undefined;
+    await deps.responseWrites.rollbackResponse(responseId);
+  }
+
   try {
     const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
@@ -887,15 +896,16 @@ async function* generateEvents(
       // turn are numbered contiguously regardless of which iteration
       // created them.
       if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
+        activeResponseId = responseId;
         if (input.signal?.aborted) {
-          await deps.responseWrites.rollbackResponse(responseId);
+          await rollbackActiveResponse();
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
 
         for (const call of toolCallsFromResult) {
           if (input.signal?.aborted) {
-            await deps.responseWrites.rollbackResponse(responseId);
+            await rollbackActiveResponse();
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
@@ -963,7 +973,7 @@ async function* generateEvents(
           blockSeq = checkpointState.blockSeqRef.value;
           yield* dispatched.events;
           if (dispatched.cancelled || input.signal?.aborted) {
-            await deps.responseWrites.rollbackResponse(responseId);
+            await rollbackActiveResponse();
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
@@ -972,6 +982,7 @@ async function* generateEvents(
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
         });
+        activeResponseId = undefined;
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.
         continue;
@@ -990,6 +1001,13 @@ async function* generateEvents(
       return;
     }
   } catch (err) {
+    try {
+      await rollbackActiveResponse();
+    } catch (_rollbackError) {
+      // Keep the original turn failure visible. rollbackResponse invalidates
+      // staged runtimes before surfacing cleanup failures, so a second failure
+      // here should not hide the error that broke the response.
+    }
     // Unexpected exception (e.g. DB failure, tool crash). If the signal is
     // already aborted, treat as cancellation; otherwise finalize as error.
     yield* await finalizeTurnOnGeneratorFailure(deps, {
@@ -999,6 +1017,7 @@ async function* generateEvents(
       signal: input.signal,
     });
   } finally {
+    await rollbackActiveResponse().catch(() => undefined);
     // Helper result delivery is flushed by callers after their live-turn registry
     // is cleared. Draining here would race queued helper system turns into a
     // still-running parent thread.

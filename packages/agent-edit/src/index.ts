@@ -63,7 +63,7 @@ export type {
   UpdateMeta,
   UpdateOrigin,
 } from "./ports/types.js";
-export type { UpdateJournal } from "./ports/update-journal.js";
+export type { JournalBatchAppendEntry, UpdateJournal } from "./ports/update-journal.js";
 export type {
   ComponentRegistry,
   ComponentSpec,

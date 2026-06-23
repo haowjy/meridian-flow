@@ -4,12 +4,14 @@
 
 ### UpdateJournal (`src/ports/update-journal.ts`)
 The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
+`appendBatch` (all-or-nothing response commit across documents),
 `persistReversal` (atomically persist undo update + reversal record),
 `persistRedo` (atomically consume a doc+thread+turn reversal and append redo
 bytes), and `readReversals` (durable redo lookup). Ordered by monotonic seq per
-document. Every adapter implements this. Response staging still calls the same
-`append(docId, update, agentMeta(turnId))` shape; it defers those appends until
-`commitResponse(responseId)`.
+document. Every adapter implements this. Response staging buffers the same
+`{ docId, update, agentMeta(turnId) }` entries and commits them with one
+`appendBatch(...)` call from `commitResponse(responseId)`; Phase 3 extends that
+batch entry to mint mutation records in the same transaction.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
@@ -142,9 +144,14 @@ the LLM-facing response is the plain `text` field (status line + echo + content)
 immediately to the agent runtime doc and returns an echo from that cumulative
 staged state. Journal append, live-doc sync, concurrent-edit merge, and
 projection refresh are deferred to `commitResponse(responseId)`, which appends
-the buffered updates in write order and applies one aggregate Yjs update per
-document. `rollbackResponse(responseId)` discards the buffer, restores affected
-runtime docs from live, and evicts hot undo managers for those threads.
+the buffered updates in one journal batch and then applies one aggregate Yjs
+update per document. Journal batch failure leaves the buffer retryable and
+invalidates staged runtimes so ordinary later views do not see phantom edits. If
+the journal batch lands but live merge fails, the journal remains the truth;
+affected runtimes are evicted and the next access rebuilds from live+journal.
+`rollbackResponse(responseId)` discards the buffer, restores affected runtime
+docs from live (or live+journal after a journaled commit attempt), and evicts hot
+undo managers for those threads.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,

@@ -558,6 +558,19 @@ class MemoryJournal implements UpdateJournal {
     return this.appendSync(update, meta);
   }
 
+  async appendBatch(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): Promise<number[]> {
+    const nextSeq = this.nextSeq;
+    entries.forEach((entry, index) => {
+      const expectedSeq = nextSeq + index;
+      if (entry.meta.seq && entry.meta.seq !== expectedSeq) {
+        throw new Error(`Expected seq ${expectedSeq}, got ${entry.meta.seq}`);
+      }
+    });
+    return entries.map((entry) => this.appendSync(entry.update, entry.meta));
+  }
+
   async read(
     _docId: string,
     opts: { since?: number; until?: number } = {},

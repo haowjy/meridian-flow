@@ -259,6 +259,18 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       return appendUpdate(db, docId, update, meta);
     },
 
+    async appendBatch(entries) {
+      if (entries.length === 0) return [];
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        const seqs: number[] = [];
+        for (const entry of entries) {
+          seqs.push(await appendUpdate(txDb, entry.docId, entry.update, entry.meta));
+        }
+        return seqs;
+      });
+    },
+
     async read(docId, opts = {}): Promise<JournalSnapshot> {
       const checkpoint = await latestCheckpoint(db, docId);
       const conditions = [

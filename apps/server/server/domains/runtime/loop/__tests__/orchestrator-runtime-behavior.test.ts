@@ -319,4 +319,73 @@ describe("runtime orchestrator behavior", () => {
     expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
     expect(events.some((event) => event.type === "tool.result")).toBe(false);
   });
+
+  it("rolls back the active response when tool dispatch throws", async () => {
+    const gateway = gatewayFromResults([
+      {
+        content: [{ type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const rolledBack: string[] = [];
+    const committed: string[] = [];
+    let responseIdSeenByTool: string | undefined;
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      toolExecutor: {
+        executeTool: async (_call, ctx) => {
+          responseIdSeenByTool = ctx.responseId;
+          throw new Error("tool crashed after staging a write");
+        },
+      },
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      responseWrites: {
+        async commitResponse(responseId) {
+          committed.push(responseId);
+        },
+        async rollbackResponse(responseId) {
+          rolledBack.push(responseId);
+        },
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const guardedOrchestrator = createOrchestrator(deps);
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await guardedOrchestrator.runTurn({
+        threadId: thread.id,
+        userText: "write then crash",
+        tools: [
+          {
+            type: "function",
+            name: "write",
+            description: "Write",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    );
+
+    expect(responseIdSeenByTool).toBeDefined();
+    expect(rolledBack).toEqual([responseIdSeenByTool]);
+    expect(committed).toEqual([]);
+    expect(events.some((event) => event.type === "turn.error")).toBe(true);
+  });
 });

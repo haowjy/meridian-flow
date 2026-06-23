@@ -83,11 +83,36 @@ describe("write tool dispatch", () => {
     ).toEqual(["# Draft", "Opening line."]);
 
     const snapshot = await ctx.journal.read("new.md");
+    expect(ctx.journal.appendBatchCalls).toBe(1);
     expect(snapshot.checkpoint).toBeNull();
     expect(snapshot.updates).toHaveLength(1);
     const replayed = new Y.Doc({ gc: false });
     for (const update of snapshot.updates) Y.applyUpdate(replayed, update.update);
     expect(blockTexts(replayed)).toEqual(["Draft", "Opening line."]);
+  });
+
+  it("stages create and commits it through the response batch path", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-create",
+      responseId: "response-staged-create",
+    };
+
+    const result = await ctx.core.write(
+      { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
+      responseContext,
+    );
+
+    expect(outcomeText(result)).toContain("status: success");
+    expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([]);
+
+    await ctx.core.commitResponse("response-staged-create");
+
+    expect(ctx.journal.appendBatchCalls).toBe(1);
+    expect((await ctx.journal.read("new.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
   });
 
   it("rejects create for an existing non-empty file", async () => {
@@ -228,6 +253,89 @@ describe("write tool dispatch", () => {
     const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
     expect(outcomeText(view)).toContain("Alpha.");
     expect(outcomeText(view)).not.toContain("Beta.");
+  });
+
+  it("keeps response commit all-or-nothing when the journal batch append fails", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-response-journal-fail",
+      responseId: "response-journal-fail",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    ctx.journal.failNextAppendBatchWith(new Error("journal unavailable"));
+
+    await expect(ctx.core.commitResponse("response-journal-fail")).rejects.toThrow(
+      /before the journal batch was committed/,
+    );
+
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    const viewAfterFailure = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    expect(outcomeText(viewAfterFailure)).toContain("Alpha.");
+    expect(outcomeText(viewAfterFailure)).not.toContain("Beta.");
+
+    const retry = await ctx.core.commitResponse("response-journal-fail");
+
+    expect(retry).toMatchObject({ documentCount: 1, updateCount: 1 });
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("recovers from journal truth when live merge fails after a response batch append", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-response-live-fail",
+      responseId: "response-live-fail",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    ctx.coordinator.failNextWith(new Error("live merge unavailable"));
+
+    await expect(ctx.core.commitResponse("response-live-fail")).rejects.toThrow(
+      /after the journal batch was committed/,
+    );
+
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    expect(outcomeText(view)).toContain("Beta.");
+  });
+
+  it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-response-rollback-fail",
+      responseId: "response-rollback-fail",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    ctx.coordinator.failNextWith(new Error("restore unavailable"));
+
+    await expect(ctx.core.rollbackResponse("response-rollback-fail")).rejects.toThrow(
+      "restore unavailable",
+    );
+
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    expect(outcomeText(view)).toContain("Alpha.");
+    expect(outcomeText(view)).not.toContain("Beta.");
+    await expect(ctx.core.commitResponse("response-rollback-fail")).resolves.toMatchObject({
+      updateCount: 0,
+    });
   });
 
   it("appends unanchored inserts and handles explicit start and end anchors", async () => {
@@ -838,6 +946,7 @@ function harness(
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
+  coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
   const core = createAgentEditCore({
@@ -868,7 +977,9 @@ class MemoryDocumentLifecycle implements DocumentLifecycle {
 
 class MemoryCoordinator implements DocumentCoordinator {
   readonly docs = new Map<string, Y.Doc>();
+  private journal?: UpdateJournal;
   private failure: unknown;
+  private nextFailure: unknown;
 
   constructor(initialDocs: Record<string, string>) {
     for (const [docId, markdown] of Object.entries(initialDocs)) {
@@ -899,15 +1010,39 @@ class MemoryCoordinator implements DocumentCoordinator {
     this.failure = cause;
   }
 
+  failNextWith(cause: unknown): void {
+    this.nextFailure = cause;
+  }
+
+  useJournal(journal: UpdateJournal): void {
+    this.journal = journal;
+  }
+
   async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+    if (this.nextFailure) {
+      const failure = this.nextFailure;
+      this.nextFailure = undefined;
+      throw failure;
+    }
     if (this.failure) throw this.failure;
     return fn(this.require(docId));
   }
 
-  async recover(_docId: string): Promise<void> {}
+  async recover(docId: string): Promise<void> {
+    if (!this.journal) return;
+    const snapshot = await this.journal.read(docId);
+    if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
+    const doc = this.ensureEmpty(docId);
+    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
+    for (const entry of snapshot.updates) {
+      Y.applyUpdate(doc, entry.update, { type: "system" });
+    }
+  }
 }
 
 class MemoryJournal implements UpdateJournal {
+  appendBatchCalls = 0;
+
   private readonly data = new Map<
     string,
     {
@@ -918,6 +1053,7 @@ class MemoryJournal implements UpdateJournal {
       reversals: ReversalRecord[];
     }
   >();
+  private nextAppendBatchFailure: unknown;
 
   setCheckpoint(docId: string, checkpoint: Uint8Array): void {
     this.entry(docId).checkpoint = checkpoint;
@@ -925,6 +1061,32 @@ class MemoryJournal implements UpdateJournal {
 
   async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
     return this.appendSync(docId, update, meta);
+  }
+
+  async appendBatch(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): Promise<number[]> {
+    this.appendBatchCalls += 1;
+    if (this.nextAppendBatchFailure) {
+      const failure = this.nextAppendBatchFailure;
+      this.nextAppendBatchFailure = undefined;
+      throw failure;
+    }
+    const nextSeqByDoc = new Map<string, number>();
+    for (const batchEntry of entries) {
+      const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? this.entry(batchEntry.docId).nextSeq;
+      if (batchEntry.meta.seq && batchEntry.meta.seq !== nextSeq) {
+        throw new Error(`Expected seq ${nextSeq}, got ${batchEntry.meta.seq}`);
+      }
+      nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
+    }
+    return entries.map((batchEntry) =>
+      this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta),
+    );
+  }
+
+  failNextAppendBatchWith(cause: unknown): void {
+    this.nextAppendBatchFailure = cause;
   }
 
   async read(
