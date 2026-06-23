@@ -74,7 +74,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { asc, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { createDrizzleJournal, createDrizzleMutationStore } = await import(
+      "../drizzle-journal.js"
+    );
 
     const db = createDb(DATABASE_URL, { max: 4 });
 
@@ -414,6 +416,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("mints mutation w-ids atomically with journal batches", async () => {
       const journal = createDrizzleJournal(db);
+      const mutationStore = createDrizzleMutationStore(db);
       const doc = new Y.Doc({ gc: false });
       doc.clientID = LIVE_CLIENT_ID;
 
@@ -447,6 +450,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { wId: 1, turnId: TURN_A, status: "active", createdSeq: first[0]?.seq },
         { wId: 2, turnId: TURN_B, status: "active", createdSeq: first[1]?.seq },
         { wId: 3, turnId: TURN_C, status: "active", createdSeq: second[0]?.seq },
+      ]);
+      expect(await mutationStore.latestActiveTurn(DOC_ID, THREAD_ID)).toBe(TURN_C);
+      expect(await mutationStore.activeTurnSummary(DOC_ID, THREAD_ID)).toEqual([
+        { turnId: TURN_A, count: 1, minSeq: first[0]?.seq },
+        { turnId: TURN_B, count: 1, minSeq: first[1]?.seq },
+        { turnId: TURN_C, count: 1, minSeq: second[0]?.seq },
       ]);
 
       const idsBeforeFailure = await updateIds();
@@ -531,6 +540,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]]);
       const core = createAgentEditCore({
         journal,
+        mutationStore: createDrizzleMutationStore(db),
         coordinator,
         codec,
         model,
@@ -591,6 +601,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
       const core = createAgentEditCore({
         journal,
+        mutationStore: createDrizzleMutationStore(db),
         coordinator,
         codec,
         model,
@@ -633,6 +644,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const restarted = createAgentEditCore({
         journal,
+        mutationStore: createDrizzleMutationStore(db),
         coordinator,
         codec,
         model,
