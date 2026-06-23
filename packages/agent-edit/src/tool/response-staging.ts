@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
+import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import type { UndoManagerRegistry } from "../undo/manager-registry.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
@@ -66,13 +66,12 @@ interface ResponseBuffer {
 }
 
 export function createResponseStaging(deps: {
-  journal: UpdateJournal;
   registry: UndoManagerRegistry;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   ensureDocument?: (docId: string) => Promise<void>;
 }): ResponseStaging {
-  const { journal, registry, runtimeStore, mutationCommit, ensureDocument } = deps;
+  const { registry, runtimeStore, mutationCommit, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
 
   return {
@@ -100,8 +99,7 @@ export function createResponseStaging(deps: {
     let updateCount = 0;
     try {
       if (!buffer.journalCommitted) {
-        const results = await journal.appendBatch(journalBatch);
-        mutationCommit.attachCommittedWIds(journalBatch, results);
+        await mutationCommit.commitJournalBatch(journalBatch);
         buffer.journalCommitted = true;
       }
 
@@ -110,28 +108,22 @@ export function createResponseStaging(deps: {
           await ensureDocument?.(docBuffer.docId);
         }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
-        const committed = await mutationCommit.mergeCommittedUpdatesToLive({
+        const lastTurnId = docBuffer.updates.at(-1)?.turnId;
+        const projected = await mutationCommit.projectToLive(docBuffer.runtime, {
           docId: docBuffer.docId,
           commandName: docBuffer.commandName,
           updates: docBuffer.updates,
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
+          turnId: lastTurnId,
         });
-        if (!committed.ok) throw new Error(committed.response.text);
-
-        const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const concurrent = mutationCommit.applyConcurrent(
-          docBuffer.runtime,
-          committed.concurrentUpdate,
-          afterOwnVector,
-          lastTurnId,
-        );
+        if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
         updateCount += docBuffer.updates.length;
         documents.push({
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
-          ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
+          ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
         });
       }
       responseBuffers.delete(responseId);

@@ -152,6 +152,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     codec,
     model,
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
@@ -490,4 +491,26 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
+}
+
+function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {
+  return (message) => {
+    if (process.env.NODE_ENV !== "production") throw new Error(message);
+
+    if (eventSink) {
+      try {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "collab.agent_edit",
+          name: "invariant_violation",
+          payload: { message },
+        });
+      } catch (cause) {
+        console.error(message, cause);
+      }
+      return;
+    }
+
+    console.error(message);
+  };
 }

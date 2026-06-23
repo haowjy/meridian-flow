@@ -64,6 +64,8 @@ export interface CreateWriteToolOptions {
   defaultThreadId?: string;
   /** Fresh Yjs client id used for cold undo/redo reconstruction. */
   undoClientId?: number;
+  /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
+  onInvariantViolation?: (message: string) => void;
 }
 
 export interface WriteTool {
@@ -103,6 +105,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    onInvariantViolation: options.onInvariantViolation,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
@@ -113,7 +116,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
   const responseStaging = createResponseStaging({
-    journal: options.journal,
     registry,
     runtimeStore,
     mutationCommit,
@@ -301,7 +303,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
-    const committed = await mutationCommit.commitUpdatesToJournalAndLive({
+    const committed = await mutationCommit.commitImmediate({
       docId: address.filePath,
       commandName: command.command,
       updates: [{ update, meta, mutation: { threadId: session.threadId, turnId } }],
