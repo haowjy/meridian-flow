@@ -407,15 +407,12 @@ export function createUndoManagerRegistry(
   return new UndoManagerRegistry(options);
 }
 
-// Hot/cold byte parity requires both paths to mint undo Items under the same fresh clientID.
+// Hot/cold byte parity requires both paths to mint undo Items under the same
+// reserved clientID. A rebuilt runtime may already contain prior reversal
+// structs from that client; continue the client clock just like cold
+// reconstruction does.
 function setMutationClientId(doc: Y.Doc, clientId: number | undefined): void {
   if (clientId === undefined || doc.clientID === clientId) return;
-  const store = doc as unknown as { store?: { clients?: Map<number, unknown> } };
-  if (store.store?.clients?.has(clientId)) {
-    throw new Error(
-      `Cannot use Yjs clientID ${clientId} for undo; it already exists in the document store`,
-    );
-  }
   doc.clientID = clientId;
 }
 
