@@ -8,20 +8,12 @@ import { createAgentEditCore } from "../index.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type DocumentCoordinator, DocumentNotFoundError } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
-import type { MutationStore } from "../ports/mutation-store.js";
-import type {
-  CompactionResult,
-  JournalSnapshot,
-  PersistedUpdate,
-  ReversalRecord,
-  ReversalStatus,
-  UpdateMeta,
-} from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   UpdateJournal,
 } from "../ports/update-journal.js";
+import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { createUndoManagerRegistry } from "../undo/manager-registry.js";
 import type { WriteContext, WriteOutcome, WriteStatus } from "./types.js";
 
@@ -770,6 +762,73 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
   });
 
+  it("recovers all documents when a multi-document response fails during the second live merge", async () => {
+    const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "One." });
+    await ctx.core.write({ command: "view", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "view", file: "beta.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-multi-doc-response",
+      responseId: "response-multi-doc-live-fail",
+    };
+
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Beta." },
+      responseContext,
+    );
+    await ctx.core.write({ command: "insert", file: "beta.md", content: "Two." }, responseContext);
+    expect((await ctx.journal.read("alpha.md")).updates).toHaveLength(0);
+    expect((await ctx.journal.read("beta.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["One."]);
+
+    ctx.coordinator.failNextForDoc("beta.md", new Error("second live merge unavailable"));
+
+    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).resolves.toMatchObject({
+      responseId: "response-multi-doc-live-fail",
+      documentCount: 2,
+      updateCount: 2,
+      documents: [
+        { documentId: "alpha.md", updateCount: 1 },
+        { documentId: "beta.md", updateCount: 1 },
+      ],
+    });
+
+    expect(ctx.journal.appendBatchCalls).toBe(1);
+    expect((await ctx.journal.read("alpha.md")).updates).toHaveLength(1);
+    expect((await ctx.journal.read("beta.md")).updates).toHaveLength(1);
+    expect(ctx.journal.mutationRecords("alpha.md").map((record) => record.wId)).toEqual([1]);
+    expect(ctx.journal.mutationRecords("beta.md").map((record) => record.wId)).toEqual([1]);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha.", "Beta."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["One.", "Two."]);
+    expect(ctx.undoRegistry.getState("alpha.md", THREAD_ID)).toBeNull();
+    expect(ctx.undoRegistry.getState("beta.md", THREAD_ID)).toBeNull();
+    expect(await ctx.core.getAvailability("alpha.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoTurnId: "turn-multi-doc-response",
+    });
+    expect(await ctx.core.getAvailability("beta.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoTurnId: "turn-multi-doc-response",
+    });
+
+    const freshContext = { ...context, sessionId: "fresh-session" };
+    expect(
+      renderedBlockBodies(
+        await ctx.core.write({ command: "view", file: "alpha.md" }, freshContext),
+      ),
+    ).toEqual(["Alpha.", "Beta."]);
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "view", file: "beta.md" }, freshContext)),
+    ).toEqual(["One.", "Two."]);
+    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).resolves.toMatchObject({
+      documentCount: 0,
+      updateCount: 0,
+    });
+  });
+
   it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -1456,6 +1515,7 @@ class MemoryCoordinator implements DocumentCoordinator {
   private journal?: UpdateJournal;
   private failure: unknown;
   private nextFailure: unknown;
+  private readonly nextFailureByDoc = new Map<string, unknown>();
 
   constructor(initialDocs: Record<string, string>) {
     for (const [docId, markdown] of Object.entries(initialDocs)) {
@@ -1490,11 +1550,20 @@ class MemoryCoordinator implements DocumentCoordinator {
     this.nextFailure = cause;
   }
 
+  failNextForDoc(docId: string, cause: unknown): void {
+    this.nextFailureByDoc.set(docId, cause);
+  }
+
   useJournal(journal: UpdateJournal): void {
     this.journal = journal;
   }
 
   async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+    if (this.nextFailureByDoc.has(docId)) {
+      const failure = this.nextFailureByDoc.get(docId);
+      this.nextFailureByDoc.delete(docId);
+      throw failure;
+    }
     if (this.nextFailure) {
       const failure = this.nextFailure;
       this.nextFailure = undefined;
@@ -1516,44 +1585,11 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 }
 
-type StoredMutation = {
-  wId: number;
-  documentId: string;
-  threadId: string;
-  turnId: string;
-  status: "active" | "reversed";
-  createdSeq: number;
-  undoUpdateSeq?: number;
-  reversedAt?: Date;
-  reversedBy?: "user" | "agent";
-};
-
-class MemoryJournal implements UpdateJournal, MutationStore {
+class MemoryJournal extends InMemoryAgentEditJournal {
   appendBatchCalls = 0;
-
-  private readonly data = new Map<
-    string,
-    {
-      checkpoint: Uint8Array | null;
-      checkpointUpToSeq: number;
-      nextSeq: number;
-      nextWIdByThread: Map<string, number>;
-      updates: PersistedUpdate[];
-      reversals: ReversalRecord[];
-      mutations: StoredMutation[];
-    }
-  >();
   private nextAppendBatchFailure: unknown;
 
-  setCheckpoint(docId: string, checkpoint: Uint8Array): void {
-    this.entry(docId).checkpoint = checkpoint;
-  }
-
-  async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
-    return this.appendSync(docId, update, meta);
-  }
-
-  async appendBatch(
+  override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
     this.appendBatchCalls += 1;
@@ -1562,265 +1598,11 @@ class MemoryJournal implements UpdateJournal, MutationStore {
       this.nextAppendBatchFailure = undefined;
       throw failure;
     }
-    const nextSeqByDoc = new Map<string, number>();
-    for (const batchEntry of entries) {
-      const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? this.entry(batchEntry.docId).nextSeq;
-      if (batchEntry.meta.seq && batchEntry.meta.seq !== nextSeq) {
-        throw new Error(`Expected seq ${nextSeq}, got ${batchEntry.meta.seq}`);
-      }
-      nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
-    }
-    return entries.map((batchEntry) => {
-      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta);
-      if (!batchEntry.mutation) return { seq };
-      const wId = this.appendMutationSync(
-        batchEntry.docId,
-        batchEntry.mutation.threadId,
-        batchEntry.mutation.turnId,
-        seq,
-      );
-      return { seq, wId };
-    });
+    return super.appendBatch(entries);
   }
 
   failNextAppendBatchWith(cause: unknown): void {
     this.nextAppendBatchFailure = cause;
-  }
-
-  async read(
-    docId: string,
-    opts: { since?: number; until?: number } = {},
-  ): Promise<JournalSnapshot> {
-    const entry = this.entry(docId);
-    return {
-      checkpoint: entry.checkpoint,
-      updates: entry.updates.filter(
-        (update) =>
-          update.seq > entry.checkpointUpToSeq &&
-          (opts.since === undefined || update.seq >= opts.since) &&
-          (opts.until === undefined || update.seq <= opts.until),
-      ),
-    };
-  }
-
-  async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
-    const entry = this.entry(docId);
-    entry.checkpoint = state;
-    entry.checkpointUpToSeq = upToSeq;
-  }
-
-  async compact(docId: string, _before: Date): Promise<CompactionResult> {
-    const entry = this.entry(docId);
-    const doc = new Y.Doc({ gc: false });
-    if (entry.checkpoint) Y.applyUpdate(doc, entry.checkpoint);
-    const retained = entry.updates.filter((update) => update.seq > entry.checkpointUpToSeq);
-    for (const update of retained) Y.applyUpdate(doc, update.update);
-    const updatesFolded = retained.length;
-    entry.checkpoint = Y.encodeStateAsUpdate(doc);
-    entry.checkpointUpToSeq = retained.at(-1)?.seq ?? entry.checkpointUpToSeq;
-    entry.updates = entry.updates.filter((update) => update.seq > entry.checkpointUpToSeq);
-    return { updatesFolded, reversalsExpired: 0 };
-  }
-
-  async persistReversal(
-    docId: string,
-    undoUpdate: Uint8Array,
-    record: ReversalRecord,
-  ): Promise<void> {
-    const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 });
-    record.undoUpdateSeq = seq;
-    this.entry(docId).reversals.push({ ...record });
-    this.reverseMutations(
-      docId,
-      record.threadId,
-      record.turnId,
-      seq,
-      record.reversedAt ?? new Date(),
-    );
-  }
-
-  async persistRedo(
-    docId: string,
-    redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
-    meta: UpdateMeta,
-  ): Promise<{ consumed: boolean; seq?: number }> {
-    const entry = this.entry(docId);
-    const index = entry.reversals.findIndex(
-      (record) =>
-        record.threadId === ref.threadId &&
-        record.turnId === ref.turnId &&
-        record.undoUpdateSeq === ref.undoUpdateSeq &&
-        record.status === "reversed",
-    );
-    if (index === -1) return { consumed: false };
-    const seq = this.appendSync(docId, redoUpdate, meta);
-    entry.reversals[index] = { ...entry.reversals[index], status: "redone" };
-    this.reactivateMutations(docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
-    return { consumed: true, seq };
-  }
-
-  clone(): MemoryJournal {
-    const copy = new MemoryJournal();
-    for (const [docId, entry] of this.data) {
-      copy.data.set(docId, {
-        checkpoint: entry.checkpoint ? new Uint8Array(entry.checkpoint) : null,
-        checkpointUpToSeq: entry.checkpointUpToSeq,
-        nextSeq: entry.nextSeq,
-        nextWIdByThread: new Map(entry.nextWIdByThread),
-        updates: entry.updates.map((update) => ({
-          seq: update.seq,
-          update: new Uint8Array(update.update),
-          meta: { ...update.meta },
-        })),
-        reversals: entry.reversals.map((record) => ({ ...record })),
-        mutations: entry.mutations.map((record) => ({ ...record })),
-      });
-    }
-    return copy;
-  }
-
-  async readReversals(
-    docId: string,
-    opts: { threadId?: string; status?: ReversalStatus[] } = {},
-  ): Promise<ReversalRecord[]> {
-    return this.entry(docId)
-      .reversals.filter(
-        (record) =>
-          (opts.threadId === undefined || record.threadId === opts.threadId) &&
-          (opts.status === undefined || opts.status.includes(record.status)),
-      )
-      .map((record) => ({ ...record }));
-  }
-
-  async latestActiveTurn(documentId: string, threadId: string): Promise<string | undefined> {
-    return this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.status === "active")
-      .sort((left, right) => left.createdSeq - right.createdSeq)
-      .at(-1)?.turnId;
-  }
-
-  async activeTurnSummary(
-    documentId: string,
-    threadId: string,
-  ): Promise<Array<{ turnId: string; count: number; minSeq: number }>> {
-    const byTurn = new Map<string, { turnId: string; count: number; minSeq: number }>();
-    for (const record of this.entry(documentId).mutations) {
-      if (record.threadId !== threadId || record.status !== "active") continue;
-      const existing = byTurn.get(record.turnId);
-      if (existing) {
-        existing.count += 1;
-        existing.minSeq = Math.min(existing.minSeq, record.createdSeq);
-      } else {
-        byTurn.set(record.turnId, {
-          turnId: record.turnId,
-          count: 1,
-          minSeq: record.createdSeq,
-        });
-      }
-    }
-    return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
-  }
-
-  async turnMinCreatedSeq(
-    documentId: string,
-    threadId: string,
-    turnId: string,
-  ): Promise<number | undefined> {
-    const seqs = this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
-      .map((record) => record.createdSeq);
-    return seqs.length > 0 ? Math.min(...seqs) : undefined;
-  }
-
-  private entry(docId: string): {
-    checkpoint: Uint8Array | null;
-    checkpointUpToSeq: number;
-    nextSeq: number;
-    nextWIdByThread: Map<string, number>;
-    updates: PersistedUpdate[];
-    reversals: ReversalRecord[];
-    mutations: StoredMutation[];
-  } {
-    let entry = this.data.get(docId);
-    if (!entry) {
-      entry = {
-        checkpoint: null,
-        checkpointUpToSeq: 0,
-        nextSeq: 1,
-        nextWIdByThread: new Map(),
-        updates: [],
-        reversals: [],
-        mutations: [],
-      };
-      this.data.set(docId, entry);
-    }
-    return entry;
-  }
-
-  private appendSync(docId: string, update: Uint8Array, meta: UpdateMeta): number {
-    const entry = this.entry(docId);
-    const seq = entry.nextSeq++;
-    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
-    entry.updates.push({ seq, update, meta: { ...meta, seq } });
-    return seq;
-  }
-
-  mutationRecords(docId: string): StoredMutation[] {
-    return this.entry(docId).mutations.map((record) => ({ ...record }));
-  }
-
-  private appendMutationSync(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    createdSeq: number,
-  ): number {
-    const entry = this.entry(docId);
-    const wId = entry.nextWIdByThread.get(threadId) ?? 1;
-    entry.nextWIdByThread.set(threadId, wId + 1);
-    entry.mutations.push({
-      wId,
-      documentId: docId,
-      threadId,
-      turnId,
-      status: "active",
-      createdSeq,
-    });
-    return wId;
-  }
-
-  private reverseMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-    reversedAt: Date,
-  ): void {
-    for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
-      if (record.status !== "active") continue;
-      record.status = "reversed";
-      record.undoUpdateSeq = undoUpdateSeq;
-      record.reversedAt = reversedAt;
-      record.reversedBy = "agent";
-    }
-  }
-
-  private reactivateMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-  ): void {
-    for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
-      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
-      record.status = "active";
-      delete record.undoUpdateSeq;
-      delete record.reversedAt;
-      delete record.reversedBy;
-    }
   }
 }
 
