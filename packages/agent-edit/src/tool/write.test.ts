@@ -112,13 +112,39 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(result)).toContain("status: success");
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([]);
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     await ctx.core.commitResponse("response-staged-create");
 
     expect(ctx.journal.appendBatchCalls).toBe(1);
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
+  });
+
+  it("rolls back staged create without leaving an empty live document", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-create-rollback",
+      responseId: "response-staged-create-rollback",
+    };
+
+    const result = await ctx.core.write(
+      { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+
+    await ctx.core.rollbackResponse("response-staged-create-rollback");
+
+    expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+    expect(outcomeText(await ctx.core.write({ command: "view", file: "new.md" }, context))).toBe(
+      'status: document_not_found\n\nFile not found. Check the path, or use write(command="create", file="new.md") to make a new one.',
+    );
   });
 
   it("rejects create for an existing non-empty file", async () => {
@@ -334,6 +360,63 @@ describe("write tool dispatch", () => {
     ]);
     expect(ctx.journal.mutationRecords("chapter.md")[0]?.undoUpdateSeq).toBeUndefined();
     expect(ctx.journal.mutationRecords("chapter.md")[0]?.reversedBy).toBeUndefined();
+  });
+
+  it("scopes same-turn mutation status flips to the reversal being redone", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    const turnContext = { ...context, turnId: "turn-interleaved-status" };
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+      turnContext,
+    );
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    const [firstMutation] = ctx.journal.mutationRecords("chapter.md");
+    const firstUndoSeq = firstMutation?.undoUpdateSeq;
+    expect(firstMutation).toMatchObject({
+      wId: 1,
+      status: "reversed",
+      undoUpdateSeq: expect.any(Number),
+    });
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      turnContext,
+    );
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([
+      { wId: 1, status: "reversed", undoUpdateSeq: firstUndoSeq },
+      { wId: 2, status: "active" },
+    ]);
+
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    const afterSecondUndo = ctx.journal.mutationRecords("chapter.md");
+    const secondUndoSeq = afterSecondUndo[1]?.undoUpdateSeq;
+    expect(afterSecondUndo).toMatchObject([
+      { wId: 1, status: "reversed", undoUpdateSeq: firstUndoSeq },
+      { wId: 2, status: "reversed", undoUpdateSeq: expect.any(Number) },
+    ]);
+    expect(secondUndoSeq).not.toBe(firstUndoSeq);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: true,
+      redoTurnId: "turn-interleaved-status",
+    });
+
+    await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    const afterRedo = ctx.journal.mutationRecords("chapter.md");
+    expect(afterRedo).toMatchObject([
+      { wId: 1, status: "reversed", undoUpdateSeq: firstUndoSeq },
+      { wId: 2, status: "active" },
+    ]);
+    expect(afterRedo[1]?.undoUpdateSeq).toBeUndefined();
+    expect(afterRedo[1]?.reversedBy).toBeUndefined();
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoTurnId: "turn-interleaved-status",
+    });
   });
 
   it("reports undo availability only while active mutation updates are retained", async () => {
@@ -1559,7 +1642,7 @@ class MemoryJournal implements UpdateJournal, MutationStore {
   async persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string },
+    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
     const entry = this.entry(docId);
@@ -1567,12 +1650,13 @@ class MemoryJournal implements UpdateJournal, MutationStore {
       (record) =>
         record.threadId === ref.threadId &&
         record.turnId === ref.turnId &&
+        record.undoUpdateSeq === ref.undoUpdateSeq &&
         record.status === "reversed",
     );
     if (index === -1) return { consumed: false };
     const seq = this.appendSync(docId, redoUpdate, meta);
     entry.reversals[index] = { ...entry.reversals[index], status: "redone" };
-    this.reactivateMutations(docId, ref.threadId, ref.turnId);
+    this.reactivateMutations(docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
     return { consumed: true, seq };
   }
 
@@ -1715,6 +1799,7 @@ class MemoryJournal implements UpdateJournal, MutationStore {
   ): void {
     for (const record of this.entry(docId).mutations) {
       if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.status !== "active") continue;
       record.status = "reversed";
       record.undoUpdateSeq = undoUpdateSeq;
       record.reversedAt = reversedAt;
@@ -1722,9 +1807,15 @@ class MemoryJournal implements UpdateJournal, MutationStore {
     }
   }
 
-  private reactivateMutations(docId: string, threadId: string, turnId: string): void {
+  private reactivateMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+  ): void {
     for (const record of this.entry(docId).mutations) {
       if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
       record.status = "active";
       delete record.undoUpdateSeq;
       delete record.reversedAt;

@@ -9,7 +9,11 @@ import { createInMemoryEventSink } from "../domains/observability/index.js";
 import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import { createToolExecutor, createToolRegistry } from "../domains/runtime/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
-import { createWiredCoreToolRegistrations, UNIFIED_MANUSCRIPT_URI } from "./wired-core-tools.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+  UNIFIED_MANUSCRIPT_URI,
+} from "./wired-core-tools.js";
 
 describe("unified manuscript routing in wired-core-tools", () => {
   it("routes manuscript:// writes through the unified context port", async () => {
@@ -26,14 +30,16 @@ describe("unified manuscript routing in wired-core-tools", () => {
 
     const documentSync = createInMemoryCollabDomain();
     const unifiedFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
+    const eventSink = createInMemoryEventSink();
     const executor = createToolExecutor(
       createToolRegistry({
         registrations: createWiredCoreToolRegistrations({
           threads: repos.threads,
           contextPorts: unifiedFactory,
           documentSync,
+          responseWrites: createAgentEditResponseWriteLifecycle({ documentSync, eventSink }),
           threadWorks: repos.threadWorks,
-          eventSink: createInMemoryEventSink(),
+          eventSink,
         }),
       }),
     );
@@ -81,6 +87,7 @@ describe("unified manuscript routing in wired-core-tools", () => {
 
     const documentSync = createInMemoryCollabDomain();
     const unifiedFactory = createInMemoryUnifiedContextPortFactory({ documentSync });
+    const eventSink = createInMemoryEventSink();
     const port = unifiedFactory.forWork(work.id, "project_1", "user_1", new Set([work.id]));
     await port.write("manuscript://chapter-1.md", "needle in manuscript", {
       origin: { type: "system" },
@@ -95,8 +102,9 @@ describe("unified manuscript routing in wired-core-tools", () => {
           threads: repos.threads,
           contextPorts: unifiedFactory,
           documentSync,
+          responseWrites: createAgentEditResponseWriteLifecycle({ documentSync, eventSink }),
           threadWorks: repos.threadWorks,
-          eventSink: createInMemoryEventSink(),
+          eventSink,
         }),
       }),
     );

@@ -172,6 +172,7 @@ interface ResponseDocumentBuffer {
   runtime: RuntimeDocumentState;
   commandName: WriteCommand["command"];
   updates: StagedResponseUpdate[];
+  ensureDocumentBeforeCommit: boolean;
   baselineUndoStack: string[];
   baselineRedoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
   baselineRedoStackRehydrated: boolean;
@@ -293,6 +294,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
 
       for (const docBuffer of docBuffers) {
+        if (docBuffer.ensureDocumentBeforeCommit) {
+          await options.lifecycle?.ensureDocument(docBuffer.docId);
+        }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const committed = await mergeCommittedUpdatesToLive({
           docId: docBuffer.docId,
@@ -357,6 +361,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
 
       for (const docBuffer of docBuffers) {
+        if (docBuffer.ensureDocumentBeforeCommit) {
+          evictRuntime(docBuffer.session, docBuffer.docId);
+          continue;
+        }
         docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
         docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
         docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
@@ -399,6 +407,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     meta: UpdateMeta;
     liveOrigin: ConcurrentUpdateOrigin;
     turnId: string;
+    ensureDocumentBeforeCommit?: boolean;
   }): void {
     let buffer = responseBuffers.get(input.responseId);
     if (!buffer) {
@@ -414,6 +423,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         runtime: input.runtime,
         commandName: input.commandName,
         updates: [],
+        ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         baselineUndoStack: [...input.runtime.undoStack],
         baselineRedoStack: input.runtime.redoStack.map((entry) => ({ ...entry })),
         baselineRedoStackRehydrated: input.runtime.redoStackRehydrated,
@@ -422,6 +432,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     docBuffer.commandName = input.commandName;
+    docBuffer.ensureDocumentBeforeCommit =
+      docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
@@ -483,13 +495,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const parsed = parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    await options.lifecycle.ensureDocument(address.filePath);
+    const stagedCreate = context.responseId !== undefined;
+    if (!stagedCreate) await options.lifecycle.ensureDocument(address.filePath);
     const liveCheck = await withLive(address.filePath, command.command, (liveDoc) =>
       options.model.getBlocks(liveDoc).length > 0
         ? status("invalid_write", `File already exists: ${address.filePath}`)
         : null,
     );
-    if (isInternalWriteResult(liveCheck)) return liveCheck;
+    const missingLiveForStagedCreate =
+      stagedCreate && isInternalWriteResult(liveCheck) && liveCheck.status === "document_not_found";
+    // Response-staged creates may intentionally defer live document creation
+    // until commit so rollback leaves no empty Y.Doc behind.
+    if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
     const turnId = nextTurnId(session, address.filePath, runtime, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
@@ -520,6 +537,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         meta,
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
+        ensureDocumentBeforeCommit: true,
       });
       runtime.undoStack.push(turnId);
       runtime.redoStack = [];
@@ -915,7 +933,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       consumed = await options.journal.persistRedo(
         docId,
         update,
-        { threadId: session.threadId, turnId: redoTarget.turnId },
+        {
+          threadId: session.threadId,
+          turnId: redoTarget.turnId,
+          undoUpdateSeq: redoTarget.undoUpdateSeq,
+        },
         { origin: "system", seq: 0 },
       );
     } catch (cause) {

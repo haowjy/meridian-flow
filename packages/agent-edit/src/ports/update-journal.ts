@@ -65,14 +65,15 @@ export interface UpdateJournal {
 
   /**
    * Atomically consume a reversed record and append its redo update.
-   * The reversal is scoped by document, thread, and turn, and the status guard
-   * runs in the same transaction as the append. If the record is missing or is
-   * no longer "reversed", append nothing and report that nothing was consumed.
+   * The reversal is scoped by document, thread, turn, and undo update sequence,
+   * and the status guard runs in the same transaction as the append. If the
+   * record is missing or is no longer "reversed", append nothing and report
+   * that nothing was consumed.
    */
   persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string },
+    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }>;
 

@@ -43,6 +43,7 @@ export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
   documentSync: AgentEditAccess & DocumentProjectionRefresher;
+  responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -66,7 +67,24 @@ type WriteToolInput = {
 type ResolvedDocumentAddress = {
   documentId: string;
   file: string;
+  created?: boolean;
 };
+
+export type StagedCreateCleanup = {
+  responseId: string;
+  port: ContextPort;
+  path: string;
+  documentId: string;
+};
+
+export interface AgentEditResponseWriteLifecycle {
+  trackStagedCreate(input: StagedCreateCleanup): void;
+  commitResponse(
+    responseId: string,
+    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ): Promise<void>;
+  rollbackResponse(responseId: string): Promise<void>;
+}
 
 const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
@@ -249,15 +267,20 @@ function fileForDocument(documentId: string, fragment?: string): string {
 async function resolveDocumentAddress(
   port: ContextPort,
   input: WriteToolInput,
+  options: { deferTrackedDocumentSync?: boolean } = {},
 ): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
   const { basePath, fragment } = splitFragment(input.path);
   if (input.command === "create") {
     if (fragment) return toolError({ message: "create does not accept a #fragment in path" });
-    const ensured = await port.ensureTrackedDocument(basePath);
+    const ensured = await port.ensureTrackedDocument(
+      basePath,
+      options.deferTrackedDocumentSync ? { deferDocumentSync: true } : undefined,
+    );
     if (!ensured.ok) return toolError(ensured.error);
     return {
       documentId: ensured.value.documentId,
       file: fileForDocument(ensured.value.documentId, fragment),
+      created: ensured.value.created,
     };
   }
 
@@ -273,6 +296,29 @@ async function resolveDocumentAddress(
     documentId: ref.value.documentId,
     file: fileForDocument(ref.value.documentId, fragment),
   };
+}
+
+function contextErrorMessage(error: ContextError): string {
+  if ("message" in error && typeof error.message === "string") return error.message;
+  return `${error.code}: ${error.uri}`;
+}
+
+async function deleteCreatedTrackedDocument(input: {
+  port: ContextPort;
+  path: string;
+  documentId: string;
+}): Promise<void> {
+  const ref = await input.port.stat(input.path);
+  if (!ref.ok) {
+    if (ref.error.code === "not_found") return;
+    throw new Error(contextErrorMessage(ref.error));
+  }
+  if (ref.value.kind !== "tracked" || ref.value.documentId !== input.documentId) return;
+
+  const deleted = await input.port.delete(input.path);
+  if (!deleted.ok && deleted.error.code !== "not_found") {
+    throw new Error(contextErrorMessage(deleted.error));
+  }
 }
 
 function buildAgentWriteCommand(
@@ -355,8 +401,30 @@ async function refreshProjectionAfterCommittedWrite(
 
 export function createAgentEditResponseWriteLifecycle(
   deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
-) {
+): AgentEditResponseWriteLifecycle {
+  const stagedCreates = new Map<string, StagedCreateCleanup[]>();
+
+  async function cleanupStagedCreates(responseId: string): Promise<void> {
+    const records = stagedCreates.get(responseId) ?? [];
+    stagedCreates.delete(responseId);
+    for (const record of records) {
+      await deleteCreatedTrackedDocument(record);
+    }
+  }
+
   return {
+    trackStagedCreate(input: StagedCreateCleanup): void {
+      const records = stagedCreates.get(input.responseId) ?? [];
+      if (
+        !records.some(
+          (record) => record.path === input.path && record.documentId === input.documentId,
+        )
+      ) {
+        records.push(input);
+      }
+      stagedCreates.set(input.responseId, records);
+    },
+
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
@@ -370,10 +438,24 @@ export function createAgentEditResponseWriteLifecycle(
           }),
         ),
       );
+      stagedCreates.delete(responseId);
     },
 
-    rollbackResponse(responseId: string): Promise<void> {
-      return deps.documentSync.agentEdit().rollbackResponse(responseId);
+    async rollbackResponse(responseId: string): Promise<void> {
+      let rollbackError: unknown;
+      try {
+        await deps.documentSync.agentEdit().rollbackResponse(responseId);
+      } catch (error) {
+        rollbackError = error;
+      }
+      let cleanupError: unknown;
+      try {
+        await cleanupStagedCreates(responseId);
+      } catch (error) {
+        cleanupError = error;
+      }
+      if (rollbackError) throw rollbackError;
+      if (cleanupError) throw cleanupError;
     },
   };
 }
@@ -401,7 +483,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
 
-      const address = await resolveDocumentAddress(portOrError, parsed);
+      const address = await resolveDocumentAddress(portOrError, parsed, {
+        deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
+      });
       if (isToolError(address)) return address;
 
       const outcome = await deps.documentSync
@@ -413,7 +497,36 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           responseId: ctx.responseId,
           tool_use_id: ctx.toolCallId,
         });
-      if (outcome.isError) return toolError({ message: outcome.text });
+      const stagedCreate =
+        parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
+      if (outcome.isError) {
+        if (stagedCreate) {
+          try {
+            await deleteCreatedTrackedDocument({
+              port: portOrError,
+              path: parsed.path,
+              documentId: address.documentId,
+            });
+          } catch (error) {
+            return toolError({
+              message: `Failed to discard staged create for ${parsed.path}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            });
+          }
+        }
+        return toolError({ message: outcome.text });
+      }
+      if (stagedCreate) {
+        const responseId = ctx.responseId;
+        if (responseId === undefined) return toolError({ message: "Missing staged response id" });
+        deps.responseWrites.trackStagedCreate({
+          responseId,
+          port: portOrError,
+          path: parsed.path,
+          documentId: address.documentId,
+        });
+      }
 
       recordTouchInBackground(deps, address.documentId, ctx);
       const stagedWrite =

@@ -153,6 +153,7 @@ export function createInMemoryJournal(): InMemoryJournal {
   ): void {
     for (const record of entry(docId).mutations) {
       if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.status !== "active") continue;
       record.status = "reversed";
       record.undoUpdateSeq = undoUpdateSeq;
       record.reversedAt = reversedAt;
@@ -160,9 +161,15 @@ export function createInMemoryJournal(): InMemoryJournal {
     }
   }
 
-  function reactivateMutations(docId: string, threadId: string, turnId: string): void {
+  function reactivateMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+  ): void {
     for (const record of entry(docId).mutations) {
       if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
       record.status = "active";
       delete record.undoUpdateSeq;
       delete record.reversedAt;
@@ -242,12 +249,13 @@ export function createInMemoryJournal(): InMemoryJournal {
         (record) =>
           record.threadId === ref.threadId &&
           record.turnId === ref.turnId &&
+          record.undoUpdateSeq === ref.undoUpdateSeq &&
           record.status === "reversed",
       );
       if (index === -1) return { consumed: false };
       const seq = appendPersisted(docId, redoUpdate, meta);
       current.reversals[index] = { ...current.reversals[index], status: "redone" };
-      reactivateMutations(docId, ref.threadId, ref.turnId);
+      reactivateMutations(docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
       return { consumed: true, seq };
     },
 
