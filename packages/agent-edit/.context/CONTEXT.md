@@ -23,10 +23,11 @@ Query-only port over durable agent mutation metadata. The journal write side
 still owns atomic mutation creation/status flips (`appendBatch`,
 `persistReversal`, `persistRedo`); `MutationStore` answers only the questions
 the core needs after those writes: the latest active turn for a
-`(documentId, threadId)` pair and active per-turn summaries with each turn's
-earliest `createdSeq`. Availability uses that earliest retained sequence to
-distinguish "active and still undoable" from active metadata whose forward
-updates were compacted away.
+`(documentId, threadId)` pair, active per-turn summaries with each turn's
+earliest `createdSeq`, and the earliest `createdSeq` for a specific turn
+regardless of status. Availability uses those earliest retained sequences to
+distinguish "active/reversed and still reconstructable" from mutation metadata
+whose forward updates were compacted away.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
@@ -74,11 +75,12 @@ The public package façade exposes `write()`, `recover()`, `compact()`,
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether turn-level undo/redo will
-attempt work: undo requires active mutation metadata plus retained forward
-journal rows; redo requires a retained reversed record/update and the existing
-linear-redo eligibility check. `invalidateThread` evicts cached runtime state
-and the hot `UndoManager` for a document/thread so the next access rebuilds from
-the live document and journal.
+attempt work: undo requires active mutation metadata plus the retained earliest
+forward row for that turn; redo requires a retained reversed record/update, the
+retained earliest forward row for the reversed turn, and the existing linear-redo
+eligibility check. `invalidateThread` evicts cached runtime state, staged
+response buffers, and the hot `UndoManager` for a document/thread so the next
+access rebuilds from the live document and journal.
 
 ## Architecture
 

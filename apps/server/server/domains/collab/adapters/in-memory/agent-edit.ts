@@ -287,6 +287,13 @@ export function createInMemoryJournal(): InMemoryJournal {
       return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
     },
 
+    async turnMinCreatedSeq(documentId, threadId, turnId) {
+      const seqs = entry(documentId)
+        .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+        .map((record) => record.createdSeq);
+      return seqs.length > 0 ? Math.min(...seqs) : undefined;
+    },
+
     createCheckpoint,
 
     async getCheckpoint(id) {

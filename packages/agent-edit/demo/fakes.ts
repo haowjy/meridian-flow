@@ -226,6 +226,17 @@ export class InMemoryJournal implements UpdateJournal, MutationStore {
     return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
   }
 
+  async turnMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<number | undefined> {
+    const seqs = this.entry(documentId)
+      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+      .map((record) => record.createdSeq);
+    return seqs.length > 0 ? Math.min(...seqs) : undefined;
+  }
+
   reversalRecords(docId: string): ReversalRecord[] {
     return [...this.entry(docId).reversals.values()].map((stored) => ({ ...stored.record }));
   }

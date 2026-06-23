@@ -597,6 +597,20 @@ export function createDrizzleMutationStore(db: JournalDb): MutationStore {
         minSeq: Number(row.minSeq),
       }));
     },
+
+    async turnMinCreatedSeq(documentId, threadId, turnId) {
+      const [row] = await db
+        .select({ minSeq: sql<number>`min(${agentEditMutations.createdSeq})` })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+          ),
+        );
+      return row?.minSeq === null || row?.minSeq === undefined ? undefined : Number(row.minSeq);
+    },
   };
 }
 

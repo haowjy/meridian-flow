@@ -11,4 +11,11 @@ export interface MutationStore {
 
   /** Active mutation counts and earliest retained sequence per turn. */
   activeTurnSummary(documentId: string, threadId: string): Promise<ActiveTurnSummary[]>;
+
+  /** Earliest forward journal sequence for this turn, regardless of current mutation status. */
+  turnMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<number | undefined>;
 }
