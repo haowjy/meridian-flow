@@ -455,6 +455,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { turnId: TURN_C, count: 1, minSeq: second[0]?.seq },
       ]);
       expect(await journal.turnMinCreatedSeq(DOC_ID, THREAD_ID, TURN_A)).toBe(first[0]?.seq);
+      expect(await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A)).toEqual([
+        { wId: 1, createdSeq: first[0]?.seq, status: "active" },
+      ]);
 
       const idsBeforeFailure = await updateIds();
       await expect(
@@ -589,6 +592,78 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(Array.from(cold.undoUpdate)).toEqual(Array.from(hotUndoUpdate));
       expect(blockTexts(coldDoc)).toEqual(blockTexts(liveDoc));
       expect(documentBytes(coldDoc)).toEqual(documentBytes(liveDoc));
+    });
+
+    it("cold redo targets the latest reversed same-turn subset through Drizzle", async () => {
+      const journal = createDrizzleJournal(db);
+      const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+
+      const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
+      const core = createAgentEditCore({
+        journal,
+        coordinator,
+        codec,
+        model,
+        undoClientId: REVERSAL_CLIENT_ID,
+      });
+      const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
+      const turnContext = { ...context, turnId: TURN_A };
+
+      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+        "Alpha sword.",
+      );
+      expect(
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "Alpha", content: "Beta" },
+            turnContext,
+          ),
+        ),
+      ).toContain("status: success");
+      expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
+        "status: reversed",
+      );
+      expect(
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
+            turnContext,
+          ),
+        ),
+      ).toContain("status: success");
+      expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
+        "status: reversed",
+      );
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
+
+      const rowsBeforeRedo = await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A);
+      expect(rowsBeforeRedo).toMatchObject([
+        { wId: 1, status: "reversed", undoUpdateSeq: expect.any(Number) },
+        { wId: 2, status: "reversed", undoUpdateSeq: expect.any(Number) },
+      ]);
+      expect(rowsBeforeRedo[1]?.undoUpdateSeq).not.toBe(rowsBeforeRedo[0]?.undoUpdateSeq);
+
+      coordinator.discard(DOC_ID);
+      await core.recover(DOC_ID);
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
+
+      const restarted = createAgentEditCore({
+        journal,
+        coordinator,
+        codec,
+        model,
+        undoClientId: REVERSAL_CLIENT_ID,
+      });
+      expect(outcomeText(await restarted.redoTurn(DOC_ID, THREAD_ID))).toContain(
+        "status: reversed",
+      );
+
+      expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
+      expect(await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A)).toMatchObject([
+        { wId: 1, status: "reversed", undoUpdateSeq: rowsBeforeRedo[0]?.undoUpdateSeq },
+        { wId: 2, status: "active" },
+      ]);
     });
 
     it("rehydrates redo from reversal records after live doc recovery", async () => {

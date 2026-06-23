@@ -480,6 +480,92 @@ describe("write tool dispatch", () => {
     });
   });
 
+  it("cold undo reverses only the active subset inside a reused turn id", async () => {
+    const turnId = "turn-cold-active-subset";
+
+    async function setup(ctx: ReturnType<typeof harness>) {
+      const turnContext = { ...context, turnId };
+      await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+        turnContext,
+      );
+      expect(
+        outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
+      ).toContain("status: reversed");
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+        turnContext,
+      );
+      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+      expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([
+        { wId: 1, turnId, status: "reversed" },
+        { wId: 2, turnId, status: "active", createdSeq: 3 },
+      ]);
+    }
+
+    const hot = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await setup(hot);
+    const hotUndo = await hot.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(outcomeText(hotUndo)).toContain("status: reversed");
+
+    const cold = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await setup(cold);
+    const coldUndo = await cold.core.undoTurn("chapter.md", THREAD_ID);
+    expect(outcomeText(coldUndo)).toContain("status: reversed");
+
+    expect(blockTexts(hot.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+    expect(blockTexts(cold.liveDoc("chapter.md"))).toEqual(blockTexts(hot.liveDoc("chapter.md")));
+    expect(cold.journal.mutationRecords("chapter.md")).toMatchObject([
+      { wId: 1, status: "reversed" },
+      { wId: 2, status: "reversed" },
+    ]);
+  });
+
+  it("cold redo replays the most recent reversed subset inside a reused turn id", async () => {
+    const turnId = "turn-cold-redo-subset";
+
+    async function setup(ctx: ReturnType<typeof harness>) {
+      const turnContext = { ...context, turnId };
+      await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+        turnContext,
+      );
+      await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+        turnContext,
+      );
+      await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+      const rows = ctx.journal.mutationRecords("chapter.md");
+      expect(rows).toMatchObject([
+        { wId: 1, turnId, status: "reversed", undoUpdateSeq: expect.any(Number) },
+        { wId: 2, turnId, status: "reversed", undoUpdateSeq: expect.any(Number) },
+      ]);
+      expect(rows[1]?.undoUpdateSeq).not.toBe(rows[0]?.undoUpdateSeq);
+    }
+
+    const hot = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await setup(hot);
+    const hotRedo = await hot.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(hotRedo)).toContain("status: reversed");
+
+    const cold = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await setup(cold);
+    const coldRedo = await cold.core.redoTurn("chapter.md", THREAD_ID);
+    expect(outcomeText(coldRedo)).toContain("status: reversed");
+
+    expect(blockTexts(hot.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+    expect(blockTexts(cold.liveDoc("chapter.md"))).toEqual(blockTexts(hot.liveDoc("chapter.md")));
+    expect(cold.journal.mutationRecords("chapter.md")).toMatchObject([
+      { wId: 1, status: "reversed" },
+      { wId: 2, status: "active" },
+    ]);
+    expect(cold.journal.mutationRecords("chapter.md")[1]?.undoUpdateSeq).toBeUndefined();
+  });
+
   it("reports undo availability only while active mutation updates are retained", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);

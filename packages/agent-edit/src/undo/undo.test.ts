@@ -221,6 +221,84 @@ describe("hot/cold parity", () => {
     expect(documentBytes(coldRedoDoc)).toEqual(documentBytes(ctx.doc));
   });
 
+  it("matches hot/cold bytes for same-turn subset undo and redo", () => {
+    const ctx = createScenario("Alpha sword.");
+    const turnId = "interleaved-subset";
+
+    agentTurn(ctx, THREAD_A, turnId, () => {
+      applyAgentText(ctx, THREAD_A, 0, { start: 0, end: 5 }, "Beta");
+    });
+    const preFirstUndoVector = Y.encodeStateVector(ctx.doc);
+    const firstUndo = ctx.registry.undoLatest(DOC_ID, THREAD_A, {
+      scope: "turn",
+      turnId,
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(firstUndo).toMatchObject({ ok: true, turnId });
+    ctx.journal.appendSync(DOC_ID, Y.encodeStateAsUpdate(ctx.doc, preFirstUndoVector), {
+      origin: "system",
+      seq: 0,
+    });
+
+    agentTurn(ctx, THREAD_A, turnId, () => {
+      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
+    });
+    const subsetSeq = lastUpdateSeq(ctx.journal);
+    const targetSeqs = new Set([subsetSeq]);
+
+    const preSubsetUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    const preSubsetUndoVector = Y.encodeStateVector(ctx.doc);
+    const hotUndo = ctx.registry.undoLatest(DOC_ID, THREAD_A, {
+      scope: "turn",
+      turnId,
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotUndo).toMatchObject({ ok: true, turnId });
+    const hotUndoUpdate = Y.encodeStateAsUpdate(ctx.doc, preSubsetUndoVector);
+
+    const coldUndo = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
+      docId: DOC_ID,
+      turnId,
+      targetSeqs,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldUndoDoc = cloneDoc(preSubsetUndoDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldUndoDoc, coldUndo.undoUpdate);
+
+    expect(coldUndo.targetUpdateSeqs).toEqual([subsetSeq]);
+    expect(Array.from(coldUndo.undoUpdate)).toEqual(Array.from(hotUndoUpdate));
+    expect(blockTexts(coldUndoDoc)).toEqual(["Alpha sword."]);
+    expect(documentBytes(coldUndoDoc)).toEqual(documentBytes(ctx.doc));
+
+    const undoUpdateSeq = ctx.journal.appendSync(DOC_ID, hotUndoUpdate, {
+      origin: "system",
+      seq: 0,
+    });
+    const afterSubsetUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    const preSubsetRedoVector = Y.encodeStateVector(ctx.doc);
+    const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotRedo).toMatchObject({ ok: true, turnId });
+    const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preSubsetRedoVector);
+
+    const coldRedo = reconstructRedoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
+      docId: DOC_ID,
+      turnId,
+      targetSeqs,
+      undoUpdateSeq,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    expectRedoOk(coldRedo);
+    const coldRedoDoc = cloneDoc(afterSubsetUndoDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldRedoDoc, coldRedo.redoUpdate);
+
+    expect(coldRedo.targetUpdateSeqs).toEqual([subsetSeq]);
+    expect(Array.from(coldRedo.redoUpdate)).toEqual(Array.from(hotRedoUpdate));
+    expect(blockTexts(coldRedoDoc)).toEqual(["Alpha blade."]);
+    expect(documentBytes(coldRedoDoc)).toEqual(documentBytes(ctx.doc));
+  });
+
   it("rejects cold redo after a new forward edit clears the hot redo stack", () => {
     const ctx = createScenario("Alpha sword.\n\nBeta waits.");
     agentTurn(ctx, THREAD_A, "old-turn", () => {
@@ -571,6 +649,12 @@ class MemoryJournal extends InMemoryAgentEditJournal {
     this.compactCalls += 1;
     return super.compact(docId, before);
   }
+}
+
+function lastUpdateSeq(journal: MemoryJournal): number {
+  const seq = journal.updateRecords(DOC_ID).at(-1)?.seq;
+  if (seq === undefined) throw new Error("No updates in journal");
+  return seq;
 }
 
 function targetSeqsForTurn(
