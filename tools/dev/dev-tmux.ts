@@ -7,6 +7,7 @@ import {
 } from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
+import { runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
@@ -42,18 +43,9 @@ interface PortlessState {
   errors: string[];
 }
 
-function runGit(args: string[]): string {
-  const tmuxStore = new TmuxSessionStore(repoRoot);
-  const result = tmuxStore.run("git", args);
-  if (result.status !== 0) {
-    return "";
-  }
-  return result.stdout.trim();
-}
-
 function isLinkedWorktree(): boolean {
-  const gitDir = runGit(["rev-parse", "--git-dir"]);
-  const commonDir = runGit(["rev-parse", "--git-common-dir"]);
+  const gitDir = runGit(repoRoot, ["rev-parse", "--git-dir"]);
+  const commonDir = runGit(repoRoot, ["rev-parse", "--git-common-dir"]);
   if (!gitDir || !commonDir) return false;
 
   const resolvedGitDir = path.resolve(repoRoot, gitDir);
@@ -117,6 +109,7 @@ function envSourcePreamble(): string {
 
 function portlessCommandBody(mode: DevMode): string {
   const shareFlag = portlessShareFlag(mode);
+  // Keep names in sync with SERVICE_HOST_SUFFIXES in portless-routes.ts; portless adds `.localhost`.
   const services: Array<{ name: string; pkg: string; shared: boolean; sharedModeOnly?: boolean }> =
     [
       { name: "app.meridian", pkg: "@meridian/app", shared: true },
@@ -308,8 +301,8 @@ async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
 
-  const branchName = runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
-  const detachedHeadRef = runGit(["rev-parse", "--short", "HEAD"]);
+  const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const detachedHeadRef = runGit(repoRoot, ["rev-parse", "--short", "HEAD"]);
   const identity = resolveSessionIdentity({
     branchName,
     detachedHeadRef,

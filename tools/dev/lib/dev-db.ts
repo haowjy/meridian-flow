@@ -95,6 +95,50 @@ export async function pingDatabaseForUrl(databaseUrl: string): Promise<void> {
   }
 }
 
+/**
+ * Read applied drizzle migration hashes (oldest first). Returns `null` when the
+ * `drizzle.__drizzle_migrations` table does not exist, i.e. the database was
+ * never migrated — callers distinguish that from an up-to-date empty result.
+ */
+export async function readAppliedMigrationHashes(databaseUrl: string): Promise<string[] | null> {
+  const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
+  try {
+    const present = await sql<{ exists: boolean }[]>`
+      SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists`;
+    if (!present[0]?.exists) return null;
+    const rows = await sql<{ hash: string }[]>`
+      SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at`;
+    return rows.map((row) => row.hash);
+  } finally {
+    await sql.end();
+  }
+}
+
+/** List local worktree-shaped databases for the registered dev DB base names. */
+export async function listWorktreeDatabasesForUrl(
+  databaseUrl: string,
+  baseDbNames: readonly string[],
+): Promise<string[]> {
+  assertLocalDevPostgresEndpoint(databaseUrl, "list databases");
+  if (baseDbNames.length === 0) return [];
+
+  const prefixes = baseDbNames.map((baseDbName) => `${baseDbName}_`);
+  const { adminConnString } = parseTargetDatabase(databaseUrl);
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    const rows = await adminSql<{ datname: string }[]>`
+      SELECT datname
+      FROM pg_database
+      WHERE datistemplate = false
+      ORDER BY datname`;
+    return rows
+      .map((row) => row.datname)
+      .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)));
+  } finally {
+    await adminSql.end();
+  }
+}
+
 /** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
