@@ -75,6 +75,22 @@ export function createInMemoryJournal(): InMemoryJournal {
     return seq;
   }
 
+  function appendBatchPersisted(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): number[] {
+    const nextSeqByDoc = new Map<string, number>();
+    for (const batchEntry of entries) {
+      const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? entry(batchEntry.docId).nextSeq;
+      if (batchEntry.meta.seq && batchEntry.meta.seq !== nextSeq) {
+        throw new Error(`Expected seq ${nextSeq}, got ${batchEntry.meta.seq}`);
+      }
+      nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
+    }
+    return entries.map((batchEntry) =>
+      appendPersisted(batchEntry.docId, batchEntry.update, batchEntry.meta),
+    );
+  }
+
   async function createCheckpoint(
     docId: string,
     state: Uint8Array,
@@ -98,6 +114,10 @@ export function createInMemoryJournal(): InMemoryJournal {
   return {
     async append(docId, update, meta) {
       return appendPersisted(docId, update, meta);
+    },
+
+    async appendBatch(entries) {
+      return appendBatchPersisted(entries);
     },
 
     async read(docId, opts = {}): Promise<JournalSnapshot> {

@@ -40,6 +40,23 @@ export class InMemoryJournal implements UpdateJournal {
     return this.appendInternal(docId, update, meta, this.now());
   }
 
+  async appendBatch(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): Promise<number[]> {
+    const storedAt = this.now();
+    const nextSeqByDoc = new Map<string, number>();
+    for (const batchEntry of entries) {
+      const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? this.entry(batchEntry.docId).nextSeq;
+      if (batchEntry.meta.seq !== 0 && batchEntry.meta.seq !== nextSeq) {
+        throw new Error(`Expected seq ${nextSeq}, got ${batchEntry.meta.seq}`);
+      }
+      nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
+    }
+    return entries.map((batchEntry) =>
+      this.appendInternal(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt),
+    );
+  }
+
   async read(
     docId: string,
     opts: { since?: number; until?: number } = {},

@@ -25,7 +25,7 @@ import {
 } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
@@ -158,6 +158,8 @@ interface ResponseDocumentBuffer {
 
 interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
+  updates: JournalBatchAppendEntry[];
+  journalCommitted: boolean;
 }
 
 type ReversalResult =
@@ -181,6 +183,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const responseBuffers = new Map<string, ResponseBuffer>();
+  const docsNeedingRecovery = new Set<string>();
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
@@ -249,13 +252,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const buffer = responseBuffers.get(responseId);
     if (!buffer) return emptyResponseCommit(responseId);
 
+    const docBuffers = [...buffer.docs.values()].filter(
+      (docBuffer) => docBuffer.updates.length > 0,
+    );
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
     try {
-      for (const docBuffer of buffer.docs.values()) {
-        if (docBuffer.updates.length === 0) continue;
+      if (!buffer.journalCommitted) {
+        await options.journal.appendBatch(buffer.updates);
+        buffer.journalCommitted = true;
+      }
+
+      for (const docBuffer of docBuffers) {
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
-        const committed = await commitUpdatesToJournalAndLive({
+        const committed = await mergeCommittedUpdatesToLive({
           docId: docBuffer.docId,
           commandName: docBuffer.commandName,
           updates: docBuffer.updates,
@@ -279,34 +289,48 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
         });
       }
+      responseBuffers.delete(responseId);
       return {
         responseId,
         documentCount: documents.length,
         updateCount,
         documents,
       };
-    } finally {
-      responseBuffers.delete(responseId);
+    } catch (cause) {
+      const recoveryFailure = buffer.journalCommitted
+        ? await recoverLiveDocsFromJournal(docBuffers).catch((error: unknown) => error)
+        : null;
+      evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
+      throw responseCommitError(responseId, buffer.journalCommitted, cause, recoveryFailure);
     }
   }
 
   async function rollbackResponse(responseId: string): Promise<void> {
     const buffer = responseBuffers.get(responseId);
     if (!buffer) return;
-    responseBuffers.delete(responseId);
 
-    for (const docBuffer of buffer.docs.values()) {
-      docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
-      docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
-      docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
-      registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
-      const restored = await restoreRuntimeFromLive(
-        docBuffer.session,
-        docBuffer.docId,
-        docBuffer.runtime,
-        docBuffer.commandName,
-      );
-      if (isInternalWriteResult(restored)) throw new Error(restored.text);
+    const docBuffers = [...buffer.docs.values()];
+    try {
+      for (const docBuffer of docBuffers) {
+        docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
+        docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
+        docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
+        registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
+        const restored = await restoreRuntimeFromLive(
+          docBuffer.session,
+          docBuffer.docId,
+          docBuffer.runtime,
+          docBuffer.commandName,
+          { recoverFromJournal: buffer.journalCommitted },
+        );
+        if (isInternalWriteResult(restored)) throw new Error(restored.text);
+        attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+      }
+      responseBuffers.delete(responseId);
+    } catch (cause) {
+      evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
+      responseBuffers.delete(responseId);
+      throw cause;
     }
   }
 
@@ -333,7 +357,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   }): void {
     let buffer = responseBuffers.get(input.responseId);
     if (!buffer) {
-      buffer = { docs: new Map() };
+      buffer = { docs: new Map(), updates: [], journalCommitted: false };
       responseBuffers.set(input.responseId, buffer);
     }
 
@@ -359,6 +383,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
     });
+    buffer.updates.push({ docId: input.docId, update: input.update, meta: input.meta });
   }
 
   async function view(
@@ -453,13 +478,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
-    await options.journal.append(address.filePath, update, meta);
-
-    const liveResult = await withLive(address.filePath, command.command, async (liveDoc) => {
-      Y.applyUpdate(liveDoc, update, agentUpdateOrigin(turnId));
-      return null;
+    const committed = await commitUpdatesToJournalAndLive({
+      docId: address.filePath,
+      commandName: command.command,
+      updates: [{ update, meta }],
+      afterOwnVector: Y.encodeStateVector(runtime.doc),
+      liveOrigin: agentUpdateOrigin(turnId),
     });
-    if (isInternalWriteResult(liveResult)) return liveResult;
+    if (!committed.ok) return committed.response;
 
     runtime.undoStack.push(turnId);
     runtime.redoStack = [];
@@ -813,7 +839,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
+    restoreOptions: { recoverFromJournal?: boolean } = {},
   ): Promise<InternalWriteResult | null> {
+    if (restoreOptions.recoverFromJournal || docsNeedingRecovery.has(docId)) {
+      try {
+        await options.coordinator.recover(docId);
+        docsNeedingRecovery.delete(docId);
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
+        throw cause;
+      }
+    }
     const response = await withLive(docId, commandName, (liveDoc) => {
       const restored = new Y.Doc({ gc: false });
       Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
@@ -823,6 +859,47 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (isInternalWriteResult(response)) return response;
     markSynced(session, docId, runtime);
     return null;
+  }
+
+  async function recoverLiveDocsFromJournal(
+    docBuffers: readonly ResponseDocumentBuffer[],
+  ): Promise<void> {
+    const seen = new Set<string>();
+    for (const docBuffer of docBuffers) {
+      if (seen.has(docBuffer.docId)) continue;
+      seen.add(docBuffer.docId);
+      await options.coordinator.recover(docBuffer.docId);
+      docsNeedingRecovery.delete(docBuffer.docId);
+    }
+  }
+
+  function attachRuntime(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+  ): void {
+    runtimeDocs.set(runtimeKey(session, docId), runtime);
+    markSynced(session, docId, runtime);
+  }
+
+  function evictResponseRuntimes(
+    docBuffers: readonly ResponseDocumentBuffer[],
+    evictOptions: { needsRecovery?: boolean } = {},
+  ): void {
+    for (const docBuffer of docBuffers) {
+      evictRuntime(docBuffer.session, docBuffer.docId, evictOptions);
+    }
+  }
+
+  function evictRuntime(
+    session: ActorSession,
+    docId: string,
+    evictOptions: { needsRecovery?: boolean } = {},
+  ): void {
+    runtimeDocs.delete(runtimeKey(session, docId));
+    session.documents.delete(docId);
+    registry.evictThread(docId, session.threadId);
+    if (evictOptions.needsRecovery) docsNeedingRecovery.add(docId);
   }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -846,6 +923,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
+    if (docsNeedingRecovery.has(docId)) {
+      try {
+        await options.coordinator.recover(docId);
+        docsNeedingRecovery.delete(docId);
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) {
+          return { ok: false, response: documentNotFound(commandName, docId) };
+        }
+        throw cause;
+      }
+    }
     const response = await withLive(docId, commandName, async (liveDoc) => {
       const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
       if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
@@ -945,10 +1033,22 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<
     { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
   > {
-    for (const entry of input.updates) {
-      await options.journal.append(input.docId, entry.update, entry.meta);
-    }
+    await options.journal.appendBatch(
+      input.updates.map((entry) => ({
+        docId: input.docId,
+        update: entry.update,
+        meta: entry.meta,
+      })),
+    );
 
+    return mergeCommittedUpdatesToLive(input);
+  }
+
+  async function mergeCommittedUpdatesToLive(
+    input: LiveUpdateCommitInput,
+  ): Promise<
+    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
+  > {
     return mergeCommittedUpdateToLive({
       docId: input.docId,
       commandName: input.commandName,
@@ -1239,6 +1339,29 @@ function hasYjsUpdate(update: Uint8Array): boolean {
 
 function mergeUpdates(updates: Uint8Array[]): Uint8Array {
   return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
+}
+
+function responseCommitError(
+  responseId: string,
+  journalCommitted: boolean,
+  cause: unknown,
+  recoveryFailure: unknown,
+): Error {
+  const phase = journalCommitted
+    ? "after the journal batch was committed"
+    : "before the journal batch was committed";
+  const recovery = recoveryFailure
+    ? ` Recovery from the committed journal also failed: ${errorMessage(recoveryFailure)}.`
+    : journalCommitted
+      ? " The affected runtime docs were invalidated and will rebuild from live+journal on next access."
+      : " The affected runtime docs were invalidated; the response buffer is still available for retry or rollback.";
+  return new Error(
+    `Failed to commit response ${responseId} ${phase}: ${errorMessage(cause)}.${recovery}`,
+  );
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function emptyResponseCommit(responseId: string): ResponseCommitResult {

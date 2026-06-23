@@ -18,6 +18,16 @@ class MemoryJournal implements UpdateJournal {
     return seq;
   }
 
+  async appendBatch(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): Promise<number[]> {
+    return entries.map((entry) => {
+      const seq = this.updates.length + 1;
+      this.updates.push({ seq, update: entry.update, meta: { ...entry.meta, seq } });
+      return seq;
+    });
+  }
+
   async read() {
     return {
       checkpoint: this.checkpointState,

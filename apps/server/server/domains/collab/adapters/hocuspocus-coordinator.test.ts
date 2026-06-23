@@ -29,6 +29,16 @@ class MemoryJournal implements UpdateJournal {
     return seq;
   }
 
+  async appendBatch(
+    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
+  ): Promise<number[]> {
+    const seqs: number[] = [];
+    for (const batchEntry of entries) {
+      seqs.push(await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta));
+    }
+    return seqs;
+  }
+
   async read(docId: string) {
     const entry = this.entries.get(docId);
     return entry
