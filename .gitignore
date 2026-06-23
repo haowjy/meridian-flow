@@ -56,4 +56,7 @@ apps/app/playwright-report/
 # stale design/research docs — recorded in the docs repo
 .meridian/fs/
 
+# agent scratch / work artifacts (benches, findings); never committed
+.meridian-work/
+
 *.code-workspace
