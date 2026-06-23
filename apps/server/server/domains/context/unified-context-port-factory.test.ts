@@ -134,8 +134,9 @@ describe("createInMemoryUnifiedContextPortFactory", () => {
       thread.id,
     );
     expect(resolution?.primaryWorkId).toBe(work.id);
+    if (!resolution) throw new Error("Expected thread context resolution");
 
-    const port = contextPortForThread(factory, resolution!);
+    const port = contextPortForThread(factory, resolution);
     await port.write("manuscript://chapter-1.md", "thread manuscript", {
       origin: { type: "system" },
     });

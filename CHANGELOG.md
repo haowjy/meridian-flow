@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Test suite pruning: deleted low-value contract/helper tests, in-memory
+  conformance wrappers, skipped DB conformance wrappers, and duplicate golden
+  coverage that did not protect a durable boundary.
+
 - Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
   replaces the bare needle and cinnabar seal-square favicon. Proto route at
   `/proto/logo-mark` for comparing discarded framing options.
