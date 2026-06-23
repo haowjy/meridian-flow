@@ -62,22 +62,28 @@ describe("runtime store", () => {
       expect(reversal?.undoUpdateSeq).toBeGreaterThan(0);
     }
 
-    const hot = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
-    await writeThenUndo(hot);
-    const coldCoordinator = new MemoryCoordinator({});
-    coldCoordinator.docs.set("chapter.md", cloneDoc(hot.liveDoc("chapter.md")));
-    const coldLifecycle = new MemoryDocumentLifecycle(coldCoordinator);
-    const coldJournal = hot.journal.clone();
+    const baseline = harness(
+      { "chapter.md": "Alpha sword." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await writeThenUndo(baseline);
+    const restartedCoordinator = new MemoryCoordinator({});
+    restartedCoordinator.docs.set("chapter.md", cloneDoc(baseline.liveDoc("chapter.md")));
+    const restartedLifecycle = new MemoryDocumentLifecycle(restartedCoordinator);
+    const restartedJournal = baseline.journal.clone();
 
-    const hotRedo = await hot.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(hotRedo)).toContain("status: reversed");
-    const hotTexts = blockTexts(hot.liveDoc("chapter.md"));
-    const hotBytes = documentBytes(hot.liveDoc("chapter.md"));
+    const baselineRedo = await baseline.core.write(
+      { command: "redo", file: "chapter.md" },
+      context,
+    );
+    expect(outcomeText(baselineRedo)).toContain("status: reversed");
+    const baselineTexts = blockTexts(baseline.liveDoc("chapter.md"));
+    const baselineBytes = documentBytes(baseline.liveDoc("chapter.md"));
 
     const restarted = createAgentEditCore({
-      journal: coldJournal,
-      coordinator: coldCoordinator,
-      lifecycle: coldLifecycle,
+      journal: restartedJournal,
+      coordinator: restartedCoordinator,
+      lifecycle: restartedLifecycle,
       codec,
       model,
       undoClientId: REVERSAL_CLIENT_ID,
@@ -86,28 +92,28 @@ describe("runtime store", () => {
       outcomeText(await restarted.write({ command: "view", file: "chapter.md" }, context)),
     ).toContain("Alpha sword.");
 
-    const coldRedo = await restarted.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(coldRedo)).toContain("status: reversed");
-    expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
-    expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
+    const restartedRedo = await restarted.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(restartedRedo)).toContain("status: reversed");
+    expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
+    expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
 
     expect(
-      await coldJournal.readReversals("chapter.md", {
+      await restartedJournal.readReversals("chapter.md", {
         threadId: context.threadId,
         status: ["reversed"],
       }),
     ).toEqual([]);
     expect(
-      await coldJournal.readReversals("chapter.md", {
+      await restartedJournal.readReversals("chapter.md", {
         threadId: context.threadId,
         status: ["redone"],
       }),
     ).toMatchObject([{ turnId, status: "redone" }]);
 
     const secondRestart = createAgentEditCore({
-      journal: coldJournal,
-      coordinator: coldCoordinator,
-      lifecycle: coldLifecycle,
+      journal: restartedJournal,
+      coordinator: restartedCoordinator,
+      lifecycle: restartedLifecycle,
       codec,
       model,
       undoClientId: REVERSAL_CLIENT_ID,
@@ -116,8 +122,8 @@ describe("runtime store", () => {
 
     const doubleRedo = await secondRestart.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo");
-    expect(blockTexts(coldCoordinator.require("chapter.md"))).toEqual(hotTexts);
-    expect(documentBytes(coldCoordinator.require("chapter.md"))).toEqual(hotBytes);
+    expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
+    expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
   });
 
   it("consumes durable redo once across concurrent restarted sessions", async () => {

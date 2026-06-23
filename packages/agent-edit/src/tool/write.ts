@@ -18,7 +18,7 @@ import type { UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
-import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
+import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
@@ -49,7 +49,6 @@ export interface CreateWriteToolOptions {
   lifecycle?: DocumentLifecycle;
   codec: Codec;
   model: AgentEditModel;
-  undoRegistry?: UndoManagerRegistry;
   actorSessionStore?: ActorSessionStore;
   retention?: {
     reversalWindowMs?: number;
@@ -60,7 +59,10 @@ export interface CreateWriteToolOptions {
   /** Server-local fallback identity when no ActorSession/ActorSessionStore is supplied. */
   defaultSessionId?: string;
   defaultThreadId?: string;
-  /** Fresh Yjs client id used for cold undo/redo reconstruction. */
+  /**
+   * Stable Yjs client id used for cold undo/redo reconstruction. Defaults to
+   * agent-edit's arbitrary standalone fallback when the host does not inject one.
+   */
   undoClientId?: number;
   /**
    * Host-owned factory for forward-authoring runtime docs. Lets the host keep
@@ -74,7 +76,6 @@ export interface CreateWriteToolOptions {
 
 export interface WriteTool {
   write: WriteFunction;
-  registry: UndoManagerRegistry;
   recover(docId: string): Promise<void>;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
@@ -96,11 +97,16 @@ interface ApplySuccessResponseInput {
 }
 
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
+// Fixed fallback Yjs clientID for deterministic standalone cold reconstruction
+// when the host does not inject one. Not tied to any host reserved-band scheme;
+// Meridian injects its own AGENT_EDIT_UNDO_CLIENT_ID at the composition root.
+const DEFAULT_UNDO_CLIENT_ID = 999;
 let nextAutoTurnIdNonce = 0;
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
-  const registry = options.undoRegistry ?? createUndoManagerRegistry();
+  const threadOrigins = createThreadOriginRegistry();
   const lifecycle = options.lifecycle;
+  const undoClientId = options.undoClientId ?? DEFAULT_UNDO_CLIENT_ID;
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
@@ -111,36 +117,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const mutationCommit = createMutationCommit({
     journal: options.journal,
-    registry,
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
-    onInvariantViolation: options.onInvariantViolation,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
     journal: options.journal,
-    registry,
-    model: options.model,
-    codec: options.codec,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
   const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
   const responseStaging = createResponseStaging({
-    registry,
     runtimeStore,
     mutationCommit,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
   const turnReversal = createTurnReversal({
     journal: options.journal,
-    registry,
     runtimeStore,
     mutationCommit,
     model: options.model,
     codec: options.codec,
     retention: options.retention,
-    undoClientId: options.undoClientId,
+    undoClientId,
     onInvariantViolation: options.onInvariantViolation,
   });
 
@@ -163,7 +162,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   return {
     write,
-    registry,
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
@@ -277,19 +275,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const turnId = nextTurnId(session, address.filePath, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = registry.beginTurn(
-      address.filePath,
-      session.threadId,
-      runtime.doc,
-      turnId,
-    ).origin;
-    try {
-      runtime.doc.transact(() => {
-        options.model.insertBlocks(runtime.doc, null, parsed.parsed);
-      }, origin);
-    } finally {
-      registry.endTurn(address.filePath, session.threadId, turnId);
-    }
+    const origin = threadOrigins.getThreadOrigin(address.filePath, session.threadId);
+    runtime.doc.transact(() => {
+      options.model.insertBlocks(runtime.doc, null, parsed.parsed);
+    }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
 
@@ -353,21 +342,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.filePath, context);
-    const origin = registry.beginTurn(
-      address.filePath,
-      session.threadId,
-      runtime.doc,
-      turnId,
-    ).origin;
-    let applied: ApplyResult;
-    try {
-      applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
-        ownActorTurnId: turnId,
-        syncStateVector: synced.stateVector,
-      });
-    } finally {
-      registry.endTurn(address.filePath, session.threadId, turnId);
-    }
+    const origin = threadOrigins.getThreadOrigin(address.filePath, session.threadId);
+    const applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
+      ownActorTurnId: turnId,
+      syncStateVector: synced.stateVector,
+    });
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
 
@@ -487,7 +466,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   function invalidateThread(docId: string, threadId: string): void {
     responseStaging.dropForThread(docId, threadId);
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
-    registry.evictThread(docId, threadId);
+    threadOrigins.evictThread(docId, threadId);
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {

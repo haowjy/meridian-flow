@@ -14,13 +14,13 @@ desktop, MCP, and future products.
 - **Apply** — 3-tier (Tier 1 Y.XmlText ops, Tier 2 per-block updateYFragment,
   Tier 3 fragment insert/delete), preflight-before-mutate discipline, echo +
   concurrent-edit detection.
-- **Undo/redo** — hot path (live UndoManager per thread, stable origin symbol,
-  `stopCapturing` at turn boundaries) + cold path (reconstruction from journal,
-  per-turn tokens, authoritative). Hot/cold parity enforced by tests.
+- **Undo/redo** — single cold reconstruction path from the durable journal
+  (checkpoint + retained update rows + mutation metadata). Forward writes keep
+  a stable per-thread Yjs transaction origin symbol; reversal does not use an
+  in-memory reversal cache.
 - **Compaction** — fold old updates into checkpoint, expire reversal records.
-  Exposed via the `compact()` façade; the host decides when to call it. It is
-  NOT auto-invoked on document load, so the post-checkpoint replay window is
-  currently unbounded for long-lived open docs.
+  Exposed via the `compact()` façade; the host decides when to call it. Server
+  checkpoint freshness is maintained by Hocuspocus's debounced store path.
 - **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
   model })` exposes the agent `write()` tool plus turn-level availability/user
   undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).
@@ -33,8 +33,8 @@ adapters or in the MCP distribution package.
 
 ## The invariant
 
-The Yjs CRDT machinery is generic and reusable on any `Y.Doc`: updates, native
-`Y.UndoManager` undo/redo + the reversal journal, idempotency, concurrent-edit
+The Yjs CRDT machinery is generic and reusable on any `Y.Doc`: updates, cold
+reconstruction from the reversal journal, idempotency, concurrent-edit
 detection, and the host infra ports (`UpdateJournal`, `DocumentCoordinator`,
 `DocumentLifecycle`, `ActorSessionStore`, codecs, coordinators — Hocuspocus /
 in-process mutex). None of that needs ProseMirror.

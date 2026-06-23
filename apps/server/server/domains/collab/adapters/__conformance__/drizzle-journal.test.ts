@@ -4,7 +4,6 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
   mdxCodec,
-  reconstructUndoUpdateFromSnapshot,
   type UpdateJournal,
   type WriteContext,
   yProsemirrorModel,
@@ -538,67 +537,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(textFromSnapshot(snapshot.checkpoint, snapshot.updates)).toBe("Alpha Beta");
     });
 
-    it("preserves hot/cold undo parity through createAgentEditCore", async () => {
-      const journal = createDrizzleJournal(db);
-      const liveDoc = createDoc("Alpha sword.\n\nBeta waits.", LIVE_CLIENT_ID);
-      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
-
-      const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]]);
-      const core = createAgentEditCore({
-        journal,
-        coordinator,
-        codec,
-        model,
-        undoClientId: REVERSAL_CLIENT_ID,
-      });
-      const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
-
-      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
-        "Alpha sword",
-      );
-      expect(
-        outcomeText(
-          await core.write(
-            { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
-            { ...context, turnId: TURN_A },
-          ),
-        ),
-      ).toContain("status: success");
-      expect(
-        outcomeText(
-          await core.write(
-            { command: "replace", file: DOC_ID, find: "waits", content: "marches" },
-            { ...context, turnId: TURN_B },
-          ),
-        ),
-      ).toContain("status: success");
-      expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta marches."]);
-
-      const snapshotBeforeUndo = await journal.read(DOC_ID);
-      expect(snapshotBeforeUndo.updates.map((update) => update.meta.actorTurnId)).toEqual([
-        TURN_A,
-        TURN_B,
-      ]);
-      const preUndoDoc = cloneDoc(liveDoc, LIVE_CLIENT_ID);
-      const beforeUndoVector = Y.encodeStateVector(liveDoc);
-      const undoResult = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undoResult).toContain("status: reversed");
-      const hotUndoUpdate = Y.encodeStateAsUpdate(liveDoc, beforeUndoVector);
-
-      const cold = reconstructUndoUpdateFromSnapshot(snapshotBeforeUndo, {
-        docId: DOC_ID,
-        turnId: TURN_B,
-        targetSeqs: targetSeqsFromSnapshot(snapshotBeforeUndo, TURN_B),
-        undoClientId: REVERSAL_CLIENT_ID,
-      });
-      const coldDoc = cloneDoc(preUndoDoc, LIVE_CLIENT_ID);
-      Y.applyUpdate(coldDoc, cold.undoUpdate);
-
-      expect(Array.from(cold.undoUpdate)).toEqual(Array.from(hotUndoUpdate));
-      expect(blockTexts(coldDoc)).toEqual(blockTexts(liveDoc));
-      expect(documentBytes(coldDoc)).toEqual(documentBytes(liveDoc));
-    });
-
     it("cold redo targets the latest reversed same-turn subset through Drizzle", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
@@ -794,17 +732,6 @@ function appendText(doc: Y.Doc, value: string): Uint8Array {
   return Y.encodeStateAsUpdate(doc, before);
 }
 
-function targetSeqsFromSnapshot(
-  snapshot: { updates: readonly { seq: number; meta: { actorTurnId?: string } }[] },
-  turnId: string,
-): ReadonlySet<number> {
-  return new Set(
-    snapshot.updates
-      .filter((update) => update.meta.actorTurnId === turnId)
-      .map((update) => update.seq),
-  );
-}
-
 function textFromSnapshot(
   checkpoint: Uint8Array | null,
   updates: readonly { update: Uint8Array }[],
@@ -824,17 +751,6 @@ function createDoc(markdown: string, clientID: number): Y.Doc {
   return doc;
 }
 
-function cloneDoc(source: Y.Doc, clientID: number): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
-  doc.clientID = clientID;
-  return doc;
-}
-
 function blockTexts(doc: Y.Doc): string[] {
   return model.getBlocks(doc).map((block) => model.getText(block));
-}
-
-function documentBytes(doc: Y.Doc): number[] {
-  return Array.from(Y.encodeStateAsUpdate(doc));
 }

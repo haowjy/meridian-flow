@@ -41,7 +41,7 @@ async function main() {
   await scenarioCrossBlockFind(env, docId);
   await scenarioMultiWriteTurn();
   await scenarioConcurrentReconciled();
-  await scenarioHotColdParity();
+  await scenarioColdUndoAfterRestart();
 
   section("All assertions passed");
 }
@@ -250,49 +250,28 @@ async function scenarioConcurrentReconciled() {
   );
 }
 
-async function scenarioHotColdParity() {
-  section("9. hot vs cold undo parity: fresh core falls back to journal reconstruction");
+async function scenarioColdUndoAfterRestart() {
+  section("9. cold undo after restart: fresh core reconstructs from the journal");
   const env = createEnvironment();
-  const hotDoc = "parity-hot.mdx";
-  const coldDoc = "parity-cold.mdx";
+  const docId = "cold-restart.mdx";
   const initial = "Alpha sword.\n\nOmega waits.";
 
-  await env.core.write({ command: "create", file: hotDoc, content: initial }, defaultContext);
-  await env.core.write({ command: "view", file: hotDoc }, defaultContext);
+  await env.core.write({ command: "create", file: docId, content: initial }, defaultContext);
+  await env.core.write({ command: "view", file: docId }, defaultContext);
   await env.core.write(
-    { command: "replace", file: hotDoc, find: "sword", content: "blade" },
-    { ...defaultContext, turnId: "demo-thread:parity-hot-edit" },
-  );
-  const hotUndo = await env.core.write({ command: "undo", file: hotDoc }, defaultContext);
-  const hotRendered = await rendered(env, hotDoc);
-  print("hot path undo", hotUndo.text);
-  print("hot rendered", hotRendered);
-
-  await env.core.write({ command: "create", file: coldDoc, content: initial }, defaultContext);
-  await env.core.write({ command: "view", file: coldDoc }, defaultContext);
-  await env.core.write(
-    { command: "replace", file: coldDoc, find: "sword", content: "blade" },
-    { ...defaultContext, turnId: "demo-thread:parity-cold-edit" },
+    { command: "replace", file: docId, find: "sword", content: "blade" },
+    { ...defaultContext, turnId: "demo-thread:cold-restart-edit" },
   );
 
   const freshCoreEnv = createEnvironment(env.journal, env.coordinator);
-  await freshCoreEnv.core.write({ command: "view", file: coldDoc }, defaultContext);
-  const coldUndo = await freshCoreEnv.core.write(
-    { command: "undo", file: coldDoc },
-    defaultContext,
-  );
-  const coldRendered = await rendered(env, coldDoc);
-  print("cold path undo (fresh core/session registry)", coldUndo.text);
-  print("cold rendered", coldRendered);
+  await freshCoreEnv.core.write({ command: "view", file: docId }, defaultContext);
+  const undo = await freshCoreEnv.core.write({ command: "undo", file: docId }, defaultContext);
+  const afterUndo = await rendered(env, docId);
+  print("cold reconstruction undo", undo.text);
+  print("rendered after undo", afterUndo);
 
-  if (hotRendered === coldRendered) {
-    print("hot/cold parity OK", "rendered text identical after undo");
-  } else {
-    print("hot/cold parity DIFF", diffLines(hotRendered, coldRendered));
-  }
-  assert(hotUndo.text.includes("status: reversed"), "hot undo should reverse the edit");
-  assert(coldUndo.text.includes("status: reversed"), "cold undo should reverse the edit");
-  assert(hotRendered === coldRendered, "hot and cold undo should leave identical rendered text");
+  assert(undo.text.includes("status: reversed"), "cold undo should reverse the edit");
+  assert(afterUndo.includes("Alpha sword."), "cold undo should restore the original text");
 }
 
 async function blocks(env: DemoEnvironment, docId: string): Promise<BlockLine[]> {
@@ -336,19 +315,6 @@ function assert(condition: unknown, message: string): asserts condition {
 
 function equal(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function diffLines(left: string, right: string): string {
-  const leftLines = left.split("\n");
-  const rightLines = right.split("\n");
-  const length = Math.max(leftLines.length, rightLines.length);
-  const lines: string[] = [];
-  for (let index = 0; index < length; index += 1) {
-    if (leftLines[index] === rightLines[index]) continue;
-    lines.push(`hot : ${leftLines[index] ?? "<missing>"}`);
-    lines.push(`cold: ${rightLines[index] ?? "<missing>"}`);
-  }
-  return lines.join("\n");
 }
 
 main().catch((cause) => {

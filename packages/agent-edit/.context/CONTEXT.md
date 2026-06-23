@@ -81,9 +81,9 @@ response lifecycle methods after the model response finishes or is cancelled.
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
 retained earliest forward row for the reversed turn, and the existing linear-redo
-eligibility check. `invalidateThread` evicts cached runtime state, staged
-response buffers, and the hot `UndoManager` for a document/thread so the next
-access rebuilds from the live document and journal.
+eligibility check. `invalidateThread` evicts cached runtime state and staged
+response buffers for a document/thread so the next access rebuilds runtime state
+from the live document and journal.
 
 ## Architecture
 
@@ -111,33 +111,32 @@ structurally deleting (preserves ProseMirror `doc(block+)` invariant).
 
 ### Undo/redo (`src/undo/`)
 
-**Hot path** — live `Y.UndoManager` per `(docId, threadId)` pair in
-`UndoManagerRegistry`. Each thread gets a stable origin `Symbol` (same object
-across all turns — Yjs origin tracking uses object identity).
-`stopCapturing()` at turn boundaries groups writes into separate stack items.
-`captureTimeout: Infinity` — no auto-merge; explicit split only.
+Reversal is a single cold reconstruction path from `UpdateJournal`. It replays
+checkpoint + retained updates, assigns per-reconstruction `Symbol` tokens,
+creates a fresh local `Y.UndoManager`, tags only the requested target forward
+update seqs with the tracked token, runs undo/redo, and extracts update bytes.
+The target seqs come from mutation rows: undo targets currently `active` rows for
+the turn; redo targets `reversed` rows whose `undoUpdateSeq` matches the redo
+target. This journal-backed model is authoritative.
 
-**Cold path** — reconstruction from `UpdateJournal` when UndoManager is gone.
-Replay checkpoint + updates, assign per-reconstruction `Symbol` tokens, create
-fresh UndoManager, tag only the requested target forward update seqs with the
-tracked token, undo/redo, extract bytes. The target seqs come from mutation rows:
-undo targets currently `active` rows for the turn; redo targets `reversed` rows
-whose `undoUpdateSeq` matches the redo target. Authoritative model; hot path is
-a performance cache. Redo survives process
-restart by rehydrating `runtime.redoStack` from `ReversalRecord` rows with
-`status: "reversed"` during the first `view` sync for that `(session, doc,
-thread)`. Rehydration filters expired records and records made stale by later
-forward agent/human updates. Redo consumption is authoritative at persist time:
-`persistRedo()` rechecks the doc+thread+turn reversal is still `status:
-"reversed"` inside the append transaction, marks it `status: "redone"`, and
-returns `consumed: false` without appending when another session already used it.
+Forward agent writes still use a stable transaction origin `Symbol` per
+`(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
+transaction attribution and same-actor filtering only; turn grouping for
+reversal comes from durable journal metadata (`turnId` / mutation row
+`createdSeq`), not live undo stack items.
 
-**Hot/cold parity:** both paths must produce byte-identical undo results for
-the same turn sequence. Enforced by tests (`undo.test.ts`).
+Redo survives process restart by rehydrating `runtime.redoStack` from
+`ReversalRecord` rows with `status: "reversed"` during the first `view` sync for
+that `(session, doc, thread)`. Rehydration filters expired records and records
+made stale by later forward agent/human updates. Redo consumption is
+authoritative at persist time: `persistRedo()` rechecks the doc+thread+turn
+reversal is still `status: "reversed"` inside the append transaction, marks it
+`status: "redone"`, and returns `consumed: false` without appending when another
+session already used it.
 
-**Turn-level undo:** each `write()` call is its own Yjs transaction. The
-`UndoManagerRegistry` creates a fresh undo stack item per turn boundary
-(not per command). Undoing a turn reverses ALL writes from that turn together.
+**Turn-level undo:** each `write()` call is its own durable mutation row. Undoing
+a turn reverses all currently active rows for the latest undoable turn together;
+redo replays the latest eligible reversed subset for that turn.
 
 ## Key invariants
 
@@ -146,17 +145,14 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
   Lost on type change or deletion (new element → new ID).
 - **Codec round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
-- **Hot/cold parity.** Live `um.undo()` and reconstructed `undo()` produce
-  identical document state for the same turn.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
   root; callers mutate through `write()` or the turn-level undo/redo seams.
 - **Coordinator/runtime failures → `internal_error`**, not
   `document_not_found`. Only document-missing from the coordinator is
   `document_not_found`.
-- **Turn boundaries split via explicit `stopCapturing()`**, not
-  `captureTimeout`. Without explicit splitting, all turns merge into one
-  stack item.
+- **Turn identity is durable.** Reversal groups rows by journal mutation
+  metadata, so restart/recovery does not depend on live in-memory undo state.
 
 ## Tool surface
 
@@ -179,10 +175,9 @@ undoable turn even when the post-commit live projection fails. In that case
 reattaches the affected runtimes without restoring baseline undo/redo stacks,
 and returns success; only a recovery failure invalidates runtimes so next access
 rebuilds from journal truth. `rollbackResponse(responseId)` is cancellation for
-uncommitted buffers: it discards staged updates, restores affected runtime docs
-from live, and evicts hot undo managers for those threads. If called after a
-journaled commit attempt, it is recover-only and never restores baseline
-undo/redo stacks.
+uncommitted buffers: it discards staged updates and restores affected runtime
+docs from live. If called after a journaled commit attempt, it is recover-only
+and never restores baseline undo/redo stacks.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
@@ -215,7 +210,7 @@ Meridian URI schemes — it operates on plain `{ file: "<docId>#fragment" }`.
 ## Testing
 
 Package tests cover block-hash stability, codec round-trip, resolver with
-cross-block find, 3-tier apply preflight + edge cases, echo computation,
-hot+cold undo (8-case reconcile matrix + Q2b interleaved multi-agent +
-hot/cold parity), response staging/recovery, create lifecycle, and
-compact-on-load.
+cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
+undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
+drift invariants, availability, retention, and public turn seams), response
+staging/recovery, create lifecycle, and compact-on-load.

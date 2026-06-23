@@ -13,6 +13,12 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  /**
+   * Folds updates older than the cutoff. When reversal retention is configured,
+   * the cutoff is clamped to the retention horizon so compaction cannot remove
+   * rows still needed for cold reversal. With no retention configured, the host
+   * owns cutoff safety.
+   */
   compact(docId: string, before: Date): Promise<CompactOnLoadResult>;
 }
 
@@ -28,8 +34,16 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
     compact: (docId, before) =>
-      compactOnLoad(options.journal, { docId, before, registry: tool.registry }),
+      compactOnLoad(options.journal, {
+        docId,
+        before: effectiveCompactionBefore(before, options.retention?.reversalWindowMs),
+      }),
   };
+}
+
+function effectiveCompactionBefore(before: Date, retentionMs: number | undefined): Date {
+  if (retentionMs === undefined) return before;
+  return new Date(Math.min(before.getTime(), Date.now() - retentionMs));
 }
 
 export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";

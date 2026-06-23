@@ -5,7 +5,6 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
-import type { UndoManagerRegistry } from "../undo/manager-registry.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -66,12 +65,11 @@ interface ResponseBuffer {
 }
 
 export function createResponseStaging(deps: {
-  registry: UndoManagerRegistry;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   ensureDocument?: (docId: string) => Promise<void>;
 }): ResponseStaging {
-  const { registry, runtimeStore, mutationCommit, ensureDocument } = deps;
+  const { runtimeStore, mutationCommit, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
 
   return {
@@ -177,7 +175,6 @@ export function createResponseStaging(deps: {
         docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
         docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
         docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
-        registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
         const restored = await runtimeStore.restoreRuntimeFromLive(
           docBuffer.session,
           docBuffer.docId,

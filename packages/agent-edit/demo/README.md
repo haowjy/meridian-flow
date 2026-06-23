@@ -28,5 +28,5 @@ those nodes render as a labeled placeholder block in the editor pane (the
 underlying Y.Doc structure is unchanged).
 
 [`architecture.html`](./architecture.html) — interactive, as-built map of the package
-(ports & adapters seam, the `write()` pipeline, hot+cold undo). Self-contained, CDN-only;
+(ports & adapters seam, the `write()` pipeline, cold reconstruction undo/redo). Self-contained;
 open it with `file://` or any static server.
