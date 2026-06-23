@@ -391,6 +391,60 @@ describe("WsThreadTransport", () => {
     ]);
   });
 
+  it("responds to server ping with pong", () => {
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
+
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpenAndConnected();
+    socket.emitMessage(encodeWsServerMessage({ type: "ping", ts: 1234567890 }));
+
+    expect(sentFrames(socket).filter((frame) => frame.type === "pong")).toHaveLength(1);
+  });
+
+  it("keeps subscriptions alive for late checkpoint-response errors", () => {
+    const onEvent = vi.fn();
+    const onError = vi.fn();
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent, onError }, { after: "0" });
+
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpenAndConnected();
+    socket.emitMessage(
+      encodeWsServerMessage({
+        type: "error",
+        kind: "error",
+        error: {
+          code: "checkpoint_not_pending",
+          message: "Checkpoint is no longer pending",
+          retryable: false,
+          source: "system",
+        },
+        threadId: "thread_1",
+      }),
+    );
+    socket.emitMessage(
+      encodeWsServerMessage({
+        type: "event",
+        threadId: "thread_1",
+        seq: "1",
+        event: {
+          type: EventType.RUN_FINISHED,
+          threadId: "thread_1",
+          runId: "turn_1",
+        },
+      }),
+    );
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seq: "1",
+        sourceThreadId: "thread_1",
+      }),
+    );
+  });
+
   it("delegates cancel requests to the threads API helper", async () => {
     vi.mocked(cancelTurn).mockResolvedValue({
       threadId: "thread_1",
@@ -419,5 +473,17 @@ describe("WsThreadTransport", () => {
 
     socket.emitClose(1006, "network down");
     expect(transport.getConnectionToken()).toBeUndefined();
+  });
+
+  it("resolves awaitConnectionToken after the connected frame arrives", async () => {
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
+
+    const tokenPromise = transport.awaitConnectionToken();
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpen();
+    socket.emitConnected("conn-await-test");
+
+    await expect(tokenPromise).resolves.toBe("conn-await-test");
   });
 });

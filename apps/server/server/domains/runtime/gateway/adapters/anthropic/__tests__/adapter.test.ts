@@ -2,11 +2,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { StreamEvent } from "../../../domain/index.js";
+import { mapAnthropicError } from "../errors.js";
 import { toAnthropicMessageParams } from "../request-map.js";
 import {
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromAnthropicStreamEvent,
+  mapStopReason,
+  mapUsage,
 } from "../stream-collect.js";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -338,5 +341,46 @@ describe("Anthropic adapter", () => {
     // Should have reasoning part first, then text part
     expect(result.content[0]).toEqual({ type: "reasoning", text: "Let me think..." });
     expect(result.content[1]).toEqual({ type: "text", text: "The answer is 42." });
+  });
+
+  it("maps usage details and stop reasons into canonical gateway fields", () => {
+    expect(
+      mapUsage(
+        {
+          input_tokens: 100,
+          output_tokens: 1,
+          cache_creation_input_tokens: 5,
+          cache_read_input_tokens: 30,
+          output_tokens_details: { thinking_tokens: 7 },
+        } as any,
+        {
+          output_tokens: 20,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens_details: { thinking_tokens: 9 },
+        } as any,
+      ),
+    ).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 5,
+      reasoningTokens: 9,
+    });
+    expect(mapStopReason("end_turn")).toBe("end_turn");
+    expect(mapStopReason("tool_use")).toBe("tool_use");
+    expect(mapStopReason("max_tokens")).toBe("max_tokens");
+    expect(mapStopReason("refusal")).toBe("error");
+  });
+
+  it("classifies generic Anthropic transport failures for retry policy", () => {
+    expect(mapAnthropicError(new TypeError("fetch failed"))).toMatchObject({
+      code: "network_error",
+      retryable: true,
+    });
+    expect(mapAnthropicError(new Error("provider exploded"))).toMatchObject({
+      code: "provider_error",
+      retryable: true,
+    });
   });
 });

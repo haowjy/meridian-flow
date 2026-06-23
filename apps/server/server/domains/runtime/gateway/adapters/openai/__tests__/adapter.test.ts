@@ -2,10 +2,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { StreamEvent } from "../../../domain/index.js";
+import { mapOpenAIResponsesError } from "../errors.js";
 import {
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromResponseStreamEvent,
+  mapResponseStatus,
+  mapUsage,
 } from "../stream-collect.js";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -311,5 +314,45 @@ describe("OpenAI Responses adapter", () => {
       text: "The answer is 42.",
     });
     expect(result.usage.reasoningTokens).toBe(10);
+  });
+
+  it("maps usage details and terminal statuses into canonical gateway fields", () => {
+    expect(
+      mapUsage({
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        input_tokens_details: { cached_tokens: 30 },
+        output_tokens_details: { reasoning_tokens: 7 },
+      } as any),
+    ).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      reasoningTokens: 7,
+    });
+    expect(mapResponseStatus("completed" as any, undefined, false)).toBe("end_turn");
+    expect(mapResponseStatus("completed" as any, undefined, true)).toBe("tool_use");
+    expect(mapResponseStatus("incomplete" as any, "max_output_tokens", false)).toBe("max_tokens");
+    expect(mapResponseStatus("failed" as any, undefined, false)).toBe("error");
+  });
+
+  it("classifies provider errors for retry policy", () => {
+    expect(mapOpenAIResponsesError({ status: 401, message: "bad key" })).toMatchObject({
+      code: "auth_error",
+      retryable: false,
+    });
+    expect(mapOpenAIResponsesError({ status: 429, message: "slow down" })).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+    });
+    expect(mapOpenAIResponsesError({ status: 500, message: "boom" })).toMatchObject({
+      code: "server_error",
+      retryable: true,
+    });
+    expect(mapOpenAIResponsesError(new TypeError("fetch failed"))).toMatchObject({
+      code: "network_error",
+      retryable: true,
+    });
   });
 });
