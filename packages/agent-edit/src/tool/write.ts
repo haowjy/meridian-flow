@@ -24,7 +24,7 @@ import { createDocumentRenderer } from "./document-renderer.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { createResponseStaging } from "./response-staging.js";
-import { createRuntimeStore, type RuntimeDocumentState } from "./runtime-store.js";
+import { createRuntimeStore } from "./runtime-store.js";
 import { createTurnReversal } from "./turn-reversal.js";
 import type {
   RedoCommand,
@@ -90,12 +90,18 @@ interface ApplySuccessResponseInput {
 }
 
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
+let nextAutoTurnIdNonce = 0;
+
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
   const lifecycle = options.lifecycle;
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
+  // Fallback turn ids are durable, so their counter must not live on an
+  // evictable runtime document.
+  const autoTurnIdNonce = createAutoTurnIdNonce();
+  let autoTurnCounter = 0;
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const mutationCommit = createMutationCommit({
     journal: options.journal,
@@ -262,7 +268,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
-    const turnId = nextTurnId(session, address.filePath, runtime, context);
+    const turnId = nextTurnId(session, address.filePath, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = registry.beginTurn(
       address.filePath,
@@ -339,7 +345,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const turnId = nextTurnId(session, address.filePath, runtime, context);
+    const turnId = nextTurnId(session, address.filePath, context);
     const origin = registry.beginTurn(
       address.filePath,
       session.threadId,
@@ -477,15 +483,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     registry.evictThread(docId, threadId);
   }
 
-  function nextTurnId(
-    session: ActorSession,
-    docId: string,
-    runtime: RuntimeDocumentState,
-    context: WriteContext,
-  ): string {
+  function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
     if (context.turnId) return context.turnId;
-    runtime.turnCounter += 1;
-    return `${session.threadId}:${docId}:turn-${runtime.turnCounter}`;
+    autoTurnCounter += 1;
+    return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.toString(36)}`;
   }
 
   function remember(cacheKey: string, outcome: WriteOutcome): void {
@@ -496,6 +497,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
+}
+
+function createAutoTurnIdNonce(): string {
+  nextAutoTurnIdNonce += 1;
+  const instanceId = nextAutoTurnIdNonce.toString(36);
+  const randomId =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${instanceId}-${randomId}`;
 }
 
 function parseFileAddress(

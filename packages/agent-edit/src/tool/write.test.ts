@@ -10,7 +10,7 @@ import {
   renderedBlockBodies,
   serializeDoc,
 } from "./test-support/assertions.js";
-import { context, harness } from "./test-support/write-tool-harness.js";
+import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("write tool dispatch", () => {
   it("creates a document with initial content", async () => {
@@ -114,6 +114,50 @@ describe("write tool dispatch", () => {
     expect(replay).toBe(first);
     expectOutcome(first, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
+  });
+
+  it("keeps fallback turn ids distinct across runtime eviction", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+      context,
+    );
+    const [firstMutation] = ctx.journal.mutationRecords("chapter.md");
+    const firstTurnId = firstMutation?.turnId;
+    if (!firstTurnId) throw new Error("expected first fallback turn id");
+    expect(firstTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
+
+    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      context,
+    );
+
+    const [, secondMutation] = ctx.journal.mutationRecords("chapter.md");
+    const secondTurnId = secondMutation?.turnId;
+    if (!secondTurnId) throw new Error("expected second fallback turn id");
+    expect(secondTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
+    expect(secondTurnId).not.toBe(firstTurnId);
+    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, firstTurnId)).toMatchObject([
+      { status: "active" },
+    ]);
+    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, secondTurnId)).toMatchObject(
+      [{ status: "active" }],
+    );
+
+    expect(
+      outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
+    ).toContain("status: reversed");
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta sword."]);
+    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, firstTurnId)).toMatchObject([
+      { status: "active" },
+    ]);
+    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, secondTurnId)).toMatchObject(
+      [{ status: "reversed" }],
+    );
   });
 
   it("appends unanchored inserts and handles explicit start and end anchors", async () => {
