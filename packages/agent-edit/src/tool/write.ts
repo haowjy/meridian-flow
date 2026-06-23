@@ -16,7 +16,7 @@ import type {
   ConcurrentEditInfo,
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
-import type { Codec, ParsedContent } from "../codec/types.js";
+import type { Codec } from "../codec/types.js";
 import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import {
@@ -32,7 +32,6 @@ import type {
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
-import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import {
   latestRedoableTarget,
   latestUndoableTurn,
@@ -41,6 +40,7 @@ import {
 } from "../undo/availability.js";
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
+import { createDocumentRenderer } from "./document-renderer.js";
 import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
@@ -214,6 +214,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
+  const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
 
   const write: WriteFunction = async (command, context = {}) => {
     const session = await resolveSession(context);
@@ -505,12 +506,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       if (!synced.ok) return synced.response;
     }
 
-    const selection = selectViewBlocks(runtime.doc, command, address);
+    const selection = renderer.selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
     if (command.format === "outline") {
-      return success(renderOutline(runtime.doc, selection.blocks, address.filePath));
+      return success(renderer.renderOutline(runtime.doc, selection.blocks, address.filePath));
     }
-    return success(renderBlocks(runtime.doc, selection.blocks));
+    return success(renderer.renderBlocks(runtime.doc, selection.blocks));
   }
 
   async function create(
@@ -531,7 +532,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (options.model.getBlocks(runtime.doc).length > 0) {
       return status("invalid_write", `File already exists: ${address.filePath}`);
     }
-    const parsed = parseForCommand(command.content ?? "");
+    const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const stagedCreate = context.responseId !== undefined;
@@ -582,7 +583,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       runtime.redoStack = [];
       markSynced(session, address.filePath, runtime);
       return formatApplySuccess({
-        echo: [{ mode: "truncated", blocks: renderBlockLines(runtime.doc) }],
+        echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
       });
     }
 
@@ -599,7 +600,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtime.redoStack = [];
     markSynced(session, address.filePath, runtime);
     return formatApplySuccess({
-      echo: [{ mode: "truncated", blocks: renderBlockLines(runtime.doc) }],
+      echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
     });
   }
 
@@ -1444,70 +1445,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       const oldest = idempotency.keys().next().value;
       if (oldest === undefined) break;
       idempotency.delete(oldest);
-    }
-  }
-
-  function selectViewBlocks(
-    doc: Y.Doc,
-    command: ViewCommand,
-    address: FileAddress,
-  ):
-    | { ok: true; blocks: Y.XmlElement[] }
-    | { ok: false; code: "not_found" | "invalid_write"; message: string } {
-    const scopeContext = { doc, model: options.model };
-    if (address.fragment && (command.in !== undefined || command.around !== undefined)) {
-      return {
-        ok: false,
-        code: "invalid_write",
-        message: "Use either file #fragment, in, or around for view scope, not multiple.",
-      };
-    }
-    if (address.fragment) {
-      const result = resolveScope(scopeContext, `#${address.fragment}`);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
-    }
-    if (command.around !== undefined) {
-      const result = resolveSearchScope(scopeContext, undefined, command.around);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
-    }
-    if (command.in !== undefined) {
-      const result = resolveScope(scopeContext, command.in);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
-    }
-    return { ok: true, blocks: options.model.getBlocks(doc) };
-  }
-
-  function renderBlocks(doc: Y.Doc, blocks: readonly Y.XmlElement[]): string {
-    return renderBlockLines(doc, blocks).join("\n");
-  }
-
-  function renderBlockLines(doc: Y.Doc, blocks?: readonly Y.XmlElement[]): string[] {
-    return (blocks ?? options.model.getBlocks(doc)).map((block) =>
-      options.codec.serializeBlock(
-        options.model.toProsemirrorBlock(doc, block),
-        options.model.getBlockId(block),
-      ),
-    );
-  }
-
-  function renderOutline(doc: Y.Doc, blocks: readonly Y.XmlElement[], filePath: string): string {
-    const lines: string[] = [];
-    for (const block of blocks) {
-      if (!isHeading(block)) continue;
-      const hash = options.model.getBlockId(block);
-      lines.push(options.codec.serializeBlock(options.model.toProsemirrorBlock(doc, block), hash));
-      lines.push(`write(command="view", file="${filePath}#${hash}")`);
-    }
-    return lines.length > 0 ? lines.join("\n") : renderBlocks(doc, blocks);
-  }
-
-  function parseForCommand(
-    content: string,
-  ): { ok: true; parsed: ParsedContent } | { ok: false; message: string } {
-    try {
-      return { ok: true, parsed: options.codec.parse(content) };
-    } catch (cause) {
-      return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
     }
   }
 }
