@@ -6,23 +6,18 @@ import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
   type InternalWriteResult,
   isInternalWriteResult,
 } from "./internal-result.js";
-import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type { WriteCommand } from "./types.js";
 
 export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
-  undoStack: string[];
-  redoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
-  redoStackRehydrated: boolean;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -74,10 +69,9 @@ const EMPTY_UPDATE_LENGTH = 2;
 
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
-  journal: UpdateJournal;
   createRuntimeDoc: () => Y.Doc;
 }): RuntimeStore {
-  const { coordinator, journal, createRuntimeDoc } = deps;
+  const { coordinator, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const docsNeedingRecovery = new Set<string>();
 
@@ -102,9 +96,6 @@ export function createRuntimeStore(deps: {
       doc: createRuntimeDoc(),
       session,
       threadId: session.threadId,
-      undoStack: [],
-      redoStack: [],
-      redoStackRehydrated: false,
     };
     runtimeDocs.set(key, runtime);
     return runtime;
@@ -219,14 +210,6 @@ export function createRuntimeStore(deps: {
       return null;
     });
     if (isInternalWriteResult(response)) return { ok: false, response };
-    if (shouldRehydrateRedoStack(runtime)) {
-      runtime.redoStack = await rehydrateRedoStack({
-        journal,
-        docId,
-        threadId: session.threadId,
-      });
-      runtime.redoStackRehydrated = true;
-    }
     markSynced(session, docId, runtime);
     return { ok: true };
   }
@@ -251,7 +234,6 @@ export function createRuntimeStore(deps: {
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
     session.documents.set(docId, {
       stateVector: Y.encodeStateVector(runtime.doc),
-      turnCount: runtime.undoStack.length,
     });
   }
 
@@ -268,12 +250,6 @@ export function createRuntimeStore(deps: {
       throw cause;
     }
   }
-}
-
-function shouldRehydrateRedoStack(runtime: RuntimeDocumentState): boolean {
-  return (
-    !runtime.redoStackRehydrated && runtime.undoStack.length === 0 && runtime.redoStack.length === 0
-  );
 }
 
 function hasYjsUpdate(update: Uint8Array): boolean {

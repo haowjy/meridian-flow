@@ -53,9 +53,6 @@ interface ResponseDocumentBuffer {
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
-  baselineUndoStack: string[];
-  baselineRedoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
-  baselineRedoStackRehydrated: boolean;
 }
 
 interface ResponseBuffer {
@@ -172,9 +169,6 @@ export function createResponseStaging(deps: {
           runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
           continue;
         }
-        docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
-        docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
-        docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
         const restored = await runtimeStore.restoreRuntimeFromLive(
           docBuffer.session,
           docBuffer.docId,
@@ -226,9 +220,6 @@ export function createResponseStaging(deps: {
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         discardedBeforeCommit: false,
-        baselineUndoStack: [...input.runtime.undoStack],
-        baselineRedoStack: input.runtime.redoStack.map((entry) => ({ ...entry })),
-        baselineRedoStackRehydrated: input.runtime.redoStackRehydrated,
       };
       buffer.docs.set(input.docId, docBuffer);
     }

@@ -123,7 +123,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
-    journal: options.journal,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
   const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
@@ -295,8 +294,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         turnId,
         ensureDocumentBeforeCommit: true,
       });
-      runtime.undoStack.push(turnId);
-      runtime.redoStack = [];
       markSynced(session, address.filePath, runtime);
       return formatApplySuccess({
         echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
@@ -312,8 +309,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!committed.ok) return committed.response;
 
-    runtime.undoStack.push(turnId);
-    runtime.redoStack = [];
     markSynced(session, address.filePath, runtime);
     return formatApplySuccess({
       echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
@@ -373,8 +368,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         deletedHashes: new Set(applied.deletedBlocks ?? []),
         structuralChange: hasStructuralChange(applied),
       });
-      runtime.undoStack.push(turnId);
-      runtime.redoStack = [];
       markSynced(session, address.filePath, runtime);
       return formatApplySuccess({
         echo: summary.echo,
@@ -399,8 +392,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
-    runtime.undoStack.push(turnId);
-    runtime.redoStack = [];
     markSynced(session, address.filePath, runtime);
     return formatApplySuccess({
       echo: syncedMutation.summary.echo,
