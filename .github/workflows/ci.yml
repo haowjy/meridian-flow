@@ -64,5 +64,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Mirror the canonical setup (tools/dev/prepare-db.ts, deploy's
+      # run-migrations.sh): migrate, then apply PL/pgSQL functions. The
+      # migrations alone don't define them.
       - run: pnpm db:migrate
+      - run: pnpm db:apply-functions
       - run: pnpm exec vitest run -c vitest.db.config.mts
