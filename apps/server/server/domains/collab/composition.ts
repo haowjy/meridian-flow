@@ -7,6 +7,7 @@ import {
   type DocumentLifecycle,
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
+  type MutationStore,
   mdxCodec,
   type UpdateJournal,
   type UpdateMeta,
@@ -70,6 +71,7 @@ export type CollabFacadeStore = {
 
 export type CollabFacadeDeps = {
   journal: UpdateJournal;
+  mutationStore: MutationStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   store: CollabFacadeStore;
@@ -89,7 +91,7 @@ const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 const AGENT_EDIT_UNDO_CLIENT_ID = 9_999;
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
+  const { journal, mutationStore, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -99,6 +101,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   return createFacade({
     journal,
+    mutationStore,
     coordinator,
     lifecycle,
     store,
@@ -126,6 +129,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
   return createFacade({
     journal,
+    mutationStore: journal,
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
@@ -142,6 +146,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const model = yProsemirrorModel(schema);
   const agentEditCore: AgentEditCore = createAgentEditCore({
     journal: deps.journal,
+    mutationStore: deps.mutationStore,
     coordinator: deps.coordinator,
     lifecycle: deps.lifecycle,
     codec,

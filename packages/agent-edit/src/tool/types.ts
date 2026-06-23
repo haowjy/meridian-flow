@@ -124,6 +124,9 @@ export type WriteFunction = (
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
 
+export type TurnUndoResult = WriteOutcome & { command: "undo" };
+export type TurnRedoResult = WriteOutcome & { command: "redo" };
+
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;

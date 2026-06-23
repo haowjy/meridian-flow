@@ -24,6 +24,7 @@ import {
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
+import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
@@ -32,16 +33,20 @@ import type {
 } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
-import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
 import {
-  groupUpdatesByTurn,
-  reconstructRedoUpdate,
-  reconstructUndoUpdate,
-} from "../undo/reconstruction.js";
+  latestRedoableTarget,
+  latestUndoableTurn,
+  resolveUndoAvailability,
+  type UndoAvailability,
+} from "../undo/availability.js";
+import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
+import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
 import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
+  TurnRedoResult,
+  TurnUndoResult,
   UndoCommand,
   UndoRedoOutcome,
   ViewCommand,
@@ -56,6 +61,7 @@ import type {
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
+  mutationStore: MutationStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   codec: Codec;
@@ -81,10 +87,16 @@ export interface WriteTool {
   recover(docId: string): Promise<void>;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<void>;
+  getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
+  undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
+  redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
+  invalidateThread(docId: string, threadId: string): void;
 }
 
 interface RuntimeDocumentState {
   doc: Y.Doc;
+  session: ActorSession;
+  threadId: string;
   turnCounter: number;
   undoStack: string[];
   redoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
@@ -219,6 +231,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse,
     rollbackResponse,
+    getAvailability,
+    undoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "undo"),
+    redoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "redo"),
+    invalidateThread,
   };
 
   async function dispatch(
@@ -249,6 +265,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const id = context.sessionId ?? options.defaultSessionId ?? "default-session";
     const threadId = context.threadId ?? options.defaultThreadId ?? id;
+    return localSession(id, threadId);
+  }
+
+  function localSession(id: string, threadId: string): ActorSession {
     const existing = localSessions.get(id);
     if (existing) return existing;
     const session: ActorSession = { id, threadId, documents: new Map() };
@@ -644,22 +664,88 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const count = commandCount(command);
     if (!count.ok) return status("invalid_write", count.message);
 
+    return runUndoOrRedo({
+      docId: address.filePath,
+      session,
+      runtime,
+      commandName: command.command,
+      direction,
+      count,
+    });
+  }
+
+  function runTurnReversal(
+    docId: string,
+    threadId: string,
+    direction: "undo",
+  ): Promise<TurnUndoResult>;
+  function runTurnReversal(
+    docId: string,
+    threadId: string,
+    direction: "redo",
+  ): Promise<TurnRedoResult>;
+  async function runTurnReversal(
+    docId: string,
+    threadId: string,
+    direction: "undo" | "redo",
+  ): Promise<TurnUndoResult | TurnRedoResult> {
+    invalidateThread(docId, threadId);
+    const session = localSession(`turn-reversal:${threadId}`, threadId);
+    const runtime = runtimeFor(session, docId);
+    const synced = await syncLocalFromLive(session, docId, runtime, direction);
+    const result = !synced.ok
+      ? synced.response
+      : await runUndoOrRedo({
+          docId,
+          session,
+          runtime,
+          commandName: direction,
+          direction,
+          count: { all: false, count: 1 },
+        });
+    if (result.status !== "document_not_found") invalidateThread(docId, threadId);
+    return toOutcome(direction, result) as TurnUndoResult | TurnRedoResult;
+  }
+
+  async function getAvailability(docId: string, threadId: string): Promise<UndoAvailability> {
+    const availability = await resolveUndoAvailability({
+      journal: options.journal,
+      mutationStore: options.mutationStore,
+      docId,
+      threadId,
+    });
+    return {
+      undo: availability.undo,
+      redo: availability.redo,
+      ...(availability.undoTurnId ? { undoTurnId: availability.undoTurnId } : {}),
+      ...(availability.redoTurnId ? { redoTurnId: availability.redoTurnId } : {}),
+    };
+  }
+
+  async function runUndoOrRedo(input: {
+    docId: string;
+    session: ActorSession;
+    runtime: RuntimeDocumentState;
+    commandName: WriteCommand["command"];
+    direction: "undo" | "redo";
+    count: { all: boolean; count: number };
+  }): Promise<InternalWriteResult> {
     let applied = 0;
     let lastOutcome: UndoRedoOutcome | null = null;
     const echo: ApplyEchoHunk[] = [];
     const concurrentEdits: ConcurrentEditInfo[] = [];
     let sawReconcile = false;
-    const limit = count.all ? Number.POSITIVE_INFINITY : count.count;
+    const limit = input.count.all ? Number.POSITIVE_INFINITY : input.count.count;
 
     while (applied < limit) {
       const result =
-        direction === "undo"
-          ? await undoOne(address.filePath, session, runtime, command.command)
-          : await redoOne(address.filePath, session, runtime, command.command);
+        input.direction === "undo"
+          ? await undoOne(input.docId, input.session, input.runtime, input.commandName)
+          : await redoOne(input.docId, input.session, input.runtime, input.commandName);
       if (!result.ok) return result.response;
       if (result.status === "nothing_to_undo" || result.status === "nothing_to_redo") {
         if (applied === 0) return status(result.status);
-        lastOutcome = count.all ? (sawReconcile ? "reconciled" : "reversed") : "partial";
+        lastOutcome = input.count.all ? (sawReconcile ? "reconciled" : "reversed") : "partial";
         break;
       }
       if (result.status === "expired") {
@@ -677,12 +763,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         if (result.sync.concurrentEdits) concurrentEdits.push(result.sync.concurrentEdits);
       }
       applied += 1;
-      markSynced(session, address.filePath, runtime);
+      markSynced(input.session, input.docId, input.runtime);
     }
 
     const outcome = lastOutcome ?? (sawReconcile ? "reconciled" : "reversed");
     const lines = [`status: ${outcome}`];
-    if (applied > 0) lines.push("", `${direction}: ${applied} edit(s)`);
+    if (applied > 0) lines.push("", `${input.direction}: ${applied} edit(s)`);
     const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
     if (echoLines.length > 0) lines.push("", ...echoLines);
     for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));
@@ -695,10 +781,19 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
   ): Promise<ReversalResult> {
+    const availableTurnId = await latestUndoableTurn({
+      journal: options.journal,
+      mutationStore: options.mutationStore,
+      docId,
+      threadId: session.threadId,
+    });
+    if (!availableTurnId) return { ok: true, status: "nothing_to_undo" };
+
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const hot = registry.undoLatest(docId, session.threadId, {
-      scope: "file",
+      scope: "turn",
+      turnId: availableTurnId,
       mutationClientId: options.undoClientId,
     });
     let turnId: string | undefined;
@@ -708,23 +803,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       turnId = hot.turnId;
       update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
-      return { ok: true, status: "partial" };
+      registry.evictThread(docId, session.threadId);
+      update = undefined;
+      turnId = undefined;
     }
 
     if (!turnId || !update) {
-      const coldTurnId =
-        runtime.undoStack.at(-1) ?? (await latestJournalTurn(docId, session.threadId));
-      if (!coldTurnId) return { ok: true, status: "nothing_to_undo" };
       try {
-        const cold = await reconstructUndoUpdate(options.journal, docId, coldTurnId, {
+        const cold = await reconstructUndoUpdate(options.journal, docId, availableTurnId, {
           undoClientId: options.undoClientId,
         });
-        turnId = coldTurnId;
+        turnId = availableTurnId;
         update = cold.undoUpdate;
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       } catch (_cause) {
-        return { ok: true, status: "expired" };
+        return { ok: true, status: "nothing_to_undo" };
       }
+    }
+
+    if (turnId !== availableTurnId) {
+      registry.evictThread(docId, session.threadId);
+      return { ok: true, status: "partial" };
     }
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownDiff = diffSnapshots(
@@ -772,10 +871,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
   ): Promise<ReversalResult> {
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
-    const redoTarget = runtime.redoStack.at(-1);
-    if (!redoTarget?.undoUpdateSeq) return { ok: true, status: "nothing_to_redo" };
+    const redoTarget = await latestRedoableTarget({
+      journal: options.journal,
+      docId,
+      threadId: session.threadId,
+    });
+    if (!redoTarget) return { ok: true, status: "nothing_to_redo" };
 
+    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     let update: Uint8Array | undefined;
     let locallyApplied = false;
     const hotRedoTurn = registry.getState(docId, session.threadId)?.redoStack.at(-1)?.turnId;
@@ -946,12 +1049,25 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (evictOptions.needsRecovery) docsNeedingRecovery.add(docId);
   }
 
+  function invalidateThread(docId: string, threadId: string): void {
+    for (const [key, runtime] of [...runtimeDocs]) {
+      if (runtime.threadId !== threadId) continue;
+      if (!key.endsWith(`\u0000${docId}`)) continue;
+      runtimeDocs.delete(key);
+      runtime.session.documents.delete(docId);
+    }
+    docsNeedingRecovery.add(docId);
+    registry.evictThread(docId, threadId);
+  }
+
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
     const key = runtimeKey(session, docId);
     const existing = runtimeDocs.get(key);
     if (existing) return existing;
     const runtime: RuntimeDocumentState = {
       doc: new Y.Doc({ gc: false }),
+      session,
+      threadId: session.threadId,
       turnCounter: 0,
       undoStack: [],
       redoStack: [],
@@ -1224,14 +1340,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.turnId) return context.turnId;
     runtime.turnCounter += 1;
     return `${session.threadId}:${docId}:turn-${runtime.turnCounter}`;
-  }
-
-  async function latestJournalTurn(docId: string, threadId: string): Promise<string | undefined> {
-    const snapshot = await options.journal.read(docId);
-    const prefix = `${threadId}:`;
-    return groupUpdatesByTurn(snapshot.updates)
-      .filter((group) => group.turnId.startsWith(prefix))
-      .at(-1)?.turnId;
   }
 
   function remember(cacheKey: string, outcome: WriteOutcome): void {

@@ -53,6 +53,7 @@ function createEnvironment(journal = new InMemoryJournal(), coordinator?: InMemo
     coordinator: fakeServer,
     core: createAgentEditCore({
       journal,
+      mutationStore: journal,
       coordinator: fakeServer,
       lifecycle: fakeServer,
       codec,

@@ -16,8 +16,9 @@ the update journal, and the live-document coordinator.
   server-side read/SET/edit orchestration over the package codec/model, journal,
   and coordinator. This is not part of the `@meridian/agent-edit` public mutation
   surface.
-- **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`, server lifecycle, checkpoints, latest
-  attribution), `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
+- **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`,
+  `MutationStore`, server lifecycle, checkpoints, latest attribution),
+  `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
   (test/app fakes).
 - **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for the
