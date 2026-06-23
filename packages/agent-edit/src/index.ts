@@ -75,6 +75,7 @@ export type {
   ActiveTurnSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  TurnMutationRow,
   UpdateJournal,
 } from "./ports/update-journal.js";
 export type {

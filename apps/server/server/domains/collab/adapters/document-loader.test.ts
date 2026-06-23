@@ -46,6 +46,10 @@ class MemoryJournal implements UpdateJournal {
     return undefined;
   }
 
+  async mutationsForTurn() {
+    return [];
+  }
+
   async read() {
     return {
       checkpoint: this.checkpointState,
