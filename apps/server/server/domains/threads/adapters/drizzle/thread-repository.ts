@@ -87,12 +87,14 @@ function primaryThreadWorksJoin() {
 export async function writeThreadCostUpdate(
   db: DrizzleDb,
   id: ThreadId,
-  _deltaCostUsd: string,
-  _turnCountIncrement = 0,
+  deltaCostUsd: string,
+  turnCountIncrement = 0,
 ) {
   const [row] = await currentDrizzleDb(db)
     .update(schema.threads)
     .set({
+      totalCostUsd: sql`${schema.threads.totalCostUsd} + ${deltaCostUsd}::numeric`,
+      turnCount: sql`${schema.threads.turnCount} + ${turnCountIncrement}`,
       updatedAt: new Date(),
     })
     .where(eq(schema.threads.id, id))
@@ -102,9 +104,17 @@ export async function writeThreadCostUpdate(
 
 export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
   const activeDb = currentDrizzleDb(db);
+  const [aggregate] = await activeDb
+    .select({
+      totalCostUsd: sql<string>`COALESCE(SUM(${schema.modelResponses.costUsd}), 0)::numeric(12,6)`,
+    })
+    .from(schema.modelResponses)
+    .innerJoin(schema.turns, eq(schema.modelResponses.turnId, schema.turns.id))
+    .where(eq(schema.turns.threadId, id));
   const [row] = await activeDb
     .update(schema.threads)
     .set({
+      totalCostUsd: aggregate?.totalCostUsd ?? "0",
       updatedAt: new Date(),
     })
     .where(eq(schema.threads.id, id))
@@ -133,7 +143,7 @@ export function createDrizzleThreadRepository(
           parentThreadId: normalized.parentThreadId,
           spawnStatus: normalized.spawnStatus,
           spawnDepth: normalized.spawnDepth,
-          status: "active",
+          status: "idle",
         })
         .returning();
       if (!row) throw new Error("Failed to create thread");
@@ -158,7 +168,7 @@ export function createDrizzleThreadRepository(
           originType: "spawn",
           spawnStatus: thread.spawnStatus,
           spawnDepth: thread.spawnDepth,
-          status: thread.status === "archived" ? "archived" : "active",
+          status: thread.status,
         })
         .returning();
       if (!row) throw new Error("Failed to create subagent thread");
@@ -180,7 +190,7 @@ export function createDrizzleThreadRepository(
           originTurnId: input.originTurnId ?? null,
           originType: input.originType,
           spawnDepth: 0,
-          status: "active",
+          status: thread.status,
         })
         .returning();
       if (!row) throw new Error("Failed to create derived primary thread");
@@ -296,7 +306,7 @@ export function createDrizzleThreadRepository(
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
         .set({
-          status: status === "archived" ? "archived" : "active",
+          status,
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))

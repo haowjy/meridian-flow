@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Server DB: completed the Drizzle thread repository contract for usage/cost
+  rollups. Threads now persist `total_cost_usd`; turns persist response count,
+  latest model/provider, reasoning/cache tokens, request/response metadata; model
+  responses persist reasoning/cache tokens; block rows persist provider metadata.
+  Drizzle now maps the same thread/turn/model-response semantics as the
+  in-memory conformance adapter, including decimal zero normalization.
+
 - `packages/agent-edit`: undo/redo now runs on a single cold reconstruction path;
   the live `Y.UndoManager` ("hot") path is deleted. Behavior is unchanged for
   callers — agent undo still reverts only the agent's edits and preserves
