@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+- Chat editing: the agent now edits documents through one `write(command=...)`
+  tool (create / view / insert / replace / undo / redo) backed by
+  `@meridian/agent-edit`. Edits land as real Yjs collaborator operations —
+  character-level, position-anchored — so multiple people and the agent can edit
+  the same document live, and undo/redo is native (never silently no-ops). The
+  old `read`/`edit`/full-replace `write` tools are gone.
+
+- `packages/agent-edit`: `write()` returns a structured `WriteOutcome`
+  (`command`, `status`, `isError`, `text`); hosts read the envelope instead of
+  parsing status out of the text. Package is host-agnostic: it requires an
+  injected ProseMirror schema and carries no Meridian dependency
+  (`@meridian/prosemirror-schema` is devDependency-only). Public API trimmed to
+  the supported surface. Yjs+ProseMirror is the v1 content model; a swappable
+  non-ProseMirror content model is deferred (GH #70).
+
+- Server collab: full-document markdown engine extracted out of `composition.ts`
+  into a focused module; `CollabDomain` split into narrow ports
+  (`AgentEditAccess`, `MarkdownDocumentStore`, `DocumentProjectionRefresher`,
+  `DocumentCheckpoints`, `DocumentAttribution`, `CollabTransport`).
+
+- Runtime gateway: cancelled-call settlement moved behind a provider-neutral
+  `Gateway.settleCancelledResult` hook; the orchestrator/loop no longer reference
+  any model provider by name, so a new provider needs only a gateway adapter.
+
+- Dev (`pnpm dev`): the per-worktree `DATABASE_URL` rewrite is injected directly
+  into the tmux pane instead of trusting the launching shell's direnv state — a
+  stale direnv cache no longer boots the server against the wrong database. The
+  resolved DB name is logged at launch.
+
+- Dev (`pnpm dev`): fail fast when the live database has drifted from the repo's
+  migration baseline (compares applied vs expected migration hashes) instead of
+  failing later, deep in feature code, on the first schema mismatch.
+
 - `packages/agent-edit`: scaffold `@meridian/agent-edit` with port interfaces
   (`UpdateJournal`, `DocumentCoordinator`, `ActorSessionStore`, `Codec`,
   `DocumentModel`, `ComponentSpec`) — types only, no implementations yet.
