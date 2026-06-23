@@ -67,7 +67,9 @@ The WS route calls the collab domain hooks:
 
 - `loadHocuspocusDocument` replays checkpoint + updates via `loadDocumentState`.
 - `persistConnectionUpdate` appends the connection update to the journal outside
-  the coordinator; pending appends are tracked by document.
+  the coordinator; pending appends are tracked by document. It first rejects any
+  update carrying a struct in the reserved clientID band (see below): the update
+  is dropped and the document is flagged unsafe-for-checkpoint.
 - `storeHocuspocusDocument` drains pending appends for that document, captures
   the latest persisted update seq, then writes a checkpoint from
   `Y.encodeStateAsUpdate(document)`. The seq is captured before encoding so a
@@ -77,6 +79,30 @@ The WS route calls the collab domain hooks:
   Hocuspocus connections.
 - Connection-update appends are collaborative keystroke persistence, not
   document-level write events, so they do not fire the activity/projection hook.
+
+### Reserved Yjs clientID band
+
+Yjs identifies CRDT items by `(clientID, clock)`; two writers sharing a clientID
+corrupt the doc permanently. The band `[0, RESERVED_CLIENT_ID_MAX]` (999, defined
+in `@meridian/prosemirror-schema`) is reserved for **server-authored reversal**
+writing — `composition.ts` injects `AGENT_EDIT_UNDO_CLIENT_ID` (999) into the
+agent-edit write tool. Two invariants keep the band exclusive:
+
+- **No live writer draws into the band.** Every content-authoring `Y.Doc` (the
+  browser editor and all server adapters) is built via `createCollabYDoc()`,
+  which re-rolls any clientID `<= 999`. agent-edit stays host-agnostic: its
+  forward runtime docs come from an injected `createRuntimeDoc` factory wired to
+  `createCollabYDoc` at this composition root.
+- **Inbound band updates are rejected at ingest.** `persistConnectionUpdate`
+  drops any connection update with a struct in the band and marks the doc
+  unsafe-for-checkpoint, so a forged/misbehaving client can't collide with the
+  reversal stream.
+
+Reversal is served entirely by cold reconstruction (no live `Y.UndoManager`).
+Cold-reconstruction latency stays interactive because checkpoint freshness is
+maintained by Hocuspocus's debounced store (`debounce: 2000, maxDebounce: 10000`
+in the WS route) — a checkpoint every ≤10s of active editing bounds the replay
+window.
 
 ## Stable server-side helpers
 
