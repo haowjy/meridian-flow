@@ -17,16 +17,9 @@ import {
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
+import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import type {
-  TurnRedoResult,
-  TurnUndoResult,
-  UndoRedoOutcome,
-  WriteCommand,
-  WriteErrorStatus,
-  WriteOutcome,
-  WriteStatus,
-} from "./types.js";
+import type { TurnRedoResult, TurnUndoResult, UndoRedoOutcome, WriteCommand } from "./types.js";
 
 export interface TurnReversal {
   run(input: TurnReversalRunInput): Promise<InternalWriteResult>;
@@ -456,42 +449,6 @@ async function targetSeqsForRedo(
 
 function mutationSeqs(rows: readonly TurnMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
-}
-
-function status(code: WriteStatus, message?: string): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
-}
-
-function result(status: WriteStatus, text: string): InternalWriteResult {
-  return { status, text };
-}
-
-function toOutcome(command: "undo" | "redo", result: InternalWriteResult): WriteOutcome {
-  return {
-    command,
-    status: result.status,
-    isError: isWriteErrorStatus(result.status),
-    text: result.text,
-  };
-}
-
-function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
-  return (
-    status === "not_found" ||
-    status === "ambiguous_match" ||
-    status === "invalid_write" ||
-    status === "document_not_found" ||
-    status === "partial_failure" ||
-    status === "internal_error"
-  );
-}
-
-function formatConcurrent(info: ConcurrentEditInfo): string[] {
-  const lines = ["concurrent edits:"];
-  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
-  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
-  if (info.reviewCommand) lines.push(info.reviewCommand);
-  return lines;
 }
 
 function formatCause(cause: unknown): string {
