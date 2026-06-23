@@ -488,17 +488,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(await core.write({ command: "view", file: DOC_ID }, context)).toContain("Alpha sword");
+      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+        "Alpha sword",
+      );
       expect(
-        await core.write(
-          { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
-          { ...context, turnId: TURN_A },
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
+            { ...context, turnId: TURN_A },
+          ),
         ),
       ).toContain("status: success");
       expect(
-        await core.write(
-          { command: "replace", file: DOC_ID, find: "waits", content: "marches" },
-          { ...context, turnId: TURN_B },
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "waits", content: "marches" },
+            { ...context, turnId: TURN_B },
+          ),
         ),
       ).toContain("status: success");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta marches."]);
@@ -510,7 +516,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const preUndoDoc = cloneDoc(liveDoc, LIVE_CLIENT_ID);
       const beforeUndoVector = Y.encodeStateVector(liveDoc);
-      const undoResult = await core.write({ command: "undo", file: DOC_ID }, context);
+      const undoResult = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
       expect(undoResult).toContain("status: reversed");
       const hotUndoUpdate = Y.encodeStateAsUpdate(liveDoc, beforeUndoVector);
 
@@ -542,13 +548,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(await core.write({ command: "view", file: DOC_ID }, context)).toContain(
+      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
         "Alpha sword.",
       );
       expect(
-        await core.write(
-          { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
-          { ...context, turnId: TURN_A },
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
+            { ...context, turnId: TURN_A },
+          ),
         ),
       ).toContain("status: success");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
@@ -556,7 +564,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null },
       ]);
 
-      const undo = await core.write({ command: "undo", file: DOC_ID }, context);
+      const undo = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
       expect(undo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
       expect(await mutationRows()).toMatchObject([
@@ -580,11 +588,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(await restarted.write({ command: "view", file: DOC_ID }, context)).toContain(
-        "Alpha sword.",
-      );
+      expect(
+        outcomeText(await restarted.write({ command: "view", file: DOC_ID }, context)),
+      ).toContain("Alpha sword.");
 
-      const redo = await restarted.write({ command: "redo", file: DOC_ID }, context);
+      const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));
       expect(redo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await mutationRows()).toMatchObject([
@@ -635,6 +643,10 @@ class MemoryCoordinator implements DocumentCoordinator {
     if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
     for (const update of snapshot.updates) Y.applyUpdate(doc, update.update, { type: "system" });
   }
+}
+
+function outcomeText(outcome: { text: string }): string {
+  return outcome.text;
 }
 
 function appendText(doc: Y.Doc, value: string): Uint8Array {
