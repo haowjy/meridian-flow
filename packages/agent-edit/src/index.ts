@@ -84,20 +84,12 @@ export type {
   PropSpec,
 } from "./registry/component-registry.js";
 export type {
-  CreateCommand,
-  InsertCommand,
-  RedoCommand,
-  ReplaceCommand,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   TurnRedoResult,
   TurnUndoResult,
-  UndoCommand,
-  UndoRedoOutcome,
-  ViewCommand,
-  ViewFormat,
   WriteCommand,
   WriteContext,
   WriteErrorStatus,
@@ -106,8 +98,7 @@ export type {
   WriteStatus,
 } from "./tool/types.js";
 export type { UndoAvailability } from "./undo/availability.js";
-export type { CompactOnLoadOptions, CompactOnLoadResult } from "./undo/compaction.js";
-export { compactOnLoad } from "./undo/compaction.js";
+export type { CompactOnLoadResult } from "./undo/compaction.js";
 export type {
   ReconstructionOptions,
   UndoReconstructionResult,
