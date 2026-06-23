@@ -99,6 +99,12 @@ revertible. After each self-contained change that passes checks
 (This governs local commit cadence; opening PRs and pushing remain separate,
 deliberate decisions.)
 
+## Worktree discipline
+
+**Never switch the branch of a checkout you don't own** — it may be shared. Need
+another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
+-b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
+
 ## Cross-repo linking
 
 - Links into the docs repo ([meridian-flow-docs]) use full GitHub URLs.
