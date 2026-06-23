@@ -2,13 +2,14 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import { createInMemoryEventSink, type EventSink } from "../observability/index.js";
 import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import { type CollabFacadeStore, createFacade } from "./composition.js";
+import { AGENT_EDIT_UNDO_CLIENT_ID, type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
@@ -143,19 +144,86 @@ describe("createFacade document write hook", () => {
   });
 });
 
+describe("createFacade connection update ingest", () => {
+  it("rejects connection updates authored with the reserved reversal client id", async () => {
+    const eventSink = createInMemoryEventSink();
+    const { domain, journal } = createTestHarness({ eventSink });
+    const foreign = updateAuthoredBy(AGENT_EDIT_UNDO_CLIENT_ID);
+
+    domain.persistConnectionUpdate({
+      documentId: DOC_ID,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusPersistence();
+    await domain.storeHocuspocusDocument(DOC_ID, foreign.doc);
+
+    expect((await journal.read(DOC_ID)).updates).toEqual([]);
+    expect(await journal.listCheckpoints(DOC_ID)).toEqual([]);
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        source: "collab.agent_edit",
+        name: "invariant_violation",
+        payload: expect.objectContaining({
+          documentId: DOC_ID,
+          originType: "user",
+          reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+        }),
+      }),
+    );
+  });
+
+  it("persists normal connection updates unchanged", async () => {
+    const eventSink = createInMemoryEventSink();
+    const { domain, journal } = createTestHarness({ eventSink });
+    const foreign = updateAuthoredBy(1234);
+
+    domain.persistConnectionUpdate({
+      documentId: DOC_ID,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusPersistence();
+
+    const snapshot = await journal.read(DOC_ID);
+    expect(snapshot.updates).toHaveLength(1);
+    expect(snapshot.updates[0]?.meta.origin).toBe(`human:${USER_ID}`);
+    expect([...(snapshot.updates[0]?.update ?? [])]).toEqual([...foreign.update]);
+    expect(eventSink.events).not.toContainEqual(
+      expect.objectContaining({
+        source: "collab.agent_edit",
+        name: "invariant_violation",
+      }),
+    );
+  });
+});
+
 function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
+  return createTestHarness(options).domain;
+}
+
+function createTestHarness(options: TestFacadeOptions = {}): {
+  domain: CollabDomain;
+  journal: ReturnType<typeof createInMemoryJournal>;
+} {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
-  return createFacade({
+  return {
+    domain: createFacade({
+      journal,
+      coordinator,
+      lifecycle: createInMemoryDocumentLifecycle(coordinator),
+      store: storeFor(journal),
+      hocuspocus: () => null,
+      bindHocuspocus: (_instance: Hocuspocus) => {},
+      eventSink: options.eventSink,
+      documentWriteHook: options.hook,
+    }),
     journal,
-    coordinator,
-    lifecycle: createInMemoryDocumentLifecycle(coordinator),
-    store: storeFor(journal),
-    hocuspocus: () => null,
-    bindHocuspocus: (_instance: Hocuspocus) => {},
-    eventSink: options.eventSink,
-    documentWriteHook: options.hook,
-  });
+  };
 }
 
 function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFacadeStore {
@@ -166,4 +234,12 @@ function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFaca
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
   };
+}
+
+function updateAuthoredBy(clientId: number): { doc: Y.Doc; update: Uint8Array } {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = clientId;
+  const before = Y.encodeStateVector(doc);
+  doc.getMap("connection").set("value", clientId);
+  return { doc, update: Y.encodeStateAsUpdate(doc, before) };
 }
