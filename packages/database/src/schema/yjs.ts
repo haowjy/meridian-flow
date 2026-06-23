@@ -24,6 +24,8 @@ import { documents } from "./content";
 import { users } from "./users";
 
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
+type MutationStatus = "active" | "reversed";
+type MutationReversedBy = "user" | "agent";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -109,6 +111,43 @@ export const documentYjsReversals = pgTable(
       "document_yjs_reversals_status_valid",
       sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
     ),
+  ],
+);
+
+export const agentEditMutations = pgTable(
+  "agent_edit_mutations",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    wId: integer("w_id").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    status: text("status").$type<MutationStatus>().notNull().default("active"),
+    createdSeq: integer("created_seq").notNull(),
+    // No FK: compaction can delete the update row while durable mutation metadata remains.
+    undoUpdateSeq: integer("undo_update_seq"),
+    createdAt: createdAt(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedBy: text("reversed_by").$type<MutationReversedBy>(),
+  },
+  (table) => [
+    uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
+      table.documentId,
+      table.threadId,
+      table.wId,
+    ),
+    index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
+    index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
+    check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
 );
 

@@ -8,6 +8,13 @@
       "when": 1782085960848,
       "tag": "0000_thankful_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782191339049,
+      "tag": "0001_serious_red_skull",
+      "breakpoints": true
     }
   ]
 }
