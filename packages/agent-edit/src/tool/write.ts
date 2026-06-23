@@ -23,6 +23,7 @@ import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
+import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import { createTurnReversal } from "./turn-reversal.js";
@@ -35,12 +36,10 @@ import type {
   UndoCommand,
   ViewCommand,
   WriteCommand,
-  WriteCommandName,
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
   WriteOutcome,
-  WriteStatus,
 } from "./types.js";
 
 export interface CreateWriteToolOptions {
@@ -500,14 +499,6 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
   return result("success", lines.join("\n"));
 }
 
-function formatConcurrent(info: ConcurrentEditInfo): string[] {
-  const lines = ["concurrent edits:"];
-  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
-  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
-  if (info.reviewCommand) lines.push(info.reviewCommand);
-  return lines;
-}
-
 function errorResponse(
   code: WriteErrorStatus,
   message: string,
@@ -520,41 +511,13 @@ function errorResponse(
   );
 }
 
-function status(code: WriteStatus, message?: string): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
-}
-
 function success(text: string): InternalWriteResult {
   return result("success", text);
-}
-
-function result(status: WriteStatus, text: string): InternalWriteResult {
-  return { status, text };
 }
 
 function internalError(cause: unknown): InternalWriteResult {
   const reason = cause instanceof Error && cause.message ? ` ${cause.message}` : "";
   return status("internal_error", `Retry — transient edit system failure.${reason}`);
-}
-
-function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
-  return {
-    command,
-    status: result.status,
-    isError: isWriteErrorStatus(result.status),
-    text: result.text,
-  };
-}
-
-function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
-  return (
-    status === "not_found" ||
-    status === "ambiguous_match" ||
-    status === "invalid_write" ||
-    status === "document_not_found" ||
-    status === "partial_failure" ||
-    status === "internal_error"
-  );
 }
 
 function commandCount(
