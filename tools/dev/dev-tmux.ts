@@ -1,10 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
+import {
+  buildProviderApiKeyGuardShell,
+  resolveAppEnvPassthroughKeys,
+} from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
-import { DEV_DATABASES, loadMainEnvFile, resolveDatabaseUrl } from "./lib/dev-env";
+import { runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
@@ -40,18 +43,9 @@ interface PortlessState {
   errors: string[];
 }
 
-function runGit(args: string[]): string {
-  const tmuxStore = new TmuxSessionStore(repoRoot);
-  const result = tmuxStore.run("git", args);
-  if (result.status !== 0) {
-    return "";
-  }
-  return result.stdout.trim();
-}
-
 function isLinkedWorktree(): boolean {
-  const gitDir = runGit(["rev-parse", "--git-dir"]);
-  const commonDir = runGit(["rev-parse", "--git-common-dir"]);
+  const gitDir = runGit(repoRoot, ["rev-parse", "--git-dir"]);
+  const commonDir = runGit(repoRoot, ["rev-parse", "--git-common-dir"]);
   if (!gitDir || !commonDir) return false;
 
   const resolvedGitDir = path.resolve(repoRoot, gitDir);
@@ -109,49 +103,13 @@ function appEnvPassthroughExports(): string {
   return exports.length > 0 ? `; ${exports.join("; ")}` : "";
 }
 
-/**
- * Per-worktree database URL exports injected directly into the tmux pane.
- *
- * The pane must NOT depend on the launching shell's direnv state. direnv caches
- * `.envrc` evaluations, so a stale cache (or a shell where direnv never ran the
- * worktree rewrite) leaves `DATABASE_URL` pointing at the main checkout's base
- * database. The server then boots happily against the wrong DB and only fails
- * later, deep in the Yjs persistence layer, on the first schema mismatch.
- * Resolve the same `<baseDbName>_<slug>` rewrite that `.envrc` performs and make
- * it authoritative in the pane so the worktree is always isolated.
- */
-function devDatabaseEnvExports(): string {
-  const mainEnv = loadMainEnvFile(repoRoot);
-  const exports = DEV_DATABASES.flatMap((db) => {
-    const baseUrl = process.env[db.envVar] ?? mainEnv[db.envVar];
-    if (!baseUrl) return [];
-    return [`export ${db.envVar}=${shellQuote(resolveDatabaseUrl({ baseUrl, repoRoot }))}`];
-  });
-  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
-}
-
 function envSourcePreamble(): string {
-  // DB exports come last so the worktree-scoped URL wins over any `.env`/inherited value.
-  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}${devDatabaseEnvExports()}`;
-}
-
-/** Print which database each dev service will use — makes wrong-DB isolation visible at launch. */
-function logResolvedDatabases(): void {
-  const mainEnv = loadMainEnvFile(repoRoot);
-  for (const db of DEV_DATABASES) {
-    const baseUrl = process.env[db.envVar] ?? mainEnv[db.envVar];
-    if (!baseUrl) continue;
-    try {
-      const name = new URL(resolveDatabaseUrl({ baseUrl, repoRoot })).pathname.replace(/^\//, "");
-      console.log(`db  ${db.envVar}  ${name}`);
-    } catch {
-      // Non-fatal: this is diagnostic output, not a gate.
-    }
-  }
+  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}${buildProviderApiKeyGuardShell()}`;
 }
 
 function portlessCommandBody(mode: DevMode): string {
   const shareFlag = portlessShareFlag(mode);
+  // Keep names in sync with SERVICE_HOST_SUFFIXES in portless-routes.ts; portless adds `.localhost`.
   const services: Array<{ name: string; pkg: string; shared: boolean; sharedModeOnly?: boolean }> =
     [
       { name: "app.meridian", pkg: "@meridian/app", shared: true },
@@ -343,8 +301,8 @@ async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
 
-  const branchName = runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
-  const detachedHeadRef = runGit(["rev-parse", "--short", "HEAD"]);
+  const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const detachedHeadRef = runGit(repoRoot, ["rev-parse", "--short", "HEAD"]);
   const identity = resolveSessionIdentity({
     branchName,
     detachedHeadRef,
@@ -364,8 +322,6 @@ async function main(): Promise<void> {
   const worktreePrefix = detectWorktreePrefix(branchName);
   const previousWorktreePrefix = previous ? detectWorktreePrefix(previous.branch) : undefined;
   const portlessCommand = createPortlessCommand(mode);
-
-  logResolvedDatabases();
 
   if (cliOptions.print) {
     printDryRun({

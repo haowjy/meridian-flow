@@ -23,11 +23,18 @@ that scale, without the complexity cliff.
 **Load `/dev-principles` when planning or changing code** — it is the single
 source for engineering values (simplicity, deep modules, separation of concerns,
 naming discipline, commenting, aggressive deletion, consistency, testing
-restraint).
+restraint). Core principle: make the code easy to change.
+
+Modules should be written as if they are being prepared to be shared with other people to ccreate useful, flexible, powerful libraries so that 1. we may eventually split the module out to share with others, and 2. so that we can get the flexibility and make our future lives easier when we want to change something.
 
 Meridian-specific: the primary writer primitive is a **Project** (a serial /
 book / body of work and everything scoped under it; formerly "workbench" — now
 fully renamed).
+
+## Agency
+
+Default to acting on confident inferences; don't ask permission you don't need.
+Before interrupting to ask the human. Code quality, refactors, deleting unneeded code and simplifying are just being good code citizens, you do not need permission. Make the code easy to change.
 
 ## Conventions
 

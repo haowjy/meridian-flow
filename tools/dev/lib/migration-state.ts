@@ -62,24 +62,28 @@ export function describeMigrationDrift(input: {
   label: string;
   expected: string[];
   applied: string[] | null;
+  catchUpHint: string;
   resetHint: string;
 }): string | null {
-  const { label, expected, applied, resetHint } = input;
+  const { label, expected, applied, catchUpHint, resetHint } = input;
   if (expected.length === 0) return null;
 
   if (applied === null || applied.length === 0) {
-    return `${label}: database has no applied migrations — run ${resetHint}.`;
+    return `${label}: database has no applied migrations — run ${catchUpHint}.`;
   }
 
   const { missing, unknown } = diffMigrations(expected, applied);
   if (unknown.length > 0) {
     return (
       `${label}: live database diverged from repo migrations ` +
-      `(${unknown.length} applied migration(s) the repo no longer ships, likely a stale baseline) — run ${resetHint}.`
+      `(${unknown.length} unknown applied migration hash(es); repo no longer ships them, likely a stale baseline) — run ${resetHint}.`
     );
   }
   if (missing.length > 0) {
-    return `${label}: live database is behind repo migrations (${missing.length} pending) — run ${resetHint}.`;
+    return (
+      `${label}: live database is behind repo migrations ` +
+      `(${missing.length} pending migration(s); no unknown applied hashes) — run ${catchUpHint}.`
+    );
   }
   return null;
 }

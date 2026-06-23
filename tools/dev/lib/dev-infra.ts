@@ -63,9 +63,8 @@ export async function assertDevInfraReady(): Promise<void> {
 /**
  * Fail fast when a live dev database has drifted from the repo's migration
  * baseline. Without this, a worktree DB stamped from an older/squashed baseline
- * boots happily and only breaks later inside feature code (e.g. a missing column
- * surfacing as an opaque "database error" in chat). Best-effort: a check that
- * cannot run (no migrations dir configured, query failure) does not block dev.
+ * boots happily and only breaks later inside feature code. Best-effort: a check
+ * that cannot run (no migrations dir configured, query failure) does not block dev.
  */
 async function assertMigrationsCurrent(
   repoRoot: string,
@@ -87,7 +86,8 @@ async function assertMigrationsCurrent(
     label: db.label,
     expected,
     applied,
-    resetHint: db.resetHint ?? db.migrateScript,
+    catchUpHint: db.catchUpHint ?? db.migrateScript,
+    resetHint: db.resetHint ?? "pnpm db:reset",
   });
   if (drift) {
     throw new DevInfraNotReadyError(`dev infra check failed — ${drift}`);

@@ -114,6 +114,31 @@ export async function readAppliedMigrationHashes(databaseUrl: string): Promise<s
   }
 }
 
+/** List local worktree-shaped databases for the registered dev DB base names. */
+export async function listWorktreeDatabasesForUrl(
+  databaseUrl: string,
+  baseDbNames: readonly string[],
+): Promise<string[]> {
+  assertLocalDevPostgresEndpoint(databaseUrl, "list databases");
+  if (baseDbNames.length === 0) return [];
+
+  const prefixes = baseDbNames.map((baseDbName) => `${baseDbName}_`);
+  const { adminConnString } = parseTargetDatabase(databaseUrl);
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    const rows = await adminSql<{ datname: string }[]>`
+      SELECT datname
+      FROM pg_database
+      WHERE datistemplate = false
+      ORDER BY datname`;
+    return rows
+      .map((row) => row.datname)
+      .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)));
+  } finally {
+    await adminSql.end();
+  }
+}
+
 /** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,

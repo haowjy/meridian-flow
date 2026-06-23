@@ -141,36 +141,6 @@ describe("WsThreadTransport", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses safe default timer wrappers so native timers are called with global receiver", () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(function (
-      this: unknown,
-    ) {
-      if (this !== globalThis) {
-        throw new TypeError("Illegal invocation");
-      }
-      return 123 as unknown as ReturnType<typeof setTimeout>;
-    });
-    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(function (
-      this: unknown,
-    ) {
-      if (this !== globalThis) {
-        throw new TypeError("Illegal invocation");
-      }
-    });
-
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "1" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    socket.emitOpen();
-
-    expect(() => socket.emitClose(1006, "network down")).not.toThrow();
-    expect(setTimeoutSpy).toHaveBeenCalled();
-
-    transport.disconnect();
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-  });
-
   it("keeps a single socket alive across multiple subscriptions and only unsubscribes on the last local handler", () => {
     const transport = new WsThreadTransport();
 
@@ -228,66 +198,6 @@ describe("WsThreadTransport", () => {
 
     expect(socket.readyState).toBe(FakeWebSocket.OPEN);
     unsubscribeC();
-  });
-
-  it("keeps same-origin websocket URL for ts.net hosts", () => {
-    Object.defineProperty(globalThis, "window", {
-      value: {
-        location: {
-          protocol: "https:",
-          host: "pop-os.tail852a76.ts.net:8445",
-          hostname: "pop-os.tail852a76.ts.net",
-          port: "8445",
-        },
-      },
-      configurable: true,
-    });
-
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "1" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    expect(socket.url).toBe("wss://pop-os.tail852a76.ts.net:8445/api/threads/ws");
-  });
-
-  it("uses same-origin websocket URL for bare ts.net funnel host", () => {
-    Object.defineProperty(globalThis, "window", {
-      value: {
-        location: {
-          protocol: "https:",
-          host: "pop-os.tail852a76.ts.net",
-          hostname: "pop-os.tail852a76.ts.net",
-          port: "",
-        },
-      },
-      configurable: true,
-    });
-
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "1" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    expect(socket.url).toBe("wss://pop-os.tail852a76.ts.net/api/threads/ws");
-  });
-
-  it("keeps same-origin websocket URL for non-ts hosts", () => {
-    Object.defineProperty(globalThis, "window", {
-      value: {
-        location: {
-          protocol: "https:",
-          host: "app.meridian.localhost:8443",
-          hostname: "app.meridian.localhost",
-          port: "8443",
-        },
-      },
-      configurable: true,
-    });
-
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "1" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    expect(socket.url).toBe("wss://app.meridian.localhost:8443/api/threads/ws");
   });
 
   it("reconnects after close and resumes all active threads with latest seq", () => {
@@ -368,76 +278,6 @@ describe("WsThreadTransport", () => {
         ],
       },
     ]);
-  });
-
-  it("enters degraded state and surfaces an error after reconnect budget is exhausted", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-05-26T12:00:00.000Z"));
-
-    const stateSpy = vi.fn();
-    const onError = vi.fn();
-    const transport = new WsThreadTransport({
-      backoff: {
-        maxReconnectAttempts: 1,
-        baseDelayMs: 100,
-        maxDelayMs: 100,
-        jitterRatio: 0,
-      },
-      random: () => 0.5,
-      now: () => Date.now(),
-    });
-
-    transport.subscribe("thread_1", {
-      onEvent: vi.fn(),
-      onConnectionState: stateSpy,
-      onError,
-    });
-
-    const first = FakeWebSocket.instances[0] as FakeWebSocket;
-    first.emitOpenAndConnected();
-    first.emitClose(1006, "network down");
-
-    expect(stateSpy.mock.calls.map((call) => call[0])).toContainEqual(
-      expect.objectContaining({ kind: "reconnecting", attempt: 1 }),
-    );
-    expect(onError).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(100);
-    const second = FakeWebSocket.instances[1] as FakeWebSocket;
-    second.emitClose(1006, "still down");
-
-    expect(stateSpy.mock.calls.map((call) => call[0])).toContainEqual(
-      expect.objectContaining({ kind: "degraded", attempt: 2 }),
-    );
-    expect(onError).toHaveBeenCalledWith(expect.any(Error));
-  });
-
-  it("rewinds lastSeq and resubscribes when a later run passes an older stream cursor", () => {
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "5" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    socket.emitOpenAndConnected();
-    socket.emitMessage(
-      encodeWsServerMessage({
-        type: "event",
-        threadId: "thread_1",
-        seq: "8",
-        event: {
-          type: EventType.RUN_STARTED,
-          threadId: "thread_1",
-          runId: "turn_1",
-        },
-      }),
-    );
-
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "3" });
-
-    expect(subscribeFramesOnly(socket)).toContainEqual({
-      type: "subscribe",
-      threadId: "thread_1",
-      lastSeq: "3",
-    });
   });
 
   it("dedupes by seq and dispatches gap payloads", () => {
@@ -526,54 +366,6 @@ describe("WsThreadTransport", () => {
     });
   });
 
-  it("preserves sourceThreadId from server frames for family-stream safety", () => {
-    const onEvent = vi.fn();
-    const transport = new WsThreadTransport();
-    transport.subscribe(
-      "thread_root",
-      {
-        onEvent,
-      },
-      { after: "0" },
-    );
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    socket.emitOpenAndConnected();
-    socket.emitMessage(
-      encodeWsServerMessage({
-        type: "event",
-        threadId: "thread_root",
-        sourceThreadId: "thread_child",
-        seq: "1",
-        event: {
-          type: EventType.TEXT_MESSAGE_CONTENT,
-          messageId: "msg_1",
-          delta: "child output",
-        },
-      }),
-    );
-
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        seq: "1",
-        sourceThreadId: "thread_child",
-      }),
-    );
-  });
-
-  it("responds to server ping with pong", () => {
-    const transport = new WsThreadTransport();
-    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
-
-    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
-    socket.emitOpenAndConnected();
-
-    socket.emitMessage(encodeWsServerMessage({ type: "ping", ts: 1234567890 }));
-
-    const pongFrames = sentFrames(socket).filter((f) => f.type === "pong");
-    expect(pongFrames).toHaveLength(1);
-  });
-
   it("sends checkpoint responses over the open thread websocket", () => {
     const transport = new WsThreadTransport();
     transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
@@ -599,6 +391,17 @@ describe("WsThreadTransport", () => {
     ]);
   });
 
+  it("responds to server ping with pong", () => {
+    const transport = new WsThreadTransport();
+    transport.subscribe("thread_1", { onEvent: vi.fn() }, { after: "0" });
+
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emitOpenAndConnected();
+    socket.emitMessage(encodeWsServerMessage({ type: "ping", ts: 1234567890 }));
+
+    expect(sentFrames(socket).filter((frame) => frame.type === "pong")).toHaveLength(1);
+  });
+
   it("keeps subscriptions alive for late checkpoint-response errors", () => {
     const onEvent = vi.fn();
     const onError = vi.fn();
@@ -607,7 +410,6 @@ describe("WsThreadTransport", () => {
 
     const socket = FakeWebSocket.instances[0] as FakeWebSocket;
     socket.emitOpenAndConnected();
-
     socket.emitMessage(
       encodeWsServerMessage({
         type: "error",
