@@ -23,6 +23,13 @@ export interface ActiveTurnSummary {
   minSeq: number;
 }
 
+export interface TurnMutationRow {
+  wId: number;
+  createdSeq: number;
+  status: "active" | "reversed";
+  undoUpdateSeq?: number;
+}
+
 /**
  * Ordered Yjs update journal — the foundation every deployment implements.
  * Adapters guarantee durable append order, checkpoint storage, atomic reversal writes,
@@ -54,6 +61,13 @@ export interface UpdateJournal {
     threadId: string,
     turnId: string,
   ): Promise<number | undefined>;
+
+  /** Concrete mutation rows for one document/thread/turn, used to target cold reconstruction. */
+  mutationsForTurn(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<TurnMutationRow[]>;
 
   /**
    * Read checkpoint plus updates in sequence order.

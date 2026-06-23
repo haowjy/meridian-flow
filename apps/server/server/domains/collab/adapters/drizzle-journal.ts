@@ -6,6 +6,7 @@ import type {
   PersistedUpdate,
   ReversalRecord,
   ReversalStatus,
+  TurnMutationRow,
   UpdateJournal,
   UpdateMeta,
 } from "@meridian/agent-edit";
@@ -284,8 +285,6 @@ async function reverseMutationsForTurn(
   db: JournalDb,
   input: { documentId: string; threadId: string; turnId: string; undoUpdateSeq: number; at: Date },
 ): Promise<void> {
-  // Status flips are scoped to rows touched by this reversal. Cold reconstruction
-  // still targets turnId journal rows; finer w-id-targeted reconstruction is deferred.
   await db
     .update(agentEditMutations)
     .set({
@@ -417,6 +416,32 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
           ),
         );
       return row?.minSeq === null || row?.minSeq === undefined ? undefined : Number(row.minSeq);
+    },
+
+    async mutationsForTurn(documentId, threadId, turnId): Promise<TurnMutationRow[]> {
+      const rows = await db
+        .select({
+          wId: agentEditMutations.wId,
+          createdSeq: agentEditMutations.createdSeq,
+          status: agentEditMutations.status,
+          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
+        })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+          ),
+        )
+        .orderBy(asc(agentEditMutations.createdSeq), asc(agentEditMutations.wId));
+
+      return rows.map((row) => ({
+        wId: row.wId,
+        createdSeq: Number(row.createdSeq),
+        status: row.status,
+        ...(row.undoUpdateSeq === null ? {} : { undoUpdateSeq: Number(row.undoUpdateSeq) }),
+      }));
     },
 
     async read(docId, opts = {}): Promise<JournalSnapshot> {

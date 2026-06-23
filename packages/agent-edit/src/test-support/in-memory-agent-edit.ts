@@ -12,6 +12,7 @@ import type {
   ActiveTurnSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  TurnMutationRow,
   UpdateJournal,
 } from "../ports/update-journal.js";
 
@@ -248,6 +249,22 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
       .map((record) => record.createdSeq);
     return seqs.length > 0 ? Math.min(...seqs) : undefined;
+  }
+
+  async mutationsForTurn(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<TurnMutationRow[]> {
+    return this.entry(documentId)
+      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+      .sort((left, right) => left.createdSeq - right.createdSeq || left.wId - right.wId)
+      .map((record) => ({
+        wId: record.wId,
+        createdSeq: record.createdSeq,
+        status: record.status,
+        ...(record.undoUpdateSeq !== undefined ? { undoUpdateSeq: record.undoUpdateSeq } : {}),
+      }));
   }
 
   appendSync(

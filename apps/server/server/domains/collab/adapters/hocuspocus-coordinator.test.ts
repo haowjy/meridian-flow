@@ -54,6 +54,10 @@ class MemoryJournal implements UpdateJournal {
     return undefined;
   }
 
+  async mutationsForTurn() {
+    return [];
+  }
+
   async read(docId: string) {
     const entry = this.entries.get(docId);
     return entry
