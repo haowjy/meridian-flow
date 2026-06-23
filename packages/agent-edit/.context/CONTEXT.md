@@ -147,11 +147,16 @@ projection refresh are deferred to `commitResponse(responseId)`, which appends
 the buffered updates in one journal batch and then applies one aggregate Yjs
 update per document. Journal batch failure leaves the buffer retryable and
 invalidates staged runtimes so ordinary later views do not see phantom edits. If
-the journal batch lands but live merge fails, the journal remains the truth;
-affected runtimes are evicted and the next access rebuilds from live+journal.
-`rollbackResponse(responseId)` discards the buffer, restores affected runtime
-docs from live (or live+journal after a journaled commit attempt), and evicts hot
-undo managers for those threads.
+the journal batch lands, the whole response is durable and remains the latest
+undoable turn even when the post-commit live projection fails. In that case
+`commitResponse(responseId)` recovers live docs from the journal, rebuilds and
+reattaches the affected runtimes without restoring baseline undo/redo stacks,
+and returns success; only a recovery failure invalidates runtimes so next access
+rebuilds from journal truth. `rollbackResponse(responseId)` is cancellation for
+uncommitted buffers: it discards staged updates, restores affected runtime docs
+from live, and evicts hot undo managers for those threads. If called after a
+journaled commit attempt, it is recover-only and never restores baseline
+undo/redo stacks.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
@@ -178,8 +183,8 @@ Meridian URI schemes — it operates on plain `{ file: "<docId>#fragment" }`.
 
 ## Testing
 
-95 tests across the package (all pass). Key coverage areas: block-hash
-stability, codec round-trip, resolver with cross-block find, 3-tier apply
-preflight + edge cases, echo computation, hot+cold undo (8-case reconcile
-matrix + Q2b interleaved multi-agent + hot/cold parity), create lifecycle,
+Package tests cover block-hash stability, codec round-trip, resolver with
+cross-block find, 3-tier apply preflight + edge cases, echo computation,
+hot+cold undo (8-case reconcile matrix + Q2b interleaved multi-agent +
+hot/cold parity), response staging/recovery, create lifecycle, and
 compact-on-load.
