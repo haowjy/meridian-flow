@@ -128,6 +128,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     codec: options.codec,
     retention: options.retention,
     undoClientId: options.undoClientId,
+    onInvariantViolation: options.onInvariantViolation,
   });
 
   const write: WriteFunction = async (command, context = {}) => {
@@ -460,8 +461,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const session = localSession(`turn-reversal:${threadId}`, threadId);
     const outcome =
       direction === "undo"
-        ? await turnReversal.runTurnReversal({ docId, session, direction: "undo" })
-        : await turnReversal.runTurnReversal({ docId, session, direction: "redo" });
+        ? await turnReversal
+            .runTurnReversal({ docId, session, direction: "undo" })
+            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as TurnUndoResult)
+        : await turnReversal
+            .runTurnReversal({ docId, session, direction: "redo" })
+            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as TurnRedoResult);
     if (outcome.status !== "document_not_found") responseStaging.dropForThread(docId, threadId);
     return outcome;
   }

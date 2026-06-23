@@ -11,6 +11,7 @@ import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  TurnMutationRow,
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
@@ -564,6 +565,79 @@ describe("write tool dispatch", () => {
       { wId: 2, status: "active" },
     ]);
     expect(cold.journal.mutationRecords("chapter.md")[1]?.undoUpdateSeq).toBeUndefined();
+  });
+
+  it("surfaces cold undo target drift as an internal error instead of a false no-op", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    const invariantMessages: string[] = [];
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-cold-undo-drift" },
+    );
+    const driftCore = createAgentEditCore({
+      journal: journalWithMissingMutationTarget(ctx.journal, {
+        status: "active",
+        createdSeq: 999,
+      }),
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+      onInvariantViolation: (message) => {
+        invariantMessages.push(message);
+      },
+    });
+
+    const undo = await driftCore.undoTurn("chapter.md", THREAD_ID);
+
+    expectOutcome(undo, "internal_error", true);
+    expect(outcomeText(undo)).toContain("Cold undo reconstruction invariant failed");
+    expect(outcomeText(undo)).toContain("Missing target update seqs");
+    expect(outcomeText(undo)).not.toBe("status: nothing_to_undo");
+    expect(invariantMessages).toHaveLength(1);
+    expect(invariantMessages[0]).toContain("turn-cold-undo-drift");
+    expect(ctx.journal.reversalRecords("chapter.md")).toEqual([]);
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([{ status: "active" }]);
+  });
+
+  it("surfaces cold redo target drift as an internal error instead of a false no-op", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    const invariantMessages: string[] = [];
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-cold-redo-drift" },
+    );
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    const undoUpdateSeq = ctx.journal.mutationRecords("chapter.md")[0]?.undoUpdateSeq;
+    if (undoUpdateSeq === undefined) throw new Error("expected undo update seq");
+    const driftCore = createAgentEditCore({
+      journal: journalWithMissingMutationTarget(ctx.journal, {
+        status: "reversed",
+        createdSeq: 999,
+        undoUpdateSeq,
+      }),
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec,
+      model,
+      undoClientId: REVERSAL_CLIENT_ID,
+      onInvariantViolation: (message) => {
+        invariantMessages.push(message);
+      },
+    });
+
+    const redo = await driftCore.redoTurn("chapter.md", THREAD_ID);
+
+    expectOutcome(redo, "internal_error", true);
+    expect(outcomeText(redo)).toContain("Cold redo reconstruction invariant failed");
+    expect(outcomeText(redo)).toContain("Missing target update seqs");
+    expect(outcomeText(redo)).not.toBe("status: nothing_to_redo");
+    expect(invariantMessages).toHaveLength(1);
+    expect(invariantMessages[0]).toContain("turn-cold-redo-drift");
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([{ status: "reversed" }]);
   });
 
   it("reports undo availability only while active mutation updates are retained", async () => {
@@ -1762,6 +1836,37 @@ class MemoryJournal extends InMemoryAgentEditJournal {
   failNextAppendBatchWith(cause: unknown): void {
     this.nextAppendBatchFailure = cause;
   }
+}
+
+function journalWithMissingMutationTarget(
+  journal: MemoryJournal,
+  missing: Pick<TurnMutationRow, "status" | "createdSeq" | "undoUpdateSeq">,
+): UpdateJournal {
+  return {
+    append: journal.append.bind(journal),
+    appendBatch: journal.appendBatch.bind(journal),
+    latestActiveTurn: journal.latestActiveTurn.bind(journal),
+    activeTurnSummary: journal.activeTurnSummary.bind(journal),
+    turnMinCreatedSeq: journal.turnMinCreatedSeq.bind(journal),
+    mutationsForTurn: async (documentId, threadId, turnId) => {
+      const rows = await journal.mutationsForTurn(documentId, threadId, turnId);
+      return [
+        ...rows,
+        {
+          wId: 999,
+          createdSeq: missing.createdSeq,
+          status: missing.status,
+          ...(missing.undoUpdateSeq !== undefined ? { undoUpdateSeq: missing.undoUpdateSeq } : {}),
+        },
+      ];
+    },
+    read: journal.read.bind(journal),
+    checkpoint: journal.checkpoint.bind(journal),
+    compact: journal.compact.bind(journal),
+    persistReversal: journal.persistReversal.bind(journal),
+    persistRedo: journal.persistRedo.bind(journal),
+    readReversals: journal.readReversals.bind(journal),
+  };
 }
 
 function createDoc(markdown: string, clientID: number): Y.Doc {
