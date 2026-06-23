@@ -1,29 +1,33 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { mdxCodec } from "../codec/presets/mdx.js";
-import { createAgentEditCore } from "../index.js";
-import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import { type DocumentCoordinator, DocumentNotFoundError } from "../ports/document-coordinator.js";
-import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
-import type {
-  JournalBatchAppendEntry,
-  JournalBatchAppendResult,
-  TurnMutationRow,
-  UpdateJournal,
-} from "../ports/update-journal.js";
-import { InMemoryAgentEditJournal } from "../test-support/index.js";
-import { createUndoManagerRegistry } from "../undo/manager-registry.js";
-import type { WriteContext, WriteOutcome, WriteStatus } from "./types.js";
 
-const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
-const model = yProsemirrorModel(schema);
-const THREAD_ID = "thread-a";
-const context: WriteContext = { sessionId: "session-a", threadId: THREAD_ID };
-const REVERSAL_CLIENT_ID = 9_999;
+import { createAgentEditCore } from "../index.js";
+import type { TurnMutationRow, UpdateJournal } from "../ports/update-journal.js";
+import { createUndoManagerRegistry } from "../undo/manager-registry.js";
+import {
+  blockTexts,
+  documentBytes,
+  expectNoInternalIds,
+  expectOutcome,
+  hashAt,
+  humanText,
+  outcomeText,
+  renderedBlockBodies,
+  serializeDoc,
+} from "./test-support/assertions.js";
+import type { MemoryJournal } from "./test-support/recording-journal.js";
+import {
+  cloneDoc,
+  codec,
+  context,
+  harness,
+  MemoryCoordinator,
+  MemoryDocumentLifecycle,
+  model,
+  REVERSAL_CLIENT_ID,
+  THREAD_ID,
+} from "./test-support/write-tool-harness.js";
 
 describe("write tool dispatch", () => {
   it("views block-hashed document content and scoped outline sections", async () => {
@@ -1692,152 +1696,6 @@ describe("write tool dispatch", () => {
   });
 });
 
-function harness(
-  initialDocs: Record<string, string> = {},
-  options: {
-    undoRegistry?: ReturnType<typeof createUndoManagerRegistry>;
-    lifecycle?: boolean;
-    undoClientId?: number;
-    retention?: {
-      reversalWindowMs?: number;
-    };
-  } = {},
-) {
-  const coordinator = new MemoryCoordinator(initialDocs);
-  const lifecycle = new MemoryDocumentLifecycle(coordinator);
-  const journal = new MemoryJournal();
-  const undoRegistry = options.undoRegistry ?? createUndoManagerRegistry();
-  coordinator.useJournal(journal);
-  for (const [docId, doc] of coordinator.docs)
-    journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
-  const core = createAgentEditCore({
-    journal,
-    coordinator,
-    ...(options.lifecycle === false ? {} : { lifecycle }),
-    codec,
-    model,
-    undoRegistry,
-    undoClientId: options.undoClientId,
-    ...(options.retention ? { retention: options.retention } : {}),
-  });
-  return {
-    core,
-    coordinator,
-    lifecycle,
-    journal,
-    undoRegistry,
-    liveDoc: (docId: string) => coordinator.require(docId),
-  };
-}
-
-class MemoryDocumentLifecycle implements DocumentLifecycle {
-  constructor(private readonly coordinator: MemoryCoordinator) {}
-
-  async ensureDocument(docId: string): Promise<void> {
-    this.coordinator.ensureEmpty(docId);
-  }
-}
-
-class MemoryCoordinator implements DocumentCoordinator {
-  readonly docs = new Map<string, Y.Doc>();
-  private journal?: UpdateJournal;
-  private failure: unknown;
-  private nextFailure: unknown;
-  private readonly nextFailureByDoc = new Map<string, unknown>();
-
-  constructor(initialDocs: Record<string, string>) {
-    for (const [docId, markdown] of Object.entries(initialDocs)) {
-      this.docs.set(docId, createDoc(markdown, 100 + this.docs.size));
-    }
-  }
-
-  createEmpty(docId: string): Y.Doc {
-    return this.ensureEmpty(docId);
-  }
-
-  ensureEmpty(docId: string): Y.Doc {
-    const existing = this.docs.get(docId);
-    if (existing) return existing;
-    const doc = new Y.Doc({ gc: false });
-    doc.clientID = 100 + this.docs.size;
-    this.docs.set(docId, doc);
-    return doc;
-  }
-
-  require(docId: string): Y.Doc {
-    const doc = this.docs.get(docId);
-    if (!doc) throw new DocumentNotFoundError(docId);
-    return doc;
-  }
-
-  failWith(cause: unknown): void {
-    this.failure = cause;
-  }
-
-  failNextWith(cause: unknown): void {
-    this.nextFailure = cause;
-  }
-
-  failNextForDoc(docId: string, cause: unknown): void {
-    this.nextFailureByDoc.set(docId, cause);
-  }
-
-  useJournal(journal: UpdateJournal): void {
-    this.journal = journal;
-  }
-
-  async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-    if (this.nextFailureByDoc.has(docId)) {
-      const failure = this.nextFailureByDoc.get(docId);
-      this.nextFailureByDoc.delete(docId);
-      throw failure;
-    }
-    if (this.nextFailure) {
-      const failure = this.nextFailure;
-      this.nextFailure = undefined;
-      throw failure;
-    }
-    if (this.failure) throw this.failure;
-    return fn(this.require(docId));
-  }
-
-  async recover(docId: string): Promise<void> {
-    if (!this.journal) return;
-    const snapshot = await this.journal.read(docId);
-    if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
-    const doc = this.ensureEmpty(docId);
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
-    for (const entry of snapshot.updates) {
-      Y.applyUpdate(doc, entry.update, { type: "system" });
-    }
-  }
-}
-
-class MemoryJournal extends InMemoryAgentEditJournal {
-  appendBatchCalls = 0;
-  appendBatchEntryOrders: string[][] = [];
-  private nextAppendBatchFailure: unknown;
-
-  override async appendBatch(
-    entries: readonly JournalBatchAppendEntry[],
-  ): Promise<JournalBatchAppendResult[]> {
-    this.appendBatchCalls += 1;
-    this.appendBatchEntryOrders.push(
-      entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`),
-    );
-    if (this.nextAppendBatchFailure) {
-      const failure = this.nextAppendBatchFailure;
-      this.nextAppendBatchFailure = undefined;
-      throw failure;
-    }
-    return super.appendBatch(entries);
-  }
-
-  failNextAppendBatchWith(cause: unknown): void {
-    this.nextAppendBatchFailure = cause;
-  }
-}
-
 function journalWithMissingMutationTarget(
   journal: MemoryJournal,
   missing: Pick<TurnMutationRow, "status" | "createdSeq" | "undoUpdateSeq">,
@@ -1869,53 +1727,6 @@ function journalWithMissingMutationTarget(
   };
 }
 
-function createDoc(markdown: string, clientID: number): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  doc.clientID = clientID;
-  const root = schema.node("doc", null, codec.parse(markdown).blocks);
-  prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
-  doc.clientID = clientID;
-  return doc;
-}
-
-function cloneDoc(source: Y.Doc): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
-  return doc;
-}
-
-function hashAt(doc: Y.Doc, index: number): string {
-  const block = model.getBlocks(doc)[index];
-  if (!block) throw new Error(`No block at ${index}`);
-  return model.getBlockId(block);
-}
-
-function blockTexts(doc: Y.Doc): string[] {
-  return model.getBlocks(doc).map((block) => model.getText(block));
-}
-
-function outcomeText(output: string | WriteOutcome): string {
-  return typeof output === "string" ? output : output.text;
-}
-
-function expectOutcome(outcome: WriteOutcome, status: WriteStatus, isError = false): void {
-  expect(outcome.status).toBe(status);
-  expect(outcome.isError).toBe(isError);
-}
-
-function expectNoInternalIds(text: string): void {
-  expect(text).not.toMatch(
-    /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
-  );
-  expect(text).not.toContain("turn-");
-}
-
-function renderedBlockBodies(output: string | WriteOutcome): string[] {
-  const rendered = outcomeText(output);
-  if (!rendered) return [];
-  return rendered.split("\n").map((line) => line.replace(/^[0-9a-f]{4,}\|/, ""));
-}
-
 function numberedBlocks(count: number): string {
   return Array.from({ length: count }, (_, index) => `Block ${index + 1}`).join("\n\n");
 }
@@ -1932,28 +1743,4 @@ function aroundNeedleBlocks(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
-}
-
-function humanText(
-  doc: Y.Doc,
-  blockIndex: number,
-  span: { from: number; to: number },
-  text: string,
-): void {
-  const block = model.getBlocks(doc)[blockIndex];
-  if (!block) throw new Error(`No block at ${blockIndex}`);
-  doc.transact(
-    () => {
-      model.applyTextEdit(doc, block, span, text);
-    },
-    { type: "human" },
-  );
-}
-
-function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
-}
-
-function documentBytes(doc: Y.Doc): number[] {
-  return Array.from(Y.encodeStateAsUpdate(doc));
 }
