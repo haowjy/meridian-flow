@@ -73,9 +73,19 @@ export function createTurnReversal(deps: {
     reversalWindowMs?: number;
   };
   undoClientId?: number;
+  onInvariantViolation?: (message: string) => void;
 }): TurnReversal {
-  const { journal, registry, runtimeStore, mutationCommit, model, codec, retention, undoClientId } =
-    deps;
+  const {
+    journal,
+    registry,
+    runtimeStore,
+    mutationCommit,
+    model,
+    codec,
+    retention,
+    undoClientId,
+    onInvariantViolation = defaultInvariantViolation,
+  } = deps;
 
   return {
     run,
@@ -226,14 +236,20 @@ export function createTurnReversal(deps: {
     }
 
     if (!turnId || !update) {
+      let targetSeqs: ReadonlySet<number>;
       try {
-        const targetSeqs = await targetSeqsForUndo(
-          journal,
+        targetSeqs = await targetSeqsForUndo(journal, docId, session.threadId, availableTurnId);
+      } catch (cause) {
+        return surfaceColdReversalInvariant({
+          direction: "undo",
           docId,
-          session.threadId,
-          availableTurnId,
-        );
-        if (targetSeqs.size === 0) return { ok: true, status: "nothing_to_undo" };
+          threadId: session.threadId,
+          turnId: availableTurnId,
+          cause,
+        });
+      }
+      if (targetSeqs.size === 0) return { ok: true, status: "nothing_to_undo" };
+      try {
         const cold = await reconstructUndoUpdate(journal, docId, availableTurnId, {
           targetSeqs,
           undoClientId,
@@ -241,8 +257,14 @@ export function createTurnReversal(deps: {
         turnId = availableTurnId;
         update = cold.undoUpdate;
         Y.applyUpdate(runtime.doc, update, { type: "system" });
-      } catch (_cause) {
-        return { ok: true, status: "nothing_to_undo" };
+      } catch (cause) {
+        return surfaceColdReversalInvariant({
+          direction: "undo",
+          docId,
+          threadId: session.threadId,
+          turnId: availableTurnId,
+          cause,
+        });
       }
     }
 
@@ -317,25 +339,49 @@ export function createTurnReversal(deps: {
     }
 
     if (!update) {
-      const targetSeqs = await targetSeqsForRedo(
-        journal,
-        docId,
-        session.threadId,
-        redoTarget.turnId,
-        redoTarget.undoUpdateSeq,
-      );
+      let targetSeqs: ReadonlySet<number>;
+      try {
+        targetSeqs = await targetSeqsForRedo(
+          journal,
+          docId,
+          session.threadId,
+          redoTarget.turnId,
+          redoTarget.undoUpdateSeq,
+        );
+      } catch (cause) {
+        return surfaceColdReversalInvariant({
+          direction: "redo",
+          docId,
+          threadId: session.threadId,
+          turnId: redoTarget.turnId,
+          undoUpdateSeq: redoTarget.undoUpdateSeq,
+          cause,
+        });
+      }
       if (targetSeqs.size === 0) {
         popIfTop(runtime.redoStack, redoTarget.turnId);
         registry.evictThread(docId, session.threadId);
         return { ok: true, status: "nothing_to_redo" };
       }
-      const cold = await reconstructRedoUpdate(
-        journal,
-        docId,
-        redoTarget.turnId,
-        redoTarget.undoUpdateSeq,
-        { targetSeqs, undoClientId },
-      ).catch(() => null);
+      let cold: Awaited<ReturnType<typeof reconstructRedoUpdate>>;
+      try {
+        cold = await reconstructRedoUpdate(
+          journal,
+          docId,
+          redoTarget.turnId,
+          redoTarget.undoUpdateSeq,
+          { targetSeqs, undoClientId },
+        );
+      } catch (cause) {
+        return surfaceColdReversalInvariant({
+          direction: "redo",
+          docId,
+          threadId: session.threadId,
+          turnId: redoTarget.turnId,
+          undoUpdateSeq: redoTarget.undoUpdateSeq,
+          cause,
+        });
+      }
       if (!cold?.ok) {
         popIfTop(runtime.redoStack, redoTarget.turnId);
         registry.evictThread(docId, session.threadId);
@@ -403,6 +449,28 @@ export function createTurnReversal(deps: {
       ok: true,
       status: sync.summary.reconciled ? "reconciled" : "reversed",
       sync: sync.summary,
+    };
+  }
+
+  function surfaceColdReversalInvariant(input: {
+    direction: "undo" | "redo";
+    docId: string;
+    threadId: string;
+    turnId: string;
+    undoUpdateSeq?: number;
+    cause: unknown;
+  }): ReversalResult {
+    const message = [
+      `Cold ${input.direction} reconstruction invariant failed for document ${input.docId}, thread ${input.threadId}, turn ${input.turnId}`,
+      input.undoUpdateSeq === undefined ? undefined : `undo update seq ${input.undoUpdateSeq}`,
+      formatCause(input.cause),
+    ]
+      .filter(Boolean)
+      .join(": ");
+    onInvariantViolation(message);
+    return {
+      ok: false,
+      response: status("internal_error", `Retry — transient edit system failure. ${message}`),
     };
   }
 
@@ -495,4 +563,12 @@ function popIfTop(
     stack.pop();
     item = stack.at(-1);
   }
+}
+
+function formatCause(cause: unknown): string {
+  return cause instanceof Error && cause.message ? cause.message : String(cause);
+}
+
+function defaultInvariantViolation(message: string): never {
+  throw new Error(message);
 }
