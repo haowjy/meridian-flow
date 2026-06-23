@@ -5,8 +5,10 @@ import * as Y from "yjs";
 import { createAgentEditCore } from "../index.js";
 import type { TurnMutationRow, UpdateJournal } from "../ports/update-journal.js";
 import { createUndoManagerRegistry } from "../undo/manager-registry.js";
+import { reconstructUndoUpdate } from "../undo/reconstruction.js";
 import {
   blockTexts,
+  documentBytes,
   expectNoInternalIds,
   expectOutcome,
   hashAt,
@@ -15,6 +17,7 @@ import {
 } from "./test-support/assertions.js";
 import type { MemoryJournal } from "./test-support/recording-journal.js";
 import {
+  cloneDoc,
   codec,
   context,
   harness,
@@ -217,6 +220,56 @@ describe("turn reversal", () => {
     const coldRows = await cold.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId);
     expect(coldRows).toMatchObject([{ status: "reversed" }, { status: "active" }]);
     expect(coldRows[1]?.undoUpdateSeq).toBeUndefined();
+  });
+
+  it("hot undo after recovery continues the reserved reversal client id", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+      { ...context, turnId: "turn-before-recovery" },
+    );
+    expect(
+      outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
+    ).toContain("status: reversed");
+
+    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-after-recovery" },
+    );
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+
+    const targetSeqs = new Set(
+      (await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-after-recovery"))
+        .filter((row) => row.status === "active")
+        .map((row) => row.createdSeq),
+    );
+    const cold = await reconstructUndoUpdate(ctx.journal, "chapter.md", "turn-after-recovery", {
+      targetSeqs,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldDoc = cloneDoc(ctx.liveDoc("chapter.md"));
+    Y.applyUpdate(coldDoc, cold.undoUpdate, { type: "system" });
+
+    const hotUndo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(hotUndo, "reversed");
+    expect(outcomeText(hotUndo)).not.toContain("internal_error");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+    expect(documentBytes(ctx.liveDoc("chapter.md"))).toEqual(documentBytes(coldDoc));
+
+    const [row] = await ctx.journal.mutationsForTurn(
+      "chapter.md",
+      THREAD_ID,
+      "turn-after-recovery",
+    );
+    const hotUndoUpdate = (await ctx.journal.read("chapter.md")).updates.find(
+      (update) => update.seq === row?.undoUpdateSeq,
+    );
+    expect(hotUndoUpdate).toBeDefined();
+    expect(Array.from(hotUndoUpdate?.update ?? [])).toEqual(Array.from(cold.undoUpdate));
   });
 
   it("surfaces cold undo target drift as an internal error instead of a false no-op", async () => {
