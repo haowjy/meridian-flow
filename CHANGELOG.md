@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: undo/redo now runs on a single cold reconstruction path;
+  the live `Y.UndoManager` ("hot") path is deleted. Behavior is unchanged for
+  callers — agent undo still reverts only the agent's edits and preserves
+  overlapping human edits. Public API drops `WriteTool.registry` and the
+  `undoRegistry` option; adds an optional `createRuntimeDoc` so the host controls
+  forward-write doc creation. `compact()` clamps its cutoff to the reversal
+  retention window so it can't drop rows undo/redo still needs.
+
+- Collab: a Yjs clientID band `[0,999]` is reserved for server-authored reversal.
+  The browser editor and server docs draw their clientID outside the band, and
+  inbound collaboration updates carrying a band clientID are rejected at ingest —
+  so agent reversal authoring can never collide with a real collaborator's edit
+  stream.
+
 - Chat editing: the agent now edits documents through one `write(command=...)`
   tool (create / view / insert / replace / undo / redo) backed by
   `@meridian/agent-edit`. Edits land as real Yjs collaborator operations —
