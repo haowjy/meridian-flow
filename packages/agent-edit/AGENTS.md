@@ -18,7 +18,9 @@ desktop, MCP, and future products.
   `stopCapturing` at turn boundaries) + cold path (reconstruction from journal,
   per-turn tokens, authoritative). Hot/cold parity enforced by tests.
 - **Compaction** — fold old updates into checkpoint, expire reversal records.
-  Runs on first document load.
+  Exposed via the `compact()` façade; the host decides when to call it. It is
+  NOT auto-invoked on document load, so the post-checkpoint replay window is
+  currently unbounded for long-lived open docs.
 - **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
   model })` exposes the agent `write()` tool plus turn-level availability/user
   undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).
