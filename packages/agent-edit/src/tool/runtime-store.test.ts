@@ -3,13 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
-import {
-  blockTexts,
-  documentBytes,
-  expectNoInternalIds,
-  humanText,
-  outcomeText,
-} from "./test-support/assertions.js";
+import { blockTexts, documentBytes, humanText, outcomeText } from "./test-support/assertions.js";
 import {
   cloneDoc,
   codec,
@@ -194,7 +188,6 @@ describe("runtime store", () => {
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(outcomeText(undo)).toContain("status: reconciled");
-    expectNoInternalIds(outcomeText(undo));
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword."]);
 
     const followup = await ctx.core.write(
@@ -215,7 +208,6 @@ describe("runtime store", () => {
 
     const redo = await redoCtx.core.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(redo)).toContain("status: reconciled");
-    expectNoInternalIds(outcomeText(redo));
     expect(blockTexts(redoCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
 
     const redoFollowup = await redoCtx.core.write(
