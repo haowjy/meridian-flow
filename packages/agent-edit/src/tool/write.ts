@@ -873,6 +873,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<ReversalResult> {
     const redoTarget = await latestRedoableTarget({
       journal: options.journal,
+      mutationStore: options.mutationStore,
       docId,
       threadId: session.threadId,
     });
@@ -1050,6 +1051,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   }
 
   function invalidateThread(docId: string, threadId: string): void {
+    dropResponseBuffersForThread(docId, threadId);
     for (const [key, runtime] of [...runtimeDocs]) {
       if (runtime.threadId !== threadId) continue;
       if (!key.endsWith(`\u0000${docId}`)) continue;
@@ -1058,6 +1060,19 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
     docsNeedingRecovery.add(docId);
     registry.evictThread(docId, threadId);
+  }
+
+  function dropResponseBuffersForThread(docId: string, threadId: string): void {
+    for (const [responseId, buffer] of [...responseBuffers]) {
+      const docBuffer = buffer.docs.get(docId);
+      if (docBuffer?.session.threadId === threadId) buffer.docs.delete(docId);
+      buffer.updates = buffer.updates.filter(
+        (entry) => !(entry.docId === docId && entry.mutation?.threadId === threadId),
+      );
+      if (buffer.docs.size === 0 && buffer.updates.length === 0) {
+        responseBuffers.delete(responseId);
+      }
+    }
   }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -1179,16 +1194,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
   ): SyncedMutationSummary {
     const after = snapshotBlocks(input.runtime.doc, options.model, options.codec);
-    const echo = computeEcho({
+    const baseEchoInput = {
       before: input.before,
       after,
       agentTouchedHashes: input.touchedHashes,
       agentDeletedHashes: input.deletedHashes,
       structuralChange: input.structuralChange,
       concurrentTouchedHashes: concurrent.touchedHashes,
-    });
+    };
+    const echo = computeEcho(baseEchoInput);
+    const regroundingEcho =
+      echo.length > 0 || (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
+        ? echo
+        : computeEcho({ ...baseEchoInput, structuralChange: true });
     return {
-      echo,
+      echo: regroundingEcho,
       concurrentEdits: concurrent.info,
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };

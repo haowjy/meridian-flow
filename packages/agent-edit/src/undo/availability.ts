@@ -57,6 +57,7 @@ export async function latestUndoableTurn(input: {
 
 export async function latestRedoableTarget(input: {
   journal: UpdateJournal;
+  mutationStore: MutationStore;
   docId: string;
   threadId: string;
   now?: Date;
@@ -77,10 +78,16 @@ export async function latestRedoableTarget(input: {
   const undoUpdate = snapshot.updates.find((update) => update.seq === latest.undoUpdateSeq);
   if (!undoUpdate) return undefined;
 
-  const targetTurnStillRetained = snapshot.updates.some(
-    (update) => update.meta.actorTurnId === latest.turnId,
+  const targetTurnStartSeq = await input.mutationStore.turnMinCreatedSeq(
+    input.docId,
+    input.threadId,
+    latest.turnId,
   );
-  if (!targetTurnStillRetained) return undefined;
+  if (targetTurnStartSeq === undefined) return undefined;
+  const targetTurnStartStillRetained = snapshot.updates.some(
+    (update) => update.seq === targetTurnStartSeq && update.meta.actorTurnId === latest.turnId,
+  );
+  if (!targetTurnStartStillRetained) return undefined;
 
   return evaluateRedoEligibility(snapshot.updates, { undoUpdateSeq: latest.undoUpdateSeq }).ok
     ? { turnId: latest.turnId, undoUpdateSeq: latest.undoUpdateSeq }

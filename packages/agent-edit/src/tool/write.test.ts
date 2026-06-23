@@ -256,6 +256,39 @@ describe("write tool dispatch", () => {
     ]);
   });
 
+  it("returns cumulative staged echoes for text writes at the tool-response level", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-text-echo",
+      responseId: "response-staged-text-echo",
+    };
+
+    const first = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Beta" },
+      responseContext,
+    );
+    const second = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      responseContext,
+    );
+    const third = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "waits", content: "marches" },
+      responseContext,
+    );
+
+    expect(outcomeText(first)).toMatch(/^[0-9a-f]{4}\|Beta sword waits\.$/m);
+    expect(outcomeText(second)).toMatch(/^[0-9a-f]{4}\|Beta blade waits\.$/m);
+    expect(outcomeText(third)).toMatch(/^[0-9a-f]{4}\|Beta blade marches\.$/m);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword waits."]);
+
+    await ctx.core.commitResponse("response-staged-text-echo");
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta blade marches."]);
+  });
+
   it("flips mutation status when undoing and redoing a turn", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -358,6 +391,41 @@ describe("write tool dispatch", () => {
     ).toBe("status: nothing_to_redo");
   });
 
+  it("reports redo unavailable when partial compaction drops the reversed turn start", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const turnContext = { ...context, turnId: "turn-redo-compacted-prefix" };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
+      turnContext,
+    );
+    const stateAfterFirstForwardWrite = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      turnContext,
+    );
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: true,
+      redoTurnId: "turn-redo-compacted-prefix",
+    });
+
+    await ctx.journal.checkpoint("chapter.md", stateAfterFirstForwardWrite, 1);
+
+    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
+      2, 3,
+    ]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: false,
+    });
+    expect(
+      outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
+    ).toBe("status: nothing_to_redo");
+  });
+
   it("formats undo and redo responses without internal UUIDs and with fresh undo hashes", async () => {
     const ctx = harness({
       "chapter.md":
@@ -389,6 +457,42 @@ describe("write tool dispatch", () => {
     expectNoInternalIds(outcomeText(redo));
   });
 
+  it("formats partial undo and redo responses without internal IDs", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-partial-format" },
+    );
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
+
+    expect(outcomeText(undo)).toContain("status: partial");
+    expect(outcomeText(undo)).toContain("undo: 1 edit(s)");
+    expectNoInternalIds(outcomeText(undo));
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md", last: 2 }, context);
+
+    expect(outcomeText(redo)).toContain("status: partial");
+    expect(outcomeText(redo)).toContain("redo: 1 edit(s)");
+    expectNoInternalIds(outcomeText(redo));
+  });
+
+  it("filters expired redo records without leaking internal IDs", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { retention: { reversalWindowMs: -1 } });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-expired-format" },
+    );
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    expect(outcomeText(redo)).toBe("status: nothing_to_redo");
+    expectNoInternalIds(outcomeText(redo));
+  });
+
   it("invalidates a thread runtime and rebuilds the next view from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -411,6 +515,29 @@ describe("write tool dispatch", () => {
     expect(ctx.undoRegistry.getState("chapter.md", THREAD_ID)).toBeNull();
     const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
     expect(outcomeText(view)).toContain("|Human Alpha blade.");
+  });
+
+  it("drops staged response buffers when invalidating a thread", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      {
+        ...context,
+        turnId: "turn-stale-buffer",
+        responseId: "response-stale-buffer",
+      },
+    );
+
+    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    const commit = await ctx.core.commitResponse("response-stale-buffer");
+
+    expect(commit).toMatchObject({ documentCount: 0, updateCount: 0 });
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    expect(outcomeText(view)).toContain("|Alpha.");
+    expect(outcomeText(view)).not.toContain("Beta.");
   });
 
   it("exposes user turn undo and redo seams by document and thread", async () => {
@@ -667,14 +794,16 @@ describe("write tool dispatch", () => {
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
     );
-    expect(outcomeText(text)).toBe("status: success");
+    expect(outcomeText(text)).toContain("status: success");
+    expect(outcomeText(text)).toContain("|Alpha blade.");
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha blade.");
 
     const formatted = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "**blade**", find: "blade" },
       context,
     );
-    expect(outcomeText(formatted)).toBe("status: success");
+    expect(outcomeText(formatted)).toContain("status: success");
+    expect(outcomeText(formatted)).toContain("|Alpha **blade**.");
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain("Alpha **blade**.");
 
     const deleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
@@ -856,7 +985,8 @@ describe("write tool dispatch", () => {
       context,
     );
 
-    expect(outcomeText(result)).toBe("status: success");
+    expect(outcomeText(result)).toContain("status: success");
+    expect(outcomeText(result)).toContain("|blade here");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Arena",
       "blade here",
@@ -1038,6 +1168,7 @@ describe("write tool dispatch", () => {
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(outcomeText(undo)).toContain("status: reconciled");
+    expectNoInternalIds(outcomeText(undo));
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword."]);
 
     const followup = await ctx.core.write(
@@ -1058,6 +1189,7 @@ describe("write tool dispatch", () => {
 
     const redo = await redoCtx.core.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(redo)).toContain("status: reconciled");
+    expectNoInternalIds(outcomeText(redo));
     expect(blockTexts(redoCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
 
     const redoFollowup = await redoCtx.core.write(
@@ -1195,6 +1327,9 @@ function harness(
     undoRegistry?: ReturnType<typeof createUndoManagerRegistry>;
     lifecycle?: boolean;
     undoClientId?: number;
+    retention?: {
+      reversalWindowMs?: number;
+    };
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -1213,6 +1348,7 @@ function harness(
     model,
     undoRegistry,
     undoClientId: options.undoClientId,
+    ...(options.retention ? { retention: options.retention } : {}),
   });
   return {
     core,
@@ -1500,6 +1636,17 @@ class MemoryJournal implements UpdateJournal, MutationStore {
       }
     }
     return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
+  }
+
+  async turnMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<number | undefined> {
+    const seqs = this.entry(documentId)
+      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+      .map((record) => record.createdSeq);
+    return seqs.length > 0 ? Math.min(...seqs) : undefined;
   }
 
   private entry(docId: string): {

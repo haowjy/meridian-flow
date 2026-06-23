@@ -457,6 +457,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { turnId: TURN_B, count: 1, minSeq: first[1]?.seq },
         { turnId: TURN_C, count: 1, minSeq: second[0]?.seq },
       ]);
+      expect(await mutationStore.turnMinCreatedSeq(DOC_ID, THREAD_ID, TURN_A)).toBe(first[0]?.seq);
 
       const idsBeforeFailure = await updateIds();
       await expect(
