@@ -23,7 +23,6 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
-  turnCounter: number;
   undoStack: string[];
   redoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
   redoStackRehydrated: boolean;
@@ -108,7 +107,6 @@ export function createRuntimeStore(deps: {
       doc: new Y.Doc({ gc: false }),
       session,
       threadId: session.threadId,
-      turnCounter: 0,
       undoStack: [],
       redoStack: [],
       redoStackRehydrated: false,
