@@ -9,6 +9,9 @@ Shared ProseMirror structural contract used by TipTap/Yjs editor code.
   this package.
 - Keep `PROSEMIRROR_FRAGMENT_NAME` as the shared Y.XmlFragment name used by the
   frontend editor and server Yjs mirror.
+- Treat `createCollabYDoc()` and the reserved clientID band constants as shared
+  collab protocol: random-authoring docs use the factory so they never draw the
+  server-owned clientID band `[0, RESERVED_CLIENT_ID_MAX]`.
 - Keep this package independent from React components, TipTap runtime objects,
   database adapters, and server domain code.
 

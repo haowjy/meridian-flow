@@ -16,6 +16,11 @@ documents from the same node/mark specs.
   `Y.XmlFragment` name (`"prosemirror"`). Server mirror code imports it from
   this package; app code must stay aligned when it re-exports or displays the
   fragment name.
+- **One Yjs clientID policy.** `RESERVED_CLIENT_ID_MAX` reserves clientIDs
+  `[0, 999]` for server-authored Yjs writer streams, with
+  `AGENT_EDIT_UNDO_CLIENT_ID` occupying slot `999`. Random-authoring docs that
+  may persist or sync use `createCollabYDoc()` so they re-roll out of the
+  reserved band before writing.
 - **TipTap parity is load-bearing.** The app test
   `apps/app/src/core/editor/schema-parity.test.ts` compares the TipTap schema
   from `createEditorExtensions()` against this package by node/mark names and

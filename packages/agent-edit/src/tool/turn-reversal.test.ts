@@ -272,6 +272,54 @@ describe("turn reversal", () => {
     expect(Array.from(hotUndoUpdate?.update ?? [])).toEqual(Array.from(cold.undoUpdate));
   });
 
+  it("restores the runtime client id after hot undo before later forward writes", async () => {
+    const ctx = harness(
+      { "chapter.md": "Alpha sword." },
+      {
+        undoClientId: REVERSAL_CLIENT_ID,
+        createRuntimeDoc: createRuntimeDocFactory(REVERSAL_CLIENT_ID + 1),
+      },
+    );
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-before-hot-undo" },
+    );
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undo, "reversed");
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "spear", find: "sword" },
+      { ...context, turnId: "turn-after-hot-undo" },
+    );
+    const [secondMutation] = await ctx.journal.mutationsForTurn(
+      "chapter.md",
+      THREAD_ID,
+      "turn-after-hot-undo",
+    );
+    if (!secondMutation) throw new Error("expected second forward mutation");
+    const persistedUpdates = (await ctx.journal.read("chapter.md")).updates;
+    const secondForwardUpdate = persistedUpdates.find(
+      (update) => update.seq === secondMutation.createdSeq,
+    );
+    if (!secondForwardUpdate) throw new Error("expected second forward update");
+    const secondForwardClients = updateStructClients(secondForwardUpdate.update);
+    expect(secondForwardClients.length).toBeGreaterThan(0);
+    expect(secondForwardClients.every((clientId) => clientId > REVERSAL_CLIENT_ID)).toBe(true);
+
+    const [reversal] = await ctx.journal.readReversals("chapter.md", {
+      threadId: THREAD_ID,
+      status: ["reversed"],
+    });
+    if (!reversal) throw new Error("expected reversal record");
+    const reversalUpdate = persistedUpdates.find((update) => update.seq === reversal.undoUpdateSeq);
+    if (!reversalUpdate) throw new Error("expected reversal update");
+    const reversalClients = updateStructClients(reversalUpdate.update);
+    expect(reversalClients).toContain(REVERSAL_CLIENT_ID);
+    expect(reversalClients.every((clientId) => clientId === REVERSAL_CLIENT_ID)).toBe(true);
+  });
+
   it("surfaces cold undo target drift as an internal error instead of a false no-op", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     const invariantMessages: string[] = [];
@@ -671,6 +719,20 @@ type NoInternalIdCase = {
   run: (state: NoInternalIdState) => Promise<string | WriteOutcome>;
   assertExtra?: (state: NoInternalIdState, text: string) => void | Promise<void>;
 };
+
+function createRuntimeDocFactory(firstClientId: number): () => Y.Doc {
+  let nextClientId = firstClientId;
+  return () => {
+    const doc = new Y.Doc({ gc: false });
+    doc.clientID = nextClientId;
+    nextClientId += 1;
+    return doc;
+  };
+}
+
+function updateStructClients(update: Uint8Array): number[] {
+  return Y.decodeUpdate(update).structs.map((struct) => struct.id.client);
+}
 
 async function deletedBlockScenario(turnId: string): Promise<NoInternalIdState> {
   const ctx = harness({

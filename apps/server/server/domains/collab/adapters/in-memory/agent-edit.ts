@@ -7,6 +7,7 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import { loadDocumentState } from "../document-loader.js";
@@ -106,7 +107,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   function ensureEmpty(docId: string): Y.Doc {
     const existing = docs.get(docId);
     if (existing) return existing;
-    const doc = new Y.Doc({ gc: false });
+    const doc = createCollabYDoc({ gc: false });
     docs.set(docId, doc);
     return doc;
   }
