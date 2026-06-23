@@ -12,6 +12,10 @@ export interface ReconstructionOptions {
   undoClientId?: number;
 }
 
+interface ReconstructionTargetOptions extends ReconstructionOptions {
+  targetSeqs: ReadonlySet<number>;
+}
+
 export interface TurnUpdateGroup {
   turnId: string;
   updates: PersistedUpdate[];
@@ -78,7 +82,7 @@ export async function reconstructUndoUpdate(
   journal: UpdateJournal,
   docId: string,
   turnId: string,
-  options: ReconstructionOptions = {},
+  options: ReconstructionTargetOptions,
 ): Promise<UndoReconstructionResult> {
   const snapshot = await journal.read(docId);
   return reconstructUndoUpdateFromSnapshot(snapshot, { ...options, docId, turnId });
@@ -86,12 +90,11 @@ export async function reconstructUndoUpdate(
 
 export function reconstructUndoUpdateFromSnapshot(
   snapshot: JournalSnapshot,
-  options: ReconstructionOptions & { docId: string; turnId: string },
+  options: ReconstructionTargetOptions & { docId: string; turnId: string },
 ): UndoReconstructionResult {
-  const target = targetTurnRange(snapshot.updates, options.turnId);
+  const target = targetUpdateRange(snapshot.updates, options.turnId, options.targetSeqs);
   const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
     untilSeqExclusive: target.firstSeq,
-    clientId: options.undoClientId,
   });
   const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
   const targetOriginToken = Symbol(`turn-${options.turnId}`);
@@ -110,7 +113,7 @@ export function reconstructUndoUpdateFromSnapshot(
     replayUpdateWithOrigin(
       doc,
       update,
-      update.meta.actorTurnId === options.turnId ? targetOriginToken : nonTargetOriginToken,
+      options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
     );
   }
   um.stopCapturing();
@@ -120,6 +123,7 @@ export function reconstructUndoUpdateFromSnapshot(
     replayUpdateWithOrigin(doc, update, nonTargetOriginToken);
   }
 
+  setReconstructionClientId(doc, options.undoClientId);
   const beforeUndoStateVector = Y.encodeStateVector(doc);
   const undoStackDepthBeforeUndo = um.undoStack.length;
   currentStackItem = um.undoStack.at(-1) ?? null;
@@ -149,7 +153,7 @@ export async function reconstructRedoUpdate(
   docId: string,
   turnId: string,
   undoUpdateSeq: number,
-  options: ReconstructionOptions = {},
+  options: ReconstructionTargetOptions,
 ): Promise<RedoReconstructionResult> {
   const snapshot = await journal.read(docId);
   return reconstructRedoUpdateFromSnapshot(snapshot, { ...options, docId, turnId, undoUpdateSeq });
@@ -157,9 +161,9 @@ export async function reconstructRedoUpdate(
 
 export function reconstructRedoUpdateFromSnapshot(
   snapshot: JournalSnapshot,
-  options: ReconstructionOptions & { docId: string; turnId: string; undoUpdateSeq: number },
+  options: ReconstructionTargetOptions & { docId: string; turnId: string; undoUpdateSeq: number },
 ): RedoReconstructionResult {
-  const target = targetTurnRange(snapshot.updates, options.turnId);
+  const target = targetUpdateRange(snapshot.updates, options.turnId, options.targetSeqs);
   const undoUpdate = snapshot.updates.find((update) => update.seq === options.undoUpdateSeq);
   if (!undoUpdate) throw new Error(`Undo update seq ${options.undoUpdateSeq} not found`);
   if (undoUpdate.seq <= target.lastSeq) {
@@ -174,7 +178,6 @@ export function reconstructRedoUpdateFromSnapshot(
 
   const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
     untilSeqExclusive: target.firstSeq,
-    clientId: options.undoClientId,
   });
   const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
   const targetOriginToken = Symbol(`turn-${options.turnId}`);
@@ -193,7 +196,7 @@ export function reconstructRedoUpdateFromSnapshot(
     replayUpdateWithOrigin(
       doc,
       update,
-      update.meta.actorTurnId === options.turnId ? targetOriginToken : nonTargetOriginToken,
+      options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
     );
   }
   um.stopCapturing();
@@ -203,6 +206,7 @@ export function reconstructRedoUpdateFromSnapshot(
     replayUpdateWithOrigin(doc, update, nonTargetOriginToken);
   }
 
+  setReconstructionClientId(doc, options.undoClientId);
   currentStackItem = um.undoStack.at(-1) ?? null;
   try {
     um.undo();
@@ -285,16 +289,41 @@ export function groupUpdatesByTurn(updates: readonly PersistedUpdate[]): TurnUpd
     .sort((left, right) => left.firstSeq - right.firstSeq);
 }
 
-function targetTurnRange(updates: readonly PersistedUpdate[], turnId: string): TurnUpdateGroup {
-  const target = groupUpdatesByTurn(updates).find((group) => group.turnId === turnId);
-  if (!target) throw new Error(`No persisted updates found for turn ${turnId}`);
-  return target;
+function targetUpdateRange(
+  updates: readonly PersistedUpdate[],
+  turnId: string,
+  targetSeqs: ReadonlySet<number>,
+): TurnUpdateGroup {
+  if (targetSeqs.size === 0) throw new Error(`No target update seqs provided for turn ${turnId}`);
+
+  const missing = new Set(targetSeqs);
+  const targetUpdates: PersistedUpdate[] = [];
+  for (const update of updates) {
+    if (!targetSeqs.has(update.seq)) continue;
+    if (update.meta.actorTurnId !== turnId) {
+      throw new Error(`Target update seq ${update.seq} does not belong to turn ${turnId}`);
+    }
+    targetUpdates.push(update);
+    missing.delete(update.seq);
+  }
+  if (missing.size > 0) {
+    throw new Error(
+      `Missing target update seqs for turn ${turnId}: ${[...missing].sort((a, b) => a - b).join(", ")}`,
+    );
+  }
+
+  return {
+    turnId,
+    updates: targetUpdates,
+    firstSeq: Math.min(...targetUpdates.map((update) => update.seq)),
+    lastSeq: Math.max(...targetUpdates.map((update) => update.seq)),
+  };
 }
 
 function buildDocThroughUpdates(
   checkpoint: Uint8Array | null,
   updates: readonly PersistedUpdate[],
-  options: { untilSeqExclusive: number; clientId?: number },
+  options: { untilSeqExclusive: number },
 ): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   if (checkpoint) Y.applyUpdate(doc, checkpoint);
@@ -302,18 +331,11 @@ function buildDocThroughUpdates(
     if (update.seq >= options.untilSeqExclusive) break;
     Y.applyUpdate(doc, update.update);
   }
-  setReconstructionClientId(doc, options.clientId);
   return doc;
 }
 
 function setReconstructionClientId(doc: Y.Doc, clientId: number | undefined): void {
   if (clientId === undefined || doc.clientID === clientId) return;
-  const store = doc as unknown as { store?: { clients?: Map<number, unknown> } };
-  if (store.store?.clients?.has(clientId)) {
-    throw new Error(
-      `Cannot use Yjs clientID ${clientId} for reconstruction; it already exists in the journal`,
-    );
-  }
   doc.clientID = clientId;
 }
 

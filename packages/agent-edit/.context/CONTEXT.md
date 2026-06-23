@@ -7,10 +7,11 @@ The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
 `appendBatch` (all-or-nothing response commit across documents),
 `persistReversal` (atomically persist undo update + reversal record),
 `persistRedo` (atomically consume a doc+thread+turn reversal and append redo
-bytes), `readReversals` (durable redo lookup), and the mutation metadata queries
-used by availability (`latestActiveTurn`, `activeTurnSummary`,
-`turnMinCreatedSeq`). Ordered by monotonic seq per document. Every adapter
-implements this. Response staging buffers the same
+bytes), `readReversals` (durable redo lookup), and mutation metadata queries:
+availability uses aggregate reads (`latestActiveTurn`, `activeTurnSummary`,
+`turnMinCreatedSeq`), while cold reconstruction uses `mutationsForTurn` to
+describe the concrete mutation-row subset for a turn. Ordered by monotonic seq
+per document. Every adapter implements this. Response staging buffers the same
 `{ docId, update, agentMeta(turnId) }` entries and commits them with one
 `appendBatch(...)` call from `commitResponse(responseId)`; mutation entries mint
 their rows in the same transaction.
@@ -20,7 +21,9 @@ The mutation reads deliberately live on `UpdateJournal`, not a separate
 mutation metadata table that changes with it, so the co-sourcing guarantee is
 structural. Internal consumers still depend on narrow read slices such as
 `MutationQueries`, which picks only `latestActiveTurn`, `activeTurnSummary`, and
-`turnMinCreatedSeq` from `UpdateJournal`.
+`turnMinCreatedSeq` from `UpdateJournal`; turn reversal reads the row-level
+`mutationsForTurn` descriptor only on cold fallback to compute the exact
+forward update sequences to reverse.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
@@ -115,9 +118,12 @@ across all turns — Yjs origin tracking uses object identity).
 `captureTimeout: Infinity` — no auto-merge; explicit split only.
 
 **Cold path** — reconstruction from `UpdateJournal` when UndoManager is gone.
-Replay checkpoint + updates, assign per-turn `Symbol` tokens, create fresh
-UndoManager, replay target turn with tracked token, undo/redo, extract bytes.
-Authoritative model; hot path is a performance cache. Redo survives process
+Replay checkpoint + updates, assign per-reconstruction `Symbol` tokens, create
+fresh UndoManager, tag only the requested target forward update seqs with the
+tracked token, undo/redo, extract bytes. The target seqs come from mutation rows:
+undo targets currently `active` rows for the turn; redo targets `reversed` rows
+whose `undoUpdateSeq` matches the redo target. Authoritative model; hot path is
+a performance cache. Redo survives process
 restart by rehydrating `runtime.redoStack` from `ReversalRecord` rows with
 `status: "reversed"` during the first `view` sync for that `(session, doc,
 thread)`. Rehydration filters expired records and records made stale by later

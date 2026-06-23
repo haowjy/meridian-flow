@@ -7,7 +7,7 @@ import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalRecord } from "../ports/types.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type { TurnMutationRow, UpdateJournal } from "../ports/update-journal.js";
 import {
   latestRedoableTarget,
   latestUndoableTurn,
@@ -227,7 +227,15 @@ export function createTurnReversal(deps: {
 
     if (!turnId || !update) {
       try {
+        const targetSeqs = await targetSeqsForUndo(
+          journal,
+          docId,
+          session.threadId,
+          availableTurnId,
+        );
+        if (targetSeqs.size === 0) return { ok: true, status: "nothing_to_undo" };
         const cold = await reconstructUndoUpdate(journal, docId, availableTurnId, {
+          targetSeqs,
           undoClientId,
         });
         turnId = availableTurnId;
@@ -309,12 +317,24 @@ export function createTurnReversal(deps: {
     }
 
     if (!update) {
+      const targetSeqs = await targetSeqsForRedo(
+        journal,
+        docId,
+        session.threadId,
+        redoTarget.turnId,
+        redoTarget.undoUpdateSeq,
+      );
+      if (targetSeqs.size === 0) {
+        popIfTop(runtime.redoStack, redoTarget.turnId);
+        registry.evictThread(docId, session.threadId);
+        return { ok: true, status: "nothing_to_redo" };
+      }
       const cold = await reconstructRedoUpdate(
         journal,
         docId,
         redoTarget.turnId,
         redoTarget.undoUpdateSeq,
-        { undoClientId },
+        { targetSeqs, undoClientId },
       ).catch(() => null);
       if (!cold?.ok) {
         popIfTop(runtime.redoStack, redoTarget.turnId);
@@ -390,6 +410,37 @@ export function createTurnReversal(deps: {
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
     registry.evictThread(docId, threadId);
   }
+}
+
+async function targetSeqsForUndo(
+  journal: UpdateJournal,
+  docId: string,
+  threadId: string,
+  turnId: string,
+): Promise<ReadonlySet<number>> {
+  return mutationSeqs(
+    (await journal.mutationsForTurn(docId, threadId, turnId)).filter(
+      (row) => row.status === "active",
+    ),
+  );
+}
+
+async function targetSeqsForRedo(
+  journal: UpdateJournal,
+  docId: string,
+  threadId: string,
+  turnId: string,
+  undoUpdateSeq: number,
+): Promise<ReadonlySet<number>> {
+  return mutationSeqs(
+    (await journal.mutationsForTurn(docId, threadId, turnId)).filter(
+      (row) => row.status === "reversed" && row.undoUpdateSeq === undoUpdateSeq,
+    ),
+  );
+}
+
+function mutationSeqs(rows: readonly TurnMutationRow[]): ReadonlySet<number> {
+  return new Set(rows.map((row) => row.createdSeq));
 }
 
 function status(code: WriteStatus, message?: string): InternalWriteResult {

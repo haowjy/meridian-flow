@@ -88,6 +88,7 @@ describe("UndoManagerRegistry hot path", () => {
     const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "capped-turn",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "capped-turn"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
@@ -179,6 +180,7 @@ describe("hot/cold parity", () => {
     const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T2",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "T2"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(preUndoDoc, LIVE_CLIENT_ID);
@@ -206,6 +208,7 @@ describe("hot/cold parity", () => {
     const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T2",
+      targetSeqs: targetSeqsForTurn(journalWithUndo, "T2"),
       undoUpdateSeq: undoSeq,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -250,6 +253,7 @@ describe("hot/cold parity", () => {
     const coldRedo = reconstructRedoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "old-turn",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "old-turn"),
       undoUpdateSeq: undoSeq,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -285,6 +289,7 @@ describe("hot/cold parity", () => {
     const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "insert",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "insert"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(preUndoDoc, LIVE_CLIENT_ID);
@@ -311,6 +316,7 @@ describe("hot/cold parity", () => {
     const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "insert",
+      targetSeqs: targetSeqsForTurn(journalWithUndo, "insert"),
       undoUpdateSeq: undoSeq,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -362,6 +368,7 @@ describe("hot/cold parity", () => {
     const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "delete-beta",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "delete-beta"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(afterDeleteDoc, LIVE_CLIENT_ID);
@@ -387,6 +394,7 @@ describe("hot/cold parity", () => {
     const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "delete-beta",
+      targetSeqs: targetSeqsForTurn(journalWithUndo, "delete-beta"),
       undoUpdateSeq: undoSeq,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -409,11 +417,13 @@ describe("hot/cold parity", () => {
     const first = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T1",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "T1"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const second = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T1",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "T1"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
 
@@ -437,6 +447,7 @@ describe("8-case reconcile matrix", () => {
     const cold = reconstructUndoUpdateFromSnapshot(matrixCase.ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: matrixCase.turnId,
+      targetSeqs: targetSeqsForTurn(matrixCase.ctx.journal, matrixCase.turnId),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(matrixCase.ctx.doc, LIVE_CLIENT_ID);
@@ -485,6 +496,7 @@ describe("Q2b interleaved multi-agent turns", () => {
     const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "B1",
+      targetSeqs: targetSeqsForTurn(ctx.journal, "B1"),
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coldDoc = cloneDoc(preUndo, LIVE_CLIENT_ID);
@@ -559,6 +571,22 @@ class MemoryJournal extends InMemoryAgentEditJournal {
     this.compactCalls += 1;
     return super.compact(docId, before);
   }
+}
+
+function targetSeqsForTurn(
+  journal: {
+    snapshot(docId: string): {
+      updates: readonly { seq: number; meta: { actorTurnId?: string } }[];
+    };
+  },
+  turnId: string,
+): ReadonlySet<number> {
+  return new Set(
+    journal
+      .snapshot(DOC_ID)
+      .updates.filter((update) => update.meta.actorTurnId === turnId)
+      .map((update) => update.seq),
+  );
 }
 
 function createScenario(

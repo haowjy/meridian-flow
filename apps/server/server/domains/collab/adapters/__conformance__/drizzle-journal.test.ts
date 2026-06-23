@@ -580,6 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const cold = reconstructUndoUpdateFromSnapshot(snapshotBeforeUndo, {
         docId: DOC_ID,
         turnId: TURN_B,
+        targetSeqs: targetSeqsFromSnapshot(snapshotBeforeUndo, TURN_B),
         undoClientId: REVERSAL_CLIENT_ID,
       });
       const coldDoc = cloneDoc(preUndoDoc, LIVE_CLIENT_ID);
@@ -711,6 +712,17 @@ function appendText(doc: Y.Doc, value: string): Uint8Array {
   const before = Y.encodeStateVector(doc);
   text.insert(text.toString().length, value);
   return Y.encodeStateAsUpdate(doc, before);
+}
+
+function targetSeqsFromSnapshot(
+  snapshot: { updates: readonly { seq: number; meta: { actorTurnId?: string } }[] },
+  turnId: string,
+): ReadonlySet<number> {
+  return new Set(
+    snapshot.updates
+      .filter((update) => update.meta.actorTurnId === turnId)
+      .map((update) => update.seq),
+  );
 }
 
 function textFromSnapshot(
