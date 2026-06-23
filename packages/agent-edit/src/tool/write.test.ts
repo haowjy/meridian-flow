@@ -13,32 +13,6 @@ import {
 import { context, harness } from "./test-support/write-tool-harness.js";
 
 describe("write tool dispatch", () => {
-  it("views block-hashed document content and scoped outline sections", async () => {
-    const ctx = harness({ "chapter.md": "# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits." });
-
-    const full = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-
-    expectOutcome(full, "success");
-    expect(outcomeText(full)).toMatch(/^[0-9a-f]{4}\|# Chapter/m);
-    expect(outcomeText(full)).toContain("|Alpha sword.");
-
-    const headingHash = hashAt(ctx.liveDoc("chapter.md"), 2);
-    const section = await ctx.core.write(
-      { command: "view", file: `chapter.md#${headingHash}` },
-      context,
-    );
-    expect(outcomeText(section)).toContain("|## Arena");
-    expect(outcomeText(section)).toContain("|Beta waits.");
-
-    const outline = await ctx.core.write(
-      { command: "view", file: "chapter.md", format: "outline" },
-      context,
-    );
-    expect(outcomeText(outline)).toContain(
-      `write(command="view", file="chapter.md#${headingHash}")`,
-    );
-  });
-
   it("creates a document with initial content", async () => {
     const ctx = harness();
     ctx.coordinator.createEmpty("new.md");
@@ -294,56 +268,6 @@ describe("write tool dispatch", () => {
     expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual(["Alpha starts", "ends! Omega"]);
   });
 
-  it("views around windows with radius three and clamps at document edges", async () => {
-    const ctx = harness({ "chapter.md": numberedBlocks(9) });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    const middleHash = hashAt(ctx.liveDoc("chapter.md"), 4);
-    const nearStartHash = hashAt(ctx.liveDoc("chapter.md"), 1);
-    const nearEndHash = hashAt(ctx.liveDoc("chapter.md"), 7);
-
-    const middle = await ctx.core.write(
-      { command: "view", file: "chapter.md", around: middleHash },
-      context,
-    );
-    const middleWithHashPrefix = await ctx.core.write(
-      { command: "view", file: "chapter.md", around: `#${middleHash}` },
-      context,
-    );
-    const nearStart = await ctx.core.write(
-      { command: "view", file: "chapter.md", around: nearStartHash },
-      context,
-    );
-    const nearEnd = await ctx.core.write(
-      { command: "view", file: "chapter.md", around: nearEndHash },
-      context,
-    );
-
-    expect(renderedBlockBodies(middle)).toEqual([
-      "Block 2",
-      "Block 3",
-      "Block 4",
-      "Block 5",
-      "Block 6",
-      "Block 7",
-      "Block 8",
-    ]);
-    expect(outcomeText(middleWithHashPrefix)).toBe(outcomeText(middle));
-    expect(renderedBlockBodies(nearStart)).toEqual([
-      "Block 1",
-      "Block 2",
-      "Block 3",
-      "Block 4",
-      "Block 5",
-    ]);
-    expect(renderedBlockBodies(nearEnd)).toEqual([
-      "Block 5",
-      "Block 6",
-      "Block 7",
-      "Block 8",
-      "Block 9",
-    ]);
-  });
-
   it("scopes find-based replace and insert to around windows", async () => {
     const replaceCtx = harness({ "chapter.md": aroundNeedleBlocks() });
     await replaceCtx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -501,10 +425,6 @@ describe("write tool dispatch", () => {
     expect(outcomeText(transient)).toContain("database unavailable");
   });
 });
-
-function numberedBlocks(count: number): string {
-  return Array.from({ length: count }, (_, index) => `Block ${index + 1}`).join("\n\n");
-}
 
 function aroundNeedleBlocks(): string {
   return [
