@@ -2,8 +2,6 @@
 export interface ActorSessionDocumentState {
   /** State vector at last sync with the live document. */
   stateVector: Uint8Array;
-  /** Turn count for undo stack depth accounting. */
-  turnCount: number;
 }
 
 /**

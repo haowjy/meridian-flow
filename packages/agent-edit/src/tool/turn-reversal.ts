@@ -274,8 +274,6 @@ export function createTurnReversal(deps: {
       structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
     });
     if (!sync.ok) return { ok: false, response: sync.response };
-    popIfTop(runtime.undoStack, turnId);
-    runtime.redoStack.push({ turnId, undoUpdateSeq: record.undoUpdateSeq || undefined });
     return {
       ok: true,
       status: sync.summary.reconciled ? "reconciled" : "reversed",
@@ -318,7 +316,6 @@ export function createTurnReversal(deps: {
       });
     }
     if (targetSeqs.size === 0) {
-      popIfTop(runtime.redoStack, redoTarget.turnId);
       return { ok: true, status: "nothing_to_redo" };
     }
 
@@ -342,7 +339,6 @@ export function createTurnReversal(deps: {
       });
     }
     if (!cold.ok) {
-      popIfTop(runtime.redoStack, redoTarget.turnId);
       return { ok: true, status: "nothing_to_redo" };
     }
     const update = cold.redoUpdate;
@@ -358,11 +354,9 @@ export function createTurnReversal(deps: {
       { origin: "system", seq: 0 },
     );
     if (!consumed.consumed) {
-      popIfTop(runtime.redoStack, redoTarget.turnId);
       return { ok: true, status: "nothing_to_redo" };
     }
 
-    const turnId = redoTarget.turnId;
     Y.applyUpdate(runtime.doc, update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownDiff = diffSnapshots(before, snapshotBlocks(runtime.doc, model, codec));
@@ -380,8 +374,6 @@ export function createTurnReversal(deps: {
       structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
     });
     if (!sync.ok) return { ok: false, response: sync.response };
-    popIfTop(runtime.redoStack, turnId);
-    runtime.undoStack.push(turnId);
     return {
       ok: true,
       status: sync.summary.reconciled ? "reconciled" : "reversed",
@@ -481,24 +473,6 @@ function formatConcurrent(info: ConcurrentEditInfo): string[] {
   if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
   if (info.reviewCommand) lines.push(info.reviewCommand);
   return lines;
-}
-
-function popIfTop(stack: string[], value: string): void;
-function popIfTop(stack: Array<{ turnId: string; undoUpdateSeq?: number }>, value: string): void;
-function popIfTop(
-  stack: string[] | Array<{ turnId: string; undoUpdateSeq?: number }>,
-  value: string,
-): void {
-  const last = stack.at(-1);
-  if (typeof last === "string") {
-    while (stack.at(-1) === value) stack.pop();
-    return;
-  }
-  let item = stack.at(-1);
-  while (item && typeof item !== "string" && item.turnId === value) {
-    stack.pop();
-    item = stack.at(-1);
-  }
 }
 
 function formatCause(cause: unknown): string {

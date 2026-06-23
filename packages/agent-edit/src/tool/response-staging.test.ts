@@ -199,9 +199,6 @@ describe("response staging", () => {
           doc: new Y.Doc({ gc: false }),
           session,
           threadId: THREAD_ID,
-          undoStack: [],
-          redoStack: [],
-          redoStackRehydrated: false,
         };
         runtimes.set(docId, runtime);
       }
