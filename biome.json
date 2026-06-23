@@ -9,6 +9,7 @@
       "!**/.nx",
       "!**/.mars",
       "!**/.meridian",
+      "!**/.meridian-work",
       "!**/.codex-local",
       "!**/routeTree.gen.ts",
       "!apps/**/src/styles",
