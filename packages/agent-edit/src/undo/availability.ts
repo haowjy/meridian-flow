@@ -27,6 +27,7 @@ export async function resolveUndoAvailability(input: {
   mutationQueries: MutationQueries;
   docId: string;
   threadId: string;
+  now?: Date;
 }): Promise<AvailabilityDetails> {
   const [undoTurnId, redoTarget] = await Promise.all([
     latestUndoableTurn(input),
@@ -63,13 +64,17 @@ export async function latestRedoableTarget(input: {
   mutationQueries: MutationQueries;
   docId: string;
   threadId: string;
+  now?: Date;
 }): Promise<{ turnId: string; undoUpdateSeq: number } | undefined> {
+  const now = input.now ?? new Date();
   const records = (
     await input.journal.readReversals(input.docId, {
       threadId: input.threadId,
       status: ["reversed"],
     })
-  ).sort(compareReversalStackOrder);
+  )
+    .filter((record) => !record.expiresAt || record.expiresAt > now)
+    .sort(compareReversalStackOrder);
   const latest = records.at(-1);
   if (!latest) return undefined;
 
