@@ -14,7 +14,6 @@ import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
-import type { MutationStore } from "../ports/mutation-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
@@ -46,7 +45,6 @@ import type {
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   codec: Codec;
@@ -123,7 +121,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const turnReversal = createTurnReversal({
     journal: options.journal,
-    mutationStore: options.mutationStore,
     registry,
     runtimeStore,
     mutationCommit,

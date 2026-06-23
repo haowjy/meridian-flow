@@ -148,7 +148,6 @@ function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   return createFacade({
     journal,
-    mutationStore: journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
     store: storeFor(journal),

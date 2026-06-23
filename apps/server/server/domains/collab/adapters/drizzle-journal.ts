@@ -3,7 +3,6 @@
 import type {
   DocumentLifecycle,
   JournalSnapshot,
-  MutationStore,
   PersistedUpdate,
   ReversalRecord,
   ReversalStatus,
@@ -50,7 +49,6 @@ export type CollabFacadeStore = {
 
 export type DrizzleCollabPersistence = {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
   lifecycle: DocumentLifecycle;
   store: CollabFacadeStore;
 };
@@ -366,6 +364,61 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       });
     },
 
+    async latestActiveTurn(documentId, threadId) {
+      const [row] = await db
+        .select({ turnId: agentEditMutations.turnId })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.status, "active"),
+          ),
+        )
+        .orderBy(desc(agentEditMutations.createdSeq))
+        .limit(1);
+      return row?.turnId;
+    },
+
+    async activeTurnSummary(documentId, threadId) {
+      const minSeq = sql<number>`min(${agentEditMutations.createdSeq})`;
+      const rows = await db
+        .select({
+          turnId: agentEditMutations.turnId,
+          count: sql<number>`count(*)::int`,
+          minSeq,
+        })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.status, "active"),
+          ),
+        )
+        .groupBy(agentEditMutations.turnId)
+        .orderBy(asc(minSeq));
+      return rows.map((row) => ({
+        turnId: row.turnId,
+        count: Number(row.count),
+        minSeq: Number(row.minSeq),
+      }));
+    },
+
+    async turnMinCreatedSeq(documentId, threadId, turnId) {
+      const [row] = await db
+        .select({ minSeq: sql<number>`min(${agentEditMutations.createdSeq})` })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+          ),
+        );
+      return row?.minSeq === null || row?.minSeq === undefined ? undefined : Number(row.minSeq);
+    },
+
     async read(docId, opts = {}): Promise<JournalSnapshot> {
       const checkpoint = await latestCheckpoint(db, docId);
       const conditions = [
@@ -563,65 +616,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
   };
 }
 
-export function createDrizzleMutationStore(db: JournalDb): MutationStore {
-  return {
-    async latestActiveTurn(documentId, threadId) {
-      const [row] = await db
-        .select({ turnId: agentEditMutations.turnId })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.status, "active"),
-          ),
-        )
-        .orderBy(desc(agentEditMutations.createdSeq))
-        .limit(1);
-      return row?.turnId;
-    },
-
-    async activeTurnSummary(documentId, threadId) {
-      const minSeq = sql<number>`min(${agentEditMutations.createdSeq})`;
-      const rows = await db
-        .select({
-          turnId: agentEditMutations.turnId,
-          count: sql<number>`count(*)::int`,
-          minSeq,
-        })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.status, "active"),
-          ),
-        )
-        .groupBy(agentEditMutations.turnId)
-        .orderBy(asc(minSeq));
-      return rows.map((row) => ({
-        turnId: row.turnId,
-        count: Number(row.count),
-        minSeq: Number(row.minSeq),
-      }));
-    },
-
-    async turnMinCreatedSeq(documentId, threadId, turnId) {
-      const [row] = await db
-        .select({ minSeq: sql<number>`min(${agentEditMutations.createdSeq})` })
-        .from(agentEditMutations)
-        .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
-            eq(agentEditMutations.turnId, asTurnId(turnId)),
-          ),
-        );
-      return row?.minSeq === null || row?.minSeq === undefined ? undefined : Number(row.minSeq);
-    },
-  };
-}
-
 export function createServerDocumentLifecycle(
   db: JournalDb,
   journal: UpdateJournal,
@@ -684,7 +678,6 @@ export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPers
   const journal = createDrizzleJournal(db);
   return {
     journal,
-    mutationStore: createDrizzleMutationStore(db),
     lifecycle: createServerDocumentLifecycle(db, journal),
     store: createDrizzleCollabFacadeStore(db),
   };

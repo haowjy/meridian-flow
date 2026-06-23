@@ -17,7 +17,7 @@ the update journal, and the live-document coordinator.
   and coordinator. This is not part of the `@meridian/agent-edit` public mutation
   surface.
 - **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`,
-  `MutationStore`, server lifecycle, checkpoints, latest attribution),
+  mutation metadata queries, server lifecycle, checkpoints, latest attribution),
   `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
   (test/app fakes).

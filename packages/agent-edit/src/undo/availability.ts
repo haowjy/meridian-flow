@@ -1,8 +1,12 @@
 /** Undo/redo availability derived from mutation metadata and retained journal rows. */
-import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { evaluateRedoEligibility } from "./reconstruction.js";
+
+type MutationQueries = Pick<
+  UpdateJournal,
+  "latestActiveTurn" | "activeTurnSummary" | "turnMinCreatedSeq"
+>;
 
 export interface UndoAvailability {
   undo: boolean;
@@ -20,7 +24,7 @@ export interface AvailabilityDetails extends UndoAvailability {
 
 export async function resolveUndoAvailability(input: {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
+  mutationQueries: MutationQueries;
   docId: string;
   threadId: string;
   now?: Date;
@@ -39,14 +43,14 @@ export async function resolveUndoAvailability(input: {
 
 export async function latestUndoableTurn(input: {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
+  mutationQueries: MutationQueries;
   docId: string;
   threadId: string;
 }): Promise<string | undefined> {
-  const latestTurnId = await input.mutationStore.latestActiveTurn(input.docId, input.threadId);
+  const latestTurnId = await input.mutationQueries.latestActiveTurn(input.docId, input.threadId);
   if (!latestTurnId) return undefined;
 
-  const summaries = await input.mutationStore.activeTurnSummary(input.docId, input.threadId);
+  const summaries = await input.mutationQueries.activeTurnSummary(input.docId, input.threadId);
   const latest = summaries.find((summary) => summary.turnId === latestTurnId);
   if (!latest) return undefined;
 
@@ -57,7 +61,7 @@ export async function latestUndoableTurn(input: {
 
 export async function latestRedoableTarget(input: {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
+  mutationQueries: MutationQueries;
   docId: string;
   threadId: string;
   now?: Date;
@@ -78,7 +82,7 @@ export async function latestRedoableTarget(input: {
   const undoUpdate = snapshot.updates.find((update) => update.seq === latest.undoUpdateSeq);
   if (!undoUpdate) return undefined;
 
-  const targetTurnStartSeq = await input.mutationStore.turnMinCreatedSeq(
+  const targetTurnStartSeq = await input.mutationQueries.turnMinCreatedSeq(
     input.docId,
     input.threadId,
     latest.turnId,

@@ -3,7 +3,6 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   DocumentNotFoundError,
-  type MutationStore,
   type PersistedUpdate,
   type UpdateJournal,
 } from "@meridian/agent-edit";
@@ -20,18 +19,17 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = UpdateJournal &
-  MutationStore & {
-    createCheckpoint(
-      docId: string,
-      state: Uint8Array,
-      reason: string,
-      upToSeq: number,
-    ): Promise<string>;
-    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-  };
+export type InMemoryJournal = UpdateJournal & {
+  createCheckpoint(
+    docId: string,
+    state: Uint8Array,
+    reason: string,
+    upToSeq: number,
+  ): Promise<string>;
+  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+};
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];

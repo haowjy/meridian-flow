@@ -39,7 +39,6 @@ export function createPlaygroundEnv(): PlaygroundEnv {
   };
   const core = createAgentEditCore({
     journal,
-    mutationStore: journal,
     coordinator,
     lifecycle: coordinator,
     codec,

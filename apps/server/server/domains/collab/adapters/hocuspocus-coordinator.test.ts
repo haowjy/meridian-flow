@@ -42,6 +42,18 @@ class MemoryJournal implements UpdateJournal {
     return results;
   }
 
+  async latestActiveTurn(): Promise<string | undefined> {
+    return undefined;
+  }
+
+  async activeTurnSummary() {
+    return [];
+  }
+
+  async turnMinCreatedSeq(): Promise<number | undefined> {
+    return undefined;
+  }
+
   async read(docId: string) {
     const entry = this.entries.get(docId);
     return entry

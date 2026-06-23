@@ -5,7 +5,6 @@ import { type BlockSnapshotModel, diffSnapshots, snapshotBlocks } from "../apply
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -64,7 +63,6 @@ type ReversalResult =
 
 export function createTurnReversal(deps: {
   journal: UpdateJournal;
-  mutationStore: MutationStore;
   registry: UndoManagerRegistry;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
@@ -75,17 +73,8 @@ export function createTurnReversal(deps: {
   };
   undoClientId?: number;
 }): TurnReversal {
-  const {
-    journal,
-    mutationStore,
-    registry,
-    runtimeStore,
-    mutationCommit,
-    model,
-    codec,
-    retention,
-    undoClientId,
-  } = deps;
+  const { journal, registry, runtimeStore, mutationCommit, model, codec, retention, undoClientId } =
+    deps;
 
   return {
     run,
@@ -96,7 +85,7 @@ export function createTurnReversal(deps: {
   async function getAvailability(docId: string, threadId: string): Promise<UndoAvailability> {
     const availability = await resolveUndoAvailability({
       journal,
-      mutationStore,
+      mutationQueries: journal,
       docId,
       threadId,
     });
@@ -209,7 +198,7 @@ export function createTurnReversal(deps: {
   ): Promise<ReversalResult> {
     const availableTurnId = await latestUndoableTurn({
       journal,
-      mutationStore,
+      mutationQueries: journal,
       docId,
       threadId: session.threadId,
     });
@@ -297,7 +286,7 @@ export function createTurnReversal(deps: {
   ): Promise<ReversalResult> {
     const redoTarget = await latestRedoableTarget({
       journal,
-      mutationStore,
+      mutationQueries: journal,
       docId,
       threadId: session.threadId,
     });
