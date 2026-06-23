@@ -1,14 +1,10 @@
 // Turns Y.Doc blocks into agent-facing text and parses agent input.
 import type * as Y from "yjs";
 
-import type { Block, Codec, ParsedContent } from "../codec/types.js";
-import type { DocumentModel } from "../model/types.js";
+import type { Codec, ParsedContent } from "../codec/types.js";
+import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import type { ViewCommand } from "./types.js";
-
-export interface DocumentRendererModel extends DocumentModel<Y.XmlElement> {
-  toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): Block;
-}
 
 export interface DocumentRenderAddress {
   filePath: string;
@@ -36,7 +32,7 @@ export type ParseForCommandResult =
   | { ok: false; message: string };
 
 export function createDocumentRenderer(deps: {
-  model: DocumentRendererModel;
+  model: AgentEditModel;
   codec: Codec;
 }): DocumentRenderer {
   const { model, codec } = deps;

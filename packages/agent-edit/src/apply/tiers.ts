@@ -4,7 +4,7 @@ import { Fragment } from "prosemirror-model";
 import * as Y from "yjs";
 
 import type { Codec, ParsedContent, Span } from "../codec/types.js";
-import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
+import type { AgentEditModel } from "../ports/model.js";
 import { isLiveXmlElement } from "../resolver/block-hash.js";
 import {
   applyConcurrentUpdates,
@@ -70,7 +70,7 @@ type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 /** Apply resolved edits to an agent-local Y.Doc using the three-tier mutation plan. */
 export function applyEdits(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   codec: Codec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
@@ -170,7 +170,7 @@ function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
 
 function preflightEdit(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   codec: Codec,
   edit: ResolvedEdit,
 ):
@@ -188,7 +188,7 @@ function preflightEdit(
 
 function preflightTextEdit(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   codec: Codec,
   edit: Extract<ResolvedEdit, { kind: "text" }>,
 ): ReturnType<typeof preflightEdit> {
@@ -241,7 +241,7 @@ function preflightTextEdit(
 
 function preflightInsert(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   codec: Codec,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
 ): ReturnType<typeof preflightEdit> {
@@ -262,7 +262,7 @@ function preflightInsert(
 
 function preflightDelete(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   edit: Extract<ResolvedEdit, { kind: "delete" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.element, "target");
@@ -285,7 +285,7 @@ function preflightDelete(
 
 function executePlans(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   plans: readonly PlannedEdit[],
   accumulator: ApplyAccumulator,
 ): void {
@@ -334,7 +334,7 @@ function textPlanStart(plan: Extract<PlannedEdit, { kind: "text" }>): number {
 
 function collectTierOneGroup(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   codec: Codec,
   edits: readonly ResolvedEdit[],
   startIndex: number,
@@ -362,7 +362,7 @@ function collectTierOneGroup(
 
 function validateNoSameTurnTombstones(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
   const shadowBlocks = [...model.getBlocks(doc)];
@@ -402,7 +402,7 @@ function referencedElements(edit: ResolvedEdit): Y.XmlElement[] {
 
 function validateLiveBlock(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: AgentEditModel,
   block: Y.XmlElement,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {

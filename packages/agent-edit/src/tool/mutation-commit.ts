@@ -4,7 +4,6 @@ import * as Y from "yjs";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
-  type BlockSnapshotModel,
   type ConcurrentDetectionResult,
   computeEcho,
   snapshotBlocks,
@@ -12,6 +11,7 @@ import {
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
@@ -24,8 +24,6 @@ import { type InternalWriteResult, isInternalWriteResult } from "./internal-resu
 import type { WriteCommand } from "./types.js";
 
 const EMPTY_UPDATE_LENGTH = 2;
-
-export type MutationCommitModel = BlockSnapshotModel;
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -112,7 +110,7 @@ export function createMutationCommit(deps: {
   journal: UpdateJournal;
   registry: UndoManagerRegistry;
   coordinator: DocumentCoordinator;
-  model: MutationCommitModel;
+  model: AgentEditModel;
   codec: Codec;
   onInvariantViolation?: (message: string) => void;
 }): MutationCommit {

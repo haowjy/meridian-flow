@@ -2,12 +2,12 @@
 import * as Y from "yjs";
 
 import type { Codec } from "../codec/types.js";
-import type { DocumentModel } from "../model/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
+import type { DocumentModel } from "../ports/model.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import type { UndoManagerRegistry } from "../undo/manager-registry.js";
 import { withLiveDocument } from "./coordinator.js";

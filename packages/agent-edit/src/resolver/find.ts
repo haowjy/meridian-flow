@@ -1,14 +1,14 @@
 import type * as Y from "yjs";
 
 import type { Codec } from "../codec/types.js";
-import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
 const EMPTY_PARAGRAPH_SENTINEL = "\u00a0";
 
 export interface FindContext {
   doc: Y.Doc;
-  model: YProsemirrorDocumentModel;
+  model: AgentEditModel;
   codec: Codec;
 }
 

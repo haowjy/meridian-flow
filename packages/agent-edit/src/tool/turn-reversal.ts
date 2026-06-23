@@ -1,10 +1,11 @@
 // Runs turn-level undo/redo across hot UndoManager state and cold journal reconstruction.
 import * as Y from "yjs";
 
-import { type BlockSnapshotModel, diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalRecord } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -66,7 +67,7 @@ export function createTurnReversal(deps: {
   registry: UndoManagerRegistry;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
-  model: BlockSnapshotModel;
+  model: AgentEditModel;
   codec: Codec;
   retention?: {
     reversalWindowMs?: number;
