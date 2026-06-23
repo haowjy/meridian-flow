@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+- Dev tooling: clarified migration drift remediation (migrate/apply-functions for simple catch-up, reset for divergence), removed duplicate env/git helpers, and added `pnpm dev:gc-dbs` for stale worktree DB cleanup.
+
 - Test suite pruning: deleted low-value contract/helper tests, in-memory
   conformance wrappers, skipped DB conformance wrappers, and duplicate golden
-  coverage that did not protect a durable boundary.
+  coverage; collapsed broad runtime, gateway, MDX, turn-reducer, and WS suites
+  to representative boundary cases.
 
 - Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
   replaces the bare needle and cinnabar seal-square favicon. Proto route at
