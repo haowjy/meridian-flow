@@ -13,6 +13,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
+  agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversals,
@@ -248,15 +249,26 @@ async function appendMutation(
   db: JournalDb,
   input: { documentId: string; threadId: string; turnId: string; createdSeq: number },
 ): Promise<number> {
+  const [counter] = await db
+    .insert(agentEditWidCounters)
+    .values({
+      documentId: asDocumentId(input.documentId),
+      threadId: asThreadId(input.threadId),
+      nextWid: 1,
+    })
+    .onConflictDoUpdate({
+      target: [agentEditWidCounters.documentId, agentEditWidCounters.threadId],
+      set: {
+        nextWid: sql`${agentEditWidCounters.nextWid} + 1`,
+      },
+    })
+    .returning({ wId: agentEditWidCounters.nextWid });
+  if (!counter) throw new Error("Failed to allocate agent edit w-id");
+
   const [row] = await db
     .insert(agentEditMutations)
     .values({
-      wId: sql<number>`(
-        SELECT COALESCE(MAX(${agentEditMutations.wId}), 0) + 1
-        FROM ${agentEditMutations}
-        WHERE ${agentEditMutations.documentId} = ${asDocumentId(input.documentId)}
-          AND ${agentEditMutations.threadId} = ${asThreadId(input.threadId)}
-      )`,
+      wId: counter.wId,
       documentId: asDocumentId(input.documentId),
       threadId: asThreadId(input.threadId),
       turnId: asTurnId(input.turnId),

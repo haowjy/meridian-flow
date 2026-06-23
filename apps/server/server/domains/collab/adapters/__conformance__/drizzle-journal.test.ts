@@ -28,6 +28,16 @@ const TURN_B = "00000000-0000-4000-8000-000000000207";
 const TURN_C = "00000000-0000-4000-8000-000000000208";
 const TURN_D = "00000000-0000-4000-8000-000000000209";
 const TURN_E = "00000000-0000-4000-8000-00000000020a";
+const CONCURRENT_TURNS = [
+  "00000000-0000-4000-8000-00000000020b",
+  "00000000-0000-4000-8000-00000000020c",
+  "00000000-0000-4000-8000-00000000020d",
+  "00000000-0000-4000-8000-00000000020e",
+  "00000000-0000-4000-8000-00000000020f",
+  "00000000-0000-4000-8000-000000000210",
+  "00000000-0000-4000-8000-000000000211",
+  "00000000-0000-4000-8000-000000000212",
+] as const;
 const MISSING_THREAD_ID = "00000000-0000-4000-8000-0000000002ff";
 const LIVE_CLIENT_ID = 100;
 const REVERSAL_CLIENT_ID = 9_999;
@@ -47,6 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       contextSources,
       agentEditMutations,
+      agentEditWidCounters,
       documentYjsCheckpoints,
       documentYjsHeads,
       documentYjsReversals,
@@ -65,11 +76,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
 
-    const db = createDb(DATABASE_URL, { max: 1 });
+    const db = createDb(DATABASE_URL, { max: 4 });
 
     async function truncateAll(): Promise<void> {
       await truncateDrizzleTables(db, [
         agentEditMutations,
+        agentEditWidCounters,
         documentYjsReversals,
         documentYjsHeads,
         documentYjsUpdates,
@@ -144,6 +156,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           role: "assistant",
           status: "complete",
         },
+        ...CONCURRENT_TURNS.map((id) => ({
+          id,
+          threadId: THREAD_ID,
+          parentTurnId: TURN_E,
+          role: "assistant" as const,
+          status: "complete" as const,
+        })),
       ]);
     }
 
@@ -444,6 +463,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await updateIds()).toEqual(idsBeforeFailure);
       expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3]);
+    });
+
+    it("does not fail spuriously when concurrent batches mint w-ids for the same thread", async () => {
+      const journal = createDrizzleJournal(db);
+
+      const results = await Promise.all(
+        CONCURRENT_TURNS.map((turnId, index) => {
+          const doc = new Y.Doc({ gc: false });
+          doc.clientID = LIVE_CLIENT_ID + index;
+          return journal.appendBatch([
+            {
+              docId: DOC_ID,
+              update: appendText(doc, `Edit ${index}`),
+              meta: { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 },
+              mutation: { threadId: THREAD_ID, turnId },
+            },
+          ]);
+        }),
+      );
+
+      expect(results).toHaveLength(CONCURRENT_TURNS.length);
+      const wIds = results
+        .flatMap((batch) =>
+          batch.map((result) => {
+            expect(result.wId).toBeDefined();
+            return result.wId ?? -1;
+          }),
+        )
+        .sort((a, b) => a - b);
+      expect(wIds).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     });
 
     it("replays updates appended after checkpoint state was captured", async () => {

@@ -559,6 +559,7 @@ class MemoryJournal implements UpdateJournal {
   mutations: StoredMutation[] = [];
   nextSeq = 1;
   compactCalls = 0;
+  private readonly nextWIdByDocThread = new Map<string, number>();
 
   constructor(checkpoint: Uint8Array | null) {
     this.checkpointBytes = checkpoint;
@@ -633,6 +634,9 @@ class MemoryJournal implements UpdateJournal {
     copy.checkpointUpToSeq = this.checkpointUpToSeq;
     copy.nextSeq = this.nextSeq;
     copy.mutations = this.mutations.map((record) => ({ ...record }));
+    for (const [key, nextWId] of this.nextWIdByDocThread) {
+      copy.nextWIdByDocThread.set(key, nextWId);
+    }
     return copy;
   }
 
@@ -709,13 +713,9 @@ class MemoryJournal implements UpdateJournal {
     turnId: string,
     createdSeq: number,
   ): number {
-    const wId =
-      Math.max(
-        0,
-        ...this.mutations
-          .filter((record) => record.documentId === docId && record.threadId === threadId)
-          .map((record) => record.wId),
-      ) + 1;
+    const key = `${docId}\u0000${threadId}`;
+    const wId = this.nextWIdByDocThread.get(key) ?? 1;
+    this.nextWIdByDocThread.set(key, wId + 1);
     this.mutations.push({
       wId,
       documentId: docId,

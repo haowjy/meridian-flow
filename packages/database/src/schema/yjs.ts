@@ -13,6 +13,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -132,9 +133,9 @@ export const agentEditMutations = pgTable(
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
     status: text("status").$type<MutationStatus>().notNull().default("active"),
-    createdSeq: integer("created_seq").notNull(),
+    createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
     // No FK: compaction can delete the update row while durable mutation metadata remains.
-    undoUpdateSeq: integer("undo_update_seq"),
+    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }),
     createdAt: createdAt(),
     reversedAt: timestamp("reversed_at", { withTimezone: true }),
     reversedBy: text("reversed_by").$type<MutationReversedBy>(),
@@ -149,6 +150,16 @@ export const agentEditMutations = pgTable(
     index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
     check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
+);
+
+export const agentEditWidCounters = pgTable(
+  "agent_edit_wid_counters",
+  {
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull(),
+    nextWid: integer("next_wid").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
 );
 
 export const documentYjsHeads = pgTable("document_yjs_heads", {

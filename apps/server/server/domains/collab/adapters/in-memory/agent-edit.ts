@@ -28,6 +28,7 @@ type JournalEntry = {
   checkpoint: Uint8Array | null;
   checkpointUpToSeq: number;
   nextSeq: number;
+  nextWIdByThread: Map<string, number>;
   updates: PersistedUpdate[];
   reversals: ReversalRecord[];
   mutations: StoredMutation[];
@@ -70,6 +71,7 @@ export function createInMemoryJournal(): InMemoryJournal {
         checkpoint: null,
         checkpointUpToSeq: 0,
         nextSeq: 1,
+        nextWIdByThread: new Map(),
         updates: [],
         reversals: [],
         mutations: [],
@@ -126,13 +128,8 @@ export function createInMemoryJournal(): InMemoryJournal {
     createdAt: Date,
   ): number {
     const current = entry(docId);
-    const wId =
-      Math.max(
-        0,
-        ...current.mutations
-          .filter((record) => record.documentId === docId && record.threadId === threadId)
-          .map((record) => record.wId),
-      ) + 1;
+    const wId = current.nextWIdByThread.get(threadId) ?? 1;
+    current.nextWIdByThread.set(threadId, wId + 1);
     current.mutations.push({
       wId,
       documentId: docId,
