@@ -1267,7 +1267,6 @@ describe("write tool dispatch", () => {
 
     const restarted = createAgentEditCore({
       journal: coldJournal,
-      mutationStore: coldJournal,
       coordinator: coldCoordinator,
       lifecycle: coldLifecycle,
       codec,
@@ -1298,7 +1297,6 @@ describe("write tool dispatch", () => {
 
     const secondRestart = createAgentEditCore({
       journal: coldJournal,
-      mutationStore: coldJournal,
       coordinator: coldCoordinator,
       lifecycle: coldLifecycle,
       codec,
@@ -1328,7 +1326,6 @@ describe("write tool dispatch", () => {
 
     const coreA = createAgentEditCore({
       journal: initial.journal,
-      mutationStore: initial.journal,
       coordinator: initial.coordinator,
       lifecycle: initial.lifecycle,
       codec,
@@ -1337,7 +1334,6 @@ describe("write tool dispatch", () => {
     });
     const coreB = createAgentEditCore({
       journal: initial.journal,
-      mutationStore: initial.journal,
       coordinator: initial.coordinator,
       lifecycle: initial.lifecycle,
       codec,
@@ -1556,7 +1552,6 @@ function harness(
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
   const core = createAgentEditCore({
     journal,
-    mutationStore: journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,

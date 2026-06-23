@@ -7,27 +7,25 @@ The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
 `appendBatch` (all-or-nothing response commit across documents),
 `persistReversal` (atomically persist undo update + reversal record),
 `persistRedo` (atomically consume a doc+thread+turn reversal and append redo
-bytes), and `readReversals` (durable redo lookup). Ordered by monotonic seq per
-document. Every adapter implements this. Response staging buffers the same
+bytes), `readReversals` (durable redo lookup), and the mutation metadata queries
+used by availability (`latestActiveTurn`, `activeTurnSummary`,
+`turnMinCreatedSeq`). Ordered by monotonic seq per document. Every adapter
+implements this. Response staging buffers the same
 `{ docId, update, agentMeta(turnId) }` entries and commits them with one
-`appendBatch(...)` call from `commitResponse(responseId)`; Phase 3 extends that
-batch entry to mint mutation records in the same transaction.
+`appendBatch(...)` call from `commitResponse(responseId)`; mutation entries mint
+their rows in the same transaction.
+
+The mutation reads deliberately live on `UpdateJournal`, not a separate
+`MutationStore` port. Hosts implement one adapter for the journal table and the
+mutation metadata table that changes with it, so the co-sourcing guarantee is
+structural. Internal consumers still depend on narrow read slices such as
+`MutationQueries`, which picks only `latestActiveTurn`, `activeTurnSummary`, and
+`turnMinCreatedSeq` from `UpdateJournal`.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
 contains; replaying an already-included update is idempotent, but skipping one
 is durable data loss.
-
-### MutationStore (`src/ports/mutation-store.ts`)
-Query-only port over durable agent mutation metadata. The journal write side
-still owns atomic mutation creation/status flips (`appendBatch`,
-`persistReversal`, `persistRedo`); `MutationStore` answers only the questions
-the core needs after those writes: the latest active turn for a
-`(documentId, threadId)` pair, active per-turn summaries with each turn's
-earliest `createdSeq`, and the earliest `createdSeq` for a specific turn
-regardless of status. Availability uses those earliest retained sequences to
-distinguish "active/reversed and still reconstructable" from mutation metadata
-whose forward updates were compacted away.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers

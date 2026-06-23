@@ -17,9 +17,16 @@ export interface JournalBatchAppendResult {
   wId?: number;
 }
 
+export interface ActiveTurnSummary {
+  turnId: string;
+  count: number;
+  minSeq: number;
+}
+
 /**
  * Ordered Yjs update journal — the foundation every deployment implements.
- * Adapters guarantee durable append order, checkpoint storage, and atomic reversal writes.
+ * Adapters guarantee durable append order, checkpoint storage, atomic reversal writes,
+ * and mutation-query co-sourcing with the mutation rows created by appendBatch().
  */
 export interface UpdateJournal {
   /**
@@ -34,6 +41,19 @@ export interface UpdateJournal {
    * Returns assigned sequence numbers and mutation w-ids in the same order as entries.
    */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+
+  /** Latest turn with active mutations for this document/thread, if one exists. */
+  latestActiveTurn(documentId: string, threadId: string): Promise<string | undefined>;
+
+  /** Active mutation counts and earliest retained sequence per turn. */
+  activeTurnSummary(documentId: string, threadId: string): Promise<ActiveTurnSummary[]>;
+
+  /** Earliest forward journal sequence for this turn, regardless of current mutation status. */
+  turnMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    turnId: string,
+  ): Promise<number | undefined>;
 
   /**
    * Read checkpoint plus updates in sequence order.

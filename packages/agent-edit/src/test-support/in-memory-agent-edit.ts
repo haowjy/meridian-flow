@@ -1,6 +1,5 @@
-// Canonical in-memory agent-edit journal and mutation store for tests and demos.
+// Canonical in-memory agent-edit journal for tests and demos.
 import * as Y from "yjs";
-import type { ActiveTurnSummary, MutationStore } from "../ports/mutation-store.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -10,6 +9,7 @@ import type {
   UpdateMeta,
 } from "../ports/types.js";
 import type {
+  ActiveTurnSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   UpdateJournal,
@@ -56,13 +56,13 @@ interface JournalEntry {
 }
 
 /**
- * Drizzle-compatible in-memory implementation of UpdateJournal + MutationStore.
+ * Drizzle-compatible in-memory implementation of UpdateJournal.
  *
  * This is deliberately shared by package tests, demos, and the server in-memory
  * adapter so reversal metadata, w-id allocation, and compaction semantics do not
  * drift away from the production adapter.
  */
-export class InMemoryAgentEditJournal implements UpdateJournal, MutationStore {
+export class InMemoryAgentEditJournal implements UpdateJournal {
   private readonly data = new Map<string, JournalEntry>();
   private readonly now: () => Date;
 

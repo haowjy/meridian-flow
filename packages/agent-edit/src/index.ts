@@ -62,7 +62,6 @@ export {
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
-export type { ActiveTurnSummary, MutationStore } from "./ports/mutation-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -73,6 +72,7 @@ export type {
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
+  ActiveTurnSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   UpdateJournal,

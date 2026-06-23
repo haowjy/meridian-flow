@@ -1,9 +1,9 @@
 # @meridian/agent-edit
 
 Shared agent-editing core behind the `write(command=...)` tool surface. Built on
-port interfaces (`UpdateJournal`, `MutationStore`, `DocumentCoordinator`,
-`Codec`, `DocumentModel`, `ActorSessionStore`) so the same core works for
-Meridian web, desktop, MCP, and future products.
+port interfaces (`UpdateJournal`, `DocumentCoordinator`, `Codec`,
+`DocumentModel`, `ActorSessionStore`) so the same core works for Meridian web,
+desktop, MCP, and future products.
 
 ## What it is
 
@@ -19,10 +19,9 @@ Meridian web, desktop, MCP, and future products.
   per-turn tokens, authoritative). Hot/cold parity enforced by tests.
 - **Compaction** — fold old updates into checkpoint, expire reversal records.
   Runs on first document load.
-- **Core surface** — `createAgentEditCore({ journal, mutationStore, coordinator,
-  codec, model })` exposes the agent `write()` tool plus turn-level
-  availability/user undo seams (`getAvailability`, `undoTurn`, `redoTurn`,
-  `invalidateThread`).
+- **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
+  model })` exposes the agent `write()` tool plus turn-level availability/user
+  undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).
 
 ## What it is NOT
 
