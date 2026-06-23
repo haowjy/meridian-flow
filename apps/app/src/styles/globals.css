@@ -319,6 +319,11 @@
     drop-shadow(0 0 8px color-mix(in srgb, var(--color-cinnabar) 22%, transparent));
 }
 
+/** Brand-mark disc — cream warmed with a hint of jade (disc-cream-ring frame). */
+@utility mark-disc-fill {
+  fill: color-mix(in oklab, var(--color-cream) 88%, var(--color-primary) 12%);
+}
+
 /** Project pane header title — Home, Chat, Settings, thread switcher label. */
 @utility pane-title {
   @apply text-sm font-medium text-foreground;
