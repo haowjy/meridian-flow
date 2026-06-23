@@ -27,7 +27,8 @@ import type { WriteContext, WriteOutcome, WriteStatus } from "./types.js";
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
-const context: WriteContext = { sessionId: "session-a", threadId: "thread-a" };
+const THREAD_ID = "thread-a";
+const context: WriteContext = { sessionId: "session-a", threadId: THREAD_ID };
 const REVERSAL_CLIENT_ID = 9_999;
 
 describe("write tool dispatch", () => {
@@ -237,7 +238,7 @@ describe("write tool dispatch", () => {
       (await ctx.journal.read("chapter.md")).updates.map((update) => update.seq),
     );
     expect(
-      ctx.undoRegistry.getState("chapter.md", context.threadId!)?.undoStack.map((item) => item.wId),
+      ctx.undoRegistry.getState("chapter.md", THREAD_ID)?.undoStack.map((item) => item.wId),
     ).toEqual([1, 2, 3]);
 
     await ctx.core.write(
@@ -270,7 +271,7 @@ describe("write tool dispatch", () => {
         createdSeq: 1,
       },
     ]);
-    expect(ctx.undoRegistry.getState("chapter.md", context.threadId!)?.undoStack).toMatchObject([
+    expect(ctx.undoRegistry.getState("chapter.md", THREAD_ID)?.undoStack).toMatchObject([
       { turnId: "turn-mutation-status", wId: 1 },
     ]);
 
