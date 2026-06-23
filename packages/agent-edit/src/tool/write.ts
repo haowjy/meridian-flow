@@ -281,7 +281,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           afterOwnVector,
           lastTurnId,
         );
-        markSynced(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
         updateCount += docBuffer.updates.length;
         documents.push({
           documentId: docBuffer.docId,
@@ -297,11 +297,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         documents,
       };
     } catch (cause) {
-      const recoveryFailure = buffer.journalCommitted
-        ? await recoverLiveDocsFromJournal(docBuffers).catch((error: unknown) => error)
-        : null;
-      evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
-      throw responseCommitError(responseId, buffer.journalCommitted, cause, recoveryFailure);
+      if (!buffer.journalCommitted) {
+        evictResponseRuntimes(docBuffers);
+        throw responseCommitError(responseId, false, cause, null);
+      }
+
+      const recoveryFailure = await recoverCommittedResponseProjection(docBuffers).catch(
+        (error: unknown) => error,
+      );
+      responseBuffers.delete(responseId);
+      if (!recoveryFailure) {
+        return responseCommitResult(responseId, docBuffers, documents);
+      }
+
+      evictResponseRuntimes(docBuffers, { needsRecovery: true });
+      throw responseCommitError(responseId, true, cause, recoveryFailure);
     }
   }
 
@@ -311,6 +321,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const docBuffers = [...buffer.docs.values()];
     try {
+      if (buffer.journalCommitted) {
+        await recoverCommittedResponseProjection(docBuffers);
+        responseBuffers.delete(responseId);
+        return;
+      }
+
       for (const docBuffer of docBuffers) {
         docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
         docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
@@ -873,11 +889,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
+  async function recoverCommittedResponseProjection(
+    docBuffers: readonly ResponseDocumentBuffer[],
+  ): Promise<void> {
+    await recoverLiveDocsFromJournal(docBuffers);
+    for (const docBuffer of docBuffers) {
+      registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
+      const restored = await restoreRuntimeFromLive(
+        docBuffer.session,
+        docBuffer.docId,
+        docBuffer.runtime,
+        docBuffer.commandName,
+      );
+      if (isInternalWriteResult(restored)) throw new Error(restored.text);
+      attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+    }
+  }
+
   function attachRuntime(
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
   ): void {
+    docsNeedingRecovery.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
     markSynced(session, docId, runtime);
   }
@@ -1366,6 +1400,29 @@ function errorMessage(cause: unknown): string {
 
 function emptyResponseCommit(responseId: string): ResponseCommitResult {
   return { responseId, documentCount: 0, updateCount: 0, documents: [] };
+}
+
+function responseCommitResult(
+  responseId: string,
+  docBuffers: readonly ResponseDocumentBuffer[],
+  knownDocuments: ResponseCommitResult["documents"] = [],
+): ResponseCommitResult {
+  const documentsById = new Map(
+    knownDocuments.map((document) => [document.documentId, document] as const),
+  );
+  for (const docBuffer of docBuffers) {
+    if (docBuffer.updates.length === 0 || documentsById.has(docBuffer.docId)) continue;
+    documentsById.set(docBuffer.docId, {
+      documentId: docBuffer.docId,
+      updateCount: docBuffer.updates.length,
+    });
+  }
+  return {
+    responseId,
+    documentCount: documentsById.size,
+    updateCount: docBuffers.reduce((total, docBuffer) => total + docBuffer.updates.length, 0),
+    documents: [...documentsById.values()],
+  };
 }
 
 function agentMeta(turnId: string): UpdateMeta {

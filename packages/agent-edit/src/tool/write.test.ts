@@ -284,30 +284,60 @@ describe("write tool dispatch", () => {
     expect(retry).toMatchObject({ documentCount: 1, updateCount: 1 });
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+
+    const followup = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "Recovered.", find: "Beta." },
+      context,
+    );
+    expectOutcome(followup, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Recovered."]);
   });
 
-  it("recovers from journal truth when live merge fails after a response batch append", async () => {
+  it("keeps a post-journal response as the next undo target after live recovery", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, turnId: "turn-prior-history" },
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "First", find: "Alpha" },
+      { ...context, turnId: "turn-redo-source" },
+    );
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+
     const responseContext = {
       ...context,
       turnId: "turn-response-live-fail",
       responseId: "response-live-fail",
     };
     await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Beta." },
+      { command: "insert", file: "chapter.md", content: "Gamma." },
       responseContext,
     );
     ctx.coordinator.failNextWith(new Error("live merge unavailable"));
 
-    await expect(ctx.core.commitResponse("response-live-fail")).rejects.toThrow(
-      /after the journal batch was committed/,
-    );
+    await expect(ctx.core.commitResponse("response-live-fail")).resolves.toMatchObject({
+      responseId: "response-live-fail",
+      documentCount: 1,
+      updateCount: 1,
+    });
 
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(4);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
+
+    const redoBeforeUndo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(redoBeforeUndo)).toBe("status: nothing_to_redo");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(outcomeText(undo)).toContain("status: reversed");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
-    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    expect(outcomeText(view)).toContain("Beta.");
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
   });
 
   it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
