@@ -1,6 +1,6 @@
 import type * as Y from "yjs";
 
-import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
+import type { DocumentModel } from "../model/types.js";
 import { lookupBlockHash } from "./block-hash.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
@@ -9,7 +9,7 @@ const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
 export interface ScopeContext {
   doc: Y.Doc;
-  model: YProsemirrorDocumentModel;
+  model: DocumentModel<Y.XmlElement>;
 }
 
 export interface BlockScope {
