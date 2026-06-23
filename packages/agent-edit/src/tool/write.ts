@@ -358,7 +358,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     let applied = 0;
     let lastOutcome: UndoRedoOutcome | null = null;
-    const appliedTurns: string[] = [];
     const echo: ApplyEchoHunk[] = [];
     const concurrentEdits: ConcurrentEditInfo[] = [];
     let sawReconcile = false;
@@ -390,13 +389,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         if (result.sync.concurrentEdits) concurrentEdits.push(result.sync.concurrentEdits);
       }
       applied += 1;
-      appliedTurns.push(result.turnId);
       markSynced(session, address.filePath, runtime);
     }
 
     const outcome = lastOutcome ?? (sawReconcile ? "reconciled" : "reversed");
     const lines = [`status: ${outcome}`];
-    if (appliedTurns.length > 0) lines.push("", `${direction}: ${appliedTurns.join(", ")}`);
+    if (applied > 0) lines.push("", `${direction}: ${applied} edit(s)`);
     const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
     if (echoLines.length > 0) lines.push("", ...echoLines);
     for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));

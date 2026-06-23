@@ -653,9 +653,11 @@ describe("write tool dispatch", () => {
       ]);
 
       const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+      const undoText = outcomeText(undo);
 
-      expect(outcomeText(undo)).toContain("status: reversed");
-      expect(outcomeText(undo)).toContain("undo: turn-with-two-writes");
+      expect(undoText).toContain("status: reversed");
+      expect(undoText).toContain("undo: 1 edit(s)");
+      expect(undoText).not.toContain("turn-with-two-writes");
       return blockTexts(ctx.liveDoc("chapter.md"));
     }
 
