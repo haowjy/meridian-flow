@@ -149,6 +149,10 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
+  responseWrites: {
+    commitResponse(responseId: string, ctx: { threadId: ThreadId; turnId: TurnId }): Promise<void>;
+    rollbackResponse(responseId: string): Promise<void>;
+  };
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -411,6 +415,7 @@ async function persistModelResponse(input: {
   turnAccounting: TurnAccounting;
   blockSeq: number;
 }): Promise<{
+  responseId: string;
   updatedTurn: Turn;
   createdBlocks: Block[];
   toolCalls: ReturnType<typeof collectToolCalls>;
@@ -508,12 +513,13 @@ async function persistModelResponse(input: {
     });
 
     return {
-      result: { updatedTurn, createdBlocks },
+      result: { responseId, updatedTurn, createdBlocks },
       events,
     };
   });
 
   return {
+    responseId: persistedResponse.result.responseId,
     updatedTurn: persistedResponse.result.updatedTurn,
     createdBlocks: persistedResponse.result.createdBlocks,
     toolCalls,
@@ -559,6 +565,7 @@ async function* settleAndFinalizeCancelled(input: {
     blockSeq = persistedResponse.nextBlockSeq;
     input.allBlocks.push(...persistedResponse.createdBlocks);
     yield* persistedResponse.events;
+    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId);
   }
 
   yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
@@ -857,6 +864,7 @@ async function* generateEvents(
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
+      const responseId = persistedResponse.responseId;
       const toolCallsFromResult = persistedResponse.toolCalls;
       allBlocks.push(...persistedResponse.createdBlocks);
       yield* persistedResponse.events;
@@ -880,12 +888,14 @@ async function* generateEvents(
       // created them.
       if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
         if (input.signal?.aborted) {
+          await deps.responseWrites.rollbackResponse(responseId);
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
 
         for (const call of toolCallsFromResult) {
           if (input.signal?.aborted) {
+            await deps.responseWrites.rollbackResponse(responseId);
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
@@ -940,6 +950,7 @@ async function* generateEvents(
             call,
             {
               thread,
+              responseId,
               state: checkpointState,
               checkpointSession,
               checkpointAutoResume,
@@ -951,7 +962,16 @@ async function* generateEvents(
           currentAssistantTurn = checkpointState.currentTurn;
           blockSeq = checkpointState.blockSeqRef.value;
           yield* dispatched.events;
+          if (dispatched.cancelled || input.signal?.aborted) {
+            await deps.responseWrites.rollbackResponse(responseId);
+            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+            return;
+          }
         }
+        await deps.responseWrites.commitResponse(responseId, {
+          threadId: input.threadId,
+          turnId: currentAssistantTurn.id,
+        });
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.
         continue;

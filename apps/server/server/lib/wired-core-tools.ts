@@ -324,13 +324,13 @@ function buildAgentWriteCommand(
 }
 
 async function refreshProjectionAfterCommittedWrite(
-  deps: ToolWiringDeps,
-  address: ResolvedDocumentAddress,
-  ctx: ToolHandlerContext,
+  deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
+  documentId: string,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ): Promise<void> {
   try {
     await deps.documentSync.refreshDocumentProjection({
-      documentId: address.documentId,
+      documentId,
       threadId: ctx.threadId,
     });
   } catch (error) {
@@ -346,11 +346,36 @@ async function refreshProjectionAfterCommittedWrite(
       payload: {
         threadId: ctx.threadId,
         turnId: ctx.turnId,
-        documentId: address.documentId,
+        documentId,
         ...unknownToEventPayload(error),
       },
     });
   }
+}
+
+export function createAgentEditResponseWriteLifecycle(
+  deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
+) {
+  return {
+    async commitResponse(
+      responseId: string,
+      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ): Promise<void> {
+      const result = await deps.documentSync.agentEdit().commitResponse(responseId);
+      await Promise.all(
+        result.documents.map((document) =>
+          refreshProjectionAfterCommittedWrite(deps, document.documentId, {
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+          }),
+        ),
+      );
+    },
+
+    rollbackResponse(responseId: string): Promise<void> {
+      return deps.documentSync.agentEdit().rollbackResponse(responseId);
+    },
+  };
 }
 
 async function askUserHandler(input: unknown, ctx: CheckpointToolHandlerContext) {
@@ -385,13 +410,19 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           sessionId: ctx.threadId,
           threadId: ctx.threadId,
           turnId: ctx.turnId,
+          responseId: ctx.responseId,
           tool_use_id: ctx.toolCallId,
         });
       if (outcome.isError) return toolError({ message: outcome.text });
 
       recordTouchInBackground(deps, address.documentId, ctx);
-      if (MUTATING_WRITE_COMMANDS.has(parsed.command)) {
-        await refreshProjectionAfterCommittedWrite(deps, address, ctx);
+      const stagedWrite =
+        ctx.responseId !== undefined &&
+        (parsed.command === "create" ||
+          parsed.command === "insert" ||
+          parsed.command === "replace");
+      if (MUTATING_WRITE_COMMANDS.has(parsed.command) && !stagedWrite) {
+        await refreshProjectionAfterCommittedWrite(deps, address.documentId, ctx);
       }
       return outcome.text;
     },

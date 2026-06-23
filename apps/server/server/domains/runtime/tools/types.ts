@@ -50,6 +50,8 @@ export interface ToolCallInput {
 export interface ToolExecutionContext {
   threadId: ThreadId;
   turnId: TurnId;
+  /** Model-response id currently dispatching tool calls. */
+  responseId?: string;
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -121,6 +123,8 @@ export interface ToolHandlerContext {
   toolCallId?: string;
   threadId: string;
   turnId: string;
+  /** Model-response id currently dispatching tool calls. */
+  responseId?: string;
   /** Mars agent slug from Thread.currentAgent; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**

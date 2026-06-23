@@ -34,7 +34,10 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../domains/threads/index.js";
-import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "./wired-core-tools.js";
 
 type WiredTestGraphOptions = {
   works?: ReturnType<typeof createInMemoryWorkRepository>;
@@ -243,6 +246,47 @@ function scriptedToolGateway(
   };
 }
 
+function singleResponseToolGateway(
+  toolCalls: Array<{ id: string; input: Record<string, unknown> }>,
+): Gateway {
+  let call = 0;
+  return {
+    ...gatewayStubDefaults,
+    async *stream(): AsyncGenerator<StreamEvent> {
+      call += 1;
+      yield {
+        type: "end",
+        result:
+          call === 1
+            ? {
+                content: toolCalls.map((toolCall) => ({
+                  type: "tool_use" as const,
+                  toolCallId: toolCall.id,
+                  toolName: "write",
+                  input: toolCall.input,
+                })),
+                toolCalls: [],
+                finishReason: "tool_use",
+                usage: { inputTokens: 1, outputTokens: 1 },
+                model: "stub-model",
+                provider: "stub",
+              }
+            : {
+                content: [{ type: "text", text: "done" }],
+                toolCalls: [],
+                finishReason: "end_turn",
+                usage: { inputTokens: 1, outputTokens: 1 },
+                model: "stub-model",
+                provider: "stub",
+              },
+      };
+    },
+    async generate() {
+      throw new Error("not used in this test");
+    },
+  };
+}
+
 describe("createWiredCoreToolRegistrations", () => {
   it("returns the runnable canonical core tools", () => {
     const exposed = buildRegistrations().map((registration) => registration.definition.name);
@@ -390,6 +434,10 @@ describe("createWiredCoreToolRegistrations", () => {
         eventWriter,
         checkpointRegistry: createCheckpointRegistry(),
         creditLedger,
+        responseWrites: createAgentEditResponseWriteLifecycle({
+          documentSync,
+          eventSink: createInMemoryEventSink(),
+        }),
       }),
     );
 
@@ -455,6 +503,91 @@ describe("createWiredCoreToolRegistrations", () => {
     const touches = await repos.documentTouches.listByThread(thread.id);
     expect(touches).toHaveLength(1);
     expect(touches[0]).toMatchObject({ turnId: assistantTurn.id });
+  });
+
+  it("refreshes document projection once after a staged model response commits", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Tool Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const documentSync = createInMemoryCollabDomain();
+    const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
+    const refreshDocumentProjection = vi.fn(
+      documentSync.refreshDocumentProjection.bind(documentSync),
+    );
+    const toolDocumentSync = {
+      agentEdit: () => documentSync.agentEdit(),
+      refreshDocumentProjection,
+    };
+    const eventSink = createInMemoryEventSink();
+    const toolRegistry = createToolRegistry({
+      registrations: createWiredCoreToolRegistrations({
+        threads: repos.threads,
+        contextPorts,
+        documentSync: toolDocumentSync,
+        threadWorks: repos.threadWorks,
+        documentTouches: repos.documentTouches,
+        eventSink,
+      }),
+    });
+    const executor = createToolExecutor(toolRegistry);
+    const gateway = singleResponseToolGateway([
+      {
+        id: "call-create",
+        input: { command: "create", path: "kb://staged.md", content: "Alpha." },
+      },
+      {
+        id: "call-insert-beta",
+        input: { command: "insert", path: "kb://staged.md", content: "Beta." },
+      },
+      {
+        id: "call-insert-gamma",
+        input: { command: "insert", path: "kb://staged.md", content: "Gamma." },
+      },
+    ]);
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const orchestrator = createOrchestrator(
+      createTestOrchestratorDeps({
+        gateway,
+        toolExecutor: executor,
+        toolRegistry,
+        repos,
+        eventWriter: createInMemoryEventJournalWriter(),
+        checkpointRegistry: createCheckpointRegistry(),
+        creditLedger,
+        responseWrites: createAgentEditResponseWriteLifecycle({
+          documentSync: toolDocumentSync,
+          eventSink,
+        }),
+      }),
+    );
+
+    const events = await collectEvents(
+      await orchestrator.runTurn({
+        threadId: thread.id,
+        userText: "Create the staged document.",
+        tools: executor.getDefinitions?.(),
+      }),
+    );
+
+    expect(events.some((event) => event.type === "turn.completed")).toBe(true);
+    expect(refreshDocumentProjection).toHaveBeenCalledTimes(1);
+    const read = await contextPorts.forProject(project.id, "user-1").read("kb://staged.md");
+    expect(read).toMatchObject({
+      ok: true,
+      value: { content: expect.stringContaining("Alpha.") },
+    });
+    if (read.ok) {
+      expect(read.value.content).toContain("Beta.");
+      expect(read.value.content).toContain("Gamma.");
+    }
   });
 
   it("does not status-sniff write(command=view) document content", async () => {

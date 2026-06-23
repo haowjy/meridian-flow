@@ -112,6 +112,10 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Model response lifecycle** — `persistModelResponse` mints the response id
+  used by tool handlers. After all tool results for that response are persisted,
+  the orchestrator commits response-scoped agent-edit writes; cancellation paths
+  roll the response buffer back before finalizing the turn as cancelled.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.

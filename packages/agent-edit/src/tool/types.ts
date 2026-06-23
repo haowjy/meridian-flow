@@ -1,4 +1,6 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
+
+import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 
 export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
@@ -113,9 +115,24 @@ export interface WriteContext {
   turnId?: string;
   /** Host/tool-call idempotency key. Replays return the original plain-text response. */
   tool_use_id?: string;
+  /** Host model-response id. Mutating writes buffer until commitResponse when set. */
+  responseId?: string;
 }
 
 export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
+
+export interface ResponseCommitDocumentResult {
+  documentId: string;
+  updateCount: number;
+  concurrentEdits?: ConcurrentEditInfo;
+}
+
+export interface ResponseCommitResult {
+  responseId: string;
+  documentCount: number;
+  updateCount: number;
+  documents: ResponseCommitDocumentResult[];
+}

@@ -7,6 +7,8 @@ export type AgentEditCoreOptions = CreateWriteToolOptions;
 export interface AgentEditCore {
   write: ReturnType<typeof createWriteTool>["write"];
   recover: ReturnType<typeof createWriteTool>["recover"];
+  commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
+  rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   compact(docId: string, before: Date): Promise<CompactOnLoadResult>;
 }
 
@@ -15,6 +17,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   return {
     write: tool.write,
     recover: tool.recover,
+    commitResponse: tool.commitResponse,
+    rollbackResponse: tool.rollbackResponse,
     compact: (docId, before) =>
       compactOnLoad(options.journal, { docId, before, registry: tool.registry }),
   };
@@ -71,6 +75,8 @@ export type {
   InsertCommand,
   RedoCommand,
   ReplaceCommand,
+  ResponseCommitDocumentResult,
+  ResponseCommitResult,
   UndoCommand,
   UndoRedoOutcome,
   ViewCommand,
