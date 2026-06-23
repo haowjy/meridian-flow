@@ -20,7 +20,6 @@ __debug_bin*
 
 # Package manager
 .pnpm-store
-pnpm-lock.yaml
 
 # Tool caches
 .nx/
