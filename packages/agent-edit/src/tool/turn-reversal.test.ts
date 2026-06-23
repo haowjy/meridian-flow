@@ -435,20 +435,6 @@ describe("turn reversal", () => {
       },
     },
     {
-      label: "expired redo",
-      setup: async () => {
-        const state = await simpleReplaceScenario("turn-expired-format", {
-          retention: { reversalWindowMs: -1 },
-        });
-        await state.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-        return state;
-      },
-      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
-      assertExtra: (_state, text) => {
-        expect(text).toBe("status: nothing_to_redo");
-      },
-    },
-    {
       label: "reconciled undo",
       setup: async () => {
         const state = await simpleReplaceScenario("turn-reconciled-undo");

@@ -1,6 +1,5 @@
 // Supported public surface for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
-import { type CompactOnLoadResult, compactOnLoad } from "./undo/compaction.js";
 
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
@@ -13,13 +12,6 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
-  /**
-   * Folds updates older than the cutoff. When reversal retention is configured,
-   * the cutoff is clamped to the retention horizon so compaction cannot remove
-   * rows still needed for cold reversal. With no retention configured, the host
-   * owns cutoff safety.
-   */
-  compact(docId: string, before: Date): Promise<CompactOnLoadResult>;
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -33,17 +25,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
-    compact: (docId, before) =>
-      compactOnLoad(options.journal, {
-        docId,
-        before: effectiveCompactionBefore(before, options.retention?.reversalWindowMs),
-      }),
   };
-}
-
-function effectiveCompactionBefore(before: Date, retentionMs: number | undefined): Date {
-  if (retentionMs === undefined) return before;
-  return new Date(Math.min(before.getTime(), Date.now() - retentionMs));
 }
 
 export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";
@@ -113,9 +95,3 @@ export type {
   WriteStatus,
 } from "./tool/types.js";
 export type { UndoAvailability } from "./undo/availability.js";
-export type { CompactOnLoadResult } from "./undo/compaction.js";
-export type {
-  ReconstructionOptions,
-  UndoReconstructionResult,
-} from "./undo/reconstruction.js";
-export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
