@@ -23,6 +23,10 @@ interface TurnUpdateGroup {
   lastSeq: number;
 }
 
+interface CurrentUndoStackItem {
+  value: UndoStackItemLike | null;
+}
+
 export interface UndoReconstructionResult {
   docId: string;
   turnId: string;
@@ -80,43 +84,24 @@ export function reconstructUndoUpdateFromSnapshot(
   options: ReconstructionTargetOptions & { docId: string; turnId: string },
 ): UndoReconstructionResult {
   const target = targetUpdateRange(snapshot.updates, options.turnId, options.targetSeqs);
-  const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
-    untilSeqExclusive: target.firstSeq,
+  const currentStackItem: CurrentUndoStackItem = { value: null };
+  const { doc, um } = buildReplayedDocWithUndoManager(snapshot, target, {
+    ...options,
+    currentStackItem,
   });
-  const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
-  const targetOriginToken = Symbol(`turn-${options.turnId}`);
-  const nonTargetOriginToken = Symbol("non-target");
-  let currentStackItem: UndoStackItemLike | null = null;
-  const um = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([targetOriginToken]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-    deleteFilter: (item) => shouldDeleteUndoItem(item, currentStackItem),
-  });
-
-  um.stopCapturing();
-  for (const update of snapshot.updates) {
-    if (update.seq < target.firstSeq) continue;
-    if (update.seq > target.lastSeq) break;
-    replayUpdateWithOrigin(
-      doc,
-      update,
-      options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
-    );
-  }
-  um.stopCapturing();
 
   for (const update of snapshot.updates) {
     if (update.seq <= target.lastSeq) continue;
-    replayUpdateWithOrigin(doc, update, nonTargetOriginToken);
+    replayNonTargetUpdate(doc, update);
   }
 
   setReconstructionClientId(doc, options.undoClientId);
   const beforeUndoStateVector = Y.encodeStateVector(doc);
-  currentStackItem = um.undoStack.at(-1) ?? null;
+  currentStackItem.value = um.undoStack.at(-1) ?? null;
   try {
     um.undo();
   } finally {
-    currentStackItem = null;
+    currentStackItem.value = null;
     um.stopCapturing();
   }
   const undoUpdate = Y.encodeStateAsUpdate(doc, beforeUndoStateVector);
@@ -155,60 +140,41 @@ export function reconstructRedoUpdateFromSnapshot(
   });
   if (!eligibility.ok) return noRedoResult(options, eligibility);
 
-  const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
-    untilSeqExclusive: target.firstSeq,
+  const currentStackItem: CurrentUndoStackItem = { value: null };
+  const { doc, um } = buildReplayedDocWithUndoManager(snapshot, target, {
+    ...options,
+    currentStackItem,
   });
-  const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
-  const targetOriginToken = Symbol(`turn-${options.turnId}`);
-  const nonTargetOriginToken = Symbol("non-target");
-  let currentStackItem: UndoStackItemLike | null = null;
-  const um = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([targetOriginToken]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-    deleteFilter: (item) => shouldDeleteUndoItem(item, currentStackItem),
-  });
-
-  um.stopCapturing();
-  for (const update of snapshot.updates) {
-    if (update.seq < target.firstSeq) continue;
-    if (update.seq > target.lastSeq) break;
-    replayUpdateWithOrigin(
-      doc,
-      update,
-      options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
-    );
-  }
-  um.stopCapturing();
 
   for (const update of snapshot.updates) {
     if (update.seq <= target.lastSeq || update.seq >= undoUpdate.seq) continue;
-    replayUpdateWithOrigin(doc, update, nonTargetOriginToken);
+    replayNonTargetUpdate(doc, update);
   }
 
   setReconstructionClientId(doc, options.undoClientId);
-  currentStackItem = um.undoStack.at(-1) ?? null;
+  currentStackItem.value = um.undoStack.at(-1) ?? null;
   try {
     um.undo();
   } finally {
-    currentStackItem = null;
+    currentStackItem.value = null;
     um.stopCapturing();
   }
 
   for (const update of snapshot.updates) {
     if (update.seq <= undoUpdate.seq) continue;
-    replayUpdateWithOrigin(doc, update, nonTargetOriginToken);
+    replayNonTargetUpdate(doc, update);
   }
 
   const beforeRedoStateVector = Y.encodeStateVector(doc);
   if (um.redoStack.length === 0) {
     return noRedoResult(options, { ok: false, status: "no_redo", reason: "empty_redo_stack" });
   }
-  currentStackItem = um.redoStack.at(-1) ?? null;
+  currentStackItem.value = um.redoStack.at(-1) ?? null;
   let popped: UndoStackItemLike | null;
   try {
     popped = um.redo();
   } finally {
-    currentStackItem = null;
+    currentStackItem.value = null;
     um.stopCapturing();
   }
   if (!popped) {
@@ -274,6 +240,38 @@ function targetUpdateRange(
   };
 }
 
+function buildReplayedDocWithUndoManager(
+  snapshot: JournalSnapshot,
+  target: TurnUpdateGroup,
+  options: ReconstructionTargetOptions & { currentStackItem: CurrentUndoStackItem },
+): { doc: Y.Doc; um: Y.UndoManager } {
+  const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
+    untilSeqExclusive: target.firstSeq,
+  });
+  const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
+  const targetOriginToken = Symbol(`turn-${target.turnId}`);
+  const nonTargetOriginToken = Symbol("non-target");
+  const um = new Y.UndoManager(fragment, {
+    trackedOrigins: new Set([targetOriginToken]),
+    captureTimeout: Number.POSITIVE_INFINITY,
+    deleteFilter: (item) => shouldDeleteUndoItem(item, options.currentStackItem.value),
+  });
+
+  um.stopCapturing();
+  for (const update of snapshot.updates) {
+    if (update.seq < target.firstSeq) continue;
+    if (update.seq > target.lastSeq) break;
+    replayUpdateWithOrigin(
+      doc,
+      update,
+      options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
+    );
+  }
+  um.stopCapturing();
+
+  return { doc, um };
+}
+
 function buildDocThroughUpdates(
   checkpoint: Uint8Array | null,
   updates: readonly PersistedUpdate[],
@@ -291,6 +289,10 @@ function buildDocThroughUpdates(
 function setReconstructionClientId(doc: Y.Doc, clientId: number | undefined): void {
   if (clientId === undefined || doc.clientID === clientId) return;
   doc.clientID = clientId;
+}
+
+function replayNonTargetUpdate(doc: Y.Doc, update: PersistedUpdate): void {
+  replayUpdateWithOrigin(doc, update, Symbol("non-target"));
 }
 
 function replayUpdateWithOrigin(doc: Y.Doc, update: PersistedUpdate, origin: symbol): void {
