@@ -1,0 +1,333 @@
+// Commits local Yjs mutations to the journal and live document projection.
+import * as Y from "yjs";
+
+import {
+  applyConcurrentUpdates,
+  type BlockSnapshot,
+  type BlockSnapshotModel,
+  type ConcurrentDetectionResult,
+  computeEcho,
+  snapshotBlocks,
+} from "../apply/echo.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
+import type { Codec } from "../codec/types.js";
+import {
+  type DocumentCoordinator,
+  isDocumentNotFoundError,
+} from "../ports/document-coordinator.js";
+import type { UpdateMeta } from "../ports/types.js";
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  UpdateJournal,
+} from "../ports/update-journal.js";
+import type { UndoManagerRegistry } from "../undo/manager-registry.js";
+import {
+  documentNotFound,
+  type InternalWriteResult,
+  isInternalWriteResult,
+} from "./internal-result.js";
+import type { WriteCommand } from "./types.js";
+
+const EMPTY_UPDATE_LENGTH = 2;
+
+export type MutationCommitModel = BlockSnapshotModel;
+
+export interface MutationCommitRuntime {
+  doc: Y.Doc;
+}
+
+export interface SyncedMutationSummary {
+  echo: ApplyEchoHunk[];
+  concurrentEdits?: ConcurrentEditInfo;
+  reconciled: boolean;
+}
+
+export interface MutationEchoInput {
+  runtime: MutationCommitRuntime;
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
+}
+
+export interface JournaledUpdate {
+  update: Uint8Array;
+  meta: UpdateMeta;
+  mutation?: {
+    threadId: string;
+    turnId: string;
+  };
+}
+
+export interface LiveUpdateCommitInput {
+  docId: string;
+  commandName: WriteCommand["command"];
+  updates: readonly JournaledUpdate[];
+  afterOwnVector: Uint8Array;
+  liveOrigin: ConcurrentUpdateOrigin;
+}
+
+export interface LocalMutationSyncInput {
+  docId: string;
+  commandName: WriteCommand["command"];
+  runtime: MutationCommitRuntime;
+  update: Uint8Array;
+  meta?: UpdateMeta;
+  mutation?: JournaledUpdate["mutation"];
+  afterOwnVector: Uint8Array;
+  liveOrigin: ConcurrentUpdateOrigin;
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
+  ownTurnId?: string;
+}
+
+type LiveCommitResult =
+  | { ok: true; concurrentUpdate: Uint8Array | null }
+  | { ok: false; response: InternalWriteResult };
+
+type MutationSyncResult =
+  | { ok: true; summary: SyncedMutationSummary }
+  | { ok: false; response: InternalWriteResult };
+
+export interface MutationCommit {
+  syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
+  commitUpdatesToJournalAndLive(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
+  attachCommittedWIds(
+    entries: readonly JournalBatchAppendEntry[],
+    results: readonly JournalBatchAppendResult[],
+  ): void;
+  mergeCommittedUpdatesToLive(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
+  applyConcurrent(
+    runtime: MutationCommitRuntime,
+    update: Uint8Array | null,
+    afterOwnVector: Uint8Array,
+    turnId: string | undefined,
+  ): ConcurrentDetectionResult;
+  summarizeMutationEcho(
+    input: MutationEchoInput,
+    concurrent?: ConcurrentDetectionResult,
+  ): SyncedMutationSummary;
+  withLive<T>(
+    docId: string,
+    commandName: WriteCommand["command"],
+    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
+  ): Promise<T | InternalWriteResult | null>;
+}
+
+export function createMutationCommit(deps: {
+  journal: UpdateJournal;
+  registry: UndoManagerRegistry;
+  coordinator: DocumentCoordinator;
+  model: MutationCommitModel;
+  codec: Codec;
+}): MutationCommit {
+  const { journal, registry, coordinator, model, codec } = deps;
+
+  return {
+    syncAfterLocalMutation,
+    commitUpdatesToJournalAndLive,
+    attachCommittedWIds,
+    mergeCommittedUpdatesToLive,
+    applyConcurrent,
+    summarizeMutationEcho,
+    withLive,
+  };
+
+  async function syncAfterLocalMutation(
+    input: LocalMutationSyncInput,
+  ): Promise<MutationSyncResult> {
+    const committed = input.meta
+      ? await commitUpdatesToJournalAndLive({
+          docId: input.docId,
+          commandName: input.commandName,
+          updates: [
+            {
+              update: input.update,
+              meta: input.meta,
+              ...(input.mutation ? { mutation: input.mutation } : {}),
+            },
+          ],
+          afterOwnVector: input.afterOwnVector,
+          liveOrigin: input.liveOrigin,
+        })
+      : await mergeCommittedUpdateToLive({
+          docId: input.docId,
+          commandName: input.commandName,
+          update: input.update,
+          afterOwnVector: input.afterOwnVector,
+          liveOrigin: input.liveOrigin,
+        });
+    if (!committed.ok) return { ok: false, response: committed.response };
+    const concurrent = applyConcurrent(
+      input.runtime,
+      committed.concurrentUpdate,
+      input.afterOwnVector,
+      input.ownTurnId,
+    );
+    return { ok: true, summary: summarizeMutationEcho(input, concurrent) };
+  }
+
+  function summarizeMutationEcho(
+    input: MutationEchoInput,
+    concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
+  ): SyncedMutationSummary {
+    const after = snapshotBlocks(input.runtime.doc, model, codec);
+    const baseEchoInput = {
+      before: input.before,
+      after,
+      agentTouchedHashes: input.touchedHashes,
+      agentDeletedHashes: input.deletedHashes,
+      structuralChange: input.structuralChange,
+      concurrentTouchedHashes: concurrent.touchedHashes,
+    };
+    const echo = computeEcho(baseEchoInput);
+    const regroundingEcho =
+      echo.length > 0 || (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
+        ? echo
+        : computeEcho({ ...baseEchoInput, structuralChange: true });
+    return {
+      echo: regroundingEcho,
+      concurrentEdits: concurrent.info,
+      reconciled: echo.some((hunk) => hunk.mode === "full"),
+    };
+  }
+
+  async function commitUpdatesToJournalAndLive(
+    input: LiveUpdateCommitInput,
+  ): Promise<LiveCommitResult> {
+    const entries = input.updates.map((entry) => ({
+      docId: input.docId,
+      update: entry.update,
+      meta: entry.meta,
+      ...(entry.mutation ? { mutation: entry.mutation } : {}),
+    }));
+    const results = await journal.appendBatch(entries);
+    attachCommittedWIds(entries, results);
+
+    return mergeCommittedUpdatesToLive(input);
+  }
+
+  function attachCommittedWIds(
+    entries: readonly JournalBatchAppendEntry[],
+    results: readonly JournalBatchAppendResult[],
+  ): void {
+    for (const [index, result] of results.entries()) {
+      if (result.wId === undefined) continue;
+      const entry = entries[index];
+      if (!entry?.mutation) {
+        surfaceWIdAttachFailure(
+          `Journal returned w-id ${result.wId} for batch entry ${index}, but that entry has no mutation metadata.`,
+        );
+        continue;
+      }
+      const attached = registry.attachNextWId(
+        entry.docId,
+        entry.mutation.threadId,
+        entry.mutation.turnId,
+        result.wId,
+      );
+      if (!attached && registry.getState(entry.docId, entry.mutation.threadId)) {
+        // Missing hot managers are valid for cold-path fallback and response
+        // retries after staged runtimes were invalidated; durable mutation rows
+        // are still authoritative. An active manager with no matching item is drift.
+        surfaceWIdAttachFailure(
+          `Failed to attach committed w-id ${result.wId} to undo stack for document ${entry.docId}, thread ${entry.mutation.threadId}, turn ${entry.mutation.turnId}.`,
+        );
+      }
+    }
+  }
+
+  function surfaceWIdAttachFailure(message: string): void {
+    if (process.env.NODE_ENV === "production") {
+      console.error(message);
+      return;
+    }
+    throw new Error(message);
+  }
+
+  async function mergeCommittedUpdatesToLive(
+    input: LiveUpdateCommitInput,
+  ): Promise<LiveCommitResult> {
+    return mergeCommittedUpdateToLive({
+      docId: input.docId,
+      commandName: input.commandName,
+      update: mergeUpdates(input.updates.map((entry) => entry.update)),
+      afterOwnVector: input.afterOwnVector,
+      liveOrigin: input.liveOrigin,
+    });
+  }
+
+  async function mergeCommittedUpdateToLive(input: {
+    docId: string;
+    commandName: WriteCommand["command"];
+    update: Uint8Array;
+    afterOwnVector: Uint8Array;
+    liveOrigin: ConcurrentUpdateOrigin;
+  }): Promise<LiveCommitResult> {
+    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
+    if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
+    return { ok: true, concurrentUpdate };
+  }
+
+  async function mergeUpdateAndCaptureConcurrent(input: {
+    docId: string;
+    commandName: WriteCommand["command"];
+    update: Uint8Array;
+    afterOwnVector: Uint8Array;
+    liveOrigin: ConcurrentUpdateOrigin;
+  }): Promise<Uint8Array | null | InternalWriteResult> {
+    let concurrentUpdate: Uint8Array | null = null;
+    const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
+      concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
+      Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+      return null;
+    });
+    if (isInternalWriteResult(response)) return response;
+    return concurrentUpdate;
+  }
+
+  function applyConcurrent(
+    runtime: MutationCommitRuntime,
+    update: Uint8Array | null,
+    afterOwnVector: Uint8Array,
+    turnId: string | undefined,
+  ): ConcurrentDetectionResult {
+    if (!update || !hasYjsUpdate(update)) return { touchedHashes: new Set() };
+    return applyConcurrentUpdates(
+      runtime.doc,
+      model,
+      codec,
+      [{ update, origin: { type: "human" } }],
+      turnId ? agentUpdateOrigin(turnId) : undefined,
+      afterOwnVector,
+    );
+  }
+
+  async function withLive<T>(
+    docId: string,
+    commandName: WriteCommand["command"],
+    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
+  ): Promise<T | InternalWriteResult | null> {
+    try {
+      return await coordinator.withDocument(docId, async (doc) => fn(doc));
+    } catch (cause) {
+      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
+      throw cause;
+    }
+  }
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > EMPTY_UPDATE_LENGTH;
+}
+
+function mergeUpdates(updates: Uint8Array[]): Uint8Array {
+  return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
+}
+
+function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
+  return { type: "agent", actorTurnId: turnId };
+}
