@@ -2,7 +2,7 @@
  * Core-tool wiring: binds runtime core tool registrations to concrete handlers
  * backed by Meridian context, collab, and thread services.
  */
-import type { WriteCommand } from "@meridian/agent-edit";
+import type { ResponseStagedCreateOutcome, WriteCommand } from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   checkpointRequestFromAskUser,
@@ -404,10 +404,14 @@ export function createAgentEditResponseWriteLifecycle(
 ): AgentEditResponseWriteLifecycle {
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
 
-  async function cleanupStagedCreates(responseId: string): Promise<void> {
+  async function cleanupDiscardedStagedCreates(
+    responseId: string,
+    discardedDocumentIds: ResponseStagedCreateOutcome["discarded"],
+  ): Promise<void> {
     const records = stagedCreates.get(responseId) ?? [];
-    stagedCreates.delete(responseId);
+    const discarded = new Set(discardedDocumentIds);
     for (const record of records) {
+      if (!discarded.has(record.documentId)) continue;
       await deleteCreatedTrackedDocument(record);
     }
   }
@@ -438,24 +442,17 @@ export function createAgentEditResponseWriteLifecycle(
           }),
         ),
       );
+      await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
     },
 
     async rollbackResponse(responseId: string): Promise<void> {
-      let rollbackError: unknown;
+      const result = await deps.documentSync.agentEdit().rollbackResponse(responseId);
       try {
-        await deps.documentSync.agentEdit().rollbackResponse(responseId);
-      } catch (error) {
-        rollbackError = error;
+        await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
+      } finally {
+        stagedCreates.delete(responseId);
       }
-      let cleanupError: unknown;
-      try {
-        await cleanupStagedCreates(responseId);
-      } catch (error) {
-        cleanupError = error;
-      }
-      if (rollbackError) throw rollbackError;
-      if (cleanupError) throw cleanupError;
     },
   };
 }
