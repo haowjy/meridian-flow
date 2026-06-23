@@ -1,18 +1,13 @@
 /** In-memory agent-edit adapters for tests and the in-memory app graph. */
 import {
-  type CompactionResult,
   type DocumentCoordinator,
   type DocumentLifecycle,
   DocumentNotFoundError,
-  type JournalBatchAppendEntry,
-  type JournalBatchAppendResult,
-  type JournalSnapshot,
   type MutationStore,
   type PersistedUpdate,
-  type ReversalRecord,
   type UpdateJournal,
-  type UpdateMeta,
 } from "@meridian/agent-edit";
+import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import { loadDocumentState } from "../document-loader.js";
@@ -23,30 +18,6 @@ export type InMemoryCheckpointRecord = {
   state: Uint8Array;
   reason: string;
   createdAt: string;
-};
-
-type JournalEntry = {
-  checkpoint: Uint8Array | null;
-  checkpointUpToSeq: number;
-  nextSeq: number;
-  nextWIdByThread: Map<string, number>;
-  updates: PersistedUpdate[];
-  reversals: ReversalRecord[];
-  mutations: StoredMutation[];
-  checkpoints: InMemoryCheckpointRecord[];
-};
-
-type StoredMutation = {
-  wId: number;
-  documentId: string;
-  threadId: string;
-  turnId: string;
-  status: "active" | "reversed";
-  createdSeq: number;
-  undoUpdateSeq?: number;
-  createdAt: Date;
-  reversedAt?: Date;
-  reversedBy?: "user" | "agent";
 };
 
 export type InMemoryJournal = UpdateJournal &
@@ -62,264 +33,70 @@ export type InMemoryJournal = UpdateJournal &
     latestUpdate(docId: string): Promise<PersistedUpdate | null>;
   };
 
-export function createInMemoryJournal(): InMemoryJournal {
-  const data = new Map<string, JournalEntry>();
-  let nextCheckpointId = 1;
+class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
+  private readonly checkpoints: InMemoryCheckpointRecord[] = [];
+  private nextCheckpointId = 1;
 
-  function entry(docId: string): JournalEntry {
-    let existing = data.get(docId);
-    if (!existing) {
-      existing = {
-        checkpoint: null,
-        checkpointUpToSeq: 0,
-        nextSeq: 1,
-        nextWIdByThread: new Map(),
-        updates: [],
-        reversals: [],
-        mutations: [],
-        checkpoints: [],
-      };
-      data.set(docId, existing);
-    }
-    return existing;
-  }
-
-  function appendPersisted(docId: string, update: Uint8Array, meta: UpdateMeta): number {
-    const current = entry(docId);
-    const seq = current.nextSeq++;
-    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
-    current.updates.push({
-      seq,
-      update: new Uint8Array(update),
-      meta: { ...meta, seq },
-    });
-    return seq;
-  }
-
-  function appendBatchPersisted(
-    entries: readonly JournalBatchAppendEntry[],
-  ): JournalBatchAppendResult[] {
-    const nextSeqByDoc = new Map<string, number>();
-    for (const batchEntry of entries) {
-      const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? entry(batchEntry.docId).nextSeq;
-      if (batchEntry.meta.seq && batchEntry.meta.seq !== nextSeq) {
-        throw new Error(`Expected seq ${nextSeq}, got ${batchEntry.meta.seq}`);
-      }
-      nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
-    }
-    const createdAt = new Date();
-    return entries.map((batchEntry) => {
-      const seq = appendPersisted(batchEntry.docId, batchEntry.update, batchEntry.meta);
-      if (!batchEntry.mutation) return { seq };
-      const wId = appendMutation(
-        batchEntry.docId,
-        batchEntry.mutation.threadId,
-        batchEntry.mutation.turnId,
-        seq,
-        createdAt,
-      );
-      return { seq, wId };
-    });
-  }
-
-  function appendMutation(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    createdSeq: number,
-    createdAt: Date,
-  ): number {
-    const current = entry(docId);
-    const wId = current.nextWIdByThread.get(threadId) ?? 1;
-    current.nextWIdByThread.set(threadId, wId + 1);
-    current.mutations.push({
-      wId,
-      documentId: docId,
-      threadId,
-      turnId,
-      status: "active",
-      createdSeq,
-      createdAt,
-    });
-    return wId;
-  }
-
-  function reverseMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-    reversedAt: Date,
-  ): void {
-    for (const record of entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
-      if (record.status !== "active") continue;
-      record.status = "reversed";
-      record.undoUpdateSeq = undoUpdateSeq;
-      record.reversedAt = reversedAt;
-      record.reversedBy = "agent";
-    }
-  }
-
-  function reactivateMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-  ): void {
-    for (const record of entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
-      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
-      record.status = "active";
-      delete record.undoUpdateSeq;
-      delete record.reversedAt;
-      delete record.reversedBy;
-    }
-  }
-
-  async function createCheckpoint(
+  async createCheckpoint(
     docId: string,
     state: Uint8Array,
     reason: string,
     upToSeq: number,
   ): Promise<string> {
-    const record: InMemoryCheckpointRecord = {
-      id: String(nextCheckpointId++),
-      documentId: docId,
+    const record = this.checkpointRecord(docId, state, reason);
+    await super.checkpoint(docId, state, upToSeq);
+    this.checkpoints.push(record);
+    return record.id;
+  }
+
+  async getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null> {
+    const checkpoint = this.checkpoints.find((candidate) => candidate.id === id);
+    return checkpoint ? copyCheckpointRecord(checkpoint) : null;
+  }
+
+  async listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]> {
+    return this.checkpoints
+      .filter((checkpoint) => checkpoint.documentId === docId)
+      .sort((left, right) => Number(right.id) - Number(left.id))
+      .map(copyCheckpointRecord);
+  }
+
+  async latestUpdate(docId: string): Promise<PersistedUpdate | null> {
+    return this.updateRecords(docId).at(-1) ?? null;
+  }
+
+  override async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
+    await this.createCheckpoint(docId, state, "checkpoint", upToSeq);
+  }
+
+  override async compact(docId: string, before: Date) {
+    const result = await super.compact(docId, before);
+    if (result.updatesFolded > 0) {
+      const snapshot = await super.read(docId);
+      if (snapshot.checkpoint) {
+        this.checkpoints.push(this.checkpointRecord(docId, snapshot.checkpoint, "compact"));
+      }
+    }
+    return result;
+  }
+
+  private checkpointRecord(
+    documentId: string,
+    state: Uint8Array,
+    reason: string,
+  ): InMemoryCheckpointRecord {
+    return {
+      id: String(this.nextCheckpointId++),
+      documentId,
       state: new Uint8Array(state),
       reason,
       createdAt: new Date().toISOString(),
     };
-    const current = entry(docId);
-    current.checkpoint = record.state;
-    current.checkpointUpToSeq = upToSeq;
-    current.checkpoints.push(record);
-    return record.id;
   }
+}
 
-  return {
-    async append(docId, update, meta) {
-      return appendPersisted(docId, update, meta);
-    },
-
-    async appendBatch(entries) {
-      return appendBatchPersisted(entries);
-    },
-
-    async read(docId, opts = {}): Promise<JournalSnapshot> {
-      const current = entry(docId);
-      return {
-        checkpoint: current.checkpoint,
-        updates: current.updates.filter(
-          (update) =>
-            update.seq > current.checkpointUpToSeq &&
-            (opts.since === undefined || update.seq >= opts.since) &&
-            (opts.until === undefined || update.seq <= opts.until),
-        ),
-      };
-    },
-
-    async checkpoint(docId, state, upToSeq) {
-      await createCheckpoint(docId, state, "checkpoint", upToSeq);
-    },
-
-    async compact(docId, _before): Promise<CompactionResult> {
-      const current = entry(docId);
-      const doc = new Y.Doc({ gc: false });
-      if (current.checkpoint) Y.applyUpdate(doc, current.checkpoint);
-      const retained = current.updates.filter((update) => update.seq > current.checkpointUpToSeq);
-      for (const update of retained) Y.applyUpdate(doc, update.update);
-      const updatesFolded = retained.length;
-      const upToSeq = retained.at(-1)?.seq ?? current.checkpointUpToSeq;
-      await createCheckpoint(docId, Y.encodeStateAsUpdate(doc), "compact", upToSeq);
-      current.updates = current.updates.filter((update) => update.seq > upToSeq);
-      return { updatesFolded, reversalsExpired: 0 };
-    },
-
-    async persistReversal(docId, undoUpdate, record) {
-      const seq = appendPersisted(docId, undoUpdate, { origin: "system", seq: 0 });
-      record.undoUpdateSeq = seq;
-      entry(docId).reversals.push({ ...record });
-      reverseMutations(docId, record.threadId, record.turnId, seq, record.reversedAt ?? new Date());
-    },
-
-    async persistRedo(docId, redoUpdate, ref, meta) {
-      const current = entry(docId);
-      const index = current.reversals.findIndex(
-        (record) =>
-          record.threadId === ref.threadId &&
-          record.turnId === ref.turnId &&
-          record.undoUpdateSeq === ref.undoUpdateSeq &&
-          record.status === "reversed",
-      );
-      if (index === -1) return { consumed: false };
-      const seq = appendPersisted(docId, redoUpdate, meta);
-      current.reversals[index] = { ...current.reversals[index], status: "redone" };
-      reactivateMutations(docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
-      return { consumed: true, seq };
-    },
-
-    async readReversals(docId, opts = {}) {
-      return entry(docId)
-        .reversals.filter(
-          (record) =>
-            (opts.threadId === undefined || record.threadId === opts.threadId) &&
-            (opts.status === undefined || opts.status.includes(record.status)),
-        )
-        .map((record) => ({ ...record }));
-    },
-
-    async latestActiveTurn(documentId, threadId) {
-      return entry(documentId)
-        .mutations.filter((record) => record.threadId === threadId && record.status === "active")
-        .sort((left, right) => left.createdSeq - right.createdSeq)
-        .at(-1)?.turnId;
-    },
-
-    async activeTurnSummary(documentId, threadId) {
-      const byTurn = new Map<string, { turnId: string; count: number; minSeq: number }>();
-      for (const record of entry(documentId).mutations) {
-        if (record.threadId !== threadId || record.status !== "active") continue;
-        const existing = byTurn.get(record.turnId);
-        if (existing) {
-          existing.count += 1;
-          existing.minSeq = Math.min(existing.minSeq, record.createdSeq);
-        } else {
-          byTurn.set(record.turnId, {
-            turnId: record.turnId,
-            count: 1,
-            minSeq: record.createdSeq,
-          });
-        }
-      }
-      return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
-    },
-
-    async turnMinCreatedSeq(documentId, threadId, turnId) {
-      const seqs = entry(documentId)
-        .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
-        .map((record) => record.createdSeq);
-      return seqs.length > 0 ? Math.min(...seqs) : undefined;
-    },
-
-    createCheckpoint,
-
-    async getCheckpoint(id) {
-      for (const current of data.values()) {
-        const checkpoint = current.checkpoints.find((candidate) => candidate.id === id);
-        if (checkpoint) return checkpoint;
-      }
-      return null;
-    },
-
-    async listCheckpoints(docId) {
-      return [...entry(docId).checkpoints].sort((a, b) => Number(b.id) - Number(a.id));
-    },
-
-    async latestUpdate(docId) {
-      return entry(docId).updates.at(-1) ?? null;
-    },
-  };
+export function createInMemoryJournal(): InMemoryJournal {
+  return new InMemoryCollabJournal();
 }
 
 export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoordinator & {
@@ -374,5 +151,12 @@ export function createInMemoryDocumentLifecycle(coordinator: {
     async ensureDocument(docId) {
       coordinator.ensureEmpty(docId);
     },
+  };
+}
+
+function copyCheckpointRecord(record: InMemoryCheckpointRecord): InMemoryCheckpointRecord {
+  return {
+    ...record,
+    state: new Uint8Array(record.state),
   };
 }

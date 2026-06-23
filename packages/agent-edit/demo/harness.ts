@@ -199,7 +199,7 @@ async function scenarioMultiWriteTurn() {
   const undo = await env.core.write({ command: "undo", file: docId }, defaultContext);
   print("write(undo)", undo.text);
   printBlocks("after undo", await blocks(env, docId));
-  assert(undo.text.includes("undo: demo-turn-two-writes"), "undo should target the shared turn id");
+  assert(undo.text.includes("undo: 1 edit(s)"), "undo should report the grouped edit count");
   assert(
     equal(await plainTexts(env, docId), ["Alpha sword.", "Omega."]),
     "undo should reverse both writes in the turn",

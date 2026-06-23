@@ -7,19 +7,8 @@ import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
 import { mdxCodec } from "../codec/presets/mdx.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import type {
-  CompactionResult,
-  JournalSnapshot,
-  PersistedUpdate,
-  ReversalRecord,
-  ReversalStatus,
-  UpdateMeta,
-} from "../ports/types.js";
-import type {
-  JournalBatchAppendEntry,
-  JournalBatchAppendResult,
-  UpdateJournal,
-} from "../ports/update-journal.js";
+import type { UpdateMeta } from "../ports/types.js";
+import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { compactOnLoad } from "./compaction.js";
 import {
   createUndoManagerRegistry,
@@ -96,7 +85,7 @@ describe("UndoManagerRegistry hot path", () => {
       ctx.registry.undoLatest(DOC_ID, THREAD_A, { scope: "turn", turnId: "capped-turn" }),
     ).toMatchObject({ ok: false, status: "no_manager" });
 
-    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "capped-turn",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -158,7 +147,7 @@ describe("cold reconstruction", () => {
       applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "blade");
     });
 
-    const groups = groupUpdatesByTurn(ctx.journal.snapshot().updates);
+    const groups = groupUpdatesByTurn(ctx.journal.snapshot(DOC_ID).updates);
 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ turnId: "multi" });
@@ -187,7 +176,7 @@ describe("hot/cold parity", () => {
     expect(hotUndo).toMatchObject({ ok: true, turnId: "T2", redoDepth: 1 });
     const hotUndoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector);
 
-    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T2",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -202,7 +191,10 @@ describe("hot/cold parity", () => {
     expect(cold.redoStackDepthAfterUndo).toBe(1);
 
     const journalWithUndo = ctx.journal.clone();
-    const undoSeq = journalWithUndo.appendSync(cold.undoUpdate, { origin: "system", seq: 0 });
+    const undoSeq = journalWithUndo.appendSync(DOC_ID, cold.undoUpdate, {
+      origin: "system",
+      seq: 0,
+    });
     const afterUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
     const preHotRedoVector = Y.encodeStateVector(ctx.doc);
     const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
@@ -211,7 +203,7 @@ describe("hot/cold parity", () => {
     expect(hotRedo).toMatchObject({ ok: true, turnId: "T2" });
     const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotRedoVector);
 
-    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(), {
+    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T2",
       undoUpdateSeq: undoSeq,
@@ -239,10 +231,14 @@ describe("hot/cold parity", () => {
       mutationClientId: REVERSAL_CLIENT_ID,
     });
     expect(hotUndo).toMatchObject({ ok: true, turnId: "old-turn", redoDepth: 1 });
-    const undoSeq = ctx.journal.appendSync(Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector), {
-      origin: "system",
-      seq: 0,
-    });
+    const undoSeq = ctx.journal.appendSync(
+      DOC_ID,
+      Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector),
+      {
+        origin: "system",
+        seq: 0,
+      },
+    );
 
     agentTurn(ctx, THREAD_A, "new-turn", () => {
       applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "marches");
@@ -251,7 +247,7 @@ describe("hot/cold parity", () => {
     const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
       mutationClientId: REVERSAL_CLIENT_ID,
     });
-    const coldRedo = reconstructRedoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const coldRedo = reconstructRedoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "old-turn",
       undoUpdateSeq: undoSeq,
@@ -286,7 +282,7 @@ describe("hot/cold parity", () => {
     expect(hotUndo).toMatchObject({ ok: true, turnId: "insert", redoDepth: 1 });
     const hotUndoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector);
 
-    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "insert",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -300,7 +296,10 @@ describe("hot/cold parity", () => {
     expect(serializeDoc(coldDoc)).toBe(serializeDoc(ctx.doc));
 
     const journalWithUndo = ctx.journal.clone();
-    const undoSeq = journalWithUndo.appendSync(cold.undoUpdate, { origin: "system", seq: 0 });
+    const undoSeq = journalWithUndo.appendSync(DOC_ID, cold.undoUpdate, {
+      origin: "system",
+      seq: 0,
+    });
     const afterUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
     const preHotRedoVector = Y.encodeStateVector(ctx.doc);
     const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
@@ -309,7 +308,7 @@ describe("hot/cold parity", () => {
     expect(hotRedo).toMatchObject({ ok: true, turnId: "insert" });
     const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotRedoVector);
 
-    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(), {
+    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "insert",
       undoUpdateSeq: undoSeq,
@@ -360,7 +359,7 @@ describe("hot/cold parity", () => {
     const betaHashAfterUndo = model.getBlockId(model.getBlocks(ctx.doc)[1]);
     expect(betaHashAfterUndo).not.toBe(betaHashBefore);
 
-    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "delete-beta",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -373,7 +372,10 @@ describe("hot/cold parity", () => {
     expect(documentJson(coldDoc)).toEqual(documentJson(ctx.doc));
 
     const journalWithUndo = ctx.journal.clone();
-    const undoSeq = journalWithUndo.appendSync(cold.undoUpdate, { origin: "system", seq: 0 });
+    const undoSeq = journalWithUndo.appendSync(DOC_ID, cold.undoUpdate, {
+      origin: "system",
+      seq: 0,
+    });
     const afterUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
     const preHotRedoVector = Y.encodeStateVector(ctx.doc);
     const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
@@ -382,7 +384,7 @@ describe("hot/cold parity", () => {
     expect(hotRedo).toMatchObject({ ok: true, turnId: "delete-beta" });
     const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotRedoVector);
 
-    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(), {
+    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "delete-beta",
       undoUpdateSeq: undoSeq,
@@ -404,12 +406,12 @@ describe("hot/cold parity", () => {
       applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
     });
 
-    const first = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const first = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T1",
       undoClientId: REVERSAL_CLIENT_ID,
     });
-    const second = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const second = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "T1",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -432,7 +434,7 @@ describe("8-case reconcile matrix", () => {
     ["partial reversal", casePartialReversal],
   ] satisfies Array<[string, () => MatrixCase]>)("%s", (_name, buildCase) => {
     const matrixCase = buildCase();
-    const cold = reconstructUndoUpdateFromSnapshot(matrixCase.ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(matrixCase.ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: matrixCase.turnId,
       undoClientId: REVERSAL_CLIENT_ID,
@@ -480,7 +482,7 @@ describe("Q2b interleaved multi-agent turns", () => {
     expect(hot).toMatchObject({ ok: true, turnId: "B1" });
     expect(blockTexts(ctx.doc)).toEqual(["A two.", "B one.", "C one."]);
 
-    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
       docId: DOC_ID,
       turnId: "B1",
       undoClientId: REVERSAL_CLIENT_ID,
@@ -519,7 +521,7 @@ describe("compactOnLoad", () => {
     });
 
     expect(ctx.journal.compactCalls).toBe(1);
-    expect(result).toMatchObject({ updatesFolded: 1, reversalsExpired: 1 });
+    expect(result).toMatchObject({ updatesFolded: 1, reversalsExpired: 0 });
     expect(result.retainedUpdates).toEqual([]);
     expect(result.checkpoint).toBeInstanceOf(Uint8Array);
     expect(documentBytes(ctx.doc)).toEqual(liveBefore);
@@ -539,230 +541,23 @@ interface MatrixCase {
   expectedMarkdown?: string;
 }
 
-type StoredMutation = {
-  wId: number;
-  documentId: string;
-  threadId: string;
-  turnId: string;
-  status: "active" | "reversed";
-  createdSeq: number;
-  undoUpdateSeq?: number;
-  reversedAt?: Date;
-  reversedBy?: "user" | "agent";
-};
-
-class MemoryJournal implements UpdateJournal {
-  checkpointBytes: Uint8Array | null;
-  checkpointUpToSeq = 0;
-  updates: PersistedUpdate[] = [];
-  reversals: ReversalRecord[] = [];
-  mutations: StoredMutation[] = [];
-  nextSeq = 1;
+class MemoryJournal extends InMemoryAgentEditJournal {
   compactCalls = 0;
-  private readonly nextWIdByDocThread = new Map<string, number>();
 
   constructor(checkpoint: Uint8Array | null) {
-    this.checkpointBytes = checkpoint;
+    super({ now: () => new Date("2026-06-19T00:00:00.000Z") });
+    if (checkpoint) this.setCheckpoint(DOC_ID, checkpoint, 0);
   }
 
-  appendSync(update: Uint8Array, meta: Omit<UpdateMeta, "seq"> & { seq?: number }): number {
-    const seq = this.nextSeq++;
-    if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
-    this.updates.push({ seq, update, meta: { ...meta, seq } });
-    return seq;
-  }
-
-  async append(_docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
-    return this.appendSync(update, meta);
-  }
-
-  async appendBatch(
-    entries: readonly JournalBatchAppendEntry[],
-  ): Promise<JournalBatchAppendResult[]> {
-    const nextSeq = this.nextSeq;
-    entries.forEach((entry, index) => {
-      const expectedSeq = nextSeq + index;
-      if (entry.meta.seq && entry.meta.seq !== expectedSeq) {
-        throw new Error(`Expected seq ${expectedSeq}, got ${entry.meta.seq}`);
-      }
-    });
-    return entries.map((entry) => {
-      const seq = this.appendSync(entry.update, entry.meta);
-      if (!entry.mutation) return { seq };
-      const wId = this.appendMutationSync(
-        entry.docId,
-        entry.mutation.threadId,
-        entry.mutation.turnId,
-        seq,
-      );
-      return { seq, wId };
-    });
-  }
-
-  async read(
-    _docId: string,
-    opts: { since?: number; until?: number } = {},
-  ): Promise<JournalSnapshot> {
-    return this.readSync(opts);
-  }
-
-  readSync(opts: { since?: number; until?: number } = {}): JournalSnapshot {
-    return {
-      checkpoint: this.checkpointBytes,
-      updates: this.updates.filter(
-        (update) =>
-          update.seq > this.checkpointUpToSeq &&
-          (opts.since === undefined || update.seq >= opts.since) &&
-          (opts.until === undefined || update.seq <= opts.until),
-      ),
-    };
-  }
-
-  snapshot(): JournalSnapshot {
-    return this.readSync();
-  }
-
-  clone(): MemoryJournal {
-    const copy = new MemoryJournal(
-      this.checkpointBytes ? new Uint8Array(this.checkpointBytes) : null,
-    );
-    copy.updates = this.updates.map((update) => ({
-      seq: update.seq,
-      update: new Uint8Array(update.update),
-      meta: { ...update.meta },
-    }));
-    copy.checkpointUpToSeq = this.checkpointUpToSeq;
-    copy.nextSeq = this.nextSeq;
-    copy.mutations = this.mutations.map((record) => ({ ...record }));
-    for (const [key, nextWId] of this.nextWIdByDocThread) {
-      copy.nextWIdByDocThread.set(key, nextWId);
-    }
+  override clone(): MemoryJournal {
+    const copy = this.cloneInto(new MemoryJournal(null));
+    copy.compactCalls = this.compactCalls;
     return copy;
   }
 
-  async checkpoint(_docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
-    this.checkpointBytes = state;
-    this.checkpointUpToSeq = upToSeq;
-  }
-
-  async compact(_docId: string, _before: Date): Promise<CompactionResult> {
+  override async compact(docId: string, before: Date) {
     this.compactCalls += 1;
-    const retained = this.updates.filter((update) => update.seq > this.checkpointUpToSeq);
-    const folded = retained.length;
-    const doc = new Y.Doc({ gc: false });
-    if (this.checkpointBytes) Y.applyUpdate(doc, this.checkpointBytes);
-    for (const update of retained) Y.applyUpdate(doc, update.update);
-    this.checkpointBytes = Y.encodeStateAsUpdate(doc);
-    this.checkpointUpToSeq = retained.at(-1)?.seq ?? this.checkpointUpToSeq;
-    this.updates = this.updates.filter((update) => update.seq > this.checkpointUpToSeq);
-    return { updatesFolded: folded, reversalsExpired: folded > 0 ? 1 : 0 };
-  }
-
-  async persistReversal(
-    _docId: string,
-    undoUpdate: Uint8Array,
-    record: ReversalRecord,
-  ): Promise<void> {
-    const seq = this.appendSync(undoUpdate, { origin: "system", seq: 0 });
-    record.undoUpdateSeq = seq;
-    this.reversals.push({ ...record });
-    this.reverseMutations(
-      record.documentId,
-      record.threadId,
-      record.turnId,
-      seq,
-      record.reversedAt ?? new Date(),
-    );
-  }
-
-  async persistRedo(
-    _docId: string,
-    redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
-    meta: UpdateMeta,
-  ): Promise<{ consumed: boolean; seq?: number }> {
-    const index = this.reversals.findIndex(
-      (record) =>
-        record.threadId === ref.threadId &&
-        record.turnId === ref.turnId &&
-        record.undoUpdateSeq === ref.undoUpdateSeq &&
-        record.status === "reversed",
-    );
-    if (index === -1) return { consumed: false };
-    const seq = this.appendSync(redoUpdate, meta);
-    this.reversals[index] = { ...this.reversals[index], status: "redone" };
-    this.reactivateMutations(_docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
-    return { consumed: true, seq };
-  }
-
-  async readReversals(
-    _docId: string,
-    opts: { threadId?: string; status?: ReversalStatus[] } = {},
-  ): Promise<ReversalRecord[]> {
-    return this.reversals
-      .filter(
-        (record) =>
-          (opts.threadId === undefined || record.threadId === opts.threadId) &&
-          (opts.status === undefined || opts.status.includes(record.status)),
-      )
-      .map((record) => ({ ...record }));
-  }
-
-  private appendMutationSync(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    createdSeq: number,
-  ): number {
-    const key = `${docId}\u0000${threadId}`;
-    const wId = this.nextWIdByDocThread.get(key) ?? 1;
-    this.nextWIdByDocThread.set(key, wId + 1);
-    this.mutations.push({
-      wId,
-      documentId: docId,
-      threadId,
-      turnId,
-      status: "active",
-      createdSeq,
-    });
-    return wId;
-  }
-
-  private reverseMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-    reversedAt: Date,
-  ): void {
-    for (const record of this.mutations) {
-      if (record.documentId !== docId || record.threadId !== threadId || record.turnId !== turnId) {
-        continue;
-      }
-      if (record.status !== "active") continue;
-      record.status = "reversed";
-      record.undoUpdateSeq = undoUpdateSeq;
-      record.reversedAt = reversedAt;
-      record.reversedBy = "agent";
-    }
-  }
-
-  private reactivateMutations(
-    docId: string,
-    threadId: string,
-    turnId: string,
-    undoUpdateSeq: number,
-  ): void {
-    for (const record of this.mutations) {
-      if (record.documentId !== docId || record.threadId !== threadId || record.turnId !== turnId) {
-        continue;
-      }
-      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
-      record.status = "active";
-      delete record.undoUpdateSeq;
-      delete record.reversedAt;
-      delete record.reversedBy;
-    }
+    return super.compact(docId, before);
   }
 }
 
@@ -810,7 +605,7 @@ function capture(ctx: ScenarioContext, meta: Omit<UpdateMeta, "seq">, fn: () => 
   } finally {
     ctx.doc.off("update", handler);
   }
-  for (const update of updates) ctx.journal.appendSync(update, { ...meta, seq: 0 });
+  for (const update of updates) ctx.journal.appendSync(DOC_ID, update, { ...meta, seq: 0 });
 }
 
 function applyAgentText(
