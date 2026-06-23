@@ -86,7 +86,7 @@ type PendingAppend = {
 };
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
-const AGENT_EDIT_UNDO_CLIENT_ID = 9_999;
+export const AGENT_EDIT_UNDO_CLIENT_ID = 9_999;
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
@@ -151,6 +151,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
+  const unsafeCheckpointDocuments = new Set<string>();
   let nextPendingId = 1;
 
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -252,23 +253,54 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     const tracked = promise
       .then(() => undefined)
       .catch((cause) => {
-        droppedByDocument.set(documentId, (droppedByDocument.get(documentId) ?? 0) + 1);
-        if (deps.eventSink) {
-          emitEvent(deps.eventSink, {
-            level: "error",
-            source: "collab.hocuspocus",
-            name: "persistence_append.failed",
-            payload: {
-              documentId,
-              error: cause instanceof Error ? cause.message : String(cause),
-            },
-          });
-        }
+        recordDroppedConnectionUpdate(documentId);
+        emitPersistenceAppendFailure(documentId, cause);
       })
       .finally(() => {
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
+  }
+
+  function rejectReservedClientIdUpdate(input: {
+    documentId: DocumentId;
+    origin: UpdateOrigin;
+  }): void {
+    unsafeCheckpointDocuments.add(input.documentId);
+    recordDroppedConnectionUpdate(input.documentId);
+    emitAgentEditInvariantViolation({
+      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${AGENT_EDIT_UNDO_CLIENT_ID} is reserved for server reversal authoring.`,
+      documentId: input.documentId,
+      originType: input.origin.type,
+      reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+    });
+  }
+
+  function recordDroppedConnectionUpdate(documentId: string): void {
+    droppedByDocument.set(documentId, (droppedByDocument.get(documentId) ?? 0) + 1);
+  }
+
+  function emitPersistenceAppendFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "persistence_append.failed",
+      payload: {
+        documentId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
+  function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "invariant_violation",
+      payload,
+    });
   }
 
   function latestMetrics(): CollabPersistenceMetrics {
@@ -398,10 +430,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async loadHocuspocusDocument(documentId) {
+      unsafeCheckpointDocuments.delete(documentId);
       return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
     },
 
     persistConnectionUpdate(input) {
+      if (containsYjsStructFromClient(input.update, AGENT_EDIT_UNDO_CLIENT_ID)) {
+        rejectReservedClientIdUpdate(input);
+        return;
+      }
       trackAppend(
         input.documentId,
         deps.journal.append(input.documentId, input.update, metaForOrigin(input.origin)),
@@ -410,6 +447,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async storeHocuspocusDocument(documentId, document) {
       await drainPending(documentId);
+      if (unsafeCheckpointDocuments.has(documentId)) {
+        emitAgentEditInvariantViolation({
+          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update may still be present in the live Y.Doc.`,
+          documentId,
+          reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+        });
+        return;
+      }
       const upToSeq = await latestUpdateSeq(documentId);
       // upToSeq must be ≤ the updates reflected in state; appends after this
       // point are intentionally replayed when the document reloads.
@@ -486,6 +531,10 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
+}
+
+function containsYjsStructFromClient(update: Uint8Array, clientId: number): boolean {
+  return Y.decodeUpdate(update).structs.some((struct) => struct.id.client === clientId);
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {
