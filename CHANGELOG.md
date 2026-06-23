@@ -7,7 +7,8 @@
 - Test suite pruning: deleted low-value contract/helper tests, in-memory
   conformance wrappers, skipped DB conformance wrappers, and duplicate golden
   coverage; collapsed broad runtime, gateway, MDX, turn-reducer, and WS suites
-  to representative boundary cases.
+  to representative boundary cases; removed additional low-value dev-tool,
+  package, route-helper, context-helper, and app presentation tests.
 
 - Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
   replaces the bare needle and cinnabar seal-square favicon. Proto route at

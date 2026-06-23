@@ -5,20 +5,16 @@
  */
 
 import { EventType } from "@meridian/contracts/protocol";
-import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
-import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { deriveJournalTurnId } from "../../../threads/domain/journal-turn-id.js";
 import type { projectOrchestratorEvents } from "../../../threads/domain/orchestrator-event-projector.js";
 import {
-  buildThreadSnapshot,
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
-  createThreadEventHub,
   projectReadModelEvent,
 } from "../../../threads/index.js";
 import {
@@ -32,14 +28,9 @@ import {
   type StreamEvent,
 } from "../../gateway/index.js";
 import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
-import type {
-  CheckpointToolHandlerContext,
-  ToolExecutor,
-  ToolHandler,
-  ToolHandlerContext,
-} from "../../tools/index.js";
+import type { CheckpointToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import { createCheckpointRegistry, EXPIRED_CHECKPOINT_VALUE } from "../checkpoints.js";
+import { createCheckpointRegistry } from "../checkpoints.js";
 import { createOrchestrator } from "../orchestrator.js";
 import {
   computeEffectivePermissions,
@@ -126,7 +117,7 @@ describe("runtime loop integration", () => {
 
   type InMemoryThreadRepos = ReturnType<typeof createInMemoryRepositories>;
 
-  async function readTurnLevelReadModel(repos: InMemoryThreadRepos, threadId: string) {
+  async function _readTurnLevelReadModel(repos: InMemoryThreadRepos, threadId: string) {
     const turns = await repos.turns.listByThread(threadId);
     const turnOrder = new Map(turns.map((turn, index) => [turn.id, index]));
     const responses = (
@@ -192,13 +183,13 @@ describe("runtime loop integration", () => {
     };
   }
 
-  async function readThreadRow(repos: InMemoryThreadRepos, threadId: string) {
+  async function _readThreadRow(repos: InMemoryThreadRepos, threadId: string) {
     const thread = await repos.threads.findById(threadId);
     if (!thread) throw new Error(`missing thread row: ${threadId}`);
     return thread;
   }
 
-  async function createEmptyReplayStoreFromThread(
+  async function _createEmptyReplayStoreFromThread(
     sourceRepos: InMemoryThreadRepos,
     threadId: string,
   ) {
@@ -226,7 +217,7 @@ describe("runtime loop integration", () => {
     return repos;
   }
 
-  async function replayJournalIntoStore(
+  async function _replayJournalIntoStore(
     repos: InMemoryThreadRepos,
     eventWriter: ReturnType<typeof createInMemoryEventJournalWriter>,
     threadId: string,
@@ -240,7 +231,7 @@ describe("runtime loop integration", () => {
     return journal;
   }
 
-  function liveBlockSequencesFromAgui(agui: ReturnType<typeof projectOrchestratorEvents>) {
+  function _liveBlockSequencesFromAgui(agui: ReturnType<typeof projectOrchestratorEvents>) {
     const sequences: {
       blockType: "text" | "reasoning" | "tool_use" | "tool_result";
       sequence: number;
@@ -428,7 +419,7 @@ describe("runtime loop integration", () => {
     }
   }
 
-  function createWeatherToolExecutor(): ToolExecutor {
+  function _createWeatherToolExecutor(): ToolExecutor {
     const registry = createToolRegistry();
     registry.register({
       source: "core",
@@ -441,7 +432,7 @@ describe("runtime loop integration", () => {
     return createToolExecutor(registry);
   }
 
-  function representativeToolGateway(): Gateway {
+  function _representativeToolGateway(): Gateway {
     return gatewayFromResults([
       {
         content: [
@@ -482,7 +473,7 @@ describe("runtime loop integration", () => {
     ]);
   }
 
-  function positionalTextResumeGateway(): Gateway {
+  function _positionalTextResumeGateway(): Gateway {
     let call = 0;
     return {
       ...gatewayStubDefaults,
@@ -544,7 +535,7 @@ describe("runtime loop integration", () => {
     };
   }
 
-  function positionalReasoningGateway(): Gateway {
+  function _positionalReasoningGateway(): Gateway {
     let call = 0;
     return {
       ...gatewayStubDefaults,
