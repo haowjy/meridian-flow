@@ -166,6 +166,9 @@ interface LocalMutationSyncInput {
 interface StagedResponseUpdate extends JournaledUpdate {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  // Per-doc buffers lose insertion order across documents; commit derives the
+  // journal batch by this response-local staging sequence.
+  stageSeq: number;
 }
 
 interface ResponseDocumentBuffer {
@@ -183,7 +186,7 @@ interface ResponseDocumentBuffer {
 
 interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
-  updates: JournalBatchAppendEntry[];
+  nextStageSeq: number;
   journalCommitted: boolean;
 }
 
@@ -287,16 +290,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const docBuffers = [...buffer.docs.values()].filter(
       (docBuffer) => docBuffer.updates.length > 0,
     );
-    if (docBuffers.length === 0 && buffer.updates.length === 0) {
+    if (docBuffers.length === 0) {
       responseBuffers.delete(responseId);
       return emptyResponseCommit(responseId, responseStagedCreateOutcome(buffer, []));
     }
+    const journalBatch = responseJournalBatch(docBuffers);
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
     try {
       if (!buffer.journalCommitted) {
-        const results = await options.journal.appendBatch(buffer.updates);
-        attachCommittedWIds(buffer.updates, results);
+        const results = await options.journal.appendBatch(journalBatch);
+        attachCommittedWIds(journalBatch, results);
         buffer.journalCommitted = true;
       }
 
@@ -429,7 +433,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   }): void {
     let buffer = responseBuffers.get(input.responseId);
     if (!buffer) {
-      buffer = { docs: new Map(), updates: [], journalCommitted: false };
+      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitted: false };
       responseBuffers.set(input.responseId, buffer);
     }
 
@@ -460,13 +464,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       mutation: { threadId: input.session.threadId, turnId: input.turnId },
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
+      stageSeq: buffer.nextStageSeq,
     });
-    buffer.updates.push({
-      docId: input.docId,
-      update: input.update,
-      meta: input.meta,
-      mutation: { threadId: input.session.threadId, turnId: input.turnId },
-    });
+    buffer.nextStageSeq += 1;
+  }
+
+  function responseJournalBatch(
+    docBuffers: readonly ResponseDocumentBuffer[],
+  ): JournalBatchAppendEntry[] {
+    return docBuffers
+      .flatMap((docBuffer) =>
+        docBuffer.updates.map((entry) => ({
+          stageSeq: entry.stageSeq,
+          journalEntry: {
+            docId: docBuffer.docId,
+            update: entry.update,
+            meta: entry.meta,
+            ...(entry.mutation ? { mutation: entry.mutation } : {}),
+          },
+        })),
+      )
+      .sort((left, right) => left.stageSeq - right.stageSeq)
+      .map((entry) => entry.journalEntry);
   }
 
   async function view(
@@ -1107,21 +1126,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   function dropResponseBuffersForThread(docId: string, threadId: string): void {
     for (const [responseId, buffer] of [...responseBuffers]) {
       const docBuffer = buffer.docs.get(docId);
-      if (docBuffer?.session.threadId === threadId) {
-        if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
-          docBuffer.discardedBeforeCommit = true;
-          docBuffer.updates = [];
-        } else {
+      if (docBuffer) {
+        docBuffer.updates = docBuffer.updates.filter(
+          (entry) => entry.mutation?.threadId !== threadId,
+        );
+        if (docBuffer.session.threadId === threadId) {
+          if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
+            docBuffer.discardedBeforeCommit = true;
+          }
+        }
+        if (docBuffer.updates.length === 0 && !docBuffer.discardedBeforeCommit) {
           buffer.docs.delete(docId);
         }
       }
-      buffer.updates = buffer.updates.filter(
-        (entry) => !(entry.docId === docId && entry.mutation?.threadId === threadId),
-      );
-      if (buffer.docs.size === 0 && buffer.updates.length === 0) {
+      if (!responseBufferHasPendingOutcome(buffer)) {
         responseBuffers.delete(responseId);
       }
     }
+  }
+
+  function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
+    return [...buffer.docs.values()].some(
+      (docBuffer) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit,
+    );
   }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {

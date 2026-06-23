@@ -308,6 +308,41 @@ describe("write tool dispatch", () => {
     ]);
   });
 
+  it("preserves cross-document response staging order in the derived journal batch", async () => {
+    const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "One." });
+    await ctx.core.write({ command: "view", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "view", file: "beta.md" }, context);
+    const responseId = "response-cross-doc-order";
+
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "A1." },
+      { ...context, responseId, turnId: "turn-alpha-1" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "beta.md", content: "B1." },
+      { ...context, responseId, turnId: "turn-beta-1" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "A2." },
+      { ...context, responseId, turnId: "turn-alpha-2" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "beta.md", content: "B2." },
+      { ...context, responseId, turnId: "turn-beta-2" },
+    );
+
+    await ctx.core.commitResponse(responseId);
+
+    expect(ctx.journal.appendBatchEntryOrders.at(-1)).toEqual([
+      "alpha.md:turn-alpha-1",
+      "beta.md:turn-beta-1",
+      "alpha.md:turn-alpha-2",
+      "beta.md:turn-beta-2",
+    ]);
+    expect(ctx.journal.mutationRecords("alpha.md").map((record) => record.wId)).toEqual([1, 2]);
+    expect(ctx.journal.mutationRecords("beta.md").map((record) => record.wId)).toEqual([1, 2]);
+  });
+
   it("returns cumulative staged echoes for text writes at the tool-response level", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword waits." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -1625,12 +1660,16 @@ class MemoryCoordinator implements DocumentCoordinator {
 
 class MemoryJournal extends InMemoryAgentEditJournal {
   appendBatchCalls = 0;
+  appendBatchEntryOrders: string[][] = [];
   private nextAppendBatchFailure: unknown;
 
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
     this.appendBatchCalls += 1;
+    this.appendBatchEntryOrders.push(
+      entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`),
+    );
     if (this.nextAppendBatchFailure) {
       const failure = this.nextAppendBatchFailure;
       this.nextAppendBatchFailure = undefined;
