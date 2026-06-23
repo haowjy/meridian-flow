@@ -14,7 +14,9 @@ export interface DevDatabase {
   readonly optional?: boolean;
   /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
   readonly migrationsDir?: string;
-  /** Command shown in the drift error to bring the DB back in sync. */
+  /** Command shown when the DB can catch up by applying unapplied migrations. */
+  readonly catchUpHint?: string;
+  /** Command shown when applied migrations diverged from the repo baseline. */
   readonly resetHint?: string;
 }
 
@@ -32,6 +34,7 @@ export const DEV_DATABASES: readonly DevDatabase[] = [
     label: "Meridian local Postgres",
     extensions: ["pg_trgm"],
     migrationsDir: "packages/database/src/migrations",
+    catchUpHint: "pnpm db:migrate && pnpm db:apply-functions",
     resetHint: "pnpm db:reset",
   },
 ];
@@ -44,7 +47,7 @@ function gitEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runGit(cwd: string, args: string[]): string {
+export function runGit(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",

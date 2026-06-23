@@ -28,7 +28,11 @@ describe("diffMigrations", () => {
 });
 
 describe("describeMigrationDrift", () => {
-  const base = { label: "Test DB", resetHint: "pnpm db:reset" };
+  const base = {
+    label: "Test DB",
+    catchUpHint: "pnpm db:migrate && pnpm db:apply-functions",
+    resetHint: "pnpm db:reset",
+  };
 
   it("returns null with no expected migrations", () => {
     expect(describeMigrationDrift({ ...base, expected: [], applied: null })).toBeNull();
@@ -38,22 +42,26 @@ describe("describeMigrationDrift", () => {
     expect(describeMigrationDrift({ ...base, expected: ["a"], applied: ["a"] })).toBeNull();
   });
 
-  it("flags an unmigrated database", () => {
-    expect(describeMigrationDrift({ ...base, expected: ["a"], applied: null })).toContain(
-      "no applied migrations",
-    );
+  it("flags an unmigrated database with the non-destructive catch-up command", () => {
+    const message = describeMigrationDrift({ ...base, expected: ["a"], applied: null });
+    expect(message).toContain("no applied migrations");
+    expect(message).toContain("pnpm db:migrate && pnpm db:apply-functions");
   });
 
-  it("flags a diverged/stale baseline (unknown applied hashes)", () => {
+  it("flags a diverged/stale baseline (unknown applied hashes) with reset", () => {
     const message = describeMigrationDrift({ ...base, expected: ["a"], applied: ["x"] });
     expect(message).toContain("diverged");
+    expect(message).toContain("unknown applied");
     expect(message).toContain("pnpm db:reset");
+    expect(message).not.toContain("pnpm db:migrate && pnpm db:apply-functions");
   });
 
-  it("flags a database that is behind", () => {
-    expect(describeMigrationDrift({ ...base, expected: ["a", "b"], applied: ["a"] })).toContain(
-      "behind",
-    );
+  it("flags a database that is only behind with the non-destructive catch-up command", () => {
+    const message = describeMigrationDrift({ ...base, expected: ["a", "b"], applied: ["a"] });
+    expect(message).toContain("behind");
+    expect(message).toContain("no unknown applied hashes");
+    expect(message).toContain("pnpm db:migrate && pnpm db:apply-functions");
+    expect(message).not.toContain("pnpm db:reset");
   });
 });
 

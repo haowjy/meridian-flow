@@ -14,8 +14,7 @@
   callers — agent undo still reverts only the agent's edits and preserves
   overlapping human edits. Public API drops `WriteTool.registry` and the
   `undoRegistry` option; adds an optional `createRuntimeDoc` so the host controls
-  forward-write doc creation. `compact()` clamps its cutoff to the reversal
-  retention window so it can't drop rows undo/redo still needs.
+  forward-write doc creation.
 
 - Collab: a Yjs clientID band `[0,999]` is reserved for server-authored reversal.
   The browser editor and server docs draw their clientID outside the band, and
@@ -59,6 +58,15 @@
 - `packages/agent-edit`: scaffold `@meridian/agent-edit` with port interfaces
   (`UpdateJournal`, `DocumentCoordinator`, `ActorSessionStore`, `Codec`,
   `DocumentModel`, `ComponentSpec`) — types only, no implementations yet.
+
+- Dev tooling: clarified migration drift remediation (migrate/apply-functions
+  for simple catch-up, reset for divergence), removed duplicate env/git helpers,
+  and added `pnpm dev:gc-dbs` for stale worktree DB cleanup.
+
+- Test suite pruning: deleted low-value contract/helper tests, in-memory
+  conformance wrappers, skipped DB conformance wrappers, and duplicate golden
+  coverage; collapsed broad runtime, gateway, MDX, turn-reducer, and WS suites
+  to representative boundary cases.
 
 - Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
   replaces the bare needle and cinnabar seal-square favicon. Proto route at
