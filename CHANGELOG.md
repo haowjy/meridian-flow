@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
+  replaces the bare needle and cinnabar seal-square favicon. Proto route at
+  `/proto/logo-mark` for comparing discarded framing options.
+
 - Docs: consolidated local setup in `DEVELOPMENT.md`; slimmed
   `tools/dev/.context/CONTEXT.md` to module contracts only; `AGENTS.md` points
   to `DEVELOPMENT.md` for setup and `tools/dev/AGENTS.md` when editing dev tools.

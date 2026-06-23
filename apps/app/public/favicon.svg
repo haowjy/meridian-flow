@@ -1,6 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
   <title>Meridian</title>
-  <rect x="6" y="6" width="36" height="36" rx="6" stroke="#B23A2E" stroke-width="2" fill="none"/>
-  <path d="M24 12 L26 24 L24 23 L22 24 Z" fill="#B23A2E"/>
-  <path d="M24 36 L22 24 L24 25 L26 24 Z" fill="#2E7D6B"/>
+  <!-- Static favicon — geometry matches MeridianMark (disc-cream-ring). Colors are
+       sRGB snapshots of ink-jade tokens: cream+jade disc mix, border, cinnabar,
+       primary jade, cream pivot, ink-deep center. -->
+  <circle cx="24" cy="24" r="22" fill="#dce4dd"/>
+  <circle cx="24" cy="24" r="22" stroke="#e3e2de" stroke-width="1" fill="none"/>
+  <g transform="translate(24 24) scale(0.92) translate(-24 -24)">
+    <path d="M24 4 L29 24 L24 22 L19 24 Z" fill="#B23A2E"/>
+    <path d="M24 44 L19 24 L24 26 L29 24 Z" fill="#2E7D6B"/>
+    <circle cx="24" cy="24" r="2.5" fill="#f4f2ec"/>
+    <circle cx="24" cy="24" r="1" fill="#3d3c38"/>
+  </g>
 </svg>
