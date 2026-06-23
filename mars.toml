@@ -17,7 +17,7 @@ include_fanout = false
 
 [settings.meridian.fanout]
 agents = [
-    "reviewer",
+#    "reviewer",
 #    "browser-prober",
 #    "prober",
 ]
