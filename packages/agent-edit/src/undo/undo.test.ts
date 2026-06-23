@@ -321,6 +321,79 @@ describe("hot/cold parity", () => {
     expect(serializeDoc(coldRedoDoc)).toBe(serializeDoc(ctx.doc));
   });
 
+  it("changes a deleted block hash when undo re-inserts identical content", () => {
+    const ctx = createScenario(
+      "Alpha waits at dawn.\n\nBeta waits in the clearing, sword drawn.\n\nGamma keeps watch.",
+    );
+    const beta = model.getBlocks(ctx.doc)[1];
+    const betaTextBefore = model.getText(beta);
+    const betaHashBefore = model.getBlockId(beta);
+
+    agentTurn(ctx, THREAD_A, "delete-beta", () => {
+      const block = model.getBlocks(ctx.doc)[1];
+      applyAgentEdits(ctx, THREAD_A, [
+        { documentId: DOC_ID, file: FILE, kind: "delete", element: block },
+      ]);
+    });
+
+    expect(blockTexts(ctx.doc)).toEqual(["Alpha waits at dawn.", "Gamma keeps watch."]);
+    const afterDeleteDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+
+    const preHotUndoVector = Y.encodeStateVector(ctx.doc);
+    const hotUndo = ctx.registry.undoLatest(DOC_ID, THREAD_A, {
+      scope: "turn",
+      turnId: "delete-beta",
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotUndo).toMatchObject({ ok: true, turnId: "delete-beta", redoDepth: 1 });
+    const hotUndoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotUndoVector);
+
+    expect(blockTexts(ctx.doc)).toEqual([
+      "Alpha waits at dawn.",
+      betaTextBefore,
+      "Gamma keeps watch.",
+    ]);
+    const betaHashAfterUndo = model.getBlockId(model.getBlocks(ctx.doc)[1]);
+    expect(betaHashAfterUndo).not.toBe(betaHashBefore);
+
+    const cold = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(), {
+      docId: DOC_ID,
+      turnId: "delete-beta",
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    const coldDoc = cloneDoc(afterDeleteDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldDoc, cold.undoUpdate);
+
+    expect(Array.from(cold.undoUpdate)).toEqual(Array.from(hotUndoUpdate));
+    expect(documentBytes(coldDoc)).toEqual(documentBytes(ctx.doc));
+    expect(documentJson(coldDoc)).toEqual(documentJson(ctx.doc));
+
+    const journalWithUndo = ctx.journal.clone();
+    const undoSeq = journalWithUndo.appendSync(cold.undoUpdate, { origin: "system", seq: 0 });
+    const afterUndoDoc = cloneDoc(ctx.doc, LIVE_CLIENT_ID);
+    const preHotRedoVector = Y.encodeStateVector(ctx.doc);
+    const hotRedo = ctx.registry.redoLatest(DOC_ID, THREAD_A, {
+      mutationClientId: REVERSAL_CLIENT_ID,
+    });
+    expect(hotRedo).toMatchObject({ ok: true, turnId: "delete-beta" });
+    const hotRedoUpdate = Y.encodeStateAsUpdate(ctx.doc, preHotRedoVector);
+
+    const coldRedo = reconstructRedoUpdateFromSnapshot(journalWithUndo.snapshot(), {
+      docId: DOC_ID,
+      turnId: "delete-beta",
+      undoUpdateSeq: undoSeq,
+      undoClientId: REVERSAL_CLIENT_ID,
+    });
+    expectRedoOk(coldRedo);
+    const coldRedoDoc = cloneDoc(afterUndoDoc, LIVE_CLIENT_ID);
+    Y.applyUpdate(coldRedoDoc, coldRedo.redoUpdate);
+
+    expect(Array.from(coldRedo.redoUpdate)).toEqual(Array.from(hotRedoUpdate));
+    expect(blockTexts(ctx.doc)).toEqual(["Alpha waits at dawn.", "Gamma keeps watch."]);
+    expect(documentBytes(coldRedoDoc)).toEqual(documentBytes(ctx.doc));
+    expect(documentJson(coldRedoDoc)).toEqual(documentJson(ctx.doc));
+  });
+
   it("uses fresh cold-path tokens for each reconstruction", () => {
     const ctx = createScenario("Alpha sword.");
     agentTurn(ctx, THREAD_A, "T1", () => {
