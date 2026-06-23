@@ -4,6 +4,17 @@ export interface JournalBatchAppendEntry {
   docId: string;
   update: Uint8Array;
   meta: UpdateMeta;
+  /** Present for agent edit writes that need a durable per-thread w-id. */
+  mutation?: {
+    threadId: string;
+    turnId: string;
+  };
+}
+
+export interface JournalBatchAppendResult {
+  seq: number;
+  /** Durable monotonic id per (documentId, threadId), present only for mutation entries. */
+  wId?: number;
 }
 
 /**
@@ -20,9 +31,9 @@ export interface UpdateJournal {
 
   /**
    * Append multiple Yjs updates in one all-or-nothing transaction.
-   * Returns assigned sequence numbers in the same order as entries.
+   * Returns assigned sequence numbers and mutation w-ids in the same order as entries.
    */
-  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<number[]>;
+  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
 
   /**
    * Read checkpoint plus updates in sequence order.

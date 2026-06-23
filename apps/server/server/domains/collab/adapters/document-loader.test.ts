@@ -1,6 +1,12 @@
 /** Tests for rebuilding Y.Doc state from the UpdateJournal. */
 
-import type { PersistedUpdate, UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  PersistedUpdate,
+  UpdateJournal,
+  UpdateMeta,
+} from "@meridian/agent-edit";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { loadDocumentState } from "./document-loader.js";
@@ -19,12 +25,12 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async appendBatch(
-    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
-  ): Promise<number[]> {
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]> {
     return entries.map((entry) => {
       const seq = this.updates.length + 1;
       this.updates.push({ seq, update: entry.update, meta: { ...entry.meta, seq } });
-      return seq;
+      return { seq };
     });
   }
 

@@ -25,7 +25,11 @@ import {
 } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  UpdateJournal,
+} from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
@@ -115,6 +119,10 @@ interface MutationEchoInput {
 interface JournaledUpdate {
   update: Uint8Array;
   meta: UpdateMeta;
+  mutation?: {
+    threadId: string;
+    turnId: string;
+  };
 }
 
 interface LiveUpdateCommitInput {
@@ -131,6 +139,7 @@ interface LocalMutationSyncInput {
   runtime: RuntimeDocumentState;
   update: Uint8Array;
   meta?: UpdateMeta;
+  mutation?: JournaledUpdate["mutation"];
   afterOwnVector: Uint8Array;
   liveOrigin: ConcurrentUpdateOrigin;
   before: readonly BlockSnapshot[];
@@ -258,7 +267,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     let updateCount = 0;
     try {
       if (!buffer.journalCommitted) {
-        await options.journal.appendBatch(buffer.updates);
+        const results = await options.journal.appendBatch(buffer.updates);
+        attachCommittedWIds(buffer.updates, results);
         buffer.journalCommitted = true;
       }
 
@@ -395,10 +405,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
+      mutation: { threadId: input.session.threadId, turnId: input.turnId },
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
     });
-    buffer.updates.push({ docId: input.docId, update: input.update, meta: input.meta });
+    buffer.updates.push({
+      docId: input.docId,
+      update: input.update,
+      meta: input.meta,
+      mutation: { threadId: input.session.threadId, turnId: input.turnId },
+    });
   }
 
   async function view(
@@ -496,7 +512,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const committed = await commitUpdatesToJournalAndLive({
       docId: address.filePath,
       commandName: command.command,
-      updates: [{ update, meta }],
+      updates: [{ update, meta, mutation: { threadId: session.threadId, turnId } }],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
     });
@@ -588,6 +604,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       runtime,
       update: ownUpdate,
       meta,
+      mutation: { threadId: session.threadId, turnId },
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),
       before,
@@ -1014,7 +1031,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       ? await commitUpdatesToJournalAndLive({
           docId: input.docId,
           commandName: input.commandName,
-          updates: [{ update: input.update, meta: input.meta }],
+          updates: [
+            {
+              update: input.update,
+              meta: input.meta,
+              ...(input.mutation ? { mutation: input.mutation } : {}),
+            },
+          ],
           afterOwnVector: input.afterOwnVector,
           liveOrigin: input.liveOrigin,
         })
@@ -1060,15 +1083,33 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<
     { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
   > {
-    await options.journal.appendBatch(
-      input.updates.map((entry) => ({
-        docId: input.docId,
-        update: entry.update,
-        meta: entry.meta,
-      })),
-    );
+    const entries = input.updates.map((entry) => ({
+      docId: input.docId,
+      update: entry.update,
+      meta: entry.meta,
+      ...(entry.mutation ? { mutation: entry.mutation } : {}),
+    }));
+    const results = await options.journal.appendBatch(entries);
+    attachCommittedWIds(entries, results);
 
     return mergeCommittedUpdatesToLive(input);
+  }
+
+  function attachCommittedWIds(
+    entries: readonly JournalBatchAppendEntry[],
+    results: readonly JournalBatchAppendResult[],
+  ): void {
+    for (const [index, result] of results.entries()) {
+      if (result.wId === undefined) continue;
+      const entry = entries[index];
+      if (!entry?.mutation) continue;
+      registry.attachNextWId(
+        entry.docId,
+        entry.mutation.threadId,
+        entry.mutation.turnId,
+        result.wId,
+      );
+    }
   }
 
   async function mergeCommittedUpdatesToLive(

@@ -4,6 +4,8 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   DocumentNotFoundError,
+  type JournalBatchAppendEntry,
+  type JournalBatchAppendResult,
   type JournalSnapshot,
   type PersistedUpdate,
   type ReversalRecord,
@@ -22,11 +24,25 @@ interface StoredReversal {
   storedAt: Date;
 }
 
+interface StoredMutation {
+  wId: number;
+  documentId: string;
+  threadId: string;
+  turnId: string;
+  status: "active" | "reversed";
+  createdSeq: number;
+  undoUpdateSeq?: number;
+  createdAt: Date;
+  reversedAt?: Date;
+  reversedBy?: "user" | "agent";
+}
+
 interface JournalEntry {
   checkpoint: Uint8Array | null;
   updates: StoredUpdate[];
   nextSeq: number;
   reversals: Map<string, StoredReversal>;
+  mutations: StoredMutation[];
 }
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -41,8 +57,8 @@ export class InMemoryJournal implements UpdateJournal {
   }
 
   async appendBatch(
-    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
-  ): Promise<number[]> {
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]> {
     const storedAt = this.now();
     const nextSeqByDoc = new Map<string, number>();
     for (const batchEntry of entries) {
@@ -52,9 +68,23 @@ export class InMemoryJournal implements UpdateJournal {
       }
       nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
     }
-    return entries.map((batchEntry) =>
-      this.appendInternal(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt),
-    );
+    return entries.map((batchEntry) => {
+      const seq = this.appendInternal(
+        batchEntry.docId,
+        batchEntry.update,
+        batchEntry.meta,
+        storedAt,
+      );
+      if (!batchEntry.mutation) return { seq };
+      const wId = this.appendMutationInternal(
+        batchEntry.docId,
+        batchEntry.mutation.threadId,
+        batchEntry.mutation.turnId,
+        seq,
+        storedAt,
+      );
+      return { seq, wId };
+    });
   }
 
   async read(
@@ -123,6 +153,13 @@ export class InMemoryJournal implements UpdateJournal {
       record: { ...record, undoUpdateSeq: seq },
       storedAt,
     });
+    this.reverseMutations(
+      docId,
+      record.threadId,
+      record.turnId,
+      seq,
+      record.reversedAt ?? storedAt,
+    );
   }
 
   async persistRedo(
@@ -141,6 +178,7 @@ export class InMemoryJournal implements UpdateJournal {
       ...stored,
       record: { ...stored.record, status: "redone" },
     });
+    this.reactivateMutations(docId, ref.threadId, ref.turnId);
     return { consumed: true, seq };
   }
 
@@ -160,6 +198,10 @@ export class InMemoryJournal implements UpdateJournal {
 
   reversalRecords(docId: string): ReversalRecord[] {
     return [...this.entry(docId).reversals.values()].map((stored) => ({ ...stored.record }));
+  }
+
+  mutationRecords(docId: string): StoredMutation[] {
+    return this.entry(docId).mutations.map((record) => ({ ...record }));
   }
 
   private appendInternal(
@@ -184,10 +226,63 @@ export class InMemoryJournal implements UpdateJournal {
     return seq;
   }
 
+  private appendMutationInternal(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    createdSeq: number,
+    createdAt: Date,
+  ): number {
+    const entry = this.entry(docId);
+    const wId =
+      Math.max(
+        0,
+        ...entry.mutations
+          .filter((record) => record.documentId === docId && record.threadId === threadId)
+          .map((record) => record.wId),
+      ) + 1;
+    entry.mutations.push({
+      wId,
+      documentId: docId,
+      threadId,
+      turnId,
+      status: "active",
+      createdSeq,
+      createdAt,
+    });
+    return wId;
+  }
+
+  private reverseMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+    reversedAt: Date,
+  ): void {
+    for (const record of this.entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "reversed";
+      record.undoUpdateSeq = undoUpdateSeq;
+      record.reversedAt = reversedAt;
+      record.reversedBy = "agent";
+    }
+  }
+
+  private reactivateMutations(docId: string, threadId: string, turnId: string): void {
+    for (const record of this.entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "active";
+      delete record.undoUpdateSeq;
+      delete record.reversedAt;
+      delete record.reversedBy;
+    }
+  }
+
   private entry(docId: string): JournalEntry {
     let entry = this.data.get(docId);
     if (!entry) {
-      entry = { checkpoint: null, updates: [], nextSeq: 1, reversals: new Map() };
+      entry = { checkpoint: null, updates: [], nextSeq: 1, reversals: new Map(), mutations: [] };
       this.data.set(docId, entry);
     }
     return entry;

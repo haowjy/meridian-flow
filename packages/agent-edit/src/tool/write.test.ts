@@ -16,7 +16,11 @@ import type {
   ReversalStatus,
   UpdateMeta,
 } from "../ports/types.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  UpdateJournal,
+} from "../ports/update-journal.js";
 import { createUndoManagerRegistry } from "../undo/manager-registry.js";
 import type { WriteContext, WriteOutcome, WriteStatus } from "./types.js";
 
@@ -227,6 +231,74 @@ describe("write tool dispatch", () => {
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(3);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma.", "Delta."]);
     expect(liveUpdateCount).toBe(1);
+    const firstCommitMutations = ctx.journal.mutationRecords("chapter.md");
+    expect(firstCommitMutations.map((record) => record.wId)).toEqual([1, 2, 3]);
+    expect(firstCommitMutations.map((record) => record.createdSeq)).toEqual(
+      (await ctx.journal.read("chapter.md")).updates.map((update) => update.seq),
+    );
+    expect(
+      ctx.undoRegistry.getState("chapter.md", context.threadId!)?.undoStack.map((item) => item.wId),
+    ).toEqual([1, 2, 3]);
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Epsilon." },
+      {
+        ...context,
+        turnId: "turn-response-staging-next",
+        responseId: "response-staging-next",
+      },
+    );
+    await ctx.core.commitResponse("response-staging-next");
+    expect(ctx.journal.mutationRecords("chapter.md").map((record) => record.wId)).toEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
+  it("flips mutation status when undoing and redoing a turn", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-mutation-status" },
+    );
+
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([
+      {
+        wId: 1,
+        turnId: "turn-mutation-status",
+        status: "active",
+        createdSeq: 1,
+      },
+    ]);
+    expect(ctx.undoRegistry.getState("chapter.md", context.threadId!)?.undoStack).toMatchObject([
+      { turnId: "turn-mutation-status", wId: 1 },
+    ]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expect(outcomeText(undo)).toContain("status: reversed");
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([
+      {
+        wId: 1,
+        turnId: "turn-mutation-status",
+        status: "reversed",
+        undoUpdateSeq: 2,
+        reversedBy: "agent",
+      },
+    ]);
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(ctx.journal.mutationRecords("chapter.md")).toMatchObject([
+      {
+        wId: 1,
+        turnId: "turn-mutation-status",
+        status: "active",
+      },
+    ]);
+    expect(ctx.journal.mutationRecords("chapter.md")[0]?.undoUpdateSeq).toBeUndefined();
+    expect(ctx.journal.mutationRecords("chapter.md")[0]?.reversedBy).toBeUndefined();
   });
 
   it("rolls back staged response writes and restores the runtime doc from live", async () => {
@@ -976,6 +1048,7 @@ function harness(
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
+  const undoRegistry = options.undoRegistry ?? createUndoManagerRegistry();
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
@@ -985,7 +1058,7 @@ function harness(
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model,
-    undoRegistry: options.undoRegistry,
+    undoRegistry,
     undoClientId: options.undoClientId,
   });
   return {
@@ -993,6 +1066,7 @@ function harness(
     coordinator,
     lifecycle,
     journal,
+    undoRegistry,
     liveDoc: (docId: string) => coordinator.require(docId),
   };
 }
@@ -1070,6 +1144,18 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 }
 
+type StoredMutation = {
+  wId: number;
+  documentId: string;
+  threadId: string;
+  turnId: string;
+  status: "active" | "reversed";
+  createdSeq: number;
+  undoUpdateSeq?: number;
+  reversedAt?: Date;
+  reversedBy?: "user" | "agent";
+};
+
 class MemoryJournal implements UpdateJournal {
   appendBatchCalls = 0;
 
@@ -1081,6 +1167,7 @@ class MemoryJournal implements UpdateJournal {
       nextSeq: number;
       updates: PersistedUpdate[];
       reversals: ReversalRecord[];
+      mutations: StoredMutation[];
     }
   >();
   private nextAppendBatchFailure: unknown;
@@ -1094,8 +1181,8 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async appendBatch(
-    entries: readonly { docId: string; update: Uint8Array; meta: UpdateMeta }[],
-  ): Promise<number[]> {
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]> {
     this.appendBatchCalls += 1;
     if (this.nextAppendBatchFailure) {
       const failure = this.nextAppendBatchFailure;
@@ -1110,9 +1197,17 @@ class MemoryJournal implements UpdateJournal {
       }
       nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
     }
-    return entries.map((batchEntry) =>
-      this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta),
-    );
+    return entries.map((batchEntry) => {
+      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta);
+      if (!batchEntry.mutation) return { seq };
+      const wId = this.appendMutationSync(
+        batchEntry.docId,
+        batchEntry.mutation.threadId,
+        batchEntry.mutation.turnId,
+        seq,
+      );
+      return { seq, wId };
+    });
   }
 
   failNextAppendBatchWith(cause: unknown): void {
@@ -1162,6 +1257,13 @@ class MemoryJournal implements UpdateJournal {
     const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 });
     record.undoUpdateSeq = seq;
     this.entry(docId).reversals.push({ ...record });
+    this.reverseMutations(
+      docId,
+      record.threadId,
+      record.turnId,
+      seq,
+      record.reversedAt ?? new Date(),
+    );
   }
 
   async persistRedo(
@@ -1180,6 +1282,7 @@ class MemoryJournal implements UpdateJournal {
     if (index === -1) return { consumed: false };
     const seq = this.appendSync(docId, redoUpdate, meta);
     entry.reversals[index] = { ...entry.reversals[index], status: "redone" };
+    this.reactivateMutations(docId, ref.threadId, ref.turnId);
     return { consumed: true, seq };
   }
 
@@ -1196,6 +1299,7 @@ class MemoryJournal implements UpdateJournal {
           meta: { ...update.meta },
         })),
         reversals: entry.reversals.map((record) => ({ ...record })),
+        mutations: entry.mutations.map((record) => ({ ...record })),
       });
     }
     return copy;
@@ -1220,10 +1324,18 @@ class MemoryJournal implements UpdateJournal {
     nextSeq: number;
     updates: PersistedUpdate[];
     reversals: ReversalRecord[];
+    mutations: StoredMutation[];
   } {
     let entry = this.data.get(docId);
     if (!entry) {
-      entry = { checkpoint: null, checkpointUpToSeq: 0, nextSeq: 1, updates: [], reversals: [] };
+      entry = {
+        checkpoint: null,
+        checkpointUpToSeq: 0,
+        nextSeq: 1,
+        updates: [],
+        reversals: [],
+        mutations: [],
+      };
       this.data.set(docId, entry);
     }
     return entry;
@@ -1235,6 +1347,61 @@ class MemoryJournal implements UpdateJournal {
     if (meta.seq && meta.seq !== seq) throw new Error(`Expected seq ${seq}, got ${meta.seq}`);
     entry.updates.push({ seq, update, meta: { ...meta, seq } });
     return seq;
+  }
+
+  mutationRecords(docId: string): StoredMutation[] {
+    return this.entry(docId).mutations.map((record) => ({ ...record }));
+  }
+
+  private appendMutationSync(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    createdSeq: number,
+  ): number {
+    const entry = this.entry(docId);
+    const wId =
+      Math.max(
+        0,
+        ...entry.mutations
+          .filter((record) => record.documentId === docId && record.threadId === threadId)
+          .map((record) => record.wId),
+      ) + 1;
+    entry.mutations.push({
+      wId,
+      documentId: docId,
+      threadId,
+      turnId,
+      status: "active",
+      createdSeq,
+    });
+    return wId;
+  }
+
+  private reverseMutations(
+    docId: string,
+    threadId: string,
+    turnId: string,
+    undoUpdateSeq: number,
+    reversedAt: Date,
+  ): void {
+    for (const record of this.entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "reversed";
+      record.undoUpdateSeq = undoUpdateSeq;
+      record.reversedAt = reversedAt;
+      record.reversedBy = "agent";
+    }
+  }
+
+  private reactivateMutations(docId: string, threadId: string, turnId: string): void {
+    for (const record of this.entry(docId).mutations) {
+      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      record.status = "active";
+      delete record.undoUpdateSeq;
+      delete record.reversedAt;
+      delete record.reversedBy;
+    }
   }
 }
 
