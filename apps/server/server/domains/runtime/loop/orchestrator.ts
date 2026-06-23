@@ -84,7 +84,6 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { readOpenRouterGenerationId } from "../gateway/adapters/openrouter/provider-data.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -92,13 +91,6 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import {
-  buildReconciliationStub,
-  createReconcileSignal,
-  type OpenRouterReconcileConfig,
-  reconcileInterruptedModelResult,
-  shouldPersistCancelledModelCall,
-} from "./cancel-settlement.js";
 import { type CheckpointArtifactFlushPort, createCheckpointSession } from "./checkpoint-session.js";
 import {
   type CheckpointAutoResumePolicy,
@@ -157,8 +149,6 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
-  /** OpenRouter /generation reconciliation for interrupted turns without stream usage. */
-  openRouterReconcile?: OpenRouterReconcileConfig;
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -449,7 +439,7 @@ async function persistModelResponse(input: {
       sequence: responseSeq,
       provider: result.provider,
       model: result.model,
-      providerRequestId: readOpenRouterGenerationId(result.providerData) ?? null,
+      providerRequestId: result.providerRequestId ?? null,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens ?? null,
@@ -543,33 +533,24 @@ async function* settleAndFinalizeCancelled(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
-  provider: string;
-  generationId?: string;
 }): AsyncGenerator<OrchestratorEvent> {
   let currentAssistantTurn = input.currentAssistantTurn;
   let blockSeq = input.blockSeq;
-  let settleResult = input.result;
-  if (!settleResult && input.generationId) {
-    settleResult = buildReconciliationStub({
-      model: input.model,
-      provider: input.provider,
-      generationId: input.generationId,
-    });
-  }
+  const settlement = await input.deps.gateway.settleCancelledResult?.({
+    model: input.model,
+    ...(input.result ? { result: input.result } : {}),
+    ...(input.result?.providerRequestId
+      ? { providerRequestId: input.result.providerRequestId }
+      : {}),
+  });
 
-  if (settleResult && shouldPersistCancelledModelCall(settleResult)) {
-    const reconcileSignal = createReconcileSignal();
-    settleResult = await reconcileInterruptedModelResult(
-      input.deps.openRouterReconcile,
-      settleResult,
-      reconcileSignal,
-    );
+  if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
       currentAssistantTurn,
-      result: settleResult,
+      result: settlement.result,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq,
@@ -798,7 +779,6 @@ async function* generateEvents(
       // usage can be persisted before turn.cancelled.
       let result: GenerateResult | undefined;
       let streamModel = request.model ?? "unknown";
-      let streamProvider = request.provider ?? "unknown";
       for await (const event of gateway.stream(request)) {
         if (input.signal?.aborted) {
           cancelRequested = true;
@@ -806,7 +786,6 @@ async function* generateEvents(
 
         if (event.type === "start") {
           streamModel = event.model;
-          streamProvider = event.provider;
         }
 
         const mapped = mapStreamEvent(event);
@@ -845,8 +824,6 @@ async function* generateEvents(
           allBlocks,
           result,
           model: result?.model ?? streamModel,
-          provider: result?.provider ?? streamProvider,
-          generationId: result ? readOpenRouterGenerationId(result.providerData) : undefined,
         });
         return;
       }

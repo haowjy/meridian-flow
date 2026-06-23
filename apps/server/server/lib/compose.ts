@@ -192,7 +192,6 @@ export type ProductionAppPorts = {
   results: ResultRepository;
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
-  openRouterReconcile?: { apiKey: string; baseUrl?: string };
 };
 
 export async function createProductionAppPorts(input: {
@@ -306,12 +305,6 @@ export async function createProductionAppPorts(input: {
     results,
     promotionService,
     documentAccess,
-    openRouterReconcile: environment.OPENROUTER_API_KEY
-      ? {
-          apiKey: environment.OPENROUTER_API_KEY,
-          baseUrl: environment.OPENROUTER_BASE_URL,
-        }
-      : undefined,
   };
 }
 
@@ -418,7 +411,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
-    openRouterReconcile: ports.openRouterReconcile,
   });
   runTurnProxy.bind(orchestrator);
 

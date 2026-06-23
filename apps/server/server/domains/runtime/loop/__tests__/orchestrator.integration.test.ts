@@ -1675,9 +1675,8 @@ describe("runtime loop integration", () => {
             toolCalls: [],
             finishReason: "end_turn",
             usage: { inputTokens: 10, outputTokens: 20 },
-            model: "openai/gpt-4o",
-            provider: "openrouter",
-            providerData: { reportedCostUsd: 1.5, generationId: "gen-expensive" },
+            model: "gpt-4o",
+            provider: "openai",
           },
         };
       },

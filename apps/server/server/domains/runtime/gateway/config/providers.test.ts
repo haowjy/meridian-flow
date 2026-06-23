@@ -35,4 +35,15 @@ describe("buildProviderConfigs", () => {
     expect(config.providers).toEqual([]);
     expect(config.defaultModel).toBeUndefined();
   });
+
+  it("threads OpenRouter base URL through provider config", () => {
+    const config = buildProviderConfigs({
+      OPENROUTER_API_KEY: "sk-openrouter-real",
+      OPENROUTER_BASE_URL: "https://openrouter.example/api/v1",
+    });
+
+    expect(config.providers.find((provider) => provider.id === "openrouter")?.baseUrl).toBe(
+      "https://openrouter.example/api/v1",
+    );
+  });
 });
