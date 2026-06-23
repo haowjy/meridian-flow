@@ -67,9 +67,6 @@ export function createTurnReversal(deps: {
   mutationCommit: MutationCommit;
   model: AgentEditModel;
   codec: Codec;
-  retention?: {
-    reversalWindowMs?: number;
-  };
   undoClientId?: number;
   onInvariantViolation?: (message: string) => void;
 }): TurnReversal {
@@ -79,7 +76,6 @@ export function createTurnReversal(deps: {
     mutationCommit,
     model,
     codec,
-    retention,
     undoClientId,
     onInvariantViolation = defaultInvariantViolation,
   } = deps;
@@ -256,9 +252,6 @@ export function createTurnReversal(deps: {
       status: "reversed",
       undoUpdateSeq: 0,
       reversedAt: new Date(),
-      ...(retention?.reversalWindowMs
-        ? { expiresAt: new Date(Date.now() + retention.reversalWindowMs) }
-        : {}),
     };
     await journal.persistReversal(docId, update, record);
     const sync = await mutationCommit.syncAfterLocalMutation({

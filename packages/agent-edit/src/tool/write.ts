@@ -50,9 +50,6 @@ export interface CreateWriteToolOptions {
   codec: Codec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
-  retention?: {
-    reversalWindowMs?: number;
-  };
   idempotency?: {
     maxEntries?: number;
   };
@@ -137,7 +134,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     codec: options.codec,
-    retention: options.retention,
     undoClientId,
     onInvariantViolation: options.onInvariantViolation,
   });

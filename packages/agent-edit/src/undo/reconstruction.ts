@@ -16,7 +16,7 @@ interface ReconstructionTargetOptions extends ReconstructionOptions {
   targetSeqs: ReadonlySet<number>;
 }
 
-export interface TurnUpdateGroup {
+interface TurnUpdateGroup {
   turnId: string;
   updates: PersistedUpdate[];
   firstSeq: number;
@@ -27,14 +27,6 @@ export interface UndoReconstructionResult {
   docId: string;
   turnId: string;
   undoUpdate: Uint8Array;
-  targetUpdateSeqs: number[];
-  beforeUndoStateVector: Uint8Array;
-  afterUndoStateVector: Uint8Array;
-  undoStackDepthBeforeUndo: number;
-  redoStackDepthAfterUndo: number;
-  /** Exposed for tests to assert fresh per-reconstruction identity tokens. */
-  targetOriginToken: symbol;
-  nonTargetOriginToken: symbol;
 }
 
 export type RedoReconstructionResult =
@@ -48,11 +40,6 @@ export interface RedoReconstructionAppliedResult {
   turnId: string;
   redoUpdate: Uint8Array;
   undoUpdateSeq: number;
-  targetUpdateSeqs: number[];
-  beforeRedoStateVector: Uint8Array;
-  afterRedoStateVector: Uint8Array;
-  redoStackDepthBeforeRedo: number;
-  undoStackDepthAfterRedo: number;
 }
 
 export interface RedoReconstructionNoRedoResult {
@@ -125,7 +112,6 @@ export function reconstructUndoUpdateFromSnapshot(
 
   setReconstructionClientId(doc, options.undoClientId);
   const beforeUndoStateVector = Y.encodeStateVector(doc);
-  const undoStackDepthBeforeUndo = um.undoStack.length;
   currentStackItem = um.undoStack.at(-1) ?? null;
   try {
     um.undo();
@@ -138,13 +124,6 @@ export function reconstructUndoUpdateFromSnapshot(
     docId: options.docId,
     turnId: options.turnId,
     undoUpdate,
-    targetUpdateSeqs: target.updates.map((update) => update.seq),
-    beforeUndoStateVector,
-    afterUndoStateVector: Y.encodeStateVector(doc),
-    undoStackDepthBeforeUndo,
-    redoStackDepthAfterUndo: um.redoStack.length,
-    targetOriginToken,
-    nonTargetOriginToken,
   };
 }
 
@@ -221,8 +200,7 @@ export function reconstructRedoUpdateFromSnapshot(
   }
 
   const beforeRedoStateVector = Y.encodeStateVector(doc);
-  const redoStackDepthBeforeRedo = um.redoStack.length;
-  if (redoStackDepthBeforeRedo === 0) {
+  if (um.redoStack.length === 0) {
     return noRedoResult(options, { ok: false, status: "no_redo", reason: "empty_redo_stack" });
   }
   currentStackItem = um.redoStack.at(-1) ?? null;
@@ -244,11 +222,6 @@ export function reconstructRedoUpdateFromSnapshot(
     turnId: options.turnId,
     redoUpdate,
     undoUpdateSeq: options.undoUpdateSeq,
-    targetUpdateSeqs: target.updates.map((update) => update.seq),
-    beforeRedoStateVector,
-    afterRedoStateVector: Y.encodeStateVector(doc),
-    redoStackDepthBeforeRedo,
-    undoStackDepthAfterRedo: um.undoStack.length,
   };
 }
 
@@ -268,25 +241,6 @@ export function evaluateRedoEligibility(
     blockingUpdateOrigin: blockingUpdate.meta.origin,
     blockingUpdateActorTurnId: blockingUpdate.meta.actorTurnId,
   };
-}
-
-export function groupUpdatesByTurn(updates: readonly PersistedUpdate[]): TurnUpdateGroup[] {
-  const byTurn = new Map<string, PersistedUpdate[]>();
-  for (const update of updates) {
-    const turnId = update.meta.actorTurnId;
-    if (!turnId) continue;
-    const group = byTurn.get(turnId) ?? [];
-    group.push(update);
-    byTurn.set(turnId, group);
-  }
-  return [...byTurn.entries()]
-    .map(([turnId, group]) => ({
-      turnId,
-      updates: group,
-      firstSeq: Math.min(...group.map((update) => update.seq)),
-      lastSeq: Math.max(...group.map((update) => update.seq)),
-    }))
-    .sort((left, right) => left.firstSeq - right.firstSeq);
 }
 
 function targetUpdateRange(

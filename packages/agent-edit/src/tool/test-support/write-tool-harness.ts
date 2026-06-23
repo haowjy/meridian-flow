@@ -32,9 +32,6 @@ export function harness(
   options: {
     lifecycle?: boolean;
     undoClientId?: number;
-    retention?: {
-      reversalWindowMs?: number;
-    };
     createRuntimeDoc?: () => Y.Doc;
   } = {},
 ) {
@@ -52,7 +49,6 @@ export function harness(
     model,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
-    ...(options.retention ? { retention: options.retention } : {}),
   });
   return {
     core,

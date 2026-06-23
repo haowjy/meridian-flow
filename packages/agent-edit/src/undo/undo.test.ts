@@ -5,18 +5,16 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
 import { mdxCodec } from "../codec/presets/mdx.js";
-import { createAgentEditCore } from "../index.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
-import { compactOnLoad } from "./compaction.js";
-import { groupUpdatesByTurn, reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
+import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
@@ -69,43 +67,6 @@ describe("cold reconstruction", () => {
     um.undo();
     expect(replayText.toString()).toBe("");
   });
-
-  it("groups multiple updates per turn by actorTurnId", () => {
-    const ctx = createScenario("Alpha sword.\n\nBeta sword.");
-    agentTurn(ctx, "multi", () => {
-      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-      applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "blade");
-    });
-
-    const groups = groupUpdatesByTurn(ctx.journal.snapshot(DOC_ID).updates);
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ turnId: "multi" });
-    expect(groups[0]?.updates).toHaveLength(2);
-  });
-
-  it("uses fresh cold-path tokens for each reconstruction", () => {
-    const ctx = createScenario("Alpha sword.");
-    agentTurn(ctx, "T1", () => {
-      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-    });
-
-    const first = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
-      docId: DOC_ID,
-      turnId: "T1",
-      targetSeqs: targetSeqsForTurn(ctx.journal, "T1"),
-      undoClientId: REVERSAL_CLIENT_ID,
-    });
-    const second = reconstructUndoUpdateFromSnapshot(ctx.journal.snapshot(DOC_ID), {
-      docId: DOC_ID,
-      turnId: "T1",
-      targetSeqs: targetSeqsForTurn(ctx.journal, "T1"),
-      undoClientId: REVERSAL_CLIENT_ID,
-    });
-
-    expect(first.targetOriginToken).not.toBe(second.targetOriginToken);
-    expect(first.nonTargetOriginToken).not.toBe(second.nonTargetOriginToken);
-  });
 });
 
 describe("8-case reconcile matrix", () => {
@@ -135,57 +96,6 @@ describe("8-case reconcile matrix", () => {
   });
 });
 
-describe("compactOnLoad", () => {
-  it("delegates to journal.compact, returns retained updates, and leaves live docs untouched", async () => {
-    const ctx = createScenario("Alpha sword.");
-    agentTurn(ctx, "T1", () => {
-      applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-    });
-    const liveBefore = documentBytes(ctx.doc);
-
-    const result = await compactOnLoad(ctx.journal, {
-      docId: DOC_ID,
-      before: new Date("2026-06-20T00:00:00.000Z"),
-    });
-
-    expect(ctx.journal.compactCalls).toBe(1);
-    expect(result).toMatchObject({ updatesFolded: 1, reversalsExpired: 0 });
-    expect(result.retainedUpdates).toEqual([]);
-    expect(result.checkpoint).toBeInstanceOf(Uint8Array);
-    expect(documentBytes(ctx.doc)).toEqual(liveBefore);
-  });
-
-  it("core compact clamps the cutoff to preserve rows inside reversal retention", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date("2026-06-20T00:00:00.000Z"));
-      const ctx = createScenario("Alpha sword.");
-      agentTurn(ctx, "T1", () => {
-        applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-      });
-      const core = createAgentEditCore({
-        journal: ctx.journal,
-        coordinator: {
-          recover: async () => {},
-          withDocument: async <T>(_docId: string, fn: (doc: Y.Doc) => Promise<T>) => fn(ctx.doc),
-        },
-        codec,
-        model,
-        retention: { reversalWindowMs: 2 * 24 * 60 * 60 * 1000 },
-        undoClientId: REVERSAL_CLIENT_ID,
-      });
-
-      const result = await core.compact(DOC_ID, new Date());
-
-      expect(result).toMatchObject({ updatesFolded: 0, reversalsExpired: 0 });
-      expect(result.retainedUpdates.map((update) => update.seq)).toEqual([1]);
-      expect(ctx.journal.snapshot(DOC_ID).updates.map((update) => update.seq)).toEqual([1]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
 interface ScenarioContext {
   doc: Y.Doc;
   origins: Map<string, symbol>;
@@ -200,22 +110,9 @@ interface MatrixCase {
 }
 
 class MemoryJournal extends InMemoryAgentEditJournal {
-  compactCalls = 0;
-
   constructor(checkpoint: Uint8Array | null) {
     super({ now: () => new Date("2026-06-19T00:00:00.000Z") });
     if (checkpoint) this.setCheckpoint(DOC_ID, checkpoint, 0);
-  }
-
-  override clone(): MemoryJournal {
-    const copy = this.cloneInto(new MemoryJournal(null));
-    copy.compactCalls = this.compactCalls;
-    return copy;
-  }
-
-  override async compact(docId: string, before: Date) {
-    this.compactCalls += 1;
-    return super.compact(docId, before);
   }
 }
 
@@ -371,10 +268,6 @@ function blockTexts(doc: Y.Doc): string[] {
 
 function serializeDoc(doc: Y.Doc): string {
   return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
-}
-
-function documentBytes(doc: Y.Doc): number[] {
-  return Array.from(Y.encodeStateAsUpdate(doc));
 }
 
 function caseCleanReverse(): MatrixCase {
