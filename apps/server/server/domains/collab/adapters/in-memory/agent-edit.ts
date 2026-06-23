@@ -7,6 +7,7 @@ import {
   type JournalBatchAppendEntry,
   type JournalBatchAppendResult,
   type JournalSnapshot,
+  type MutationStore,
   type PersistedUpdate,
   type ReversalRecord,
   type UpdateJournal,
@@ -48,17 +49,18 @@ type StoredMutation = {
   reversedBy?: "user" | "agent";
 };
 
-export type InMemoryJournal = UpdateJournal & {
-  createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-  ): Promise<string>;
-  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-};
+export type InMemoryJournal = UpdateJournal &
+  MutationStore & {
+    createCheckpoint(
+      docId: string,
+      state: Uint8Array,
+      reason: string,
+      upToSeq: number,
+    ): Promise<string>;
+    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+  };
 
 export function createInMemoryJournal(): InMemoryJournal {
   const data = new Map<string, JournalEntry>();
@@ -257,6 +259,32 @@ export function createInMemoryJournal(): InMemoryJournal {
             (opts.status === undefined || opts.status.includes(record.status)),
         )
         .map((record) => ({ ...record }));
+    },
+
+    async latestActiveTurn(documentId, threadId) {
+      return entry(documentId)
+        .mutations.filter((record) => record.threadId === threadId && record.status === "active")
+        .sort((left, right) => left.createdSeq - right.createdSeq)
+        .at(-1)?.turnId;
+    },
+
+    async activeTurnSummary(documentId, threadId) {
+      const byTurn = new Map<string, { turnId: string; count: number; minSeq: number }>();
+      for (const record of entry(documentId).mutations) {
+        if (record.threadId !== threadId || record.status !== "active") continue;
+        const existing = byTurn.get(record.turnId);
+        if (existing) {
+          existing.count += 1;
+          existing.minSeq = Math.min(existing.minSeq, record.createdSeq);
+        } else {
+          byTurn.set(record.turnId, {
+            turnId: record.turnId,
+            count: 1,
+            minSeq: record.createdSeq,
+          });
+        }
+      }
+      return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
     },
 
     createCheckpoint,
