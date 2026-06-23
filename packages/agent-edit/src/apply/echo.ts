@@ -1,9 +1,13 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import * as Y from "yjs";
 
-import type { Codec } from "../codec/types.js";
-import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
+import type { Block, Codec } from "../codec/types.js";
+import type { DocumentModel } from "../model/types.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
+
+export type BlockSnapshotModel = DocumentModel<Y.XmlElement> & {
+  toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): Block;
+};
 
 export interface BlockSnapshot {
   hash: string;
@@ -41,7 +45,7 @@ const TRUNCATED_PREVIEW_LENGTH = 48;
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: BlockSnapshotModel,
   codec: Codec,
 ): BlockSnapshot[] {
   return model.getBlocks(doc).map((block) => {
@@ -82,7 +86,7 @@ export function diffSnapshots(
  */
 export function applyConcurrentUpdates(
   doc: Y.Doc,
-  model: YProsemirrorDocumentModel,
+  model: BlockSnapshotModel,
   codec: Codec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
@@ -241,7 +245,7 @@ function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array):
 }
 
 function orderedHashes(
-  model: YProsemirrorDocumentModel,
+  model: BlockSnapshotModel,
   doc: Y.Doc,
   hashes: ReadonlySet<string>,
 ): string[] {

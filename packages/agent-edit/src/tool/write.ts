@@ -1,14 +1,7 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
 
-import {
-  applyConcurrentUpdates,
-  type BlockSnapshot,
-  type ConcurrentDetectionResult,
-  computeEcho,
-  diffSnapshots,
-  snapshotBlocks,
-} from "../apply/echo.js";
+import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type {
   ApplyEchoHunk,
@@ -26,11 +19,7 @@ import {
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
-import type {
-  JournalBatchAppendEntry,
-  JournalBatchAppendResult,
-  UpdateJournal,
-} from "../ports/update-journal.js";
+import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import {
   latestRedoableTarget,
@@ -41,6 +30,16 @@ import {
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import {
+  documentNotFound,
+  type InternalWriteResult,
+  isInternalWriteResult,
+} from "./internal-result.js";
+import {
+  createMutationCommit,
+  type JournaledUpdate,
+  type SyncedMutationSummary,
+} from "./mutation-commit.js";
 import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
@@ -116,53 +115,6 @@ interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
 }
 
-interface SyncedMutationSummary {
-  echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
-  reconciled: boolean;
-}
-
-interface MutationEchoInput {
-  runtime: RuntimeDocumentState;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
-}
-
-interface JournaledUpdate {
-  update: Uint8Array;
-  meta: UpdateMeta;
-  mutation?: {
-    threadId: string;
-    turnId: string;
-  };
-}
-
-interface LiveUpdateCommitInput {
-  docId: string;
-  commandName: WriteCommand["command"];
-  updates: readonly JournaledUpdate[];
-  afterOwnVector: Uint8Array;
-  liveOrigin: ConcurrentUpdateOrigin;
-}
-
-interface LocalMutationSyncInput {
-  docId: string;
-  commandName: WriteCommand["command"];
-  runtime: RuntimeDocumentState;
-  update: Uint8Array;
-  meta?: UpdateMeta;
-  mutation?: JournaledUpdate["mutation"];
-  afterOwnVector: Uint8Array;
-  liveOrigin: ConcurrentUpdateOrigin;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
-  ownTurnId?: string;
-}
-
 interface StagedResponseUpdate extends JournaledUpdate {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
@@ -198,11 +150,6 @@ type ReversalResult =
     }
   | { ok: false; response: InternalWriteResult };
 
-interface InternalWriteResult {
-  status: WriteStatus;
-  text: string;
-}
-
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 const EMPTY_UPDATE_LENGTH = 2;
 
@@ -215,6 +162,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
+  const mutationCommit = createMutationCommit({
+    journal: options.journal,
+    registry,
+    coordinator: options.coordinator,
+    model: options.model,
+    codec: options.codec,
+  });
 
   const write: WriteFunction = async (command, context = {}) => {
     const session = await resolveSession(context);
@@ -301,7 +255,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     try {
       if (!buffer.journalCommitted) {
         const results = await options.journal.appendBatch(journalBatch);
-        attachCommittedWIds(journalBatch, results);
+        mutationCommit.attachCommittedWIds(journalBatch, results);
         buffer.journalCommitted = true;
       }
 
@@ -310,7 +264,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           await options.lifecycle?.ensureDocument(docBuffer.docId);
         }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
-        const committed = await mergeCommittedUpdatesToLive({
+        const committed = await mutationCommit.mergeCommittedUpdatesToLive({
           docId: docBuffer.docId,
           commandName: docBuffer.commandName,
           updates: docBuffer.updates,
@@ -320,7 +274,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         if (!committed.ok) throw new Error(committed.response.text);
 
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const concurrent = applyConcurrent(
+        const concurrent = mutationCommit.applyConcurrent(
           docBuffer.runtime,
           committed.concurrentUpdate,
           afterOwnVector,
@@ -537,7 +491,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const stagedCreate = context.responseId !== undefined;
     if (!stagedCreate) await options.lifecycle.ensureDocument(address.filePath);
-    const liveCheck = await withLive(address.filePath, command.command, (liveDoc) =>
+    const liveCheck = await mutationCommit.withLive(address.filePath, command.command, (liveDoc) =>
       options.model.getBlocks(liveDoc).length > 0
         ? status("invalid_write", `File already exists: ${address.filePath}`)
         : null,
@@ -587,7 +541,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
-    const committed = await commitUpdatesToJournalAndLive({
+    const committed = await mutationCommit.commitUpdatesToJournalAndLive({
       docId: address.filePath,
       commandName: command.command,
       updates: [{ update, meta, mutation: { threadId: session.threadId, turnId } }],
@@ -660,7 +614,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
       });
-      const summary = summarizeMutationEcho({
+      const summary = mutationCommit.summarizeMutationEcho({
         runtime,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
@@ -676,7 +630,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
-    const syncedMutation = await syncAfterLocalMutation({
+    const syncedMutation = await mutationCommit.syncAfterLocalMutation({
       docId: address.filePath,
       commandName: command.command,
       runtime,
@@ -901,7 +855,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         : {}),
     };
     await options.journal.persistReversal(docId, update, record);
-    const sync = await syncAfterLocalMutation({
+    const sync = await mutationCommit.syncAfterLocalMutation({
       docId,
       commandName,
       runtime,
@@ -1003,7 +957,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       snapshotBlocks(runtime.doc, options.model, options.codec),
     );
 
-    const sync = await syncAfterLocalMutation({
+    const sync = await mutationCommit.syncAfterLocalMutation({
       docId,
       commandName,
       runtime,
@@ -1042,7 +996,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         throw cause;
       }
     }
-    const response = await withLive(docId, commandName, (liveDoc) => {
+    const response = await mutationCommit.withLive(docId, commandName, (liveDoc) => {
       const restored = new Y.Doc({ gc: false });
       Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
       runtime.doc = restored;
@@ -1186,7 +1140,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         throw cause;
       }
     }
-    const response = await withLive(docId, commandName, async (liveDoc) => {
+    const response = await mutationCommit.withLive(docId, commandName, async (liveDoc) => {
       const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
       if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
       return null;
@@ -1228,197 +1182,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       };
     }
     return { ok: true, stateVector: state.stateVector };
-  }
-
-  async function syncAfterLocalMutation(
-    input: LocalMutationSyncInput,
-  ): Promise<
-    { ok: true; summary: SyncedMutationSummary } | { ok: false; response: InternalWriteResult }
-  > {
-    const committed = input.meta
-      ? await commitUpdatesToJournalAndLive({
-          docId: input.docId,
-          commandName: input.commandName,
-          updates: [
-            {
-              update: input.update,
-              meta: input.meta,
-              ...(input.mutation ? { mutation: input.mutation } : {}),
-            },
-          ],
-          afterOwnVector: input.afterOwnVector,
-          liveOrigin: input.liveOrigin,
-        })
-      : await mergeCommittedUpdateToLive({
-          docId: input.docId,
-          commandName: input.commandName,
-          update: input.update,
-          afterOwnVector: input.afterOwnVector,
-          liveOrigin: input.liveOrigin,
-        });
-    if (!committed.ok) return { ok: false, response: committed.response };
-    const concurrent = applyConcurrent(
-      input.runtime,
-      committed.concurrentUpdate,
-      input.afterOwnVector,
-      input.ownTurnId,
-    );
-    return { ok: true, summary: summarizeMutationEcho(input, concurrent) };
-  }
-
-  function summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
-  ): SyncedMutationSummary {
-    const after = snapshotBlocks(input.runtime.doc, options.model, options.codec);
-    const baseEchoInput = {
-      before: input.before,
-      after,
-      agentTouchedHashes: input.touchedHashes,
-      agentDeletedHashes: input.deletedHashes,
-      structuralChange: input.structuralChange,
-      concurrentTouchedHashes: concurrent.touchedHashes,
-    };
-    const echo = computeEcho(baseEchoInput);
-    const regroundingEcho =
-      echo.length > 0 || (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
-        ? echo
-        : computeEcho({ ...baseEchoInput, structuralChange: true });
-    return {
-      echo: regroundingEcho,
-      concurrentEdits: concurrent.info,
-      reconciled: echo.some((hunk) => hunk.mode === "full"),
-    };
-  }
-
-  async function commitUpdatesToJournalAndLive(
-    input: LiveUpdateCommitInput,
-  ): Promise<
-    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
-  > {
-    const entries = input.updates.map((entry) => ({
-      docId: input.docId,
-      update: entry.update,
-      meta: entry.meta,
-      ...(entry.mutation ? { mutation: entry.mutation } : {}),
-    }));
-    const results = await options.journal.appendBatch(entries);
-    attachCommittedWIds(entries, results);
-
-    return mergeCommittedUpdatesToLive(input);
-  }
-
-  function attachCommittedWIds(
-    entries: readonly JournalBatchAppendEntry[],
-    results: readonly JournalBatchAppendResult[],
-  ): void {
-    for (const [index, result] of results.entries()) {
-      if (result.wId === undefined) continue;
-      const entry = entries[index];
-      if (!entry?.mutation) {
-        surfaceWIdAttachFailure(
-          `Journal returned w-id ${result.wId} for batch entry ${index}, but that entry has no mutation metadata.`,
-        );
-        continue;
-      }
-      const attached = registry.attachNextWId(
-        entry.docId,
-        entry.mutation.threadId,
-        entry.mutation.turnId,
-        result.wId,
-      );
-      if (!attached && registry.getState(entry.docId, entry.mutation.threadId)) {
-        // Missing hot managers are valid for cold-path fallback and response
-        // retries after staged runtimes were invalidated; durable mutation rows
-        // are still authoritative. An active manager with no matching item is drift.
-        surfaceWIdAttachFailure(
-          `Failed to attach committed w-id ${result.wId} to undo stack for document ${entry.docId}, thread ${entry.mutation.threadId}, turn ${entry.mutation.turnId}.`,
-        );
-      }
-    }
-  }
-
-  function surfaceWIdAttachFailure(message: string): void {
-    if (process.env.NODE_ENV === "production") {
-      console.error(message);
-      return;
-    }
-    throw new Error(message);
-  }
-
-  async function mergeCommittedUpdatesToLive(
-    input: LiveUpdateCommitInput,
-  ): Promise<
-    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
-  > {
-    return mergeCommittedUpdateToLive({
-      docId: input.docId,
-      commandName: input.commandName,
-      update: mergeUpdates(input.updates.map((entry) => entry.update)),
-      afterOwnVector: input.afterOwnVector,
-      liveOrigin: input.liveOrigin,
-    });
-  }
-
-  async function mergeCommittedUpdateToLive(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    liveOrigin: ConcurrentUpdateOrigin;
-  }): Promise<
-    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
-  > {
-    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
-    if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
-    return { ok: true, concurrentUpdate };
-  }
-
-  async function mergeUpdateAndCaptureConcurrent(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    liveOrigin: ConcurrentUpdateOrigin;
-  }): Promise<Uint8Array | null | InternalWriteResult> {
-    let concurrentUpdate: Uint8Array | null = null;
-    const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
-      concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
-      Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-      return null;
-    });
-    if (isInternalWriteResult(response)) return response;
-    return concurrentUpdate;
-  }
-
-  function applyConcurrent(
-    runtime: RuntimeDocumentState,
-    update: Uint8Array | null,
-    afterOwnVector: Uint8Array,
-    turnId: string | undefined,
-  ): ConcurrentDetectionResult {
-    if (!update || !hasYjsUpdate(update)) return { touchedHashes: new Set() };
-    return applyConcurrentUpdates(
-      runtime.doc,
-      options.model,
-      options.codec,
-      [{ update, origin: { type: "human" } }],
-      turnId ? agentUpdateOrigin(turnId) : undefined,
-      afterOwnVector,
-    );
-  }
-
-  async function withLive<T>(
-    docId: string,
-    commandName: WriteCommand["command"],
-    fn: (doc: Y.Doc) => Promise<T | InternalWriteResult | null> | T | InternalWriteResult | null,
-  ): Promise<T | InternalWriteResult | null> {
-    try {
-      return await options.coordinator.withDocument(docId, async (doc) => fn(doc));
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
-      throw cause;
-    }
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
@@ -1488,19 +1251,6 @@ function errorResponse(
   );
 }
 
-function documentNotFound(
-  commandName: WriteCommand["command"],
-  filePath: string,
-): InternalWriteResult {
-  if (commandName === "view") {
-    return status(
-      "document_not_found",
-      `File not found. Check the path, or use write(command="create", file="${filePath}") to make a new one.`,
-    );
-  }
-  return status("document_not_found", "File not found. View the project to find the right path.");
-}
-
 function status(code: WriteStatus, message?: string): InternalWriteResult {
   return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
 }
@@ -1538,16 +1288,6 @@ function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
   );
 }
 
-function isInternalWriteResult(value: unknown): value is InternalWriteResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "status" in value &&
-    "text" in value &&
-    typeof (value as InternalWriteResult).text === "string"
-  );
-}
-
 function commandCount(
   command: UndoCommand | RedoCommand,
 ): { ok: true; all: boolean; count: number } | { ok: false; message: string } {
@@ -1565,10 +1305,6 @@ function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolea
 
 function hasYjsUpdate(update: Uint8Array): boolean {
   return update.length > EMPTY_UPDATE_LENGTH;
-}
-
-function mergeUpdates(updates: Uint8Array[]): Uint8Array {
-  return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
 }
 
 function responseCommitError(
