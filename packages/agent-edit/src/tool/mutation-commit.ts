@@ -62,6 +62,10 @@ export interface LiveUpdateCommitInput {
   liveOrigin: ConcurrentUpdateOrigin;
 }
 
+export interface LiveProjectionInput extends LiveUpdateCommitInput {
+  turnId?: string;
+}
+
 export interface LocalMutationSyncInput {
   docId: string;
   commandName: WriteCommand["command"];
@@ -86,20 +90,18 @@ type MutationSyncResult =
   | { ok: true; summary: SyncedMutationSummary }
   | { ok: false; response: InternalWriteResult };
 
+type LiveProjectionResult =
+  | { ok: true; concurrent: ConcurrentDetectionResult }
+  | { ok: false; response: InternalWriteResult };
+
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
-  commitUpdatesToJournalAndLive(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
-  attachCommittedWIds(
-    entries: readonly JournalBatchAppendEntry[],
-    results: readonly JournalBatchAppendResult[],
-  ): void;
-  mergeCommittedUpdatesToLive(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
-  applyConcurrent(
+  commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
+  commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<void>;
+  projectToLive(
     runtime: MutationCommitRuntime,
-    update: Uint8Array | null,
-    afterOwnVector: Uint8Array,
-    turnId: string | undefined,
-  ): ConcurrentDetectionResult;
+    input: LiveProjectionInput,
+  ): Promise<LiveProjectionResult>;
   summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
@@ -112,15 +114,22 @@ export function createMutationCommit(deps: {
   coordinator: DocumentCoordinator;
   model: MutationCommitModel;
   codec: Codec;
+  onInvariantViolation?: (message: string) => void;
 }): MutationCommit {
-  const { journal, registry, coordinator, model, codec } = deps;
+  const {
+    journal,
+    registry,
+    coordinator,
+    model,
+    codec,
+    onInvariantViolation = defaultInvariantViolation,
+  } = deps;
 
   return {
     syncAfterLocalMutation,
-    commitUpdatesToJournalAndLive,
-    attachCommittedWIds,
-    mergeCommittedUpdatesToLive,
-    applyConcurrent,
+    commitImmediate,
+    commitJournalBatch,
+    projectToLive,
     summarizeMutationEcho,
   };
 
@@ -128,7 +137,7 @@ export function createMutationCommit(deps: {
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
     const committed = input.meta
-      ? await commitUpdatesToJournalAndLive({
+      ? await commitImmediate({
           docId: input.docId,
           commandName: input.commandName,
           updates: [
@@ -183,19 +192,32 @@ export function createMutationCommit(deps: {
     };
   }
 
-  async function commitUpdatesToJournalAndLive(
-    input: LiveUpdateCommitInput,
-  ): Promise<LiveCommitResult> {
-    const entries = input.updates.map((entry) => ({
-      docId: input.docId,
-      update: entry.update,
-      meta: entry.meta,
-      ...(entry.mutation ? { mutation: entry.mutation } : {}),
-    }));
-    const results = await journal.appendBatch(entries);
-    attachCommittedWIds(entries, results);
+  async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
+    await commitJournalBatch(journalEntries(input));
 
     return mergeCommittedUpdatesToLive(input);
+  }
+
+  async function commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<void> {
+    const results = await journal.appendBatch(entries);
+    attachCommittedWIds(entries, results);
+  }
+
+  async function projectToLive(
+    runtime: MutationCommitRuntime,
+    input: LiveProjectionInput,
+  ): Promise<LiveProjectionResult> {
+    const committed = await mergeCommittedUpdatesToLive(input);
+    if (!committed.ok) return { ok: false, response: committed.response };
+    return {
+      ok: true,
+      concurrent: applyConcurrent(
+        runtime,
+        committed.concurrentUpdate,
+        input.afterOwnVector,
+        input.turnId,
+      ),
+    };
   }
 
   function attachCommittedWIds(
@@ -229,11 +251,7 @@ export function createMutationCommit(deps: {
   }
 
   function surfaceWIdAttachFailure(message: string): void {
-    if (process.env.NODE_ENV === "production") {
-      console.error(message);
-      return;
-    }
-    throw new Error(message);
+    onInvariantViolation(message);
   }
 
   async function mergeCommittedUpdatesToLive(
@@ -308,6 +326,19 @@ function mergeUpdates(updates: Uint8Array[]): Uint8Array {
   return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
 }
 
+function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[] {
+  return input.updates.map((entry) => ({
+    docId: input.docId,
+    update: entry.update,
+    meta: entry.meta,
+    ...(entry.mutation ? { mutation: entry.mutation } : {}),
+  }));
+}
+
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
+}
+
+function defaultInvariantViolation(message: string): never {
+  throw new Error(message);
 }
