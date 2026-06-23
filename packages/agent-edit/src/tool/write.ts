@@ -1,7 +1,7 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
 
-import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type {
   ApplyEchoHunk,
@@ -15,23 +15,18 @@ import type { ActorSession, ActorSessionStore } from "../ports/actor-session-sto
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { MutationStore } from "../ports/mutation-store.js";
-import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
+import type { UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
-import {
-  latestRedoableTarget,
-  latestUndoableTurn,
-  resolveUndoAvailability,
-  type UndoAvailability,
-} from "../undo/availability.js";
+import type { UndoAvailability } from "../undo/availability.js";
 import { createUndoManagerRegistry, type UndoManagerRegistry } from "../undo/manager-registry.js";
-import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import { createMutationCommit, type SyncedMutationSummary } from "./mutation-commit.js";
+import { createMutationCommit } from "./mutation-commit.js";
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore, type RuntimeDocumentState } from "./runtime-store.js";
+import { createTurnReversal } from "./turn-reversal.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
@@ -39,7 +34,6 @@ import type {
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
-  UndoRedoOutcome,
   ViewCommand,
   WriteCommand,
   WriteCommandName,
@@ -95,14 +89,6 @@ interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
 }
 
-type ReversalResult =
-  | {
-      ok: true;
-      status: UndoRedoOutcome;
-      sync?: SyncedMutationSummary;
-    }
-  | { ok: false; response: InternalWriteResult };
-
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
@@ -125,14 +111,24 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
   });
-  const { markSynced, requireSynced, restoreRuntimeFromLive, runtimeFor, syncLocalFromLive } =
-    runtimeStore;
+  const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
   const responseStaging = createResponseStaging({
     journal: options.journal,
     registry,
     runtimeStore,
     mutationCommit,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
+  });
+  const turnReversal = createTurnReversal({
+    journal: options.journal,
+    mutationStore: options.mutationStore,
+    registry,
+    runtimeStore,
+    mutationCommit,
+    model: options.model,
+    codec: options.codec,
+    retention: options.retention,
+    undoClientId: options.undoClientId,
   });
 
   const write: WriteFunction = async (command, context = {}) => {
@@ -158,9 +154,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
-    getAvailability,
-    undoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "undo"),
-    redoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "redo"),
+    getAvailability: turnReversal.getAvailability,
+    undoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
+    redoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread,
   };
 
@@ -434,314 +430,41 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       // writes first so reversal order matches the model's tool-call order.
       await responseStaging.commitResponse(context.responseId);
     }
-    const runtime = runtimeFor(session, address.filePath);
-    const synced = requireSynced(session, address.filePath);
-    if (!synced.ok) return synced.response;
     const count = commandCount(command);
     if (!count.ok) return status("invalid_write", count.message);
 
-    return runUndoOrRedo({
+    return turnReversal.run({
       docId: address.filePath,
       session,
-      runtime,
       commandName: command.command,
       direction,
       count,
     });
   }
 
-  function runTurnReversal(
+  function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "undo",
   ): Promise<TurnUndoResult>;
-  function runTurnReversal(
+  function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "redo",
   ): Promise<TurnRedoResult>;
-  async function runTurnReversal(
+  async function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "undo" | "redo",
   ): Promise<TurnUndoResult | TurnRedoResult> {
-    invalidateThread(docId, threadId);
+    responseStaging.dropForThread(docId, threadId);
     const session = localSession(`turn-reversal:${threadId}`, threadId);
-    const runtime = runtimeFor(session, docId);
-    const synced = await syncLocalFromLive(session, docId, runtime, direction);
-    const result = !synced.ok
-      ? synced.response
-      : await runUndoOrRedo({
-          docId,
-          session,
-          runtime,
-          commandName: direction,
-          direction,
-          count: { all: false, count: 1 },
-        });
-    if (result.status !== "document_not_found") invalidateThread(docId, threadId);
-    return toOutcome(direction, result) as TurnUndoResult | TurnRedoResult;
-  }
-
-  async function getAvailability(docId: string, threadId: string): Promise<UndoAvailability> {
-    const availability = await resolveUndoAvailability({
-      journal: options.journal,
-      mutationStore: options.mutationStore,
-      docId,
-      threadId,
-    });
-    return {
-      undo: availability.undo,
-      redo: availability.redo,
-      ...(availability.undoTurnId ? { undoTurnId: availability.undoTurnId } : {}),
-      ...(availability.redoTurnId ? { redoTurnId: availability.redoTurnId } : {}),
-    };
-  }
-
-  async function runUndoOrRedo(input: {
-    docId: string;
-    session: ActorSession;
-    runtime: RuntimeDocumentState;
-    commandName: WriteCommand["command"];
-    direction: "undo" | "redo";
-    count: { all: boolean; count: number };
-  }): Promise<InternalWriteResult> {
-    let applied = 0;
-    let lastOutcome: UndoRedoOutcome | null = null;
-    const echo: ApplyEchoHunk[] = [];
-    const concurrentEdits: ConcurrentEditInfo[] = [];
-    let sawReconcile = false;
-    const limit = input.count.all ? Number.POSITIVE_INFINITY : input.count.count;
-
-    while (applied < limit) {
-      const result =
-        input.direction === "undo"
-          ? await undoOne(input.docId, input.session, input.runtime, input.commandName)
-          : await redoOne(input.docId, input.session, input.runtime, input.commandName);
-      if (!result.ok) return result.response;
-      if (result.status === "nothing_to_undo" || result.status === "nothing_to_redo") {
-        if (applied === 0) return status(result.status);
-        lastOutcome = input.count.all ? (sawReconcile ? "reconciled" : "reversed") : "partial";
-        break;
-      }
-      if (result.status === "expired") {
-        if (applied === 0) return status("expired");
-        lastOutcome = "partial";
-        break;
-      }
-      if (result.status !== "reversed" && result.status !== "reconciled") {
-        lastOutcome = result.status;
-        break;
-      }
-      if (result.status === "reconciled") sawReconcile = true;
-      if (result.sync) {
-        echo.push(...result.sync.echo);
-        if (result.sync.concurrentEdits) concurrentEdits.push(result.sync.concurrentEdits);
-      }
-      applied += 1;
-      markSynced(input.session, input.docId, input.runtime);
-    }
-
-    const outcome = lastOutcome ?? (sawReconcile ? "reconciled" : "reversed");
-    const lines = [`status: ${outcome}`];
-    if (applied > 0) lines.push("", `${input.direction}: ${applied} edit(s)`);
-    const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-    if (echoLines.length > 0) lines.push("", ...echoLines);
-    for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));
-    return result(outcome, lines.join("\n"));
-  }
-
-  async function undoOne(
-    docId: string,
-    session: ActorSession,
-    runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-  ): Promise<ReversalResult> {
-    const availableTurnId = await latestUndoableTurn({
-      journal: options.journal,
-      mutationStore: options.mutationStore,
-      docId,
-      threadId: session.threadId,
-    });
-    if (!availableTurnId) return { ok: true, status: "nothing_to_undo" };
-
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    const hot = registry.undoLatest(docId, session.threadId, {
-      scope: "turn",
-      turnId: availableTurnId,
-      mutationClientId: options.undoClientId,
-    });
-    let turnId: string | undefined;
-    let update: Uint8Array | undefined;
-
-    if (hot.ok) {
-      turnId = hot.turnId;
-      update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
-      registry.evictThread(docId, session.threadId);
-      update = undefined;
-      turnId = undefined;
-    }
-
-    if (!turnId || !update) {
-      try {
-        const cold = await reconstructUndoUpdate(options.journal, docId, availableTurnId, {
-          undoClientId: options.undoClientId,
-        });
-        turnId = availableTurnId;
-        update = cold.undoUpdate;
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      } catch (_cause) {
-        return { ok: true, status: "nothing_to_undo" };
-      }
-    }
-
-    if (turnId !== availableTurnId) {
-      registry.evictThread(docId, session.threadId);
-      return { ok: true, status: "partial" };
-    }
-    const afterOwnVector = Y.encodeStateVector(runtime.doc);
-    const ownDiff = diffSnapshots(
-      before,
-      snapshotBlocks(runtime.doc, options.model, options.codec),
-    );
-
-    const record: ReversalRecord = {
-      documentId: docId,
-      turnId,
-      threadId: session.threadId,
-      status: "reversed",
-      undoUpdateSeq: 0,
-      reversedAt: new Date(),
-      ...(options.retention?.reversalWindowMs
-        ? { expiresAt: new Date(Date.now() + options.retention.reversalWindowMs) }
-        : {}),
-    };
-    await options.journal.persistReversal(docId, update, record);
-    const sync = await mutationCommit.syncAfterLocalMutation({
-      docId,
-      commandName,
-      runtime,
-      update,
-      afterOwnVector,
-      liveOrigin: { type: "system" },
-      before,
-      touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
-      deletedHashes: ownDiff.deleted,
-      structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
-    });
-    if (!sync.ok) return { ok: false, response: sync.response };
-    popIfTop(runtime.undoStack, turnId);
-    runtime.redoStack.push({ turnId, undoUpdateSeq: record.undoUpdateSeq || undefined });
-    return {
-      ok: true,
-      status: sync.summary.reconciled ? "reconciled" : "reversed",
-      sync: sync.summary,
-    };
-  }
-
-  async function redoOne(
-    docId: string,
-    session: ActorSession,
-    runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-  ): Promise<ReversalResult> {
-    const redoTarget = await latestRedoableTarget({
-      journal: options.journal,
-      mutationStore: options.mutationStore,
-      docId,
-      threadId: session.threadId,
-    });
-    if (!redoTarget) return { ok: true, status: "nothing_to_redo" };
-
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
-    let update: Uint8Array | undefined;
-    let locallyApplied = false;
-    const hotRedoTurn = registry.getState(docId, session.threadId)?.redoStack.at(-1)?.turnId;
-    if (hotRedoTurn === redoTarget.turnId) {
-      const beforeVector = Y.encodeStateVector(runtime.doc);
-      const hot = registry.redoLatest(docId, session.threadId, {
-        mutationClientId: options.undoClientId,
-      });
-      if (hot.ok) {
-        update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-        locallyApplied = true;
-      }
-    }
-
-    if (!update) {
-      const cold = await reconstructRedoUpdate(
-        options.journal,
-        docId,
-        redoTarget.turnId,
-        redoTarget.undoUpdateSeq,
-        { undoClientId: options.undoClientId },
-      ).catch(() => null);
-      if (!cold?.ok) {
-        popIfTop(runtime.redoStack, redoTarget.turnId);
-        registry.evictThread(docId, session.threadId);
-        return { ok: true, status: "nothing_to_redo" };
-      }
-      update = cold.redoUpdate;
-    }
-
-    let consumed: { consumed: boolean; seq?: number };
-    try {
-      consumed = await options.journal.persistRedo(
-        docId,
-        update,
-        {
-          threadId: session.threadId,
-          turnId: redoTarget.turnId,
-          undoUpdateSeq: redoTarget.undoUpdateSeq,
-        },
-        { origin: "system", seq: 0 },
-      );
-    } catch (cause) {
-      if (locallyApplied) await restoreRuntimeFromLive(session, docId, runtime, commandName);
-      registry.evictThread(docId, session.threadId);
-      throw cause;
-    }
-    if (!consumed.consumed) {
-      popIfTop(runtime.redoStack, redoTarget.turnId);
-      registry.evictThread(docId, session.threadId);
-      if (locallyApplied) {
-        const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
-        if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-      }
-      return { ok: true, status: "nothing_to_redo" };
-    }
-
-    const turnId = redoTarget.turnId;
-    if (!locallyApplied) Y.applyUpdate(runtime.doc, update, { type: "system" });
-    const afterOwnVector = Y.encodeStateVector(runtime.doc);
-    const ownDiff = diffSnapshots(
-      before,
-      snapshotBlocks(runtime.doc, options.model, options.codec),
-    );
-
-    const sync = await mutationCommit.syncAfterLocalMutation({
-      docId,
-      commandName,
-      runtime,
-      update,
-      afterOwnVector,
-      liveOrigin: { type: "system" },
-      before,
-      touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
-      deletedHashes: ownDiff.deleted,
-      structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
-    });
-    if (!sync.ok) return { ok: false, response: sync.response };
-    popIfTop(runtime.redoStack, turnId);
-    if (!locallyApplied) registry.evictThread(docId, session.threadId);
-    runtime.undoStack.push(turnId);
-    return {
-      ok: true,
-      status: sync.summary.reconciled ? "reconciled" : "reversed",
-      sync: sync.summary,
-    };
+    const outcome =
+      direction === "undo"
+        ? await turnReversal.runTurnReversal({ docId, session, direction: "undo" })
+        : await turnReversal.runTurnReversal({ docId, session, direction: "redo" });
+    if (outcome.status !== "document_not_found") responseStaging.dropForThread(docId, threadId);
+    return outcome;
   }
 
   function invalidateThread(docId: string, threadId: string): void {
@@ -868,22 +591,4 @@ function agentMeta(turnId: string): UpdateMeta {
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
-}
-
-function popIfTop(stack: string[], value: string): void;
-function popIfTop(stack: Array<{ turnId: string; undoUpdateSeq?: number }>, value: string): void;
-function popIfTop(
-  stack: string[] | Array<{ turnId: string; undoUpdateSeq?: number }>,
-  value: string,
-): void {
-  const last = stack.at(-1);
-  if (typeof last === "string") {
-    while (stack.at(-1) === value) stack.pop();
-    return;
-  }
-  let item = stack.at(-1);
-  while (item && typeof item !== "string" && item.turnId === value) {
-    stack.pop();
-    item = stack.at(-1);
-  }
 }
