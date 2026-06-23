@@ -2,7 +2,7 @@
 
 Shared agent-editing core behind the `write(command=...)` tool surface. Built on
 port interfaces (`UpdateJournal`, `DocumentCoordinator`, `Codec`,
-`DocumentModel`, `ActorSessionStore`) so the same core works for Meridian web,
+`AgentEditModel`, `ActorSessionStore`) so the same core works for Meridian web,
 desktop, MCP, and future products.
 
 ## What it is
@@ -41,10 +41,10 @@ The **content editing model is ProseMirror today** — the `write` command gramm
 edits a block-structured markdown document represented as y-prosemirror. Making
 the content model swappable so the library can edit non-ProseMirror Yjs documents
 is an **intended future direction, deferred** (GH issue #70, "generic Yjs edit
-core"). The seams for it exist (`Codec`, `DocumentModel<Block>`) but are not yet
-fully realized — the apply core still calls ProseMirror-specific operations, so
-y-prosemirror is the only working implementation. Do not over-claim it as done;
-do not delete the seams.
+core"). The seams for it exist (`Codec`, structural `AgentEditModel`) but are
+not yet fully realized — the apply core still calls ProseMirror-specific
+operations, so y-prosemirror is the only working implementation. Do not
+over-claim it as done; do not delete the seams.
 
 ## v1 scope
 

@@ -1,13 +1,9 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import * as Y from "yjs";
 
-import type { Block, Codec } from "../codec/types.js";
-import type { DocumentModel } from "../model/types.js";
+import type { Codec } from "../codec/types.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
-
-export type BlockSnapshotModel = DocumentModel<Y.XmlElement> & {
-  toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): Block;
-};
 
 export interface BlockSnapshot {
   hash: string;
@@ -43,11 +39,7 @@ const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
 const TRUNCATED_PREVIEW_LENGTH = 48;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
-export function snapshotBlocks(
-  doc: Y.Doc,
-  model: BlockSnapshotModel,
-  codec: Codec,
-): BlockSnapshot[] {
+export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
   return model.getBlocks(doc).map((block) => {
     const hash = model.getBlockId(block);
     return { hash, serialized: codec.serializeBlock(model.toProsemirrorBlock(doc, block), hash) };
@@ -86,7 +78,7 @@ export function diffSnapshots(
  */
 export function applyConcurrentUpdates(
   doc: Y.Doc,
-  model: BlockSnapshotModel,
+  model: AgentEditModel,
   codec: Codec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
@@ -244,11 +236,7 @@ function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array):
   return false;
 }
 
-function orderedHashes(
-  model: BlockSnapshotModel,
-  doc: Y.Doc,
-  hashes: ReadonlySet<string>,
-): string[] {
+function orderedHashes(model: AgentEditModel, doc: Y.Doc, hashes: ReadonlySet<string>): string[] {
   const liveOrder = model.getBlocks(doc).map((block) => model.getBlockId(block));
   const live = liveOrder.filter((hash) => hashes.has(hash));
   const deleted = [...hashes].filter((hash) => !liveOrder.includes(hash)).sort();

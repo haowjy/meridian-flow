@@ -10,10 +10,10 @@ import type {
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
-import type { YProsemirrorDocumentModel } from "../model/y-prosemirror.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
@@ -48,7 +48,7 @@ export interface CreateWriteToolOptions {
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   codec: Codec;
-  model: YProsemirrorDocumentModel;
+  model: AgentEditModel;
   undoRegistry?: UndoManagerRegistry;
   actorSessionStore?: ActorSessionStore;
   retention?: {

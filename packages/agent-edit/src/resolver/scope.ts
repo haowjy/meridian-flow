@@ -1,6 +1,6 @@
 import type * as Y from "yjs";
 
-import type { DocumentModel } from "../model/types.js";
+import type { DocumentModel } from "../ports/model.js";
 import { lookupBlockHash } from "./block-hash.js";
 
 export const AROUND_BLOCK_RADIUS = 3;

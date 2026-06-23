@@ -53,12 +53,14 @@ ProseMirror `Schema`; the package has no default Meridian schema.
 the schema explicitly. This keeps the package provably host-agnostic without
 server/infra dependency leaks. See `src/codec/create-codec.ts:29`.
 
-### DocumentModel (`src/model/types.ts` — interface, `src/model/y-prosemirror.js` — v1 impl)
-What "block" means in Yjs. Carries the 3-tier apply implementation: `getBlocks`,
-`getBlockId` (hash from CRDT item ID), `getText`, `applyTextEdit` (Tier 1/2),
-`insertBlocks` (Tier 3), `deleteBlock` (Tier 3). v1 is y-prosemirror only.
-`yProsemirrorModel(schema)` is explicit; the server composition root supplies
-Meridian's fiction schema.
+### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
+Structural model port for what "block" means in Yjs. Carries the 3-tier apply
+implementation: `getBlocks`, `getBlockId` (hash from CRDT item ID), `getText`,
+`applyTextEdit` (Tier 1/2), `insertBlocks` (Tier 3), `deleteBlock` (Tier 3), plus
+the current ProseMirror projection hooks `toProsemirrorBlock` and `applyBlockDiff`.
+v1 is y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
+composition root supplies Meridian's fiction schema. Hosts depend on the
+structural `AgentEditModel` port, not the concrete y-prosemirror model type.
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent

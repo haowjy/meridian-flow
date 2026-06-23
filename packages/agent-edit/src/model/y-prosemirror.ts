@@ -3,9 +3,9 @@ import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirro
 import * as Y from "yjs";
 
 import type { ParsedContent, Span } from "../codec/types.js";
+import type { AgentEditModel } from "../ports/model.js";
 import { getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
-import type { DocumentModel } from "./types.js";
 
 interface TextSegment {
   text: Y.XmlText;
@@ -15,10 +15,8 @@ interface TextSegment {
 
 type BindingMetadata = Parameters<typeof updateYFragment>[3];
 
-export type YProsemirrorDocumentModel = DocumentModel<Y.XmlElement> & {
+export type YProsemirrorDocumentModel = AgentEditModel & {
   schema: Schema;
-  applyBlockDiff(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void;
-  toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): PMNode;
 };
 
 export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {

@@ -48,7 +48,6 @@ export type {
   Span,
 } from "./codec/types.js";
 export { CodecParseError } from "./codec/types.js";
-export type { DocumentModel } from "./model/types.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
@@ -62,6 +61,7 @@ export {
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
+export type { AgentEditModel, DocumentModel } from "./ports/model.js";
 export type {
   CompactionResult,
   JournalSnapshot,
