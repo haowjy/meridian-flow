@@ -14,6 +14,7 @@ export interface GatewayEnvInput {
   OPENAI_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  OPENROUTER_BASE_URL?: string;
 }
 
 const MOCK_MODEL: ModelInfo = {
@@ -41,12 +42,21 @@ export function buildProviderConfigs(
     return { providers: [], defaultModel: undefined };
   }
 
-  return buildFromRegistry(MODEL_REGISTRY, {
+  const gatewayConfig = buildFromRegistry(MODEL_REGISTRY, {
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   });
+
+  if (!env.OPENROUTER_BASE_URL) return gatewayConfig;
+
+  return {
+    ...gatewayConfig,
+    providers: gatewayConfig.providers.map((provider) =>
+      provider.id === "openrouter" ? { ...provider, baseUrl: env.OPENROUTER_BASE_URL } : provider,
+    ),
+  };
 }
 
 /**

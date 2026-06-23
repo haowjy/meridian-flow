@@ -5,6 +5,7 @@
 
 import OpenAI from "openai";
 import { modelAttemptTimeoutEvent } from "../../deadline.js";
+import { createReconcileSignal } from "../../domain/cancel-settlement.js";
 import type {
   GenerateRequest,
   ModelInfo,
@@ -15,29 +16,13 @@ import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapOpenAIError } from "../openai-compatible/errors.js";
 import { toOpenAIChatCompletionParams } from "../openai-compatible/request-map.js";
 import { accumulatorHasPartialResult } from "../openai-compatible/stream-collect.js";
+import { DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterApiKey } from "./config.js";
 import { enrichOpenRouterResult } from "./enrich-result.js";
 import {
   buildOpenRouterGenerateResult,
   createOpenRouterStreamAccumulator,
   eventsFromOpenRouterChunk,
 } from "./stream-collect.js";
-
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
-
-function createReconcileSignal(timeoutMs = 5_000): AbortSignal {
-  if (typeof AbortSignal.timeout === "function") {
-    return AbortSignal.timeout(timeoutMs);
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  timer.unref?.();
-  return controller.signal;
-}
-
-function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
-  if (!auth?.apiKey) return undefined;
-  return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
-}
 
 function enrichSignal(request: GenerateRequest): AbortSignal | undefined {
   return request.signal?.aborted ? createReconcileSignal() : request.signal;
@@ -64,8 +49,8 @@ function openRouterHeaders(config: ProviderConfig): Record<string, string> {
 }
 
 export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter {
-  const apiKey = resolveApiKey(config.auth);
-  const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+  const apiKey = resolveOpenRouterApiKey(config.auth);
+  const baseUrl = config.baseUrl ?? DEFAULT_OPENROUTER_BASE_URL;
   const client = new OpenAI({
     apiKey: apiKey ?? "not-needed",
     baseURL: baseUrl,
