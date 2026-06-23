@@ -16,7 +16,7 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { MutationStore } from "../ports/mutation-store.js";
 import type { ReversalRecord, UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import {
   latestRedoableTarget,
@@ -29,17 +29,13 @@ import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruc
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import {
-  createMutationCommit,
-  type JournaledUpdate,
-  type SyncedMutationSummary,
-} from "./mutation-commit.js";
+import { createMutationCommit, type SyncedMutationSummary } from "./mutation-commit.js";
+import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore, type RuntimeDocumentState } from "./runtime-store.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
   ResponseRollbackResult,
-  ResponseStagedCreateOutcome,
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
@@ -99,33 +95,6 @@ interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
 }
 
-interface StagedResponseUpdate extends JournaledUpdate {
-  liveOrigin: ConcurrentUpdateOrigin;
-  turnId: string;
-  // Per-doc buffers lose insertion order across documents; commit derives the
-  // journal batch by this response-local staging sequence.
-  stageSeq: number;
-}
-
-interface ResponseDocumentBuffer {
-  docId: string;
-  session: ActorSession;
-  runtime: RuntimeDocumentState;
-  commandName: WriteCommand["command"];
-  updates: StagedResponseUpdate[];
-  ensureDocumentBeforeCommit: boolean;
-  discardedBeforeCommit: boolean;
-  baselineUndoStack: string[];
-  baselineRedoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
-  baselineRedoStackRehydrated: boolean;
-}
-
-interface ResponseBuffer {
-  docs: Map<string, ResponseDocumentBuffer>;
-  nextStageSeq: number;
-  journalCommitted: boolean;
-}
-
 type ReversalResult =
   | {
       ok: true;
@@ -137,7 +106,7 @@ type ReversalResult =
 const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
-  const responseBuffers = new Map<string, ResponseBuffer>();
+  const lifecycle = options.lifecycle;
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
@@ -156,17 +125,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
   });
-  const {
-    attachRuntime,
-    evictResponseRuntimes,
-    evictRuntime,
-    markSynced,
-    recoverCommittedResponseProjection,
-    requireSynced,
-    restoreRuntimeFromLive,
-    runtimeFor,
-    syncLocalFromLive,
-  } = runtimeStore;
+  const { markSynced, requireSynced, restoreRuntimeFromLive, runtimeFor, syncLocalFromLive } =
+    runtimeStore;
+  const responseStaging = createResponseStaging({
+    journal: options.journal,
+    registry,
+    runtimeStore,
+    mutationCommit,
+    ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
+  });
 
   const write: WriteFunction = async (command, context = {}) => {
     const session = await resolveSession(context);
@@ -189,8 +156,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     write,
     registry,
     recover: (docId) => options.coordinator.recover(docId),
-    commitResponse,
-    rollbackResponse,
+    commitResponse: responseStaging.commitResponse,
+    rollbackResponse: responseStaging.rollbackResponse,
     getAvailability,
     undoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "undo"),
     redoTurn: (docId, threadId) => runTurnReversal(docId, threadId, "redo"),
@@ -236,211 +203,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return session;
   }
 
-  async function commitResponse(responseId: string): Promise<ResponseCommitResult> {
-    const buffer = responseBuffers.get(responseId);
-    if (!buffer) return emptyResponseCommit(responseId);
-
-    const docBuffers = [...buffer.docs.values()].filter(
-      (docBuffer) => docBuffer.updates.length > 0,
-    );
-    if (docBuffers.length === 0) {
-      responseBuffers.delete(responseId);
-      return emptyResponseCommit(responseId, responseStagedCreateOutcome(buffer, []));
-    }
-    const journalBatch = responseJournalBatch(docBuffers);
-    const documents: ResponseCommitResult["documents"] = [];
-    let updateCount = 0;
-    try {
-      if (!buffer.journalCommitted) {
-        const results = await options.journal.appendBatch(journalBatch);
-        mutationCommit.attachCommittedWIds(journalBatch, results);
-        buffer.journalCommitted = true;
-      }
-
-      for (const docBuffer of docBuffers) {
-        if (docBuffer.ensureDocumentBeforeCommit) {
-          await options.lifecycle?.ensureDocument(docBuffer.docId);
-        }
-        const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
-        const committed = await mutationCommit.mergeCommittedUpdatesToLive({
-          docId: docBuffer.docId,
-          commandName: docBuffer.commandName,
-          updates: docBuffer.updates,
-          afterOwnVector,
-          liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
-        });
-        if (!committed.ok) throw new Error(committed.response.text);
-
-        const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const concurrent = mutationCommit.applyConcurrent(
-          docBuffer.runtime,
-          committed.concurrentUpdate,
-          afterOwnVector,
-          lastTurnId,
-        );
-        attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-        updateCount += docBuffer.updates.length;
-        documents.push({
-          documentId: docBuffer.docId,
-          updateCount: docBuffer.updates.length,
-          ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
-        });
-      }
-      responseBuffers.delete(responseId);
-      return {
-        responseId,
-        documentCount: documents.length,
-        updateCount,
-        documents,
-        stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
-      };
-    } catch (cause) {
-      if (!buffer.journalCommitted) {
-        evictResponseRuntimes(docBuffers);
-        throw responseCommitError(responseId, false, cause, null);
-      }
-
-      const recoveryFailure = await recoverCommittedResponseProjection(docBuffers).catch(
-        (error: unknown) => error,
-      );
-      if (!recoveryFailure) {
-        responseBuffers.delete(responseId);
-        return responseCommitResult(responseId, buffer, docBuffers, documents);
-      }
-
-      evictResponseRuntimes(docBuffers, { needsRecovery: true });
-      throw responseCommitError(responseId, true, cause, recoveryFailure);
-    }
-  }
-
-  async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
-    const buffer = responseBuffers.get(responseId);
-    if (!buffer) return emptyResponseRollback(responseId);
-
-    const docBuffers = [...buffer.docs.values()];
-    const pendingDocBuffers = docBuffers.filter((docBuffer) => docBuffer.updates.length > 0);
-    try {
-      if (buffer.journalCommitted) {
-        await recoverCommittedResponseProjection(pendingDocBuffers);
-        responseBuffers.delete(responseId);
-        return {
-          responseId,
-          stagedCreates: responseStagedCreateOutcome(buffer, pendingDocBuffers),
-        };
-      }
-
-      for (const docBuffer of docBuffers) {
-        if (docBuffer.ensureDocumentBeforeCommit) {
-          evictRuntime(docBuffer.session, docBuffer.docId);
-          continue;
-        }
-        docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
-        docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
-        docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
-        registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
-        const restored = await restoreRuntimeFromLive(
-          docBuffer.session,
-          docBuffer.docId,
-          docBuffer.runtime,
-          docBuffer.commandName,
-          { recoverFromJournal: buffer.journalCommitted },
-        );
-        if (isInternalWriteResult(restored)) throw new Error(restored.text);
-        attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-      }
-      responseBuffers.delete(responseId);
-      return {
-        responseId,
-        stagedCreates: responseStagedCreateOutcome(buffer, [], {
-          discardPendingStagedCreates: true,
-        }),
-      };
-    } catch (cause) {
-      evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
-      responseBuffers.delete(responseId);
-      throw cause;
-    }
-  }
-
-  function hasBufferedResponseWrites(responseId: string): boolean {
-    const buffer = responseBuffers.get(responseId);
-    if (!buffer) return false;
-    return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
-  }
-
-  function hasBufferedResponseWritesForDoc(responseId: string, docId: string): boolean {
-    return (responseBuffers.get(responseId)?.docs.get(docId)?.updates.length ?? 0) > 0;
-  }
-
-  function stageResponseUpdate(input: {
-    responseId: string;
-    docId: string;
-    session: ActorSession;
-    runtime: RuntimeDocumentState;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    meta: UpdateMeta;
-    liveOrigin: ConcurrentUpdateOrigin;
-    turnId: string;
-    ensureDocumentBeforeCommit?: boolean;
-  }): void {
-    let buffer = responseBuffers.get(input.responseId);
-    if (!buffer) {
-      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitted: false };
-      responseBuffers.set(input.responseId, buffer);
-    }
-
-    let docBuffer = buffer.docs.get(input.docId);
-    if (!docBuffer) {
-      docBuffer = {
-        docId: input.docId,
-        session: input.session,
-        runtime: input.runtime,
-        commandName: input.commandName,
-        updates: [],
-        ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
-        discardedBeforeCommit: false,
-        baselineUndoStack: [...input.runtime.undoStack],
-        baselineRedoStack: input.runtime.redoStack.map((entry) => ({ ...entry })),
-        baselineRedoStackRehydrated: input.runtime.redoStackRehydrated,
-      };
-      buffer.docs.set(input.docId, docBuffer);
-    }
-
-    docBuffer.commandName = input.commandName;
-    docBuffer.ensureDocumentBeforeCommit =
-      docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
-    docBuffer.discardedBeforeCommit = false;
-    docBuffer.updates.push({
-      update: input.update,
-      meta: input.meta,
-      mutation: { threadId: input.session.threadId, turnId: input.turnId },
-      liveOrigin: input.liveOrigin,
-      turnId: input.turnId,
-      stageSeq: buffer.nextStageSeq,
-    });
-    buffer.nextStageSeq += 1;
-  }
-
-  function responseJournalBatch(
-    docBuffers: readonly ResponseDocumentBuffer[],
-  ): JournalBatchAppendEntry[] {
-    return docBuffers
-      .flatMap((docBuffer) =>
-        docBuffer.updates.map((entry) => ({
-          stageSeq: entry.stageSeq,
-          journalEntry: {
-            docId: docBuffer.docId,
-            update: entry.update,
-            meta: entry.meta,
-            ...(entry.mutation ? { mutation: entry.mutation } : {}),
-          },
-        })),
-      )
-      .sort((left, right) => left.stageSeq - right.stageSeq)
-      .map((entry) => entry.journalEntry);
-  }
-
   async function view(
     command: ViewCommand,
     session: ActorSession,
@@ -452,7 +214,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     if (
       !context.responseId ||
-      !hasBufferedResponseWritesForDoc(context.responseId, address.filePath)
+      !responseStaging.hasBufferedWritesForDoc(context.responseId, address.filePath)
     ) {
       const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
       if (!synced.ok) return synced.response;
@@ -523,7 +285,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      stageResponseUpdate({
+      responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.filePath,
         session,
@@ -605,7 +367,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      stageResponseUpdate({
+      responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.filePath,
         session,
@@ -667,10 +429,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
-    if (context.responseId && hasBufferedResponseWrites(context.responseId)) {
+    if (context.responseId && responseStaging.hasBufferedWrites(context.responseId)) {
       // Undo/redo read and write committed journal state; flush staged response
       // writes first so reversal order matches the model's tool-call order.
-      await commitResponse(context.responseId);
+      await responseStaging.commitResponse(context.responseId);
     }
     const runtime = runtimeFor(session, address.filePath);
     const synced = requireSynced(session, address.filePath);
@@ -983,37 +745,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   }
 
   function invalidateThread(docId: string, threadId: string): void {
-    dropResponseBuffersForThread(docId, threadId);
+    responseStaging.dropForThread(docId, threadId);
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
     registry.evictThread(docId, threadId);
-  }
-
-  function dropResponseBuffersForThread(docId: string, threadId: string): void {
-    for (const [responseId, buffer] of [...responseBuffers]) {
-      const docBuffer = buffer.docs.get(docId);
-      if (docBuffer) {
-        docBuffer.updates = docBuffer.updates.filter(
-          (entry) => entry.mutation?.threadId !== threadId,
-        );
-        if (docBuffer.session.threadId === threadId) {
-          if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
-            docBuffer.discardedBeforeCommit = true;
-          }
-        }
-        if (docBuffer.updates.length === 0 && !docBuffer.discardedBeforeCommit) {
-          buffer.docs.delete(docId);
-        }
-      }
-      if (!responseBufferHasPendingOutcome(buffer)) {
-        responseBuffers.delete(responseId);
-      }
-    }
-  }
-
-  function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
-    return [...buffer.docs.values()].some(
-      (docBuffer) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit,
-    );
   }
 
   function nextTurnId(
@@ -1126,93 +860,6 @@ function commandCount(
 
 function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolean {
   return result.appliedEdits?.some((edit) => edit.kind !== "text") ?? false;
-}
-
-function responseCommitError(
-  responseId: string,
-  journalCommitted: boolean,
-  cause: unknown,
-  recoveryFailure: unknown,
-): Error {
-  const phase = journalCommitted
-    ? "after the journal batch was committed"
-    : "before the journal batch was committed";
-  const recovery = recoveryFailure
-    ? ` Recovery from the committed journal also failed: ${errorMessage(recoveryFailure)}.`
-    : journalCommitted
-      ? " The affected runtime docs were invalidated and will rebuild from live+journal on next access."
-      : " The affected runtime docs were invalidated; the response buffer is still available for retry or rollback.";
-  return new Error(
-    `Failed to commit response ${responseId} ${phase}: ${errorMessage(cause)}.${recovery}`,
-  );
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-function emptyResponseCommit(
-  responseId: string,
-  stagedCreates: ResponseStagedCreateOutcome = { committed: [], discarded: [] },
-): ResponseCommitResult {
-  return { responseId, documentCount: 0, updateCount: 0, documents: [], stagedCreates };
-}
-
-function emptyResponseRollback(responseId: string): ResponseRollbackResult {
-  return { responseId, stagedCreates: { committed: [], discarded: [] } };
-}
-
-function responseStagedCreateOutcome(
-  buffer: ResponseBuffer,
-  committedDocBuffers: readonly ResponseDocumentBuffer[],
-  options: { discardPendingStagedCreates?: boolean } = {},
-): ResponseStagedCreateOutcome {
-  const committed = stagedCreateDocIds(committedDocBuffers);
-  const discarded = stagedCreateDocIds(
-    [...buffer.docs.values()].filter(
-      (docBuffer) =>
-        docBuffer.discardedBeforeCommit ||
-        (options.discardPendingStagedCreates &&
-          docBuffer.ensureDocumentBeforeCommit &&
-          !buffer.journalCommitted),
-    ),
-  );
-  return { committed, discarded };
-}
-
-function stagedCreateDocIds(docBuffers: readonly ResponseDocumentBuffer[]): string[] {
-  return [
-    ...new Set(
-      docBuffers
-        .filter((docBuffer) => docBuffer.ensureDocumentBeforeCommit)
-        .map((docBuffer) => docBuffer.docId),
-    ),
-  ];
-}
-
-function responseCommitResult(
-  responseId: string,
-  buffer: ResponseBuffer,
-  docBuffers: readonly ResponseDocumentBuffer[],
-  knownDocuments: ResponseCommitResult["documents"] = [],
-): ResponseCommitResult {
-  const documentsById = new Map(
-    knownDocuments.map((document) => [document.documentId, document] as const),
-  );
-  for (const docBuffer of docBuffers) {
-    if (docBuffer.updates.length === 0 || documentsById.has(docBuffer.docId)) continue;
-    documentsById.set(docBuffer.docId, {
-      documentId: docBuffer.docId,
-      updateCount: docBuffer.updates.length,
-    });
-  }
-  return {
-    responseId,
-    documentCount: documentsById.size,
-    updateCount: docBuffers.reduce((total, docBuffer) => total + docBuffer.updates.length, 0),
-    documents: [...documentsById.values()],
-    stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
-  };
 }
 
 function agentMeta(turnId: string): UpdateMeta {
