@@ -36,6 +36,9 @@ owns the PM-mapping dispatch. `serialize`/`parse` are the two directions.
 Pinned unified stringify options for canonical round-trip output. Concrete:
 `presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
 ProseMirror `Schema`; the package has no default Meridian schema.
+`@meridian/prosemirror-schema` is a devDependency only — host composition passes
+the schema explicitly. This keeps the package provably host-agnostic without
+server/infra dependency leaks. See `src/codec/create-codec.ts:29`.
 
 ### DocumentModel (`src/model/types.ts` — interface, `src/model/y-prosemirror.js` — v1 impl)
 What "block" means in Yjs. Carries the 3-tier apply implementation: `getBlocks`,
@@ -118,6 +121,26 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
 - **Turn boundaries split via explicit `stopCapturing()`**, not
   `captureTimeout`. Without explicit splitting, all turns merge into one
   stack item.
+
+## Tool surface
+
+`write()` returns a structured `WriteOutcome { command, status, isError, text }`
+(`src/tool/types.ts:94`). The host routing layer reads the structured envelope;
+the LLM-facing response is the plain `text` field (status line + echo + content).
+`idempotency` is provided by `tool_use_id` — replay returns the cached text.
+
+**Re-sync discipline:** each `write()` call re-syncs the agent's local snapshot
+after mutation (echo + concurrent-edit detection). The runtime marks `write`
+`sequential: true` (`apps/server/server/domains/runtime/tools/core-tools.ts:98`),
+so parallel calls within a turn execute serially, each with its own re-sync.
+This differs from the design target (batch + single re-sync at turn end) but is
+functionally correct — per-command re-sync means each command operates on
+fresh state.
+
+**`path` vs `file`:** The model-visible schema uses `path` (a context URI).
+The server adapter resolves `path` → `documentId` → `file` for the package
+(`apps/server/server/lib/wired-core-tools.ts:239-275`). The package never sees
+Meridian URI schemes — it operates on plain `{ file: "<docId>#fragment" }`.
 
 ## v1 simplifications (deferred, documented for discoverability)
 
