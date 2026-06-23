@@ -39,6 +39,15 @@ never a bare `Date` in a template. Canonical patterns:
   [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
   (`documentRevisionWhere` + the `updatedAt::text` selects).
 
+### Thread-domain rollup columns
+
+The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the
+JSON-natural thread contract fields that repository conformance reads back:
+thread total cost, turn usage rollups/latest model metadata, model-response
+reasoning/cache token counts, and block provider metadata. These columns are
+maintained by TypeScript repositories and the read-model projector; do not add
+database triggers/functions for these rollups.
+
 ## Migration workflow
 
 Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
@@ -52,8 +61,9 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
    (functions are applied separately, after migrate).
 
-The journal is a squashed baseline (`0000_careless_rockslide`) plus additive
-migrations (`0001_tidy_siren`, …); prefer additive migrations over re-squashing.
+The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
+migrations (`0001_serious_red_skull`, …); prefer additive migrations over
+re-squashing.
 
 ## Transaction model (lives in apps/server)
 

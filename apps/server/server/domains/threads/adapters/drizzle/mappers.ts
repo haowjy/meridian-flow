@@ -8,19 +8,20 @@ import type * as schema from "@meridian/database/schema";
 import { toIsoString, toSeqString } from "../../domain/contract-serialization.js";
 
 function decimalString(value: string | null | undefined): string {
-  return value ?? "0";
+  if (value == null) return "0";
+  return /^-?0(?:\.0+)?$/.test(value) ? "0" : value;
 }
 
 export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsage {
   return {
     inputTokens: row.totalInputTokens ?? 0,
     outputTokens: row.totalOutputTokens ?? 0,
-    reasoningTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
+    reasoningTokens: row.reasoningTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
     totalCostUsd: decimalString(row.totalCostUsd),
     totalMillicredits: row.totalMillicredits?.toString(),
-    responseCount: 0,
+    responseCount: row.responseCount,
   };
 }
 
@@ -34,8 +35,8 @@ export function mapThread(
     workId: row.workId ?? null,
     userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
-    status: row.status === "archived" ? "archived" : "idle",
-    title: row.title,
+    status: row.status as Thread["status"],
+    title: row.title === "" ? null : row.title,
     composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
     bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
@@ -49,7 +50,7 @@ export function mapThread(
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     spawnResult: row.spawnResult as Thread["spawnResult"],
-    totalCostUsd: "0",
+    totalCostUsd: decimalString(row.totalCostUsd),
     turnCount: row.turnCount,
     historySummary: null,
     createdAt: toIsoString(row.createdAt),
@@ -68,20 +69,20 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     status: row.status as Turn["status"],
     agentDefinitionId: row.agentDefinitionId,
     finishReason: row.finishReason as Turn["finishReason"],
-    model: null,
-    provider: null,
+    model: row.model,
+    provider: row.provider,
     inputTokens: row.totalInputTokens ?? 0,
     outputTokens: row.totalOutputTokens ?? 0,
-    reasoningTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
+    reasoningTokens: row.reasoningTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
     totalCostUsd: decimalString(row.totalCostUsd),
     totalMillicredits: row.totalMillicredits?.toString(),
-    responseCount: 0,
+    responseCount: row.responseCount,
     usage: turnUsageFromRow(row),
     error: row.error,
-    requestParams: null,
-    responseMetadata: null,
+    requestParams: row.requestParams as Turn["requestParams"],
+    responseMetadata: row.responseMetadata as Turn["responseMetadata"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
     blocks: [],
@@ -104,8 +105,8 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     modelText,
     compact: row.compact ?? "",
     pruned: row.pruned,
-    provider: null,
-    providerData: null,
+    provider: row.provider,
+    providerData: row.providerData as Block["providerData"],
     executionSide: row.executionSide as Block["executionSide"],
     status: row.status as Block["status"],
     collapsedContent: row.compact,
@@ -123,9 +124,9 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     providerRequestId: row.providerRequestId ?? null,
     inputTokens: row.inputTokens ?? 0,
     outputTokens: row.outputTokens ?? 0,
-    reasoningTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
+    reasoningTokens: row.reasoningTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
     usageBreakdown: row.usageBreakdown as ModelResponse["usageBreakdown"],
     costUsd: decimalString(row.costUsd),
     millicredits: row.millicredits?.toString(),

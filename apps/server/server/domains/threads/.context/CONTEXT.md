@@ -76,17 +76,17 @@ Meridian Flow's Postgres schema. Key column mappings:
 
 | Upstream | Meridian Flow | Notes |
 |---|---|---|
-| `threads.projectId` | `threads.projectId` | Meridian uses `projects`, not `projects` |
+| `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
 | `threads.currentAgent` | `threads.currentAgentId` | Agent ID column |
 | `threads.rootThreadId` | — | Computed as `parentThreadId ?? id` |
-| `threads.totalCostUsd` | — | Not a column; hardcoded `"0"` in mapper |
-| `threads.bakedSkillSlugs` | — | Not a column; freeze detected by `composedSystemPrompt` presence |
+| `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
+| `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |
-| `turns.model` / `turns.provider` | — | Not columns; hardcoded `null` in mapper |
-| `turns.requestParams` | — | Not a column; hardcoded `null` |
-| `turns.responseMetadata` | — | Not a column; hardcoded `null` |
-| `turnBlocks.provider` / `turnBlocks.providerData` | — | Not columns; hardcoded `null` in mapper |
+| `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
+| `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |
+| `turns.responseMetadata` | `turns.responseMetadata` | Latest response metadata projected onto the turn |
+| `turnBlocks.provider` / `turnBlocks.providerData` | `turnBlocks.provider` / `turnBlocks.providerData` | Provider metadata for projected block rows |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |
 | `threads.workId` (N:1) | **`thread_works` join** (M:N) | Column **dropped** in migration 0011; replaced by membership join with primary marker |
@@ -96,7 +96,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | Column | Role |
 |---|---|
 | `provider_request_id` | OpenRouter generation ID / provider request ID for cost reconciliation |
-| `price_source` | `"pinned"` (direct provider) or `"provider"` (OpenRouter reported) |
+| `price_source` | `"computed"`, `"provider_reported"`, `"configured_rate"`, or `"unknown"` |
 | `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
 ### Date handling
@@ -108,9 +108,10 @@ for repository insertion. The `toIsoString()` helper remains for contract output
 
 ### `modelText` null-safety
 
-`turn_blocks.modelText` is `NOT NULL DEFAULT ''` in the Meridian Flow schema.
-The `mapBlock` mapper handles this with `const modelText = row.modelText ?? ""`
-to prevent null from leaking into contract shapes.
+`turn_blocks.modelText` is nullable at the schema boundary, but the thread
+contract exposes `modelText` as a string. The `mapBlock` mapper handles this with
+`const modelText = row.modelText ?? ""` to prevent null from leaking into
+contract shapes.
 
 ## Invariants
 
@@ -121,21 +122,21 @@ to prevent null from leaking into contract shapes.
 - A thread's `totalCostUsd` is the sum of all model response costs for its turns,
   recomputed by the read-model projector from `model_responses`. `updateCost`
   remains only for direct lifecycle/counter writes such as `turnCount`.
-- Turn rollups (`totalCostUsd`, `inputTokens`, `outputTokens`, etc.) are
-  recomputed atomically from `model_responses` by the read-model projector as
+- Turn rollups (`totalCostUsd`, `inputTokens`, `outputTokens`,
+  `reasoningTokens`, cache tokens, `responseCount`, latest `model`/`provider`)
+  are recomputed atomically from `model_responses` by the read-model projector as
   `model.response_received` events are appended, so journal replay is idempotent.
-- **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen) when
-  `composedSystemPrompt` is non-null. Meridian Flow does not use `bakedSkillSlugs`;
-  the `mapThread` mapper sets `bakedSkillSlugs: null` and detects frozen state via
-  `Boolean(row.composedSystemPrompt)`.
+- **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
+  when `bakedSkillSlugs` is non-null. Before bake, `composedSystemPrompt` may
+  carry a raw pre-bake system prompt.
 - Soft-delete (`deletedAt`) is idempotent for both threads and the
   `requireThreadOwner` gate treats soft-deleted threads as 404.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
 - Hot cache is bounded at 500 events; older events fall through to journal
   replay (capped at 10,000 entries).
-- Thread status: `"active"` in DB for new threads; mapper maps `"archived"` →
-  `"archived"`, everything else → `"idle"`.
+- Thread status is stored in DB using the domain vocabulary
+  (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
 
 ## Cross-domain dependencies
 

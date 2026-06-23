@@ -22,19 +22,40 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
     .select({
       inputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.inputTokens}), 0)::int`,
       outputTokens: sql<number>`COALESCE(SUM(${schema.modelResponses.outputTokens}), 0)::int`,
+      reasoningTokens: sql<number | null>`SUM(${schema.modelResponses.reasoningTokens})::int`,
+      cacheReadTokens: sql<number | null>`SUM(${schema.modelResponses.cacheReadTokens})::int`,
+      cacheWriteTokens: sql<number | null>`SUM(${schema.modelResponses.cacheWriteTokens})::int`,
       totalCostUsd: sql<string>`COALESCE(SUM(${schema.modelResponses.costUsd}), 0)::numeric(12,6)`,
       totalMillicredits: sql<number | null>`SUM(${schema.modelResponses.millicredits})`,
+      responseCount: sql<number>`COUNT(*)::int`,
     })
     .from(schema.modelResponses)
     .where(eq(schema.modelResponses.turnId, id));
+  const [latestResponse] = await activeDb
+    .select({
+      model: schema.modelResponses.model,
+      provider: schema.modelResponses.provider,
+      responseMetadata: schema.modelResponses.responseMetadata,
+    })
+    .from(schema.modelResponses)
+    .where(eq(schema.modelResponses.turnId, id))
+    .orderBy(desc(schema.modelResponses.sequence))
+    .limit(1);
 
   const [row] = await activeDb
     .update(schema.turns)
     .set({
       totalInputTokens: aggregate?.inputTokens ?? 0,
       totalOutputTokens: aggregate?.outputTokens ?? 0,
+      reasoningTokens: aggregate?.reasoningTokens ?? null,
+      cacheReadTokens: aggregate?.cacheReadTokens ?? null,
+      cacheWriteTokens: aggregate?.cacheWriteTokens ?? null,
       totalCostUsd: aggregate?.totalCostUsd ?? "0",
       totalMillicredits: aggregate?.totalMillicredits ?? null,
+      responseCount: aggregate?.responseCount ?? 0,
+      model: latestResponse?.model ?? null,
+      provider: latestResponse?.provider ?? null,
+      responseMetadata: latestResponse?.responseMetadata ?? null,
     })
     .where(eq(schema.turns.id, id))
     .returning();
@@ -56,6 +77,8 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCostUsd: "0",
+          responseCount: 0,
+          requestParams: input.requestParams ?? null,
           createdAt: input.createdAt === undefined ? undefined : toDate(input.createdAt),
         })
         .onConflictDoNothing({ target: schema.turns.id })
@@ -71,7 +94,6 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
         .update(schema.threads)
         .set({
           activeLeafTurnId: row.id,
-          turnCount: sql`${schema.threads.turnCount} + 1`,
           updatedAt: now,
         })
         .where(eq(schema.threads.id, row.threadId));
