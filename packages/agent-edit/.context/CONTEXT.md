@@ -7,7 +7,9 @@ The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
 `persistReversal` (atomically persist undo update + reversal record),
 `persistRedo` (atomically consume a doc+thread+turn reversal and append redo
 bytes), and `readReversals` (durable redo lookup). Ordered by monotonic seq per
-document. Every adapter implements this.
+document. Every adapter implements this. Response staging still calls the same
+`append(docId, update, agentMeta(turnId))` shape; it defers those appends until
+`commitResponse(responseId)`.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
 state is allowed to hide from replay. It must not be higher than what the state
@@ -51,6 +53,12 @@ Meridian's fiction schema.
 Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
+
+### AgentEditCore (`src/index.ts`)
+The public package façade exposes `write()`, `recover()`, `compact()`,
+`commitResponse(responseId)`, and `rollbackResponse(responseId)`. Host runtimes
+that pass `WriteContext.responseId` must call exactly one of the response
+lifecycle methods after the model response finishes or is cancelled.
 
 ## Architecture
 
@@ -129,13 +137,18 @@ the same turn sequence. Enforced by tests (`undo.test.ts`).
 the LLM-facing response is the plain `text` field (status line + echo + content).
 `idempotency` is provided by `tool_use_id` — replay returns the cached text.
 
-**Re-sync discipline:** each `write()` call re-syncs the agent's local snapshot
-after mutation (echo + concurrent-edit detection). The runtime marks `write`
-`sequential: true` (`apps/server/server/domains/runtime/tools/core-tools.ts:98`),
-so parallel calls within a turn execute serially, each with its own re-sync.
-This differs from the design target (batch + single re-sync at turn end) but is
-functionally correct — per-command re-sync means each command operates on
-fresh state.
+**Response staging:** callers can pass `WriteContext.responseId` to stage
+`create` / `insert` / `replace` writes for one model response. Each write applies
+immediately to the agent runtime doc and returns an echo from that cumulative
+staged state. Journal append, live-doc sync, concurrent-edit merge, and
+projection refresh are deferred to `commitResponse(responseId)`, which appends
+the buffered updates in write order and applies one aggregate Yjs update per
+document. `rollbackResponse(responseId)` discards the buffer, restores affected
+runtime docs from live, and evicts hot undo managers for those threads.
+
+Without `responseId`, writes keep the immediate append + live sync behavior.
+`undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
+the buffer is committed first so reversal order matches tool-call order.
 
 **`path` vs `file`:** The model-visible schema uses `path` (a context URI).
 The server adapter resolves `path` → `documentId` → `file` for the package

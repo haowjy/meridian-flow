@@ -156,6 +156,80 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
+  it("stages multiple response writes and commits journal plus live doc once", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-response-staging",
+      responseId: "response-staging",
+    };
+    let liveUpdateCount = 0;
+    ctx.liveDoc("chapter.md").on("update", () => {
+      liveUpdateCount += 1;
+    });
+
+    const first = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    const second = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Gamma." },
+      responseContext,
+    );
+    const third = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Delta." },
+      responseContext,
+    );
+
+    expect(outcomeText(first)).toContain("Beta.");
+    expect(outcomeText(second)).toContain("Beta.");
+    expect(outcomeText(second)).toContain("Gamma.");
+    expect(outcomeText(third)).toContain("Gamma.");
+    expect(outcomeText(third)).toContain("Delta.");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    expect(liveUpdateCount).toBe(0);
+
+    const commit = await ctx.core.commitResponse("response-staging");
+
+    expect(commit).toMatchObject({
+      responseId: "response-staging",
+      documentCount: 1,
+      updateCount: 3,
+      documents: [{ documentId: "chapter.md", updateCount: 3 }],
+    });
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(3);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma.", "Delta."]);
+    expect(liveUpdateCount).toBe(1);
+  });
+
+  it("rolls back staged response writes and restores the runtime doc from live", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-response-rollback",
+      responseId: "response-rollback",
+    };
+
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain("Beta.");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+
+    await ctx.core.rollbackResponse("response-rollback");
+
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    expect(outcomeText(view)).toContain("Alpha.");
+    expect(outcomeText(view)).not.toContain("Beta.");
+  });
+
   it("appends unanchored inserts and handles explicit start and end anchors", async () => {
     const noAnchorCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
     await noAnchorCtx.core.write({ command: "view", file: "chapter.md" }, context);

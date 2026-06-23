@@ -113,7 +113,10 @@ import {
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
-import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "./wired-core-tools.js";
 
 type AgentPackageStore = { readonly phase: "skeleton" };
 
@@ -411,6 +414,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
+    responseWrites: createAgentEditResponseWriteLifecycle({
+      documentSync: ports.documentSync,
+      eventSink: ports.eventSink,
+    }),
   });
   runTurnProxy.bind(orchestrator);
 

@@ -37,6 +37,7 @@ import {
 import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
+  ResponseCommitResult,
   UndoCommand,
   UndoRedoOutcome,
   ViewCommand,
@@ -74,6 +75,8 @@ export interface WriteTool {
   write: WriteFunction;
   registry: UndoManagerRegistry;
   recover(docId: string): Promise<void>;
+  commitResponse(responseId: string): Promise<ResponseCommitResult>;
+  rollbackResponse(responseId: string): Promise<void>;
 }
 
 interface RuntimeDocumentState {
@@ -101,11 +104,33 @@ interface SyncedMutationSummary {
   reconciled: boolean;
 }
 
+interface MutationEchoInput {
+  runtime: RuntimeDocumentState;
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
+}
+
+interface JournaledUpdate {
+  update: Uint8Array;
+  meta: UpdateMeta;
+}
+
+interface LiveUpdateCommitInput {
+  docId: string;
+  commandName: WriteCommand["command"];
+  updates: readonly JournaledUpdate[];
+  afterOwnVector: Uint8Array;
+  liveOrigin: ConcurrentUpdateOrigin;
+}
+
 interface LocalMutationSyncInput {
   docId: string;
   commandName: WriteCommand["command"];
   runtime: RuntimeDocumentState;
   update: Uint8Array;
+  meta?: UpdateMeta;
   afterOwnVector: Uint8Array;
   liveOrigin: ConcurrentUpdateOrigin;
   before: readonly BlockSnapshot[];
@@ -113,6 +138,26 @@ interface LocalMutationSyncInput {
   deletedHashes: ReadonlySet<string>;
   structuralChange: boolean;
   ownTurnId?: string;
+}
+
+interface StagedResponseUpdate extends JournaledUpdate {
+  liveOrigin: ConcurrentUpdateOrigin;
+  turnId: string;
+}
+
+interface ResponseDocumentBuffer {
+  docId: string;
+  session: ActorSession;
+  runtime: RuntimeDocumentState;
+  commandName: WriteCommand["command"];
+  updates: StagedResponseUpdate[];
+  baselineUndoStack: string[];
+  baselineRedoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
+  baselineRedoStackRehydrated: boolean;
+}
+
+interface ResponseBuffer {
+  docs: Map<string, ResponseDocumentBuffer>;
 }
 
 type ReversalResult =
@@ -135,6 +180,7 @@ const EMPTY_UPDATE_LENGTH = 2;
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const registry = options.undoRegistry ?? createUndoManagerRegistry();
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
+  const responseBuffers = new Map<string, ResponseBuffer>();
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
@@ -160,6 +206,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     write,
     registry,
     recover: (docId) => options.coordinator.recover(docId),
+    commitResponse,
+    rollbackResponse,
   };
 
   async function dispatch(
@@ -169,16 +217,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<InternalWriteResult> {
     switch (command.command) {
       case "view":
-        return view(command, session);
+        return view(command, session, context);
       case "create":
         return create(command, session, context);
       case "insert":
       case "replace":
         return mutate(command, session, context);
       case "undo":
-        return undoOrRedo(command, session, "undo");
+        return undoOrRedo(command, session, "undo", context);
       case "redo":
-        return undoOrRedo(command, session, "redo");
+        return undoOrRedo(command, session, "redo", context);
     }
   }
 
@@ -197,13 +245,138 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return session;
   }
 
-  async function view(command: ViewCommand, session: ActorSession): Promise<InternalWriteResult> {
+  async function commitResponse(responseId: string): Promise<ResponseCommitResult> {
+    const buffer = responseBuffers.get(responseId);
+    if (!buffer) return emptyResponseCommit(responseId);
+
+    const documents: ResponseCommitResult["documents"] = [];
+    let updateCount = 0;
+    try {
+      for (const docBuffer of buffer.docs.values()) {
+        if (docBuffer.updates.length === 0) continue;
+        const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
+        const committed = await commitUpdatesToJournalAndLive({
+          docId: docBuffer.docId,
+          commandName: docBuffer.commandName,
+          updates: docBuffer.updates,
+          afterOwnVector,
+          liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
+        });
+        if (!committed.ok) throw new Error(committed.response.text);
+
+        const lastTurnId = docBuffer.updates.at(-1)?.turnId;
+        const concurrent = applyConcurrent(
+          docBuffer.runtime,
+          committed.concurrentUpdate,
+          afterOwnVector,
+          lastTurnId,
+        );
+        markSynced(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        updateCount += docBuffer.updates.length;
+        documents.push({
+          documentId: docBuffer.docId,
+          updateCount: docBuffer.updates.length,
+          ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
+        });
+      }
+      return {
+        responseId,
+        documentCount: documents.length,
+        updateCount,
+        documents,
+      };
+    } finally {
+      responseBuffers.delete(responseId);
+    }
+  }
+
+  async function rollbackResponse(responseId: string): Promise<void> {
+    const buffer = responseBuffers.get(responseId);
+    if (!buffer) return;
+    responseBuffers.delete(responseId);
+
+    for (const docBuffer of buffer.docs.values()) {
+      docBuffer.runtime.undoStack = [...docBuffer.baselineUndoStack];
+      docBuffer.runtime.redoStack = docBuffer.baselineRedoStack.map((entry) => ({ ...entry }));
+      docBuffer.runtime.redoStackRehydrated = docBuffer.baselineRedoStackRehydrated;
+      registry.evictThread(docBuffer.docId, docBuffer.session.threadId);
+      const restored = await restoreRuntimeFromLive(
+        docBuffer.session,
+        docBuffer.docId,
+        docBuffer.runtime,
+        docBuffer.commandName,
+      );
+      if (isInternalWriteResult(restored)) throw new Error(restored.text);
+    }
+  }
+
+  function hasBufferedResponseWrites(responseId: string): boolean {
+    const buffer = responseBuffers.get(responseId);
+    if (!buffer) return false;
+    return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
+  }
+
+  function hasBufferedResponseWritesForDoc(responseId: string, docId: string): boolean {
+    return (responseBuffers.get(responseId)?.docs.get(docId)?.updates.length ?? 0) > 0;
+  }
+
+  function stageResponseUpdate(input: {
+    responseId: string;
+    docId: string;
+    session: ActorSession;
+    runtime: RuntimeDocumentState;
+    commandName: WriteCommand["command"];
+    update: Uint8Array;
+    meta: UpdateMeta;
+    liveOrigin: ConcurrentUpdateOrigin;
+    turnId: string;
+  }): void {
+    let buffer = responseBuffers.get(input.responseId);
+    if (!buffer) {
+      buffer = { docs: new Map() };
+      responseBuffers.set(input.responseId, buffer);
+    }
+
+    let docBuffer = buffer.docs.get(input.docId);
+    if (!docBuffer) {
+      docBuffer = {
+        docId: input.docId,
+        session: input.session,
+        runtime: input.runtime,
+        commandName: input.commandName,
+        updates: [],
+        baselineUndoStack: [...input.runtime.undoStack],
+        baselineRedoStack: input.runtime.redoStack.map((entry) => ({ ...entry })),
+        baselineRedoStackRehydrated: input.runtime.redoStackRehydrated,
+      };
+      buffer.docs.set(input.docId, docBuffer);
+    }
+
+    docBuffer.commandName = input.commandName;
+    docBuffer.updates.push({
+      update: input.update,
+      meta: input.meta,
+      liveOrigin: input.liveOrigin,
+      turnId: input.turnId,
+    });
+  }
+
+  async function view(
+    command: ViewCommand,
+    session: ActorSession,
+    context: WriteContext,
+  ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
 
-    const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
-    if (!synced.ok) return synced.response;
+    if (
+      !context.responseId ||
+      !hasBufferedResponseWritesForDoc(context.responseId, address.filePath)
+    ) {
+      const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
+      if (!synced.ok) return synced.response;
+    }
 
     const selection = selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
@@ -258,7 +431,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       registry.endTurn(address.filePath, session.threadId, turnId);
     }
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    await options.journal.append(address.filePath, update, agentMeta(turnId));
+    const meta = agentMeta(turnId);
+
+    if (context.responseId) {
+      stageResponseUpdate({
+        responseId: context.responseId,
+        docId: address.filePath,
+        session,
+        runtime,
+        commandName: command.command,
+        update,
+        meta,
+        liveOrigin: agentUpdateOrigin(turnId),
+        turnId,
+      });
+      runtime.undoStack.push(turnId);
+      runtime.redoStack = [];
+      markSynced(session, address.filePath, runtime);
+      return formatApplySuccess({
+        echo: [{ mode: "truncated", blocks: renderBlockLines(runtime.doc) }],
+      });
+    }
+
+    await options.journal.append(address.filePath, update, meta);
 
     const liveResult = await withLive(address.filePath, command.command, async (liveDoc) => {
       Y.applyUpdate(liveDoc, update, agentUpdateOrigin(turnId));
@@ -316,13 +511,42 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    await options.journal.append(address.filePath, ownUpdate, agentMeta(turnId));
+    const meta = agentMeta(turnId);
+
+    if (context.responseId) {
+      stageResponseUpdate({
+        responseId: context.responseId,
+        docId: address.filePath,
+        session,
+        runtime,
+        commandName: command.command,
+        update: ownUpdate,
+        meta,
+        liveOrigin: agentUpdateOrigin(turnId),
+        turnId,
+      });
+      const summary = summarizeMutationEcho({
+        runtime,
+        before,
+        touchedHashes: new Set(applied.changedBlocks ?? []),
+        deletedHashes: new Set(applied.deletedBlocks ?? []),
+        structuralChange: hasStructuralChange(applied),
+      });
+      runtime.undoStack.push(turnId);
+      runtime.redoStack = [];
+      markSynced(session, address.filePath, runtime);
+      return formatApplySuccess({
+        echo: summary.echo,
+        deletedBlocks: applied.deletedBlocks,
+      });
+    }
 
     const syncedMutation = await syncAfterLocalMutation({
       docId: address.filePath,
       commandName: command.command,
       runtime,
       update: ownUpdate,
+      meta,
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),
       before,
@@ -347,9 +571,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     command: UndoCommand | RedoCommand,
     session: ActorSession,
     direction: "undo" | "redo",
+    context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
+    if (context.responseId && hasBufferedResponseWrites(context.responseId)) {
+      // Undo/redo read and write committed journal state; flush staged response
+      // writes first so reversal order matches the model's tool-call order.
+      await commitResponse(context.responseId);
+    }
     const runtime = runtimeFor(session, address.filePath);
     const synced = requireSynced(session, address.filePath);
     if (!synced.ok) return synced.response;
@@ -665,14 +895,35 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<
     { ok: true; summary: SyncedMutationSummary } | { ok: false; response: InternalWriteResult }
   > {
-    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
-    if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
+    const committed = input.meta
+      ? await commitUpdatesToJournalAndLive({
+          docId: input.docId,
+          commandName: input.commandName,
+          updates: [{ update: input.update, meta: input.meta }],
+          afterOwnVector: input.afterOwnVector,
+          liveOrigin: input.liveOrigin,
+        })
+      : await mergeCommittedUpdateToLive({
+          docId: input.docId,
+          commandName: input.commandName,
+          update: input.update,
+          afterOwnVector: input.afterOwnVector,
+          liveOrigin: input.liveOrigin,
+        });
+    if (!committed.ok) return { ok: false, response: committed.response };
     const concurrent = applyConcurrent(
       input.runtime,
-      concurrentUpdate,
+      committed.concurrentUpdate,
       input.afterOwnVector,
       input.ownTurnId,
     );
+    return { ok: true, summary: summarizeMutationEcho(input, concurrent) };
+  }
+
+  function summarizeMutationEcho(
+    input: MutationEchoInput,
+    concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
+  ): SyncedMutationSummary {
     const after = snapshotBlocks(input.runtime.doc, options.model, options.codec);
     const echo = computeEcho({
       before: input.before,
@@ -683,18 +934,51 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       concurrentTouchedHashes: concurrent.touchedHashes,
     });
     return {
-      ok: true,
-      summary: {
-        echo,
-        concurrentEdits: concurrent.info,
-        reconciled: echo.some((hunk) => hunk.mode === "full"),
-      },
+      echo,
+      concurrentEdits: concurrent.info,
+      reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
   }
 
-  async function mergeUpdateAndCaptureConcurrent(
-    input: LocalMutationSyncInput,
-  ): Promise<Uint8Array | null | InternalWriteResult> {
+  async function commitUpdatesToJournalAndLive(
+    input: LiveUpdateCommitInput,
+  ): Promise<
+    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
+  > {
+    for (const entry of input.updates) {
+      await options.journal.append(input.docId, entry.update, entry.meta);
+    }
+
+    return mergeCommittedUpdateToLive({
+      docId: input.docId,
+      commandName: input.commandName,
+      update: mergeUpdates(input.updates.map((entry) => entry.update)),
+      afterOwnVector: input.afterOwnVector,
+      liveOrigin: input.liveOrigin,
+    });
+  }
+
+  async function mergeCommittedUpdateToLive(input: {
+    docId: string;
+    commandName: WriteCommand["command"];
+    update: Uint8Array;
+    afterOwnVector: Uint8Array;
+    liveOrigin: ConcurrentUpdateOrigin;
+  }): Promise<
+    { ok: true; concurrentUpdate: Uint8Array | null } | { ok: false; response: InternalWriteResult }
+  > {
+    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
+    if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
+    return { ok: true, concurrentUpdate };
+  }
+
+  async function mergeUpdateAndCaptureConcurrent(input: {
+    docId: string;
+    commandName: WriteCommand["command"];
+    update: Uint8Array;
+    afterOwnVector: Uint8Array;
+    liveOrigin: ConcurrentUpdateOrigin;
+  }): Promise<Uint8Array | null | InternalWriteResult> {
     let concurrentUpdate: Uint8Array | null = null;
     const response = await withLive(input.docId, input.commandName, async (liveDoc) => {
       concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
@@ -951,6 +1235,14 @@ function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolea
 
 function hasYjsUpdate(update: Uint8Array): boolean {
   return update.length > EMPTY_UPDATE_LENGTH;
+}
+
+function mergeUpdates(updates: Uint8Array[]): Uint8Array {
+  return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
+}
+
+function emptyResponseCommit(responseId: string): ResponseCommitResult {
+  return { responseId, documentCount: 0, updateCount: 0, documents: [] };
 }
 
 function agentMeta(turnId: string): UpdateMeta {

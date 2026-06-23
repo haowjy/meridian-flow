@@ -86,7 +86,7 @@ free of Meridian URI schemes and database concerns.
 
 | Tool | Backend |
 |---|---|
-| `write` | Command grammar (`create` / `view` / `insert` / `replace` / `undo` / `redo`). Handler resolves the context URI to a tracked document id, calls `CollabDomain.agentEdit().write(...)`, returns the package's plain-text `WriteResult`, and refreshes the markdown projection after mutating commands. |
+| `write` | Command grammar (`create` / `view` / `insert` / `replace` / `undo` / `redo`). Handler resolves the context URI to a tracked document id, calls `CollabDomain.agentEdit().write(...)`, and returns the package's plain-text `WriteResult`. When the runtime supplies a model `responseId`, `create` / `insert` / `replace` writes are staged in `@meridian/agent-edit`; the orchestrator's response lifecycle commits them and refreshes the markdown projection once per affected document. Non-staged writes and undo/redo refresh after their immediate commit. |
 | `list` | Lists the resolved unified `ContextPort` path/URI. |
 | `search` | Searches the resolved unified `ContextPort` scope. |
 | `ask_user` | Creates a checkpoint component block and keeps the assistant turn interruptible/resumable. |
