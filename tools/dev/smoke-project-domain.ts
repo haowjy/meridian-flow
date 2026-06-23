@@ -13,13 +13,23 @@ import { eq } from "drizzle-orm";
 import { createDrizzleProjectRepository } from "../../apps/server/server/domains/projects/adapters/project-repository/drizzle.ts";
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
-import { loadRepoEnv, requireEnv } from "./load-env.ts";
+import { applyDevEnvToProcess } from "./lib/dev-env";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
-loadRepoEnv(repoRoot);
+applyDevEnvToProcess(repoRoot);
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111" as ProjectId;
 const OTHER_USER_ID = "11111111-1111-4111-8111-111111111102" as UserId;
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `Missing ${name}. Copy .env.example to .env, run pnpm dev:infra, and set DATABASE_URL.`,
+    );
+  }
+  return value;
+}
 
 async function ensureSmokeUserId(databaseUrl: string): Promise<UserId> {
   const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
