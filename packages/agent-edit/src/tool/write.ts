@@ -45,6 +45,8 @@ import { rehydrateRedoStack } from "./redo-rehydration.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
+  ResponseRollbackResult,
+  ResponseStagedCreateOutcome,
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
@@ -86,7 +88,7 @@ export interface WriteTool {
   registry: UndoManagerRegistry;
   recover(docId: string): Promise<void>;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
-  rollbackResponse(responseId: string): Promise<void>;
+  rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
@@ -173,6 +175,7 @@ interface ResponseDocumentBuffer {
   commandName: WriteCommand["command"];
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
+  discardedBeforeCommit: boolean;
   baselineUndoStack: string[];
   baselineRedoStack: Array<{ turnId: string; undoUpdateSeq?: number }>;
   baselineRedoStackRehydrated: boolean;
@@ -284,6 +287,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const docBuffers = [...buffer.docs.values()].filter(
       (docBuffer) => docBuffer.updates.length > 0,
     );
+    if (docBuffers.length === 0 && buffer.updates.length === 0) {
+      responseBuffers.delete(responseId);
+      return emptyResponseCommit(responseId, responseStagedCreateOutcome(buffer, []));
+    }
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
     try {
@@ -328,6 +335,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         documentCount: documents.length,
         updateCount,
         documents,
+        stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
       };
     } catch (cause) {
       if (!buffer.journalCommitted) {
@@ -338,9 +346,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       const recoveryFailure = await recoverCommittedResponseProjection(docBuffers).catch(
         (error: unknown) => error,
       );
-      responseBuffers.delete(responseId);
       if (!recoveryFailure) {
-        return responseCommitResult(responseId, docBuffers, documents);
+        responseBuffers.delete(responseId);
+        return responseCommitResult(responseId, buffer, docBuffers, documents);
       }
 
       evictResponseRuntimes(docBuffers, { needsRecovery: true });
@@ -348,16 +356,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
-  async function rollbackResponse(responseId: string): Promise<void> {
+  async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
     const buffer = responseBuffers.get(responseId);
-    if (!buffer) return;
+    if (!buffer) return emptyResponseRollback(responseId);
 
     const docBuffers = [...buffer.docs.values()];
+    const pendingDocBuffers = docBuffers.filter((docBuffer) => docBuffer.updates.length > 0);
     try {
       if (buffer.journalCommitted) {
-        await recoverCommittedResponseProjection(docBuffers);
+        await recoverCommittedResponseProjection(pendingDocBuffers);
         responseBuffers.delete(responseId);
-        return;
+        return {
+          responseId,
+          stagedCreates: responseStagedCreateOutcome(buffer, pendingDocBuffers),
+        };
       }
 
       for (const docBuffer of docBuffers) {
@@ -380,6 +392,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
       }
       responseBuffers.delete(responseId);
+      return {
+        responseId,
+        stagedCreates: responseStagedCreateOutcome(buffer, [], {
+          discardPendingStagedCreates: true,
+        }),
+      };
     } catch (cause) {
       evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
       responseBuffers.delete(responseId);
@@ -424,6 +442,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         commandName: input.commandName,
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
+        discardedBeforeCommit: false,
         baselineUndoStack: [...input.runtime.undoStack],
         baselineRedoStack: input.runtime.redoStack.map((entry) => ({ ...entry })),
         baselineRedoStackRehydrated: input.runtime.redoStackRehydrated,
@@ -434,6 +453,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
+    docBuffer.discardedBeforeCommit = false;
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
@@ -1087,7 +1107,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   function dropResponseBuffersForThread(docId: string, threadId: string): void {
     for (const [responseId, buffer] of [...responseBuffers]) {
       const docBuffer = buffer.docs.get(docId);
-      if (docBuffer?.session.threadId === threadId) buffer.docs.delete(docId);
+      if (docBuffer?.session.threadId === threadId) {
+        if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
+          docBuffer.discardedBeforeCommit = true;
+          docBuffer.updates = [];
+        } else {
+          buffer.docs.delete(docId);
+        }
+      }
       buffer.updates = buffer.updates.filter(
         (entry) => !(entry.docId === docId && entry.mutation?.threadId === threadId),
       );
@@ -1603,12 +1630,48 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function emptyResponseCommit(responseId: string): ResponseCommitResult {
-  return { responseId, documentCount: 0, updateCount: 0, documents: [] };
+function emptyResponseCommit(
+  responseId: string,
+  stagedCreates: ResponseStagedCreateOutcome = { committed: [], discarded: [] },
+): ResponseCommitResult {
+  return { responseId, documentCount: 0, updateCount: 0, documents: [], stagedCreates };
+}
+
+function emptyResponseRollback(responseId: string): ResponseRollbackResult {
+  return { responseId, stagedCreates: { committed: [], discarded: [] } };
+}
+
+function responseStagedCreateOutcome(
+  buffer: ResponseBuffer,
+  committedDocBuffers: readonly ResponseDocumentBuffer[],
+  options: { discardPendingStagedCreates?: boolean } = {},
+): ResponseStagedCreateOutcome {
+  const committed = stagedCreateDocIds(committedDocBuffers);
+  const discarded = stagedCreateDocIds(
+    [...buffer.docs.values()].filter(
+      (docBuffer) =>
+        docBuffer.discardedBeforeCommit ||
+        (options.discardPendingStagedCreates &&
+          docBuffer.ensureDocumentBeforeCommit &&
+          !buffer.journalCommitted),
+    ),
+  );
+  return { committed, discarded };
+}
+
+function stagedCreateDocIds(docBuffers: readonly ResponseDocumentBuffer[]): string[] {
+  return [
+    ...new Set(
+      docBuffers
+        .filter((docBuffer) => docBuffer.ensureDocumentBeforeCommit)
+        .map((docBuffer) => docBuffer.docId),
+    ),
+  ];
 }
 
 function responseCommitResult(
   responseId: string,
+  buffer: ResponseBuffer,
   docBuffers: readonly ResponseDocumentBuffer[],
   knownDocuments: ResponseCommitResult["documents"] = [],
 ): ResponseCommitResult {
@@ -1627,6 +1690,7 @@ function responseCommitResult(
     documentCount: documentsById.size,
     updateCount: docBuffers.reduce((total, docBuffer) => total + docBuffer.updates.length, 0),
     documents: [...documentsById.values()],
+    stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
   };
 }
 

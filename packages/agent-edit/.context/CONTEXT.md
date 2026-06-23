@@ -181,6 +181,11 @@ undo/redo stacks.
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
 the buffer is committed first so reversal order matches tool-call order.
+`commitResponse()` and `rollbackResponse()` also report staged-create outcomes
+for hosts that created path-level placeholders before the journal commit:
+committed creates must keep their path, while only pre-commit discards should be
+deleted. `invalidateThread()` marks pending staged creates as discarded inside
+the response buffer so a later empty commit still carries the cleanup signal.
 
 **`path` vs `file`:** The model-visible schema uses `path` (a context URI).
 The server adapter resolves `path` → `documentId` → `file` for the package

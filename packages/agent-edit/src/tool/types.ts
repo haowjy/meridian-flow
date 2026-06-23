@@ -133,9 +133,20 @@ export interface ResponseCommitDocumentResult {
   concurrentEdits?: ConcurrentEditInfo;
 }
 
+export interface ResponseStagedCreateOutcome {
+  committed: string[];
+  discarded: string[];
+}
+
 export interface ResponseCommitResult {
   responseId: string;
   documentCount: number;
   updateCount: number;
   documents: ResponseCommitDocumentResult[];
+  stagedCreates: ResponseStagedCreateOutcome;
+}
+
+export interface ResponseRollbackResult {
+  responseId: string;
+  stagedCreates: ResponseStagedCreateOutcome;
 }

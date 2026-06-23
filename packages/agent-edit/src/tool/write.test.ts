@@ -106,8 +106,9 @@ describe("write tool dispatch", () => {
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
-    await ctx.core.commitResponse("response-staged-create");
+    const commit = await ctx.core.commitResponse("response-staged-create");
 
+    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
     expect(ctx.journal.appendBatchCalls).toBe(1);
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
@@ -130,13 +131,46 @@ describe("write tool dispatch", () => {
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
-    await ctx.core.rollbackResponse("response-staged-create-rollback");
+    const rollback = await ctx.core.rollbackResponse("response-staged-create-rollback");
 
+    expect(rollback.stagedCreates).toEqual({ committed: [], discarded: ["new.md"] });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
     expect(outcomeText(await ctx.core.write({ command: "view", file: "new.md" }, context))).toBe(
       'status: document_not_found\n\nFile not found. Check the path, or use write(command="create", file="new.md") to make a new one.',
     );
+  });
+
+  it("reports a staged create as discarded when invalidation drops its response buffer", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-create-invalidated",
+      responseId: "response-staged-create-invalidated",
+    };
+
+    await ctx.core.write(
+      { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
+      responseContext,
+    );
+    ctx.core.invalidateThread("new.md", THREAD_ID);
+
+    const commit = await ctx.core.commitResponse("response-staged-create-invalidated");
+
+    expect(commit).toMatchObject({
+      documentCount: 0,
+      updateCount: 0,
+      stagedCreates: { committed: [], discarded: ["new.md"] },
+    });
+    expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+    await expect(ctx.core.commitResponse("response-staged-create-invalidated")).resolves.toEqual({
+      responseId: "response-staged-create-invalidated",
+      documentCount: 0,
+      updateCount: 0,
+      documents: [],
+      stagedCreates: { committed: [], discarded: [] },
+    });
   });
 
   it("rejects create for an existing non-empty file", async () => {
@@ -607,7 +641,11 @@ describe("write tool dispatch", () => {
     ctx.core.invalidateThread("chapter.md", THREAD_ID);
     const commit = await ctx.core.commitResponse("response-stale-buffer");
 
-    expect(commit).toMatchObject({ documentCount: 0, updateCount: 0 });
+    expect(commit).toMatchObject({
+      documentCount: 0,
+      updateCount: 0,
+      stagedCreates: { committed: [], discarded: [] },
+    });
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
     const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);

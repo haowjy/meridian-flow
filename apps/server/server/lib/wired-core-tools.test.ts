@@ -643,6 +643,170 @@ describe("createWiredCoreToolRegistrations", () => {
     });
   });
 
+  it("keeps a newly tracked path when a staged create commits", async () => {
+    const { documentSync, executor, port, responseWrites, thread } = await wiredWriteHarness();
+
+    const result = await executor.executeTool(
+      {
+        id: "call-staged-create-commit",
+        name: "write",
+        arguments: {
+          command: "create",
+          path: "kb://committed.md",
+          content: "# Draft\n\nOpening line.",
+        },
+      },
+      {
+        signal: new AbortController().signal,
+        threadId: thread.id,
+        turnId: "turn-staged-create-commit",
+        responseId: "response-staged-create-commit",
+        agentSlug: null,
+      },
+    );
+
+    expect(stringOutput(result)).toContain("status: success");
+    const statBeforeCommit = await port.stat("kb://committed.md");
+    expect(statBeforeCommit).toMatchObject({ ok: true });
+    if (!statBeforeCommit.ok) throw new Error("expected staged path");
+    const { documentId } = statBeforeCommit.value;
+    if (!documentId) throw new Error("expected staged document id");
+
+    await responseWrites.commitResponse("response-staged-create-commit", {
+      threadId: thread.id,
+      turnId: "turn-staged-create-commit",
+    });
+
+    await expect(port.stat("kb://committed.md")).resolves.toMatchObject({
+      ok: true,
+      value: { documentId },
+    });
+    await expect(documentSync.readAsMarkdown(documentId)).resolves.toMatchObject({
+      ok: true,
+      value: expect.stringContaining("Opening line."),
+    });
+  });
+
+  it("keeps the tracked path when rollback follows a post-journal staged create failure", async () => {
+    const baseDocumentSync = createInMemoryCollabDomain();
+    const baseAgentEdit = baseDocumentSync.agentEdit();
+    const toolDocumentSync = {
+      agentEdit: () => ({
+        ...baseAgentEdit,
+        commitResponse: async (responseId: string) => {
+          const result = await baseAgentEdit.commitResponse(responseId);
+          if (responseId === "response-staged-create-post-journal") {
+            throw new Error("post-journal observer failed");
+          }
+          return result;
+        },
+      }),
+      refreshDocumentProjection: baseDocumentSync.refreshDocumentProjection,
+    };
+    const { documentSync, executor, port, responseWrites, thread } = await wiredWriteHarness({
+      documentSync: baseDocumentSync,
+      toolDocumentSync,
+    });
+
+    const result = await executor.executeTool(
+      {
+        id: "call-staged-create-post-journal",
+        name: "write",
+        arguments: {
+          command: "create",
+          path: "kb://post-journal.md",
+          content: "# Durable\n\nRecovered content.",
+        },
+      },
+      {
+        signal: new AbortController().signal,
+        threadId: thread.id,
+        turnId: "turn-staged-create-post-journal",
+        responseId: "response-staged-create-post-journal",
+        agentSlug: null,
+      },
+    );
+
+    expect(stringOutput(result)).toContain("status: success");
+    const statBeforeCommit = await port.stat("kb://post-journal.md");
+    expect(statBeforeCommit).toMatchObject({ ok: true });
+    if (!statBeforeCommit.ok) throw new Error("expected staged path");
+    const { documentId } = statBeforeCommit.value;
+    if (!documentId) throw new Error("expected staged document id");
+
+    await expect(
+      responseWrites.commitResponse("response-staged-create-post-journal", {
+        threadId: thread.id,
+        turnId: "turn-staged-create-post-journal",
+      }),
+    ).rejects.toThrow("post-journal observer failed");
+
+    await responseWrites.rollbackResponse("response-staged-create-post-journal");
+
+    await expect(port.stat("kb://post-journal.md")).resolves.toMatchObject({
+      ok: true,
+      value: { documentId },
+    });
+    await expect(documentSync.readAsMarkdown(documentId)).resolves.toMatchObject({
+      ok: true,
+      value: expect.stringContaining("Recovered content."),
+    });
+  });
+
+  it("deletes a staged-create path when invalidation discards the pending response buffer", async () => {
+    const { documentSync, executor, port, responseWrites, thread } = await wiredWriteHarness();
+
+    const result = await executor.executeTool(
+      {
+        id: "call-staged-create-invalidated",
+        name: "write",
+        arguments: {
+          command: "create",
+          path: "kb://invalidated.md",
+          content: "# Draft\n\nTransient content.",
+        },
+      },
+      {
+        signal: new AbortController().signal,
+        threadId: thread.id,
+        turnId: "turn-staged-create-invalidated",
+        responseId: "response-staged-create-invalidated",
+        agentSlug: null,
+      },
+    );
+
+    expect(stringOutput(result)).toContain("status: success");
+    const statBeforeInvalidate = await port.stat("kb://invalidated.md");
+    expect(statBeforeInvalidate).toMatchObject({ ok: true });
+    if (!statBeforeInvalidate.ok) throw new Error("expected staged path");
+    const { documentId } = statBeforeInvalidate.value;
+    if (!documentId) throw new Error("expected staged document id");
+
+    documentSync.agentEdit().invalidateThread(documentId, thread.id);
+    await responseWrites.commitResponse("response-staged-create-invalidated", {
+      threadId: thread.id,
+      turnId: "turn-staged-create-invalidated",
+    });
+
+    await expect(port.stat("kb://invalidated.md")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    await expect(documentSync.readAsMarkdown(documentId)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+
+    await responseWrites.commitResponse("response-staged-create-invalidated", {
+      threadId: thread.id,
+      turnId: "turn-staged-create-invalidated",
+    });
+    await expect(port.stat("kb://invalidated.md")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+  });
+
   it("does not status-sniff write(command=view) document content", async () => {
     const baseDocumentSync = createInMemoryCollabDomain();
     const rawBody = "status: not_found\n\nThis is valid prose.";

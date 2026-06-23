@@ -90,6 +90,8 @@ export type {
   ReplaceCommand,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
+  ResponseRollbackResult,
+  ResponseStagedCreateOutcome,
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
