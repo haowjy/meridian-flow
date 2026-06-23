@@ -8,7 +8,7 @@ import { shouldDeleteUndoItem, type UndoStackItemLike } from "./delete-filter.js
 
 export interface ReconstructionOptions {
   fragmentName?: string;
-  /** Yjs clientID used for the local reconstructed undo/redo mutation; match hot mutationClientId for byte parity. */
+  /** Yjs clientID used for the local reconstructed undo/redo mutation. */
   undoClientId?: number;
 }
 

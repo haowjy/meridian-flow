@@ -1,4 +1,4 @@
-// Runs turn-level undo/redo across hot UndoManager state and cold journal reconstruction.
+// Runs turn-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
@@ -14,9 +14,8 @@ import {
   resolveUndoAvailability,
   type UndoAvailability,
 } from "../undo/availability.js";
-import type { UndoManagerRegistry } from "../undo/manager-registry.js";
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
-import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
+import type { InternalWriteResult } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
@@ -64,7 +63,6 @@ type ReversalResult =
 
 export function createTurnReversal(deps: {
   journal: UpdateJournal;
-  registry: UndoManagerRegistry;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
@@ -77,7 +75,6 @@ export function createTurnReversal(deps: {
 }): TurnReversal {
   const {
     journal,
-    registry,
     runtimeStore,
     mutationCommit,
     model,
@@ -216,68 +213,39 @@ export function createTurnReversal(deps: {
     if (!availableTurnId) return { ok: true, status: "nothing_to_undo" };
 
     const before = snapshotBlocks(runtime.doc, model, codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    let turnId: string | undefined;
-    let update: Uint8Array | undefined;
-
-    const runtimeClientId = runtime.doc.clientID;
+    let targetSeqs: ReadonlySet<number>;
     try {
-      const hot = registry.undoLatest(docId, session.threadId, {
-        scope: "turn",
+      targetSeqs = await targetSeqsForUndo(journal, docId, session.threadId, availableTurnId);
+    } catch (cause) {
+      return surfaceColdReversalInvariant({
+        direction: "undo",
+        docId,
+        threadId: session.threadId,
         turnId: availableTurnId,
-        // Hot and cold paths share this client id so their update bytes stay identical.
-        mutationClientId: undoClientId,
+        cause,
       });
+    }
+    if (targetSeqs.size === 0) return { ok: true, status: "nothing_to_undo" };
 
-      if (hot.ok) {
-        turnId = hot.turnId;
-        update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-      } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
-        registry.evictThread(docId, session.threadId);
-        update = undefined;
-        turnId = undefined;
-      }
-    } finally {
-      restoreDocClientId(runtime.doc, runtimeClientId);
+    let update: Uint8Array;
+    try {
+      const cold = await reconstructUndoUpdate(journal, docId, availableTurnId, {
+        targetSeqs,
+        undoClientId,
+      });
+      update = cold.undoUpdate;
+      Y.applyUpdate(runtime.doc, update, { type: "system" });
+    } catch (cause) {
+      return surfaceColdReversalInvariant({
+        direction: "undo",
+        docId,
+        threadId: session.threadId,
+        turnId: availableTurnId,
+        cause,
+      });
     }
 
-    if (!turnId || !update) {
-      let targetSeqs: ReadonlySet<number>;
-      try {
-        targetSeqs = await targetSeqsForUndo(journal, docId, session.threadId, availableTurnId);
-      } catch (cause) {
-        return surfaceColdReversalInvariant({
-          direction: "undo",
-          docId,
-          threadId: session.threadId,
-          turnId: availableTurnId,
-          cause,
-        });
-      }
-      if (targetSeqs.size === 0) return { ok: true, status: "nothing_to_undo" };
-      try {
-        const cold = await reconstructUndoUpdate(journal, docId, availableTurnId, {
-          targetSeqs,
-          undoClientId,
-        });
-        turnId = availableTurnId;
-        update = cold.undoUpdate;
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      } catch (cause) {
-        return surfaceColdReversalInvariant({
-          direction: "undo",
-          docId,
-          threadId: session.threadId,
-          turnId: availableTurnId,
-          cause,
-        });
-      }
-    }
-
-    if (turnId !== availableTurnId) {
-      registry.evictThread(docId, session.threadId);
-      return { ok: true, status: "partial" };
-    }
+    const turnId = availableTurnId;
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownDiff = diffSnapshots(before, snapshotBlocks(runtime.doc, model, codec));
 
@@ -330,113 +298,72 @@ export function createTurnReversal(deps: {
     if (!redoTarget) return { ok: true, status: "nothing_to_redo" };
 
     const before = snapshotBlocks(runtime.doc, model, codec);
-    let update: Uint8Array | undefined;
-    let locallyApplied = false;
-    const hotRedoTurn = registry.getState(docId, session.threadId)?.redoStack.at(-1)?.turnId;
-    if (hotRedoTurn === redoTarget.turnId) {
-      const beforeVector = Y.encodeStateVector(runtime.doc);
-      const runtimeClientId = runtime.doc.clientID;
-      try {
-        const hot = registry.redoLatest(docId, session.threadId, {
-          mutationClientId: undoClientId,
-        });
-        if (hot.ok) {
-          update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-          locallyApplied = true;
-        }
-      } finally {
-        restoreDocClientId(runtime.doc, runtimeClientId);
-      }
-    }
-
-    if (!update) {
-      let targetSeqs: ReadonlySet<number>;
-      try {
-        targetSeqs = await targetSeqsForRedo(
-          journal,
-          docId,
-          session.threadId,
-          redoTarget.turnId,
-          redoTarget.undoUpdateSeq,
-        );
-      } catch (cause) {
-        return surfaceColdReversalInvariant({
-          direction: "redo",
-          docId,
-          threadId: session.threadId,
-          turnId: redoTarget.turnId,
-          undoUpdateSeq: redoTarget.undoUpdateSeq,
-          cause,
-        });
-      }
-      if (targetSeqs.size === 0) {
-        popIfTop(runtime.redoStack, redoTarget.turnId);
-        registry.evictThread(docId, session.threadId);
-        return { ok: true, status: "nothing_to_redo" };
-      }
-      let cold: Awaited<ReturnType<typeof reconstructRedoUpdate>>;
-      try {
-        cold = await reconstructRedoUpdate(
-          journal,
-          docId,
-          redoTarget.turnId,
-          redoTarget.undoUpdateSeq,
-          { targetSeqs, undoClientId },
-        );
-      } catch (cause) {
-        return surfaceColdReversalInvariant({
-          direction: "redo",
-          docId,
-          threadId: session.threadId,
-          turnId: redoTarget.turnId,
-          undoUpdateSeq: redoTarget.undoUpdateSeq,
-          cause,
-        });
-      }
-      if (!cold?.ok) {
-        popIfTop(runtime.redoStack, redoTarget.turnId);
-        registry.evictThread(docId, session.threadId);
-        return { ok: true, status: "nothing_to_redo" };
-      }
-      update = cold.redoUpdate;
-    }
-
-    let consumed: { consumed: boolean; seq?: number };
+    let targetSeqs: ReadonlySet<number>;
     try {
-      consumed = await journal.persistRedo(
+      targetSeqs = await targetSeqsForRedo(
+        journal,
         docId,
-        update,
-        {
-          threadId: session.threadId,
-          turnId: redoTarget.turnId,
-          undoUpdateSeq: redoTarget.undoUpdateSeq,
-        },
-        { origin: "system", seq: 0 },
+        session.threadId,
+        redoTarget.turnId,
+        redoTarget.undoUpdateSeq,
       );
     } catch (cause) {
-      if (locallyApplied) {
-        await runtimeStore.restoreRuntimeFromLive(session, docId, runtime, commandName);
-      }
-      registry.evictThread(docId, session.threadId);
-      throw cause;
+      return surfaceColdReversalInvariant({
+        direction: "redo",
+        docId,
+        threadId: session.threadId,
+        turnId: redoTarget.turnId,
+        undoUpdateSeq: redoTarget.undoUpdateSeq,
+        cause,
+      });
     }
+    if (targetSeqs.size === 0) {
+      popIfTop(runtime.redoStack, redoTarget.turnId);
+      return { ok: true, status: "nothing_to_redo" };
+    }
+
+    let cold: Awaited<ReturnType<typeof reconstructRedoUpdate>>;
+    try {
+      cold = await reconstructRedoUpdate(
+        journal,
+        docId,
+        redoTarget.turnId,
+        redoTarget.undoUpdateSeq,
+        { targetSeqs, undoClientId },
+      );
+    } catch (cause) {
+      return surfaceColdReversalInvariant({
+        direction: "redo",
+        docId,
+        threadId: session.threadId,
+        turnId: redoTarget.turnId,
+        undoUpdateSeq: redoTarget.undoUpdateSeq,
+        cause,
+      });
+    }
+    if (!cold.ok) {
+      popIfTop(runtime.redoStack, redoTarget.turnId);
+      return { ok: true, status: "nothing_to_redo" };
+    }
+    const update = cold.redoUpdate;
+
+    const consumed = await journal.persistRedo(
+      docId,
+      update,
+      {
+        threadId: session.threadId,
+        turnId: redoTarget.turnId,
+        undoUpdateSeq: redoTarget.undoUpdateSeq,
+      },
+      { origin: "system", seq: 0 },
+    );
     if (!consumed.consumed) {
       popIfTop(runtime.redoStack, redoTarget.turnId);
-      registry.evictThread(docId, session.threadId);
-      if (locallyApplied) {
-        const restored = await runtimeStore.restoreRuntimeFromLive(
-          session,
-          docId,
-          runtime,
-          commandName,
-        );
-        if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-      }
       return { ok: true, status: "nothing_to_redo" };
     }
 
     const turnId = redoTarget.turnId;
-    if (!locallyApplied) Y.applyUpdate(runtime.doc, update, { type: "system" });
+    Y.applyUpdate(runtime.doc, update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownDiff = diffSnapshots(before, snapshotBlocks(runtime.doc, model, codec));
 
@@ -454,7 +381,6 @@ export function createTurnReversal(deps: {
     });
     if (!sync.ok) return { ok: false, response: sync.response };
     popIfTop(runtime.redoStack, turnId);
-    if (!locallyApplied) registry.evictThread(docId, session.threadId);
     runtime.undoStack.push(turnId);
     return {
       ok: true,
@@ -487,7 +413,6 @@ export function createTurnReversal(deps: {
 
   function invalidateRuntimeThread(docId: string, threadId: string): void {
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
-    registry.evictThread(docId, threadId);
   }
 }
 
@@ -520,10 +445,6 @@ async function targetSeqsForRedo(
 
 function mutationSeqs(rows: readonly TurnMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
-}
-
-function restoreDocClientId(doc: Y.Doc, clientId: number): void {
-  if (doc.clientID !== clientId) doc.clientID = clientId;
 }
 
 function status(code: WriteStatus, message?: string): InternalWriteResult {

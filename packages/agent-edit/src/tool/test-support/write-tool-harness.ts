@@ -17,7 +17,6 @@ import {
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { UpdateJournal } from "../../ports/update-journal.js";
-import { createUndoManagerRegistry } from "../../undo/manager-registry.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -31,7 +30,6 @@ const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 export function harness(
   initialDocs: Record<string, string> = {},
   options: {
-    undoRegistry?: ReturnType<typeof createUndoManagerRegistry>;
     lifecycle?: boolean;
     undoClientId?: number;
     retention?: {
@@ -43,7 +41,6 @@ export function harness(
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
-  const undoRegistry = options.undoRegistry ?? createUndoManagerRegistry();
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
@@ -53,7 +50,6 @@ export function harness(
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model,
-    undoRegistry,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.retention ? { retention: options.retention } : {}),
@@ -63,7 +59,6 @@ export function harness(
     coordinator,
     lifecycle,
     journal,
-    undoRegistry,
     liveDoc: (docId: string) => coordinator.require(docId),
   };
 }

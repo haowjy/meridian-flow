@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { createUndoManagerRegistry } from "../undo/manager-registry.js";
 import type { MutationCommit } from "./mutation-commit.js";
 import { createResponseStaging } from "./response-staging.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -189,7 +188,6 @@ describe("response staging", () => {
       projectToLive: async () => ({ ok: true, concurrent: { touchedHashes: new Set() } }),
     } as unknown as MutationCommit;
     const staging = createResponseStaging({
-      registry: createUndoManagerRegistry(),
       runtimeStore,
       mutationCommit,
     });

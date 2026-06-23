@@ -13,12 +13,7 @@ import type { Codec } from "../codec/types.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type {
-  JournalBatchAppendEntry,
-  JournalBatchAppendResult,
-  UpdateJournal,
-} from "../ports/update-journal.js";
-import type { UndoManagerRegistry } from "../undo/manager-registry.js";
+import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { WriteCommand } from "./types.js";
@@ -108,20 +103,11 @@ export interface MutationCommit {
 
 export function createMutationCommit(deps: {
   journal: UpdateJournal;
-  registry: UndoManagerRegistry;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: Codec;
-  onInvariantViolation?: (message: string) => void;
 }): MutationCommit {
-  const {
-    journal,
-    registry,
-    coordinator,
-    model,
-    codec,
-    onInvariantViolation = defaultInvariantViolation,
-  } = deps;
+  const { journal, coordinator, model, codec } = deps;
 
   return {
     syncAfterLocalMutation,
@@ -197,8 +183,7 @@ export function createMutationCommit(deps: {
   }
 
   async function commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<void> {
-    const results = await journal.appendBatch(entries);
-    attachCommittedWIds(entries, results);
+    await journal.appendBatch(entries);
   }
 
   async function projectToLive(
@@ -216,40 +201,6 @@ export function createMutationCommit(deps: {
         input.turnId,
       ),
     };
-  }
-
-  function attachCommittedWIds(
-    entries: readonly JournalBatchAppendEntry[],
-    results: readonly JournalBatchAppendResult[],
-  ): void {
-    for (const [index, result] of results.entries()) {
-      if (result.wId === undefined) continue;
-      const entry = entries[index];
-      if (!entry?.mutation) {
-        surfaceWIdAttachFailure(
-          `Journal returned w-id ${result.wId} for batch entry ${index}, but that entry has no mutation metadata.`,
-        );
-        continue;
-      }
-      const attached = registry.attachNextWId(
-        entry.docId,
-        entry.mutation.threadId,
-        entry.mutation.turnId,
-        result.wId,
-      );
-      if (!attached && registry.getState(entry.docId, entry.mutation.threadId)) {
-        // Missing hot managers are valid for cold-path fallback and response
-        // retries after staged runtimes were invalidated; durable mutation rows
-        // are still authoritative. An active manager with no matching item is drift.
-        surfaceWIdAttachFailure(
-          `Failed to attach committed w-id ${result.wId} to undo stack for document ${entry.docId}, thread ${entry.mutation.threadId}, turn ${entry.mutation.turnId}.`,
-        );
-      }
-    }
-  }
-
-  function surfaceWIdAttachFailure(message: string): void {
-    onInvariantViolation(message);
   }
 
   async function mergeCommittedUpdatesToLive(
@@ -335,8 +286,4 @@ function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[]
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
-}
-
-function defaultInvariantViolation(message: string): never {
-  throw new Error(message);
 }

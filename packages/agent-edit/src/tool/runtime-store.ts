@@ -1,15 +1,12 @@
 // Owns per-session runtime Y.Doc lifecycles, live sync, and recovery flags.
 import * as Y from "yjs";
 
-import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
-import type { DocumentModel } from "../ports/model.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
-import type { UndoManagerRegistry } from "../undo/manager-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
@@ -78,12 +75,9 @@ const EMPTY_UPDATE_LENGTH = 2;
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
   journal: UpdateJournal;
-  registry: UndoManagerRegistry;
-  model: DocumentModel<Y.XmlElement>;
-  codec: Codec;
   createRuntimeDoc: () => Y.Doc;
 }): RuntimeStore {
-  const { coordinator, journal, registry, createRuntimeDoc } = deps;
+  const { coordinator, journal, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const docsNeedingRecovery = new Set<string>();
 
@@ -142,7 +136,6 @@ export function createRuntimeStore(deps: {
   ): void {
     runtimeDocs.delete(runtimeKey(session, docId));
     session.documents.delete(docId);
-    registry.evictThread(docId, session.threadId);
     if (options.needsRecovery) docsNeedingRecovery.add(docId);
   }
 
@@ -187,7 +180,6 @@ export function createRuntimeStore(deps: {
   ): Promise<void> {
     await recoverLiveDocsFromJournal(documents);
     for (const document of documents) {
-      registry.evictThread(document.docId, document.session.threadId);
       const restored = await restoreRuntimeFromLive(
         document.session,
         document.docId,

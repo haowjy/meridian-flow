@@ -1,13 +1,15 @@
 // Compact-on-load entry point; adapters own the journal mutation, live docs are untouched.
 import type { CompactionResult, PersistedUpdate } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
-import type { UndoManagerRegistry } from "./manager-registry.js";
 
 export interface CompactOnLoadOptions {
   docId: string;
+  /**
+   * Effective compaction cutoff: folds updates older than this date. The public
+   * core facade clamps this to the reversal retention horizon when retention is
+   * configured; callers using this helper directly own cutoff safety.
+   */
   before: Date;
-  /** Optional hot registry guard; compaction is only legal before live UMs exist. */
-  registry?: Pick<UndoManagerRegistry, "hasActiveDocument">;
 }
 
 export interface CompactOnLoadResult extends CompactionResult {
@@ -19,9 +21,6 @@ export async function compactOnLoad(
   journal: UpdateJournal,
   options: CompactOnLoadOptions,
 ): Promise<CompactOnLoadResult> {
-  if (options.registry?.hasActiveDocument(options.docId)) {
-    throw new Error(`Cannot compact ${options.docId} while live UndoManagers are active`);
-  }
   const result = await journal.compact(options.docId, options.before);
   const snapshot = await journal.read(options.docId);
   return {
