@@ -18,9 +18,6 @@ desktop, MCP, and future products.
   (checkpoint + retained update rows + mutation metadata). Forward writes keep
   a stable per-thread Yjs transaction origin symbol; reversal does not use an
   in-memory reversal cache.
-- **Compaction** — fold old updates into checkpoint, expire reversal records.
-  Exposed via the `compact()` façade; the host decides when to call it. Server
-  checkpoint freshness is maintained by Hocuspocus's debounced store path.
 - **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
   model })` exposes the agent `write()` tool plus turn-level availability/user
   undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).

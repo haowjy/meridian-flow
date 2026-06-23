@@ -71,7 +71,7 @@ sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
 
 ### AgentEditCore (`src/index.ts`)
-The public package façade exposes `write()`, `recover()`, `compact()`,
+The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
 `getAvailability(docId, threadId)`, `undoTurn(docId, threadId)`,
 `redoTurn(docId, threadId)`, and `invalidateThread(docId, threadId)`. Host
@@ -125,14 +125,12 @@ transaction attribution and same-actor filtering only; turn grouping for
 reversal comes from durable journal metadata (`turnId` / mutation row
 `createdSeq`), not live undo stack items.
 
-Redo survives process restart by rehydrating `runtime.redoStack` from
-`ReversalRecord` rows with `status: "reversed"` during the first `view` sync for
-that `(session, doc, thread)`. Rehydration filters expired records and records
-made stale by later forward agent/human updates. Redo consumption is
-authoritative at persist time: `persistRedo()` rechecks the doc+thread+turn
-reversal is still `status: "reversed"` inside the append transaction, marks it
-`status: "redone"`, and returns `consumed: false` without appending when another
-session already used it.
+Redo targets are selected from durable `ReversalRecord` rows with
+`status: "reversed"`; there is no runtime redo stack or rehydration cache. Redo
+consumption is authoritative at persist time: `persistRedo()` rechecks the
+doc+thread+turn reversal is still `status: "reversed"` inside the append
+transaction, marks it `status: "redone"`, and returns `consumed: false` without
+appending when another session already used it.
 
 **Turn-level undo:** each `write()` call is its own durable mutation row. Undoing
 a turn reverses all currently active rows for the latest undoable turn together;
@@ -172,12 +170,11 @@ invalidates staged runtimes so ordinary later views do not see phantom edits. If
 the journal batch lands, the whole response is durable and remains the latest
 undoable turn even when the post-commit live projection fails. In that case
 `commitResponse(responseId)` recovers live docs from the journal, rebuilds and
-reattaches the affected runtimes without restoring baseline undo/redo stacks,
-and returns success; only a recovery failure invalidates runtimes so next access
-rebuilds from journal truth. `rollbackResponse(responseId)` is cancellation for
-uncommitted buffers: it discards staged updates and restores affected runtime
-docs from live. If called after a journaled commit attempt, it is recover-only
-and never restores baseline undo/redo stacks.
+reattaches the affected runtimes, and returns success; only a recovery failure
+invalidates runtimes so next access rebuilds from journal truth.
+`rollbackResponse(responseId)` is cancellation for uncommitted buffers: it
+discards staged updates and restores affected runtime docs from live. If called
+after a journaled commit attempt, it is recover-only.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
@@ -212,5 +209,5 @@ Meridian URI schemes — it operates on plain `{ file: "<docId>#fragment" }`.
 Package tests cover block-hash stability, codec round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
-drift invariants, availability, retention, and public turn seams), response
-staging/recovery, create lifecycle, and compact-on-load.
+drift invariants, availability, and public turn seams), response
+staging/recovery, and create lifecycle.
