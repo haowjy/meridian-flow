@@ -1,5 +1,10 @@
 // Parity and reconcile coverage for hot UndoManagers and cold journal reconstruction.
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -29,8 +34,8 @@ const DOC_ID = "doc-1";
 const FILE = "chapter.md";
 const THREAD_A = "thread-a";
 const THREAD_B = "thread-b";
-const LIVE_CLIENT_ID = 100;
-const REVERSAL_CLIENT_ID = 9_999;
+const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
+const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 describe("UndoManagerRegistry hot path", () => {
   it("returns the same thread origin object across turns and splits with stopCapturing", () => {

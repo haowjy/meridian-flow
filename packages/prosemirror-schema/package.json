@@ -7,13 +7,17 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "lib0": "^0.2.114",
     "prosemirror-model": "^1.25.9",
-    "prosemirror-schema-basic": "^1.2.4"
+    "prosemirror-schema-basic": "^1.2.4",
+    "yjs": "13.6.31"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

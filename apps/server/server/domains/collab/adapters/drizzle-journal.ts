@@ -20,6 +20,7 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 
@@ -492,7 +493,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
 
         let compactedThroughSeq = checkpointSeq;
         if (foldRows.length > 0) {
-          const doc = new Y.Doc({ gc: false });
+          const doc = createCollabYDoc({ gc: false });
           if (checkpoint) Y.applyUpdate(doc, toBytes(checkpoint.state));
           for (const row of foldRows) Y.applyUpdate(doc, toBytes(row.updateData));
           compactedThroughSeq = foldRows.at(-1)?.id ?? checkpointSeq;
@@ -652,7 +653,7 @@ export function createServerDocumentLifecycle(
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
-      const emptyDoc = new Y.Doc({ gc: false });
+      const emptyDoc = createCollabYDoc({ gc: false });
       await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc), 0);
     },
   };

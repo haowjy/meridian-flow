@@ -81,8 +81,9 @@ export function createRuntimeStore(deps: {
   registry: UndoManagerRegistry;
   model: DocumentModel<Y.XmlElement>;
   codec: Codec;
+  createRuntimeDoc: () => Y.Doc;
 }): RuntimeStore {
-  const { coordinator, journal, registry } = deps;
+  const { coordinator, journal, registry, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   const docsNeedingRecovery = new Set<string>();
 
@@ -104,7 +105,7 @@ export function createRuntimeStore(deps: {
     const existing = runtimeDocs.get(key);
     if (existing) return existing;
     const runtime: RuntimeDocumentState = {
-      doc: new Y.Doc({ gc: false }),
+      doc: createRuntimeDoc(),
       session,
       threadId: session.threadId,
       undoStack: [],
@@ -171,7 +172,7 @@ export function createRuntimeStore(deps: {
       if (recovered) return recovered;
     }
     const response = await withLiveDocument(coordinator, docId, commandName, (liveDoc) => {
-      const restored = new Y.Doc({ gc: false });
+      const restored = createRuntimeDoc();
       Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
       runtime.doc = restored;
       return null;

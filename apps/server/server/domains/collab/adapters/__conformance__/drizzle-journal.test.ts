@@ -9,7 +9,12 @@ import {
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -39,8 +44,8 @@ const CONCURRENT_TURNS = [
   "00000000-0000-4000-8000-000000000212",
 ] as const;
 const MISSING_THREAD_ID = "00000000-0000-4000-8000-0000000002ff";
-const LIVE_CLIENT_ID = 100;
-const REVERSAL_CLIENT_ID = 9_999;
+const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
+const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });

@@ -62,6 +62,12 @@ export interface CreateWriteToolOptions {
   defaultThreadId?: string;
   /** Fresh Yjs client id used for cold undo/redo reconstruction. */
   undoClientId?: number;
+  /**
+   * Host-owned factory for forward-authoring runtime docs. Lets the host keep
+   * their clientID outside any reserved band. Defaults to a plain gc:false
+   * Y.Doc for standalone use.
+   */
+  createRuntimeDoc?: () => Y.Doc;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
 }
@@ -117,6 +123,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     registry,
     model: options.model,
     codec: options.codec,
+    createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
   const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
   const responseStaging = createResponseStaging({

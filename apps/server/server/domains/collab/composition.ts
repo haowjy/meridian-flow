@@ -14,7 +14,13 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  createCollabYDoc,
+  isReservedClientId,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
@@ -86,7 +92,6 @@ type PendingAppend = {
 };
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
-export const AGENT_EDIT_UNDO_CLIENT_ID = 9_999;
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
@@ -147,11 +152,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     codec,
     model,
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
-  const unsafeCheckpointDocuments = new Set<string>();
+  const unsafeCheckpointDocuments = new Map<string, number>();
   let nextPendingId = 1;
 
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -265,14 +271,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   function rejectReservedClientIdUpdate(input: {
     documentId: DocumentId;
     origin: UpdateOrigin;
+    reservedClientId: number;
   }): void {
-    unsafeCheckpointDocuments.add(input.documentId);
+    unsafeCheckpointDocuments.set(input.documentId, input.reservedClientId);
     recordDroppedConnectionUpdate(input.documentId);
     emitAgentEditInvariantViolation({
-      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${AGENT_EDIT_UNDO_CLIENT_ID} is reserved for server reversal authoring.`,
+      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${input.reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
       documentId: input.documentId,
       originType: input.origin.type,
-      reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+      reservedClientId: input.reservedClientId,
+      reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
     });
   }
 
@@ -378,7 +386,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         return Err({ code: "checkpoint_not_found", checkpointId });
       }
       try {
-        const restored = new Y.Doc({ gc: false });
+        const restored = createCollabYDoc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
         const result = await markdownDocuments.setMarkdown({
           documentId: documentId as DocumentId,
@@ -435,8 +443,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     persistConnectionUpdate(input) {
-      if (containsYjsStructFromClient(input.update, AGENT_EDIT_UNDO_CLIENT_ID)) {
-        rejectReservedClientIdUpdate(input);
+      const reservedClientId = reservedClientIdInUpdate(input.update);
+      if (reservedClientId !== null) {
+        rejectReservedClientIdUpdate({ ...input, reservedClientId });
         return;
       }
       trackAppend(
@@ -447,11 +456,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async storeHocuspocusDocument(documentId, document) {
       await drainPending(documentId);
-      if (unsafeCheckpointDocuments.has(documentId)) {
+      const reservedClientId = unsafeCheckpointDocuments.get(documentId);
+      if (reservedClientId !== undefined) {
         emitAgentEditInvariantViolation({
-          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update may still be present in the live Y.Doc.`,
+          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update with reserved Yjs clientID ${reservedClientId} may still be present in the live Y.Doc. The reserved band is [0, ${RESERVED_CLIENT_ID_MAX}].`,
           documentId,
-          reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+          reservedClientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
         });
         return;
       }
@@ -533,8 +544,11 @@ function attributionFromMeta(meta: UpdateMeta): {
   return { originType: null, actorTurnId: null, actorUserId: null };
 }
 
-function containsYjsStructFromClient(update: Uint8Array, clientId: number): boolean {
-  return Y.decodeUpdate(update).structs.some((struct) => struct.id.client === clientId);
+function reservedClientIdInUpdate(update: Uint8Array): number | null {
+  return (
+    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
+      .client ?? null
+  );
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

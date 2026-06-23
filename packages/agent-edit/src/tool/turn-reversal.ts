@@ -217,22 +217,28 @@ export function createTurnReversal(deps: {
 
     const before = snapshotBlocks(runtime.doc, model, codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const hot = registry.undoLatest(docId, session.threadId, {
-      scope: "turn",
-      turnId: availableTurnId,
-      // Hot and cold paths share this client id so their update bytes stay identical.
-      mutationClientId: undoClientId,
-    });
     let turnId: string | undefined;
     let update: Uint8Array | undefined;
 
-    if (hot.ok) {
-      turnId = hot.turnId;
-      update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
-      registry.evictThread(docId, session.threadId);
-      update = undefined;
-      turnId = undefined;
+    const runtimeClientId = runtime.doc.clientID;
+    try {
+      const hot = registry.undoLatest(docId, session.threadId, {
+        scope: "turn",
+        turnId: availableTurnId,
+        // Hot and cold paths share this client id so their update bytes stay identical.
+        mutationClientId: undoClientId,
+      });
+
+      if (hot.ok) {
+        turnId = hot.turnId;
+        update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
+      } else if (hot.status !== "no_manager" && hot.status !== "no_undo") {
+        registry.evictThread(docId, session.threadId);
+        update = undefined;
+        turnId = undefined;
+      }
+    } finally {
+      restoreDocClientId(runtime.doc, runtimeClientId);
     }
 
     if (!turnId || !update) {
@@ -329,12 +335,17 @@ export function createTurnReversal(deps: {
     const hotRedoTurn = registry.getState(docId, session.threadId)?.redoStack.at(-1)?.turnId;
     if (hotRedoTurn === redoTarget.turnId) {
       const beforeVector = Y.encodeStateVector(runtime.doc);
-      const hot = registry.redoLatest(docId, session.threadId, {
-        mutationClientId: undoClientId,
-      });
-      if (hot.ok) {
-        update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-        locallyApplied = true;
+      const runtimeClientId = runtime.doc.clientID;
+      try {
+        const hot = registry.redoLatest(docId, session.threadId, {
+          mutationClientId: undoClientId,
+        });
+        if (hot.ok) {
+          update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
+          locallyApplied = true;
+        }
+      } finally {
+        restoreDocClientId(runtime.doc, runtimeClientId);
       }
     }
 
@@ -509,6 +520,10 @@ async function targetSeqsForRedo(
 
 function mutationSeqs(rows: readonly TurnMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
+}
+
+function restoreDocClientId(doc: Y.Doc, clientId: number): void {
+  if (doc.clientID !== clientId) doc.clientID = clientId;
 }
 
 function status(code: WriteStatus, message?: string): InternalWriteResult {

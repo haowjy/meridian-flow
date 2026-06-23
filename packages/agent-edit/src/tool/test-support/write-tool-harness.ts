@@ -1,5 +1,10 @@
 // Shared in-memory harness for write-tool module integration tests.
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
@@ -20,7 +25,8 @@ export const codec = mdxCodec({ schema });
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };
-export const REVERSAL_CLIENT_ID = 9_999;
+export const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
+const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 
 export function harness(
   initialDocs: Record<string, string> = {},
@@ -31,6 +37,7 @@ export function harness(
     retention?: {
       reversalWindowMs?: number;
     };
+    createRuntimeDoc?: () => Y.Doc;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -48,6 +55,7 @@ export function harness(
     model,
     undoRegistry,
     undoClientId: options.undoClientId,
+    ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.retention ? { retention: options.retention } : {}),
   });
   return {
@@ -77,7 +85,7 @@ export class MemoryCoordinator implements DocumentCoordinator {
 
   constructor(initialDocs: Record<string, string>) {
     for (const [docId, markdown] of Object.entries(initialDocs)) {
-      this.docs.set(docId, createDoc(markdown, 100 + this.docs.size));
+      this.docs.set(docId, createDoc(markdown, FIRST_FAKE_LIVE_CLIENT_ID + this.docs.size));
     }
   }
 
@@ -89,7 +97,7 @@ export class MemoryCoordinator implements DocumentCoordinator {
     const existing = this.docs.get(docId);
     if (existing) return existing;
     const doc = new Y.Doc({ gc: false });
-    doc.clientID = 100 + this.docs.size;
+    doc.clientID = FIRST_FAKE_LIVE_CLIENT_ID + this.docs.size;
     this.docs.set(docId, doc);
     return doc;
   }

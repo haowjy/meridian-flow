@@ -1,6 +1,7 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryEventSink, type EventSink } from "../observability/index.js";
@@ -9,7 +10,7 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import { AGENT_EDIT_UNDO_CLIENT_ID, type CollabFacadeStore, createFacade } from "./composition.js";
+import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
@@ -145,10 +146,13 @@ describe("createFacade document write hook", () => {
 });
 
 describe("createFacade connection update ingest", () => {
-  it("rejects connection updates authored with the reserved reversal client id", async () => {
+  it.each([
+    500,
+    AGENT_EDIT_UNDO_CLIENT_ID,
+  ])("rejects connection updates authored inside the reserved clientID band (%s)", async (reservedClientId) => {
     const eventSink = createInMemoryEventSink();
     const { domain, journal } = createTestHarness({ eventSink });
-    const foreign = updateAuthoredBy(AGENT_EDIT_UNDO_CLIENT_ID);
+    const foreign = updateAuthoredBy(reservedClientId);
 
     domain.persistConnectionUpdate({
       documentId: DOC_ID,
@@ -169,7 +173,8 @@ describe("createFacade connection update ingest", () => {
         payload: expect.objectContaining({
           documentId: DOC_ID,
           originType: "user",
-          reservedClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+          reservedClientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
         }),
       }),
     );
@@ -178,7 +183,7 @@ describe("createFacade connection update ingest", () => {
   it("persists normal connection updates unchanged", async () => {
     const eventSink = createInMemoryEventSink();
     const { domain, journal } = createTestHarness({ eventSink });
-    const foreign = updateAuthoredBy(1234);
+    const foreign = updateAuthoredBy(RESERVED_CLIENT_ID_MAX + 1);
 
     domain.persistConnectionUpdate({
       documentId: DOC_ID,

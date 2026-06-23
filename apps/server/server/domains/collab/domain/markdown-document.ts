@@ -18,6 +18,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -120,7 +121,7 @@ export function createMarkdownDocumentEngine(
     parsed: ParsedContent,
     origin: RuntimeOrigin,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
-    const draft = new Y.Doc({ gc: false });
+    const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
     const yjsOrigin = yjsTransactionOrigin(origin);
