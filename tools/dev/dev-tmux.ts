@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
@@ -6,6 +8,12 @@ import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
+import {
+  findStaleTailscaleRoutes,
+  parseTailscaleServeStatusJson,
+  type TailscaleRouteBinding,
+  tailscaleRouteOffArgs,
+} from "./lib/tailscale-stale-routes";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
   formatDevRouteLines,
@@ -65,6 +73,98 @@ function isDevMode(value: string | null | undefined): value is DevMode {
 
 function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function commandErrorText(error: unknown): string {
+  if (typeof error === "object" && error !== null && "stderr" in error) {
+    const stderr = (error as { stderr?: Buffer | string }).stderr;
+    if (typeof stderr === "string" && stderr.trim()) return stderr.trim();
+    if (Buffer.isBuffer(stderr) && stderr.toString().trim()) return stderr.toString().trim();
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
+
+function readTailscaleStatusJson(args: string[]): unknown | null {
+  try {
+    const output = execFileSync("tailscale", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(output) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function readTailscaleRouteBindings(): TailscaleRouteBinding[] {
+  const seen = new Set<string>();
+  const bindings: TailscaleRouteBinding[] = [];
+
+  for (const { args, modeOverride } of [
+    { args: ["serve", "status", "--json"], modeOverride: undefined },
+    { args: ["funnel", "status", "--json"], modeOverride: "funnel" as const },
+  ]) {
+    const status = readTailscaleStatusJson(args);
+    if (!status) continue;
+
+    for (const parsedBinding of parseTailscaleServeStatusJson(status)) {
+      const binding = modeOverride ? { ...parsedBinding, mode: modeOverride } : parsedBinding;
+      const key = `${binding.mode}:${binding.httpsPort}:${binding.localPort}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      bindings.push(binding);
+    }
+  }
+
+  return bindings;
+}
+
+function isLocalPortListening(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = (live: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(live);
+    };
+
+    socket.setTimeout(250);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+async function pruneStaleTailscaleRoutes(): Promise<void> {
+  const bindings = readTailscaleRouteBindings();
+  if (bindings.length === 0) return;
+
+  const liveness = new Map<number, boolean>();
+  for (const localPort of [...new Set(bindings.map((binding) => binding.localPort))]) {
+    liveness.set(localPort, await isLocalPortListening(localPort));
+  }
+
+  const staleRoutes = findStaleTailscaleRoutes(bindings, (port) => liveness.get(port) ?? false);
+  let pruned = 0;
+
+  for (const route of staleRoutes) {
+    try {
+      execFileSync("tailscale", tailscaleRouteOffArgs(route), {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      pruned += 1;
+    } catch (error) {
+      const message = commandErrorText(error);
+      if (!/handler does not exist/i.test(message)) {
+        console.warn(`tailscale ${route.mode} --https=${route.httpsPort} off warning: ${message}`);
+      }
+    }
+  }
+
+  if (pruned > 0) {
+    console.log(`pruned ${pruned} stale tailscale route${pruned === 1 ? "" : "s"}`);
+  }
 }
 
 function portlessEnvPrefix(shared: boolean): string {
@@ -371,6 +471,8 @@ async function main(): Promise<void> {
     });
     return;
   }
+
+  await pruneStaleTailscaleRoutes();
 
   const createResult = tmuxStore.createSession(identity.sessionName);
   if (createResult.status !== 0) {

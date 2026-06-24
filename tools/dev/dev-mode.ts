@@ -24,8 +24,9 @@ function isFalsy(value: string | undefined): boolean {
 
 export function parseDevCliOptions({ argv, env = process.env }: ParseModeInput): DevCliOptions {
   const wantsFunnel = argv.includes("--funnel") || isTruthy(env.PORTLESS_FUNNEL);
-  // Tailscale is the default sharing mode. Opt out with `--no-tailscale`
-  // (or `PORTLESS_TAILSCALE=0`). Funnel always implies tailscale and wins.
+  // Tailscale serve is the tailnet-only default. Opt out with `--no-tailscale`
+  // (or `PORTLESS_TAILSCALE=0`). Funnel is public internet exposure, so it
+  // stays an explicit opt-in; when requested, it implies tailscale and wins.
   const optOutTailscale =
     !wantsFunnel && (argv.includes("--no-tailscale") || isFalsy(env.PORTLESS_TAILSCALE));
 

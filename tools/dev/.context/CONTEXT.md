@@ -45,7 +45,10 @@ tools/dev/
 ## Dev server contract
 
 - Portless-first — `pnpm portless:list` is the URL source of truth; no raw localhost port assumptions in new dev tools.
+- Tailscale serve is the tailnet-only default. Portless auto-assigns a unique serve HTTPS port per worktree; `--no-tailscale` opts out to local-only.
+- Funnel is the explicit public-internet opt-in (`--funnel` / `PORTLESS_FUNNEL=1`); never make it implicit.
 - `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` clean only this worktree's session and orphaned routes.
+- Before launching portless, dev start prunes stale Tailscale serve/funnel routes whose `127.0.0.1:<port>` target has no live listener. Cleanup is surgical per HTTPS port (`off`) only: never `tailscale serve reset`, and never prune a route with any live target.
 - Smoke/e2e should use portless/TLS routes unless intentionally in-process.
 
 ## Migration tooling
