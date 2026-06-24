@@ -4,7 +4,12 @@ import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import { type Codec, CodecParseError, type ParsedContent } from "../codec/types.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { lookupBlockHash } from "./block-hash.js";
-import { findTextMatches, serializePmBlockBody, type TextFindMatch } from "./find.js";
+import {
+  findTextMatches,
+  serializeBlockBody,
+  serializePmBlockBody,
+  type TextFindMatch,
+} from "./find.js";
 import {
   type BlockScope,
   headingLevel,
@@ -102,10 +107,7 @@ function resolveInsert(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return {
-      ok: true,
-      edits: found.matches.map((match) => insertionEditForMatch(params, match)),
-    };
+    return lowerFindMatches(ctx, params, found.matches, "insert");
   }
 
   const lowered = lowerInsertPosition(ctx, params);
@@ -143,7 +145,7 @@ function resolveReplace(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return replaceFindMatches(ctx, params, found.matches);
+    return lowerFindMatches(ctx, params, found.matches, "replace");
   }
 
   if (params.around !== undefined) {
@@ -243,50 +245,29 @@ function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteR
   };
 }
 
-function insertionEditForMatch(params: NormalizedParams, match: TextFindMatch): ResolvedEdit {
-  if (match.kind === "cross-block") {
-    return {
-      documentId: params.documentId,
-      file: params.filePath,
-      kind: "text",
-      element: match.endElement,
-      span: { start: match.endSpan.end, end: match.endSpan.end },
-      newText: params.content,
-    };
-  }
-  return {
-    documentId: params.documentId,
-    file: params.filePath,
-    kind: "text",
-    element: match.element,
-    span: { start: match.span.end, end: match.span.end },
-    newText: params.content,
-  };
+interface FindMatchGroup {
+  elements: Y.XmlElement[];
+  startIndex: number;
+  endIndex: number;
+  rangeStart: number;
+  matches: TextFindMatch[];
 }
 
-function replaceFindMatches(
+function lowerFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   matches: readonly TextFindMatch[],
+  command: WriteCommandName,
 ): ResolveWriteResult {
-  const edits: ResolvedEdit[] = [];
-  for (const match of matches) {
-    if (match.kind === "single-block") {
-      edits.push({
-        documentId: params.documentId,
-        file: params.filePath,
-        kind: "text",
-        element: match.element,
-        span: match.span,
-        newText: params.content,
-      });
-      continue;
-    }
+  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, matches, command);
+  if (plainTextEdits) return { ok: true, edits: plainTextEdits };
 
-    const replacedSource =
-      match.rangeSource.slice(0, match.matchStart) +
-      params.content +
-      match.rangeSource.slice(match.matchEnd);
+  const edits: ResolvedEdit[] = [];
+  for (const group of groupFindMatches(matches)) {
+    const groupSource = group.elements
+      .map((element) => serializeBlockBody(ctx, element))
+      .join("\n\n");
+    const replacedSource = spliceFindMatches(groupSource, group, params.content, command);
     const parsed = parseReplacementRange(ctx, replacedSource);
     if (!parsed.ok) return parsed;
     const lowered = replaceScope(
@@ -294,9 +275,9 @@ function replaceFindMatches(
       params,
       {
         kind: "range",
-        blocks: match.elements,
-        startIndex: match.startIndex,
-        endIndex: match.endIndex,
+        blocks: group.elements,
+        startIndex: group.startIndex,
+        endIndex: group.endIndex,
       },
       parsed.parsed,
     );
@@ -304,6 +285,86 @@ function replaceFindMatches(
     edits.push(...lowered.edits);
   }
   return { ok: true, edits };
+}
+
+function lowerPlainTextFindMatches(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  matches: readonly TextFindMatch[],
+  command: WriteCommandName,
+): ResolvedEdit[] | null {
+  if (!isPlainTextContent(ctx, params.content)) return null;
+  const edits: ResolvedEdit[] = [];
+  for (const match of matches) {
+    if (match.elements.length !== 1) return null;
+    const [element] = match.elements;
+    if (match.rangeSource !== ctx.model.getText(element)) return null;
+    const start = command === "insert" ? match.matchEnd : match.matchStart;
+    const end = match.matchEnd;
+    edits.push({
+      documentId: params.documentId,
+      file: params.filePath,
+      kind: "text",
+      element,
+      span: { start, end },
+      newText: params.content,
+    });
+  }
+  return edits;
+}
+
+function isPlainTextContent(ctx: ConcreteResolveContext, content: string): boolean {
+  if (content.length === 0) return true;
+  const parsed = parseReplacementRange(ctx, content);
+  if (!parsed.ok || parsed.parsed.blocks.length !== 1) return false;
+  const [block] = parsed.parsed.blocks;
+  return (
+    block.isTextblock &&
+    block.textContent === content &&
+    serializePmBlockBody(ctx, block) === content
+  );
+}
+
+function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
+  const groups: FindMatchGroup[] = [];
+  for (const match of matches) {
+    const last = groups.at(-1);
+    if (last && match.startIndex <= last.endIndex) {
+      const known = new Set(last.elements);
+      for (const element of match.elements) {
+        if (!known.has(element)) last.elements.push(element);
+      }
+      last.startIndex = Math.min(last.startIndex, match.startIndex);
+      last.endIndex = Math.max(last.endIndex, match.endIndex);
+      last.rangeStart = Math.min(last.rangeStart, match.rangeStart);
+      last.matches.push(match);
+      continue;
+    }
+    groups.push({
+      elements: [...match.elements],
+      startIndex: match.startIndex,
+      endIndex: match.endIndex,
+      rangeStart: match.rangeStart,
+      matches: [match],
+    });
+  }
+  return groups;
+}
+
+function spliceFindMatches(
+  source: string,
+  group: FindMatchGroup,
+  content: string,
+  command: WriteCommandName,
+): string {
+  let result = source;
+  for (const match of [...group.matches].reverse()) {
+    const start = match.rangeStart + match.matchStart - group.rangeStart;
+    const end = match.rangeStart + match.matchEnd - group.rangeStart;
+    const spliceStart = command === "insert" ? end : start;
+    result = result.slice(0, spliceStart) + content + result.slice(end);
+  }
+  return result;
 }
 
 function parseReplacementRange(
