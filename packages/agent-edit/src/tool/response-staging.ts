@@ -1,7 +1,8 @@
 // Buffers model-response write updates until commit or rollback resolves their lifecycle.
 import * as Y from "yjs";
 
-import type { ConcurrentUpdateOrigin } from "../apply/types.js";
+import type { BlockSnapshot, ConcurrentDetectionResult } from "../apply/echo.js";
+import type { ApplyEchoHunk, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
@@ -36,14 +37,26 @@ export interface ResponseStageUpdateInput {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
   ensureDocumentBeforeCommit?: boolean;
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  echoInput: StagedWriteEchoInput;
   // Per-doc buffers lose insertion order across documents; commit derives the
   // journal batch by this response-local staging sequence.
   stageSeq: number;
+}
+
+interface StagedWriteEchoInput {
+  before: readonly BlockSnapshot[];
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  structuralChange: boolean;
 }
 
 interface ResponseDocumentBuffer {
@@ -116,19 +129,20 @@ export function createResponseStaging(deps: {
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
         updateCount += docBuffer.updates.length;
+        const echoes = postCommitEchoes(docBuffer, projected.concurrent);
+        const text =
+          echoes.length > 0 || projected.concurrent.info
+            ? formatConcurrentCommitEcho({
+                echoes,
+                concurrentEdits: projected.concurrent.info,
+              })
+            : undefined;
         documents.push({
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
-          ...(projected.concurrent.info
-            ? {
-                concurrentEdits: projected.concurrent.info,
-                echo: projected.echo,
-                text: formatConcurrentCommitEcho({
-                  echo: projected.echo,
-                  concurrentEdits: projected.concurrent.info,
-                }),
-              }
-            : {}),
+          ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
+          ...(echoes.length > 0 ? { echo: echoes } : {}),
+          ...(text ? { text } : {}),
         });
       }
       responseBuffers.delete(responseId);
@@ -244,9 +258,37 @@ export function createResponseStaging(deps: {
       mutation: { threadId: input.session.threadId, turnId: input.turnId },
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
+      echoInput: {
+        before: input.before,
+        touchedHashes: input.touchedHashes,
+        deletedHashes: input.deletedHashes,
+        structuralChange: input.structuralChange,
+      },
       stageSeq: buffer.nextStageSeq,
     });
     buffer.nextStageSeq += 1;
+  }
+
+  function postCommitEchoes(
+    docBuffer: ResponseDocumentBuffer,
+    concurrent: ConcurrentDetectionResult,
+  ): ApplyEchoHunk[][] {
+    return docBuffer.updates
+      .map(
+        (update) =>
+          mutationCommit.summarizeMutationEcho(
+            {
+              runtime: docBuffer.runtime,
+              before: update.echoInput.before,
+              touchedHashes: update.echoInput.touchedHashes,
+              deletedHashes: update.echoInput.deletedHashes,
+              structuralChange: update.echoInput.structuralChange,
+            },
+            concurrent,
+            { regroundSuppressedText: false },
+          ).echo,
+      )
+      .filter((echo) => echo.length > 0);
   }
 
   function responseJournalBatch(

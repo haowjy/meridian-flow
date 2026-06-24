@@ -127,13 +127,15 @@ export type WriteFunction = (
 export type TurnUndoResult = WriteOutcome & { command: "undo" };
 export type TurnRedoResult = WriteOutcome & { command: "redo" };
 
+export type ResponseCommitWriteEcho = ApplyEchoHunk[];
+
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
-  /** Full post-commit echo for blocks touched by the re-sync that detected concurrent edits. */
-  echo?: ApplyEchoHunk[];
-  /** Exact model-facing text for the post-commit concurrent-edit echo. */
+  /** Adaptive post-commit echoes for staged writes, in original write order; suppressed writes are omitted. */
+  echo?: ResponseCommitWriteEcho[];
+  /** Exact model-facing text for the post-commit write echoes and concurrent-edit summary. */
   text?: string;
 }
 

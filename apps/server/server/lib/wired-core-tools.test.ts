@@ -41,7 +41,7 @@ describe("agent-edit response write lifecycle", () => {
           documentId: "doc-1",
           updateCount: 1,
           concurrentEdits: { human: ["abcd"], agent: [] },
-          echo: [{ mode: "full", blocks: ["abcd|Who---—"] }],
+          echo: [[{ mode: "full", blocks: ["abcd|Who---—"] }]],
           text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
         },
       ],

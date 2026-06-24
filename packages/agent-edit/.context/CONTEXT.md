@@ -178,17 +178,18 @@ after a journaled commit attempt, it is recover-only.
 
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into
-**one** lifecycle run at `commitResponse` (N writes → 1 merge+sync). That batched
-run must follow the *same* lifecycle as a per-write commit, including the final
-step — emit the concurrent-edits echo (`human` vs `agent` blocks touched by the
-re-sync) back to the model. The core already computes this (`projectToLive` returns
-`documents[*].concurrentEdits`); the defect is downstream: the host adapter
-discards it (`apps/server/server/lib/wired-core-tools.ts` `commitResponse` returns
-`void`) and the post-commit runtime is not re-grounded for the next `view`. The
-garbled character-level merge of two edits to the same text is accepted
-("mangled-but-intact") — the model is told via this echo, not prevented. Mid-
-response, the model working against its local snapshot (no per-write re-sync) is
-the accepted cost of the optimization, not a defect.
+**one** lifecycle run at `commitResponse` (N writes → 1 merge+sync). Only the
+merge+re-sync is collapsed. After that single re-sync, the package computes the
+post-commit echo for each staged write, in original write order, using that
+write's pre-write snapshot and touched/deleted hash metadata against the one
+post-re-sync runtime snapshot. Suppressed per-write echoes are omitted; structural
+writes still produce truncated echoes even without concurrent edits; concurrent
+overlap at the write site produces a full echo. `documents[*].concurrentEdits` is
+the document-level human/agent touched-hash summary from the one re-sync and keeps
+the collapse-threshold behavior. The garbled character-level merge of two edits
+to the same text is accepted ("mangled-but-intact") — the model is told via this
+echo, not prevented. Mid-response, the model working against its local snapshot
+(no per-write re-sync) is the accepted cost of the optimization, not a defect.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
