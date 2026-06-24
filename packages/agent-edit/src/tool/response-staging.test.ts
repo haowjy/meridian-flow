@@ -9,6 +9,8 @@ import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   expectOutcome,
+  hashAt,
+  humanText,
   outcomeText,
   renderedBlockBodies,
 } from "./test-support/assertions.js";
@@ -272,6 +274,48 @@ describe("response staging", () => {
     await ctx.core.commitResponse("response-staged-text-echo");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta blade marches."]);
+  });
+
+  it("returns a model-facing concurrent-edit echo when a staged commit merges a human edit", async () => {
+    const ctx = harness({ "chapter.md": "Who-" });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const blockHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Who-", content: "Who—" },
+      { ...context, turnId: "turn-staged-concurrent", responseId: "response-staged-concurrent" },
+    );
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 3, to: 4 }, "---");
+
+    const commit = await ctx.core.commitResponse("response-staged-concurrent");
+
+    expect(commit.documents).toHaveLength(1);
+    expect(commit.documents[0]).toMatchObject({
+      documentId: "chapter.md",
+      updateCount: 1,
+      concurrentEdits: { human: [blockHash], agent: [] },
+      echo: [{ mode: "full" }],
+    });
+    expect(commit.documents[0]?.text).toContain("concurrent edits:");
+    expect(commit.documents[0]?.text).toContain(`human: ${blockHash}`);
+    expect(commit.documents[0]?.echo?.[0]?.blocks[0]).toContain(`${blockHash}|`);
+  });
+
+  it("re-grounds the runtime after staged commit so the next view includes merged live edits", async () => {
+    const ctx = harness({ "chapter.md": "Who-" });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Who-", content: "Who—" },
+      { ...context, turnId: "turn-staged-reground", responseId: "response-staged-reground" },
+    );
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 3, to: 4 }, "---");
+    await ctx.core.commitResponse("response-staged-reground");
+
+    const view = await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    expect(outcomeText(view)).toContain("---");
+    expect(outcomeText(view)).not.toBe("status: success\n\nWho—");
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {

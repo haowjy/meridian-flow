@@ -28,6 +28,7 @@ import {
 import {
   type CheckpointToolHandlerContext,
   createCoreToolRegistrations,
+  type ResponseCommitEcho,
   type ToolHandlerContext,
   type ToolRegistration,
 } from "../domains/runtime/index.js";
@@ -82,7 +83,7 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<void>;
+  ): Promise<ResponseCommitEcho[]>;
   rollbackResponse(responseId: string): Promise<void>;
 }
 
@@ -432,7 +433,7 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<void> {
+    ): Promise<ResponseCommitEcho[]> {
       const result = await deps.documentSync.agentEdit().commitResponse(responseId);
       await Promise.all(
         result.documents.map((document) =>
@@ -444,6 +445,9 @@ export function createAgentEditResponseWriteLifecycle(
       );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
+      return result.documents.flatMap((document) =>
+        document.text ? [{ documentId: document.documentId, text: document.text }] : [],
+      );
     },
 
     async rollbackResponse(responseId: string): Promise<void> {

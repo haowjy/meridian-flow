@@ -129,6 +129,11 @@ export interface OrchestratorRepositories {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
+export interface ResponseCommitEcho {
+  documentId: string;
+  text: string;
+}
+
 export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
@@ -150,7 +155,10 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   responseWrites: {
-    commitResponse(responseId: string, ctx: { threadId: ThreadId; turnId: TurnId }): Promise<void>;
+    commitResponse(
+      responseId: string,
+      ctx: { threadId: ThreadId; turnId: TurnId },
+    ): Promise<ResponseCommitEcho[]>;
     rollbackResponse(responseId: string): Promise<void>;
   };
 }
@@ -623,6 +631,39 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
+async function persistResponseCommitEcho(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  turn: Turn;
+  responseId: string;
+  echoes: readonly ResponseCommitEcho[];
+  blockSeq: number;
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; nextBlockSeq: number }> {
+  const visibleEchoes = input.echoes.filter((echo) => echo.text.trim().length > 0);
+  if (visibleEchoes.length === 0) return { blocks: [], events: [], nextBlockSeq: input.blockSeq };
+
+  let blockSeq = input.blockSeq;
+  const textContent = visibleEchoes
+    .map((echo) => `Post-commit write sync for ${echo.documentId}:\n${echo.text}`)
+    .join("\n\n");
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      turnId: input.turn.id,
+      blockType: "text",
+      sequence: blockSeq++,
+      responseId: input.responseId,
+      textContent,
+      status: "complete",
+    });
+    return {
+      result: [localBlockFromEvent(block)],
+      events: [{ type: "block.upserted", block }],
+    };
+  });
+
+  return { blocks: persisted.result, events: persisted.events, nextBlockSeq: blockSeq };
+}
+
 async function completeTurn(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -983,10 +1024,21 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        await deps.responseWrites.commitResponse(responseId, {
+        const commitEchoes = await deps.responseWrites.commitResponse(responseId, {
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
         });
+        const persistedCommitEcho = await persistResponseCommitEcho({
+          deps,
+          threadId: input.threadId,
+          turn: currentAssistantTurn,
+          responseId,
+          echoes: commitEchoes,
+          blockSeq,
+        });
+        blockSeq = persistedCommitEcho.nextBlockSeq;
+        allBlocks.push(...persistedCommitEcho.blocks);
+        yield* persistedCommitEcho.events;
         activeResponseId = undefined;
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.

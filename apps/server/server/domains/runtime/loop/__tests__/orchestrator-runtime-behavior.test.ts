@@ -177,6 +177,96 @@ describe("runtime orchestrator behavior", () => {
     );
   });
 
+  it("injects post-commit concurrent edit echoes into the next model context", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "saw the sync" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
+      },
+      responseWrites: {
+        async commitResponse() {
+          return [
+            {
+              documentId: "chapter.md",
+              text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
+            },
+          ];
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain(
+      "Post-commit write sync for chapter.md",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).toContain("concurrent edits");
+    expect(
+      events.some(
+        (event) =>
+          event.type === "block.upserted" &&
+          event.block.blockType === "text" &&
+          String(event.block.content).includes("human: abcd"),
+      ),
+    ).toBe(true);
+  });
+
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
     const gateway = gatewayFromResults([
       {
@@ -352,6 +442,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
+          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);
@@ -433,6 +524,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
+          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);

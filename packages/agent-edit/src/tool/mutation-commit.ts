@@ -6,6 +6,7 @@ import {
   type BlockSnapshot,
   type ConcurrentDetectionResult,
   computeEcho,
+  fullEchoForTouchedBlocks,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -84,7 +85,7 @@ type MutationSyncResult =
   | { ok: false; response: InternalWriteResult };
 
 type LiveProjectionResult =
-  | { ok: true; concurrent: ConcurrentDetectionResult }
+  | { ok: true; concurrent: ConcurrentDetectionResult; echo: ApplyEchoHunk[] }
   | { ok: false; response: InternalWriteResult };
 
 export interface MutationCommit {
@@ -192,14 +193,21 @@ export function createMutationCommit(deps: {
   ): Promise<LiveProjectionResult> {
     const committed = await mergeCommittedUpdatesToLive(input);
     if (!committed.ok) return { ok: false, response: committed.response };
+    const concurrent = applyConcurrent(
+      runtime,
+      committed.concurrentUpdate,
+      input.afterOwnVector,
+      input.turnId,
+    );
     return {
       ok: true,
-      concurrent: applyConcurrent(
-        runtime,
-        committed.concurrentUpdate,
-        input.afterOwnVector,
-        input.turnId,
-      ),
+      concurrent,
+      echo: concurrent.info
+        ? fullEchoForTouchedBlocks(
+            snapshotBlocks(runtime.doc, model, codec),
+            concurrent.touchedHashes,
+          )
+        : [],
     };
   }
 

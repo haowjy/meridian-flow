@@ -1,6 +1,6 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
-import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 
 export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
@@ -131,6 +131,10 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
+  /** Full post-commit echo for blocks touched by the re-sync that detected concurrent edits. */
+  echo?: ApplyEchoHunk[];
+  /** Exact model-facing text for the post-commit concurrent-edit echo. */
+  text?: string;
 }
 
 export interface ResponseStagedCreateOutcome {

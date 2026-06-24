@@ -7,6 +7,7 @@ import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
+import { formatConcurrentCommitEcho } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   ResponseCommitResult,
@@ -118,7 +119,16 @@ export function createResponseStaging(deps: {
         documents.push({
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
-          ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
+          ...(projected.concurrent.info
+            ? {
+                concurrentEdits: projected.concurrent.info,
+                echo: projected.echo,
+                text: formatConcurrentCommitEcho({
+                  echo: projected.echo,
+                  concurrentEdits: projected.concurrent.info,
+                }),
+              }
+            : {}),
         });
       }
       responseBuffers.delete(responseId);

@@ -116,6 +116,17 @@ export function applyConcurrentUpdates(
   return { info: { human, agent }, touchedHashes };
 }
 
+/** Render the current serialized blocks touched by a post-commit re-sync as full echo hunks. */
+export function fullEchoForTouchedBlocks(
+  after: readonly BlockSnapshot[],
+  touchedHashes: ReadonlySet<string>,
+): ApplyEchoHunk[] {
+  const blocks = after
+    .filter((block) => touchedHashes.has(block.hash))
+    .map((block) => block.serialized);
+  return blocks.length > 0 ? [{ mode: "full", blocks }] : [];
+}
+
 /** Build adaptive echo hunks from the post-merge document snapshot. */
 export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   const changedWindows = changedBlockWindows(input);

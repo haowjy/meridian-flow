@@ -11,7 +11,7 @@ export {
   createCheckpointRegistry,
   EXPIRED_CHECKPOINT_VALUE,
 } from "./loop/checkpoints.js";
-export { createOrchestrator } from "./loop/orchestrator.js";
+export { createOrchestrator, type ResponseCommitEcho } from "./loop/orchestrator.js";
 export * from "./loop/permissions/index.js";
 export {
   createLateBindRunTurnPort,

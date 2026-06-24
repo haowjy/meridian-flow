@@ -80,7 +80,9 @@ export function createTestOrchestratorDeps(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     responseWrites: {
-      async commitResponse() {},
+      async commitResponse() {
+        return [];
+      },
       async rollbackResponse() {},
     },
     ...overrides,
