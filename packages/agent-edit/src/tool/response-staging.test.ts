@@ -281,6 +281,48 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta blade marches."]);
   });
 
+  it("resyncs staged response views from live while preserving staged edits on another block", async () => {
+    const ctx = harness({ "chapter.md": "Alpha waits.\n\nBravo waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-view-resync-other-block",
+      responseId: "response-staged-view-resync-other-block",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Agent" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 5 }, "Human");
+
+    const review = await ctx.core.write({ command: "view", file: "chapter.md" }, responseContext);
+
+    expect(renderedBlockBodies(review)).toEqual(["Agent waits.", "Human waits."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha waits.", "Human waits."]);
+  });
+
+  it("resyncs staged response views from live while preserving staged edits on the same block", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-view-resync-same-block",
+      responseId: "response-staged-view-resync-same-block",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Agent" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 12, to: 17 }, "marches");
+
+    const review = await ctx.core.write({ command: "view", file: "chapter.md" }, responseContext);
+
+    expect(renderedBlockBodies(review)).toEqual(["Agent sword marches."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword marches."]);
+  });
+
   it("emits per-write post-commit echoes and suppresses clean non-overlapping writes", async () => {
     const ctx = harness({ "chapter.md": "Alpha.\n\nSpacer one.\n\nWho-\n\nSpacer two.\n\nClean." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -337,6 +379,37 @@ describe("response staging", () => {
     );
     expect(commit.documents[0]?.text).toMatch(/status: success\n\n[0-9a-f]{4}\|Alpha\./);
     expect(commit.documents[0]?.text).toMatch(/[0-9a-f]{4}\|Beta\./);
+  });
+
+  it("keeps two surviving post-commit echoes in write order without duplicate shared blocks", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBravo.\n\nCharlie." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const bravoHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-two-echoes",
+      responseId: "response-staged-two-echoes",
+    };
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent one.", after: alphaHash },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent two.", after: bravoHash },
+      responseContext,
+    );
+
+    const commit = await ctx.core.commitResponse("response-staged-two-echoes");
+    const echoes = commit.documents[0]?.echo;
+
+    expect(echoes).toHaveLength(2);
+    expect(echoes?.map((echo) => echo[0]?.mode)).toEqual(["truncated", "truncated"]);
+    expect(echoes?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent one\./);
+    expect(echoes?.[1]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent two\./);
+    const echoLines = commit.documents[0]?.text?.split("\n") ?? [];
+    expect(echoLines.filter((line) => line.startsWith(`${bravoHash}|`))).toHaveLength(1);
   });
 
   it("suppresses all post-commit output for no-concurrent non-structural staged writes", async () => {

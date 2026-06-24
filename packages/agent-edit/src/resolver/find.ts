@@ -287,6 +287,7 @@ function mapMatchedCluster(
 
   if (bodyCluster.text.length !== flatCluster.text.length) return;
   for (let offset = 1; offset < bodyCluster.text.length; offset += 1) {
+    // Callers must index only cluster boundaries; mid-cluster offsets can map to the wrong codepoint.
     offsets[bodyCluster.start + offset] = flatCluster.start + offset;
   }
 }

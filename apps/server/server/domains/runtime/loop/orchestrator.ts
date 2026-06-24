@@ -944,6 +944,8 @@ async function* generateEvents(
           return;
         }
 
+        // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+        // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
         for (const call of toolCallsFromResult) {
           if (input.signal?.aborted) {
             await rollbackActiveResponse();
