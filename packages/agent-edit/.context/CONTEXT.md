@@ -255,10 +255,15 @@ committed creates must keep their path, while only pre-commit discards should be
 deleted. `invalidateThread()` marks pending staged creates as discarded inside
 the response buffer so a later empty commit still carries the cleanup signal.
 
-**`path` vs `file`:** The model-visible schema uses `path` (a context URI).
-The server adapter resolves `path` → `documentId` → `file` for the package
-(`apps/server/server/lib/wired-core-tools.ts:239-275`). The package never sees
-Meridian URI schemes — it operates on plain `{ file: "<docId>#fragment" }`.
+**`documentId` vs `file` / `filePath`:** The model-visible schema uses a
+human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
+The host resolves that path to an internal `documentId` and passes both into the
+package. `documentId` is only storage/journal/runtime/coordinator identity;
+model-facing text must render the display `file` / `filePath`, including view
+commands, creation guidance, not-found messages, and re-sync hints. The package
+stays host-agnostic: it does not invent display paths, it only echoes the path
+the host supplied. Tests should prefer UUID-like document ids plus friendly
+paths so accidental UUID interpolation fails loudly.
 
 ## v1 simplifications (deferred, documented for discoverability)
 
