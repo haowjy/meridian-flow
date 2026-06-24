@@ -268,6 +268,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
     const turnId = nextTurnId(session, address.filePath, context);
+    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.filePath, session.threadId);
     runtime.doc.transact(() => {
@@ -275,6 +276,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
+    const after = snapshotBlocks(runtime.doc, options.model, options.codec);
 
     if (context.responseId) {
       responseStaging.stageUpdate({
@@ -288,6 +290,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
         ensureDocumentBeforeCommit: true,
+        before,
+        touchedHashes: new Set(after.map((block) => block.hash)),
+        deletedHashes: new Set(),
+        structuralChange: true,
       });
       markSynced(session, address.filePath, runtime);
       return formatApplySuccess({
@@ -355,6 +361,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         meta,
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
+        before,
+        touchedHashes: new Set(applied.changedBlocks ?? []),
+        deletedHashes: new Set(applied.deletedBlocks ?? []),
+        structuralChange: hasStructuralChange(applied),
       });
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,

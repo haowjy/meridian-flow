@@ -6,7 +6,6 @@ import {
   type BlockSnapshot,
   type ConcurrentDetectionResult,
   computeEcho,
-  fullEchoForTouchedBlocks,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -85,7 +84,7 @@ type MutationSyncResult =
   | { ok: false; response: InternalWriteResult };
 
 type LiveProjectionResult =
-  | { ok: true; concurrent: ConcurrentDetectionResult; echo: ApplyEchoHunk[] }
+  | { ok: true; concurrent: ConcurrentDetectionResult }
   | { ok: false; response: InternalWriteResult };
 
 export interface MutationCommit {
@@ -99,6 +98,7 @@ export interface MutationCommit {
   summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
+    options?: { regroundSuppressedText?: boolean },
   ): SyncedMutationSummary;
 }
 
@@ -155,6 +155,7 @@ export function createMutationCommit(deps: {
   function summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
+    options: { regroundSuppressedText?: boolean } = {},
   ): SyncedMutationSummary {
     const after = snapshotBlocks(input.runtime.doc, model, codec);
     const baseEchoInput = {
@@ -166,14 +167,17 @@ export function createMutationCommit(deps: {
       concurrentTouchedHashes: concurrent.touchedHashes,
     };
     const echo = computeEcho(baseEchoInput);
+    const shouldRegroundSuppressedText = options.regroundSuppressedText ?? true;
     const regroundingEcho =
-      echo.length > 0 || (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
+      !shouldRegroundSuppressedText ||
+      echo.length > 0 ||
+      (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
         ? echo
         : computeEcho({ ...baseEchoInput, structuralChange: true });
     return {
       echo: regroundingEcho,
       concurrentEdits: concurrent.info,
-      reconciled: echo.some((hunk) => hunk.mode === "full"),
+      reconciled: concurrent.touchedHashes.size > 0 && echo.some((hunk) => hunk.mode === "full"),
     };
   }
 
@@ -199,16 +203,7 @@ export function createMutationCommit(deps: {
       input.afterOwnVector,
       input.turnId,
     );
-    return {
-      ok: true,
-      concurrent,
-      echo: concurrent.info
-        ? fullEchoForTouchedBlocks(
-            snapshotBlocks(runtime.doc, model, codec),
-            concurrent.touchedHashes,
-          )
-        : [],
-    };
+    return { ok: true, concurrent };
   }
 
   async function mergeCommittedUpdatesToLive(

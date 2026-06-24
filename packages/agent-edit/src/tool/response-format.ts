@@ -21,13 +21,15 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
 }
 
 export function formatConcurrentCommitEcho(input: {
-  echo: readonly ApplyEchoHunk[];
-  concurrentEdits: ConcurrentEditInfo;
+  echoes: readonly (readonly ApplyEchoHunk[])[];
+  concurrentEdits?: ConcurrentEditInfo;
 }): string {
   const lines = ["status: success"];
-  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  const echoLines = input.echoes
+    .flatMap((echo) => echo.flatMap((hunk) => hunk.blocks))
+    .filter((line) => line.length > 0);
   if (echoLines.length > 0) lines.push("", ...echoLines);
-  lines.push("", ...formatConcurrent(input.concurrentEdits));
+  if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
   return lines.join("\n");
 }
 

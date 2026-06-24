@@ -188,6 +188,7 @@ describe("response staging", () => {
         await journal.appendBatch(entries);
       },
       projectToLive: async () => ({ ok: true, concurrent: { touchedHashes: new Set() } }),
+      summarizeMutationEcho: () => ({ echo: [], reconciled: false }),
     } as unknown as MutationCommit;
     const staging = createResponseStaging({
       runtimeStore,
@@ -214,6 +215,10 @@ describe("response staging", () => {
         meta: { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 },
         liveOrigin: { type: "agent", actorTurnId: turnId },
         turnId,
+        before: [],
+        touchedHashes: new Set(),
+        deletedHashes: new Set(),
+        structuralChange: false,
       });
     };
 
@@ -276,6 +281,89 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta blade marches."]);
   });
 
+  it("emits per-write post-commit echoes and suppresses clean non-overlapping writes", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nSpacer one.\n\nWho-\n\nSpacer two.\n\nClean." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const overlapHash = hashAt(ctx.liveDoc("chapter.md"), 2);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-per-write-overlap",
+      responseId: "response-staged-per-write-overlap",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Beta" },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Who-", content: "Who—" },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Clean", content: "Done" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 2, { from: 3, to: 4 }, "---");
+
+    const commit = await ctx.core.commitResponse("response-staged-per-write-overlap");
+
+    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
+    expect(commit.documents[0]?.echo?.map((echo) => echo[0]?.mode)).toEqual(["full"]);
+    expect(
+      commit.documents[0]?.echo?.[0]?.[0]?.blocks.some((line) => line.includes(`${overlapHash}|`)),
+    ).toBe(true);
+    expect(commit.documents[0]?.text).toContain(`human: ${overlapHash}`);
+  });
+
+  it("emits a truncated per-write post-commit echo for staged inserted blocks without concurrent edits", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      {
+        ...context,
+        turnId: "turn-staged-insert-echo",
+        responseId: "response-staged-insert-echo",
+      },
+    );
+
+    const commit = await ctx.core.commitResponse("response-staged-insert-echo");
+
+    expect(commit.documents[0]?.concurrentEdits).toBeUndefined();
+    expect(commit.documents[0]?.echo?.map((echo) => echo[0]?.mode)).toEqual(["truncated"]);
+    expect(commit.documents[0]?.echo?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(
+      /[0-9a-f]{4}\|Beta\./,
+    );
+    expect(commit.documents[0]?.text).toMatch(/status: success\n\n[0-9a-f]{4}\|Alpha\./);
+    expect(commit.documents[0]?.text).toMatch(/[0-9a-f]{4}\|Beta\./);
+  });
+
+  it("suppresses all post-commit output for no-concurrent non-structural staged writes", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-suppressed-commit",
+      responseId: "response-staged-suppressed-commit",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Beta" },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      responseContext,
+    );
+
+    const commit = await ctx.core.commitResponse("response-staged-suppressed-commit");
+
+    expect(commit.documents[0]?.concurrentEdits).toBeUndefined();
+    expect(commit.documents[0]?.echo).toBeUndefined();
+    expect(commit.documents[0]?.text).toBeUndefined();
+  });
+
   it("returns a model-facing concurrent-edit echo when a staged commit merges a human edit", async () => {
     const ctx = harness({ "chapter.md": "Who-" });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -294,11 +382,11 @@ describe("response staging", () => {
       documentId: "chapter.md",
       updateCount: 1,
       concurrentEdits: { human: [blockHash], agent: [] },
-      echo: [{ mode: "full" }],
+      echo: [[{ mode: "full" }]],
     });
     expect(commit.documents[0]?.text).toContain("concurrent edits:");
     expect(commit.documents[0]?.text).toContain(`human: ${blockHash}`);
-    expect(commit.documents[0]?.echo?.[0]?.blocks[0]).toContain(`${blockHash}|`);
+    expect(commit.documents[0]?.echo?.[0]?.[0]?.blocks[0]).toContain(`${blockHash}|`);
   });
 
   it("re-grounds the runtime after staged commit so the next view includes merged live edits", async () => {

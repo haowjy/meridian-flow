@@ -43,11 +43,13 @@ the conflict via the concurrent-edits echo, it is not prevented.
 **Deferred commit (response staging) is an optimization, not a different model.**
 Instead of running the full lifecycle on every write, a response's writes are
 buffered and the lifecycle runs **once** at `commitResponse` — N writes collapse
-to **one** merge+sync per turn. The optimization must follow the *exact same
-lifecycle*, including the final step: emit the concurrent-edits echo (blocks the
-re-sync touched, `human` vs `agent`) back to the model. Doing the merge+sync but
-dropping that echo (or the host discarding it) is the defect this package guards
-against — the agent must never be left blind to a concurrent edit after a commit.
+to **one** merge+sync per turn. Only the merge+sync collapses: post-commit echoes
+are still computed per staged write, in order, from the single post-re-sync
+snapshot using the same adaptive `computeEcho` tiers (suppressed / truncated /
+full). The document-level concurrent-edits summary (`human` vs `agent`) still
+comes from the one re-sync. Dropping those post-commit echoes (or aggregating them
+into one blob) leaves the agent blind to concurrent edits and structural insert
+context, so this package guards that contract.
 
 ## What it is NOT
 
