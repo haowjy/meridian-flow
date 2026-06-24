@@ -265,7 +265,7 @@ describe("write tool dispatch", () => {
   it("replaces and inserts with find anchors copied from markdown-form view", async () => {
     const ctx = harness({
       "chapter.md":
-        "Not burning — *thrumming.* Alive.\n\nHe could *feel* the qi in the air now — not as a vague warmth, but as a current.",
+        "Not burning — *thrumming.* Alive.\n\nHe could *feel* the qi in the air now — not as a vague warmth, but as a current.\n\nA **bold** anchor waits.",
     });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
 
@@ -291,6 +291,64 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[1]).toBe(
       "He could feel! the qi in the air now — not as a vague warmth, but as a current.",
     );
+
+    const bold = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "strong", find: "**bold**" },
+      context,
+    );
+
+    expect(outcomeText(bold)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[2]).toBe("A strong anchor waits.");
+  });
+
+  it("reconciles find replacements in markdown space without serialized-to-flat offset mapping", async () => {
+    const ctx = harness({
+      "chapter.md": "Before **bold** — after — **tail**.",
+    });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: " ", find: "—", all: true },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Before bold   after   tail."]);
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain(
+      "Before **bold**   after   **tail**.",
+    );
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("inserts near markdown delimiters and preserves surrounding marks", async () => {
+    const ctx = harness({ "chapter.md": "A **bold** marker and *italic* marker." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    const inserted = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "!", find: "**bold**" },
+      context,
+    );
+
+    expect(outcomeText(inserted)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["A bold! marker and italic marker."]);
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain(
+      "A **bold**! marker and *italic* marker.",
+    );
+  });
+
+  it("routes single-block find replacements that change block type through structural reconcile", async () => {
+    const ctx = harness({ "chapter.md": "Opening line.\n\nTail." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "# Opening line.", find: "Opening line." },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "view", file: "chapter.md" }, context)),
+    ).toEqual(["# Opening line.", "Tail."]);
   });
 
   it("replaces and deletes find matches that span block boundaries", async () => {

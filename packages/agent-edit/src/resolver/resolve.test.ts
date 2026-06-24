@@ -91,7 +91,7 @@ describe("resolveWrite", () => {
     expect(edits[1].kind === "text" ? edits[1].element : null).toBe(blocks[1]);
   });
 
-  it("maps cross-block serialized markdown anchors to the insertion boundary", () => {
+  it("lowers cross-block serialized markdown anchors through block reconciliation", () => {
     const doc = createDoc("Alpha *starts*\n\nends *Omega*");
     const [, omega] = model.getBlocks(doc);
 
@@ -99,12 +99,17 @@ describe("resolveWrite", () => {
       resolve(doc, { command: "insert", content: "!", find: "*starts*\n\nends *Omega*" }),
     );
 
-    expect(edits).toHaveLength(1);
+    expect(edits).toHaveLength(2);
     expect(edits[0]).toMatchObject({
       kind: "text",
+      span: { start: 0, end: "Alpha starts".length },
+      newText: "Alpha *starts*",
+    });
+    expect(edits[1]).toMatchObject({
+      kind: "text",
       element: omega,
-      span: { start: "ends Omega".length, end: "ends Omega".length },
-      newText: "!",
+      span: { start: 0, end: "ends Omega".length },
+      newText: "ends *Omega*!",
     });
   });
 
@@ -164,7 +169,7 @@ describe("resolveWrite", () => {
     });
   });
 
-  it("maps serialized inline markdown anchors in the middle of prose", () => {
+  it("reconciles serialized inline markdown anchors in the middle of prose", () => {
     const source =
       "He could *feel* the qi in the air now — not as a vague warmth, but as a current.";
     const doc = createDoc(source);
@@ -180,8 +185,8 @@ describe("resolveWrite", () => {
     expect(edits).toHaveLength(1);
     expect(edits[0]).toMatchObject({
       kind: "text",
-      span: { start: "He could ".length, end: "He could feel".length },
-      newText: "sense",
+      span: { start: 0, end: source.replaceAll("*", "").length },
+      newText: "He could sense the qi in the air now — not as a vague warmth, but as a current.",
     });
   });
 
@@ -193,15 +198,15 @@ describe("resolveWrite", () => {
     );
     expect(bold[0]).toMatchObject({
       kind: "text",
-      span: { start: "A ".length, end: "A bold".length },
-      newText: "strong",
+      span: { start: 0, end: "A bold word, code(), and bold nested end.".length },
+      newText: "A strong word, `code()`, and **bold *nested*** end.",
     });
 
     const code = expectOk(resolve(doc, { command: "insert", content: "!", find: "`code()`" }));
     expect(code[0]).toMatchObject({
       kind: "text",
-      span: { start: "A bold word, code()".length, end: "A bold word, code()".length },
-      newText: "!",
+      span: { start: 0, end: "A bold word, code(), and bold nested end.".length },
+      newText: "A **bold** word, `code()`!, and **bold *nested*** end.",
     });
 
     const mixed = expectOk(
@@ -209,11 +214,8 @@ describe("resolveWrite", () => {
     );
     expect(mixed[0]).toMatchObject({
       kind: "text",
-      span: {
-        start: "A bold word, code(), and ".length,
-        end: "A bold word, code(), and bold nested".length,
-      },
-      newText: "layered",
+      span: { start: 0, end: "A bold word, code(), and bold nested end.".length },
+      newText: "A **bold** word, `code()`, and layered end.",
     });
   });
 
