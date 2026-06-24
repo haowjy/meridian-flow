@@ -20,12 +20,25 @@ export function resolveAuthRedirectUri(request: Request): string {
   if (runtime.appEnv !== "dev") return fallback;
   const requestUrl = new URL(request.url);
   const fallbackUrl = new URL(fallback);
-  if (!canUseDynamicRedirect(requestUrl, fallbackUrl)) return fallback;
-  return `${requestUrl.origin}${CALLBACK_PATH}`;
+  const effectiveProtocol = getEffectiveRequestProtocol(request, requestUrl);
+  if (!canUseDynamicRedirect(requestUrl, fallbackUrl, effectiveProtocol)) return fallback;
+  return `${effectiveProtocol}//${requestUrl.host}${CALLBACK_PATH}`;
 }
 
-function canUseDynamicRedirect(requestUrl: URL, fallbackUrl: URL): boolean {
-  if (requestUrl.protocol !== fallbackUrl.protocol) return false;
+function getEffectiveRequestProtocol(request: Request, requestUrl: URL): string {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (!forwardedProto) return requestUrl.protocol;
+  const firstProto = forwardedProto.split(",", 1)[0]?.trim().toLowerCase();
+  if (!firstProto) return requestUrl.protocol;
+  return firstProto.endsWith(":") ? firstProto : `${firstProto}:`;
+}
+
+function canUseDynamicRedirect(
+  requestUrl: URL,
+  fallbackUrl: URL,
+  effectiveProtocol: string,
+): boolean {
+  if (effectiveProtocol !== fallbackUrl.protocol) return false;
   const hostname = requestUrl.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return fallbackUrl.hostname === "localhost" || fallbackUrl.hostname === "127.0.0.1";
