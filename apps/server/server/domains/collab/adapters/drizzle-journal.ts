@@ -326,6 +326,11 @@ async function reverseMutationsForWrite(
     actor: ReversalActor;
   },
 ): Promise<void> {
+  // Reversal records carry write handles ("w3"); the writeId text column stores
+  // the durable id (tool_use_id/UUID), so match on the wId ordinal like every
+  // other lookup in this adapter.
+  const ordinal = parseWriteHandle(input.writeId);
+  if (ordinal === undefined) return;
   await db
     .update(agentEditMutations)
     .set({
@@ -338,7 +343,7 @@ async function reverseMutationsForWrite(
       and(
         eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
         eq(agentEditMutations.threadId, asThreadId(input.threadId)),
-        eq(agentEditMutations.writeId, input.writeId),
+        eq(agentEditMutations.wId, ordinal),
         eq(agentEditMutations.status, "active"),
       ),
     );
@@ -348,6 +353,9 @@ async function reactivateMutationsForWrite(
   db: JournalDb,
   input: { documentId: string; threadId: string; writeId: string; undoUpdateSeq: number },
 ): Promise<void> {
+  // writeId here is a handle ("w3"); match on the wId ordinal (see reverseMutationsForWrite).
+  const ordinal = parseWriteHandle(input.writeId);
+  if (ordinal === undefined) return;
   await db
     .update(agentEditMutations)
     .set({
@@ -360,7 +368,7 @@ async function reactivateMutationsForWrite(
       and(
         eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
         eq(agentEditMutations.threadId, asThreadId(input.threadId)),
-        eq(agentEditMutations.writeId, input.writeId),
+        eq(agentEditMutations.wId, ordinal),
         eq(agentEditMutations.status, "reversed"),
         eq(agentEditMutations.undoUpdateSeq, input.undoUpdateSeq),
       ),
