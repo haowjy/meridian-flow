@@ -262,6 +262,37 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
+  it("replaces and inserts with find anchors copied from markdown-form view", async () => {
+    const ctx = harness({
+      "chapter.md":
+        "Not burning — *thrumming.* Alive.\n\nHe could *feel* the qi in the air now — not as a vague warmth, but as a current.",
+    });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Not burning — humming. Alive.",
+        find: "Not burning — *thrumming.* Alive.",
+      },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Not burning — humming. Alive.");
+
+    const inserted = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "!", find: "*feel*" },
+      context,
+    );
+
+    expect(outcomeText(inserted)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[1]).toBe(
+      "He could feel! the qi in the air now — not as a vague warmth, but as a current.",
+    );
+  });
+
   it("replaces and deletes find matches that span block boundaries", async () => {
     const replaceCtx = harness({ "chapter.md": "Alpha starts\n\nends Omega" });
     await replaceCtx.core.write({ command: "view", file: "chapter.md" }, context);

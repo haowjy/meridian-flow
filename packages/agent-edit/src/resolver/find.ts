@@ -226,12 +226,87 @@ function serializedOffsetsToFlatSpan(
   end: number,
 ): { start: number; end: number } | null {
   if (entry.body === entry.flatText) return { start, end };
-  const matched = entry.body.slice(start, end).normalize("NFC");
-  const flat = entry.flatText.normalize("NFC");
-  const flatStart = flat.indexOf(matched);
-  if (flatStart < 0) return null;
-  if (flat.indexOf(matched, flatStart + Math.max(matched.length, 1)) >= 0) return null;
-  return { start: flatStart, end: flatStart + matched.length };
+  const bodyToFlat = serializedBodyToFlatOffsetMap(entry.body, entry.flatText);
+  if (!bodyToFlat) return null;
+  const flatStart = bodyToFlat[start];
+  const flatEnd = bodyToFlat[end];
+  if (flatStart === undefined || flatEnd === undefined || flatEnd < flatStart) return null;
+  return { start: flatStart, end: flatEnd };
+}
+
+interface TextCluster {
+  text: string;
+  normalized: string;
+  start: number;
+  end: number;
+}
+
+function serializedBodyToFlatOffsetMap(
+  body: string,
+  flatText: string,
+): Array<number | undefined> | null {
+  const bodyClusters = textClusters(body);
+  const flatClusters = textClusters(flatText);
+  const offsets: Array<number | undefined> = Array.from({ length: body.length + 1 });
+  let flatIndex = 0;
+
+  // The serialized body is the flat editable text plus zero-width markdown syntax.
+  // Align NFC text clusters in order and map unmatched serialized clusters to the
+  // current flat boundary so anchors copied from view resolve to editable spans.
+
+  for (const bodyCluster of bodyClusters) {
+    const flatCluster = flatClusters[flatIndex];
+    if (flatCluster && bodyCluster.normalized === flatCluster.normalized) {
+      mapMatchedCluster(offsets, bodyCluster, flatCluster);
+      flatIndex += 1;
+      continue;
+    }
+    mapSkippedCluster(offsets, bodyCluster, flatOffsetAt(flatClusters, flatIndex, flatText.length));
+  }
+
+  const finalFlatOffset = flatOffsetAt(flatClusters, flatIndex, flatText.length);
+  offsets[body.length] = finalFlatOffset;
+  return flatIndex === flatClusters.length ? offsets : null;
+}
+
+function textClusters(text: string): TextCluster[] {
+  return Array.from(text.matchAll(/\P{Mark}\p{Mark}*|\p{Mark}+/gu), (match) => {
+    const start = match.index;
+    const value = match[0];
+    return { text: value, normalized: value.normalize("NFC"), start, end: start + value.length };
+  });
+}
+
+function mapMatchedCluster(
+  offsets: Array<number | undefined>,
+  bodyCluster: TextCluster,
+  flatCluster: TextCluster,
+): void {
+  offsets[bodyCluster.start] = flatCluster.start;
+  offsets[bodyCluster.end] = flatCluster.end;
+
+  if (bodyCluster.text.length !== flatCluster.text.length) return;
+  for (let offset = 1; offset < bodyCluster.text.length; offset += 1) {
+    offsets[bodyCluster.start + offset] = flatCluster.start + offset;
+  }
+}
+
+function mapSkippedCluster(
+  offsets: Array<number | undefined>,
+  bodyCluster: TextCluster,
+  flatOffset: number,
+): void {
+  for (let offset = bodyCluster.start; offset <= bodyCluster.end; offset += 1) {
+    offsets[offset] = flatOffset;
+  }
+}
+
+function flatOffsetAt(
+  flatClusters: readonly TextCluster[],
+  flatIndex: number,
+  endOffset: number,
+): number {
+  return flatClusters[flatIndex]?.start ?? endOffset;
 }
 
 function trimOneTrailingNewline(value: string): string {
