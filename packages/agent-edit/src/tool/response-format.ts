@@ -1,5 +1,5 @@
 // Formats shared write and reversal responses for the tool surface.
-import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { WriteCommandName, WriteErrorStatus, WriteOutcome, WriteStatus } from "./types.js";
 
@@ -18,6 +18,17 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     isError: isWriteErrorStatus(result.status),
     text: result.text,
   };
+}
+
+export function formatConcurrentCommitEcho(input: {
+  echo: readonly ApplyEchoHunk[];
+  concurrentEdits: ConcurrentEditInfo;
+}): string {
+  const lines = ["status: success"];
+  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  if (echoLines.length > 0) lines.push("", ...echoLines);
+  lines.push("", ...formatConcurrent(input.concurrentEdits));
+  return lines.join("\n");
 }
 
 export function formatConcurrent(info: ConcurrentEditInfo): string[] {
