@@ -192,17 +192,6 @@ export function createWriteReversal(deps: {
       return { ok: true, status: plan.status };
     }
 
-    if (
-      ![...plan.targetSeqs].some((seq) =>
-        plan.snapshot.updates.some((update) => update.seq === seq),
-      )
-    ) {
-      return {
-        ok: true,
-        status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-      };
-    }
-
     const before = snapshotBlocks(input.runtime.doc, model, codec);
     const guard =
       input.direction === "undo"

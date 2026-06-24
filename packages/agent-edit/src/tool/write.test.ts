@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
+import { createAgentEditCore } from "../index.js";
+import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectOutcome,
@@ -10,12 +12,58 @@ import {
   renderedBlockBodies,
   serializeDoc,
 } from "./test-support/assertions.js";
-import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { codec, context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { createWriteTool } from "./write.js";
 
 const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
 const MODEL_PATH = "work://chapter-2.md";
 
 describe("write tool dispatch", () => {
+  it("requires reversal store capabilities at construction time", () => {
+    if (Date.now() < 0) {
+      const oldJournalOnly = {} as UpdateJournal;
+      createWriteTool({
+        // @ts-expect-error write-level mutations require ReversalStore capabilities.
+        journal: oldJournalOnly,
+        coordinator: undefined as never,
+        codec: undefined as never,
+        model: undefined as never,
+      });
+    }
+
+    expect(true).toBe(true);
+  });
+
+  it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    const oldJournalOnly = {
+      append: ctx.journal.append.bind(ctx.journal),
+      appendBatch: ctx.journal.appendBatch.bind(ctx.journal),
+      read: ctx.journal.read.bind(ctx.journal),
+      checkpoint: ctx.journal.checkpoint.bind(ctx.journal),
+      compact: ctx.journal.compact.bind(ctx.journal),
+    } as unknown as UpdateJournal & ReversalStore;
+    const core = createAgentEditCore({
+      journal: oldJournalOnly,
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec,
+      model,
+    });
+
+    await core.write({ command: "view", file: "chapter.md" }, context);
+    const write = await core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      context,
+    );
+
+    expectOutcome(write, "internal_error", true);
+    expect(outcomeText(write)).toBe(
+      "status: internal_error\n\nRetry — transient edit system failure.",
+    );
+    expect(outcomeText(write)).not.toMatch(/ReversalStore|reserveWriteOrdinal|is not a function/i);
+  });
+
   it("creates a document with initial content", async () => {
     const ctx = harness();
     ctx.coordinator.createEmpty("new.md");
@@ -609,7 +657,7 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(transient)).toContain("status: internal_error");
     expectOutcome(transient, "internal_error", true);
-    expect(outcomeText(transient)).toContain("database unavailable");
+    expect(outcomeText(transient)).not.toContain("database unavailable");
   });
 });
 

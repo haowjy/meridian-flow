@@ -34,17 +34,11 @@ export async function resolveUndoAvailability(input: {
       now: input.now,
     }),
   ]);
-  const undoRetained =
-    undo.ok &&
-    (await selectedWritesRetained(input.reversalStore, input.docId, input.threadId, undo.writeIds));
-  const redoRetained =
-    redo.ok &&
-    (await selectedWritesRetained(input.reversalStore, input.docId, input.threadId, redo.writeIds));
   return {
-    undo: undoRetained,
-    redo: redoRetained,
-    ...(undo.ok && undoRetained ? { undoWriteId: undo.writeIds.at(-1) } : {}),
-    ...(redo.ok && redoRetained
+    undo: undo.ok,
+    redo: redo.ok,
+    ...(undo.ok ? { undoWriteId: undo.writeIds.at(-1) } : {}),
+    ...(redo.ok
       ? {
           redoWriteId: redo.writeIds[0],
           redoTarget: {
@@ -55,18 +49,4 @@ export async function resolveUndoAvailability(input: {
         }
       : {}),
   };
-}
-
-async function selectedWritesRetained(
-  reversalStore: ReversalStore,
-  docId: string,
-  threadId: string,
-  writeIds: readonly string[],
-): Promise<boolean> {
-  const snapshot = await reversalStore.readForReconstruction(docId);
-  for (const writeId of writeIds) {
-    const seq = await reversalStore.writeMinCreatedSeq(docId, threadId, writeId);
-    if (seq === undefined || !snapshot.updates.some((update) => update.seq === seq)) return false;
-  }
-  return true;
 }

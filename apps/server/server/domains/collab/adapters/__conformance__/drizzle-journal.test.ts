@@ -355,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const redo = await journal.persistRedo(
         DOC_ID,
         redoUpdate,
-        { threadId: THREAD_ID, turnId: TURN_E, undoUpdateSeq: record.undoUpdateSeq },
+        { threadId: THREAD_ID, undoUpdateSeq: record.undoUpdateSeq },
         { origin: "system", seq: 0 },
       );
       expect(redo.consumed).toBe(true);
@@ -369,7 +369,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journal.persistRedo(
           DOC_ID,
           redoUpdate,
-          { threadId: THREAD_ID, turnId: TURN_E, undoUpdateSeq: record.undoUpdateSeq },
+          { threadId: THREAD_ID, undoUpdateSeq: record.undoUpdateSeq },
           { origin: "system", seq: 0 },
         ),
       ).resolves.toEqual({ consumed: false });
@@ -377,7 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journal.persistRedo(
           DOC_ID,
           redoUpdate,
-          { threadId: MISSING_THREAD_ID, turnId: TURN_E, undoUpdateSeq: record.undoUpdateSeq },
+          { threadId: MISSING_THREAD_ID, undoUpdateSeq: record.undoUpdateSeq },
           { origin: "system", seq: 0 },
         ),
       ).resolves.toEqual({ consumed: false });

@@ -8,6 +8,7 @@ import {
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
   mdxCodec,
+  type ReversalStore,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
@@ -75,7 +76,7 @@ export type CollabFacadeStore = {
 };
 
 export type CollabFacadeDeps = {
-  journal: UpdateJournal;
+  journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   store: CollabFacadeStore;

@@ -54,7 +54,7 @@ export type CollabFacadeStore = {
 };
 
 export type DrizzleCollabPersistence = {
-  journal: UpdateJournal;
+  journal: UpdateJournal & ReversalStore;
   lifecycle: DocumentLifecycle;
   store: CollabFacadeStore;
 };
