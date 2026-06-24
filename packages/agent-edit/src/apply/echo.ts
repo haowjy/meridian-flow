@@ -126,8 +126,7 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   );
   if (!input.structuralChange && !hasConcurrentOverlap) return [];
 
-  const mode: ApplyEchoHunk["mode"] =
-    hasConcurrentOverlap || input.agentDeletedHashes.size > 0 ? "full" : "truncated";
+  const mode: ApplyEchoHunk["mode"] = hasConcurrentOverlap ? "full" : "truncated";
   return changedWindows.map((window) => ({
     mode,
     blocks: window.map((index) =>
