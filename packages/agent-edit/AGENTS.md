@@ -26,7 +26,7 @@ desktop, MCP, and future products.
 
 The model does not edit the live document directly. It edits its own per-session
 **runtime Y.Doc** — an offline peer. The canonical `write` lifecycle (design of
-record, `…/verify-reversal-e2e/design/interactive-design-v4.html`, "Sync model &
+record, `…/agent-edit-write-loop/design/interactive-design-v4.html`, "Sync model &
 V_sync") is:
 
 ```
@@ -83,6 +83,6 @@ Meridian server composes the package with the fiction schema from
 `@meridian/prosemirror-schema`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts, architecture, invariants.
-→ [system shape](https://github.com/haowjy/meridian-flow-docs/blob/main/work/verify-reversal-e2e/design/agent-edit-system-shape.md)
-→ [apply + reversal](https://github.com/haowjy/meridian-flow-docs/blob/main/work/verify-reversal-e2e/design/commutative-agent-edits.md)
-→ [tool contract](https://github.com/haowjy/meridian-flow-docs/blob/main/work/verify-reversal-e2e/design/agent-tool-contract.md)
+→ [system shape](https://github.com/haowjy/meridian-flow-docs/blob/main/work/agent-edit-write-loop/design/agent-edit-system-shape.md)
+→ [apply + reversal](https://github.com/haowjy/meridian-flow-docs/blob/main/work/agent-edit-write-loop/design/commutative-agent-edits.md)
+→ [tool contract](https://github.com/haowjy/meridian-flow-docs/blob/main/work/agent-edit-write-loop/design/agent-tool-contract.md)
