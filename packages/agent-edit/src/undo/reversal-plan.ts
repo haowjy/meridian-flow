@@ -209,7 +209,7 @@ function selectRedoGroup(
   if (selection.kind === "all") return { ok: true, group: groups.at(0) };
   if (selection.kind === "turn") {
     const targetTurnId = selection.turnId ?? groups.at(-1)?.turnId;
-    return { ok: true, group: groups.filter((group) => group.turnId === targetTurnId).at(-1) };
+    return { ok: true, group: groups.filter((group) => group.turnId === targetTurnId).at(0) };
   }
   const selected = groups.filter((group) => handlesOverlapSelection(group.writeIds, selection));
   if (selection.kind === "single") return { ok: true, group: selected.at(-1) };

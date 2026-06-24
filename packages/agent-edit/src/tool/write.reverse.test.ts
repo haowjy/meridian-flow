@@ -23,7 +23,7 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
-      scope: "write",
+      selection: { kind: "latest" },
       actor,
     });
 
@@ -45,8 +45,7 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
-      scope: "write",
-      target: "w1",
+      selection: { kind: "single", to: "w1" },
       actor,
     });
 
@@ -73,8 +72,7 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
-      scope: "turn",
-      target: "turn-target",
+      selection: { kind: "turn", turnId: "turn-target" },
       actor,
     });
 
@@ -90,7 +88,7 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
-      scope: "thread",
+      selection: { kind: "all" },
       actor,
     });
 
@@ -108,8 +106,7 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
-      scope: "turn",
-      target: "turn-redo",
+      selection: { kind: "turn", turnId: "turn-redo" },
       actor,
     });
 
@@ -117,12 +114,58 @@ describe("write host reverse", () => {
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "redo",
-      scope: "turn",
-      target: "turn-redo",
+      selection: { kind: "turn", turnId: "turn-redo" },
       actor,
     });
 
     expectOutcome(redo, "reversed");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+  });
+
+  it("redoes all reversed groups in a turn", async () => {
+    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-redo-groups" },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Two." },
+      { ...context, turnId: "turn-redo-groups" },
+    );
+
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: "w2" },
+        actor,
+      }),
+      "reversed",
+    );
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: "w1" },
+        actor,
+      }),
+      "reversed",
+    );
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const redo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "turn", turnId: "turn-redo-groups" },
+      actor,
+    });
+
+    expectOutcome(redo, "reversed");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
   });
 });

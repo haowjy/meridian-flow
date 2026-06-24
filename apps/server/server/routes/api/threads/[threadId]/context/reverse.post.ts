@@ -1,4 +1,4 @@
-import type { ReverseInput, WriteOutcome } from "@meridian/agent-edit";
+import { parseWriteHandle, type ReversalSelection, type WriteOutcome } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import {
   createError,
@@ -57,10 +57,9 @@ export default defineEventHandler(async (event) => {
     docId: document.documentId,
     threadId,
     direction: input.direction,
-    scope: input.scope,
-    ...(input.target ? { target: input.target } : {}),
+    selection: input.selection,
     actor: { type: "user", userId: user.userId },
-  } satisfies ReverseInput);
+  });
 
   setReverseStatus(event, outcome);
   if (outcome.status === "reversed" || outcome.status === "reconciled") {
@@ -75,8 +74,7 @@ export default defineEventHandler(async (event) => {
 function parseReverseBody(body: ReverseBody): {
   uri: string;
   direction: "undo" | "redo";
-  scope: "write" | "turn" | "thread";
-  target?: string;
+  selection: ReversalSelection;
 } {
   if (typeof body.uri !== "string" || body.uri.length === 0) {
     throw createError({ statusCode: 400, message: "uri is required" });
@@ -93,9 +91,29 @@ function parseReverseBody(body: ReverseBody): {
   return {
     uri: body.uri,
     direction: body.direction,
-    scope: body.scope,
-    ...(body.target ? { target: body.target } : {}),
+    selection: selectionFromScope(body.scope, body.target),
   };
+}
+
+function selectionFromScope(
+  scope: "write" | "turn" | "thread",
+  target: string | undefined,
+): ReversalSelection {
+  if (scope === "write") {
+    if (target === undefined) return { kind: "latest" };
+    if (parseWriteHandle(target) === undefined) {
+      throw createError({ statusCode: 400, message: "invalid_write" });
+    }
+    return { kind: "single", to: target };
+  }
+  if (scope === "turn") {
+    if (target === "") throw createError({ statusCode: 400, message: "target must not be empty" });
+    return target === undefined ? { kind: "turn" } : { kind: "turn", turnId: target };
+  }
+  if (target !== undefined) {
+    throw createError({ statusCode: 400, message: "thread scope does not accept target" });
+  }
+  return { kind: "all" };
 }
 
 function setReverseStatus(

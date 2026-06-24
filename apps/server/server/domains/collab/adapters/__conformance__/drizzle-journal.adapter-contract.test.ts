@@ -59,6 +59,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { asc, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { expectReversalMutationStatusContract } = await import(
+      "./journal-reversal-mutation-status-contract.js"
+    );
 
     const db = createDb(DATABASE_URL, { max: 4 });
 
@@ -183,6 +186,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => {
       await db.close();
+    });
+
+    it("matches reversal mutation status transitions", async () => {
+      await expectReversalMutationStatusContract({
+        journal: createDrizzleJournal(db),
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        turnIds: [TURN_A, TURN_B],
+        userId: USER_ID,
+      });
     });
 
     it("matches append/read/checkpoint/compact/reversal contract behavior", async () => {

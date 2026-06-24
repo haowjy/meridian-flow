@@ -21,6 +21,7 @@ import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
+import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
@@ -34,8 +35,6 @@ import type {
   RedoResult,
   ResponseCommitResult,
   ResponseRollbackResult,
-  ReverseInput,
-  ReverseScope,
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
@@ -75,6 +74,14 @@ export interface CreateWriteToolOptions {
   createRuntimeDoc?: () => Y.Doc;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
+}
+
+export interface ReverseInput {
+  docId: string;
+  threadId: string;
+  direction: "undo" | "redo";
+  selection: ReversalSelection;
+  actor: { type: "user"; userId: string } | { type: "agent" };
 }
 
 export interface WriteTool {
@@ -480,33 +487,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
   }
 
-  async function reverse(input: ReverseInput): Promise<UndoResult | RedoResult> {
-    responseStaging.dropForThread(input.docId, input.threadId);
-    const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
-    const selection = reverseSelection(input.scope, input.target);
-    const outcome =
-      input.direction === "undo"
-        ? await writeReversal
-            .runWriteReversal({
-              docId: input.docId,
-              session,
-              direction: "undo",
-              selection,
-              actor: input.actor,
-            })
-            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as UndoResult)
-        : await writeReversal
-            .runWriteReversal({
-              docId: input.docId,
-              session,
-              direction: "redo",
-              selection,
-              actor: input.actor,
-            })
-            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
-    if (outcome.status !== "document_not_found")
-      responseStaging.dropForThread(input.docId, input.threadId);
-    return outcome;
+  function reverse(input: ReverseInput): Promise<UndoResult | RedoResult> {
+    return runHostedReversal(input);
   }
 
   function runTurnReversalEndpoint(
@@ -519,22 +501,45 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     threadId: string,
     direction: "redo",
   ): Promise<TurnRedoResult>;
-  async function runTurnReversalEndpoint(
+  function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "undo" | "redo",
   ): Promise<TurnUndoResult | TurnRedoResult> {
-    responseStaging.dropForThread(docId, threadId);
-    const session = localSession(`turn-reversal:${threadId}`, threadId);
+    return runHostedReversal({
+      docId,
+      threadId,
+      direction,
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+    });
+  }
+
+  async function runHostedReversal(input: ReverseInput): Promise<UndoResult | RedoResult> {
+    responseStaging.dropForThread(input.docId, input.threadId);
+    const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
-      direction === "undo"
+      input.direction === "undo"
         ? await writeReversal
-            .runWriteReversal({ docId, session, direction: "undo" })
-            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as TurnUndoResult)
+            .runWriteReversal({
+              docId: input.docId,
+              session,
+              direction: "undo",
+              selection: input.selection,
+              actor: input.actor,
+            })
+            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as UndoResult)
         : await writeReversal
-            .runWriteReversal({ docId, session, direction: "redo" })
-            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as TurnRedoResult);
-    if (outcome.status !== "document_not_found") responseStaging.dropForThread(docId, threadId);
+            .runWriteReversal({
+              docId: input.docId,
+              session,
+              direction: "redo",
+              selection: input.selection,
+              actor: input.actor,
+            })
+            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
+    if (outcome.status !== "document_not_found")
+      responseStaging.dropForThread(input.docId, input.threadId);
     return outcome;
   }
 
@@ -621,20 +626,6 @@ function success(text: string): InternalWriteResult {
 
 function internalError(_cause: unknown): InternalWriteResult {
   return status("internal_error", "Retry — transient edit system failure.");
-}
-
-type ReversalSelection =
-  | { kind: "latest" }
-  | { kind: "single"; to: string }
-  | { kind: "range"; from: string; to: string }
-  | { kind: "last"; count: number }
-  | { kind: "all" }
-  | { kind: "turn"; turnId?: string };
-
-function reverseSelection(scope: ReverseScope, target?: string): ReversalSelection {
-  if (scope === "write") return target ? { kind: "single", to: target } : { kind: "latest" };
-  if (scope === "turn") return { kind: "turn", ...(target ? { turnId: target } : {}) };
-  return { kind: "all" };
 }
 
 function commandSelection(
