@@ -199,18 +199,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   async persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; writeId?: string; undoUpdateSeq: number },
+    ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
     const entry = this.entry(docId);
     const group = [...entry.reversals.entries()].filter(
       ([, stored]) =>
         stored.record.threadId === ref.threadId &&
-        stored.record.status === "reversed" &&
-        stored.record.undoUpdateSeq === ref.undoUpdateSeq &&
-        (ref.writeId === undefined || stored.record.writeIds.includes(ref.writeId)),
+        stored.record.undoUpdateSeq === ref.undoUpdateSeq,
     );
-    if (group.length === 0) return { consumed: false };
+    if (group.length === 0 || group.some(([, stored]) => stored.record.status !== "reversed")) {
+      return { consumed: false };
+    }
 
     const seq = this.appendSync(docId, redoUpdate, meta, this.now());
     for (const [key, stored] of group) {

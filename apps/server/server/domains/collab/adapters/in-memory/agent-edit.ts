@@ -4,6 +4,7 @@ import {
   type DocumentLifecycle,
   DocumentNotFoundError,
   type PersistedUpdate,
+  type ReversalStore,
   type UpdateJournal,
 } from "@meridian/agent-edit";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
@@ -20,17 +21,18 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = UpdateJournal & {
-  createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-  ): Promise<string>;
-  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-};
+export type InMemoryJournal = UpdateJournal &
+  ReversalStore & {
+    createCheckpoint(
+      docId: string,
+      state: Uint8Array,
+      reason: string,
+      upToSeq: number,
+    ): Promise<string>;
+    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+  };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];

@@ -48,8 +48,7 @@ import type {
 import { createWriteReversal } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
-  journal: UpdateJournal;
-  reversalStore?: ReversalStore;
+  journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   codec: Codec;
@@ -116,7 +115,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const autoTurnIdNonce = createAutoTurnIdNonce();
   let autoTurnCounter = 0;
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
-  const reversalStore = options.reversalStore ?? (options.journal as UpdateJournal & ReversalStore);
+  const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
     journal: options.journal,
     coordinator: options.coordinator,
@@ -517,10 +516,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     session: ActorSession,
     context: WriteContext,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
-    const ordinal = await requireJournalMethod(
-      reversalStore.reserveWriteOrdinal,
-      "reserveWriteOrdinal",
-    ).call(reversalStore, docId, session.threadId);
+    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
       context.tool_use_id ??
       globalThis.crypto?.randomUUID?.() ??
@@ -542,14 +538,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
-}
-
-function requireJournalMethod<T extends (...args: never[]) => unknown>(
-  method: T | undefined,
-  name: string,
-): T {
-  if (!method) throw new Error(`ReversalStore.${name} is required for write-level undo`);
-  return method;
 }
 
 function createAutoTurnIdNonce(): string {
@@ -598,9 +586,8 @@ function success(text: string): InternalWriteResult {
   return result("success", text);
 }
 
-function internalError(cause: unknown): InternalWriteResult {
-  const reason = cause instanceof Error && cause.message ? ` ${cause.message}` : "";
-  return status("internal_error", `Retry — transient edit system failure.${reason}`);
+function internalError(_cause: unknown): InternalWriteResult {
+  return status("internal_error", "Retry — transient edit system failure.");
 }
 
 type ReversalSelection =

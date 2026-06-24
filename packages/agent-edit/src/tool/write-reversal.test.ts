@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
+import type { ReversalStatus } from "../ports/types.js";
 import {
   parseWriteHandle,
   type ReversalStore,
@@ -223,6 +224,49 @@ describe("write reversal", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Five."]);
   });
 
+  it("undo all skips compacted-away writes and reverses the retained subset", async () => {
+    const ctx = harness({ "chapter.md": "Base." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["One."]);
+    const afterW1 = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "", find: "Base" },
+      { ...context, turnId: "turn-second" },
+    );
+    setStoredUpdateTime(ctx.journal, "chapter.md", 1, new Date("2026-01-01T00:00:00.000Z"));
+    setStoredUpdateTime(ctx.journal, "chapter.md", 2, new Date("2026-01-03T00:00:00.000Z"));
+
+    await ctx.journal.checkpoint("chapter.md", afterW1, 1);
+    await ctx.journal.compact("chapter.md", new Date("2026-01-02T00:00:00.000Z"));
+
+    expect(
+      (await ctx.journal.readForReconstruction("chapter.md")).updates.map((row) => row.seq),
+    ).toEqual([2]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoWriteId: "w2",
+    });
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(outcomeText(undo)).toContain("undo: 1 edit(s)");
+    expect(outcomeText(undo)).not.toContain("internal_error");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "active" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { status: "reversed" },
+    ]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: true,
+      redoWriteId: "w2",
+    });
+  });
+
   it("targets write ranges by numeric ordinal past w10", async () => {
     const ctx = harness({ "chapter.md": "Base." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -301,6 +345,26 @@ describe("write reversal", () => {
         { status: "active" },
       ]);
     }
+  });
+
+  it("refuses redo when any in-memory reversal row in the group is no longer reversed", async () => {
+    const ctx = harness({ "chapter.md": "Base." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["One.", "Two."]);
+
+    await ctx.core.write({ command: "undo", file: "chapter.md", from: "w1", to: "w2" }, context);
+    markStoredReversalStatus(ctx.journal, "chapter.md", "w1", "redone");
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    expectOutcome(redo, "nothing_to_redo");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "reversed" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { status: "reversed" },
+    ]);
   });
 
   it("refuses the swordblade case when a later undone write consumed the selected write", async () => {
@@ -502,7 +566,7 @@ describe("write reversal", () => {
     ).toBe("status: nothing_to_redo");
   });
 
-  it("surfaces cold undo target drift as an internal error instead of a false no-op", async () => {
+  it("treats cold undo target drift as a non-retained write", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     const invariantMessages: string[] = [];
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -528,23 +592,16 @@ describe("write reversal", () => {
 
     const undo = await driftCore.undoTurn("chapter.md", THREAD_ID);
 
-    expectOutcome(undo, "internal_error", true);
-    expect(outcomeText(undo)).toContain("Retry — transient edit system failure for w1.");
-    expect(outcomeText(undo)).not.toContain("Cold undo reconstruction invariant failed");
-    expect(outcomeText(undo)).not.toContain("Missing target update seqs");
-    expect(outcomeText(undo)).not.toContain("chapter.md");
-    expect(outcomeText(undo)).not.toContain("thread-a");
-    expect(outcomeText(undo)).not.toContain("undo update seq");
-    expect(outcomeText(undo)).not.toBe("status: nothing_to_undo");
-    expect(invariantMessages).toHaveLength(1);
-    expect(invariantMessages[0]).toContain("w1");
+    expectOutcome(undo, "nothing_to_undo");
+    expect(outcomeText(undo)).toBe("status: nothing_to_undo");
+    expect(invariantMessages).toEqual([]);
     expect(await ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toEqual([]);
     expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
       { status: "active" },
     ]);
   });
 
-  it("surfaces cold redo target drift as an internal error instead of a false no-op", async () => {
+  it("treats cold redo target drift as a non-retained write", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     const invariantMessages: string[] = [];
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -578,16 +635,9 @@ describe("write reversal", () => {
 
     const redo = await driftCore.redoTurn("chapter.md", THREAD_ID);
 
-    expectOutcome(redo, "internal_error", true);
-    expect(outcomeText(redo)).toContain("Retry — transient edit system failure for w1.");
-    expect(outcomeText(redo)).not.toContain("Cold redo reconstruction invariant failed");
-    expect(outcomeText(redo)).not.toContain("Missing target update seqs");
-    expect(outcomeText(redo)).not.toContain("chapter.md");
-    expect(outcomeText(redo)).not.toContain("thread-a");
-    expect(outcomeText(redo)).not.toContain("undo update seq");
-    expect(outcomeText(redo)).not.toBe("status: nothing_to_redo");
-    expect(invariantMessages).toHaveLength(1);
-    expect(invariantMessages[0]).toContain("w1");
+    expectOutcome(redo, "nothing_to_redo");
+    expect(outcomeText(redo)).toBe("status: nothing_to_redo");
+    expect(invariantMessages).toEqual([]);
     expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
       { status: "reversed" },
     ]);
@@ -905,4 +955,41 @@ function journalWithMissingMutationTarget(
     persistRedo: journal.persistRedo.bind(journal),
     readReversals: journal.readReversals.bind(journal),
   };
+}
+
+function markStoredReversalStatus(
+  journal: MemoryJournal,
+  docId: string,
+  writeId: string,
+  status: ReversalStatus,
+): void {
+  const entry = (
+    journal as unknown as {
+      data: Map<
+        string,
+        { reversals: Map<string, { record: { writeIds: string[]; status: string } }> }
+      >;
+    }
+  ).data.get(docId);
+  const stored = [...(entry?.reversals.values() ?? [])].find((candidate) =>
+    candidate.record.writeIds.includes(writeId),
+  );
+  if (!stored) throw new Error(`missing stored reversal for ${writeId}`);
+  stored.record.status = status;
+}
+
+function setStoredUpdateTime(
+  journal: MemoryJournal,
+  docId: string,
+  seq: number,
+  storedAt: Date,
+): void {
+  const entry = (
+    journal as unknown as {
+      data: Map<string, { updates: Array<{ seq: number; storedAt: Date }> }>;
+    }
+  ).data.get(docId);
+  const update = entry?.updates.find((candidate) => candidate.seq === seq);
+  if (!update) throw new Error(`missing stored update seq ${seq}`);
+  update.storedAt = storedAt;
 }

@@ -84,7 +84,7 @@ export interface ReversalStore {
   persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; undoUpdateSeq: number; writeId?: string; turnId?: string },
+    ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }>;
   readReversals(

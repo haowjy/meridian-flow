@@ -44,20 +44,21 @@ export async function planUndo(input: {
   if (!selected.ok) return selected;
   if (selected.writes.length === 0) return { ok: false, status: "nothing_to_undo" };
 
-  const rows = await rowsForHandles(
+  const retained = await retainedRowsForHandles(
     input.reversalStore,
     input.docId,
     input.threadId,
     selected.writeIds,
+    state.snapshot,
+    "active",
   );
-  const activeRows = rows.filter((row) => row.status === "active");
-  const targetSeqs = mutationSeqs(activeRows);
+  const targetSeqs = mutationSeqs(retained.rows);
   if (targetSeqs.size === 0) return { ok: false, status: "nothing_to_undo" };
   return {
     ok: true,
     direction: "undo",
-    writeIds: selected.writeIds,
-    turnId: selected.writes[0]?.turnId ?? "unknown",
+    writeIds: retained.writeIds,
+    turnId: retained.rows[0]?.turnId ?? "unknown",
     targetSeqs,
     snapshot: state.snapshot,
   };
@@ -77,15 +78,19 @@ export async function planRedo(input: {
   if (!selected.group) return { ok: false, status: "nothing_to_redo" };
 
   const group = selected.group;
-  const rows = await rowsForHandles(
+  const retained = await retainedRowsForHandles(
     input.reversalStore,
     input.docId,
     input.threadId,
     group.writeIds,
+    state.snapshot,
+    "reversed",
+    group.undoUpdateSeq,
   );
-  const targetSeqs = mutationSeqs(
-    rows.filter((row) => row.status === "reversed" && row.undoUpdateSeq === group.undoUpdateSeq),
-  );
+  if (retained.writeIds.length !== group.writeIds.length) {
+    return { ok: false, status: "nothing_to_redo" };
+  }
+  const targetSeqs = mutationSeqs(retained.rows);
   if (targetSeqs.size === 0) return { ok: false, status: "nothing_to_redo" };
   if (!snapshotRetainsSeq(state.snapshot, group.undoUpdateSeq)) {
     return { ok: false, status: "nothing_to_redo" };
@@ -118,17 +123,33 @@ async function loadState(reversalStore: ReversalStore, docId: string, threadId: 
   return { snapshot, activeWrites, reversals };
 }
 
-async function rowsForHandles(
+async function retainedRowsForHandles(
   reversalStore: ReversalStore,
   docId: string,
   threadId: string,
   handles: readonly string[],
-): Promise<WriteMutationRow[]> {
-  return (
-    await Promise.all(
-      handles.map((handle) => reversalStore.mutationsForWrite(docId, threadId, handle)),
-    )
-  ).flat();
+  snapshot: JournalSnapshot,
+  status: WriteMutationRow["status"],
+  undoUpdateSeq?: number,
+): Promise<{ writeIds: string[]; rows: WriteMutationRow[] }> {
+  const retainedSeqs = new Set(snapshot.updates.map((update) => update.seq));
+  const rowsByHandle = await Promise.all(
+    handles.map(async (handle) => ({
+      handle,
+      rows: (await reversalStore.mutationsForWrite(docId, threadId, handle)).filter(
+        (row) =>
+          row.status === status &&
+          (undoUpdateSeq === undefined || row.undoUpdateSeq === undoUpdateSeq),
+      ),
+    })),
+  );
+  const retained = rowsByHandle.filter(
+    ({ rows }) => rows.length > 0 && rows.every((row) => retainedSeqs.has(row.createdSeq)),
+  );
+  return {
+    writeIds: retained.map(({ handle }) => handle),
+    rows: retained.flatMap(({ rows }) => rows),
+  };
 }
 
 function mutationSeqs(rows: readonly WriteMutationRow[]): ReadonlySet<number> {
