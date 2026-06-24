@@ -231,7 +231,7 @@ describe("runtime orchestrator behavior", () => {
         async commitResponse() {
           return [
             {
-              documentId: "chapter.md",
+              documentId: "123e4567-e89b-12d3-a456-426614174000",
               text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
             },
           ];
@@ -253,18 +253,35 @@ describe("runtime orchestrator behavior", () => {
     );
 
     expect(requests).toHaveLength(2);
-    expect(JSON.stringify(requests[1]?.messages)).toContain(
-      "Post-commit write sync for chapter.md",
+    const secondRequestMessages = JSON.stringify(requests[1]?.messages);
+    expect(secondRequestMessages).toContain("concurrent edits");
+    expect(secondRequestMessages).not.toContain("Post-commit write sync for");
+    expect(secondRequestMessages).not.toContain("123e4567-e89b-12d3-a456-426614174000");
+    const echoMessage = requests[1]?.messages.find(
+      (message) =>
+        message.role === "system" &&
+        message.content.some(
+          (part) => part.type === "text" && part.text.includes("concurrent edits"),
+        ),
     );
-    expect(JSON.stringify(requests[1]?.messages)).toContain("concurrent edits");
-    expect(
-      events.some(
-        (event) =>
-          event.type === "block.upserted" &&
-          event.block.blockType === "text" &&
-          String(event.block.content).includes("human: abcd"),
-      ),
-    ).toBe(true);
+    expect(echoMessage).toBeDefined();
+
+    const syncBlockEvent = events.find(
+      (event) =>
+        event.type === "block.upserted" &&
+        event.block.blockType === "text" &&
+        String(event.block.content).includes("human: abcd"),
+    ) as Extract<OrchestratorEvent, { type: "block.upserted" }> | undefined;
+    expect(syncBlockEvent).toBeDefined();
+    expect(syncBlockEvent?.block.responseId).toBeNull();
+    expect(String(syncBlockEvent?.block.content)).not.toContain("Post-commit write sync for");
+    expect(String(syncBlockEvent?.block.content)).not.toContain(
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
+    const syncTurnEvent = events.find(
+      (event) => event.type === "turn.created" && event.turn.id === syncBlockEvent?.block.turnId,
+    );
+    expect(syncTurnEvent).toMatchObject({ turn: { role: "system" } });
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
