@@ -273,6 +273,7 @@ export function createResponseStaging(deps: {
     docBuffer: ResponseDocumentBuffer,
     concurrent: ConcurrentDetectionResult,
   ): ApplyEchoHunk[][] {
+    const seenBlockKeys = new Set<string>();
     return docBuffer.updates
       .map(
         (update) =>
@@ -288,7 +289,30 @@ export function createResponseStaging(deps: {
             { regroundSuppressedText: false },
           ).echo,
       )
+      .map((echo) => dedupeEchoBlocks(echo, seenBlockKeys))
       .filter((echo) => echo.length > 0);
+  }
+
+  function dedupeEchoBlocks(
+    echo: readonly ApplyEchoHunk[],
+    seenBlockKeys: Set<string>,
+  ): ApplyEchoHunk[] {
+    return echo
+      .map((hunk) => ({
+        ...hunk,
+        blocks: hunk.blocks.filter((block) => {
+          const key = echoBlockKey(block);
+          if (seenBlockKeys.has(key)) return false;
+          seenBlockKeys.add(key);
+          return true;
+        }),
+      }))
+      .filter((hunk) => hunk.blocks.length > 0);
+  }
+
+  function echoBlockKey(block: string): string {
+    const hashEnd = block.indexOf("|");
+    return hashEnd > 0 ? block.slice(0, hashEnd) : block;
   }
 
   function responseJournalBatch(

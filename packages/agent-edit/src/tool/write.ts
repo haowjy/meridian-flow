@@ -207,19 +207,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   async function view(
     command: ViewCommand,
     session: ActorSession,
-    context: WriteContext,
+    _context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
 
-    if (
-      !context.responseId ||
-      !responseStaging.hasBufferedWritesForDoc(context.responseId, address.filePath)
-    ) {
-      const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
-      if (!synced.ok) return synced.response;
-    }
+    const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
+    if (!synced.ok) return synced.response;
 
     const selection = renderer.selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
