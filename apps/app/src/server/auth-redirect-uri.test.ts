@@ -26,6 +26,38 @@ describe("resolveAuthRedirectUri", () => {
     );
   });
 
+  it("uses forwarded https scheme for proxied Tailscale hosts in development", () => {
+    process.env.APP_ENV = "dev";
+    process.env.WORKOS_REDIRECT_URI = "https://app.meridian.localhost/api/auth/callback";
+    expect(
+      resolveAuthRedirectUri(
+        new Request("http://writer.tail852a76.ts.net:8444/", {
+          headers: { "x-forwarded-proto": "https" },
+        }),
+      ),
+    ).toBe("https://writer.tail852a76.ts.net:8444/api/auth/callback");
+  });
+
+  it("uses the first forwarded proto value for proxied Tailscale hosts", () => {
+    process.env.APP_ENV = "dev";
+    process.env.WORKOS_REDIRECT_URI = "https://app.meridian.localhost/api/auth/callback";
+    expect(
+      resolveAuthRedirectUri(
+        new Request("http://writer.tail852a76.ts.net:8444/", {
+          headers: { "x-forwarded-proto": "https, http" },
+        }),
+      ),
+    ).toBe("https://writer.tail852a76.ts.net:8444/api/auth/callback");
+  });
+
+  it("keeps WORKOS_REDIRECT_URI for proxied Tailscale http without forwarded proto", () => {
+    process.env.APP_ENV = "dev";
+    process.env.WORKOS_REDIRECT_URI = "https://app.meridian.localhost/api/auth/callback";
+    expect(resolveAuthRedirectUri(new Request("http://writer.tail852a76.ts.net:8444/"))).toBe(
+      "https://app.meridian.localhost/api/auth/callback",
+    );
+  });
+
   it("keeps WORKOS_REDIRECT_URI for http localhost when env is https", () => {
     process.env.APP_ENV = "dev";
     process.env.WORKOS_REDIRECT_URI = "https://app.meridian.localhost/api/auth/callback";
