@@ -1,9 +1,9 @@
-// Turn-level undo/redo, availability, durable status, and response formatting contracts.
+// Write-level undo/redo, availability, durable status, and response formatting contracts.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
-import type { TurnMutationRow, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal, WriteMutationRow } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectNoInternalIds,
@@ -23,8 +23,8 @@ import {
 } from "./test-support/write-tool-harness.js";
 import type { WriteOutcome } from "./types.js";
 
-describe("turn reversal", () => {
-  it("flips mutation status when undoing and redoing a turn", async () => {
+describe("write reversal", () => {
+  it("flips mutation status when undoing and redoing a write", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -32,9 +32,9 @@ describe("turn reversal", () => {
       { ...context, turnId: "turn-mutation-status" },
     );
 
-    expect(
-      await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-mutation-status"),
-    ).toMatchObject([{ status: "active", createdSeq: 1 }]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { handle: "w1", turnId: "turn-mutation-status", status: "active", createdSeq: 1 },
+    ]);
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
 
@@ -45,165 +45,210 @@ describe("turn reversal", () => {
     });
     expect(reversal).toMatchObject({
       turnId: "turn-mutation-status",
+      writeId: "w1",
       threadId: THREAD_ID,
       status: "reversed",
     });
     expect(reversal?.undoUpdateSeq).toBeGreaterThan(0);
-    expect(
-      await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-mutation-status"),
-    ).toMatchObject([{ status: "reversed", undoUpdateSeq: reversal?.undoUpdateSeq }]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "reversed", undoUpdateSeq: reversal?.undoUpdateSeq },
+    ]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
 
     expect(outcomeText(redo)).toContain("status: reversed");
-    const [afterRedo] = await ctx.journal.mutationsForTurn(
-      "chapter.md",
-      THREAD_ID,
-      "turn-mutation-status",
-    );
+    const [afterRedo] = await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1");
     expect(afterRedo).toMatchObject({ status: "active" });
     expect(afterRedo?.undoUpdateSeq).toBeUndefined();
     expect(await ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toMatchObject([
-      { turnId: "turn-mutation-status", status: "redone" },
+      { turnId: "turn-mutation-status", writeId: "w1", status: "redone" },
     ]);
   });
 
-  it("scopes same-turn mutation status flips to the reversal being redone", async () => {
+  it("defaults to the latest write in a multi-write turn and redoes in stack order", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." }, { undoClientId: REVERSAL_CLIENT_ID });
+    const turnContext = { ...context, turnId: "turn-with-two-writes" };
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "insert", file: "chapter.md", content: "A." }, turnContext);
+    const aHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "B.", after: aHash },
+      turnContext,
+    );
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "A.", "B."]);
+
+    expect(
+      outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
+    ).toContain("undo: 1 edit(s)");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "A."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "active" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { status: "reversed" },
+    ]);
+
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+
+    await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "A."]);
+    await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "A.", "B."]);
+  });
+
+  it("returns write ids in immediate results even when the echo is suppressed", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
-    const turnContext = { ...context, turnId: "turn-interleaved-status" };
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
 
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
-      turnContext,
+    const write = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      context,
     );
-    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    const [firstMutation] = await ctx.journal.mutationsForTurn(
-      "chapter.md",
-      THREAD_ID,
-      "turn-interleaved-status",
-    );
-    const firstUndoSeq = firstMutation?.undoUpdateSeq;
-    expect(firstMutation).toMatchObject({
-      status: "reversed",
-      undoUpdateSeq: expect.any(Number),
-    });
 
+    expect(write.writeId).toBe("w1");
+    expect(outcomeText(write)).toContain("write id: w1");
+  });
+
+  it("targets one write without disturbing later writes", async () => {
+    const ctx = harness({ "chapter.md": "Base." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["A.", "B.", "C."]);
+
+    await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "B.", "C."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "reversed" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { status: "active" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w3")).toMatchObject([
+      { status: "active" },
+    ]);
+  });
+
+  it("targets an inclusive write range", async () => {
+    const ctx = harness({ "chapter.md": "Base." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["One.", "Two.", "Three.", "Four.", "Five."]);
+
+    const undo = await ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w2", to: "w4" },
+      context,
+    );
+
+    expect(outcomeText(undo)).toContain("undo: 3 edit(s)");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Five."]);
+  });
+
+  it("targets a range across turns", async () => {
+    const ctx = harness({ "chapter.md": "Base." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["One.", "Two."], "turn-a");
+    await appendBlocks(ctx, ["Three.", "Four."], "turn-b");
+
+    await ctx.core.write({ command: "undo", file: "chapter.md", from: "w2", to: "w3" }, context);
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Four."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { turnId: "turn-a-1", status: "reversed" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w3")).toMatchObject([
+      { turnId: "turn-b-0", status: "reversed" },
+    ]);
+  });
+
+  it("preserves same-area human edits when undoing a selected write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      turnContext,
+      context,
     );
-    expect(
-      await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-interleaved-status"),
-    ).toMatchObject([{ status: "reversed", undoUpdateSeq: firstUndoSeq }, { status: "active" }]);
+    humanText(
+      ctx.liveDoc("chapter.md"),
+      0,
+      { from: "Alpha blade.".length, to: "Alpha blade.".length },
+      " Human.",
+    );
 
-    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    const afterSecondUndo = await ctx.journal.mutationsForTurn(
-      "chapter.md",
-      THREAD_ID,
-      "turn-interleaved-status",
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
+
+    expect(outcomeText(undo)).toContain("status: reconciled");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword. Human."]);
+  });
+
+  it("supports last and all selectors", async () => {
+    const lastCtx = harness({ "chapter.md": "Base." });
+    await lastCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(lastCtx, ["One.", "Two.", "Three.", "Four."]);
+
+    await lastCtx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
+    expect(blockTexts(lastCtx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+
+    const allCtx = harness({ "chapter.md": "Base." });
+    await allCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(allCtx, ["One.", "Two.", "Three."]);
+
+    await allCtx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
+    expect(blockTexts(allCtx.liveDoc("chapter.md"))).toEqual(["Base."]);
+  });
+
+  it("blocks redo after a forward write follows an undo", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-redo-gate" },
     );
-    const secondUndoSeq = afterSecondUndo[1]?.undoUpdateSeq;
-    expect(afterSecondUndo).toMatchObject([
-      { status: "reversed", undoUpdateSeq: firstUndoSeq },
-      { status: "reversed", undoUpdateSeq: expect.any(Number) },
-    ]);
-    expect(secondUndoSeq).not.toBe(firstUndoSeq);
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: false,
       redo: true,
-      redoTurnId: "turn-interleaved-status",
+      redoWriteId: "w1",
     });
 
-    await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-
-    const afterRedo = await ctx.journal.mutationsForTurn(
-      "chapter.md",
-      THREAD_ID,
-      "turn-interleaved-status",
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "New forward edit." },
+      { ...context, turnId: "forward_update_after_undo" },
     );
-    expect(afterRedo).toMatchObject([
-      { status: "reversed", undoUpdateSeq: firstUndoSeq },
-      { status: "active" },
-    ]);
-    expect(afterRedo[1]?.undoUpdateSeq).toBeUndefined();
+
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: true,
       redo: false,
-      undoTurnId: "turn-interleaved-status",
+      undoWriteId: "w2",
     });
+    expect(
+      outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
+    ).toBe("status: nothing_to_redo");
   });
 
-  it("cold undo reverses only the active subset inside a reused turn id", async () => {
-    const turnId = "turn-cold-active-subset";
+  it("validates ranges and unknown handles without crashing", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, context);
 
-    async function setup(ctx: ReturnType<typeof harness>) {
-      const turnContext = { ...context, turnId };
-      await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-      await ctx.core.write(
-        { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
-        turnContext,
-      );
-      expect(
-        outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
-      ).toContain("status: reversed");
-      await ctx.core.write(
-        { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-        turnContext,
-      );
-      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
-      expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId)).toMatchObject([
-        { status: "reversed" },
-        { status: "active", createdSeq: 3 },
-      ]);
-    }
+    const inverted = await ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w2", to: "w1" },
+      context,
+    );
+    expectOutcome(inverted, "invalid_write", true);
+    expect(outcomeText(inverted)).toContain("from must be before or equal to to");
 
-    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
-    await setup(ctx);
-    const undo = await ctx.core.undoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(undo)).toContain("status: reversed");
-
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId)).toMatchObject([
-      { status: "reversed" },
-      { status: "reversed" },
-    ]);
-  });
-
-  it("cold redo replays the most recent reversed subset inside a reused turn id", async () => {
-    const turnId = "turn-cold-redo-subset";
-
-    async function setup(ctx: ReturnType<typeof harness>) {
-      const turnContext = { ...context, turnId };
-      await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-      await ctx.core.write(
-        { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
-        turnContext,
-      );
-      await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-      await ctx.core.write(
-        { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-        turnContext,
-      );
-      await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-      expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
-      const rows = await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId);
-      expect(rows).toMatchObject([
-        { status: "reversed", undoUpdateSeq: expect.any(Number) },
-        { status: "reversed", undoUpdateSeq: expect.any(Number) },
-      ]);
-      expect(rows[1]?.undoUpdateSeq).not.toBe(rows[0]?.undoUpdateSeq);
-    }
-
-    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
-    await setup(ctx);
-    const redo = await ctx.core.redoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(redo)).toContain("status: reversed");
-
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
-    const rows = await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId);
-    expect(rows).toMatchObject([{ status: "reversed" }, { status: "active" }]);
-    expect(rows[1]?.undoUpdateSeq).toBeUndefined();
+    expect(
+      outcomeText(
+        await ctx.core.write({ command: "undo", file: "chapter.md", to: "w99" }, context),
+      ),
+    ).toBe("status: nothing_to_undo");
+    expect(
+      outcomeText(
+        await ctx.core.write({ command: "redo", file: "chapter.md", to: "w99" }, context),
+      ),
+    ).toBe("status: nothing_to_redo");
   });
 
   it("surfaces cold undo target drift as an internal error instead of a false no-op", async () => {
@@ -216,6 +261,7 @@ describe("turn reversal", () => {
     );
     const driftCore = createAgentEditCore({
       journal: journalWithMissingMutationTarget(ctx.journal, {
+        writeId: "w1",
         status: "active",
         createdSeq: 999,
       }),
@@ -236,11 +282,11 @@ describe("turn reversal", () => {
     expect(outcomeText(undo)).toContain("Missing target update seqs");
     expect(outcomeText(undo)).not.toBe("status: nothing_to_undo");
     expect(invariantMessages).toHaveLength(1);
-    expect(invariantMessages[0]).toContain("turn-cold-undo-drift");
+    expect(invariantMessages[0]).toContain("w1");
     expect(await ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toEqual([]);
-    expect(
-      await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-cold-undo-drift"),
-    ).toMatchObject([{ status: "active" }]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "active" },
+    ]);
   });
 
   it("surfaces cold redo target drift as an internal error instead of a false no-op", async () => {
@@ -260,6 +306,7 @@ describe("turn reversal", () => {
     if (undoUpdateSeq === undefined) throw new Error("expected undo update seq");
     const driftCore = createAgentEditCore({
       journal: journalWithMissingMutationTarget(ctx.journal, {
+        writeId: "w1",
         status: "reversed",
         createdSeq: 999,
         undoUpdateSeq,
@@ -281,16 +328,10 @@ describe("turn reversal", () => {
     expect(outcomeText(redo)).toContain("Missing target update seqs");
     expect(outcomeText(redo)).not.toBe("status: nothing_to_redo");
     expect(invariantMessages).toHaveLength(1);
-    expect(invariantMessages[0]).toContain("turn-cold-redo-drift");
-    expect(
-      await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, "turn-cold-redo-drift"),
-    ).toMatchObject([{ status: "reversed" }]);
-    expect(
-      await ctx.journal.readReversals("chapter.md", {
-        threadId: THREAD_ID,
-        status: ["reversed"],
-      }),
-    ).toMatchObject([{ undoUpdateSeq }]);
+    expect(invariantMessages[0]).toContain("w1");
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "reversed" },
+    ]);
   });
 
   it("reports undo availability only while active mutation updates are retained", async () => {
@@ -304,7 +345,7 @@ describe("turn reversal", () => {
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: true,
       redo: false,
-      undoTurnId: "turn-availability",
+      undoWriteId: "w1",
     });
 
     await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
@@ -318,62 +359,25 @@ describe("turn reversal", () => {
     ).toBe("status: nothing_to_undo");
   });
 
-  it("reports redo availability through the existing linear redo eligibility rule", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      { ...context, turnId: "turn-redo-availability" },
-    );
-    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-
-    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
-      undo: false,
-      redo: true,
-      redoTurnId: "turn-redo-availability",
-    });
-
-    await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "New forward edit." },
-      { ...context, turnId: "turn-after-undo" },
-    );
-
-    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
-      undo: true,
-      redo: false,
-      undoTurnId: "turn-after-undo",
-    });
-    expect(
-      outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
-    ).toBe("status: nothing_to_redo");
-  });
-
-  it("reports redo unavailable when partial compaction drops the reversed turn start", async () => {
+  it("reports redo unavailable when compaction drops the reversed write start", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword waits." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    const turnContext = { ...context, turnId: "turn-redo-compacted-prefix" };
 
     await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
-      turnContext,
-    );
-    const stateAfterFirstForwardWrite = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
-    await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      turnContext,
+      { ...context, turnId: "turn-redo-compacted-prefix" },
     );
+    const stateAfterForwardWrite = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: false,
       redo: true,
-      redoTurnId: "turn-redo-compacted-prefix",
+      redoWriteId: "w1",
     });
 
-    await ctx.journal.checkpoint("chapter.md", stateAfterFirstForwardWrite, 1);
+    await ctx.journal.checkpoint("chapter.md", stateAfterForwardWrite, 1);
 
-    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
-      2, 3,
-    ]);
+    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([2]);
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: false,
       redo: false,
@@ -413,28 +417,6 @@ describe("turn reversal", () => {
       },
     },
     {
-      label: "partial undo",
-      setup: () => simpleReplaceScenario("turn-partial-format-undo"),
-      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context),
-      assertExtra: (_state, text) => {
-        expect(text).toContain("status: partial");
-        expect(text).toContain("undo: 1 edit(s)");
-      },
-    },
-    {
-      label: "partial redo",
-      setup: async () => {
-        const state = await simpleReplaceScenario("turn-partial-format-redo");
-        await state.ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
-        return state;
-      },
-      run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md", last: 2 }, context),
-      assertExtra: (_state, text) => {
-        expect(text).toContain("status: partial");
-        expect(text).toContain("redo: 1 edit(s)");
-      },
-    },
-    {
       label: "reconciled undo",
       setup: async () => {
         const state = await simpleReplaceScenario("turn-reconciled-undo");
@@ -459,30 +441,6 @@ describe("turn reversal", () => {
       assertExtra: ({ ctx }, text) => {
         expect(text).toContain("status: reconciled");
         expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
-      },
-    },
-    {
-      label: "multi-write same turn",
-      setup: async () => {
-        const ctx = harness({ "chapter.md": "Alpha sword.\n\nOmega." });
-        const turnContext = { ...context, turnId: "turn-with-two-writes" };
-        await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-        const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
-        await ctx.core.write(
-          { command: "insert", file: "chapter.md", content: "Inserted.", after: alphaHash },
-          turnContext,
-        );
-        await ctx.core.write(
-          { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-          turnContext,
-        );
-        return { ctx };
-      },
-      run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
-      assertExtra: ({ ctx }, text) => {
-        expect(text).toContain("status: reversed");
-        expect(text).toContain("undo: 1 edit(s)");
-        expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Omega."]);
       },
     },
   ];
@@ -522,7 +480,6 @@ describe("turn reversal", () => {
   it("cold undo filters interleaved journal targets by thread", async () => {
     const threadB = "thread-b";
     const contextB = { sessionId: "session-b", threadId: threadB };
-    const turnId = "turn-shared-across-threads";
     const ctx = harness({
       "chapter.md": "Paragraph 1 original.\n\nParagraph 2 original.\n\nParagraph 3 original.",
     });
@@ -535,7 +492,7 @@ describe("turn reversal", () => {
         content: "Thread B paragraph 2.",
         find: "Paragraph 2 original.",
       },
-      { ...contextB, turnId },
+      { ...contextB, turnId: "turn-b-1" },
     );
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -545,7 +502,7 @@ describe("turn reversal", () => {
         content: "Thread A paragraph 1.",
         find: "Paragraph 1 original.",
       },
-      { ...context, turnId },
+      { ...context, turnId: "turn-a" },
     );
     await ctx.core.write({ command: "view", file: "chapter.md" }, contextB);
     await ctx.core.write(
@@ -555,48 +512,23 @@ describe("turn reversal", () => {
         content: "Thread B paragraph 3.",
         find: "Paragraph 3 original.",
       },
-      { ...contextB, turnId },
+      { ...contextB, turnId: "turn-b-2" },
     );
-
-    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
-      1, 2, 3,
-    ]);
 
     const undo = await ctx.core.undoTurn("chapter.md", threadB);
 
     expectOutcome(undo, "reversed");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Thread A paragraph 1.",
-      "Paragraph 2 original.",
+      "Thread B paragraph 2.",
       "Paragraph 3 original.",
     ]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", threadB, turnId)).toMatchObject([
-      { createdSeq: 1, status: "reversed", undoUpdateSeq: expect.any(Number) },
+    expect(await ctx.journal.mutationsForWrite("chapter.md", threadB, "w2")).toMatchObject([
       { createdSeq: 3, status: "reversed", undoUpdateSeq: expect.any(Number) },
     ]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, turnId)).toMatchObject([
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
       { createdSeq: 2, status: "active" },
     ]);
-  });
-
-  it("undoes and redoes this thread's writes", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
-    await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      context,
-    );
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
-
-    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    expect(outcomeText(undo)).toContain("status: reversed");
-    expectOutcome(undo, "reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
-
-    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redo)).toContain("status: reversed");
-    expectOutcome(redo, "reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 });
 
@@ -611,6 +543,19 @@ type NoInternalIdCase = {
   run: (state: NoInternalIdState) => Promise<string | WriteOutcome>;
   assertExtra?: (state: NoInternalIdState, text: string) => void | Promise<void>;
 };
+
+async function appendBlocks(
+  ctx: ReturnType<typeof harness>,
+  blocks: readonly string[],
+  turnId = "turn-append",
+): Promise<void> {
+  for (const [index, block] of blocks.entries()) {
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: block },
+      { ...context, turnId: `${turnId}-${index}` },
+    );
+  }
+}
 
 async function deletedBlockScenario(turnId: string): Promise<NoInternalIdState> {
   const ctx = harness({
@@ -642,20 +587,29 @@ async function simpleReplaceScenario(
 
 function journalWithMissingMutationTarget(
   journal: MemoryJournal,
-  missing: Pick<TurnMutationRow, "status" | "createdSeq" | "undoUpdateSeq">,
+  missing: Pick<WriteMutationRow, "status" | "createdSeq" | "undoUpdateSeq"> & {
+    writeId: string;
+  },
 ): UpdateJournal {
   return {
     append: journal.append.bind(journal),
+    reserveWriteOrdinal: journal.reserveWriteOrdinal.bind(journal),
     appendBatch: journal.appendBatch.bind(journal),
-    latestActiveTurn: journal.latestActiveTurn.bind(journal),
-    activeTurnSummary: journal.activeTurnSummary.bind(journal),
-    turnMinCreatedSeq: journal.turnMinCreatedSeq.bind(journal),
-    mutationsForTurn: async (documentId, threadId, turnId) => {
-      const rows = await journal.mutationsForTurn(documentId, threadId, turnId);
+    latestActiveWrite: journal.latestActiveWrite.bind(journal),
+    activeWriteSummary: journal.activeWriteSummary.bind(journal),
+    writeMinCreatedSeq: journal.writeMinCreatedSeq.bind(journal),
+    mutationsForWrite: async (documentId, threadId, handle) => {
+      const rows = await journal.mutationsForWrite(documentId, threadId, handle);
+      if (handle !== missing.writeId) return rows;
+      const source = rows[0];
+      if (!source) return rows;
       return [
         ...rows,
         {
-          wId: 999,
+          writeId: source.writeId,
+          handle: source.handle,
+          wId: source.wId,
+          turnId: source.turnId,
           createdSeq: missing.createdSeq,
           status: missing.status,
           ...(missing.undoUpdateSeq !== undefined ? { undoUpdateSeq: missing.undoUpdateSeq } : {}),

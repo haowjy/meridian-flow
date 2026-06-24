@@ -9,18 +9,20 @@ import type {
   UpdateMeta,
 } from "../ports/types.js";
 import type {
-  ActiveTurnSummary,
+  ActiveWriteSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
-  TurnMutationRow,
   UpdateJournal,
+  WriteMutationRow,
 } from "../ports/update-journal.js";
+import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
 
 export type StoredAgentEditMutation = {
   wId: number;
   documentId: string;
   threadId: string;
   turnId: string;
+  writeId: string;
   status: "active" | "reversed";
   createdSeq: number;
   undoUpdateSeq?: number;
@@ -95,11 +97,19 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         batchEntry.docId,
         batchEntry.mutation.threadId,
         batchEntry.mutation.turnId,
+        batchEntry.mutation.writeId ??
+          `${batchEntry.mutation.threadId}:${batchEntry.mutation.turnId}:${seq}`,
+        batchEntry.mutation.wId ??
+          this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId),
         seq,
         storedAt,
       );
       return { seq, wId };
     });
+  }
+
+  async reserveWriteOrdinal(documentId: string, threadId: string): Promise<number> {
+    return this.reserveWriteOrdinalSync(documentId, threadId);
   }
 
   async read(
@@ -161,29 +171,30 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     record.undoUpdateSeq = seq;
 
     const entry = this.entry(docId);
-    const key = reversalKey(docId, record.threadId, record.turnId);
-    const existing = entry.reversals.get(key);
-    entry.reversals.set(key, {
-      record: copyReversalRecord({ ...record, documentId: docId, undoUpdateSeq: seq }),
-      createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
-    });
-    this.reverseMutations(
-      docId,
-      record.threadId,
-      record.turnId,
-      seq,
-      record.reversedAt ?? storedAt,
-    );
+    for (const writeId of record.writeIds ?? [record.writeId ?? record.turnId]) {
+      const key = reversalKey(docId, record.threadId, writeId);
+      const existing = entry.reversals.get(key);
+      entry.reversals.set(key, {
+        record: copyReversalRecord({
+          ...record,
+          documentId: docId,
+          writeId,
+          undoUpdateSeq: seq,
+        }),
+        createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
+      });
+      this.reverseMutations(docId, record.threadId, writeId, seq, record.reversedAt ?? storedAt);
+    }
   }
 
   async persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; turnId: string; undoUpdateSeq: number },
+    ref: { threadId: string; writeId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
     const entry = this.entry(docId);
-    const key = reversalKey(docId, ref.threadId, ref.turnId);
+    const key = reversalKey(docId, ref.threadId, ref.writeId);
     const stored = entry.reversals.get(key);
     if (stored?.record.status !== "reversed" || stored.record.undoUpdateSeq !== ref.undoUpdateSeq) {
       return { consumed: false };
@@ -194,7 +205,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       ...stored,
       record: { ...stored.record, status: "redone" },
     });
-    this.reactivateMutations(docId, ref.threadId, ref.turnId, ref.undoUpdateSeq);
+    this.reactivateMutations(docId, ref.threadId, ref.writeId, ref.undoUpdateSeq);
     return { consumed: true, seq };
   }
 
@@ -214,57 +225,50 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       .map(copyReversalRecord);
   }
 
-  async latestActiveTurn(documentId: string, threadId: string): Promise<string | undefined> {
-    return this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.status === "active")
-      .sort((left, right) => left.createdSeq - right.createdSeq)
-      .at(-1)?.turnId;
-  }
-
-  async activeTurnSummary(documentId: string, threadId: string): Promise<ActiveTurnSummary[]> {
-    const byTurn = new Map<string, ActiveTurnSummary>();
-    for (const record of this.entry(documentId).mutations) {
-      if (record.threadId !== threadId || record.status !== "active") continue;
-      const existing = byTurn.get(record.turnId);
-      if (existing) {
-        existing.count += 1;
-        existing.minSeq = Math.min(existing.minSeq, record.createdSeq);
-      } else {
-        byTurn.set(record.turnId, {
-          turnId: record.turnId,
-          count: 1,
-          minSeq: record.createdSeq,
-        });
-      }
-    }
-    return [...byTurn.values()].sort((left, right) => left.minSeq - right.minSeq);
-  }
-
-  async turnMinCreatedSeq(
+  async latestActiveWrite(
     documentId: string,
     threadId: string,
-    turnId: string,
+  ): Promise<ActiveWriteSummary | undefined> {
+    const record = this.entry(documentId)
+      .mutations.filter(
+        (mutation) => mutation.threadId === threadId && mutation.status === "active",
+      )
+      .sort((left, right) => left.wId - right.wId)
+      .at(-1);
+    return record ? activeWriteSummary(record) : undefined;
+  }
+
+  async activeWriteSummary(documentId: string, threadId: string): Promise<ActiveWriteSummary[]> {
+    return this.entry(documentId)
+      .mutations.filter((record) => record.threadId === threadId && record.status === "active")
+      .sort((left, right) => left.wId - right.wId)
+      .map(activeWriteSummary);
+  }
+
+  async writeMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    handle: string,
   ): Promise<number | undefined> {
+    const ordinal = parseWriteHandle(handle);
+    if (ordinal === undefined) return undefined;
     const seqs = this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+      .mutations.filter((record) => record.threadId === threadId && record.wId === ordinal)
       .map((record) => record.createdSeq);
     return seqs.length > 0 ? Math.min(...seqs) : undefined;
   }
 
-  async mutationsForTurn(
+  async mutationsForWrite(
     documentId: string,
     threadId: string,
-    turnId: string,
-  ): Promise<TurnMutationRow[]> {
+    handle: string,
+  ): Promise<WriteMutationRow[]> {
+    const ordinal = parseWriteHandle(handle);
+    if (ordinal === undefined) return [];
     return this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.turnId === turnId)
+      .mutations.filter((record) => record.threadId === threadId && record.wId === ordinal)
       .sort((left, right) => left.createdSeq - right.createdSeq || left.wId - right.wId)
-      .map((record) => ({
-        wId: record.wId,
-        createdSeq: record.createdSeq,
-        status: record.status,
-        ...(record.undoUpdateSeq !== undefined ? { undoUpdateSeq: record.undoUpdateSeq } : {}),
-      }));
+      .map(writeMutationRow);
   }
 
   appendSync(
@@ -361,17 +365,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     docId: string,
     threadId: string,
     turnId: string,
+    writeId: string,
+    wId: number,
     createdSeq: number,
     createdAt: Date,
   ): number {
     const entry = this.entry(docId);
-    const wId = entry.nextWIdByThread.get(threadId) ?? 1;
-    entry.nextWIdByThread.set(threadId, wId + 1);
     entry.mutations.push({
       wId,
       documentId: docId,
       threadId,
       turnId,
+      writeId,
       status: "active",
       createdSeq,
       createdAt: copyDate(createdAt),
@@ -379,15 +384,22 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return wId;
   }
 
+  private reserveWriteOrdinalSync(docId: string, threadId: string): number {
+    const entry = this.entry(docId);
+    const wId = entry.nextWIdByThread.get(threadId) ?? 1;
+    entry.nextWIdByThread.set(threadId, wId + 1);
+    return wId;
+  }
+
   private reverseMutations(
     docId: string,
     threadId: string,
-    turnId: string,
+    writeId: string,
     undoUpdateSeq: number,
     reversedAt: Date,
   ): void {
     for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.threadId !== threadId || writeHandle(record.wId) !== writeId) continue;
       if (record.status !== "active") continue;
       record.status = "reversed";
       record.undoUpdateSeq = undoUpdateSeq;
@@ -399,11 +411,11 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
   private reactivateMutations(
     docId: string,
     threadId: string,
-    turnId: string,
+    writeId: string,
     undoUpdateSeq: number,
   ): void {
     for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || record.turnId !== turnId) continue;
+      if (record.threadId !== threadId || writeHandle(record.wId) !== writeId) continue;
       if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
       record.status = "active";
       delete record.undoUpdateSeq;
@@ -435,8 +447,8 @@ function assertExpectedSeq(meta: { seq?: number }, expectedSeq: number): void {
   }
 }
 
-function reversalKey(docId: string, threadId: string, turnId: string): string {
-  return `${docId}\u0000${threadId}\u0000${turnId}`;
+function reversalKey(docId: string, threadId: string, writeId: string): string {
+  return `${docId}\u0000${threadId}\u0000${writeId}`;
 }
 
 function compareReversalRecords(left: ReversalRecord, right: ReversalRecord): number {
@@ -458,6 +470,7 @@ function copyReversalRecord(record: ReversalRecord): ReversalRecord {
     documentId: record.documentId,
     turnId: record.turnId,
     threadId: record.threadId,
+    writeId: record.writeId,
     status: record.status,
     undoUpdateSeq: record.undoUpdateSeq,
     ...(record.expiresAt ? { expiresAt: copyDate(record.expiresAt) } : {}),
@@ -472,6 +485,7 @@ function copyMutationRecord(record: StoredAgentEditMutation): StoredAgentEditMut
     documentId: record.documentId,
     threadId: record.threadId,
     turnId: record.turnId,
+    writeId: record.writeId,
     status: record.status,
     createdSeq: record.createdSeq,
     createdAt: copyDate(record.createdAt),
@@ -487,4 +501,26 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
 
 function copyDate(date: Date): Date {
   return new Date(date.getTime());
+}
+
+function activeWriteSummary(record: StoredAgentEditMutation): ActiveWriteSummary {
+  return {
+    writeId: record.writeId,
+    handle: writeHandle(record.wId),
+    wId: record.wId,
+    turnId: record.turnId,
+    createdSeq: record.createdSeq,
+  };
+}
+
+function writeMutationRow(record: StoredAgentEditMutation): WriteMutationRow {
+  return {
+    writeId: record.writeId,
+    handle: writeHandle(record.wId),
+    wId: record.wId,
+    turnId: record.turnId,
+    createdSeq: record.createdSeq,
+    status: record.status,
+    ...(record.undoUpdateSeq !== undefined ? { undoUpdateSeq: record.undoUpdateSeq } : {}),
+  };
 }

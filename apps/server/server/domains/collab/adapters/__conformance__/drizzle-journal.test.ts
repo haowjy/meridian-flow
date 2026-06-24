@@ -272,6 +272,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID,
         threadId: THREAD_ID,
         turnId: TURN_D,
+        writeId: "w-expired",
         status: "active",
         undoUpdateSeq: seqE,
         expiresAt: new Date("2000-01-01T00:00:00.000Z"),
@@ -452,15 +453,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { wId: 2, turnId: TURN_B, status: "active", createdSeq: first[1]?.seq },
         { wId: 3, turnId: TURN_C, status: "active", createdSeq: second[0]?.seq },
       ]);
-      expect(await journal.latestActiveTurn(DOC_ID, THREAD_ID)).toBe(TURN_C);
-      expect(await journal.activeTurnSummary(DOC_ID, THREAD_ID)).toEqual([
-        { turnId: TURN_A, count: 1, minSeq: first[0]?.seq },
-        { turnId: TURN_B, count: 1, minSeq: first[1]?.seq },
-        { turnId: TURN_C, count: 1, minSeq: second[0]?.seq },
+      expect(await journal.latestActiveWrite?.(DOC_ID, THREAD_ID)).toMatchObject({
+        handle: "w3",
+        wId: 3,
+        turnId: TURN_C,
+        createdSeq: second[0]?.seq,
+      });
+      expect(await journal.activeWriteSummary?.(DOC_ID, THREAD_ID)).toMatchObject([
+        { handle: "w1", wId: 1, turnId: TURN_A, createdSeq: first[0]?.seq },
+        { handle: "w2", wId: 2, turnId: TURN_B, createdSeq: first[1]?.seq },
+        { handle: "w3", wId: 3, turnId: TURN_C, createdSeq: second[0]?.seq },
       ]);
-      expect(await journal.turnMinCreatedSeq(DOC_ID, THREAD_ID, TURN_A)).toBe(first[0]?.seq);
-      expect(await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A)).toEqual([
-        { wId: 1, createdSeq: first[0]?.seq, status: "active" },
+      expect(await journal.writeMinCreatedSeq?.(DOC_ID, THREAD_ID, "w1")).toBe(first[0]?.seq);
+      expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toEqual([
+        {
+          writeId: expect.any(String),
+          handle: "w1",
+          wId: 1,
+          turnId: TURN_A,
+          createdSeq: first[0]?.seq,
+          status: "active",
+        },
       ]);
 
       const idsBeforeFailure = await updateIds();
@@ -580,12 +593,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
 
-      const rowsBeforeRedo = await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A);
-      expect(rowsBeforeRedo).toMatchObject([
+      const firstBeforeRedo = await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1");
+      const secondBeforeRedo = await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w2");
+      if (!firstBeforeRedo || !secondBeforeRedo) throw new Error("expected write mutation rows");
+      expect(firstBeforeRedo).toMatchObject([
         { wId: 1, status: "reversed", undoUpdateSeq: expect.any(Number) },
+      ]);
+      expect(secondBeforeRedo).toMatchObject([
         { wId: 2, status: "reversed", undoUpdateSeq: expect.any(Number) },
       ]);
-      expect(rowsBeforeRedo[1]?.undoUpdateSeq).not.toBe(rowsBeforeRedo[0]?.undoUpdateSeq);
+      expect(secondBeforeRedo[0]?.undoUpdateSeq).not.toBe(firstBeforeRedo[0]?.undoUpdateSeq);
 
       coordinator.discard(DOC_ID);
       await core.recover(DOC_ID);
@@ -603,8 +620,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
-      expect(await journal.mutationsForTurn(DOC_ID, THREAD_ID, TURN_A)).toMatchObject([
-        { wId: 1, status: "reversed", undoUpdateSeq: rowsBeforeRedo[0]?.undoUpdateSeq },
+      expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
+        { wId: 1, status: "reversed", undoUpdateSeq: firstBeforeRedo[0]?.undoUpdateSeq },
+      ]);
+      expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w2")).toMatchObject([
         { wId: 2, status: "active" },
       ]);
     });

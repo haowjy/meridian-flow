@@ -4,6 +4,7 @@ import type { WriteCommand, WriteStatus } from "./types.js";
 export interface InternalWriteResult {
   status: WriteStatus;
   text: string;
+  writeId?: string;
 }
 
 export function documentNotFound(

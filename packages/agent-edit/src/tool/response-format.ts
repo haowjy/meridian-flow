@@ -16,17 +16,22 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     command,
     status: result.status,
     isError: isWriteErrorStatus(result.status),
+    ...(result.writeId ? { writeId: result.writeId } : {}),
     text: result.text,
   };
 }
 
 export function formatConcurrentCommitEcho(input: {
-  echoes: readonly (readonly ApplyEchoHunk[])[];
+  echoes: readonly (readonly ApplyEchoHunk[] & { writeId?: string })[];
   concurrentEdits?: ConcurrentEditInfo;
 }): string {
   const lines = ["status: success"];
   const echoLines = input.echoes
-    .flatMap((echo) => echo.flatMap((hunk) => hunk.blocks))
+    .flatMap((entry) =>
+      entry.flatMap((hunk) =>
+        hunk.blocks.map((block) => (entry.writeId ? `${entry.writeId}: ${block}` : block)),
+      ),
+    )
     .filter((line) => line.length > 0);
   if (echoLines.length > 0) lines.push("", ...echoLines);
   if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));

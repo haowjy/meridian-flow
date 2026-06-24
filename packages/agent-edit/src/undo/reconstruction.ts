@@ -16,8 +16,8 @@ interface ReconstructionTargetOptions extends ReconstructionOptions {
   targetSeqs: ReadonlySet<number>;
 }
 
-interface TurnUpdateGroup {
-  turnId: string;
+interface TargetUpdateGroup {
+  targetId: string;
   updates: PersistedUpdate[];
   firstSeq: number;
   lastSeq: number;
@@ -72,18 +72,19 @@ export type RedoEligibility =
 export async function reconstructUndoUpdate(
   journal: UpdateJournal,
   docId: string,
-  turnId: string,
+  targetId: string,
   options: ReconstructionTargetOptions,
 ): Promise<UndoReconstructionResult> {
   const snapshot = await journal.read(docId);
-  return reconstructUndoUpdateFromSnapshot(snapshot, { ...options, docId, turnId });
+  return reconstructUndoUpdateFromSnapshot(snapshot, { ...options, docId, targetId });
 }
 
 export function reconstructUndoUpdateFromSnapshot(
   snapshot: JournalSnapshot,
-  options: ReconstructionTargetOptions & { docId: string; turnId: string },
+  options: ReconstructionTargetOptions & { docId: string; targetId?: string; turnId?: string },
 ): UndoReconstructionResult {
-  const target = targetUpdateRange(snapshot.updates, options.turnId, options.targetSeqs);
+  const targetId = options.targetId ?? options.turnId ?? "target";
+  const target = targetUpdateRange(snapshot.updates, targetId, options.targetSeqs);
   const currentStackItem: CurrentUndoStackItem = { value: null };
   const { doc, um } = buildReplayedDocWithUndoManager(snapshot, target, {
     ...options,
@@ -107,7 +108,7 @@ export function reconstructUndoUpdateFromSnapshot(
   const undoUpdate = Y.encodeStateAsUpdate(doc, beforeUndoStateVector);
   return {
     docId: options.docId,
-    turnId: options.turnId,
+    turnId: targetId,
     undoUpdate,
   };
 }
@@ -115,25 +116,34 @@ export function reconstructUndoUpdateFromSnapshot(
 export async function reconstructRedoUpdate(
   journal: UpdateJournal,
   docId: string,
-  turnId: string,
+  targetId: string,
   undoUpdateSeq: number,
   options: ReconstructionTargetOptions,
 ): Promise<RedoReconstructionResult> {
   const snapshot = await journal.read(docId);
-  return reconstructRedoUpdateFromSnapshot(snapshot, { ...options, docId, turnId, undoUpdateSeq });
+  return reconstructRedoUpdateFromSnapshot(snapshot, {
+    ...options,
+    docId,
+    targetId,
+    undoUpdateSeq,
+  });
 }
 
 export function reconstructRedoUpdateFromSnapshot(
   snapshot: JournalSnapshot,
-  options: ReconstructionTargetOptions & { docId: string; turnId: string; undoUpdateSeq: number },
+  options: ReconstructionTargetOptions & {
+    docId: string;
+    targetId?: string;
+    turnId?: string;
+    undoUpdateSeq: number;
+  },
 ): RedoReconstructionResult {
-  const target = targetUpdateRange(snapshot.updates, options.turnId, options.targetSeqs);
+  const targetId = options.targetId ?? options.turnId ?? "target";
+  const target = targetUpdateRange(snapshot.updates, targetId, options.targetSeqs);
   const undoUpdate = snapshot.updates.find((update) => update.seq === options.undoUpdateSeq);
   if (!undoUpdate) throw new Error(`Undo update seq ${options.undoUpdateSeq} not found`);
   if (undoUpdate.seq <= target.lastSeq) {
-    throw new Error(
-      `Undo update seq ${options.undoUpdateSeq} must be after target turn ${options.turnId}`,
-    );
+    throw new Error(`Undo update seq ${options.undoUpdateSeq} must be after target ${targetId}`);
   }
   const eligibility = evaluateRedoEligibility(snapshot.updates, {
     undoUpdateSeq: undoUpdate.seq,
@@ -185,7 +195,7 @@ export function reconstructRedoUpdateFromSnapshot(
     ok: true,
     status: "redone",
     docId: options.docId,
-    turnId: options.turnId,
+    turnId: targetId,
     redoUpdate,
     undoUpdateSeq: options.undoUpdateSeq,
   };
@@ -211,29 +221,26 @@ export function evaluateRedoEligibility(
 
 function targetUpdateRange(
   updates: readonly PersistedUpdate[],
-  turnId: string,
+  targetId: string,
   targetSeqs: ReadonlySet<number>,
-): TurnUpdateGroup {
-  if (targetSeqs.size === 0) throw new Error(`No target update seqs provided for turn ${turnId}`);
+): TargetUpdateGroup {
+  if (targetSeqs.size === 0) throw new Error(`No target update seqs provided for ${targetId}`);
 
   const missing = new Set(targetSeqs);
   const targetUpdates: PersistedUpdate[] = [];
   for (const update of updates) {
     if (!targetSeqs.has(update.seq)) continue;
-    if (update.meta.actorTurnId !== turnId) {
-      throw new Error(`Target update seq ${update.seq} does not belong to turn ${turnId}`);
-    }
     targetUpdates.push(update);
     missing.delete(update.seq);
   }
   if (missing.size > 0) {
     throw new Error(
-      `Missing target update seqs for turn ${turnId}: ${[...missing].sort((a, b) => a - b).join(", ")}`,
+      `Missing target update seqs for ${targetId}: ${[...missing].sort((a, b) => a - b).join(", ")}`,
     );
   }
 
   return {
-    turnId,
+    targetId,
     updates: targetUpdates,
     firstSeq: Math.min(...targetUpdates.map((update) => update.seq)),
     lastSeq: Math.max(...targetUpdates.map((update) => update.seq)),
@@ -242,14 +249,14 @@ function targetUpdateRange(
 
 function buildReplayedDocWithUndoManager(
   snapshot: JournalSnapshot,
-  target: TurnUpdateGroup,
+  target: TargetUpdateGroup,
   options: ReconstructionTargetOptions & { currentStackItem: CurrentUndoStackItem },
 ): { doc: Y.Doc; um: Y.UndoManager } {
   const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
     untilSeqExclusive: target.firstSeq,
   });
   const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
-  const targetOriginToken = Symbol(`turn-${target.turnId}`);
+  const targetOriginToken = Symbol(`target-${target.targetId}`);
   const nonTargetOriginToken = Symbol("non-target");
   const um = new Y.UndoManager(fragment, {
     trackedOrigins: new Set([targetOriginToken]),
@@ -302,7 +309,7 @@ function replayUpdateWithOrigin(doc: Y.Doc, update: PersistedUpdate, origin: sym
 }
 
 function noRedoResult(
-  options: { docId: string; turnId: string; undoUpdateSeq: number },
+  options: { docId: string; targetId?: string; turnId?: string; undoUpdateSeq: number },
   failure:
     | Exclude<RedoEligibility, { ok: true }>
     | { ok: false; status: "no_redo"; reason: "empty_redo_stack" },
@@ -311,7 +318,7 @@ function noRedoResult(
     ok: false,
     status: "no_redo",
     docId: options.docId,
-    turnId: options.turnId,
+    turnId: options.targetId ?? options.turnId ?? "target",
     undoUpdateSeq: options.undoUpdateSeq,
     reason: failure.reason,
     blockingUpdateSeq:

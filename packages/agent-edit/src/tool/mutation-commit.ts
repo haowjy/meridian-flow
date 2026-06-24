@@ -13,7 +13,11 @@ import type { Codec } from "../codec/types.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
+import type {
+  JournalBatchAppendEntry,
+  JournalBatchAppendResult,
+  UpdateJournal,
+} from "../ports/update-journal.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { WriteCommand } from "./types.js";
@@ -41,10 +45,7 @@ export interface MutationEchoInput {
 export interface JournaledUpdate {
   update: Uint8Array;
   meta: UpdateMeta;
-  mutation?: {
-    threadId: string;
-    turnId: string;
-  };
+  mutation?: JournalBatchAppendEntry["mutation"];
 }
 
 export interface LiveUpdateCommitInput {
@@ -76,11 +77,11 @@ export interface LocalMutationSyncInput {
 }
 
 type LiveCommitResult =
-  | { ok: true; concurrentUpdate: Uint8Array | null }
+  | { ok: true; concurrentUpdate: Uint8Array | null; journalResults?: JournalBatchAppendResult[] }
   | { ok: false; response: InternalWriteResult };
 
 type MutationSyncResult =
-  | { ok: true; summary: SyncedMutationSummary }
+  | { ok: true; summary: SyncedMutationSummary; journalResults?: JournalBatchAppendResult[] }
   | { ok: false; response: InternalWriteResult };
 
 type LiveProjectionResult =
@@ -90,7 +91,9 @@ type LiveProjectionResult =
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
   commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
-  commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<void>;
+  commitJournalBatch(
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]>;
   projectToLive(
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
@@ -149,7 +152,11 @@ export function createMutationCommit(deps: {
       input.afterOwnVector,
       input.ownTurnId,
     );
-    return { ok: true, summary: summarizeMutationEcho(input, concurrent) };
+    return {
+      ok: true,
+      summary: summarizeMutationEcho(input, concurrent),
+      journalResults: committed.journalResults,
+    };
   }
 
   function summarizeMutationEcho(
@@ -182,13 +189,16 @@ export function createMutationCommit(deps: {
   }
 
   async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
-    await commitJournalBatch(journalEntries(input));
+    const journalResults = await commitJournalBatch(journalEntries(input));
 
-    return mergeCommittedUpdatesToLive(input);
+    const committed = await mergeCommittedUpdatesToLive(input);
+    return committed.ok ? { ...committed, journalResults } : committed;
   }
 
-  async function commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<void> {
-    await journal.appendBatch(entries);
+  async function commitJournalBatch(
+    entries: readonly JournalBatchAppendEntry[],
+  ): Promise<JournalBatchAppendResult[]> {
+    return journal.appendBatch(entries);
   }
 
   async function projectToLive(

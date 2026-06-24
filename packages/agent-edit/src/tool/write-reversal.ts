@@ -1,46 +1,49 @@
-// Runs turn-level undo/redo from durable journal reconstruction.
+// Runs write-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
-import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalRecord } from "../ports/types.js";
-import type { TurnMutationRow, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal, WriteMutationRow } from "../ports/update-journal.js";
 import {
   latestRedoableTarget,
-  latestUndoableTurn,
+  latestUndoableWrite,
+  redoableTargets,
   resolveUndoAvailability,
+  specificRedoableTarget,
+  specificUndoableWrite,
   type UndoAvailability,
+  undoableWrites,
 } from "../undo/availability.js";
 import { reconstructRedoUpdate, reconstructUndoUpdate } from "../undo/reconstruction.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import type { TurnRedoResult, TurnUndoResult, UndoRedoOutcome, WriteCommand } from "./types.js";
+import type { UndoRedoOutcome, WriteCommand, WriteRedoResult, WriteUndoResult } from "./types.js";
 
-export interface TurnReversal {
-  run(input: TurnReversalRunInput): Promise<InternalWriteResult>;
-  runTurnReversal(
-    input: TurnReversalEndpointInput & { direction: "undo" },
-  ): Promise<TurnUndoResult>;
-  runTurnReversal(
-    input: TurnReversalEndpointInput & { direction: "redo" },
-  ): Promise<TurnRedoResult>;
+export interface WriteReversal {
+  run(input: WriteReversalRunInput): Promise<InternalWriteResult>;
+  runWriteReversal(
+    input: WriteReversalEndpointInput & { direction: "undo" },
+  ): Promise<WriteUndoResult>;
+  runWriteReversal(
+    input: WriteReversalEndpointInput & { direction: "redo" },
+  ): Promise<WriteRedoResult>;
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
 }
 
-export interface TurnReversalRunInput {
+export interface WriteReversalRunInput {
   docId: string;
   session: ActorSession;
   commandName: WriteCommand["command"];
   direction: "undo" | "redo";
-  count: { all: boolean; count: number };
+  selection: ReversalSelection;
 }
 
-export interface TurnReversalEndpointInput {
+export interface WriteReversalEndpointInput {
   docId: string;
   session: ActorSession;
   direction: "undo" | "redo";
@@ -51,11 +54,21 @@ type ReversalResult =
       ok: true;
       status: UndoRedoOutcome;
       sync?: SyncedMutationSummary;
+      targetCount?: number;
     }
   | { ok: false; response: InternalWriteResult };
 
+type ReversalSelection =
+  | { kind: "latest" }
+  | { kind: "single"; to: string }
+  | { kind: "range"; from: string; to: string }
+  | { kind: "last"; count: number }
+  | { kind: "all" };
+
 interface ReversalTarget {
+  writeId: string;
   turnId: string;
+  writeIds: string[];
   undoUpdateSeq?: number;
 }
 
@@ -73,9 +86,12 @@ interface ReversalDirection {
 interface ReversalTargetInput {
   docId: string;
   threadId: string;
+  selection: ReversalSelection;
 }
 
-interface ReversalTargetSeqInput extends ReversalTargetInput {
+interface ReversalTargetSeqInput {
+  docId: string;
+  threadId: string;
   target: ReversalTarget;
 }
 
@@ -85,12 +101,14 @@ interface ReversalReconstructInput {
   targetSeqs: ReadonlySet<number>;
 }
 
-interface ReversalPersistInput extends ReversalTargetInput {
+interface ReversalPersistInput {
+  docId: string;
+  threadId: string;
   target: ReversalTarget;
   update: Uint8Array;
 }
 
-export function createTurnReversal(deps: {
+export function createWriteReversal(deps: {
   journal: UpdateJournal;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
@@ -98,7 +116,7 @@ export function createTurnReversal(deps: {
   codec: Codec;
   undoClientId?: number;
   onInvariantViolation?: (message: string) => void;
-}): TurnReversal {
+}): WriteReversal {
   const {
     journal,
     runtimeStore,
@@ -114,18 +132,17 @@ export function createTurnReversal(deps: {
       direction: "undo",
       emptyStatus: "nothing_to_undo",
       async findTarget(input) {
-        const turnId = await latestUndoableTurn({
+        const targets = await selectUndoTargets(input.selection, {
           journal,
-          mutationQueries: journal,
           docId: input.docId,
           threadId: input.threadId,
         });
-        return turnId ? { turnId } : null;
+        return targets.length > 0 ? combineTargets(targets) : null;
       },
       targetSeqs: (input) =>
-        targetSeqsForUndo(journal, input.docId, input.threadId, input.target.turnId),
+        targetSeqsForUndo(journal, input.docId, input.threadId, input.target.writeId),
       async reconstruct(input) {
-        const cold = await reconstructUndoUpdate(journal, input.docId, input.target.turnId, {
+        const cold = await reconstructUndoUpdate(journal, input.docId, input.target.writeId, {
           targetSeqs: input.targetSeqs,
           undoClientId,
         });
@@ -136,6 +153,8 @@ export function createTurnReversal(deps: {
           documentId: input.docId,
           turnId: input.target.turnId,
           threadId: input.threadId,
+          writeId: input.target.writeId,
+          writeIds: input.target.writeIds,
           status: "reversed",
           undoUpdateSeq: 0,
           reversedAt: new Date(),
@@ -148,28 +167,26 @@ export function createTurnReversal(deps: {
       direction: "redo",
       emptyStatus: "nothing_to_redo",
       async findTarget(input) {
-        return (
-          (await latestRedoableTarget({
-            journal,
-            mutationQueries: journal,
-            docId: input.docId,
-            threadId: input.threadId,
-          })) ?? null
-        );
+        const targets = await selectRedoTargets(input.selection, {
+          journal,
+          docId: input.docId,
+          threadId: input.threadId,
+        });
+        return targets.length > 0 ? combineTargets(targets) : null;
       },
       targetSeqs: (input) =>
         targetSeqsForRedo(
           journal,
           input.docId,
           input.threadId,
-          input.target.turnId,
+          input.target.writeId,
           requireUndoUpdateSeq(input.target),
         ),
       async reconstruct(input) {
         const cold = await reconstructRedoUpdate(
           journal,
           input.docId,
-          input.target.turnId,
+          input.target.writeId,
           requireUndoUpdateSeq(input.target),
           { targetSeqs: input.targetSeqs, undoClientId },
         );
@@ -181,7 +198,7 @@ export function createTurnReversal(deps: {
           input.update,
           {
             threadId: input.threadId,
-            turnId: input.target.turnId,
+            writeId: input.target.writeId,
             undoUpdateSeq: requireUndoUpdateSeq(input.target),
           },
           { origin: "system", seq: 0 },
@@ -193,41 +210,41 @@ export function createTurnReversal(deps: {
 
   return {
     run,
-    runTurnReversal,
+    runWriteReversal,
     getAvailability,
   };
 
   async function getAvailability(docId: string, threadId: string): Promise<UndoAvailability> {
     const availability = await resolveUndoAvailability({
       journal,
-      mutationQueries: journal,
+      mutationQueries: requiredMutationQueries(journal),
       docId,
       threadId,
     });
     return {
       undo: availability.undo,
       redo: availability.redo,
-      ...(availability.undoTurnId ? { undoTurnId: availability.undoTurnId } : {}),
-      ...(availability.redoTurnId ? { redoTurnId: availability.redoTurnId } : {}),
+      ...(availability.undoWriteId ? { undoWriteId: availability.undoWriteId } : {}),
+      ...(availability.redoWriteId ? { redoWriteId: availability.redoWriteId } : {}),
     };
   }
 
-  async function run(input: TurnReversalRunInput): Promise<InternalWriteResult> {
+  async function run(input: WriteReversalRunInput): Promise<InternalWriteResult> {
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
     const synced = runtimeStore.requireSynced(input.session, input.docId);
     if (!synced.ok) return synced.response;
     return runUndoOrRedo({ ...input, runtime });
   }
 
-  function runTurnReversal(
-    input: TurnReversalEndpointInput & { direction: "undo" },
-  ): Promise<TurnUndoResult>;
-  function runTurnReversal(
-    input: TurnReversalEndpointInput & { direction: "redo" },
-  ): Promise<TurnRedoResult>;
-  async function runTurnReversal(
-    input: TurnReversalEndpointInput,
-  ): Promise<TurnUndoResult | TurnRedoResult> {
+  function runWriteReversal(
+    input: WriteReversalEndpointInput & { direction: "undo" },
+  ): Promise<WriteUndoResult>;
+  function runWriteReversal(
+    input: WriteReversalEndpointInput & { direction: "redo" },
+  ): Promise<WriteRedoResult>;
+  async function runWriteReversal(
+    input: WriteReversalEndpointInput,
+  ): Promise<WriteUndoResult | WriteRedoResult> {
     invalidateRuntimeThread(input.docId, input.session.threadId);
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
     const synced = await runtimeStore.syncLocalFromLive(
@@ -244,12 +261,12 @@ export function createTurnReversal(deps: {
           runtime,
           commandName: input.direction,
           direction: input.direction,
-          count: { all: false, count: 1 },
+          selection: { kind: "latest" },
         });
     if (result.status !== "document_not_found") {
       invalidateRuntimeThread(input.docId, input.session.threadId);
     }
-    return toOutcome(input.direction, result) as TurnUndoResult | TurnRedoResult;
+    return toOutcome(input.direction, result) as WriteUndoResult | WriteRedoResult;
   }
 
   async function runUndoOrRedo(input: {
@@ -258,53 +275,31 @@ export function createTurnReversal(deps: {
     runtime: RuntimeDocumentState;
     commandName: WriteCommand["command"];
     direction: "undo" | "redo";
-    count: { all: boolean; count: number };
+    selection: ReversalSelection;
   }): Promise<InternalWriteResult> {
-    let applied = 0;
-    let lastOutcome: UndoRedoOutcome | null = null;
-    const echo: ApplyEchoHunk[] = [];
-    const concurrentEdits: ConcurrentEditInfo[] = [];
-    let sawReconcile = false;
-    const limit = input.count.all ? Number.POSITIVE_INFINITY : input.count.count;
+    const reversal = await reverseOne({
+      docId: input.docId,
+      session: input.session,
+      runtime: input.runtime,
+      commandName: input.commandName,
+      direction: directions[input.direction],
+      selection: input.selection,
+    });
+    if (!reversal.ok) return reversal.response;
+    if (reversal.status === "nothing_to_undo" || reversal.status === "nothing_to_redo")
+      return status(reversal.status);
+    if (reversal.status === "expired") return status("expired");
 
-    while (applied < limit) {
-      const result = await reverseOne({
-        docId: input.docId,
-        session: input.session,
-        runtime: input.runtime,
-        commandName: input.commandName,
-        direction: directions[input.direction],
-      });
-      if (!result.ok) return result.response;
-      if (result.status === "nothing_to_undo" || result.status === "nothing_to_redo") {
-        if (applied === 0) return status(result.status);
-        lastOutcome = input.count.all ? (sawReconcile ? "reconciled" : "reversed") : "partial";
-        break;
-      }
-      if (result.status === "expired") {
-        if (applied === 0) return status("expired");
-        lastOutcome = "partial";
-        break;
-      }
-      if (result.status !== "reversed" && result.status !== "reconciled") {
-        lastOutcome = result.status;
-        break;
-      }
-      if (result.status === "reconciled") sawReconcile = true;
-      if (result.sync) {
-        echo.push(...result.sync.echo);
-        if (result.sync.concurrentEdits) concurrentEdits.push(result.sync.concurrentEdits);
-      }
-      applied += 1;
-      runtimeStore.markSynced(input.session, input.docId, input.runtime);
-    }
-
-    const outcome = lastOutcome ?? (sawReconcile ? "reconciled" : "reversed");
+    if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
+    const outcome = reversal.status;
     const lines = [`status: ${outcome}`];
-    if (applied > 0) lines.push("", `${input.direction}: ${applied} edit(s)`);
-    const echoLines = echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+    const count = reversal.targetCount ?? 0;
+    if (count > 0) lines.push("", `${input.direction}: ${count} edit(s)`);
+    const echoLines =
+      reversal.sync?.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0) ?? [];
     if (echoLines.length > 0) lines.push("", ...echoLines);
-    for (const concurrent of concurrentEdits) lines.push("", ...formatConcurrent(concurrent));
+    if (reversal.sync?.concurrentEdits)
+      lines.push("", ...formatConcurrent(reversal.sync.concurrentEdits));
     return result(outcome, lines.join("\n"));
   }
 
@@ -314,9 +309,14 @@ export function createTurnReversal(deps: {
     runtime: RuntimeDocumentState;
     commandName: WriteCommand["command"];
     direction: ReversalDirection;
+    selection: ReversalSelection;
   }): Promise<ReversalResult> {
     const threadId = input.session.threadId;
-    const target = await input.direction.findTarget({ docId: input.docId, threadId });
+    const target = await input.direction.findTarget({
+      docId: input.docId,
+      threadId,
+      selection: input.selection,
+    });
     if (!target) return { ok: true, status: input.direction.emptyStatus };
 
     const before = snapshotBlocks(input.runtime.doc, model, codec);
@@ -328,6 +328,7 @@ export function createTurnReversal(deps: {
         direction: input.direction.direction,
         docId: input.docId,
         threadId,
+        writeId: target.writeId,
         turnId: target.turnId,
         undoUpdateSeq: target.undoUpdateSeq,
         cause,
@@ -347,6 +348,7 @@ export function createTurnReversal(deps: {
         direction: input.direction.direction,
         docId: input.docId,
         threadId,
+        writeId: target.writeId,
         turnId: target.turnId,
         undoUpdateSeq: target.undoUpdateSeq,
         cause,
@@ -383,6 +385,7 @@ export function createTurnReversal(deps: {
       ok: true,
       status: sync.summary.reconciled ? "reconciled" : "reversed",
       sync: sync.summary,
+      targetCount: target.writeIds.length,
     };
   }
 
@@ -390,12 +393,13 @@ export function createTurnReversal(deps: {
     direction: "undo" | "redo";
     docId: string;
     threadId: string;
+    writeId: string;
     turnId: string;
     undoUpdateSeq?: number;
     cause: unknown;
   }): ReversalResult {
     const message = [
-      `Cold ${input.direction} reconstruction invariant failed for document ${input.docId}, thread ${input.threadId}, turn ${input.turnId}`,
+      `Cold ${input.direction} reconstruction invariant failed for document ${input.docId}, thread ${input.threadId}, write ${input.writeId}`,
       input.undoUpdateSeq === undefined ? undefined : `undo update seq ${input.undoUpdateSeq}`,
       formatCause(input.cause),
     ]
@@ -413,9 +417,26 @@ export function createTurnReversal(deps: {
   }
 }
 
+function requiredMutationQueries(journal: UpdateJournal) {
+  if (
+    !journal.latestActiveWrite ||
+    !journal.activeWriteSummary ||
+    !journal.writeMinCreatedSeq ||
+    !journal.mutationsForWrite
+  ) {
+    throw new Error("UpdateJournal write-level mutation queries are required");
+  }
+  return journal as Required<
+    Pick<
+      UpdateJournal,
+      "latestActiveWrite" | "activeWriteSummary" | "writeMinCreatedSeq" | "mutationsForWrite"
+    >
+  >;
+}
+
 function requireUndoUpdateSeq(target: ReversalTarget): number {
   if (target.undoUpdateSeq === undefined) {
-    throw new Error(`Missing undo update seq for redo turn ${target.turnId}`);
+    throw new Error(`Missing undo update seq for redo write ${target.writeId}`);
   }
   return target.undoUpdateSeq;
 }
@@ -424,12 +445,18 @@ async function targetSeqsForUndo(
   journal: UpdateJournal,
   docId: string,
   threadId: string,
-  turnId: string,
+  writeId: string,
 ): Promise<ReadonlySet<number>> {
   return mutationSeqs(
-    (await journal.mutationsForTurn(docId, threadId, turnId)).filter(
-      (row) => row.status === "active",
-    ),
+    (
+      await Promise.all(
+        writeId
+          .split(",")
+          .map((id) => requiredMutationQueries(journal).mutationsForWrite(docId, threadId, id)),
+      )
+    )
+      .flat()
+      .filter((row) => row.status === "active"),
   );
 }
 
@@ -437,18 +464,87 @@ async function targetSeqsForRedo(
   journal: UpdateJournal,
   docId: string,
   threadId: string,
-  turnId: string,
+  writeId: string,
   undoUpdateSeq: number,
 ): Promise<ReadonlySet<number>> {
   return mutationSeqs(
-    (await journal.mutationsForTurn(docId, threadId, turnId)).filter(
-      (row) => row.status === "reversed" && row.undoUpdateSeq === undoUpdateSeq,
-    ),
+    (
+      await Promise.all(
+        writeId
+          .split(",")
+          .map((id) => requiredMutationQueries(journal).mutationsForWrite(docId, threadId, id)),
+      )
+    )
+      .flat()
+      .filter((row) => row.status === "reversed" && row.undoUpdateSeq === undoUpdateSeq),
   );
 }
 
-function mutationSeqs(rows: readonly TurnMutationRow[]): ReadonlySet<number> {
+function mutationSeqs(rows: readonly WriteMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
+}
+
+function combineTargets<T extends { writeId: string; turnId: string; undoUpdateSeq?: number }>(
+  targets: T[],
+): ReversalTarget {
+  return {
+    writeId: targets.map((target) => target.writeId).join(","),
+    writeIds: targets.map((target) => target.writeId),
+    turnId: targets[0]?.turnId ?? "unknown",
+    ...(targets[0]?.undoUpdateSeq !== undefined ? { undoUpdateSeq: targets[0].undoUpdateSeq } : {}),
+  };
+}
+
+async function selectUndoTargets(
+  selection: ReversalSelection,
+  input: { journal: UpdateJournal; docId: string; threadId: string },
+): Promise<{ writeId: string; turnId: string }[]> {
+  const base = {
+    journal: input.journal,
+    mutationQueries: requiredMutationQueries(input.journal),
+    docId: input.docId,
+    threadId: input.threadId,
+  };
+  if (selection.kind === "latest") {
+    const target = await latestUndoableWrite(base);
+    return target ? [target] : [];
+  }
+  if (selection.kind === "single") {
+    const target = await specificUndoableWrite({ ...base, writeId: selection.to });
+    return target ? [target] : [];
+  }
+  const all = await undoableWrites(base);
+  if (selection.kind === "all") return all;
+  if (selection.kind === "last") return all.slice(-selection.count);
+  return all.filter((target) => target.writeId >= selection.from && target.writeId <= selection.to);
+}
+
+async function selectRedoTargets(
+  selection: ReversalSelection,
+  input: { journal: UpdateJournal; docId: string; threadId: string },
+): Promise<{ writeId: string; turnId: string; undoUpdateSeq: number }[]> {
+  const base = {
+    journal: input.journal,
+    mutationQueries: requiredMutationQueries(input.journal),
+    docId: input.docId,
+    threadId: input.threadId,
+  };
+  if (selection.kind === "latest") {
+    const target = await latestRedoableTarget(base);
+    return target ? [target] : [];
+  }
+  if (selection.kind === "single") {
+    const target = await specificRedoableTarget({ ...base, writeId: selection.to });
+    return target ? [target] : [];
+  }
+  const all = await redoableTargets(base);
+  if (selection.kind === "all") return all;
+  if (selection.kind === "last") return all.slice(-selection.count);
+  const selected = all.filter(
+    (target) => target.writeId >= selection.from && target.writeId <= selection.to,
+  );
+  const undoSeq = selected[0]?.undoUpdateSeq;
+  return undoSeq === undefined ? [] : selected.filter((target) => target.undoUpdateSeq === undoSeq);
 }
 
 function formatCause(cause: unknown): string {
