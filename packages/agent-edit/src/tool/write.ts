@@ -10,6 +10,8 @@ import type {
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
+import type { DocumentAddress } from "../document-address.js";
+import { parseDocumentAddress } from "../document-address.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
@@ -86,14 +88,6 @@ export interface WriteTool {
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): void;
-}
-
-interface FileAddress {
-  /** Host-side storage/journal identity. */
-  documentId: string;
-  /** Model-facing display path. */
-  filePath: string;
-  fragment?: string;
 }
 
 interface ApplySuccessResponseInput {
@@ -371,7 +365,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const resolved = resolveWrite(
       { doc: runtime.doc, model: options.model, codec: options.codec },
-      { ...command, documentId: address.documentId, file: command.file },
+      { ...command, documentAddress: address },
     );
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
@@ -569,13 +563,8 @@ function createAutoTurnIdNonce(): string {
 
 function parseFileAddress(
   command: Pick<WriteCommand, "file" | "documentId">,
-): ({ ok: true } & FileAddress) | { ok: false; message: string } {
-  const [filePath, fragment] = command.file.split("#", 2);
-  if (!filePath) return { ok: false, message: "file is required" };
-  const documentId = command.documentId ?? filePath;
-  return fragment === undefined
-    ? { ok: true, documentId, filePath }
-    : { ok: true, documentId, filePath, fragment };
+): ({ ok: true } & DocumentAddress) | { ok: false; message: string } {
+  return parseDocumentAddress(command.file, command.documentId);
 }
 
 function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {

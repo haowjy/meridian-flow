@@ -2,7 +2,9 @@
  * Core-tool wiring: binds runtime core tool registrations to concrete handlers
  * backed by Meridian context, collab, and thread services.
  */
+
 import type { ResponseStagedCreateOutcome, WriteCommand } from "@meridian/agent-edit";
+import { type DocumentAddress, formatDocumentFile, splitDocumentFile } from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   checkpointRequestFromAskUser,
@@ -51,25 +53,13 @@ export interface ToolWiringDeps {
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
-type WriteToolInput = {
-  command: WriteCommand["command"];
-  path: string;
-  content?: string;
-  find?: string;
-  in?: string;
-  around?: string;
-  after?: string;
-  before?: string;
-  all?: boolean;
-  last?: number;
-  format?: "auto" | "full" | "outline";
-};
+type ModelWriteCommand = {
+  [Command in WriteCommand as Command["command"]]: Omit<Command, "file" | "documentId"> & {
+    path: string;
+  };
+}[WriteCommand["command"]];
 
-type ResolvedDocumentAddress = {
-  documentId: string;
-  file: string;
-  created?: boolean;
-};
+type ResolvedDocumentAddress = DocumentAddress & { created?: boolean };
 
 export type StagedCreateCleanup = {
   responseId: string;
@@ -149,7 +139,7 @@ function asRecord(input: unknown): Record<string, unknown> | null {
 
 function optionalString(
   input: Record<string, unknown>,
-  key: keyof WriteToolInput,
+  key: string,
 ): string | ToolErrorOutput | undefined {
   const value = input[key];
   if (value === undefined) return undefined;
@@ -159,7 +149,7 @@ function optionalString(
 
 function optionalBoolean(
   input: Record<string, unknown>,
-  key: keyof WriteToolInput,
+  key: string,
 ): boolean | ToolErrorOutput | undefined {
   const value = input[key];
   if (value === undefined) return undefined;
@@ -169,7 +159,7 @@ function optionalBoolean(
 
 function optionalPositiveInteger(
   input: Record<string, unknown>,
-  key: keyof WriteToolInput,
+  key: string,
 ): number | ToolErrorOutput | undefined {
   const value = input[key];
   if (value === undefined) return undefined;
@@ -179,7 +169,7 @@ function optionalPositiveInteger(
   return value;
 }
 
-function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
+function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutput {
   const record = asRecord(input);
   if (!record) return toolError({ message: "write input must be an object" });
 
@@ -203,6 +193,10 @@ function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
   if (isToolError(after)) return after;
   const before = optionalString(record, "before");
   if (isToolError(before)) return before;
+  const to = optionalString(record, "to");
+  if (isToolError(to)) return to;
+  const from = optionalString(record, "from");
+  if (isToolError(from)) return from;
   const all = optionalBoolean(record, "all");
   if (isToolError(all)) return all;
   const last = optionalPositiveInteger(record, "last");
@@ -217,19 +211,37 @@ function parseWriteToolInput(input: unknown): WriteToolInput | ToolErrorOutput {
     return toolError({ message: "content is required" });
   }
 
-  return {
-    command,
-    path,
-    content,
-    find,
-    in: inScope,
-    around,
-    after,
-    before,
-    all,
-    last,
-    format: format as WriteToolInput["format"],
-  };
+  const base = { command, path, tool_use_id: undefined };
+  switch (command) {
+    case "create":
+      return { ...base, command, content };
+    case "view":
+      return {
+        ...base,
+        command,
+        in: inScope,
+        around,
+        format: format as "auto" | "full" | "outline",
+      };
+    case "insert":
+      return {
+        ...base,
+        command,
+        content: content ?? "",
+        find,
+        in: inScope,
+        around,
+        after,
+        before,
+        all,
+      };
+    case "replace":
+      return { ...base, command, content: content ?? "", find, in: inScope, around, all };
+    case "undo":
+      return { ...base, command, to, from, last, all };
+    case "redo":
+      return { ...base, command, to, from, last, all };
+  }
 }
 
 function isWriteCommandName(command: string): command is WriteCommand["command"] {
@@ -255,22 +267,12 @@ function isToolError(value: unknown): value is ToolErrorOutput {
   );
 }
 
-function splitFragment(path: string): { basePath: string; fragment?: string } {
-  const marker = path.indexOf("#");
-  if (marker === -1) return { basePath: path };
-  return { basePath: path.slice(0, marker), fragment: path.slice(marker + 1) };
-}
-
-function fileForPath(path: string, fragment?: string): string {
-  return fragment ? `${path}#${fragment}` : path;
-}
-
 async function resolveDocumentAddress(
   port: ContextPort,
-  input: WriteToolInput,
+  input: ModelWriteCommand,
   options: { deferTrackedDocumentSync?: boolean } = {},
 ): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
-  const { basePath, fragment } = splitFragment(input.path);
+  const { filePath: basePath, fragment } = splitDocumentFile(input.path);
   if (input.command === "create") {
     if (fragment) return toolError({ message: "create does not accept a #fragment in path" });
     const ensured = await port.ensureTrackedDocument(
@@ -280,7 +282,8 @@ async function resolveDocumentAddress(
     if (!ensured.ok) return toolError(ensured.error);
     return {
       documentId: ensured.value.documentId,
-      file: fileForPath(basePath, fragment),
+      filePath: basePath,
+      ...(fragment === undefined ? {} : { fragment }),
       created: ensured.value.created,
     };
   }
@@ -295,7 +298,8 @@ async function resolveDocumentAddress(
   }
   return {
     documentId: ref.value.documentId,
-    file: fileForPath(basePath, fragment),
+    filePath: basePath,
+    ...(fragment === undefined ? {} : { fragment }),
   };
 }
 
@@ -323,75 +327,17 @@ async function deleteCreatedTrackedDocument(input: {
 }
 
 function buildAgentWriteCommand(
-  input: WriteToolInput,
+  input: ModelWriteCommand,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
 ): WriteCommand {
-  const { documentId, file } = address;
-  switch (input.command) {
-    case "create":
-      return {
-        command: "create",
-        documentId,
-        file,
-        content: input.content,
-        tool_use_id: toolUseId,
-      };
-    case "view":
-      return {
-        command: "view",
-        documentId,
-        file,
-        in: input.in,
-        around: input.around,
-        format: input.format,
-        tool_use_id: toolUseId,
-      };
-    case "insert":
-      return {
-        command: "insert",
-        documentId,
-        file,
-        content: input.content ?? "",
-        find: input.find,
-        in: input.in,
-        around: input.around,
-        after: input.after,
-        before: input.before,
-        all: input.all,
-        tool_use_id: toolUseId,
-      };
-    case "replace":
-      return {
-        command: "replace",
-        documentId,
-        file,
-        content: input.content ?? "",
-        find: input.find,
-        in: input.in,
-        around: input.around,
-        all: input.all,
-        tool_use_id: toolUseId,
-      };
-    case "undo":
-      return {
-        command: "undo",
-        documentId,
-        file,
-        last: input.last,
-        all: input.all,
-        tool_use_id: toolUseId,
-      };
-    case "redo":
-      return {
-        command: "redo",
-        documentId,
-        file,
-        last: input.last,
-        all: input.all,
-        tool_use_id: toolUseId,
-      };
-  }
+  const { path: _path, ...command } = input;
+  return {
+    ...command,
+    documentId: address.documentId,
+    file: formatDocumentFile(address),
+    tool_use_id: toolUseId,
+  } as WriteCommand;
 }
 
 async function refreshProjectionAfterCommittedWrite(

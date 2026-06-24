@@ -79,6 +79,16 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
               type: "boolean",
               description: "Apply to all matches for find, or undo/redo all available turns.",
             },
+            to: {
+              type: "string",
+              description:
+                "Undo/redo selector: a single write handle (for example w3), or the inclusive range end when from is also set.",
+            },
+            from: {
+              type: "string",
+              description:
+                "Undo/redo selector: inclusive range start write handle (for example w2). Requires to.",
+            },
             last: {
               type: "integer",
               minimum: 1,
