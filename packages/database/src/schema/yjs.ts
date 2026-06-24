@@ -89,6 +89,7 @@ export const documentYjsReversals = pgTable(
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
     // No FK: compaction can delete the undo update row after expiring reversal metadata.
     undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
@@ -102,10 +103,10 @@ export const documentYjsReversals = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    uniqueIndex("document_yjs_reversals_document_thread_turn").on(
+    uniqueIndex("document_yjs_reversals_document_thread_write").on(
       table.documentId,
       table.threadId,
-      table.turnId,
+      table.writeId,
     ),
     index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
     check(
@@ -132,6 +133,7 @@ export const agentEditMutations = pgTable(
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    writeId: text("write_id").notNull(),
     status: text("status").$type<MutationStatus>().notNull().default("active"),
     createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
     // No FK: compaction can delete the update row while durable mutation metadata remains.
@@ -141,6 +143,11 @@ export const agentEditMutations = pgTable(
     reversedBy: text("reversed_by").$type<MutationReversedBy>(),
   },
   (table) => [
+    uniqueIndex("agent_edit_mutations_document_thread_write_id").on(
+      table.documentId,
+      table.threadId,
+      table.writeId,
+    ),
     uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
       table.documentId,
       table.threadId,

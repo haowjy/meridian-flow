@@ -19,8 +19,8 @@ desktop, MCP, and future products.
   a stable per-thread Yjs transaction origin symbol; reversal does not use an
   in-memory reversal cache.
 - **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
-  model })` exposes the agent `write()` tool plus turn-level availability/user
-  undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).
+  model })` exposes the agent `write()` tool plus write-level availability/user
+  undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`; endpoint names remain host-compatible but default to the latest write).
 
 ## Mental model: offline peer, one merge+sync lifecycle per turn
 

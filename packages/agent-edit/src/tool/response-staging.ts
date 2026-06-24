@@ -12,6 +12,7 @@ import { formatConcurrentCommitEcho } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   ResponseCommitResult,
+  ResponseCommitWriteEcho,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   WriteCommand,
@@ -37,6 +38,9 @@ export interface ResponseStageUpdateInput {
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  writeId?: string;
+  writeOrdinal?: number;
+  durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
@@ -47,6 +51,9 @@ export interface ResponseStageUpdateInput {
 interface StagedResponseUpdate extends JournaledUpdate {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  writeId: string;
+  writeOrdinal: number;
+  durableWriteId: string;
   echoInput: StagedWriteEchoInput;
   // Per-doc buffers lose insertion order across documents; commit derives the
   // journal batch by this response-local staging sequence.
@@ -266,7 +273,18 @@ export function createResponseStaging(deps: {
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
-      mutation: { threadId: input.session.threadId, turnId: input.turnId },
+      mutation: {
+        threadId: input.session.threadId,
+        turnId: input.turnId,
+        writeId:
+          input.durableWriteId ??
+          `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
+        wId: input.writeOrdinal,
+      },
+      writeId: input.writeId ?? "w0",
+      writeOrdinal: input.writeOrdinal ?? 0,
+      durableWriteId:
+        input.durableWriteId ?? `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
       echoInput: {
@@ -283,11 +301,12 @@ export function createResponseStaging(deps: {
   function postCommitEchoes(
     docBuffer: ResponseDocumentBuffer,
     concurrent: ConcurrentDetectionResult,
-  ): ApplyEchoHunk[][] {
+  ): ResponseCommitWriteEcho[] {
     const seenBlockKeys = new Set<string>();
     return docBuffer.updates
-      .map(
-        (update) =>
+      .map((update) =>
+        tagEcho(
+          update.writeId,
           mutationCommit.summarizeMutationEcho(
             {
               runtime: docBuffer.runtime,
@@ -299,9 +318,14 @@ export function createResponseStaging(deps: {
             concurrent,
             { regroundSuppressedText: false },
           ).echo,
+        ),
       )
-      .map((echo) => dedupeEchoBlocks(echo, seenBlockKeys))
-      .filter((echo) => echo.length > 0);
+      .map((entry) => tagEcho(entry.writeId ?? "w0", dedupeEchoBlocks(entry, seenBlockKeys)))
+      .filter((entry) => entry.length > 0);
+  }
+
+  function tagEcho(writeId: string, echo: ApplyEchoHunk[]): ResponseCommitWriteEcho {
+    return Object.assign(echo, { writeId });
   }
 
   function dedupeEchoBlocks(

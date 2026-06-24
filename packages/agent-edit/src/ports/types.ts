@@ -50,8 +50,13 @@ export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "
  */
 export interface ReversalRecord {
   documentId: string;
+  /** Original turn is retained as context; reversal identity is the write handle. */
   turnId: string;
   threadId: string;
+  /** Stable model-facing write handle, e.g. w3. */
+  writeId?: string;
+  /** All write handles reversed by the same undo update; omitted for legacy/single records. */
+  writeIds?: string[];
   status: ReversalStatus;
   /** Journal sequence of the persisted undo update (for durable redo). */
   undoUpdateSeq: number;
