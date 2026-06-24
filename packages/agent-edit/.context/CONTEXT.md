@@ -77,7 +77,7 @@ The public package façade exposes `write()`, `recover()`,
 `redoTurn(docId, threadId)`, and `invalidateThread(docId, threadId)`. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
-`getAvailability` is the source of truth for whether turn-level undo/redo will
+`getAvailability` is the source of truth for whether write-level undo/redo will
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
 retained earliest forward row for the reversed turn, and the existing linear-redo
@@ -121,9 +121,9 @@ target. This journal-backed model is authoritative.
 
 Forward agent writes still use a stable transaction origin `Symbol` per
 `(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
-transaction attribution and same-actor filtering only; turn grouping for
-reversal comes from durable journal metadata (`turnId` / mutation row
-`createdSeq`), not live undo stack items.
+transaction attribution and same-actor filtering only; write selection for
+reversal comes from durable journal metadata (`w<N>` / mutation row
+`createdSeq`; `turnId` remains context), not live undo stack items.
 
 Redo targets are selected from durable `ReversalRecord` rows with
 `status: "reversed"`; there is no runtime redo stack or rehydration cache. Redo
@@ -132,9 +132,7 @@ doc+thread+turn reversal is still `status: "reversed"` inside the append
 transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
-**Turn-level undo:** each `write()` call is its own durable mutation row. Undoing
-a turn reverses all currently active rows for the latest undoable turn together;
-redo replays the latest eligible reversed subset for that turn.
+**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged.
 
 ## Key invariants
 
@@ -145,7 +143,7 @@ redo replays the latest eligible reversed subset for that turn.
   parse. Repeated serialize → parse cycles produce identical output.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
-  root; callers mutate through `write()` or the turn-level undo/redo seams.
+  root; callers mutate through `write()` or the write-level undo/redo seams.
 - **Coordinator/runtime failures → `internal_error`**, not
   `document_not_found`. Only document-missing from the coordinator is
   `document_not_found`.
@@ -281,3 +279,11 @@ cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, availability, and public turn seams), response
 staging/recovery, and create lifecycle.
+
+### Write handles and selective reversal
+
+Every successful mutating write returns a short handle line (`write id: w<N>`) even when its echo is otherwise suppressed. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
+
+Post-commit response echoes label emitted hunks with the write handle (`w3: …`) so concurrent/reconciliation reports can be traced back to the write to undo. Suppressed echoes stay suppressed.
+
+Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

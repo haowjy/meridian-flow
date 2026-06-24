@@ -140,24 +140,24 @@ describe("write tool dispatch", () => {
     if (!secondTurnId) throw new Error("expected second fallback turn id");
     expect(secondTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
     expect(secondTurnId).not.toBe(firstTurnId);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, firstTurnId)).toMatchObject([
-      { status: "active" },
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { turnId: firstTurnId, status: "active" },
     ]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, secondTurnId)).toMatchObject(
-      [{ status: "active" }],
-    );
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { turnId: secondTurnId, status: "active" },
+    ]);
 
     expect(
       outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
     ).toContain("status: reversed");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta sword."]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, firstTurnId)).toMatchObject([
-      { status: "active" },
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { turnId: firstTurnId, status: "active" },
     ]);
-    expect(await ctx.journal.mutationsForTurn("chapter.md", THREAD_ID, secondTurnId)).toMatchObject(
-      [{ status: "reversed" }],
-    );
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { turnId: secondTurnId, status: "reversed" },
+    ]);
   });
 
   it("appends unanchored inserts and handles explicit start and end anchors", async () => {
