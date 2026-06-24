@@ -51,6 +51,23 @@ comes from the one re-sync. Dropping those post-commit echoes (or aggregating th
 into one blob) leaves the agent blind to concurrent edits and structural insert
 context, so this package guards that contract.
 
+**`view` is a self-healing reconstruction — it never trusts local state.** Where
+the commit re-sync above is a *delta merge into* the runtime (it needs per-op
+origins to attribute human-vs-agent), `view` instead **rebuilds** the runtime
+from canonical (live) and replays the response's pending staged edits:
+`runtime = canonical ⊕ replay(pending)`. So a `view` is a read that can never
+carry runtime drift forward or corrupt the doc; at turn start (nothing pending)
+it is exactly canonical. `view` and `find` therefore read the same doc — the
+model always sees concurrent human edits *and* its own in-flight edits, and can
+re-ground on live truth on demand. (The reversal path still uses the delta merge
+`syncLocalFromLive`; `view` does not.)
+
+**Sequential tool dispatch is part of the contract.** The host runs the model's
+tool calls one at a time, so writes apply to the runtime sequentially and two
+overlapping *self*-writes compose or `no_match` rather than CRDT-mangle. The
+mangle is reserved for genuine *external* concurrency (human / other agent),
+which the echo reports. Parallelizing the dispatch would break this.
+
 ## What it is NOT
 
 Hocuspocus, Postgres/Drizzle, auth, HTTP/WS handlers, editor UI, TipTap
