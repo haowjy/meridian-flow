@@ -13,6 +13,18 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       stagedCreates: { committed: [], discarded: [] },
     }),
     getAvailability: async () => ({ undo: false, redo: false }),
+    undo: async () => ({
+      command: "undo",
+      status: "nothing_to_undo",
+      isError: false,
+      text: "",
+    }),
+    redo: async () => ({
+      command: "redo",
+      status: "nothing_to_redo",
+      isError: false,
+      text: "",
+    }),
     undoTurn: async () => ({
       command: "undo",
       status: "nothing_to_undo",
@@ -41,7 +53,7 @@ describe("agent-edit response write lifecycle", () => {
           documentId: "doc-1",
           updateCount: 1,
           concurrentEdits: { human: ["abcd"], agent: [] },
-          echo: [[{ mode: "full", blocks: ["abcd|Who---—"] }]],
+          echo: [{ writeId: "w1", hunks: [{ mode: "full", blocks: ["abcd|Who---—"] }] }],
           text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
         },
       ],

@@ -137,12 +137,17 @@ export type WriteFunction = (
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
 
-export type WriteUndoResult = WriteOutcome & { command: "undo" };
-export type WriteRedoResult = WriteOutcome & { command: "redo" };
-export type TurnUndoResult = WriteUndoResult;
-export type TurnRedoResult = WriteRedoResult;
+export type UndoResult = WriteOutcome & { command: "undo" };
+export type RedoResult = WriteOutcome & { command: "redo" };
+export type WriteUndoResult = UndoResult;
+export type WriteRedoResult = RedoResult;
+export type TurnUndoResult = UndoResult;
+export type TurnRedoResult = RedoResult;
 
-export type ResponseCommitWriteEcho = ApplyEchoHunk[] & { writeId?: string };
+export interface ResponseCommitWriteEcho {
+  writeId: string;
+  hunks: ApplyEchoHunk[];
+}
 
 export interface ResponseCommitDocumentResult {
   documentId: string;

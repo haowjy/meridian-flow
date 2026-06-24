@@ -8,6 +8,7 @@ import type {
   PersistedUpdate,
   ReversalRecord,
   ReversalStatus,
+  ReversalStore,
   UpdateJournal,
   UpdateMeta,
   WriteMutationRow,
@@ -148,7 +149,7 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
     documentId: row.documentId,
     threadId: row.threadId,
     turnId: row.turnId,
-    ...(row.writeId ? { writeId: row.writeId } : {}),
+    writeIds: row.writeId ? [row.writeId] : [row.turnId],
     status: row.status,
     undoUpdateSeq: row.undoUpdateSeq,
     ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
@@ -402,7 +403,7 @@ function mapWriteMutationRow(row: {
   };
 }
 
-export function createDrizzleJournal(db: JournalDb): UpdateJournal {
+export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
   return {
     async append(docId, update, meta) {
       return appendUpdate(db, docId, update, meta);
@@ -524,7 +525,10 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       return rows.map(mapWriteMutationRow);
     },
 
-    async read(docId, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
+    async read(
+      docId,
+      opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
+    ): Promise<JournalSnapshot> {
       const latest = await latestCheckpoint(db, docId);
       const fromCheckpoint = opts.fromCheckpoint ?? true;
       const conditions = [eq(documentYjsUpdates.documentId, asDocumentId(docId))];
@@ -543,6 +547,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),
       };
+    },
+
+    async readForReconstruction(docId: string): Promise<JournalSnapshot> {
+      return (
+        this.read as (
+          docId: string,
+          opts: JournalReadOptions & { fromCheckpoint?: boolean },
+        ) => Promise<JournalSnapshot>
+      )(docId, { fromCheckpoint: false });
     },
 
     async checkpoint(docId, state, upToSeq) {
@@ -616,72 +629,74 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       });
     },
 
-    async persistReversal(docId, undoUpdate, record) {
+    async persistUndo(docId, undoUpdate, records) {
       let undoUpdateSeq: number | undefined;
       await db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         undoUpdateSeq = await appendUpdate(txDb, docId, undoUpdate, { origin: "system", seq: 0 });
-        for (const writeId of record.writeIds ?? [record.writeId ?? record.turnId]) {
-          await txDb
-            .insert(documentYjsReversals)
-            .values({
-              documentId: asDocumentId(docId),
-              threadId: asThreadId(record.threadId),
-              turnId: asTurnId(record.turnId),
-              writeId,
-              status: record.status,
-              undoUpdateSeq,
-              expiresAt: record.expiresAt ?? null,
-              reversedAt: record.reversedAt ?? null,
-              reversedByUserId: asUserId(record.reversedByUserId) ?? null,
-            })
-            .onConflictDoUpdate({
-              target: [
-                documentYjsReversals.documentId,
-                documentYjsReversals.threadId,
-                documentYjsReversals.writeId,
-              ],
-              set: {
+        for (const record of records) {
+          for (const writeId of record.writeIds) {
+            await txDb
+              .insert(documentYjsReversals)
+              .values({
+                documentId: asDocumentId(docId),
+                threadId: asThreadId(record.threadId),
+                turnId: asTurnId(record.turnId),
+                writeId,
                 status: record.status,
                 undoUpdateSeq,
                 expiresAt: record.expiresAt ?? null,
                 reversedAt: record.reversedAt ?? null,
                 reversedByUserId: asUserId(record.reversedByUserId) ?? null,
-              },
+              })
+              .onConflictDoUpdate({
+                target: [
+                  documentYjsReversals.documentId,
+                  documentYjsReversals.threadId,
+                  documentYjsReversals.writeId,
+                ],
+                set: {
+                  status: record.status,
+                  undoUpdateSeq,
+                  expiresAt: record.expiresAt ?? null,
+                  reversedAt: record.reversedAt ?? null,
+                  reversedByUserId: asUserId(record.reversedByUserId) ?? null,
+                },
+              });
+          }
+          for (const writeId of record.writeIds) {
+            await reverseMutationsForWrite(txDb, {
+              documentId: docId,
+              threadId: record.threadId,
+              writeId,
+              undoUpdateSeq,
+              at: record.reversedAt ?? new Date(),
             });
-        }
-        for (const writeId of record.writeIds ?? [record.writeId ?? record.turnId]) {
-          await reverseMutationsForWrite(txDb, {
-            documentId: docId,
-            threadId: record.threadId,
-            writeId,
-            undoUpdateSeq,
-            at: record.reversedAt ?? new Date(),
-          });
+          }
         }
       });
       if (undoUpdateSeq === undefined) throw new Error("Failed to persist reversal update");
-      record.undoUpdateSeq = undoUpdateSeq;
+      for (const record of records) record.undoUpdateSeq = undoUpdateSeq;
     },
 
     async persistRedo(docId, redoUpdate, ref, meta) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
-        const [reversal] = await txDb
-          .select({ status: documentYjsReversals.status })
+        const reversals = await txDb
+          .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
           .from(documentYjsReversals)
           .where(
             and(
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
               eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
-              eq(documentYjsReversals.writeId, ref.writeId ?? ref.turnId ?? ""),
               eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           )
-          .for("update")
-          .limit(1);
+          .for("update");
 
-        if (reversal?.status !== "reversed") return { consumed: false };
+        if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
+          return { consumed: false };
+        }
 
         const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
         await txDb
@@ -691,16 +706,17 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
             and(
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
               eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
-              eq(documentYjsReversals.writeId, ref.writeId ?? ref.turnId ?? ""),
               eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           );
-        await reactivateMutationsForWrite(txDb, {
-          documentId: docId,
-          threadId: ref.threadId,
-          writeId: ref.writeId ?? ref.turnId ?? "",
-          undoUpdateSeq: ref.undoUpdateSeq,
-        });
+        for (const reversal of reversals) {
+          await reactivateMutationsForWrite(txDb, {
+            documentId: docId,
+            threadId: ref.threadId,
+            writeId: reversal.writeId,
+            undoUpdateSeq: ref.undoUpdateSeq,
+          });
+        }
 
         return { consumed: true, seq };
       });

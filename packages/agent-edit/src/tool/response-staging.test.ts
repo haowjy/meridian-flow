@@ -384,9 +384,11 @@ describe("response staging", () => {
     const commit = await ctx.core.commitResponse("response-staged-per-write-overlap");
 
     expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
-    expect(commit.documents[0]?.echo?.map((echo) => echo[0]?.mode)).toEqual(["full"]);
+    expect(commit.documents[0]?.echo?.map((echo) => echo.hunks[0]?.mode)).toEqual(["full"]);
     expect(
-      commit.documents[0]?.echo?.[0]?.[0]?.blocks.some((line) => line.includes(`${overlapHash}|`)),
+      commit.documents[0]?.echo?.[0]?.hunks[0]?.blocks.some((line) =>
+        line.includes(`${overlapHash}|`),
+      ),
     ).toBe(true);
     expect(commit.documents[0]?.text).toContain(`human: ${overlapHash}`);
   });
@@ -418,13 +420,13 @@ describe("response staging", () => {
 
     const commit = await ctx.core.commitResponse("response-staged-replace-all-windowed-overlap");
     const echoBlocks =
-      commit.documents[0]?.echo?.flatMap((echo) => echo.flatMap((hunk) => hunk.blocks)) ?? [];
+      commit.documents[0]?.echo?.flatMap((echo) => echo.hunks.flatMap((hunk) => hunk.blocks)) ?? [];
     const echoedHashes = echoBlocks.map((line) => line.slice(0, line.indexOf("|")));
 
     expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
-    expect(commit.documents[0]?.echo?.flatMap((echo) => echo.map((hunk) => hunk.mode))).toEqual([
-      "full",
-    ]);
+    expect(
+      commit.documents[0]?.echo?.flatMap((echo) => echo.hunks.map((hunk) => hunk.mode)),
+    ).toEqual(["full"]);
     expect(echoedHashes).toEqual(expectedEchoHashes);
     for (const hash of farHashes) {
       expect(echoedHashes).not.toContain(hash);
@@ -449,8 +451,8 @@ describe("response staging", () => {
     const commit = await ctx.core.commitResponse("response-staged-insert-echo");
 
     expect(commit.documents[0]?.concurrentEdits).toBeUndefined();
-    expect(commit.documents[0]?.echo?.map((echo) => echo[0]?.mode)).toEqual(["truncated"]);
-    expect(commit.documents[0]?.echo?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(
+    expect(commit.documents[0]?.echo?.map((echo) => echo.hunks[0]?.mode)).toEqual(["truncated"]);
+    expect(commit.documents[0]?.echo?.[0]?.hunks.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(
       /[0-9a-f]{4}\|Beta\./,
     );
     expect(commit.documents[0]?.text).toMatch(/status: success\n\nw1: [0-9a-f]{4}\|Alpha\./);
@@ -481,9 +483,9 @@ describe("response staging", () => {
     const echoes = commit.documents[0]?.echo;
 
     expect(echoes).toHaveLength(2);
-    expect(echoes?.map((echo) => echo[0]?.mode)).toEqual(["truncated", "truncated"]);
-    expect(echoes?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent one\./);
-    expect(echoes?.[1]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent two\./);
+    expect(echoes?.map((echo) => echo.hunks[0]?.mode)).toEqual(["truncated", "truncated"]);
+    expect(echoes?.[0]?.hunks.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent one\./);
+    expect(echoes?.[1]?.hunks.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent two\./);
     const echoLines = commit.documents[0]?.text?.split("\n") ?? [];
     expect(echoLines.filter((line) => line.includes(`${bravoHash}|`))).toHaveLength(1);
   });
@@ -536,10 +538,10 @@ describe("response staging", () => {
       concurrentEdits: { human: [blockHash], agent: [] },
     });
     expect(commit.documents[0]?.echo?.[0]?.writeId).toBe("w1");
-    expect(commit.documents[0]?.echo?.[0]?.[0]).toMatchObject({ mode: "full" });
+    expect(commit.documents[0]?.echo?.[0]?.hunks[0]).toMatchObject({ mode: "full" });
     expect(commit.documents[0]?.text).toContain("concurrent edits:");
     expect(commit.documents[0]?.text).toContain(`human: ${blockHash}`);
-    expect(commit.documents[0]?.echo?.[0]?.[0]?.blocks[0]).toContain(`${blockHash}|`);
+    expect(commit.documents[0]?.echo?.[0]?.hunks[0]?.blocks[0]).toContain(`${blockHash}|`);
   });
 
   it("re-grounds the runtime after staged commit so the next view includes merged live edits", async () => {

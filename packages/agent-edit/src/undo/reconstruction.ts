@@ -3,7 +3,7 @@ import * as Y from "yjs";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import type { JournalSnapshot, PersistedUpdate } from "../ports/types.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type { ReversalStore } from "../ports/update-journal.js";
 import { shouldDeleteUndoItem, type UndoStackItemLike } from "./delete-filter.js";
 
 export interface ReconstructionOptions {
@@ -70,12 +70,12 @@ export type RedoEligibility =
     };
 
 export async function reconstructUndoUpdate(
-  journal: UpdateJournal,
+  reversalStore: ReversalStore,
   docId: string,
   targetId: string,
   options: ReconstructionTargetOptions,
 ): Promise<UndoReconstructionResult> {
-  const snapshot = await journal.read(docId, { fromCheckpoint: false });
+  const snapshot = await reversalStore.readForReconstruction(docId);
   return reconstructUndoUpdateFromSnapshot(snapshot, { ...options, docId, targetId });
 }
 
@@ -114,13 +114,13 @@ export function reconstructUndoUpdateFromSnapshot(
 }
 
 export async function reconstructRedoUpdate(
-  journal: UpdateJournal,
+  reversalStore: ReversalStore,
   docId: string,
   targetId: string,
   undoUpdateSeq: number,
   options: ReconstructionTargetOptions,
 ): Promise<RedoReconstructionResult> {
-  const snapshot = await journal.read(docId, { fromCheckpoint: false });
+  const snapshot = await reversalStore.readForReconstruction(docId);
   return reconstructRedoUpdateFromSnapshot(snapshot, {
     ...options,
     docId,
