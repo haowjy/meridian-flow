@@ -151,7 +151,7 @@ describe("response staging", () => {
     expect(
       outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
     ).toContain("status: reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
     expect(
       outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
     ).toContain("status: reversed");
@@ -453,8 +453,8 @@ describe("response staging", () => {
     expect(commit.documents[0]?.echo?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(
       /[0-9a-f]{4}\|Beta\./,
     );
-    expect(commit.documents[0]?.text).toMatch(/status: success\n\n[0-9a-f]{4}\|Alpha\./);
-    expect(commit.documents[0]?.text).toMatch(/[0-9a-f]{4}\|Beta\./);
+    expect(commit.documents[0]?.text).toMatch(/status: success\n\nw1: [0-9a-f]{4}\|Alpha\./);
+    expect(commit.documents[0]?.text).toMatch(/w1: [0-9a-f]{4}\|Beta\./);
   });
 
   it("keeps two surviving post-commit echoes in write order without duplicate shared blocks", async () => {
@@ -485,7 +485,7 @@ describe("response staging", () => {
     expect(echoes?.[0]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent one\./);
     expect(echoes?.[1]?.flatMap((hunk) => hunk.blocks).join("\n")).toMatch(/Agent two\./);
     const echoLines = commit.documents[0]?.text?.split("\n") ?? [];
-    expect(echoLines.filter((line) => line.startsWith(`${bravoHash}|`))).toHaveLength(1);
+    expect(echoLines.filter((line) => line.includes(`${bravoHash}|`))).toHaveLength(1);
   });
 
   it("suppresses all post-commit output for no-concurrent non-structural staged writes", async () => {
@@ -497,14 +497,17 @@ describe("response staging", () => {
       responseId: "response-staged-suppressed-commit",
     };
 
-    await ctx.core.write(
+    const first = await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "Alpha", content: "Beta" },
       responseContext,
     );
-    await ctx.core.write(
+    const second = await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
       responseContext,
     );
+
+    expect(outcomeText(first)).toContain("write id: w1");
+    expect(outcomeText(second)).toContain("write id: w2");
 
     const commit = await ctx.core.commitResponse("response-staged-suppressed-commit");
 
@@ -531,8 +534,9 @@ describe("response staging", () => {
       documentId: "chapter.md",
       updateCount: 1,
       concurrentEdits: { human: [blockHash], agent: [] },
-      echo: [[{ mode: "full" }]],
     });
+    expect(commit.documents[0]?.echo?.[0]?.writeId).toBe("w1");
+    expect(commit.documents[0]?.echo?.[0]?.[0]).toMatchObject({ mode: "full" });
     expect(commit.documents[0]?.text).toContain("concurrent edits:");
     expect(commit.documents[0]?.text).toContain(`human: ${blockHash}`);
     expect(commit.documents[0]?.echo?.[0]?.[0]?.blocks[0]).toContain(`${blockHash}|`);
@@ -735,12 +739,12 @@ describe("response staging", () => {
     expect(await ctx.core.getAvailability("alpha.md", THREAD_ID)).toEqual({
       undo: true,
       redo: false,
-      undoTurnId: "turn-multi-doc-response",
+      undoWriteId: "w1",
     });
     expect(await ctx.core.getAvailability("beta.md", THREAD_ID)).toEqual({
       undo: true,
       redo: false,
-      undoTurnId: "turn-multi-doc-response",
+      undoWriteId: "w1",
     });
 
     const freshContext = { ...context, sessionId: "fresh-session" };

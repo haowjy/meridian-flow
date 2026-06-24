@@ -34,22 +34,6 @@ class MemoryJournal implements UpdateJournal {
     });
   }
 
-  async latestActiveTurn(): Promise<string | undefined> {
-    return undefined;
-  }
-
-  async activeTurnSummary() {
-    return [];
-  }
-
-  async turnMinCreatedSeq(): Promise<number | undefined> {
-    return undefined;
-  }
-
-  async mutationsForTurn() {
-    return [];
-  }
-
   async read() {
     return {
       checkpoint: this.checkpointState,

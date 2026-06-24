@@ -58,12 +58,20 @@ export type ReplaceCommand = FileCommand & {
 
 export type UndoCommand = FileCommand & {
   command: "undo";
+  /** Single write handle, or range end when from is also set. */
+  to?: string;
+  /** Inclusive range start; requires to. */
+  from?: string;
   last?: number;
   all?: boolean;
 };
 
 export type RedoCommand = FileCommand & {
   command: "redo";
+  /** Single write handle, or range end when from is also set. */
+  to?: string;
+  /** Inclusive range start; requires to. */
+  from?: string;
   last?: number;
   all?: boolean;
 };
@@ -99,6 +107,8 @@ export interface WriteOutcome {
   command: WriteCommandName;
   status: WriteStatus;
   isError: boolean;
+  /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
+  writeId?: string;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or view content. */
   text: string;
 }
@@ -126,10 +136,12 @@ export type WriteFunction = (
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
 
-export type TurnUndoResult = WriteOutcome & { command: "undo" };
-export type TurnRedoResult = WriteOutcome & { command: "redo" };
+export type WriteUndoResult = WriteOutcome & { command: "undo" };
+export type WriteRedoResult = WriteOutcome & { command: "redo" };
+export type TurnUndoResult = WriteUndoResult;
+export type TurnRedoResult = WriteRedoResult;
 
-export type ResponseCommitWriteEcho = ApplyEchoHunk[];
+export type ResponseCommitWriteEcho = ApplyEchoHunk[] & { writeId?: string };
 
 export interface ResponseCommitDocumentResult {
   documentId: string;

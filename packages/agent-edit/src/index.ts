@@ -68,12 +68,13 @@ export type {
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
-  ActiveTurnSummary,
+  ActiveWriteSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
-  TurnMutationRow,
   UpdateJournal,
+  WriteMutationRow,
 } from "./ports/update-journal.js";
+export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
 export type {
   ComponentRegistry,
   ComponentSpec,

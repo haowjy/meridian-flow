@@ -16,6 +16,7 @@ import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
+import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
@@ -26,7 +27,6 @@ import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
-import { createTurnReversal } from "./turn-reversal.js";
 import type {
   RedoCommand,
   ResponseCommitResult,
@@ -41,6 +41,7 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
+import { createWriteReversal } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
@@ -90,6 +91,7 @@ interface FileAddress {
 }
 
 interface ApplySuccessResponseInput {
+  writeId?: string;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
@@ -130,7 +132,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
-  const turnReversal = createTurnReversal({
+  const writeReversal = createWriteReversal({
     journal: options.journal,
     runtimeStore,
     mutationCommit,
@@ -162,7 +164,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
-    getAvailability: turnReversal.getAvailability,
+    getAvailability: writeReversal.getAvailability,
     undoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread,
@@ -282,6 +284,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
     const turnId = nextTurnId(session, address.documentId, context);
+    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
@@ -303,6 +306,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         meta,
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
+        writeId: writeIdentity.handle,
+        writeOrdinal: writeIdentity.ordinal,
+        durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
         before,
         touchedHashes: new Set(after.map((block) => block.hash)),
@@ -311,6 +317,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        writeId: writeIdentity.handle,
         echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
       });
     }
@@ -318,7 +325,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const committed = await mutationCommit.commitImmediate({
       docId: address.documentId,
       commandName: command.command,
-      updates: [{ update, meta, mutation: { threadId: session.threadId, turnId } }],
+      updates: [
+        {
+          update,
+          meta,
+          mutation: {
+            threadId: session.threadId,
+            turnId,
+            writeId: writeIdentity.durableId,
+            wId: writeIdentity.ordinal,
+          },
+        },
+      ],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
     });
@@ -326,6 +344,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     markSynced(session, address.documentId, runtime);
     return formatApplySuccess({
+      writeId: writeIdentity.handle,
       echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
     });
   }
@@ -352,6 +371,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
+    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
       ownActorTurnId: turnId,
@@ -375,6 +395,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         meta,
         liveOrigin: agentUpdateOrigin(turnId),
         turnId,
+        writeId: writeIdentity.handle,
+        writeOrdinal: writeIdentity.ordinal,
+        durableWriteId: writeIdentity.durableId,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
@@ -389,6 +412,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        writeId: writeIdentity.handle,
         echo: summary.echo,
         deletedBlocks: applied.deletedBlocks,
       });
@@ -400,7 +424,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       runtime,
       update: ownUpdate,
       meta,
-      mutation: { threadId: session.threadId, turnId },
+      mutation: {
+        threadId: session.threadId,
+        turnId,
+        writeId: writeIdentity.durableId,
+        wId: writeIdentity.ordinal,
+      },
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),
       before,
@@ -413,6 +442,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     markSynced(session, address.documentId, runtime);
     return formatApplySuccess({
+      writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
@@ -432,15 +462,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       // writes first so reversal order matches the model's tool-call order.
       await responseStaging.commitResponse(context.responseId);
     }
-    const count = commandCount(command);
-    if (!count.ok) return status("invalid_write", count.message);
+    const selection = commandSelection(command);
+    if (!selection.ok) return status("invalid_write", selection.message);
 
-    return turnReversal.run({
+    return writeReversal.run({
       docId: address.documentId,
       session,
       commandName: command.command,
       direction,
-      count,
+      selection: selection.selection,
     });
   }
 
@@ -463,11 +493,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const session = localSession(`turn-reversal:${threadId}`, threadId);
     const outcome =
       direction === "undo"
-        ? await turnReversal
-            .runTurnReversal({ docId, session, direction: "undo" })
+        ? await writeReversal
+            .runWriteReversal({ docId, session, direction: "undo" })
             .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as TurnUndoResult)
-        : await turnReversal
-            .runTurnReversal({ docId, session, direction: "redo" })
+        : await writeReversal
+            .runWriteReversal({ docId, session, direction: "redo" })
             .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as TurnRedoResult);
     if (outcome.status !== "document_not_found") responseStaging.dropForThread(docId, threadId);
     return outcome;
@@ -477,6 +507,22 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     responseStaging.dropForThread(docId, threadId);
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
     threadOrigins.evictThread(docId, threadId);
+  }
+
+  async function nextWriteIdentity(
+    docId: string,
+    session: ActorSession,
+    context: WriteContext,
+  ): Promise<{ durableId: string; ordinal: number; handle: string }> {
+    const ordinal = await requireJournalMethod(
+      options.journal.reserveWriteOrdinal,
+      "reserveWriteOrdinal",
+    ).call(options.journal, docId, session.threadId);
+    const durableId =
+      context.tool_use_id ??
+      globalThis.crypto?.randomUUID?.() ??
+      `${session.threadId}:${docId}:write-${ordinal}`;
+    return { durableId, ordinal, handle: writeHandle(ordinal) };
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
@@ -493,6 +539,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
+}
+
+function requireJournalMethod<T extends (...args: never[]) => unknown>(
+  method: T | undefined,
+  name: string,
+): T {
+  if (!method) throw new Error(`UpdateJournal.${name} is required for write-level undo`);
+  return method;
 }
 
 function createAutoTurnIdNonce(): string {
@@ -517,13 +571,17 @@ function parseFileAddress(
 
 function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
   const lines = ["status: success"];
+  if (input.writeId) lines.push(`write id: ${input.writeId}`);
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
     lines.push("", `deleted: ${input.deletedBlocks.join(", ")}`);
   }
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
   if (echoLines.length > 0) lines.push("", ...echoLines);
   if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
-  return result("success", lines.join("\n"));
+  return {
+    ...result("success", lines.join("\n")),
+    ...(input.writeId ? { writeId: input.writeId } : {}),
+  };
 }
 
 function errorResponse(
@@ -547,15 +605,48 @@ function internalError(cause: unknown): InternalWriteResult {
   return status("internal_error", `Retry — transient edit system failure.${reason}`);
 }
 
-function commandCount(
+type ReversalSelection =
+  | { kind: "latest" }
+  | { kind: "single"; to: string }
+  | { kind: "range"; from: string; to: string }
+  | { kind: "last"; count: number }
+  | { kind: "all" };
+
+function commandSelection(
   command: UndoCommand | RedoCommand,
-): { ok: true; all: boolean; count: number } | { ok: false; message: string } {
-  if (command.all === true) return { ok: true, all: true, count: Number.POSITIVE_INFINITY };
-  const count = command.last ?? 1;
-  if (!Number.isInteger(count) || count < 1) {
-    return { ok: false, message: "last must be a positive integer" };
+): { ok: true; selection: ReversalSelection } | { ok: false; message: string } {
+  const selectors = [
+    command.to !== undefined || command.from !== undefined,
+    command.last !== undefined,
+    command.all === true,
+  ].filter(Boolean).length;
+  if (selectors > 1)
+    return { ok: false, message: "Use only one undo/redo selector: to/from, last, or all." };
+  if (command.all === true) return { ok: true, selection: { kind: "all" } };
+  if (command.last !== undefined) {
+    if (!Number.isInteger(command.last) || command.last < 1) {
+      return { ok: false, message: "last must be a positive integer" };
+    }
+    return { ok: true, selection: { kind: "last", count: command.last } };
   }
-  return { ok: true, all: false, count };
+  if (command.from !== undefined || command.to !== undefined) {
+    if (command.to === undefined) return { ok: false, message: "from requires to" };
+    if (!isWriteHandle(command.to))
+      return { ok: false, message: "to must be a write handle like w3" };
+    if (command.from === undefined)
+      return { ok: true, selection: { kind: "single", to: command.to } };
+    if (!isWriteHandle(command.from))
+      return { ok: false, message: "from must be a write handle like w2" };
+    if (Number(command.from.slice(1)) > Number(command.to.slice(1))) {
+      return { ok: false, message: "from must be before or equal to to" };
+    }
+    return { ok: true, selection: { kind: "range", from: command.from, to: command.to } };
+  }
+  return { ok: true, selection: { kind: "latest" } };
+}
+
+function isWriteHandle(value: string): boolean {
+  return /^w[1-9]\d*$/.test(value);
 }
 
 function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolean {
