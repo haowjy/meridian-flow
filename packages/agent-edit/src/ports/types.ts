@@ -45,18 +45,16 @@ export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "
 
 /**
  * Durable metadata linking an agent turn to its persisted undo update.
- * Written atomically with the undo update via UpdateJournal.persistReversal and
- * consumed atomically with the redo update via UpdateJournal.persistRedo.
+ * Written atomically with the undo update via ReversalStore.persistUndo and
+ * consumed atomically with the redo update via ReversalStore.persistRedo.
  */
 export interface ReversalRecord {
   documentId: string;
   /** Original turn is retained as context; reversal identity is the write handle. */
   turnId: string;
   threadId: string;
-  /** Stable model-facing write handle, e.g. w3. */
-  writeId?: string;
-  /** All write handles reversed by the same undo update; omitted for legacy/single records. */
-  writeIds?: string[];
+  /** Stable model-facing write handles reversed by the same undo update. */
+  writeIds: string[];
   status: ReversalStatus;
   /** Journal sequence of the persisted undo update (for durable redo). */
   undoUpdateSeq: number;

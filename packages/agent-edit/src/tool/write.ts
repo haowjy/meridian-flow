@@ -15,8 +15,8 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
-import { writeHandle } from "../ports/update-journal.js";
+import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
@@ -29,11 +29,13 @@ import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   RedoCommand,
+  RedoResult,
   ResponseCommitResult,
   ResponseRollbackResult,
   TurnRedoResult,
   TurnUndoResult,
   UndoCommand,
+  UndoResult,
   ViewCommand,
   WriteCommand,
   WriteContext,
@@ -45,6 +47,7 @@ import { createWriteReversal } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
+  reversalStore?: ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   codec: Codec;
@@ -77,6 +80,9 @@ export interface WriteTool {
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
+  undo(docId: string, threadId: string): Promise<UndoResult>;
+  redo(docId: string, threadId: string): Promise<RedoResult>;
+  /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): void;
@@ -116,6 +122,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const autoTurnIdNonce = createAutoTurnIdNonce();
   let autoTurnCounter = 0;
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
+  const reversalStore = options.reversalStore ?? (options.journal as UpdateJournal & ReversalStore);
   const mutationCommit = createMutationCommit({
     journal: options.journal,
     coordinator: options.coordinator,
@@ -133,7 +140,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
   const writeReversal = createWriteReversal({
-    journal: options.journal,
+    reversalStore,
     runtimeStore,
     mutationCommit,
     model: options.model,
@@ -165,6 +172,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
     getAvailability: writeReversal.getAvailability,
+    undo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
+    redo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     undoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread,
@@ -515,9 +524,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     context: WriteContext,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
     const ordinal = await requireJournalMethod(
-      options.journal.reserveWriteOrdinal,
+      reversalStore.reserveWriteOrdinal,
       "reserveWriteOrdinal",
-    ).call(options.journal, docId, session.threadId);
+    ).call(reversalStore, docId, session.threadId);
     const durableId =
       context.tool_use_id ??
       globalThis.crypto?.randomUUID?.() ??
@@ -545,7 +554,7 @@ function requireJournalMethod<T extends (...args: never[]) => unknown>(
   method: T | undefined,
   name: string,
 ): T {
-  if (!method) throw new Error(`UpdateJournal.${name} is required for write-level undo`);
+  if (!method) throw new Error(`ReversalStore.${name} is required for write-level undo`);
   return method;
 }
 
@@ -646,7 +655,7 @@ function commandSelection(
 }
 
 function isWriteHandle(value: string): boolean {
-  return /^w[1-9]\d*$/.test(value);
+  return parseWriteHandle(value) !== undefined;
 }
 
 function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolean {

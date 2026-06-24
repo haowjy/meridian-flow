@@ -13,6 +13,7 @@ import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  ReversalStore,
   UpdateJournal,
   WriteMutationRow,
 } from "../ports/update-journal.js";
@@ -67,7 +68,7 @@ interface JournalEntry {
  * adapter so reversal metadata, w-id allocation, and compaction semantics do not
  * drift away from the production adapter.
  */
-export class InMemoryAgentEditJournal implements UpdateJournal {
+export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   private readonly data = new Map<string, JournalEntry>();
   private readonly now: () => Date;
 
@@ -118,6 +119,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return this.readSync(docId, opts);
   }
 
+  async readForReconstruction(docId: string): Promise<JournalSnapshot> {
+    return this.readSync(docId, { fromCheckpoint: false });
+  }
+
   async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
     this.setCheckpoint(docId, state, upToSeq);
   }
@@ -157,51 +162,66 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return { updatesFolded: foldRows.length, reversalsExpired };
   }
 
+  async persistUndo(
+    docId: string,
+    undoUpdate: Uint8Array,
+    records: readonly ReversalRecord[],
+  ): Promise<void> {
+    const storedAt = this.now();
+    const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
+
+    const entry = this.entry(docId);
+    for (const record of records) {
+      for (const writeId of record.writeIds) {
+        const key = reversalKey(docId, record.threadId, writeId);
+        const existing = entry.reversals.get(key);
+        entry.reversals.set(key, {
+          record: copyReversalRecord({
+            ...record,
+            documentId: docId,
+            undoUpdateSeq: seq,
+          }),
+          createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
+        });
+        this.reverseMutations(docId, record.threadId, writeId, seq, record.reversedAt ?? storedAt);
+      }
+    }
+  }
+
   async persistReversal(
     docId: string,
     undoUpdate: Uint8Array,
     record: ReversalRecord,
   ): Promise<void> {
-    const storedAt = this.now();
-    const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
-    record.undoUpdateSeq = seq;
-
-    const entry = this.entry(docId);
-    for (const writeId of record.writeIds ?? [record.writeId ?? record.turnId]) {
-      const key = reversalKey(docId, record.threadId, writeId);
-      const existing = entry.reversals.get(key);
-      entry.reversals.set(key, {
-        record: copyReversalRecord({
-          ...record,
-          documentId: docId,
-          writeId,
-          undoUpdateSeq: seq,
-        }),
-        createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
-      });
-      this.reverseMutations(docId, record.threadId, writeId, seq, record.reversedAt ?? storedAt);
-    }
+    await this.persistUndo(docId, undoUpdate, [record]);
   }
 
   async persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; writeId: string; undoUpdateSeq: number },
+    ref: { threadId: string; writeId?: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
     const entry = this.entry(docId);
-    const key = reversalKey(docId, ref.threadId, ref.writeId);
-    const stored = entry.reversals.get(key);
-    if (stored?.record.status !== "reversed" || stored.record.undoUpdateSeq !== ref.undoUpdateSeq) {
-      return { consumed: false };
-    }
+    const group = [...entry.reversals.entries()].filter(
+      ([, stored]) =>
+        stored.record.threadId === ref.threadId &&
+        stored.record.status === "reversed" &&
+        stored.record.undoUpdateSeq === ref.undoUpdateSeq &&
+        (ref.writeId === undefined || stored.record.writeIds.includes(ref.writeId)),
+    );
+    if (group.length === 0) return { consumed: false };
 
     const seq = this.appendSync(docId, redoUpdate, meta, this.now());
-    entry.reversals.set(key, {
-      ...stored,
-      record: { ...stored.record, status: "redone" },
-    });
-    this.reactivateMutations(docId, ref.threadId, ref.writeId, ref.undoUpdateSeq);
+    for (const [key, stored] of group) {
+      entry.reversals.set(key, {
+        ...stored,
+        record: { ...stored.record, status: "redone" },
+      });
+      for (const writeId of stored.record.writeIds) {
+        this.reactivateMutations(docId, ref.threadId, writeId, ref.undoUpdateSeq);
+      }
+    }
     return { consumed: true, seq };
   }
 
@@ -287,7 +307,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return seq;
   }
 
-  readSync(docId: string, opts: JournalReadOptions = {}): JournalSnapshot {
+  readSync(
+    docId: string,
+    opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
+  ): JournalSnapshot {
     const entry = this.entry(docId);
     const fromCheckpoint = opts.fromCheckpoint ?? true;
     const checkpointUpToSeq = fromCheckpoint ? (entry.checkpoint?.upToSeq ?? 0) : 0;
@@ -481,7 +504,7 @@ function copyReversalRecord(record: ReversalRecord): ReversalRecord {
     documentId: record.documentId,
     turnId: record.turnId,
     threadId: record.threadId,
-    writeId: record.writeId,
+    writeIds: [...record.writeIds],
     status: record.status,
     undoUpdateSeq: record.undoUpdateSeq,
     ...(record.expiresAt ? { expiresAt: copyDate(record.expiresAt) } : {}),

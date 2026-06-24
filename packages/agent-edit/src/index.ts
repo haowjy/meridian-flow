@@ -9,6 +9,8 @@ export interface AgentEditCore {
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
+  undo: ReturnType<typeof createWriteTool>["undo"];
+  redo: ReturnType<typeof createWriteTool>["redo"];
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
@@ -22,6 +24,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
     getAvailability: tool.getAvailability,
+    undo: tool.undo,
+    redo: tool.redo,
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
@@ -72,6 +76,7 @@ export type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  ReversalStore,
   UpdateJournal,
   WriteMutationRow,
 } from "./ports/update-journal.js";
@@ -83,12 +88,14 @@ export type {
   PropSpec,
 } from "./registry/component-registry.js";
 export type {
+  RedoResult,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   TurnRedoResult,
   TurnUndoResult,
+  UndoResult,
   WriteCommand,
   WriteContext,
   WriteErrorStatus,

@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
-import type { UpdateJournal, WriteMutationRow } from "../ports/update-journal.js";
+import {
+  parseWriteHandle,
+  type ReversalStore,
+  type UpdateJournal,
+  type WriteMutationRow,
+} from "../ports/update-journal.js";
 import {
   blockTexts,
   expectNoInternalIds,
@@ -45,7 +50,7 @@ describe("write reversal", () => {
     });
     expect(reversal).toMatchObject({
       turnId: "turn-mutation-status",
-      writeId: "w1",
+      writeIds: ["w1"],
       threadId: THREAD_ID,
       status: "reversed",
     });
@@ -61,7 +66,7 @@ describe("write reversal", () => {
     expect(afterRedo).toMatchObject({ status: "active" });
     expect(afterRedo?.undoUpdateSeq).toBeUndefined();
     expect(await ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toMatchObject([
-      { turnId: "turn-mutation-status", writeId: "w1", status: "redone" },
+      { turnId: "turn-mutation-status", writeIds: ["w1"], status: "redone" },
     ]);
   });
 
@@ -110,9 +115,7 @@ describe("write reversal", () => {
 
     expect((await ctx.journal.read("chapter.md")).updates).toEqual([]);
     expect(
-      (await ctx.journal.read("chapter.md", { fromCheckpoint: false })).updates.map(
-        (update) => update.seq,
-      ),
+      (await ctx.journal.readForReconstruction("chapter.md")).updates.map((update) => update.seq),
     ).toEqual([1]);
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: true,
@@ -220,6 +223,39 @@ describe("write reversal", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Five."]);
   });
 
+  it("targets write ranges by numeric ordinal past w10", async () => {
+    const ctx = harness({ "chapter.md": "Base." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(
+      ctx,
+      Array.from({ length: 11 }, (_, index) => `Block ${index + 1}.`),
+    );
+
+    const undo = await ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w2", to: "w10" },
+      context,
+    );
+
+    expect(outcomeText(undo)).toContain("undo: 9 edit(s)");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Block 1.", "Block 11."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w10")).toMatchObject([
+      { status: "reversed" },
+    ]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w11")).toMatchObject([
+      { status: "active" },
+    ]);
+  });
+
+  it("compares write handles by numeric ordinal", async () => {
+    const handles = ["w1", "w2", "w10", "w11"].sort((left, right) => {
+      const leftOrdinal = parseWriteHandle(left) ?? 0;
+      const rightOrdinal = parseWriteHandle(right) ?? 0;
+      return leftOrdinal - rightOrdinal;
+    });
+
+    expect(handles).toEqual(["w1", "w2", "w10", "w11"]);
+  });
+
   it("targets a range across turns", async () => {
     const ctx = harness({ "chapter.md": "Base." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -235,6 +271,36 @@ describe("write reversal", () => {
     expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w3")).toMatchObject([
       { turnId: "turn-b-0", status: "reversed" },
     ]);
+  });
+
+  it("redoes a grouped undo by undo update sequence", async () => {
+    const ctx = harness({ "chapter.md": "Base." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["One.", "Two.", "Three."]);
+
+    const afterWrites = blockTexts(ctx.liveDoc("chapter.md"));
+    const undo = await ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w1", to: "w3" },
+      context,
+    );
+
+    expect(outcomeText(undo)).toContain("undo: 3 edit(s)");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: true,
+      redoWriteId: "w1",
+    });
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    expect(outcomeText(redo)).toContain("redo: 3 edit(s)");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(afterWrites);
+    for (const writeId of ["w1", "w2", "w3"]) {
+      expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, writeId)).toMatchObject([
+        { status: "active" },
+      ]);
+    }
   });
 
   it("refuses the swordblade case when a later undone write consumed the selected write", async () => {
@@ -389,6 +455,29 @@ describe("write reversal", () => {
     ).toBe("status: nothing_to_redo");
   });
 
+  it("refuses undo with generic wording when an untracked later edit depends on the write", async () => {
+    const ctx = harness({ "chapter.md": "Base." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await appendBlocks(ctx, ["Dependent."]);
+
+    const live = ctx.liveDoc("chapter.md");
+    const beforeHuman = Y.encodeStateVector(live);
+    const inserted = model.getBlocks(live)[1];
+    if (!inserted) throw new Error("expected inserted block");
+    live.transact(() => model.deleteBlock(live, inserted), { type: "human" });
+    await ctx.journal.append("chapter.md", Y.encodeStateAsUpdate(live, beforeHuman), {
+      origin: "human:user-a",
+      seq: 0,
+    });
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
+
+    expectOutcome(undo, "cant_undo_dependent", true);
+    expect(outcomeText(undo)).toContain("a later edit was built on it");
+    expectNoInternalIds(outcomeText(undo));
+    expect(outcomeText(undo)).not.toMatch(/document|thread|undo update seq|Yjs|struct|delete set/i);
+  });
+
   it("validates ranges and unknown handles without crashing", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -440,8 +529,12 @@ describe("write reversal", () => {
     const undo = await driftCore.undoTurn("chapter.md", THREAD_ID);
 
     expectOutcome(undo, "internal_error", true);
-    expect(outcomeText(undo)).toContain("Cold undo reconstruction invariant failed");
-    expect(outcomeText(undo)).toContain("Missing target update seqs");
+    expect(outcomeText(undo)).toContain("Retry — transient edit system failure for w1.");
+    expect(outcomeText(undo)).not.toContain("Cold undo reconstruction invariant failed");
+    expect(outcomeText(undo)).not.toContain("Missing target update seqs");
+    expect(outcomeText(undo)).not.toContain("chapter.md");
+    expect(outcomeText(undo)).not.toContain("thread-a");
+    expect(outcomeText(undo)).not.toContain("undo update seq");
     expect(outcomeText(undo)).not.toBe("status: nothing_to_undo");
     expect(invariantMessages).toHaveLength(1);
     expect(invariantMessages[0]).toContain("w1");
@@ -486,8 +579,12 @@ describe("write reversal", () => {
     const redo = await driftCore.redoTurn("chapter.md", THREAD_ID);
 
     expectOutcome(redo, "internal_error", true);
-    expect(outcomeText(redo)).toContain("Cold redo reconstruction invariant failed");
-    expect(outcomeText(redo)).toContain("Missing target update seqs");
+    expect(outcomeText(redo)).toContain("Retry — transient edit system failure for w1.");
+    expect(outcomeText(redo)).not.toContain("Cold redo reconstruction invariant failed");
+    expect(outcomeText(redo)).not.toContain("Missing target update seqs");
+    expect(outcomeText(redo)).not.toContain("chapter.md");
+    expect(outcomeText(redo)).not.toContain("thread-a");
+    expect(outcomeText(redo)).not.toContain("undo update seq");
     expect(outcomeText(redo)).not.toBe("status: nothing_to_redo");
     expect(invariantMessages).toHaveLength(1);
     expect(invariantMessages[0]).toContain("w1");
@@ -774,7 +871,7 @@ function journalWithMissingMutationTarget(
   missing: Pick<WriteMutationRow, "status" | "createdSeq" | "undoUpdateSeq"> & {
     writeId: string;
   },
-): UpdateJournal {
+): UpdateJournal & ReversalStore {
   return {
     append: journal.append.bind(journal),
     reserveWriteOrdinal: journal.reserveWriteOrdinal.bind(journal),
@@ -801,9 +898,10 @@ function journalWithMissingMutationTarget(
       ];
     },
     read: journal.read.bind(journal),
+    readForReconstruction: journal.readForReconstruction.bind(journal),
     checkpoint: journal.checkpoint.bind(journal),
     compact: journal.compact.bind(journal),
-    persistReversal: journal.persistReversal.bind(journal),
+    persistUndo: journal.persistUndo.bind(journal),
     persistRedo: journal.persistRedo.bind(journal),
     readReversals: journal.readReversals.bind(journal),
   };

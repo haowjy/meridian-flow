@@ -2,36 +2,29 @@
 
 ## Port interfaces
 
-### UpdateJournal (`src/ports/update-journal.ts`)
-The only hard port. Append, read (checkpoint + updates, or retained full-log
-updates via `read(..., { fromCheckpoint: false })`), checkpoint, compact,
-`appendBatch` (all-or-nothing response commit across documents),
-`persistReversal` (atomically persist undo update + reversal record),
-`persistRedo` (atomically consume a doc+thread+turn reversal and append redo
-bytes), `readReversals` (durable redo lookup), and mutation metadata queries:
-availability uses aggregate reads (`latestActiveTurn`, `activeTurnSummary`,
-`turnMinCreatedSeq`), while cold reconstruction uses `mutationsForTurn` to
-describe the concrete mutation-row subset for a turn. Ordered by monotonic seq
-per document. Every adapter implements this. Response staging buffers the same
-`{ docId, update, agentMeta(turnId) }` entries and commits them with one
-`appendBatch(...)` call from `commitResponse(responseId)`; mutation entries mint
-their rows in the same transaction.
+### UpdateJournal / ReversalStore (`src/ports/update-journal.ts`)
+The persistence seam is split by concern:
 
-The mutation reads deliberately live on `UpdateJournal`, not a separate
-`MutationStore` port. Hosts implement one adapter for the journal table and the
-mutation metadata table that changes with it, so the co-sourcing guarantee is
-structural. Internal consumers still depend on narrow read slices such as
-`MutationQueries`, which picks only `latestActiveTurn`, `activeTurnSummary`, and
-`turnMinCreatedSeq` from `UpdateJournal`; turn reversal reads the row-level
-`mutationsForTurn` descriptor only on cold fallback to compute the exact
-forward update sequences to reverse.
+- `UpdateJournal` is the ordered Yjs update log: append, `appendBatch`, live-load
+  `read`, checkpoint, and compact.
+- `ReversalStore` owns write-level reversal state: write ordinal reservation,
+  active/reversed write metadata queries, `readForReconstruction(docId)`,
+  `persistUndo`, `persistRedo`, and `readReversals`.
 
-Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
-state is allowed to hide from live-load replay. It must not be higher than what
-the state contains; replaying an already-included update is idempotent, but
-skipping one is durable data loss. Reversal reads bypass that checkpoint filter
-so retained per-write update rows keep their attribution; rows deleted by
-`compact()` are the real retention boundary.
+`readForReconstruction` is the domain-level retained-log read used by cold
+undo/redo so checkpoint mechanics stay adapter-local; reversal code no longer
+passes `read(..., { fromCheckpoint: false })` through the generic log port.
+Adapters may implement both interfaces in one class when the update log,
+mutation rows, and reversal rows are co-sourced (Drizzle and the in-memory test
+journal do).
+
+Response staging still commits document updates through `UpdateJournal.appendBatch`.
+Forward write mutation entries reserve a per-thread `w<N>` ordinal through
+`ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
+use the same store to plan against retained update rows and mutation metadata.
+Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
+whole group, and `persistRedo` reactivates every write handle in that group
+atomically.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
@@ -76,8 +69,9 @@ only. Optional — falls back to a local in-memory map when omitted.
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
-`getAvailability(docId, threadId)`, `undoTurn(docId, threadId)`,
-`redoTurn(docId, threadId)`, and `invalidateThread(docId, threadId)`. Host
+`getAvailability(docId, threadId)`, `undo(docId, threadId)`,
+`redo(docId, threadId)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
+`redoTurn` remain host-compatible aliases. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether write-level undo/redo will

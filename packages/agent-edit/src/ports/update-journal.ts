@@ -42,65 +42,51 @@ export interface WriteMutationRow {
 export interface JournalReadOptions {
   since?: number;
   until?: number;
-  /**
-   * Default true: return the live-load shape (latest checkpoint plus only
-   * post-checkpoint rows). Reversal callers set this false to read retained
-   * durable update rows without hiding pre-checkpoint per-write attribution.
-   * A seq-0 baseline checkpoint may still be returned because it hides no
-   * durable update rows.
-   */
-  fromCheckpoint?: boolean;
 }
 
-/**
- * Ordered Yjs update journal — the foundation every deployment implements.
- * Adapters guarantee durable append order, checkpoint storage, atomic reversal writes,
- * and mutation-query co-sourcing with the mutation rows created by appendBatch().
- */
+/** Ordered Yjs update log: append/read/checkpoint/compact only. */
 export interface UpdateJournal {
   append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
-
-  /** Reserve the next durable per-(document, thread) write ordinal. */
-  reserveWriteOrdinal?(documentId: string, threadId: string): Promise<number>;
-
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
+  checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
+  compact(docId: string, before: Date): Promise<CompactionResult>;
+}
 
+/** Write-level reversal store: write ordinals, mutation metadata, and undo/redo rows. */
+export interface ReversalStore {
+  /** Reserve the next durable per-(document, thread) write ordinal. */
+  reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
+  /** Reversal reconstruction must see retained update rows instead of checkpoint-hidden live-load rows. */
+  readForReconstruction(docId: string): Promise<JournalSnapshot>;
   /** Latest active write for this document/thread, if one exists. */
-  latestActiveWrite?(documentId: string, threadId: string): Promise<ActiveWriteSummary | undefined>;
-
+  latestActiveWrite(documentId: string, threadId: string): Promise<ActiveWriteSummary | undefined>;
   /** Active writes in durable write order. */
-  activeWriteSummary?(documentId: string, threadId: string): Promise<ActiveWriteSummary[]>;
-
+  activeWriteSummary(documentId: string, threadId: string): Promise<ActiveWriteSummary[]>;
   /** Earliest forward journal sequence for this write, regardless of current mutation status. */
-  writeMinCreatedSeq?(
+  writeMinCreatedSeq(
     documentId: string,
     threadId: string,
     handle: string,
   ): Promise<number | undefined>;
-
   /** Concrete mutation rows for one document/thread/write handle, used to target cold reconstruction. */
-  mutationsForWrite?(
+  mutationsForWrite(
     documentId: string,
     threadId: string,
     handle: string,
   ): Promise<WriteMutationRow[]>;
-
-  read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
-
-  checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
-
-  compact(docId: string, before: Date): Promise<CompactionResult>;
-
-  persistReversal(docId: string, undoUpdate: Uint8Array, record: ReversalRecord): Promise<void>;
-
+  persistUndo(
+    docId: string,
+    undoUpdate: Uint8Array,
+    records: readonly ReversalRecord[],
+  ): Promise<void>;
   persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
-    ref: { threadId: string; writeId?: string; turnId?: string; undoUpdateSeq: number },
+    ref: { threadId: string; undoUpdateSeq: number; writeId?: string; turnId?: string },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }>;
-
   readReversals(
     docId: string,
     opts?: { threadId?: string; status?: ReversalRecord["status"][] },

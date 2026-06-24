@@ -320,12 +320,15 @@ export function createResponseStaging(deps: {
           ).echo,
         ),
       )
-      .map((entry) => tagEcho(entry.writeId ?? "w0", dedupeEchoBlocks(entry, seenBlockKeys)))
-      .filter((entry) => entry.length > 0);
+      .map((entry) => ({
+        writeId: entry.writeId,
+        hunks: dedupeEchoBlocks(entry.hunks, seenBlockKeys),
+      }))
+      .filter((entry) => entry.hunks.length > 0);
   }
 
   function tagEcho(writeId: string, echo: ApplyEchoHunk[]): ResponseCommitWriteEcho {
-    return Object.assign(echo, { writeId });
+    return { writeId, hunks: echo };
   }
 
   function dedupeEchoBlocks(

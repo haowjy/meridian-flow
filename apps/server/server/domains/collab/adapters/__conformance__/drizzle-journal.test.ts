@@ -1,9 +1,10 @@
-/** Contract tests for the Drizzle UpdateJournal adapter against local Postgres. */
+/** Contract tests for the Drizzle UpdateJournal & ReversalStore adapter against local Postgres. */
 import {
   createAgentEditCore,
   type DocumentCoordinator,
   DocumentNotFoundError,
   mdxCodec,
+  type ReversalStore,
   type UpdateJournal,
   type WriteContext,
   yProsemirrorModel,
@@ -250,7 +251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const afterCheckpoint = await journal.read(DOC_ID);
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
-      const fullLogAfterCheckpoint = await journal.read(DOC_ID, { fromCheckpoint: false });
+      const fullLogAfterCheckpoint = await journal.readForReconstruction(DOC_ID);
       expect(fullLogAfterCheckpoint.checkpoint).toBeNull();
       expect(fullLogAfterCheckpoint.updates.map((update) => update.seq)).toEqual([
         seqA,
@@ -304,12 +305,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID,
         threadId: THREAD_ID,
         turnId: TURN_E,
+        writeIds: ["w1"],
         status: "reversed" as const,
         undoUpdateSeq: 0,
         reversedAt: new Date("2026-06-21T00:00:00.000Z"),
         reversedByUserId: USER_ID,
       };
-      await journal.persistReversal(DOC_ID, undoUpdate, record);
+      await journal.persistUndo(DOC_ID, undoUpdate, [record]);
       expect(record.undoUpdateSeq).toBeGreaterThan(seqE);
 
       const withUndo = await journal.read(DOC_ID);
@@ -333,13 +335,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const idsBeforeFailure = await updateIds();
       await expect(
-        journal.persistReversal(DOC_ID, appendText(doc, " Rolled back"), {
-          documentId: DOC_ID,
-          threadId: MISSING_THREAD_ID,
-          turnId: TURN_E,
-          status: "reversed",
-          undoUpdateSeq: 0,
-        }),
+        journal.persistUndo(DOC_ID, appendText(doc, " Rolled back"), [
+          {
+            documentId: DOC_ID,
+            threadId: MISSING_THREAD_ID,
+            turnId: TURN_E,
+            writeIds: ["w1"],
+            status: "reversed",
+            undoUpdateSeq: 0,
+          },
+        ]),
       ).rejects.toThrow();
       expect(await updateIds()).toEqual(idsBeforeFailure);
       expect((await journal.read(DOC_ID)).updates.map((update) => update.seq)).toEqual([
@@ -715,7 +720,7 @@ class MemoryCoordinator implements DocumentCoordinator {
 
   constructor(
     entries: Iterable<readonly [string, Y.Doc]>,
-    private readonly journal?: UpdateJournal,
+    private readonly journal?: UpdateJournal & ReversalStore,
   ) {
     for (const [docId, doc] of entries) this.docs.set(docId, doc);
   }
