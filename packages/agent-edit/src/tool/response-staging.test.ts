@@ -2,10 +2,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import type { ActorSession } from "../ports/actor-session-store.js";
-import type { MutationCommit } from "./mutation-commit.js";
-import { createResponseStaging } from "./response-staging.js";
-import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   expectOutcome,
@@ -14,7 +10,7 @@ import {
   outcomeText,
   renderedBlockBodies,
 } from "./test-support/assertions.js";
-import { MemoryJournal } from "./test-support/recording-journal.js";
+import { responseStagingHarness } from "./test-support/response-staging-harness.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
@@ -177,57 +173,22 @@ describe("response staging", () => {
 
   it("preserves cross-document response staging order in the derived journal batch", async () => {
     const responseId = "response-cross-doc-order";
-    const session: ActorSession = { id: "session-a", threadId: THREAD_ID, documents: new Map() };
-    const runtimes = new Map<string, RuntimeDocumentState>();
-    const journal = new MemoryJournal();
-    const runtimeStore = {
-      attachRuntime: () => {},
-    } as unknown as RuntimeStore;
-    const mutationCommit = {
-      commitJournalBatch: async (entries: Parameters<MutationCommit["commitJournalBatch"]>[0]) => {
-        await journal.appendBatch(entries);
-      },
-      projectToLive: async () => ({ ok: true, concurrent: { touchedHashes: new Set() } }),
-      summarizeMutationEcho: () => ({ echo: [], reconciled: false }),
-    } as unknown as MutationCommit;
-    const staging = createResponseStaging({
-      runtimeStore,
-      mutationCommit,
-    });
+    const staging = await responseStagingHarness(responseId);
 
-    const stage = (docId: string, turnId: string) => {
-      let runtime = runtimes.get(docId);
-      if (!runtime) {
-        runtime = {
-          doc: new Y.Doc({ gc: false }),
-          session,
-          threadId: THREAD_ID,
-        };
-        runtimes.set(docId, runtime);
-      }
-      staging.stageUpdate({
-        responseId,
-        docId,
-        session,
-        runtime,
-        commandName: "insert",
-        update: new Uint8Array([1, 2, 3]),
-        meta: { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 },
-        liveOrigin: { type: "agent", actorTurnId: turnId },
-        turnId,
-        before: [],
-        touchedHashes: new Set(),
-        deletedHashes: new Set(),
-        structuralChange: false,
-      });
-    };
+    const first = await staging.stageInsert("alpha.md", "Alpha one.", "turn-alpha-1");
+    const second = await staging.stageInsert("beta.md", "Beta one.", "turn-beta-1");
+    const third = await staging.stageInsert("alpha.md", "Alpha two.", "turn-alpha-2");
+    const fourth = await staging.stageInsert("beta.md", "Beta two.", "turn-beta-2");
 
-    stage("alpha.md", "turn-alpha-1");
-    stage("beta.md", "turn-beta-1");
-    stage("alpha.md", "turn-alpha-2");
-    stage("beta.md", "turn-beta-2");
+    expect([first.writeId, second.writeId, third.writeId, fourth.writeId]).toEqual([
+      "w1",
+      "w1",
+      "w2",
+      "w2",
+    ]);
+    expect(staging.recordedBatches()).toEqual([]);
 
-    const commit = await staging.commitResponse(responseId);
+    const commit = await staging.commit();
 
     expect(commit).toMatchObject({
       responseId,
@@ -238,7 +199,7 @@ describe("response staging", () => {
         { documentId: "beta.md", updateCount: 2 },
       ],
     });
-    expect(journal.recordedBatches()).toEqual([
+    expect(staging.recordedBatches()).toEqual([
       [
         "alpha.md:turn-alpha-1",
         "beta.md:turn-beta-1",
@@ -246,6 +207,8 @@ describe("response staging", () => {
         "beta.md:turn-beta-2",
       ],
     ]);
+    expect(await staging.updateSeqs("alpha.md")).toEqual([1, 2]);
+    expect(await staging.updateSeqs("beta.md")).toEqual([1, 2]);
   });
 
   it("returns cumulative staged echoes for text writes at the tool-response level", async () => {
@@ -277,7 +240,6 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword waits."]);
 
     await ctx.core.commitResponse("response-staged-text-echo");
-
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta blade marches."]);
   });
 

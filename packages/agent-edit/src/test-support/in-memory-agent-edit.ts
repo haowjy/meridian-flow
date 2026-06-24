@@ -37,21 +37,21 @@ export interface InMemoryAgentEditJournalOptions {
   now?: () => Date;
 }
 
-interface StoredUpdate extends PersistedUpdate {
+export interface StoredUpdate extends PersistedUpdate {
   storedAt: Date;
 }
 
-interface StoredReversal {
+export interface StoredReversal {
   record: ReversalRecord;
   createdAt: Date;
 }
 
-interface StoredCheckpoint {
+export interface StoredCheckpoint {
   state: Uint8Array;
   upToSeq: number;
 }
 
-interface JournalEntry {
+export interface JournalEntry {
   checkpoint: StoredCheckpoint | null;
   checkpoints: StoredCheckpoint[];
   nextSeq: number;
@@ -392,6 +392,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
 
   mutationRecords(docId: string): StoredAgentEditMutation[] {
     return this.entry(docId).mutations.map(copyMutationRecord);
+  }
+
+  debugEntry(docId: string): JournalEntry | undefined {
+    return this.data.get(docId);
   }
 
   private appendMutationSync(
