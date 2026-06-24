@@ -303,6 +303,21 @@ function createLocalTurn(input: {
   };
 }
 
+function createLocalSystemTurn(input: { threadId: ThreadId; prevTurnId: TurnId | null }): Turn {
+  const now = toIsoString(new Date());
+  return {
+    ...createLocalTurn({
+      threadId: input.threadId,
+      prevTurnId: input.prevTurnId,
+      role: "system",
+      status: "complete",
+    }),
+    finishReason: "end_turn",
+    completedAt: now,
+    createdAt: now,
+  };
+}
+
 // ── Emit helper ──
 // Appends one event to the durable journal and yields it. Used for
 // non-transactional events (stream.delta, tool.executing) that don't need
@@ -635,33 +650,47 @@ async function persistResponseCommitEcho(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   turn: Turn;
-  responseId: string;
   echoes: readonly ResponseCommitEcho[];
   blockSeq: number;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; nextBlockSeq: number }> {
+}): Promise<{
+  turn: Turn | null;
+  blocks: Block[];
+  events: OrchestratorEvent[];
+  nextBlockSeq: number;
+}> {
   const visibleEchoes = input.echoes.filter((echo) => echo.text.trim().length > 0);
-  if (visibleEchoes.length === 0) return { blocks: [], events: [], nextBlockSeq: input.blockSeq };
+  if (visibleEchoes.length === 0) {
+    return { turn: null, blocks: [], events: [], nextBlockSeq: input.blockSeq };
+  }
 
-  let blockSeq = input.blockSeq;
-  const textContent = visibleEchoes
-    .map((echo) => `Post-commit write sync for ${echo.documentId}:\n${echo.text}`)
-    .join("\n\n");
+  const textContent = visibleEchoes.map((echo) => echo.text).join("\n\n");
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const systemTurn = createLocalSystemTurn({
+      threadId: input.threadId,
+      prevTurnId: input.turn.id,
+    });
     const block = contentForBlockInput({
-      turnId: input.turn.id,
+      turnId: systemTurn.id,
       blockType: "text",
-      sequence: blockSeq++,
-      responseId: input.responseId,
+      sequence: 0,
       textContent,
       status: "complete",
     });
     return {
-      result: [localBlockFromEvent(block)],
-      events: [{ type: "block.upserted", block }],
+      result: { turn: systemTurn, blocks: [localBlockFromEvent(block)] },
+      events: [
+        { type: "turn.created", turn: systemTurn },
+        { type: "block.upserted", block },
+      ],
     };
   });
 
-  return { blocks: persisted.result, events: persisted.events, nextBlockSeq: blockSeq };
+  return {
+    turn: persisted.result.turn,
+    blocks: persisted.result.blocks,
+    events: persisted.events,
+    nextBlockSeq: input.blockSeq,
+  };
 }
 
 async function completeTurn(input: {
@@ -1034,11 +1063,11 @@ async function* generateEvents(
           deps,
           threadId: input.threadId,
           turn: currentAssistantTurn,
-          responseId,
           echoes: commitEchoes,
           blockSeq,
         });
         blockSeq = persistedCommitEcho.nextBlockSeq;
+        if (persistedCommitEcho.turn) allTurns.push(persistedCommitEcho.turn);
         allBlocks.push(...persistedCommitEcho.blocks);
         yield* persistedCommitEcho.events;
         activeResponseId = undefined;
