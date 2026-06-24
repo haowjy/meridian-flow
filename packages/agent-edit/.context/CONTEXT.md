@@ -3,7 +3,8 @@
 ## Port interfaces
 
 ### UpdateJournal (`src/ports/update-journal.ts`)
-The only hard port. Append, read (checkpoint + updates), checkpoint, compact,
+The only hard port. Append, read (checkpoint + updates, or retained full-log
+updates via `read(..., { fromCheckpoint: false })`), checkpoint, compact,
 `appendBatch` (all-or-nothing response commit across documents),
 `persistReversal` (atomically persist undo update + reversal record),
 `persistRedo` (atomically consume a doc+thread+turn reversal and append redo
@@ -26,9 +27,11 @@ structural. Internal consumers still depend on narrow read slices such as
 forward update sequences to reverse.
 
 Checkpoint callers pass `upToSeq`, the highest update sequence the encoded
-state is allowed to hide from replay. It must not be higher than what the state
-contains; replaying an already-included update is idempotent, but skipping one
-is durable data loss.
+state is allowed to hide from live-load replay. It must not be higher than what
+the state contains; replaying an already-included update is idempotent, but
+skipping one is durable data loss. Reversal reads bypass that checkpoint filter
+so retained per-write update rows keep their attribution; rows deleted by
+`compact()` are the real retention boundary.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
@@ -112,7 +115,8 @@ structurally deleting (preserves ProseMirror `doc(block+)` invariant).
 ### Undo/redo (`src/undo/`)
 
 Reversal is a single cold reconstruction path from `UpdateJournal`. It replays
-checkpoint + retained updates, assigns per-reconstruction `Symbol` tokens,
+the retained durable update log (plus only a seq-0 baseline checkpoint when the
+host initialized a document that way), assigns per-reconstruction `Symbol` tokens,
 creates a fresh local `Y.UndoManager`, tags only the requested target forward
 update seqs with the tracked token, runs undo/redo, and extracts update bytes.
 The target seqs come from mutation rows: undo targets currently `active` rows for

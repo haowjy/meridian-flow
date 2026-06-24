@@ -250,6 +250,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const afterCheckpoint = await journal.read(DOC_ID);
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
+      const fullLogAfterCheckpoint = await journal.read(DOC_ID, { fromCheckpoint: false });
+      expect(fullLogAfterCheckpoint.checkpoint).toBeNull();
+      expect(fullLogAfterCheckpoint.updates.map((update) => update.seq)).toEqual([
+        seqA,
+        seqB,
+        seqC,
+      ]);
 
       const updateD = appendText(doc, " Delta");
       const seqD = await journal.append(DOC_ID, updateD, {

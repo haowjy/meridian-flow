@@ -3,6 +3,7 @@
 import type {
   ActiveWriteSummary,
   DocumentLifecycle,
+  JournalReadOptions,
   JournalSnapshot,
   PersistedUpdate,
   ReversalRecord,
@@ -161,6 +162,21 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
     .select()
     .from(documentYjsCheckpoints)
     .where(eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)))
+    .orderBy(desc(documentYjsCheckpoints.id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function latestBaselineCheckpoint(db: JournalDb, documentId: string) {
+  const [row] = await db
+    .select()
+    .from(documentYjsCheckpoints)
+    .where(
+      and(
+        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+        eq(documentYjsCheckpoints.upToSeq, 0),
+      ),
+    )
     .orderBy(desc(documentYjsCheckpoints.id))
     .limit(1);
   return row ?? null;
@@ -508,12 +524,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
       return rows.map(mapWriteMutationRow);
     },
 
-    async read(docId, opts = {}): Promise<JournalSnapshot> {
-      const checkpoint = await latestCheckpoint(db, docId);
-      const conditions = [
-        eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
-      ];
+    async read(docId, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
+      const latest = await latestCheckpoint(db, docId);
+      const fromCheckpoint = opts.fromCheckpoint ?? true;
+      const conditions = [eq(documentYjsUpdates.documentId, asDocumentId(docId))];
+      if (fromCheckpoint) conditions.push(gt(documentYjsUpdates.id, latest?.upToSeq ?? 0));
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
       if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
 
@@ -523,6 +538,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal {
         .where(and(...conditions))
         .orderBy(asc(documentYjsUpdates.id));
 
+      const checkpoint = fromCheckpoint ? latest : await latestBaselineCheckpoint(db, docId);
       return {
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),

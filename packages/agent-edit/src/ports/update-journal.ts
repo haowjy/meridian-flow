@@ -39,6 +39,19 @@ export interface WriteMutationRow {
   undoUpdateSeq?: number;
 }
 
+export interface JournalReadOptions {
+  since?: number;
+  until?: number;
+  /**
+   * Default true: return the live-load shape (latest checkpoint plus only
+   * post-checkpoint rows). Reversal callers set this false to read retained
+   * durable update rows without hiding pre-checkpoint per-write attribution.
+   * A seq-0 baseline checkpoint may still be returned because it hides no
+   * durable update rows.
+   */
+  fromCheckpoint?: boolean;
+}
+
 /**
  * Ordered Yjs update journal — the foundation every deployment implements.
  * Adapters guarantee durable append order, checkpoint storage, atomic reversal writes,
@@ -73,7 +86,7 @@ export interface UpdateJournal {
     handle: string,
   ): Promise<WriteMutationRow[]>;
 
-  read(docId: string, opts?: { since?: number; until?: number }): Promise<JournalSnapshot>;
+  read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
 
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
 

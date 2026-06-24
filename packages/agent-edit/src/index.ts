@@ -71,6 +71,7 @@ export type {
   ActiveWriteSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  JournalReadOptions,
   UpdateJournal,
   WriteMutationRow,
 } from "./ports/update-journal.js";

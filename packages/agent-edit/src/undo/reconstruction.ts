@@ -75,7 +75,7 @@ export async function reconstructUndoUpdate(
   targetId: string,
   options: ReconstructionTargetOptions,
 ): Promise<UndoReconstructionResult> {
-  const snapshot = await journal.read(docId);
+  const snapshot = await journal.read(docId, { fromCheckpoint: false });
   return reconstructUndoUpdateFromSnapshot(snapshot, { ...options, docId, targetId });
 }
 
@@ -120,7 +120,7 @@ export async function reconstructRedoUpdate(
   undoUpdateSeq: number,
   options: ReconstructionTargetOptions,
 ): Promise<RedoReconstructionResult> {
-  const snapshot = await journal.read(docId);
+  const snapshot = await journal.read(docId, { fromCheckpoint: false });
   return reconstructRedoUpdateFromSnapshot(snapshot, {
     ...options,
     docId,
