@@ -63,6 +63,7 @@ type ReversalResult =
       status: UndoRedoOutcome;
       sync?: SyncedMutationSummary;
       targetCount?: number;
+      turnId?: string;
     }
   | { ok: false; response: InternalWriteResult };
 
@@ -155,31 +156,56 @@ export function createWriteReversal(deps: {
     selection: ReversalSelection;
     actor?: ReversalActor;
   }): Promise<InternalWriteResult> {
-    const reversal = await reverseOne({
-      docId: input.docId,
-      session: input.session,
-      runtime: input.runtime,
-      commandName: input.commandName,
-      direction: input.direction,
-      selection: input.selection,
-      actor: input.actor ?? { type: "agent" },
-    });
-    if (!reversal.ok) return reversal.response;
-    if (reversal.status === "nothing_to_undo" || reversal.status === "nothing_to_redo")
-      return status(reversal.status);
-    if (reversal.status === "expired") return status("expired");
+    const actor = input.actor ?? { type: "agent" as const };
+    const first = await reverseOne({ ...input, actor });
+    if (!first.ok) return first.response;
+    if (first.status === "nothing_to_undo" || first.status === "nothing_to_redo")
+      return status(first.status);
+    if (first.status === "expired") return status("expired");
+
+    let reversal = first;
+    let targetCount = first.targetCount ?? 0;
+    const selection = resolvedScopeSelection(input.selection, first);
+    // Turn/thread redo can span several undo groups. Replay each eligible group
+    // in redo order so a scope redo never reports success while leaving part of
+    // that same scope reversed. Each iteration reloads planning state after the
+    // prior redo has been persisted, which keeps reconstruction snapshot-safe.
+    if (input.direction === "redo" && isScopeSelection(selection)) {
+      while (true) {
+        const next = await reverseOne({ ...input, selection, actor });
+        if (!next.ok) return next.response;
+        if (next.status === "nothing_to_redo") break;
+        if (next.status === "expired") return status("expired");
+        if (next.status === "nothing_to_undo") break;
+        reversal = next;
+        targetCount += next.targetCount ?? 0;
+      }
+    }
 
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
     const outcome = reversal.status;
     const lines = [`status: ${outcome}`];
-    const count = reversal.targetCount ?? 0;
-    if (count > 0) lines.push("", `${input.direction}: ${count} edit(s)`);
+    if (targetCount > 0) lines.push("", `${input.direction}: ${targetCount} edit(s)`);
     const echoLines =
       reversal.sync?.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0) ?? [];
     if (echoLines.length > 0) lines.push("", ...echoLines);
     if (reversal.sync?.concurrentEdits)
       lines.push("", ...formatConcurrent(reversal.sync.concurrentEdits));
     return result(outcome, lines.join("\n"));
+  }
+
+  function resolvedScopeSelection(
+    selection: ReversalSelection,
+    first: Extract<ReversalResult, { ok: true }>,
+  ): ReversalSelection {
+    if (selection.kind !== "turn" || selection.turnId !== undefined || first.turnId === undefined) {
+      return selection;
+    }
+    return { kind: "turn", turnId: first.turnId };
+  }
+
+  function isScopeSelection(selection: ReversalSelection): boolean {
+    return selection.kind === "turn" || selection.kind === "all";
   }
 
   async function reverseOne(input: {
@@ -303,6 +329,7 @@ export function createWriteReversal(deps: {
       status: sync.summary.reconciled ? "reconciled" : "reversed",
       sync: sync.summary,
       targetCount: plan.writeIds.length,
+      turnId: plan.turnId,
     };
   }
 

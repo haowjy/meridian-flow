@@ -130,8 +130,7 @@ describe("thread context reverse routes", () => {
       docId: documentId,
       threadId,
       direction: "undo",
-      scope: "turn",
-      target: "turn-1",
+      selection: { kind: "turn", turnId: "turn-1" },
       actor: { type: "user", userId },
     });
     expect(refreshed).toEqual([{ documentId, threadId }]);
@@ -157,6 +156,70 @@ describe("thread context reverse routes", () => {
         body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write", target: "w1" },
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it.each([
+    "nothing_to_undo",
+    "nothing_to_redo",
+    "expired",
+  ])("returns %s without refreshing projection", async (status) => {
+    const outcome = {
+      command: "undo",
+      status,
+      isError: false,
+      text: `status: ${status}`,
+    };
+    const { app, refreshed } = makeApp({ reverseOutcome: outcome });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+    const event: TestEvent = {
+      params: { threadId },
+      body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write" },
+    };
+
+    const response = await route(event);
+
+    expect(event.status).toBe(200);
+    expect(response).toBe(outcome);
+    expect(refreshed).toEqual([]);
+  });
+
+  it.each([
+    "",
+    "not-a-write",
+    "00000000-0000-4000-8000-000000000001",
+  ])("rejects invalid write target %j", async (target) => {
+    const { app, reverse } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write", target },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
+  it("rejects a thread-scope target", async () => {
+    const { app, reverse } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { uri: "manuscript://chapter.md", direction: "undo", scope: "thread", target: "w1" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(reverse).not.toHaveBeenCalled();
   });
 
   it("returns availability flags", async () => {

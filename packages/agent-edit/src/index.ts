@@ -98,8 +98,6 @@ export type {
   ResponseCommitResult,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
-  ReverseInput,
-  ReverseScope,
   TurnRedoResult,
   TurnUndoResult,
   UndoResult,
@@ -110,4 +108,6 @@ export type {
   WriteOutcome,
   WriteStatus,
 } from "./tool/types.js";
+export type { ReverseInput } from "./tool/write.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type { ReversalSelection } from "./undo/reversal-plan.js";
