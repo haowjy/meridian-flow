@@ -177,7 +177,7 @@ export function createMutationCommit(deps: {
     return {
       echo: regroundingEcho,
       concurrentEdits: concurrent.info,
-      reconciled: concurrent.touchedHashes.size > 0 && echo.some((hunk) => hunk.mode === "full"),
+      reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
   }
 
