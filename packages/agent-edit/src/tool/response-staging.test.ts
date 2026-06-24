@@ -391,6 +391,48 @@ describe("response staging", () => {
     expect(commit.documents[0]?.text).toContain(`human: ${overlapHash}`);
   });
 
+  it("limits a multi-hunk staged write full echo to the hunk with concurrent overlap", async () => {
+    const ctx = harness({
+      "chapter.md":
+        "sword zero.\n\nGap one.\n\nBefore overlap.\n\nsword overlap.\n\nAfter overlap.\n\nGap two.\n\nsword far.",
+    });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const expectedEchoHashes = [
+      hashAt(ctx.liveDoc("chapter.md"), 2),
+      hashAt(ctx.liveDoc("chapter.md"), 3),
+      hashAt(ctx.liveDoc("chapter.md"), 4),
+    ];
+    const overlapHash = expectedEchoHashes[1];
+    const farHashes = [hashAt(ctx.liveDoc("chapter.md"), 0), hashAt(ctx.liveDoc("chapter.md"), 6)];
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-replace-all-windowed-overlap",
+      responseId: "response-staged-replace-all-windowed-overlap",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", all: true, content: "blade" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 3, { from: 6, to: 13 }, "human");
+
+    const commit = await ctx.core.commitResponse("response-staged-replace-all-windowed-overlap");
+    const echoBlocks =
+      commit.documents[0]?.echo?.flatMap((echo) => echo.flatMap((hunk) => hunk.blocks)) ?? [];
+    const echoedHashes = echoBlocks.map((line) => line.slice(0, line.indexOf("|")));
+
+    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
+    expect(commit.documents[0]?.echo?.flatMap((echo) => echo.map((hunk) => hunk.mode))).toEqual([
+      "full",
+    ]);
+    expect(echoedHashes).toEqual(expectedEchoHashes);
+    for (const hash of farHashes) {
+      expect(echoedHashes).not.toContain(hash);
+      expect(commit.documents[0]?.text).not.toContain(`${hash}|`);
+    }
+    expect(commit.documents[0]?.text).toContain(`human: ${overlapHash}`);
+  });
+
   it("emits a truncated per-write post-commit echo for staged inserted blocks without concurrent edits", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);

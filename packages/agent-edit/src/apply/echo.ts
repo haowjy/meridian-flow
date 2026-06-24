@@ -121,20 +121,50 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   const changedWindows = changedBlockWindows(input);
   if (changedWindows.length === 0) return [];
 
-  const hasConcurrentOverlap = changedWindows.some((window) =>
-    window.some((index) => input.concurrentTouchedHashes.has(input.after[index]?.hash ?? "")),
-  );
-  if (!input.structuralChange && !hasConcurrentOverlap) return [];
+  const hunks = changedWindows.flatMap((window): ApplyEchoHunk[] => {
+    const hasConcurrentOverlap = window.some((index) =>
+      input.concurrentTouchedHashes.has(input.after[index]?.hash ?? ""),
+    );
+    const mode = hasConcurrentOverlap
+      ? "full"
+      : structuralChangeInWindow(input, window)
+        ? "truncated"
+        : undefined;
+    if (!mode) return [];
+    return [
+      {
+        mode,
+        blocks: window.map((index) =>
+          mode === "full"
+            ? (input.after[index]?.serialized ?? "")
+            : truncateSerializedBlock(input.after[index]?.serialized ?? ""),
+        ),
+      },
+    ];
+  });
+  return mergeEchoHunks(hunks);
+}
 
-  const mode: ApplyEchoHunk["mode"] = hasConcurrentOverlap ? "full" : "truncated";
-  return changedWindows.map((window) => ({
-    mode,
-    blocks: window.map((index) =>
-      mode === "full"
-        ? (input.after[index]?.serialized ?? "")
-        : truncateSerializedBlock(input.after[index]?.serialized ?? ""),
-    ),
-  }));
+function structuralChangeInWindow(input: EchoInput, window: readonly number[]): boolean {
+  if (!input.structuralChange) return false;
+
+  const beforeHashes = new Set(input.before.map((block) => block.hash));
+  const insertedInWindow = window.some(
+    (index) => !beforeHashes.has(input.after[index]?.hash ?? ""),
+  );
+  if (insertedInWindow) return true;
+
+  const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
+  for (const hash of input.agentDeletedHashes) {
+    const deletedIndex = input.before.findIndex((block) => block.hash === hash);
+    if (deletedIndex < 0) continue;
+    const survivorIndexes = adjacentSurvivorIndexes(input.before, afterIndex, deletedIndex);
+    if (survivorIndexes.some((index) => window.includes(index))) return true;
+  }
+
+  const hasKnownStructuralHashes =
+    input.agentDeletedHashes.size > 0 || input.after.some((block) => !beforeHashes.has(block.hash));
+  return !hasKnownStructuralHashes;
 }
 
 function changedBlockWindows(input: EchoInput): number[][] {
@@ -157,7 +187,7 @@ function changedBlockWindows(input: EchoInput): number[][] {
   const windows = [...candidateIndexes]
     .sort((left, right) => left - right)
     .map((index) => expandWindow(index, input.after.length));
-  return mergeWindows(windows);
+  return windows;
 }
 
 function adjacentSurvivorIndexes(
@@ -191,23 +221,28 @@ function expandWindow(index: number, blockCount: number): number[] {
   return indexes;
 }
 
-function mergeWindows(windows: number[][]): number[][] {
-  const merged: number[][] = [];
-  for (const window of windows) {
+function mergeEchoHunks(hunks: ApplyEchoHunk[]): ApplyEchoHunk[] {
+  const merged: ApplyEchoHunk[] = [];
+  for (const hunk of hunks) {
     const last = merged.at(-1);
-    if (!last) {
-      merged.push([...window]);
+    if (!last || last.mode !== hunk.mode) {
+      merged.push({ mode: hunk.mode, blocks: [...hunk.blocks] });
       continue;
     }
-    const lastEnd = last.at(-1) ?? -1;
-    const windowStart = window[0] ?? 0;
-    if (windowStart <= lastEnd + 1) {
-      for (const index of window) if (!last.includes(index)) last.push(index);
-      continue;
+    const existing = new Set(last.blocks.map(blockHash));
+    for (const block of hunk.blocks) {
+      const hash = blockHash(block);
+      if (existing.has(hash)) continue;
+      last.blocks.push(block);
+      existing.add(hash);
     }
-    merged.push([...window]);
   }
   return merged;
+}
+
+function blockHash(serialized: string): string {
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
 function truncateSerializedBlock(serialized: string): string {
