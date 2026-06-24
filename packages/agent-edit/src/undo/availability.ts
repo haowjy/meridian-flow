@@ -127,21 +127,17 @@ export async function redoableTargets(input: {
   )
     .filter((record) => !record.expiresAt || record.expiresAt > now)
     .sort(compareReversalStackOrder);
-  const snapshot = await input.journal.read(input.docId);
+  const snapshot = await input.journal.read(input.docId, { fromCheckpoint: false });
   const output: { writeId: string; turnId: string; undoUpdateSeq: number }[] = [];
   for (const record of records) {
-    const undoUpdate = snapshot.updates.find((update) => update.seq === record.undoUpdateSeq);
-    if (!undoUpdate) continue;
+    if (!snapshotRetainsSeq(snapshot, record.undoUpdateSeq)) continue;
     const targetStartSeq = await input.mutationQueries.writeMinCreatedSeq(
       input.docId,
       input.threadId,
       record.writeId ?? record.turnId,
     );
     if (targetStartSeq === undefined) continue;
-    const targetStartStillRetained = snapshot.updates.some(
-      (update) => update.seq === targetStartSeq,
-    );
-    if (!targetStartStillRetained) continue;
+    if (!snapshotRetainsSeq(snapshot, targetStartSeq)) continue;
     if (!evaluateRedoEligibility(snapshot.updates, { undoUpdateSeq: record.undoUpdateSeq }).ok)
       continue;
     output.push({
@@ -158,8 +154,16 @@ async function journalStillHasWriteStart(
   docId: string,
   row: Pick<ActiveWriteSummary, "createdSeq">,
 ): Promise<boolean> {
-  const snapshot = await journal.read(docId, { since: row.createdSeq, until: row.createdSeq });
-  return snapshot.updates.some((update) => update.seq === row.createdSeq);
+  const snapshot = await journal.read(docId, {
+    since: row.createdSeq,
+    until: row.createdSeq,
+    fromCheckpoint: false,
+  });
+  return snapshotRetainsSeq(snapshot, row.createdSeq);
+}
+
+function snapshotRetainsSeq(snapshot: { updates: { seq: number }[] }, seq: number): boolean {
+  return snapshot.updates.some((update) => update.seq === seq);
 }
 
 function compareReversalStackOrder(left: ReversalRecord, right: ReversalRecord): number {

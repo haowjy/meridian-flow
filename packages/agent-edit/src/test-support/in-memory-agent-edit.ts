@@ -12,6 +12,7 @@ import type {
   ActiveWriteSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  JournalReadOptions,
   UpdateJournal,
   WriteMutationRow,
 } from "../ports/update-journal.js";
@@ -51,6 +52,7 @@ interface StoredCheckpoint {
 
 interface JournalEntry {
   checkpoint: StoredCheckpoint | null;
+  checkpoints: StoredCheckpoint[];
   nextSeq: number;
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
@@ -112,10 +114,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return this.reserveWriteOrdinalSync(documentId, threadId);
   }
 
-  async read(
-    docId: string,
-    opts: { since?: number; until?: number } = {},
-  ): Promise<JournalSnapshot> {
+  async read(docId: string, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
     return this.readSync(docId, opts);
   }
 
@@ -136,10 +135,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       if (entry.checkpoint) Y.applyUpdate(doc, entry.checkpoint.state);
       for (const row of foldRows) Y.applyUpdate(doc, row.update);
       compactedThroughSeq = foldRows.at(-1)?.seq ?? checkpointSeq;
-      entry.checkpoint = {
-        state: Y.encodeStateAsUpdate(doc),
-        upToSeq: compactedThroughSeq,
-      };
+      this.setCheckpoint(docId, Y.encodeStateAsUpdate(doc), compactedThroughSeq);
     }
 
     if (compactedThroughSeq > 0) {
@@ -291,11 +287,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return seq;
   }
 
-  readSync(docId: string, opts: { since?: number; until?: number } = {}): JournalSnapshot {
+  readSync(docId: string, opts: JournalReadOptions = {}): JournalSnapshot {
     const entry = this.entry(docId);
-    const checkpointUpToSeq = entry.checkpoint?.upToSeq ?? 0;
+    const fromCheckpoint = opts.fromCheckpoint ?? true;
+    const checkpointUpToSeq = fromCheckpoint ? (entry.checkpoint?.upToSeq ?? 0) : 0;
+    const checkpoint = fromCheckpoint
+      ? entry.checkpoint
+      : entry.checkpoints
+          .filter((candidate) => candidate.upToSeq === 0)
+          .sort((left, right) => right.upToSeq - left.upToSeq)
+          .at(0);
     return {
-      checkpoint: entry.checkpoint ? copyBytes(entry.checkpoint.state) : null,
+      checkpoint: checkpoint ? copyBytes(checkpoint.state) : null,
       updates: entry.updates
         .filter(
           (update) =>
@@ -308,12 +311,15 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     };
   }
 
-  snapshot(docId: string, opts: { since?: number; until?: number } = {}): JournalSnapshot {
+  snapshot(docId: string, opts: JournalReadOptions = {}): JournalSnapshot {
     return this.readSync(docId, opts);
   }
 
   setCheckpoint(docId: string, state: Uint8Array, upToSeq = 0): void {
-    this.entry(docId).checkpoint = { state: copyBytes(state), upToSeq };
+    const entry = this.entry(docId);
+    const checkpoint = { state: copyBytes(state), upToSeq };
+    entry.checkpoint = checkpoint;
+    entry.checkpoints.push(checkpoint);
   }
 
   clone(): InMemoryAgentEditJournal {
@@ -327,6 +333,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         checkpoint: entry.checkpoint
           ? { state: copyBytes(entry.checkpoint.state), upToSeq: entry.checkpoint.upToSeq }
           : null,
+        checkpoints: entry.checkpoints.map((checkpoint) => ({
+          state: copyBytes(checkpoint.state),
+          upToSeq: checkpoint.upToSeq,
+        })),
         nextSeq: entry.nextSeq,
         nextWIdByThread: new Map(entry.nextWIdByThread),
         updates: entry.updates.map((update) => ({
@@ -429,6 +439,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     if (!entry) {
       entry = {
         checkpoint: null,
+        checkpoints: [],
         nextSeq: 1,
         nextWIdByThread: new Map(),
         updates: [],

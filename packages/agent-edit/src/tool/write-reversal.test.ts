@@ -98,6 +98,82 @@ describe("write reversal", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "A.", "B."]);
   });
 
+  it("undoes and redoes a write whose update is hidden by a checkpoint", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta arrives." },
+      { ...context, turnId: "turn-checkpointed-write" },
+    );
+
+    await checkpointLiveDoc(ctx, "chapter.md", 1);
+
+    expect((await ctx.journal.read("chapter.md")).updates).toEqual([]);
+    expect(
+      (await ctx.journal.read("chapter.md", { fromCheckpoint: false })).updates.map(
+        (update) => update.seq,
+      ),
+    ).toEqual([1]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoWriteId: "w1",
+    });
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expect(outcomeText(undo)).toContain("status: reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: true,
+      redoWriteId: "w1",
+    });
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+
+    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta arrives."]);
+  });
+
+  it("undoes a later write first, then a checkpointed earlier write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta arrives." },
+      { ...context, turnId: "turn-checkpointed-first" },
+    );
+    await checkpointLiveDoc(ctx, "chapter.md", 1);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Gamma follows." },
+      { ...context, turnId: "turn-later-write" },
+    );
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha sword.",
+      "Beta arrives.",
+      "Gamma follows.",
+    ]);
+
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta arrives."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w2")).toMatchObject([
+      { status: "reversed" },
+    ]);
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: true,
+      undoWriteId: "w1",
+      redoWriteId: "w2",
+    });
+
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+    expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { status: "reversed" },
+    ]);
+  });
+
   it("returns write ids in immediate results even when the echo is suppressed", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -359,7 +435,7 @@ describe("write reversal", () => {
     ).toBe("status: nothing_to_undo");
   });
 
-  it("reports redo unavailable when compaction drops the reversed write start", async () => {
+  it("reports redo unavailable when compaction drops retained reversal rows", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword waits." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
 
@@ -376,8 +452,9 @@ describe("write reversal", () => {
     });
 
     await ctx.journal.checkpoint("chapter.md", stateAfterForwardWrite, 1);
+    await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
 
-    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([2]);
+    expect((await ctx.journal.read("chapter.md")).updates).toEqual([]);
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: false,
       redo: false,
@@ -555,6 +632,14 @@ async function appendBlocks(
       { ...context, turnId: `${turnId}-${index}` },
     );
   }
+}
+
+async function checkpointLiveDoc(
+  ctx: ReturnType<typeof harness>,
+  docId: string,
+  upToSeq: number,
+): Promise<void> {
+  await ctx.journal.checkpoint(docId, Y.encodeStateAsUpdate(ctx.liveDoc(docId)), upToSeq);
 }
 
 async function deletedBlockScenario(turnId: string): Promise<NoInternalIdState> {
