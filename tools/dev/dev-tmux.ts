@@ -281,7 +281,7 @@ function createPortlessCommand(
   mode: DevMode,
   sharedPorts: ReadonlyArray<SharedDevServicePorts>,
 ): string {
-  return `mkdir -p logs && ${envSourcePreamble()} && ${portlessCommandBody(mode, sharedPorts)} 2>&1 | tee ${logPath}`;
+  return `mkdir -p logs && ${envSourcePreamble()} && unset PORTLESS_TAILSCALE PORTLESS_FUNNEL && ${portlessCommandBody(mode, sharedPorts)} 2>&1 | tee ${logPath}`;
 }
 
 function readPortlessState(
