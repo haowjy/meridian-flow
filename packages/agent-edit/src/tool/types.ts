@@ -90,6 +90,7 @@ export type WriteErrorStatus =
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
+  | "cant_undo_dependent"
   | "internal_error";
 
 export type UndoRedoOutcome =

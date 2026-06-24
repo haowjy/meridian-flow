@@ -237,6 +237,92 @@ describe("write reversal", () => {
     ]);
   });
 
+  it("refuses the swordblade case when a later undone write consumed the selected write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeDependentSwordSaber(ctx);
+
+    const undoLater = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expectOutcome(undoLater, "reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+
+    const undoEarlier = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undoEarlier, "cant_undo_dependent", true);
+    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
+    expect(outcomeText(undoEarlier)).toContain("undo the range w1..w2");
+    expectNoInternalIds(outcomeText(undoEarlier));
+    expect(outcomeText(undoEarlier)).not.toMatch(/\b(Yjs|struct|delete set|documentId)\b/i);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+  });
+
+  it("refuses the swordsaber case while the dependent later write is still active", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeDependentSwordSaber(ctx);
+
+    const undoEarlier = await ctx.core.write(
+      { command: "undo", file: "chapter.md", to: "w1" },
+      context,
+    );
+
+    expectOutcome(undoEarlier, "cant_undo_dependent", true);
+    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha saber."]);
+  });
+
+  it("allows a range that contains the dependent write cluster", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeDependentSwordSaber(ctx);
+
+    const undo = await ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w1", to: "w2" },
+      context,
+    );
+
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+  });
+
+  it("allows all when it contains the dependent write cluster", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeDependentSwordSaber(ctx);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+  });
+
+  it("allows the default newest single undo in a dependent cluster", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await writeDependentSwordSaber(ctx);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+  });
+
+  it("does not refuse a non-overlapping earlier write", async () => {
+    const ctx = harness(
+      { "chapter.md": "Alpha sword.\n\nBeta shield." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-independent" },
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "ward", find: "shield" },
+      { ...context, turnId: "turn-independent" },
+    );
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta ward."]);
+  });
+
   it("preserves same-area human edits when undoing a selected write", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -632,6 +718,19 @@ async function appendBlocks(
       { ...context, turnId: `${turnId}-${index}` },
     );
   }
+}
+
+async function writeDependentSwordSaber(ctx: ReturnType<typeof harness>): Promise<void> {
+  await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+  await ctx.core.write(
+    { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+    { ...context, turnId: "turn-dependent-writes" },
+  );
+  await ctx.core.write(
+    { command: "replace", file: "chapter.md", content: "saber", find: "blade" },
+    { ...context, turnId: "turn-dependent-writes" },
+  );
+  expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha saber."]);
 }
 
 async function checkpointLiveDoc(
