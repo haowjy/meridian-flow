@@ -50,6 +50,8 @@ describe("createToolRegistry core tools", () => {
         after: { type: "string" },
         before: { type: "string" },
         all: { type: "boolean" },
+        to: { type: "string" },
+        from: { type: "string" },
         last: { type: "integer", minimum: 1 },
         format: { enum: ["auto", "full", "outline"] },
       },

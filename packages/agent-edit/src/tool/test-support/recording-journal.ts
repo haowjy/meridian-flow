@@ -3,7 +3,7 @@ import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
 } from "../../ports/update-journal.js";
-import { InMemoryAgentEditJournal } from "../../test-support/index.js";
+import { InMemoryAgentEditJournal } from "../../test-support/in-memory-agent-edit.js";
 
 export class MemoryJournal extends InMemoryAgentEditJournal {
   private readonly batches: string[][] = [];

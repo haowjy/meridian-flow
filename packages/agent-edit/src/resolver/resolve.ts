@@ -2,6 +2,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import type * as Y from "yjs";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import { type Codec, CodecParseError, type ParsedContent } from "../codec/types.js";
+import type { DocumentAddress } from "../document-address.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { lookupBlockHash } from "./block-hash.js";
 import {
@@ -21,8 +22,7 @@ import {
 export type WriteCommandName = "insert" | "replace";
 
 export interface ResolveWriteParams {
-  documentId: string;
-  file: string;
+  documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
   after?: string;
@@ -54,15 +54,14 @@ type ResolveWriteFailure = Extract<ResolveWriteResult, { ok: false }>;
 
 interface NormalizedParams extends ResolveWriteParams {
   content: string;
-  filePath: string;
-  fileFragment?: string;
 }
 
 export function resolveWrite(
   ctx: ResolveWriteContext,
   params: ResolveWriteParams,
 ): ResolveWriteResult {
-  if (!ctx.doc) return error("document_not_found", `File not found: ${params.file}`);
+  if (!ctx.doc)
+    return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
   if (params.content === undefined) return error("invalid_write", "content is required");
   const normalized = normalizeParams(params);
   const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
@@ -116,8 +115,8 @@ function resolveInsert(
     ok: true,
     edits: [
       {
-        documentId: params.documentId,
-        file: params.filePath,
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
         kind: "insert",
         ...(lowered.after ? { after: lowered.after } : {}),
         newText: params.content,
@@ -164,8 +163,7 @@ interface ConcreteResolveContext extends ResolveWriteContext {
 }
 
 function normalizeParams(params: ResolveWriteParams): NormalizedParams {
-  const [filePath, fileFragment] = splitFileFragment(params.file);
-  return { ...params, content: params.content ?? "", filePath, fileFragment };
+  return { ...params, content: params.content ?? "" };
 }
 
 function validateContent(
@@ -237,8 +235,8 @@ function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteR
   return {
     ok: true,
     edits: scope.blocks.map((element) => ({
-      documentId: params.documentId,
-      file: params.filePath,
+      documentId: params.documentAddress.documentId,
+      file: params.documentAddress.filePath,
       kind: "delete",
       element,
     })),
@@ -302,8 +300,8 @@ function lowerPlainTextFindMatches(
     const start = command === "insert" ? match.matchEnd : match.matchStart;
     const end = match.matchEnd;
     edits.push({
-      documentId: params.documentId,
-      file: params.filePath,
+      documentId: params.documentAddress.documentId,
+      file: params.documentAddress.filePath,
       kind: "text",
       element,
       span: { start, end },
@@ -398,8 +396,8 @@ function replaceScope(
   const flushInsert = () => {
     if (pendingInsert.length === 0) return;
     edits.push({
-      documentId: params.documentId,
-      file: params.filePath,
+      documentId: params.documentAddress.documentId,
+      file: params.documentAddress.filePath,
       kind: "insert",
       ...(anchor ? { after: anchor } : {}),
       newText: serializeReplacementBlocks(ctx, pendingInsert),
@@ -414,8 +412,8 @@ function replaceScope(
     if (oldBlock.nodeName === newBlock.type.name && reusableAttrs(oldBlock, newBlock)) {
       flushInsert();
       edits.push({
-        documentId: params.documentId,
-        file: params.filePath,
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
         kind: "text",
         element: oldBlock,
         span: { start: 0, end: ctx.model.getText(oldBlock).length },
@@ -425,8 +423,8 @@ function replaceScope(
       continue;
     }
     edits.push({
-      documentId: params.documentId,
-      file: params.filePath,
+      documentId: params.documentAddress.documentId,
+      file: params.documentAddress.filePath,
       kind: "delete",
       element: oldBlock,
     });
@@ -436,8 +434,8 @@ function replaceScope(
   for (let index = sharedCount; index < oldBlocks.length; index += 1) {
     flushInsert();
     edits.push({
-      documentId: params.documentId,
-      file: params.filePath,
+      documentId: params.documentAddress.documentId,
+      file: params.documentAddress.filePath,
       kind: "delete",
       element: oldBlocks[index],
     });
@@ -465,13 +463,7 @@ function serializeReplacementBlocks(
 }
 
 function fragmentScope(params: NormalizedParams): string | undefined {
-  return params.fileFragment ? `#${params.fileFragment}` : undefined;
-}
-
-function splitFileFragment(file: string): [string, string?] {
-  const index = file.indexOf("#");
-  if (index < 0) return [file];
-  return [file.slice(0, index), file.slice(index + 1)];
+  return params.documentAddress.fragment ? `#${params.documentAddress.fragment}` : undefined;
 }
 
 function trimOneTrailingNewline(value: string): string {

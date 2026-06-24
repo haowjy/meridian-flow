@@ -454,11 +454,17 @@ function aroundNeedleDoc(): string {
 
 function resolve(
   doc: Y.Doc,
-  params: Omit<ResolveWriteParams, "documentId" | "file">,
+  params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(
     { doc, model, codec },
-    { documentId: "123e4567-e89b-12d3-a456-426614174000", file: "chapter.md", ...params },
+    {
+      documentAddress: {
+        documentId: "123e4567-e89b-12d3-a456-426614174000",
+        filePath: "chapter.md",
+      },
+      ...params,
+    },
   );
 }
 

@@ -48,6 +48,8 @@ export type {
   Span,
 } from "./codec/types.js";
 export { CodecParseError } from "./codec/types.js";
+export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
+export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
