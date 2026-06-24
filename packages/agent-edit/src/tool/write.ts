@@ -121,7 +121,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
-  const { markSynced, requireSynced, runtimeFor, syncLocalFromLive } = runtimeStore;
+  const { markSynced, requireSynced, runtimeFor } = runtimeStore;
   const responseStaging = createResponseStaging({
     runtimeStore,
     mutationCommit,
@@ -207,14 +207,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   async function view(
     command: ViewCommand,
     session: ActorSession,
-    _context: WriteContext,
+    context: WriteContext,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command.file);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.filePath);
 
-    const synced = await syncLocalFromLive(session, address.filePath, runtime, command.command);
-    if (!synced.ok) return synced.response;
+    const restored = await runtimeStore.restoreRuntimeFromLive(
+      session,
+      address.filePath,
+      runtime,
+      command.command,
+    );
+    if (isInternalWriteResult(restored)) return restored;
+    if (context.responseId) {
+      for (const update of responseStaging.bufferedUpdatesForDoc(
+        context.responseId,
+        address.filePath,
+      )) {
+        Y.applyUpdate(runtime.doc, update, { type: "system" });
+      }
+    }
+    markSynced(session, address.filePath, runtime);
 
     const selection = renderer.selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
