@@ -13,28 +13,16 @@ export interface FindContext {
 }
 
 export interface FindMatch {
-  kind: "single-block";
-  element: Y.XmlElement;
-  span: { start: number; end: number };
-  absoluteStart: number;
-  absoluteEnd: number;
-}
-
-export interface CrossBlockFindMatch {
-  kind: "cross-block";
   elements: Y.XmlElement[];
   startIndex: number;
   endIndex: number;
   rangeSource: string;
+  rangeStart: number;
   matchStart: number;
   matchEnd: number;
-  endElement: Y.XmlElement;
-  endSpan: { start: number; end: number };
-  absoluteStart: number;
-  absoluteEnd: number;
 }
 
-export type TextFindMatch = FindMatch | CrossBlockFindMatch;
+export type TextFindMatch = FindMatch;
 
 export type FindResult =
   | { ok: true; matches: TextFindMatch[] }
@@ -49,7 +37,6 @@ interface SerializedBlockEntry {
   block: Y.XmlElement;
   index: number;
   body: string;
-  flatText: string;
   start: number;
   end: number;
 }
@@ -80,7 +67,7 @@ export function findTextMatches(
 
   const resolved = matches.map((match) => resolveMatch(entries, match.start, match.end));
   if (resolved.some((match) => match === null)) {
-    return invalid("Could not map find match to editable block spans");
+    return invalid("Could not map find match to editable block range");
   }
   return {
     ok: true,
@@ -102,7 +89,7 @@ export function serializePmBlockBody(
   return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
 }
 
-function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
+export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
   let cursor = 0;
   return scope.blocks.map((block, index) => {
     const body = serializeBlockBody(ctx, block);
@@ -110,7 +97,6 @@ function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBl
       block,
       index: scope.startIndex + index,
       body,
-      flatText: ctx.model.getText(block),
       start: cursor,
       end: cursor + body.length,
     };
@@ -164,52 +150,30 @@ function resolveMatch(
   const firstIndex = entries.findIndex((entry) => start <= entry.end && end > entry.start);
   const lastIndex = findLastIndex(entries, (entry) => start < entry.end && end >= entry.start);
   if (firstIndex < 0 || lastIndex < firstIndex) return null;
-  const entry = entries[firstIndex];
-  if (firstIndex !== lastIndex || start < entry.start || end > entry.end) {
-    return resolveCrossBlockMatch(entries.slice(firstIndex, lastIndex + 1), start, end);
-  }
-  const localStart = start - entry.start;
-  const localEnd = end - entry.start;
-  const span = serializedOffsetsToFlatSpan(entry, localStart, localEnd);
-  if (!span) return null;
-  return {
-    kind: "single-block",
-    element: entry.block,
-    span,
-    absoluteStart: start,
-    absoluteEnd: end,
-  };
+  return resolveRangeMatch(entries.slice(firstIndex, lastIndex + 1), start, end);
 }
 
-function resolveCrossBlockMatch(
+function resolveRangeMatch(
   entries: readonly SerializedBlockEntry[],
   start: number,
   end: number,
-): CrossBlockFindMatch | null {
+): TextFindMatch | null {
   const first = entries[0];
   const last = entries.at(-1);
-  if (!first || !last || entries.length < 2) return null;
+  if (!first || !last) return null;
   const rangeSource = entries.map((entry) => entry.body).join("\n\n");
   const matchStart = start - first.start;
   const matchEnd = end - first.start;
   if (matchStart < 0 || matchEnd < matchStart || matchEnd > rangeSource.length) return null;
 
-  const endLocal = Math.min(Math.max(end - last.start, 0), last.body.length);
-  const endSpan = serializedOffsetsToFlatSpan(last, endLocal, endLocal);
-  if (!endSpan) return null;
-
   return {
-    kind: "cross-block",
     elements: entries.map((entry) => entry.block),
     startIndex: first.index,
     endIndex: last.index,
     rangeSource,
+    rangeStart: first.start,
     matchStart,
     matchEnd,
-    endElement: last.block,
-    endSpan,
-    absoluteStart: start,
-    absoluteEnd: end,
   };
 }
 
@@ -218,96 +182,6 @@ function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean):
     if (predicate(items[index])) return index;
   }
   return -1;
-}
-
-function serializedOffsetsToFlatSpan(
-  entry: SerializedBlockEntry,
-  start: number,
-  end: number,
-): { start: number; end: number } | null {
-  if (entry.body === entry.flatText) return { start, end };
-  const bodyToFlat = serializedBodyToFlatOffsetMap(entry.body, entry.flatText);
-  if (!bodyToFlat) return null;
-  const flatStart = bodyToFlat[start];
-  const flatEnd = bodyToFlat[end];
-  if (flatStart === undefined || flatEnd === undefined || flatEnd < flatStart) return null;
-  return { start: flatStart, end: flatEnd };
-}
-
-interface TextCluster {
-  text: string;
-  normalized: string;
-  start: number;
-  end: number;
-}
-
-function serializedBodyToFlatOffsetMap(
-  body: string,
-  flatText: string,
-): Array<number | undefined> | null {
-  const bodyClusters = textClusters(body);
-  const flatClusters = textClusters(flatText);
-  const offsets: Array<number | undefined> = Array.from({ length: body.length + 1 });
-  let flatIndex = 0;
-
-  // The serialized body is the flat editable text plus zero-width markdown syntax.
-  // Align NFC text clusters in order and map unmatched serialized clusters to the
-  // current flat boundary so anchors copied from view resolve to editable spans.
-
-  for (const bodyCluster of bodyClusters) {
-    const flatCluster = flatClusters[flatIndex];
-    if (flatCluster && bodyCluster.normalized === flatCluster.normalized) {
-      mapMatchedCluster(offsets, bodyCluster, flatCluster);
-      flatIndex += 1;
-      continue;
-    }
-    mapSkippedCluster(offsets, bodyCluster, flatOffsetAt(flatClusters, flatIndex, flatText.length));
-  }
-
-  const finalFlatOffset = flatOffsetAt(flatClusters, flatIndex, flatText.length);
-  offsets[body.length] = finalFlatOffset;
-  return flatIndex === flatClusters.length ? offsets : null;
-}
-
-function textClusters(text: string): TextCluster[] {
-  return Array.from(text.matchAll(/\P{Mark}\p{Mark}*|\p{Mark}+/gu), (match) => {
-    const start = match.index;
-    const value = match[0];
-    return { text: value, normalized: value.normalize("NFC"), start, end: start + value.length };
-  });
-}
-
-function mapMatchedCluster(
-  offsets: Array<number | undefined>,
-  bodyCluster: TextCluster,
-  flatCluster: TextCluster,
-): void {
-  offsets[bodyCluster.start] = flatCluster.start;
-  offsets[bodyCluster.end] = flatCluster.end;
-
-  if (bodyCluster.text.length !== flatCluster.text.length) return;
-  for (let offset = 1; offset < bodyCluster.text.length; offset += 1) {
-    // Callers must index only cluster boundaries; mid-cluster offsets can map to the wrong codepoint.
-    offsets[bodyCluster.start + offset] = flatCluster.start + offset;
-  }
-}
-
-function mapSkippedCluster(
-  offsets: Array<number | undefined>,
-  bodyCluster: TextCluster,
-  flatOffset: number,
-): void {
-  for (let offset = bodyCluster.start; offset <= bodyCluster.end; offset += 1) {
-    offsets[offset] = flatOffset;
-  }
-}
-
-function flatOffsetAt(
-  flatClusters: readonly TextCluster[],
-  flatIndex: number,
-  endOffset: number,
-): number {
-  return flatClusters[flatIndex]?.start ?? endOffset;
 }
 
 function trimOneTrailingNewline(value: string): string {

@@ -199,11 +199,13 @@ going blind to a concurrent human edit.
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
   to live exactly once; `view`'s replay touches only the runtime and never
   double-commits.
-- **`find` span resolution is exact or it errors.** The serialized-body→flat offset
-  map (inline-markdown delimiters → zero width) must reproduce the matched clusters
-  exactly; any ambiguous/unmappable case returns `null` → `invalid_write`. It must
-  **never** return a wrong span (silent document corruption). Callers index the
-  offset map only at cluster boundaries.
+- **`find` reconciliation happens in serialized markdown space.** Matches resolve to
+  serialized block ranges. The resolver splices the requested replacement into the
+  markdown source, parses that affected range, and lowers through `replaceScope(...)`
+  so single-block and cross-block finds share the same parse+diff path. A narrow
+  Tier-1 fast path is allowed only when the matched block body is already identical
+  to flat editable text and the replacement is plain text; formatted/escaped/entity
+  cases must not use serialized-body→flat offset mapping.
 
 ## Tool surface
 
