@@ -152,6 +152,59 @@ redo replays the latest eligible reversed subset for that turn.
 - **Turn identity is durable.** Reversal groups rows by journal mutation
   metadata, so restart/recovery does not depend on live in-memory undo state.
 
+### Sync engine — the write loop
+
+How the runtime doc, the live doc, and the staging buffer stay reconciled. Each
+rule below blocks a specific failure: silent document corruption, or the agent
+going blind to a concurrent human edit.
+
+- **Offline-peer model.** The model never edits the live doc. It edits a
+  per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
+  reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
+- **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
+  runtime has seen") is set by `markSynced` on view / create / write / commit. A
+  mutating write requires a prior sync (`requireSynced`) or returns
+  `document_not_synced` ("run view").
+- **`view` is a self-healing reconstruction, not a merge.** Every `view` discards
+  the runtime, rebuilds from canonical (live), and replays the response's pending
+  staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
+  accumulated local state, so a `view` is a read that can never carry runtime drift
+  forward or corrupt the doc. At turn start (no pending) it is exactly canonical.
+  The reversal path still uses the delta merge `syncLocalFromLive`; `view` does not.
+- **`view` and `find` read the same doc.** Both resolve against the runtime, so the
+  model can always `find` what `view` showed it. This is *why* `view` replays
+  pending: otherwise a write after a mid-response `view` could re-match
+  already-edited text and self-mangle at commit.
+- **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
+  advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
+  touched. Deferred commit collapses **only** the merge+re-sync to once per turn
+  (N writes → 1) and must still emit that echo.
+- **Echoes are per-write, computed from the post-re-sync snapshot.** Even batched,
+  each staged write echoes via `computeEcho`'s adaptive tiers (suppress / truncated
+  / full) against the single post-re-sync snapshot — observationally identical to
+  applying the writes one at a time. Each block appears at most once across the
+  combined echo (dedup), in write order.
+- **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
+  → garbled but never lost. The model is **told** via the echo, never prevented.
+- **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
+  updates one at a time, attributing each touched block to human vs agent by
+  persisted origin (the update bytes don't carry it). `view`'s rebuild can't
+  attribute, so it is not used for the commit re-sync.
+- **Sequential tool dispatch is load-bearing.** The host dispatches tool calls one
+  at a time; writes apply to the runtime sequentially, so overlapping *self*-writes
+  compose or `no_match` rather than self-mangle. Parallelizing the dispatch
+  (`Promise.all`) would let two writes resolve against the same snapshot and
+  self-mangle at commit.
+- **The staging buffer is the durable commit source, not the runtime doc.** The
+  runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
+  to live exactly once; `view`'s replay touches only the runtime and never
+  double-commits.
+- **`find` span resolution is exact or it errors.** The serialized-body→flat offset
+  map (inline-markdown delimiters → zero width) must reproduce the matched clusters
+  exactly; any ambiguous/unmappable case returns `null` → `invalid_write`. It must
+  **never** return a wrong span (silent document corruption). Callers index the
+  offset map only at cluster boundaries.
+
 ## Tool surface
 
 `write()` returns a structured `WriteOutcome { command, status, isError, text }`
@@ -188,8 +241,10 @@ overlap at the write site produces a full echo. `documents[*].concurrentEdits` i
 the document-level human/agent touched-hash summary from the one re-sync and keeps
 the collapse-threshold behavior. The garbled character-level merge of two edits
 to the same text is accepted ("mangled-but-intact") — the model is told via this
-echo, not prevented. Mid-response, the model working against its local snapshot
-(no per-write re-sync) is the accepted cost of the optimization, not a defect.
+echo, not prevented. Mid-response, per-write echoes reflect the local runtime
+(there is no per-write re-sync to live) — the accepted cost of the optimization,
+not a defect. An explicit `view` still reconstructs from canonical (see the
+sync-engine invariants), so the model can re-ground on live truth on demand.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
 `undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
