@@ -22,6 +22,33 @@ desktop, MCP, and future products.
   model })` exposes the agent `write()` tool plus turn-level availability/user
   undo seams (`getAvailability`, `undoTurn`, `redoTurn`, `invalidateThread`).
 
+## Mental model: offline peer, one merge+sync lifecycle per turn
+
+The model does not edit the live document directly. It edits its own per-session
+**runtime Y.Doc** — an offline peer. The canonical `write` lifecycle (design of
+record, `…/verify-reversal-e2e/design/interactive-design-v4.html`, "Sync model &
+V_sync") is:
+
+```
+mutate local → merge local→live → re-sync live→local → advance V_sync
+             → emit echo (concurrent edits = blocks touched by the re-sync)
+```
+
+"Re-sync" is a non-destructive Yjs merge (`syncLocalFromLive`): it pulls the
+concurrent edits live has that the runtime lacks (other humans/agents) while
+preserving the model's own edits. The character-level CRDT merge of two edits to
+the same text is accepted as "mangled-but-intact" — the model is **told** about
+the conflict via the concurrent-edits echo, it is not prevented.
+
+**Deferred commit (response staging) is an optimization, not a different model.**
+Instead of running the full lifecycle on every write, a response's writes are
+buffered and the lifecycle runs **once** at `commitResponse` — N writes collapse
+to **one** merge+sync per turn. The optimization must follow the *exact same
+lifecycle*, including the final step: emit the concurrent-edits echo (blocks the
+re-sync touched, `human` vs `agent`) back to the model. Doing the merge+sync but
+dropping that echo (or the host discarding it) is the defect this package guards
+against — the agent must never be left blind to a concurrent edit after a commit.
+
 ## What it is NOT
 
 Hocuspocus, Postgres/Drizzle, auth, HTTP/WS handlers, editor UI, TipTap
