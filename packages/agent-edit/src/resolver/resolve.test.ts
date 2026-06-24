@@ -91,6 +91,23 @@ describe("resolveWrite", () => {
     expect(edits[1].kind === "text" ? edits[1].element : null).toBe(blocks[1]);
   });
 
+  it("maps cross-block serialized markdown anchors to the insertion boundary", () => {
+    const doc = createDoc("Alpha *starts*\n\nends *Omega*");
+    const [, omega] = model.getBlocks(doc);
+
+    const edits = expectOk(
+      resolve(doc, { command: "insert", content: "!", find: "*starts*\n\nends *Omega*" }),
+    );
+
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      element: omega,
+      span: { start: "ends Omega".length, end: "ends Omega".length },
+      newText: "!",
+    });
+  });
+
   it("decomposes two-block find replacements into boundary text plus structural delete", () => {
     const doc = createDoc("Alpha starts\n\nends Omega");
     const [alpha, omega] = model.getBlocks(doc);
@@ -126,6 +143,105 @@ describe("resolveWrite", () => {
     });
     expect(edits[1].kind === "delete" ? edits[1].element : null).toBe(middle);
     expect(edits[2].kind === "delete" ? edits[2].element : null).toBe(after);
+  });
+
+  it("maps serialized italic anchors to flat text replace spans", () => {
+    const doc = createDoc("Not burning — *thrumming.* Alive.");
+
+    const edits = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "Not burning — humming. Alive.",
+        find: "Not burning — *thrumming.* Alive.",
+      }),
+    );
+
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      span: { start: 0, end: "Not burning — thrumming. Alive.".length },
+      newText: "Not burning — humming. Alive.",
+    });
+  });
+
+  it("maps serialized inline markdown anchors in the middle of prose", () => {
+    const source =
+      "He could *feel* the qi in the air now — not as a vague warmth, but as a current.";
+    const doc = createDoc(source);
+
+    const edits = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "sense",
+        find: "*feel*",
+      }),
+    );
+
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      span: { start: "He could ".length, end: "He could feel".length },
+      newText: "sense",
+    });
+  });
+
+  it("maps bold, inline-code, and mixed serialized anchors", () => {
+    const doc = createDoc("A **bold** word, `code()`, and **bold *nested*** end.");
+
+    const bold = expectOk(
+      resolve(doc, { command: "replace", content: "strong", find: "**bold**" }),
+    );
+    expect(bold[0]).toMatchObject({
+      kind: "text",
+      span: { start: "A ".length, end: "A bold".length },
+      newText: "strong",
+    });
+
+    const code = expectOk(resolve(doc, { command: "insert", content: "!", find: "`code()`" }));
+    expect(code[0]).toMatchObject({
+      kind: "text",
+      span: { start: "A bold word, code()".length, end: "A bold word, code()".length },
+      newText: "!",
+    });
+
+    const mixed = expectOk(
+      resolve(doc, { command: "replace", content: "layered", find: "**bold *nested***" }),
+    );
+    expect(mixed[0]).toMatchObject({
+      kind: "text",
+      span: {
+        start: "A bold word, code(), and ".length,
+        end: "A bold word, code(), and bold nested".length,
+      },
+      newText: "layered",
+    });
+  });
+
+  it("keeps serialized markdown anchors ambiguous when they appear more than once", () => {
+    const doc = createDoc("A *word* here.\n\nA *word* there.");
+
+    expect(resolve(doc, { command: "replace", content: "term", find: "*word*" })).toMatchObject({
+      ok: false,
+      error: { code: "ambiguous_match", details: { count: 2 } },
+    });
+  });
+
+  it("still maps plain-text anchors containing em dashes", () => {
+    const doc = createDoc("Plain text — no markers.");
+
+    const edits = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "Plain text — changed.",
+        find: "Plain text — no markers.",
+      }),
+    );
+
+    expect(edits[0]).toMatchObject({
+      kind: "text",
+      span: { start: 0, end: "Plain text — no markers.".length },
+      newText: "Plain text — changed.",
+    });
   });
 
   it("matches find text with NFC normalization while preserving original spans", () => {
