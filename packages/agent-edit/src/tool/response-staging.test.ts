@@ -323,6 +323,40 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword marches."]);
   });
 
+  it("rebuilds staged response views from canonical plus pending updates and drops runtime drift", async () => {
+    const runtimeDocs: Y.Doc[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha waits.\n\nBravo waits." },
+      {
+        createRuntimeDoc: () => {
+          const doc = new Y.Doc({ gc: false });
+          runtimeDocs.push(doc);
+          return doc;
+        },
+      },
+    );
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-view-self-heals",
+      responseId: "response-staged-view-self-heals",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Agent" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 5 }, "Human");
+    const driftedRuntime = currentRuntimeDoc(runtimeDocs);
+    humanText(driftedRuntime, 0, { from: 6, to: 11 }, "drifts");
+
+    const review = await ctx.core.write({ command: "view", file: "chapter.md" }, responseContext);
+
+    expect(renderedBlockBodies(review)).toEqual(["Agent waits.", "Human waits."]);
+    expect(blockTexts(currentRuntimeDoc(runtimeDocs))).toEqual(["Agent waits.", "Human waits."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha waits.", "Human waits."]);
+  });
+
   it("emits per-write post-commit echoes and suppresses clean non-overlapping writes", async () => {
     const ctx = harness({ "chapter.md": "Alpha.\n\nSpacer one.\n\nWho-\n\nSpacer two.\n\nClean." });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -713,3 +747,9 @@ describe("response staging", () => {
     });
   });
 });
+
+function currentRuntimeDoc(runtimeDocs: readonly Y.Doc[]): Y.Doc {
+  const runtime = runtimeDocs.at(-1);
+  if (!runtime) throw new Error("Expected a runtime document to exist");
+  return runtime;
+}
