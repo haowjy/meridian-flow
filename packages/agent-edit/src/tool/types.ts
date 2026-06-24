@@ -176,3 +176,15 @@ export interface ResponseRollbackResult {
   responseId: string;
   stagedCreates: ResponseStagedCreateOutcome;
 }
+
+export type ReverseScope = "write" | "turn" | "thread";
+
+export interface ReverseInput {
+  docId: string;
+  threadId: string;
+  direction: "undo" | "redo";
+  scope: ReverseScope;
+  /** writeId for write scope, turnId for turn scope; ignored for thread scope. */
+  target?: string;
+  actor: { type: "user"; userId: string } | { type: "agent" };
+}

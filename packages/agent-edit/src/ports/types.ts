@@ -43,6 +43,8 @@ export interface CompactionResult {
 
 export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 
+export type ReversalActor = { type: "agent" } | { type: "user"; userId: string };
+
 /**
  * Durable metadata linking an agent turn to its persisted undo update.
  * Written atomically with the undo update via ReversalStore.persistUndo and

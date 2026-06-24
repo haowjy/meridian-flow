@@ -13,7 +13,8 @@ export type ReversalSelection =
   | { kind: "single"; to: string }
   | { kind: "range"; from: string; to: string }
   | { kind: "last"; count: number }
-  | { kind: "all" };
+  | { kind: "all" }
+  | { kind: "turn"; turnId?: string };
 
 export type ReversalPlanStatus =
   | "nothing_to_undo"
@@ -206,12 +207,16 @@ function selectRedoGroup(
   if (selection.kind === "latest") return { ok: true, group: groups.at(-1) };
   if (selection.kind === "last") return { ok: true, group: groups.slice(-selection.count).at(0) };
   if (selection.kind === "all") return { ok: true, group: groups.at(0) };
+  if (selection.kind === "turn") {
+    const targetTurnId = selection.turnId ?? groups.at(-1)?.turnId;
+    return { ok: true, group: groups.filter((group) => group.turnId === targetTurnId).at(-1) };
+  }
   const selected = groups.filter((group) => handlesOverlapSelection(group.writeIds, selection));
   if (selection.kind === "single") return { ok: true, group: selected.at(-1) };
   return { ok: true, group: selected[0] };
 }
 
-function selectByHandle<T extends { handle: string }>(
+function selectByHandle<T extends { handle: string; turnId: string; createdSeq: number }>(
   items: readonly T[],
   selection: ReversalSelection,
 ): { ok: true; items: T[] } | { ok: false; status: "invalid_write"; message: string } {
@@ -220,6 +225,10 @@ function selectByHandle<T extends { handle: string }>(
     return { ok: true, items: items.filter((item) => item.handle === selection.to) };
   if (selection.kind === "all") return { ok: true, items: [...items] };
   if (selection.kind === "last") return { ok: true, items: items.slice(-selection.count) };
+  if (selection.kind === "turn") {
+    const targetTurnId = selection.turnId ?? latestByCreatedSeq(items)?.turnId;
+    return { ok: true, items: items.filter((item) => item.turnId === targetTurnId) };
+  }
   const from = parseWriteHandle(selection.from);
   const to = parseWriteHandle(selection.to);
   if (from === undefined || to === undefined || from > to) {
@@ -232,6 +241,13 @@ function selectByHandle<T extends { handle: string }>(
       return ordinal !== undefined && ordinal >= from && ordinal <= to;
     }),
   };
+}
+
+function latestByCreatedSeq<T extends { createdSeq: number }>(items: readonly T[]): T | undefined {
+  return items.reduce<T | undefined>(
+    (latest, item) => (latest === undefined || item.createdSeq > latest.createdSeq ? item : latest),
+    undefined,
+  );
 }
 
 function handlesOverlapSelection(

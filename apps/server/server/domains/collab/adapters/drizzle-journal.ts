@@ -6,6 +6,7 @@ import type {
   JournalReadOptions,
   JournalSnapshot,
   PersistedUpdate,
+  ReversalActor,
   ReversalRecord,
   ReversalStatus,
   ReversalStore,
@@ -316,7 +317,14 @@ async function appendMutation(
 
 async function reverseMutationsForWrite(
   db: JournalDb,
-  input: { documentId: string; threadId: string; writeId: string; undoUpdateSeq: number; at: Date },
+  input: {
+    documentId: string;
+    threadId: string;
+    writeId: string;
+    undoUpdateSeq: number;
+    at: Date;
+    actor: ReversalActor;
+  },
 ): Promise<void> {
   await db
     .update(agentEditMutations)
@@ -324,7 +332,7 @@ async function reverseMutationsForWrite(
       status: "reversed",
       undoUpdateSeq: input.undoUpdateSeq,
       reversedAt: input.at,
-      reversedBy: "agent",
+      reversedBy: input.actor.type,
     })
     .where(
       and(
@@ -629,7 +637,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       });
     },
 
-    async persistUndo(docId, undoUpdate, records) {
+    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
       let undoUpdateSeq: number | undefined;
       await db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
@@ -671,6 +679,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               writeId,
               undoUpdateSeq,
               at: record.reversedAt ?? new Date(),
+              actor,
             });
           }
         }

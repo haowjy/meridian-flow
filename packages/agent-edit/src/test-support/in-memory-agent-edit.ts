@@ -4,6 +4,7 @@ import type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
+  ReversalActor,
   ReversalRecord,
   ReversalStatus,
   UpdateMeta,
@@ -166,6 +167,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     docId: string,
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
+    actor: ReversalActor = { type: "agent" },
   ): Promise<void> {
     const storedAt = this.now();
     const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
@@ -183,7 +185,14 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           }),
           createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
         });
-        this.reverseMutations(docId, record.threadId, writeId, seq, record.reversedAt ?? storedAt);
+        this.reverseMutations(
+          docId,
+          record.threadId,
+          writeId,
+          seq,
+          record.reversedAt ?? storedAt,
+          actor,
+        );
       }
     }
   }
@@ -434,6 +443,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     writeId: string,
     undoUpdateSeq: number,
     reversedAt: Date,
+    actor: ReversalActor,
   ): void {
     for (const record of this.entry(docId).mutations) {
       if (record.threadId !== threadId || writeHandle(record.wId) !== writeId) continue;
@@ -441,7 +451,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       record.status = "reversed";
       record.undoUpdateSeq = undoUpdateSeq;
       record.reversedAt = copyDate(reversedAt);
-      record.reversedBy = "agent";
+      record.reversedBy = actor.type;
     }
   }
 

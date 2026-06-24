@@ -45,6 +45,12 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       isError: false,
       text: "",
     }),
+    reverse: async (input) => ({
+      command: input.direction,
+      status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
+      isError: false,
+      text: "",
+    }),
     invalidateThread: () => {},
   };
 }

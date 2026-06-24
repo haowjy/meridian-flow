@@ -5,7 +5,12 @@ import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { JournalSnapshot, PersistedUpdate, ReversalRecord } from "../ports/types.js";
+import type {
+  JournalSnapshot,
+  PersistedUpdate,
+  ReversalActor,
+  ReversalRecord,
+} from "../ports/types.js";
 import { parseWriteHandle, type ReversalStore } from "../ports/update-journal.js";
 import { resolveUndoAvailability, type UndoAvailability } from "../undo/availability.js";
 import {
@@ -41,12 +46,15 @@ export interface WriteReversalRunInput {
   commandName: WriteCommand["command"];
   direction: "undo" | "redo";
   selection: ReversalSelection;
+  actor?: ReversalActor;
 }
 
 export interface WriteReversalEndpointInput {
   docId: string;
   session: ActorSession;
   direction: "undo" | "redo";
+  selection?: ReversalSelection;
+  actor?: ReversalActor;
 }
 
 type ReversalResult =
@@ -129,7 +137,8 @@ export function createWriteReversal(deps: {
           runtime,
           commandName: input.direction,
           direction: input.direction,
-          selection: { kind: "latest" },
+          selection: input.selection ?? { kind: "latest" },
+          actor: input.actor ?? { type: "agent" },
         });
     if (result.status !== "document_not_found") {
       invalidateRuntimeThread(input.docId, input.session.threadId);
@@ -144,6 +153,7 @@ export function createWriteReversal(deps: {
     commandName: WriteCommand["command"];
     direction: "undo" | "redo";
     selection: ReversalSelection;
+    actor?: ReversalActor;
   }): Promise<InternalWriteResult> {
     const reversal = await reverseOne({
       docId: input.docId,
@@ -152,6 +162,7 @@ export function createWriteReversal(deps: {
       commandName: input.commandName,
       direction: input.direction,
       selection: input.selection,
+      actor: input.actor ?? { type: "agent" },
     });
     if (!reversal.ok) return reversal.response;
     if (reversal.status === "nothing_to_undo" || reversal.status === "nothing_to_redo")
@@ -178,6 +189,7 @@ export function createWriteReversal(deps: {
     commandName: WriteCommand["command"];
     direction: "undo" | "redo";
     selection: ReversalSelection;
+    actor: ReversalActor;
   }): Promise<ReversalResult> {
     const threadId = input.session.threadId;
     const plan = await (input.direction === "undo"
@@ -261,6 +273,7 @@ export function createWriteReversal(deps: {
       plan,
       direction: input.direction,
       update: reconstructed.update,
+      actor: input.actor,
     });
     if (!persisted.ok)
       return {
@@ -323,6 +336,7 @@ export function createWriteReversal(deps: {
     direction: "undo" | "redo";
     plan: Extract<ReversalPlan, { ok: true }>;
     update: Uint8Array;
+    actor: ReversalActor;
   }): Promise<{ ok: true } | { ok: false }> {
     if (input.direction === "undo") {
       const record: ReversalRecord = {
@@ -333,8 +347,9 @@ export function createWriteReversal(deps: {
         status: "reversed",
         undoUpdateSeq: 0,
         reversedAt: new Date(),
+        ...(input.actor.type === "user" ? { reversedByUserId: input.actor.userId } : {}),
       };
-      await reversalStore.persistUndo(input.docId, input.update, [record]);
+      await reversalStore.persistUndo(input.docId, input.update, [record], input.actor);
       return { ok: true };
     }
     const undoUpdateSeq = input.plan.redoGroup?.undoUpdateSeq;

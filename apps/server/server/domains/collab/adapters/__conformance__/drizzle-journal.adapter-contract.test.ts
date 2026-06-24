@@ -483,6 +483,63 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3]);
     });
 
+    it("persists user and agent reversal attribution on mutation rows", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+
+      const [first, second] = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(doc, "Alpha"),
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_A },
+        },
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Beta"),
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_B },
+        },
+      ]);
+
+      await journal.persistUndo(
+        DOC_ID,
+        appendText(doc, " user undo"),
+        [
+          {
+            documentId: DOC_ID,
+            threadId: THREAD_ID,
+            turnId: TURN_A,
+            writeIds: ["w1"],
+            status: "reversed",
+            undoUpdateSeq: 0,
+            reversedByUserId: USER_ID,
+          },
+        ],
+        { type: "user", userId: USER_ID },
+      );
+      await journal.persistUndo(DOC_ID, appendText(doc, " agent undo"), [
+        {
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          turnId: TURN_B,
+          writeIds: ["w2"],
+          status: "reversed",
+          undoUpdateSeq: 0,
+        },
+      ]);
+
+      expect(await mutationRows()).toMatchObject([
+        { wId: 1, status: "reversed", createdSeq: first?.seq, reversedBy: "user" },
+        { wId: 2, status: "reversed", createdSeq: second?.seq, reversedBy: "agent" },
+      ]);
+      expect(await journal.readReversals(DOC_ID, { threadId: THREAD_ID })).toMatchObject([
+        { writeIds: ["w1"], reversedByUserId: USER_ID },
+        { writeIds: ["w2"] },
+      ]);
+    });
+
     it("does not fail spuriously when concurrent batches mint w-ids for the same thread", async () => {
       const journal = createDrizzleJournal(db);
 

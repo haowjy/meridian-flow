@@ -1,4 +1,10 @@
-import type { CompactionResult, JournalSnapshot, ReversalRecord, UpdateMeta } from "./types.js";
+import type {
+  CompactionResult,
+  JournalSnapshot,
+  ReversalActor,
+  ReversalRecord,
+  UpdateMeta,
+} from "./types.js";
 
 export interface JournalBatchAppendEntry {
   docId: string;
@@ -80,6 +86,7 @@ export interface ReversalStore {
     docId: string,
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
+    actor?: ReversalActor,
   ): Promise<void>;
   persistRedo(
     docId: string,
