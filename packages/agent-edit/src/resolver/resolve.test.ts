@@ -456,7 +456,7 @@ function resolve(
 ): ResolveWriteResult {
   return resolveWrite(
     { doc, model, codec },
-    { documentId: "doc-1", file: "chapter.md", ...params },
+    { documentId: "123e4567-e89b-12d3-a456-426614174000", file: "chapter.md", ...params },
   );
 }
 

@@ -76,6 +76,13 @@ adapters or in the MCP distribution package.
 
 ## The invariant
 
+Model-facing text uses the host-supplied display path (`file` / `filePath`),
+never the internal `documentId`. Long UUID-like document ids are storage,
+journal, runtime, and coordination identity only; they must not appear in tool
+responses, view commands, re-sync hints, or creation guidance shown to the
+agent. Tests should prefer UUID-like internal ids with friendly paths so a leak
+is obvious.
+
 The Yjs CRDT machinery is generic and reusable on any `Y.Doc`: updates, cold
 reconstruction from the reversal journal, idempotency, concurrent-edit
 detection, and the host infra ports (`UpdateJournal`, `DocumentCoordinator`,

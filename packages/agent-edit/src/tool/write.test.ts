@@ -12,6 +12,9 @@ import {
 } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
+const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
+const MODEL_PATH = "work://chapter-2.md";
+
 describe("write tool dispatch", () => {
   it("creates a document with initial content", async () => {
     const ctx = harness();
@@ -62,6 +65,57 @@ describe("write tool dispatch", () => {
     expectOutcome(result, "invalid_write", true);
     expect(outcomeText(result)).toContain("File already exists: chapter.md");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
+  });
+
+  it("keeps internal document ids out of model-facing write text", async () => {
+    const ctx = harness({ [INTERNAL_DOCUMENT_ID]: "# Already here." });
+
+    const createExisting = await ctx.core.write(
+      {
+        command: "create",
+        documentId: INTERNAL_DOCUMENT_ID,
+        file: MODEL_PATH,
+        content: "Replacement.",
+      },
+      context,
+    );
+    expect(outcomeText(createExisting)).toContain(`File already exists: ${MODEL_PATH}`);
+    expect(outcomeText(createExisting)).not.toContain(INTERNAL_DOCUMENT_ID);
+
+    const unsynced = await ctx.core.write(
+      {
+        command: "replace",
+        documentId: INTERNAL_DOCUMENT_ID,
+        file: MODEL_PATH,
+        content: "New",
+        find: "Already",
+      },
+      context,
+    );
+    expect(outcomeText(unsynced)).toContain(
+      `Run write(command="view", file="${MODEL_PATH}") to re-sync.`,
+    );
+    expect(outcomeText(unsynced)).not.toContain(INTERNAL_DOCUMENT_ID);
+
+    const view = await ctx.core.write(
+      { command: "view", documentId: INTERNAL_DOCUMENT_ID, file: MODEL_PATH, format: "outline" },
+      context,
+    );
+    expect(outcomeText(view)).toContain(`write(command="view", file="${MODEL_PATH}#`);
+    expect(outcomeText(view)).not.toContain(INTERNAL_DOCUMENT_ID);
+
+    const replace = await ctx.core.write(
+      {
+        command: "replace",
+        documentId: INTERNAL_DOCUMENT_ID,
+        file: MODEL_PATH,
+        content: "Still",
+        find: "Already",
+      },
+      context,
+    );
+    expect(outcomeText(replace)).not.toContain(INTERNAL_DOCUMENT_ID);
+    expect(blockTexts(ctx.liveDoc(INTERNAL_DOCUMENT_ID))).toEqual(["Still here."]);
   });
 
   it("returns a clean unsupported error when create has no lifecycle", async () => {

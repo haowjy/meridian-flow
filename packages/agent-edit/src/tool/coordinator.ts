@@ -16,12 +16,13 @@ export async function withLiveDocument<T>(
   coordinator: DocumentCoordinator,
   docId: string,
   commandName: WriteCommand["command"],
+  filePath: string,
   fn: LiveDocumentCallback<T>,
 ): Promise<T | InternalWriteResult | null> {
   try {
     return await coordinator.withDocument(docId, async (doc) => fn(doc));
   } catch (cause) {
-    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
+    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, filePath);
     throw cause;
   }
 }
