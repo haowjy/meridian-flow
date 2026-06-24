@@ -242,6 +242,7 @@ export function createMutationCommit(deps: {
       coordinator,
       input.docId,
       input.commandName,
+      input.docId,
       async (liveDoc) => {
         concurrentUpdate = Y.encodeStateAsUpdate(liveDoc, input.afterOwnVector);
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);

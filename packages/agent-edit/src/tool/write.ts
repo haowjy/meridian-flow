@@ -82,6 +82,9 @@ export interface WriteTool {
 }
 
 interface FileAddress {
+  /** Host-side storage/journal identity. */
+  documentId: string;
+  /** Model-facing display path. */
   filePath: string;
   fragment?: string;
 }
@@ -209,26 +212,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const address = parseFileAddress(command.file);
+    const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    const runtime = runtimeFor(session, address.filePath);
+    const runtime = runtimeFor(session, address.documentId);
 
     const restored = await runtimeStore.restoreRuntimeFromLive(
       session,
-      address.filePath,
+      address.documentId,
       runtime,
       command.command,
+      { filePath: address.filePath },
     );
     if (isInternalWriteResult(restored)) return restored;
     if (context.responseId) {
       for (const update of responseStaging.bufferedUpdatesForDoc(
         context.responseId,
-        address.filePath,
+        address.documentId,
       )) {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }
-    markSynced(session, address.filePath, runtime);
+    markSynced(session, address.documentId, runtime);
 
     const selection = renderer.selectViewBlocks(runtime.doc, command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
@@ -243,7 +247,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const address = parseFileAddress(command.file);
+    const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     if (address.fragment) {
       return status("invalid_write", "create does not accept a #fragment in file.");
@@ -252,7 +256,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
 
-    const runtime = runtimeFor(session, address.filePath);
+    const runtime = runtimeFor(session, address.documentId);
     if (options.model.getBlocks(runtime.doc).length > 0) {
       return status("invalid_write", `File already exists: ${address.filePath}`);
     }
@@ -260,11 +264,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const stagedCreate = context.responseId !== undefined;
-    if (!stagedCreate) await options.lifecycle.ensureDocument(address.filePath);
+    if (!stagedCreate) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
-      address.filePath,
+      address.documentId,
       command.command,
+      address.filePath,
       (liveDoc) =>
         options.model.getBlocks(liveDoc).length > 0
           ? status("invalid_write", `File already exists: ${address.filePath}`)
@@ -276,10 +281,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
-    const turnId = nextTurnId(session, address.filePath, context);
+    const turnId = nextTurnId(session, address.documentId, context);
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(address.filePath, session.threadId);
+    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
       options.model.insertBlocks(runtime.doc, null, parsed.parsed);
     }, origin);
@@ -290,7 +295,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.responseId) {
       responseStaging.stageUpdate({
         responseId: context.responseId,
-        docId: address.filePath,
+        docId: address.documentId,
         session,
         runtime,
         commandName: command.command,
@@ -304,14 +309,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         deletedHashes: new Set(),
         structuralChange: true,
       });
-      markSynced(session, address.filePath, runtime);
+      markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
       });
     }
 
     const committed = await mutationCommit.commitImmediate({
-      docId: address.filePath,
+      docId: address.documentId,
       commandName: command.command,
       updates: [{ update, meta, mutation: { threadId: session.threadId, turnId } }],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
@@ -319,7 +324,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!committed.ok) return committed.response;
 
-    markSynced(session, address.filePath, runtime);
+    markSynced(session, address.documentId, runtime);
     return formatApplySuccess({
       echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
     });
@@ -330,15 +335,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const address = parseFileAddress(command.file);
+    const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    const runtime = runtimeFor(session, address.filePath);
-    const synced = requireSynced(session, address.filePath);
+    const runtime = runtimeFor(session, address.documentId);
+    const synced = requireSynced(session, address.documentId, address.filePath);
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(
       { doc: runtime.doc, model: options.model, codec: options.codec },
-      { ...command, documentId: address.filePath, file: command.file },
+      { ...command, documentId: address.documentId, file: command.file },
     );
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
@@ -346,8 +351,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const turnId = nextTurnId(session, address.filePath, context);
-    const origin = threadOrigins.getThreadOrigin(address.filePath, session.threadId);
+    const turnId = nextTurnId(session, address.documentId, context);
+    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
       ownActorTurnId: turnId,
       syncStateVector: synced.stateVector,
@@ -362,7 +367,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.responseId) {
       responseStaging.stageUpdate({
         responseId: context.responseId,
-        docId: address.filePath,
+        docId: address.documentId,
         session,
         runtime,
         commandName: command.command,
@@ -382,7 +387,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         deletedHashes: new Set(applied.deletedBlocks ?? []),
         structuralChange: hasStructuralChange(applied),
       });
-      markSynced(session, address.filePath, runtime);
+      markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         echo: summary.echo,
         deletedBlocks: applied.deletedBlocks,
@@ -390,7 +395,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const syncedMutation = await mutationCommit.syncAfterLocalMutation({
-      docId: address.filePath,
+      docId: address.documentId,
       commandName: command.command,
       runtime,
       update: ownUpdate,
@@ -406,7 +411,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
-    markSynced(session, address.filePath, runtime);
+    markSynced(session, address.documentId, runtime);
     return formatApplySuccess({
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
@@ -420,7 +425,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     direction: "undo" | "redo",
     context: WriteContext,
   ): Promise<InternalWriteResult> {
-    const address = parseFileAddress(command.file);
+    const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     if (context.responseId && responseStaging.hasBufferedWrites(context.responseId)) {
       // Undo/redo read and write committed journal state; flush staged response
@@ -431,7 +436,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!count.ok) return status("invalid_write", count.message);
 
     return turnReversal.run({
-      docId: address.filePath,
+      docId: address.documentId,
       session,
       commandName: command.command,
       direction,
@@ -500,11 +505,14 @@ function createAutoTurnIdNonce(): string {
 }
 
 function parseFileAddress(
-  file: string,
+  command: Pick<WriteCommand, "file" | "documentId">,
 ): ({ ok: true } & FileAddress) | { ok: false; message: string } {
-  const [filePath, fragment] = file.split("#", 2);
+  const [filePath, fragment] = command.file.split("#", 2);
   if (!filePath) return { ok: false, message: "file is required" };
-  return fragment === undefined ? { ok: true, filePath } : { ok: true, filePath, fragment };
+  const documentId = command.documentId ?? filePath;
+  return fragment === undefined
+    ? { ok: true, documentId, filePath }
+    : { ok: true, documentId, filePath, fragment };
 }
 
 function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {

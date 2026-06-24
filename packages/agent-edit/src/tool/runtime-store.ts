@@ -53,6 +53,7 @@ export interface RuntimeStore {
   requireSynced(
     session: ActorSession,
     docId: string,
+    filePath?: string,
   ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult };
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
 }
@@ -63,6 +64,7 @@ export interface RuntimeEvictOptions {
 
 export interface RuntimeRestoreOptions {
   recoverFromJournal?: boolean;
+  filePath?: string;
 }
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -151,16 +153,23 @@ export function createRuntimeStore(deps: {
     commandName: WriteCommand["command"],
     options: RuntimeRestoreOptions = {},
   ): Promise<InternalWriteResult | null> {
+    const filePath = options.filePath ?? docId;
     if (options.recoverFromJournal || docsNeedingRecovery.has(docId)) {
-      const recovered = await recoverLiveDocFromJournal(docId, commandName);
+      const recovered = await recoverLiveDocFromJournal(docId, commandName, filePath);
       if (recovered) return recovered;
     }
-    const response = await withLiveDocument(coordinator, docId, commandName, (liveDoc) => {
-      const restored = createRuntimeDoc();
-      Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
-      runtime.doc = restored;
-      return null;
-    });
+    const response = await withLiveDocument(
+      coordinator,
+      docId,
+      commandName,
+      filePath,
+      (liveDoc) => {
+        const restored = createRuntimeDoc();
+        Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+        runtime.doc = restored;
+        return null;
+      },
+    );
     if (isInternalWriteResult(response)) return response;
     markSynced(session, docId, runtime);
     return null;
@@ -204,11 +213,17 @@ export function createRuntimeStore(deps: {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return { ok: false, response: recovered };
     }
-    const response = await withLiveDocument(coordinator, docId, commandName, async (liveDoc) => {
-      const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
-      if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
-      return null;
-    });
+    const response = await withLiveDocument(
+      coordinator,
+      docId,
+      commandName,
+      docId,
+      async (liveDoc) => {
+        const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
+        if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
+        return null;
+      },
+    );
     if (isInternalWriteResult(response)) return { ok: false, response };
     markSynced(session, docId, runtime);
     return { ok: true };
@@ -217,6 +232,7 @@ export function createRuntimeStore(deps: {
   function requireSynced(
     session: ActorSession,
     docId: string,
+    filePath = docId,
   ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult } {
     const state = session.documents.get(docId);
     if (!state) {
@@ -224,7 +240,7 @@ export function createRuntimeStore(deps: {
         ok: false,
         response: {
           status: "not_found",
-          text: `status: not_found\n\nNo synced snapshot for ${docId}. Run write(command="view", file="${docId}") to re-sync.`,
+          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="view", file="${filePath}") to re-sync.`,
         },
       };
     }
@@ -240,13 +256,14 @@ export function createRuntimeStore(deps: {
   async function recoverLiveDocFromJournal(
     docId: string,
     commandName: WriteCommand["command"],
+    filePath = docId,
   ): Promise<InternalWriteResult | null> {
     try {
       await coordinator.recover(docId);
       docsNeedingRecovery.delete(docId);
       return null;
     } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, docId);
+      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, filePath);
       throw cause;
     }
   }
