@@ -261,8 +261,8 @@ function splitFragment(path: string): { basePath: string; fragment?: string } {
   return { basePath: path.slice(0, marker), fragment: path.slice(marker + 1) };
 }
 
-function fileForDocument(documentId: string, fragment?: string): string {
-  return fragment ? `${documentId}#${fragment}` : documentId;
+function fileForPath(path: string, fragment?: string): string {
+  return fragment ? `${path}#${fragment}` : path;
 }
 
 async function resolveDocumentAddress(
@@ -280,7 +280,7 @@ async function resolveDocumentAddress(
     if (!ensured.ok) return toolError(ensured.error);
     return {
       documentId: ensured.value.documentId,
-      file: fileForDocument(ensured.value.documentId, fragment),
+      file: fileForPath(basePath, fragment),
       created: ensured.value.created,
     };
   }
@@ -295,7 +295,7 @@ async function resolveDocumentAddress(
   }
   return {
     documentId: ref.value.documentId,
-    file: fileForDocument(ref.value.documentId, fragment),
+    file: fileForPath(basePath, fragment),
   };
 }
 
@@ -324,15 +324,23 @@ async function deleteCreatedTrackedDocument(input: {
 
 function buildAgentWriteCommand(
   input: WriteToolInput,
-  file: string,
+  address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
 ): WriteCommand {
+  const { documentId, file } = address;
   switch (input.command) {
     case "create":
-      return { command: "create", file, content: input.content, tool_use_id: toolUseId };
+      return {
+        command: "create",
+        documentId,
+        file,
+        content: input.content,
+        tool_use_id: toolUseId,
+      };
     case "view":
       return {
         command: "view",
+        documentId,
         file,
         in: input.in,
         around: input.around,
@@ -342,6 +350,7 @@ function buildAgentWriteCommand(
     case "insert":
       return {
         command: "insert",
+        documentId,
         file,
         content: input.content ?? "",
         find: input.find,
@@ -355,6 +364,7 @@ function buildAgentWriteCommand(
     case "replace":
       return {
         command: "replace",
+        documentId,
         file,
         content: input.content ?? "",
         find: input.find,
@@ -364,9 +374,23 @@ function buildAgentWriteCommand(
         tool_use_id: toolUseId,
       };
     case "undo":
-      return { command: "undo", file, last: input.last, all: input.all, tool_use_id: toolUseId };
+      return {
+        command: "undo",
+        documentId,
+        file,
+        last: input.last,
+        all: input.all,
+        tool_use_id: toolUseId,
+      };
     case "redo":
-      return { command: "redo", file, last: input.last, all: input.all, tool_use_id: toolUseId };
+      return {
+        command: "redo",
+        documentId,
+        file,
+        last: input.last,
+        all: input.all,
+        tool_use_id: toolUseId,
+      };
   }
 }
 
@@ -491,7 +515,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
       const outcome = await deps.documentSync
         .agentEdit()
-        .write(buildAgentWriteCommand(parsed, address.file, ctx.toolCallId), {
+        .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
           sessionId: ctx.threadId,
           threadId: ctx.threadId,
           turnId: ctx.turnId,

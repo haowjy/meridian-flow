@@ -13,8 +13,10 @@ interface IdempotentCommand {
 }
 
 interface FileCommand extends IdempotentCommand {
-  /** Document path within the project, optionally with a #fragment for view/replace scopes. */
+  /** Model-facing document path, optionally with a #fragment for view/replace scopes. */
   file: string;
+  /** Host-side document identity. Omit only in standalone hosts where file is also the storage key. */
+  documentId?: string;
 }
 
 export type CreateCommand = FileCommand & {
