@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+- Chat editing: a writer can now reverse the agent's edits themselves, not just
+  the agent. New authenticated endpoint reverses (undo/redo) at three
+  granularities — a single write (`w<N>`), a whole turn, or the entire thread —
+  and the reversal is attributed to the user. Reversing a turn/thread that was
+  undone in several steps now restores the whole scope in one call instead of
+  silently leaving part reversed.
+
+- Collab: agent/user undo now correctly marks the edit reversed in Postgres.
+  Previously the Drizzle journal matched reversal by the wrong key, so in
+  production an undone write stayed flagged active and undo availability drifted;
+  the document content reverted but the bookkeeping lied. A cross-adapter
+  conformance contract now pins in-memory and Postgres to the same behavior.
+
+- Dev (`pnpm dev`): Tailscale sharing works across multiple worktrees at once.
+  `tools/dev` now owns the Tailscale-serve → app mapping on deterministic
+  per-worktree ports, so each worktree's app/www gets its own stable
+  `https://<node>.ts.net:<port>` instead of two worktrees fighting over `:443`
+  and serving a proxy 404.
+
 - Server DB: completed the Drizzle thread repository contract for usage/cost
   rollups. Threads now persist `total_cost_usd`; turns persist response count,
   latest model/provider, reasoning/cache tokens, request/response metadata; model
