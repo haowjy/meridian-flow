@@ -15,6 +15,13 @@ const DEFAULT_EXPECTED_SERVICE_HOSTS = {
 
 export type ExpectedServiceName = keyof typeof DEFAULT_EXPECTED_SERVICE_HOSTS;
 
+export interface ExternalDevRoute {
+  service: ExpectedServiceName;
+  mode: "serve" | "funnel";
+  httpsPort: number;
+  url?: string;
+}
+
 function isExpectedServiceName(name: string): name is ExpectedServiceName {
   return name === "server" || name === "app" || name === "www";
 }
@@ -22,7 +29,7 @@ function isExpectedServiceName(name: string): name is ExpectedServiceName {
 export type ExpectedServiceDescriptor = {
   name: ExpectedServiceName;
   host: string;
-  /** When true, tailscale/funnel mode requires an external share line for this service. */
+  /** When true, tools/dev exposes the service through Tailscale/funnel in shared modes. */
   shared: boolean;
 };
 
@@ -149,11 +156,25 @@ function findRouteForService(
   return routes.find((route) => route.host === expectedHost);
 }
 
+function externalRouteForService(
+  routes: ReadonlyArray<ExternalDevRoute>,
+  service: ExpectedServiceName,
+  mode: DevMode,
+): ExternalDevRoute | undefined {
+  const routeMode = mode === "funnel" ? "funnel" : "serve";
+  return routes.find((route) => route.service === service && route.mode === routeMode);
+}
+
+function externalRouteUrl(route: ExternalDevRoute): string {
+  return route.url ?? `https://<tailscale-node>:${route.httpsPort}`;
+}
+
 /** Labeled full URLs for copy-paste; infra: `pnpm portless:list`. */
 export function formatDevRouteLines(
   output: string,
   mode: DevMode,
   worktreePrefix?: string,
+  externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
 ): string[] {
   const expected = new Set(getExpectedServicesForMode(mode).map((service) => service.name));
   const routes = readPortlessRoutes(output);
@@ -180,12 +201,13 @@ export function formatDevRouteLines(
 
     pushRouteLine(lines, name, "local", route.url);
 
-    if (mode === "tailscale" && route.tailscale[0]) {
-      pushRouteLine(lines, name, "ts", route.tailscale[0]);
+    const externalRoute = externalRouteForService(externalRoutes, name, mode);
+    if (mode === "tailscale" && externalRoute) {
+      pushRouteLine(lines, name, "ts", externalRouteUrl(externalRoute));
     }
 
-    if (mode === "funnel" && route.funnel[0]) {
-      pushRouteLine(lines, name, "funnel", route.funnel[0]);
+    if (mode === "funnel" && externalRoute) {
+      pushRouteLine(lines, name, "funnel", externalRouteUrl(externalRoute));
     }
   }
 
@@ -224,14 +246,6 @@ export function validateExpectedRoutes({
     }
 
     servicePids[service.name] = route.pid;
-
-    if (mode === "tailscale" && service.shared && route.tailscale.length === 0) {
-      errors.push(`missing tailscale share for ${service.name} (${route.host})`);
-    }
-
-    if (mode === "funnel" && service.shared && route.funnel.length === 0) {
-      errors.push(`missing funnel share for ${service.name} (${route.host})`);
-    }
   }
 
   return {
