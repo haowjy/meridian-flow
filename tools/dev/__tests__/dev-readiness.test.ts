@@ -51,6 +51,21 @@ describe("dev readiness", () => {
     expect(appAttempts).toBe(2);
   });
 
+  it("rejects 404 app responses as not ready", async () => {
+    await expect(
+      checkDevReadiness({
+        origins: {
+          server: "https://worktree.server.meridian.localhost",
+          app: "https://worktree.app.meridian.localhost",
+        },
+        httpClient: async (url) => response(String(url).endsWith("/readyz") ? 200 : 404),
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      errors: ["app https://worktree.app.meridian.localhost returned HTTP 404"],
+    });
+  });
+
   it("reports missing route origins as startup failures", async () => {
     await expect(
       checkDevReadiness({

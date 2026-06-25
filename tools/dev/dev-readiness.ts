@@ -76,7 +76,7 @@ function targetsForOrigins(origins: DevServiceOrigins): ReadinessTarget[] {
     targets.push({
       service: "app",
       url: origins.app,
-      acceptStatus: (status) => status < 500,
+      acceptStatus: (status) => status === 200 || (status >= 300 && status < 400),
     });
   }
 
