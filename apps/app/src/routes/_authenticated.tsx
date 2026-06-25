@@ -87,7 +87,6 @@ export const Route = createFileRoute("/_authenticated")({
     }
   },
   staleTime: 60_000,
-  shouldReload: () => true,
   component: AuthenticatedLayout,
 });
 

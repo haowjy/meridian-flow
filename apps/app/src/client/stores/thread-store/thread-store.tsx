@@ -559,17 +559,14 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
     createThreadStore({ now, threadCache: createThreadCache(queryClient) }),
   );
 
-  /**
-   * Keep `store.now` in sync with the route loader's `now` prop.
-   *
-   * `now` changes on every navigation (route loader re-fetches), and
-   * the store uses it for relative-time labels in chat ("just now" vs
-   * "2 min ago"). Without syncing, time labels would stick at the
-   * stale value from when the store was first created.
-   */
+  // Keep `store.now` fresh for relative-time labels ("just now" vs "2 min ago")
+  // via a timer instead of relying on route-loader refetches on every navigation.
   useEffect(() => {
-    store.setState((state) => (state.now === now ? state : { ...state, now }));
-  }, [store, now]);
+    const timer = setInterval(() => {
+      store.setState((state) => ({ ...state, now: Date.now() }));
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [store]);
 
   return <ThreadStoreContext.Provider value={store}>{children}</ThreadStoreContext.Provider>;
 }
