@@ -16,10 +16,10 @@ export interface DocumentModel<BlockNode> {
   /** Get all top-level blocks from the Yjs document. */
   getBlocks(doc: Y.Doc): BlockNode[];
 
-  /** Derive a stable hash from a block's CRDT item ID. */
+  /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockNode): string;
 
-  /** Batch version of getBlockId — computes all hashes in one pass. */
+  /** Canonical ordered hash list for a full document. */
   getBlockIds(doc: Y.Doc): string[];
 
   /** Get the text content of a block (for find/match). */

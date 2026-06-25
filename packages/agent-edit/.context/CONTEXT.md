@@ -82,7 +82,7 @@ staged write in `postCommitEchoes`. **Use the batch path for any multi-block op:
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
 | `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getBlockIds` + `toProsemirrorBlocks` + index maps in render/find/echo paths | aligned full-document block/hash/PM projection |
-| `getBlockIds(doc)` | per-block `getBlockId` | sort + unique-hash all blocks |
+| `getBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
 | `toProsemirrorBlocks(doc)` | per-block `toProsemirrorBlock` | project the PM tree |
 | `serializeBlocks(blocks, hashes)` | per-block `serializeBlock` | allocate one unified runtime |
 | `serializeBlockBodies(blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |

@@ -65,5 +65,5 @@ function createDoc(markdown: string): Y.Doc {
 }
 
 function blockHashes(doc: Y.Doc): string[] {
-  return model.getBlocks(doc).map((block) => model.getBlockId(block));
+  return model.getBlockIds(doc);
 }
