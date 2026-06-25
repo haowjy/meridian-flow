@@ -495,10 +495,14 @@ async function writeHandlesByUpdateSeq(
   }
 
   const seqToHandle = new Map<number, string>();
-  for (const handle of handles) {
-    if (!isWriteHandle(handle)) continue;
-    const rows = await reversalStore.mutationsForWrite(input.docId, input.threadId, handle);
-    for (const row of rows) seqToHandle.set(row.createdSeq, row.handle);
+  const handleList = [...handles].filter(isWriteHandle);
+  const rowsByHandle = await reversalStore.mutationsForWrites(
+    input.docId,
+    input.threadId,
+    handleList,
+  );
+  for (const handle of handleList) {
+    for (const row of rowsByHandle.get(handle) ?? []) seqToHandle.set(row.createdSeq, row.handle);
   }
   for (const reversal of await reversalStore.readReversals(input.docId, {
     threadId: input.threadId,

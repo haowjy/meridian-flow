@@ -40,10 +40,12 @@ const TRUNCATED_PREVIEW_LENGTH = 48;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
-  return model.getBlocks(doc).map((block) => {
-    const hash = model.getBlockId(block);
-    return { hash, serialized: codec.serializeBlock(model.toProsemirrorBlock(doc, block), hash) };
-  });
+  const blocks = model.getBlocks(doc);
+  if (blocks.length === 0) return [];
+  const hashes = model.getBlockIds(doc);
+  const pmBlocks = model.toProsemirrorBlocks(doc);
+  const serialized = codec.serializeBlocks(pmBlocks, hashes);
+  return blocks.map((_, i) => ({ hash: hashes[i], serialized: serialized[i] }));
 }
 
 /** Diff two block snapshots by stable block hash and serialized content. */

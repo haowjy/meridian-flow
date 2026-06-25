@@ -90,15 +90,27 @@ export function serializePmBlockBody(
 }
 
 export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
+  // Batch path: project PM tree once for the whole doc, then filter to scope
+  // blocks by index. O(D + scope·S) instead of O(scope·D).
+  const allBlocks = ctx.model.getBlocks(ctx.doc);
+  const allPmBlocks = ctx.model.toProsemirrorBlocks(ctx.doc);
+  const indexByBlock = new Map<Y.XmlElement, number>();
+  for (let i = 0; i < allBlocks.length; i++) indexByBlock.set(allBlocks[i], i);
+
+  const runtime = ctx.codec;
   let cursor = 0;
   return scope.blocks.map((block, index) => {
-    const body = serializeBlockBody(ctx, block);
+    const idx = indexByBlock.get(block);
+    const pmBlock =
+      idx !== undefined ? allPmBlocks[idx] : ctx.model.toProsemirrorBlock(ctx.doc, block);
+    const body = trimOneTrailingNewline(runtime.serialize([pmBlock]));
+    const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
     const entry = {
       block,
       index: scope.startIndex + index,
-      body,
+      body: displayBody,
       start: cursor,
-      end: cursor + body.length,
+      end: cursor + displayBody.length,
     };
     cursor = entry.end + (index === scope.blocks.length - 1 ? 0 : 2);
     return entry;

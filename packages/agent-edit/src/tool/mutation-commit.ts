@@ -40,6 +40,8 @@ export interface MutationEchoInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   structuralChange: boolean;
+  /** Precomputed post-re-sync snapshot — when supplied, skips the per-call snapshotBlocks. */
+  afterSnapshot?: readonly BlockSnapshot[];
 }
 
 export interface JournaledUpdate {
@@ -164,7 +166,7 @@ export function createMutationCommit(deps: {
     concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
     options: { regroundSuppressedText?: boolean } = {},
   ): SyncedMutationSummary {
-    const after = snapshotBlocks(input.runtime.doc, model, codec);
+    const after = input.afterSnapshot ?? snapshotBlocks(input.runtime.doc, model, codec);
     const baseEchoInput = {
       before: input.before,
       after,

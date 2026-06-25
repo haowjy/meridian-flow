@@ -296,6 +296,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       .map(writeMutationRow);
   }
 
+  async mutationsForWrites(
+    documentId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Map<string, WriteMutationRow[]>> {
+    const result = new Map<string, WriteMutationRow[]>();
+    for (const handle of handles) {
+      result.set(handle, await this.mutationsForWrite(documentId, threadId, handle));
+    }
+    return result;
+  }
+
   appendSync(
     docId: string,
     update: Uint8Array,

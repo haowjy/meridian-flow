@@ -134,19 +134,18 @@ async function retainedRowsForHandles(
   undoUpdateSeq?: number,
 ): Promise<{ writeIds: string[]; rows: WriteMutationRow[] }> {
   const retainedSeqs = new Set(snapshot.updates.map((update) => update.seq));
-  const rowsByHandle = await Promise.all(
-    handles.map(async (handle) => ({
-      handle,
-      rows: (await reversalStore.mutationsForWrite(docId, threadId, handle)).filter(
-        (row) =>
-          row.status === status &&
-          (undoUpdateSeq === undefined || row.undoUpdateSeq === undoUpdateSeq),
-      ),
-    })),
-  );
-  const retained = rowsByHandle.filter(
-    ({ rows }) => rows.length > 0 && rows.every((row) => retainedSeqs.has(row.createdSeq)),
-  );
+  const rowsByHandle = await reversalStore.mutationsForWrites(docId, threadId, handles);
+  const retained: { handle: string; rows: WriteMutationRow[] }[] = [];
+  for (const handle of handles) {
+    const rows = (rowsByHandle.get(handle) ?? []).filter(
+      (row) =>
+        row.status === status &&
+        (undoUpdateSeq === undefined || row.undoUpdateSeq === undoUpdateSeq),
+    );
+    if (rows.length > 0 && rows.every((row) => retainedSeqs.has(row.createdSeq))) {
+      retained.push({ handle, rows });
+    }
+  }
   return {
     writeIds: retained.map(({ handle }) => handle),
     rows: retained.flatMap(({ rows }) => rows),

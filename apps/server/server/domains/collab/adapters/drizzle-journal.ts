@@ -288,33 +288,6 @@ async function reserveWriteOrdinal(
   return counter.wId;
 }
 
-async function appendMutation(
-  db: JournalDb,
-  input: {
-    documentId: string;
-    threadId: string;
-    turnId: string;
-    writeId: string;
-    wId: number;
-    createdSeq: number;
-  },
-): Promise<number> {
-  const [row] = await db
-    .insert(agentEditMutations)
-    .values({
-      wId: input.wId,
-      documentId: asDocumentId(input.documentId),
-      threadId: asThreadId(input.threadId),
-      turnId: asTurnId(input.turnId),
-      writeId: input.writeId,
-      status: "active",
-      createdSeq: input.createdSeq,
-    })
-    .returning({ wId: agentEditMutations.wId });
-  if (!row) throw new Error("Failed to insert agent edit mutation");
-  return row.wId;
-}
-
 async function reverseMutationsForWrite(
   db: JournalDb,
   input: {
@@ -429,27 +402,88 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       if (entries.length === 0) return [];
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
+
+        // Multi-row INSERT for all updates — one round-trip instead of N.
+        const updateRows = await txDb
+          .insert(documentYjsUpdates)
+          .values(
+            entries.map((entry) => {
+              const origin = parseOrigin(entry.meta);
+              return {
+                documentId: asDocumentId(entry.docId),
+                updateData: toBuffer(entry.update),
+                originType: origin.originType,
+                actorUserId: origin.actorUserId ?? null,
+                actorTurnId: origin.actorTurnId ?? null,
+              };
+            }),
+          )
+          .returning({ id: documentYjsUpdates.id });
+
+        // PostgreSQL returning order matches insertion order for a single
+        // INSERT, but sort by id to be safe (id is auto-incrementing).
+        updateRows.sort((a, b) => a.id - b.id);
+
+        // Reserve wIds for mutations that don't have one pre-allocated.
+        const mutationValues: Array<{
+          index: number;
+          seq: number;
+          wId: number;
+          threadId: string;
+          turnId: string;
+          writeId: string;
+          docId: string;
+        }> = [];
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          if (!entry.mutation) continue;
+          const seq = updateRows[i].id;
+          const wId =
+            entry.mutation.wId ??
+            (await reserveWriteOrdinal(txDb, {
+              documentId: entry.docId,
+              threadId: entry.mutation.threadId,
+            }));
+          mutationValues.push({
+            index: i,
+            seq,
+            wId,
+            threadId: entry.mutation.threadId,
+            turnId: entry.mutation.turnId,
+            writeId:
+              entry.mutation.writeId ??
+              `${entry.mutation.threadId}:${entry.mutation.turnId}:${seq}`,
+            docId: entry.docId,
+          });
+        }
+
+        // Multi-row INSERT for all mutations — one round-trip instead of N.
+        if (mutationValues.length > 0) {
+          await txDb.insert(agentEditMutations).values(
+            mutationValues.map((mv) => ({
+              wId: mv.wId,
+              documentId: asDocumentId(mv.docId),
+              threadId: asThreadId(mv.threadId),
+              turnId: asTurnId(mv.turnId),
+              writeId: mv.writeId,
+              status: "active" as const,
+              createdSeq: mv.seq,
+            })),
+          );
+        }
+
+        // Build results aligned with entries order.
         const results: Array<{ seq: number; wId?: number }> = [];
-        for (const entry of entries) {
-          const seq = await appendUpdate(txDb, entry.docId, entry.update, entry.meta);
-          const wId = entry.mutation
-            ? await appendMutation(txDb, {
-                documentId: entry.docId,
-                threadId: entry.mutation.threadId,
-                turnId: entry.mutation.turnId,
-                writeId:
-                  entry.mutation.writeId ??
-                  `${entry.mutation.threadId}:${entry.mutation.turnId}:${seq}`,
-                wId:
-                  entry.mutation.wId ??
-                  (await reserveWriteOrdinal(txDb, {
-                    documentId: entry.docId,
-                    threadId: entry.mutation.threadId,
-                  })),
-                createdSeq: seq,
-              })
-            : undefined;
-          results.push(wId === undefined ? { seq } : { seq, wId });
+        let mutIdx = 0;
+        for (let i = 0; i < entries.length; i++) {
+          const seq = updateRows[i].id;
+          const mv = mutationValues[mutIdx];
+          if (mv && mv.index === i) {
+            results.push({ seq, wId: mv.wId });
+            mutIdx += 1;
+          } else {
+            results.push({ seq });
+          }
         }
         return results;
       });
@@ -539,6 +573,45 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .orderBy(asc(agentEditMutations.createdSeq), asc(agentEditMutations.wId));
 
       return rows.map(mapWriteMutationRow);
+    },
+
+    async mutationsForWrites(
+      documentId,
+      threadId,
+      handles,
+    ): Promise<Map<string, WriteMutationRow[]>> {
+      const ordinals = handles
+        .map((h) => parseWriteHandle(h))
+        .filter((o): o is number => o !== undefined);
+      const result = new Map<string, WriteMutationRow[]>();
+      if (ordinals.length === 0) return result;
+      const rows = await db
+        .select({
+          writeId: agentEditMutations.writeId,
+          wId: agentEditMutations.wId,
+          turnId: agentEditMutations.turnId,
+          createdSeq: agentEditMutations.createdSeq,
+          status: agentEditMutations.status,
+          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
+        })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, asDocumentId(documentId)),
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            inArray(agentEditMutations.wId, ordinals),
+          ),
+        )
+        .orderBy(asc(agentEditMutations.createdSeq), asc(agentEditMutations.wId));
+
+      for (const row of rows) {
+        const handle = writeHandle(row.wId);
+        const mapped = mapWriteMutationRow(row);
+        const existing = result.get(handle);
+        if (existing) existing.push(mapped);
+        else result.set(handle, [mapped]);
+      }
+      return result;
     },
 
     async read(

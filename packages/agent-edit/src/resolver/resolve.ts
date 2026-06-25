@@ -151,18 +151,7 @@ function resolveReplace(
     return error("invalid_write", "`around` only scopes find-based replace commands");
   }
   const target = params.in ?? fragmentScope(params);
-  // No in/find/fragment → replace the entire document.
-  if (target === undefined) {
-    const blocks = ctx.model.getBlocks(ctx.doc);
-    const wholeDoc: BlockScope = {
-      kind: "document",
-      blocks: blocks.slice(),
-      startIndex: 0,
-      endIndex: blocks.length - 1,
-    };
-    if (params.content.length === 0) return deleteScope(params, wholeDoc);
-    return replaceScope(ctx, params, wholeDoc, parsed);
-  }
+  if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
   const scope = resolveScope(ctx, target);
   if (!scope.ok) return scopeError(scope);
   if (params.content.length === 0) return deleteScope(params, scope.scope);

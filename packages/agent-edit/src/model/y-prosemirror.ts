@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 import type { ParsedContent, Span } from "../codec/types.js";
 import type { AgentEditModel } from "../ports/model.js";
-import { getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
+import { blockHashesForDoc, getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 interface TextSegment {
@@ -31,6 +31,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return getBlockHash(block);
     },
 
+    getBlockIds(doc) {
+      return blockHashesForDoc(doc);
+    },
+
     getText(block) {
       return collectText(block);
     },
@@ -54,6 +58,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
     toProsemirrorBlock(doc, block) {
       return toProsemirrorBlock(doc, block, schema);
     },
+
+    toProsemirrorBlocks(doc) {
+      return prosemirrorBlocksForDoc(doc, schema);
+    },
   };
 }
 
@@ -72,6 +80,16 @@ export function toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement, schema: Sche
   const pmBlock = prosemirrorRootOf(doc, schema).child(index);
   if (!pmBlock) throw new Error("ProseMirror block not found for Y.XmlElement");
   return pmBlock;
+}
+
+/** Project the PM tree once and return all top-level block nodes — O(D), not O(B·D). */
+export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
+  const root = prosemirrorRootOf(doc, schema);
+  const blocks: PMNode[] = [];
+  for (let i = 0; i < root.childCount; i++) {
+    blocks.push(root.child(i));
+  }
+  return blocks;
 }
 
 export function applyTextEdit(block: Y.XmlElement, span: Span, newText: string): void {

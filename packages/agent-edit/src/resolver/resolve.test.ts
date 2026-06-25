@@ -112,31 +112,6 @@ describe("resolveWrite", () => {
     expect(replace[0]).toMatchObject({ kind: "text", element: blocks[4] });
   });
 
-  it("replaces the entire document when replace omits in and find", () => {
-    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
-    const [alpha, beta, gamma] = model.getBlocks(doc);
-
-    const edits = expectOk(resolve(doc, { command: "replace", content: "One\n\nTwo" }));
-
-    // Three old blocks → two new: text-replace first, text-replace second, delete third.
-    expect(edits.map((edit) => edit.kind)).toEqual(["text", "text", "delete"]);
-    expect(edits[0].kind === "text" ? edits[0].element : null).toBe(alpha);
-    expect(edits[1].kind === "text" ? edits[1].element : null).toBe(beta);
-    expect(edits[2].kind === "delete" ? edits[2].element : null).toBe(gamma);
-  });
-
-  it("deletes the entire document when replace omits in/find with empty content", () => {
-    const doc = createDoc("Alpha\n\nBeta");
-    const blocks = model.getBlocks(doc);
-
-    const edits = expectOk(resolve(doc, { command: "replace", content: "" }));
-
-    expect(edits).toHaveLength(2);
-    expect(edits.every((edit) => edit.kind === "delete")).toBe(true);
-    expect(edits[0].kind === "delete" ? edits[0].element : null).toBe(blocks[0]);
-    expect(edits[1].kind === "delete" ? edits[1].element : null).toBe(blocks[1]);
-  });
-
   it("returns representative resolution errors", () => {
     const doc = createDoc("sword one\n\nsword two");
     const [first, second] = model.getBlocks(doc);

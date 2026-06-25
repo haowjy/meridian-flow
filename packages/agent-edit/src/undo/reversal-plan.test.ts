@@ -252,6 +252,13 @@ function fakeReversalStore(input: {
     writeMinCreatedSeq: async (_documentId, _threadId, handle) =>
       input.mutations.get(handle)?.at(0)?.createdSeq,
     mutationsForWrite: async (_documentId, _threadId, handle) => input.mutations.get(handle) ?? [],
+    mutationsForWrites: async (_documentId, _threadId, handles) => {
+      const result = new Map<string, WriteMutationRow[]>();
+      for (const handle of handles) {
+        result.set(handle, input.mutations.get(handle) ?? []);
+      }
+      return result;
+    },
     persistUndo: async () => {},
     persistRedo: async () => ({ consumed: false }),
     readReversals: async () => input.reversals ?? [],

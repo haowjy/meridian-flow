@@ -19,6 +19,9 @@ export interface DocumentModel<BlockNode> {
   /** Derive a stable hash from a block's CRDT item ID. */
   getBlockId(block: BlockNode): string;
 
+  /** Batch version of getBlockId — computes all hashes in one pass. */
+  getBlockIds(doc: Y.Doc): string[];
+
   /** Get the text content of a block (for find/match). */
   getText(block: BlockNode): string;
 
@@ -48,6 +51,9 @@ export interface DocumentModel<BlockNode> {
 export interface AgentEditModel extends DocumentModel<Y.XmlElement> {
   /** Project a live Yjs block into the codec's block representation. */
   toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): Block;
+
+  /** Batch version of toProsemirrorBlock — projects the PM tree once for all blocks. */
+  toProsemirrorBlocks(doc: Y.Doc): Block[];
 
   /** Replace a live Yjs block with an already-planned codec block projection. */
   applyBlockDiff(doc: Y.Doc, block: Y.XmlElement, replacement: Block): void;

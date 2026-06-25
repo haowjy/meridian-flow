@@ -82,6 +82,12 @@ export interface ReversalStore {
     threadId: string,
     handle: string,
   ): Promise<WriteMutationRow[]>;
+  /** Batched version — fetches mutation rows for multiple handles in one query. */
+  mutationsForWrites(
+    documentId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Map<string, WriteMutationRow[]>>;
   persistUndo(
     docId: string,
     undoUpdate: Uint8Array,

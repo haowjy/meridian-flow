@@ -140,6 +140,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const responseStaging = createResponseStaging({
     runtimeStore,
     mutationCommit,
+    model: options.model,
+    codec: options.codec,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
   const writeReversal = createWriteReversal({
@@ -272,8 +274,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    if (options.model.getBlocks(runtime.doc).length > 0) {
-      return status("invalid_write", `File already exists: ${address.filePath}`);
+    const overwriting = command.overwrite === true;
+    const existingBlocks = options.model.getBlocks(runtime.doc);
+    if (existingBlocks.length > 0 && !overwriting) {
+      return status(
+        "invalid_write",
+        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+      );
     }
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
@@ -286,8 +293,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       address.filePath,
       (liveDoc) =>
-        options.model.getBlocks(liveDoc).length > 0
-          ? status("invalid_write", `File already exists: ${address.filePath}`)
+        options.model.getBlocks(liveDoc).length > 0 && !overwriting
+          ? status(
+              "invalid_write",
+              `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+            )
           : null,
     );
     const missingLiveForStagedCreate =
@@ -302,7 +312,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
+      // Insert first so old blocks are no longer the only ones, then delete.
       options.model.insertBlocks(runtime.doc, null, parsed.parsed);
+      if (overwriting) {
+        for (const block of existingBlocks) {
+          options.model.deleteBlock(runtime.doc, block);
+        }
+      }
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);

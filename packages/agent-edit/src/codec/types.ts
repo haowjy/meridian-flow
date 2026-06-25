@@ -90,4 +90,7 @@ export interface Codec {
 
   /** Serialize a single block with hash prefix for echo/view. */
   serializeBlock(block: Block, hash: string): string;
+
+  /** Batch version of serializeBlock — one runtime allocation for all blocks. */
+  serializeBlocks(blocks: readonly Block[], hashes: readonly string[]): string[];
 }

@@ -137,6 +137,36 @@ export function journalWithMissingMutationTarget(
         },
       ];
     },
+    mutationsForWrites: async (documentId, threadId, handles) => {
+      const result = new Map<string, WriteMutationRow[]>();
+      for (const handle of handles) {
+        const rows = await journal.mutationsForWrite(documentId, threadId, handle);
+        if (handle !== missing.writeId) {
+          result.set(handle, rows);
+          continue;
+        }
+        const source = rows[0];
+        if (!source) {
+          result.set(handle, rows);
+          continue;
+        }
+        result.set(handle, [
+          ...rows,
+          {
+            writeId: source.writeId,
+            handle: source.handle,
+            wId: source.wId,
+            turnId: source.turnId,
+            createdSeq: missing.createdSeq,
+            status: missing.status,
+            ...(missing.undoUpdateSeq !== undefined
+              ? { undoUpdateSeq: missing.undoUpdateSeq }
+              : {}),
+          },
+        ]);
+      }
+      return result;
+    },
     read: journal.read.bind(journal),
     readForReconstruction: journal.readForReconstruction.bind(journal),
     checkpoint: journal.checkpoint.bind(journal),
