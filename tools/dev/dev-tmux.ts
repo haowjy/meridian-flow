@@ -300,6 +300,50 @@ function failAndExit(
   process.exit(1);
 }
 
+async function printExistingSessionInfo({
+  tmuxStore,
+  sessionName,
+  mode,
+  worktreePrefix,
+  externalRoutes,
+}: {
+  tmuxStore: TmuxSessionStore;
+  sessionName: string;
+  mode: DevMode;
+  worktreePrefix?: string;
+  externalRoutes: ReadonlyArray<ExternalDevRoute>;
+}): Promise<void> {
+  const routeState = waitForPortlessState(tmuxStore, mode, 5_000, worktreePrefix, externalRoutes);
+  if (!routeState.healthy) {
+    failAndExit(
+      `dev session exists but route checks failed: ${routeState.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  const readiness = await waitForDevReadiness({
+    origins: routeState.serviceOrigins,
+    timeoutMs: 5_000,
+  });
+  if (!readiness.ok) {
+    failAndExit(
+      `dev session exists but readiness checks failed: ${readiness.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  printSessionInfo({
+    headline: "already running",
+    sessionName,
+    mode,
+    routeLines: routeState.lines,
+  });
+}
+
 function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string): void {
   if (tmuxStore.sessionExists(sessionName)) {
     const killResult = tmuxStore.killSession(sessionName);
@@ -371,7 +415,6 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
-  applyDevEnvToProcess(repoRoot);
 
   const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const detachedHeadRef = runGit(repoRoot, ["rev-parse", "--short", "HEAD"]);
@@ -400,13 +443,14 @@ async function main(): Promise<void> {
   });
   const nodeDnsName = mode === "local" ? undefined : tailscaleStatusDnsName();
   const externalRoutes = externalRoutesFromSharedPorts(sharedPorts, nodeDnsName);
-  const devCommand = createDevSessionCommand({
-    mode,
-    sharedPorts,
-    worktreePrefix,
-  });
 
   if (cliOptions.print) {
+    applyDevEnvToProcess(repoRoot);
+    const devCommand = createDevSessionCommand({
+      mode,
+      sharedPorts,
+      worktreePrefix,
+    });
     printDryRun({
       sessionName: identity.sessionName,
       mode,
@@ -430,6 +474,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  applyDevEnvToProcess(repoRoot);
+  const devCommand = createDevSessionCommand({
+    mode,
+    sharedPorts,
+    worktreePrefix,
+  });
+
   // Fail fast if the dev database is unset or unreachable: the app servers boot
   // fine without Postgres (connections are lazy), so a stopped container would
   // otherwise only surface as a runtime HTTPError on the first DB-touching
@@ -441,34 +492,22 @@ async function main(): Promise<void> {
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
-    const routeState = waitForPortlessState(
+    await printExistingSessionInfo({
       tmuxStore,
-      runningMode,
-      5_000,
-      worktreePrefix,
-      previous?.externalRoutes ?? externalRoutes,
-    );
-    printSessionInfo({
-      headline: "already running",
       sessionName: identity.sessionName,
       mode: runningMode,
-      routeLines: routeState.lines,
+      worktreePrefix,
+      externalRoutes: previous?.externalRoutes ?? externalRoutes,
     });
     return;
   } else if (previous?.sessionName && tmuxStore.sessionExists(previous.sessionName)) {
     const runningMode = isDevMode(previous.mode) ? previous.mode : mode;
-    const routeState = waitForPortlessState(
+    await printExistingSessionInfo({
       tmuxStore,
-      runningMode,
-      5_000,
-      previousWorktreePrefix,
-      previous?.externalRoutes ?? externalRoutes,
-    );
-    printSessionInfo({
-      headline: "already running",
       sessionName: previous.sessionName,
       mode: runningMode,
-      routeLines: routeState.lines,
+      worktreePrefix: previousWorktreePrefix,
+      externalRoutes: previous?.externalRoutes ?? externalRoutes,
     });
     return;
   }
