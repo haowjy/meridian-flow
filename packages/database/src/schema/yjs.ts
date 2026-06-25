@@ -181,6 +181,7 @@ export const agentEditSyncState = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     stateVector: byteaColumn("state_vector").notNull(),
+    syncedSnapshot: byteaColumn("synced_snapshot").notNull(),
     committedSnapshot: byteaColumn("committed_snapshot").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

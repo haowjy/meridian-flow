@@ -2,6 +2,7 @@ CREATE TABLE "agent_edit_sync_state" (
   "document_id" uuid NOT NULL,
   "thread_id" uuid NOT NULL,
   "state_vector" bytea NOT NULL,
+  "synced_snapshot" bytea NOT NULL,
   "committed_snapshot" bytea NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT "agent_edit_sync_state_document_id_thread_id_pk" PRIMARY KEY("document_id","thread_id")
