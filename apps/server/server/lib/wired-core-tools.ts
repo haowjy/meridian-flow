@@ -522,9 +522,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
       return {
         output: outcome.content ?? outcome.text,
-        ...(outcome.writeId || address.documentId
-          ? { metadata: { writeId: outcome.writeId, documentId: address.documentId } }
-          : {}),
+        // Only attach documentId metadata for staged mutating writes (create/insert/replace
+        // within a response). This is used by the orchestrator to track which tool_result
+        // block to backfill concurrent edit info into after commitResponse. Non-mutating
+        // commands (view/undo/redo) must NOT overwrite the backfill target.
+        ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
       };
     },
     list: async (input: unknown, ctx: ToolHandlerContext) => {
