@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore } from "../index.js";
+import { createAgentEditCore, type SyncState, type SyncStateStore } from "../index.js";
 import { blockTexts, documentBytes, humanText, outcomeText } from "./test-support/assertions.js";
 import {
   cloneDoc,
@@ -17,6 +17,42 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("runtime store", () => {
+  it("loads persisted sync state after restart so writes do not require a fresh view", async () => {
+    const syncStateStore = new MemorySyncStateStore();
+    const initial = harness({ "chapter.md": "Alpha sword waits." });
+    const core = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+    await core.write({ command: "view", file: "chapter.md" }, context);
+    await core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      context,
+    );
+    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
+
+    const restarted = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+
+    const followup = await restarted.write(
+      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
+      context,
+    );
+
+    expect(outcomeText(followup)).toContain("status: success");
+    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha saber waits."]);
+  });
+
   it("invalidates a thread runtime and rebuilds the next view from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "view", file: "chapter.md" }, context);
@@ -224,3 +260,35 @@ describe("runtime store", () => {
     expect(blockTexts(redoCtx.liveDoc("chapter.md"))).toEqual(["Writer Alpha blade."]);
   });
 });
+
+class MemorySyncStateStore implements SyncStateStore {
+  private readonly states = new Map<string, SyncState>();
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    return this.states.get(key(documentId, threadId)) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    this.states.set(key(documentId, threadId), state);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.states.delete(key(documentId, threadId));
+  }
+}
+
+async function waitForSyncState(
+  store: MemorySyncStateStore,
+  documentId: string,
+  threadId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (await store.load(documentId, threadId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("sync state was not persisted");
+}
+
+function key(documentId: string, threadId: string): string {
+  return `${documentId}\0${threadId}`;
+}

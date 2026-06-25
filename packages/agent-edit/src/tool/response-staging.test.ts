@@ -285,6 +285,33 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword marches."]);
   });
 
+  it("detects concurrent edits that a staged view already absorbed into the runtime", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword waits." });
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const blockHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-view-absorbed-concurrent",
+      responseId: "response-staged-view-absorbed-concurrent",
+    };
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha", content: "Agent" },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 6, to: 11 }, "blade");
+
+    const review = await ctx.core.write({ command: "view", file: "chapter.md" }, responseContext);
+    expect(renderedBlockBodies(review)).toEqual(["Agent blade waits."]);
+
+    const commit = await ctx.core.commitResponse("response-staged-view-absorbed-concurrent");
+
+    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [blockHash], agent: [] });
+    expect(commit.documents[0]?.echo?.[0]?.hunks[0]).toMatchObject({ mode: "full" });
+    expect(commit.documents[0]?.text).toContain(`human: ${blockHash}`);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent blade waits."]);
+  });
+
   it("rebuilds staged response views from canonical plus pending updates and drops runtime drift", async () => {
     const runtimeDocs: Y.Doc[] = [];
     const ctx = harness(
