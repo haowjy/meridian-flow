@@ -1,6 +1,9 @@
 /** Durable per-thread sync baseline for agent-edit runtime sessions. */
 export interface SyncState {
   stateVector: Uint8Array;
+  /** Full Yjs state at last sync — used to restore the runtime after restart. */
+  syncedSnapshot: Uint8Array;
+  /** Full Yjs state at last commitResponse — used as concurrent detection baseline. */
   committedSnapshot: Uint8Array;
 }
 

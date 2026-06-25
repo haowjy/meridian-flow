@@ -24,6 +24,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
       const [row] = await db
         .select({
           stateVector: agentEditSyncState.stateVector,
+          syncedSnapshot: agentEditSyncState.syncedSnapshot,
           committedSnapshot: agentEditSyncState.committedSnapshot,
         })
         .from(agentEditSyncState)
@@ -37,6 +38,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
       if (!row) return null;
       return {
         stateVector: toBytes(row.stateVector),
+        syncedSnapshot: toBytes(row.syncedSnapshot),
         committedSnapshot: toBytes(row.committedSnapshot),
       };
     },
@@ -48,12 +50,14 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
           documentId: asDocumentId(documentId),
           threadId: asThreadId(threadId),
           stateVector: toBuffer(state.stateVector),
+          syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
         })
         .onConflictDoUpdate({
           target: [agentEditSyncState.documentId, agentEditSyncState.threadId],
           set: {
             stateVector: toBuffer(state.stateVector),
+            syncedSnapshot: toBuffer(state.syncedSnapshot),
             committedSnapshot: toBuffer(state.committedSnapshot),
             updatedAt: sql`now()`,
           },
