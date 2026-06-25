@@ -137,6 +137,18 @@ export function createCodec(options: CreateCodecOptions): Codec {
       if (displayBody.includes("\n")) return `${hash}|\n${displayBody}`;
       return `${hash}|${displayBody}`;
     },
+
+    serializeBlocks(blocks: readonly Block[], hashes: readonly string[]): string[] {
+      const runtime = makeRuntime("");
+      const ctx = withRuntime<SerializeContext>({ schema, components }, runtime);
+      return blocks.map((block, i) => {
+        const body = trimOneTrailingNewline(serializeOne(block, ctx));
+        const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+        const hash = hashes[i] ?? "";
+        if (displayBody.includes("\n")) return `${hash}|\n${displayBody}`;
+        return `${hash}|${displayBody}`;
+      });
+    },
   };
 }
 

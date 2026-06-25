@@ -48,6 +48,12 @@ export function getBlockHash(block: Y.XmlElement): string {
   return uniqueHashFor(block, siblings.length > 0 ? siblings : [block]);
 }
 
+/** Compute hashes for all top-level blocks in one pass — O(B log B), not O(B² log B). */
+export function blockHashesForDoc(doc: Y.Doc): string[] {
+  const blocks = getTopLevelXmlBlocks(doc);
+  return uniqueHashesForBlocks(blocks);
+}
+
 /** Deterministic full hash material for a CRDT item ID. Prefixes are displayed to agents. */
 export function fullHashForItemId(id: BlockItemId): string {
   const key = `${id.clientID}:${id.clock}`;
@@ -57,7 +63,12 @@ export function fullHashForItemId(id: BlockItemId): string {
 /** Reverse lookup from an agent-visible hash to a live block in this local Y.Doc. */
 export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
   const normalized = hash.toLowerCase();
-  const matches = getTopLevelXmlBlocks(doc).filter((block) => getBlockHash(block) === normalized);
+  const hashes = blockHashesForDoc(doc);
+  const blocks = getTopLevelXmlBlocks(doc);
+  const matches: Y.XmlElement[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    if (hashes[i] === normalized) matches.push(blocks[i]);
+  }
   if (matches.length === 1) return { ok: true, hash: normalized, block: matches[0] };
   if (matches.length > 1) return { ok: false, reason: "ambiguous", matches };
   return { ok: false, reason: "not_found" };
@@ -69,29 +80,31 @@ export function isLiveXmlElement(block: Y.XmlElement): boolean {
 }
 
 function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): string {
-  const assigned = new Map<Y.XmlElement, string>();
+  const hashes = uniqueHashesForBlocks(blocks);
+  const index = blocks.indexOf(target);
+  if (index < 0) throw new Error("Target block was not present in its hash scope");
+  return hashes[index];
+}
+
+/** Compute unique hashes for a set of blocks in one sorted pass. */
+function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
+  if (blocks.length === 0) return [];
+  const indexed = blocks.map((block, i) => ({ block, i, id: getBlockItemId(block) }));
+  indexed.sort((a, b) => a.id.clientID - b.id.clientID || a.id.clock - b.id.clock);
+  const hashes: string[] = new Array(blocks.length);
   const used = new Set<string>();
-  const ordered = [...blocks].sort(compareBlockItemId);
-  for (const block of ordered) {
-    const fullHash = fullHashForItemId(getBlockItemId(block));
+  for (const entry of indexed) {
+    const fullHash = fullHashForItemId(entry.id);
     let length = DEFAULT_HASH_LENGTH;
     let hash = fullHash.slice(0, length);
     while (used.has(hash) && length < fullHash.length) {
       length += 1;
       hash = fullHash.slice(0, length);
     }
-    assigned.set(block, hash);
+    hashes[entry.i] = hash;
     used.add(hash);
   }
-  const hash = assigned.get(target);
-  if (!hash) throw new Error("Target block was not present in its hash scope");
-  return hash;
-}
-
-function compareBlockItemId(left: Y.XmlElement, right: Y.XmlElement): number {
-  const leftId = getBlockItemId(left);
-  const rightId = getBlockItemId(right);
-  return leftId.clientID - rightId.clientID || leftId.clock - rightId.clock;
+  return hashes;
 }
 
 function siblingBlocks(block: Y.XmlElement): Y.XmlElement[] {

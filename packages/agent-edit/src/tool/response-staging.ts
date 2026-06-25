@@ -1,9 +1,15 @@
 // Buffers model-response write updates until commit or rollback resolves their lifecycle.
 import * as Y from "yjs";
 
-import type { BlockSnapshot, ConcurrentDetectionResult } from "../apply/echo.js";
+import {
+  type BlockSnapshot,
+  type ConcurrentDetectionResult,
+  snapshotBlocks,
+} from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentUpdateOrigin } from "../apply/types.js";
+import type { Codec } from "../codec/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { isInternalWriteResult } from "./internal-result.js";
@@ -86,9 +92,11 @@ interface ResponseBuffer {
 export function createResponseStaging(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
+  model: AgentEditModel;
+  codec: Codec;
   ensureDocument?: (docId: string) => Promise<void>;
 }): ResponseStaging {
-  const { runtimeStore, mutationCommit, ensureDocument } = deps;
+  const { runtimeStore, mutationCommit, model, codec, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
 
   return {
@@ -302,6 +310,9 @@ export function createResponseStaging(deps: {
     docBuffer: ResponseDocumentBuffer,
     concurrent: ConcurrentDetectionResult,
   ): ResponseCommitWriteEcho[] {
+    // One snapshot for the whole pass — the runtime doc is not mutated between
+    // staged-write echoes, so the `after` is identical for every write.
+    const afterSnapshot = snapshotBlocks(docBuffer.runtime.doc, model, codec);
     const seenBlockKeys = new Set<string>();
     return docBuffer.updates
       .map((update) =>
@@ -314,6 +325,7 @@ export function createResponseStaging(deps: {
               touchedHashes: update.echoInput.touchedHashes,
               deletedHashes: update.echoInput.deletedHashes,
               structuralChange: update.echoInput.structuralChange,
+              afterSnapshot,
             },
             concurrent,
             { regroundSuppressedText: false },

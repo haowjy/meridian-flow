@@ -101,7 +101,7 @@ describe("write tool dispatch", () => {
     expect(blockTexts(replayed)).toEqual(["Draft", "Opening line."]);
   });
 
-  it("rejects create for an existing non-empty file", async () => {
+  it("rejects create for an existing non-empty file with overwrite guidance", async () => {
     const ctx = harness({ "chapter.md": "Already here." });
 
     const result = await ctx.core.write(
@@ -112,7 +112,27 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("status: invalid_write");
     expectOutcome(result, "invalid_write", true);
     expect(outcomeText(result)).toContain("File already exists: chapter.md");
+    expect(outcomeText(result)).toContain("overwrite=true");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
+  });
+
+  it("overwrites an existing document when create uses overwrite=true", async () => {
+    const ctx = harness({ "chapter.md": "Old content.\n\nSecond paragraph." });
+
+    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "# Fresh\n\nNew content.",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expect(outcomeText(result)).toContain("status: success");
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh", "New content."]);
   });
 
   it("keeps internal document ids out of model-facing write text", async () => {

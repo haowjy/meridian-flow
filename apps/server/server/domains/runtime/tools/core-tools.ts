@@ -32,7 +32,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document; insert to add content; replace to replace or delete content (omit in and find to overwrite the entire document); undo and redo to reverse or reapply this thread's document writes. Content is markdown text, not a diff format.",
+          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes. Content is markdown text, not a diff format.",
         // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
         // (WriteCommand). The chat layer uses `path` for context URIs; the
         // server handler resolves it to the package `file`/document id.
@@ -58,10 +58,15 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
               type: "string",
               description: "Exact text to find for find-based insert/replace. Not a regex.",
             },
+            overwrite: {
+              type: "boolean",
+              description:
+                "For create only: overwrite the document if it already exists instead of erroring.",
+            },
             in: {
               type: "string",
               description:
-                "View range, replace target, or find scope (block hash, hash range, or #section). Omit for replace to overwrite the entire document.",
+                "View range, replace target, or find scope (block hash, hash range, or #section).",
             },
             around: {
               type: "string",

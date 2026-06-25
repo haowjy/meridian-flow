@@ -197,6 +197,8 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
   if (isToolError(to)) return to;
   const from = optionalString(record, "from");
   if (isToolError(from)) return from;
+  const overwrite = optionalBoolean(record, "overwrite");
+  if (isToolError(overwrite)) return overwrite;
   const all = optionalBoolean(record, "all");
   if (isToolError(all)) return all;
   const last = optionalPositiveInteger(record, "last");
@@ -214,7 +216,7 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
   const base = { command, path, tool_use_id: undefined };
   switch (command) {
     case "create":
-      return { ...base, command, content };
+      return { ...base, command, content, overwrite };
     case "view":
       return {
         ...base,

@@ -22,6 +22,8 @@ interface FileCommand extends IdempotentCommand {
 export type CreateCommand = FileCommand & {
   command: "create";
   content?: string;
+  /** When true, overwrites the document if it already exists instead of erroring. */
+  overwrite?: boolean;
 };
 
 export type ViewCommand = FileCommand & {

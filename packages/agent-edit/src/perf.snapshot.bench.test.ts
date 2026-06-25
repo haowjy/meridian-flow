@@ -10,7 +10,6 @@ import { mdxCodec } from "./codec/presets/mdx.js";
 import { yProsemirrorModel } from "./model/y-prosemirror.js";
 import { getBlockHash, lookupBlockHash } from "./resolver/block-hash.js";
 import { serializeScopeBlocks } from "./resolver/find.js";
-import { resolveScope } from "./resolver/scope.js";
 import { createDocumentRenderer } from "./tool/document-renderer.js";
 
 const schema = buildDocumentSchema();
