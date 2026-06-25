@@ -47,7 +47,10 @@ Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
 inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
 owns the PM-mapping dispatch. `serialize`/`parse` are the two directions; the
 per-block render path is `serializeBlock` (with hash prefix), or the batch
-`serializeBlocks` which allocates one unified runtime for all blocks.
+`serializeBlocks` which allocates one unified runtime for all hash-prefixed
+blocks. Resolver/find code uses `serializeBlockBodies` for the same block-body
+normalization without hash prefixes; callers should not reimplement trailing
+newline or empty-paragraph normalization.
 Pinned unified stringify options for canonical round-trip output. Concrete:
 `presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
 ProseMirror `Schema`; the package has no default Meridian schema.
@@ -78,9 +81,11 @@ staged write in `postCommitEchoes`. **Use the batch path for any multi-block op:
 
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
+| `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getBlockIds` + `toProsemirrorBlocks` + index maps in render/find/echo paths | aligned full-document block/hash/PM projection |
 | `getBlockIds(doc)` | per-block `getBlockId` | sort + unique-hash all blocks |
 | `toProsemirrorBlocks(doc)` | per-block `toProsemirrorBlock` | project the PM tree |
 | `serializeBlocks(blocks, hashes)` | per-block `serializeBlock` | allocate one unified runtime |
+| `serializeBlockBodies(blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
 | `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
 | `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
 
