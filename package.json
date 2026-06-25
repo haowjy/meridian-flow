@@ -32,7 +32,8 @@
     "dev:db:drop": "tsx tools/dev/drop-db.ts",
     "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
-    "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts"
+    "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
+    "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
