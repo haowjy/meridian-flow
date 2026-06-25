@@ -9,7 +9,8 @@ The persistence seam is split by concern:
   `read`, checkpoint, and compact.
 - `ReversalStore` owns write-level reversal state: write ordinal reservation,
   active/reversed write metadata queries, `readForReconstruction(docId)`,
-  `persistUndo`, `persistRedo`, and `readReversals`.
+  per-handle `mutationsForWrite` and the batch `mutationsForWrites` (one query for
+  multiple handles), `persistUndo`, `persistRedo`, and `readReversals`.
 
 `readForReconstruction` is the domain-level retained-log read used by cold
 undo/redo so checkpoint mechanics stay adapter-local; reversal code no longer
@@ -44,7 +45,9 @@ do not support creation get `invalid_write` instead of a thrown not-found.
 ### Codec (`src/codec/types.ts` — interface, `src/codec/create-codec.ts` — assembly)
 Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
 inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
-owns the PM-mapping dispatch. `serialize`/`parse` are the two directions.
+owns the PM-mapping dispatch. `serialize`/`parse` are the two directions; the
+per-block render path is `serializeBlock` (with hash prefix), or the batch
+`serializeBlocks` which allocates one unified runtime for all blocks.
 Pinned unified stringify options for canonical round-trip output. Concrete:
 `presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
 ProseMirror `Schema`; the package has no default Meridian schema.
@@ -60,6 +63,38 @@ the current ProseMirror projection hooks `toProsemirrorBlock` and `applyBlockDif
 v1 is y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
 composition root supplies Meridian's fiction schema. Hosts depend on the
 structural `AgentEditModel` port, not the concrete y-prosemirror model type.
+
+### Batch paths — preferred for multi-block operations
+
+The per-block helpers each re-scan the **whole document block list** to produce
+one block's result, so a per-block loop is **O(B²)**, not O(B):
+
+- `getBlockId(block)` resolves a unique hash against *all sibling blocks* (re-sorts and re-hashes every sibling per call).
+- `toProsemirrorBlock(doc, block)` rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
+- `Codec.serializeBlock` allocates its own unified runtime per block.
+
+Every batched write touches all of these (snapshot, render, find) plus once per
+staged write in `postCommitEchoes`. **Use the batch path for any multi-block op:**
+
+| Batch | Replaces (do not loop) | Does once |
+|---|---|---|
+| `getBlockIds(doc)` | per-block `getBlockId` | sort + unique-hash all blocks |
+| `toProsemirrorBlocks(doc)` | per-block `toProsemirrorBlock` | project the PM tree |
+| `serializeBlocks(blocks, hashes)` | per-block `serializeBlock` | allocate one unified runtime |
+| `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
+| `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
+
+Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
+`renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
+`serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
+(`resolver/block-hash.ts`), `afterSnapshot` precompute
+(`tool/mutation-commit.ts`), and `postCommitEchoes` memoizes one snapshot per
+response (`tool/response-staging.ts`). The Drizzle journal adapter commits a
+staged response in one multi-row INSERT via `appendBatch` (per-update
+`appendMutation` was deleted). The in-memory test journal implements the same
+batch API. See the [performance reference][perf] for measured numbers.
+
+[perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent

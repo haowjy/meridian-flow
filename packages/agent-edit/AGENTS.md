@@ -98,6 +98,19 @@ not yet fully realized — the apply core still calls ProseMirror-specific
 operations, so y-prosemirror is the only working implementation. Do not
 over-claim it as done; do not delete the seams.
 
+## Multi-block reads use the batch helpers
+
+`snapshotBlocks`, `renderBlockLines`, `serializeScopeBlocks`, `lookupBlockHash`,
+and the per-staged-write echo all walk the document block list. The per-block
+helpers (`getBlockId`, `toProsemirrorBlock`, `serializeBlock`) each re-scan all
+siblings or rebuild the whole ProseMirror tree, so a per-block loop is O(B²) — on
+large chapters this is the dominant cost. Use the batch path
+(`getBlockIds`, `toProsemirrorBlocks`, `serializeBlocks`, `blockHashesForDoc`)
+which does the document-wide work once. See [`.context/CONTEXT.md`](.context/CONTEXT.md)
+and the [performance reference][perf].
+
+[perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
+
 ## v1 scope
 
 y-prosemirror document model only. MDX and markdown codecs built in. Schema
