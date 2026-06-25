@@ -10,8 +10,6 @@ import { CORE_TOOL_NAMES, createCoreToolRegistrations, createToolRegistry } from
 function coreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
-    read: handler,
-    edit: handler,
     write: handler,
     list: handler,
     search: handler,
@@ -40,20 +38,23 @@ describe("createToolRegistry core tools", () => {
       expect(registration?.execution.type).toBe("server");
     }
 
-    expect(registry.getRegistration("read")?.definition.inputSchema).toMatchObject({
-      required: ["path"],
-    });
-    expect(registry.getRegistration("edit")?.definition.inputSchema).toMatchObject({
-      required: ["path", "edits"],
-      properties: {
-        edits: {
-          type: "array",
-          items: { required: ["oldText", "newText"] },
-        },
-      },
-    });
     expect(registry.getRegistration("write")?.definition.inputSchema).toMatchObject({
-      required: ["path", "content"],
+      required: ["command", "path"],
+      properties: {
+        command: { enum: ["create", "view", "insert", "replace", "undo", "redo"] },
+        path: { type: "string" },
+        content: { type: "string" },
+        find: { type: "string" },
+        in: { type: "string" },
+        around: { type: "string" },
+        after: { type: "string" },
+        before: { type: "string" },
+        all: { type: "boolean" },
+        to: { type: "string" },
+        from: { type: "string" },
+        last: { type: "integer", minimum: 1 },
+        format: { enum: ["auto", "full", "outline"] },
+      },
     });
     expect(registry.getRegistration("list")?.definition.inputSchema).toMatchObject({
       required: ["path"],
@@ -78,7 +79,11 @@ describe("createToolRegistry core tools", () => {
       },
     });
     expect(CORE_TOOL_NAMES).not.toContain("bash");
+    expect(CORE_TOOL_NAMES).not.toContain("read");
+    expect(CORE_TOOL_NAMES).not.toContain("edit");
     expect(registry.getRegistration("bash")).toBeUndefined();
+    expect(registry.getRegistration("read")).toBeUndefined();
+    expect(registry.getRegistration("edit")).toBeUndefined();
   });
 
   it("does not expose core tools by default", () => {
@@ -87,13 +92,13 @@ describe("createToolRegistry core tools", () => {
 
   it("throws when registering a duplicate tool name", () => {
     const registry = createToolRegistry();
-    const [read] = coreRegistrations();
-    if (!read) throw new Error("missing read registration");
+    const [write] = coreRegistrations();
+    if (!write) throw new Error("missing write registration");
 
-    registry.register(read);
+    registry.register(write);
 
-    expect(() => registry.register(read)).toThrow(
-      "Tool registration already exists for name: read",
+    expect(() => registry.register(write)).toThrow(
+      "Tool registration already exists for name: write",
     );
   });
 

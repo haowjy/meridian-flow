@@ -112,6 +112,10 @@ deliberate decisions.)
 another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
 -b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
 
+Clean up merged or abandoned work with `pnpm dev:prune-worktrees` from a
+checkout you are not removing. Start with `--auto --dry-run` or
+`--target <work-id|path|branch|pr> --dry-run`.
+
 ## Cross-repo linking
 
 - Links into the docs repo ([meridian-flow-docs]) use full GitHub URLs.

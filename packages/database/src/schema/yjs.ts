@@ -1,18 +1,32 @@
-import type { DocumentId, DocumentRestorePointId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  DocumentRestorePointId,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  check,
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, idColumn } from "./_shared";
-import { turns } from "./agent-threads";
+import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
+
+type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
+type MutationStatus = "active" | "reversed";
+type MutationReversedBy = "user" | "agent";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -59,6 +73,102 @@ export const documentYjsUpdates = pgTable(
   (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
 );
 
+export const documentYjsReversals = pgTable(
+  "document_yjs_reversals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    writeId: text("write_id").notNull(),
+    status: text("status").$type<ReversalStatus>().notNull(),
+    // No FK: compaction can delete the undo update row after expiring reversal metadata.
+    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedByUserId: uuid("reversed_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, {
+        onDelete: "set null",
+      }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("document_yjs_reversals_document_thread_write").on(
+      table.documentId,
+      table.threadId,
+      table.writeId,
+    ),
+    index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
+    check(
+      "document_yjs_reversals_status_valid",
+      sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
+    ),
+  ],
+);
+
+export const agentEditMutations = pgTable(
+  "agent_edit_mutations",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    wId: integer("w_id").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    writeId: text("write_id").notNull(),
+    status: text("status").$type<MutationStatus>().notNull().default("active"),
+    createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
+    // No FK: compaction can delete the update row while durable mutation metadata remains.
+    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }),
+    createdAt: createdAt(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedBy: text("reversed_by").$type<MutationReversedBy>(),
+  },
+  (table) => [
+    uniqueIndex("agent_edit_mutations_document_thread_write_id").on(
+      table.documentId,
+      table.threadId,
+      table.writeId,
+    ),
+    uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
+      table.documentId,
+      table.threadId,
+      table.wId,
+    ),
+    index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
+    index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
+    check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
+  ],
+);
+
+export const agentEditWidCounters = pgTable(
+  "agent_edit_wid_counters",
+  {
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    threadId: uuid("thread_id").$type<ThreadId>().notNull(),
+    nextWid: integer("next_wid").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
+);
+
 export const documentYjsHeads = pgTable("document_yjs_heads", {
   documentId: uuid("document_id")
     .$type<DocumentId>()
@@ -66,7 +176,7 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .references(() => documents.id, { onDelete: "cascade" }),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
   /** Must stay aligned with COLLAB_SCHEMA_VERSION in @meridian/prosemirror-schema. */
-  schemaVersion: integer("schema_version").notNull().default(1),
+  schemaVersion: integer("schema_version").notNull().default(3),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
   latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),

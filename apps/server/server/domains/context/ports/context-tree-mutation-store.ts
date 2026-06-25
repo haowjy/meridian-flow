@@ -59,15 +59,11 @@ export type ContextTreeMutationError =
 export interface ContextTreeMutationResult {
   /** Moved document id for files, or moved root folder id for directory moves. */
   movedNodeId: string;
-  /** Document mirrors whose source row or overwrite target changed and must be evicted. */
-  invalidatedDocumentIds: string[];
 }
 
 export interface ContextTreeDeleteResult {
   /** Document id for files, or folder id for directories. */
   deletedNodeId: string;
-  /** Deleted tracked document mirrors that must be evicted after commit. */
-  invalidatedDocumentIds: string[];
 }
 
 export interface ContextTreeMutationStore {

@@ -11,11 +11,26 @@
  * runtime composition root wires the right adapter based on GatewayConfig,
  * and route handlers never import concrete adapter factories.
  */
-import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "../domain/index.js";
+import type {
+  CancelledResultSettlement,
+  CancelledResultSettlementInput,
+  GenerateRequest,
+  GenerateResult,
+  ModelInfo,
+  StreamEvent,
+} from "../domain/index.js";
 
 export interface Gateway {
   stream(request: GenerateRequest): AsyncIterable<StreamEvent>;
   generate(request: GenerateRequest): Promise<GenerateResult>;
+  /**
+   * Reconcile an interrupted/cancelled call for billing correctness. The gateway
+   * resolves provider-specific behavior (for example provider metering lookups)
+   * and returns the result to persist, or null when there is nothing to settle.
+   */
+  settleCancelledResult?(
+    input: CancelledResultSettlementInput,
+  ): Promise<CancelledResultSettlement | null>;
   listModels?(): ModelInfo[];
   getDefaultModel(): string | undefined;
 }

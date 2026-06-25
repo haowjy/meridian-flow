@@ -44,6 +44,7 @@ export type {
 export type {
   BinaryFileEntry,
   BinaryFileRef,
+  ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,
   ContextListEntry,

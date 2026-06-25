@@ -4,6 +4,13 @@
   "sourceRoot": "packages/prosemirror-schema/src",
   "projectType": "library",
   "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/prosemirror-schema",
+        "command": "vitest run --passWithNoTests"
+      }
+    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {

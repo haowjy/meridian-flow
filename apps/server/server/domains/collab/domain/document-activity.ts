@@ -16,10 +16,12 @@ export async function touchDocumentActivity(
   const [scope] = await db
     .select({
       workId: contextSources.workId,
-      projectId: contextSources.projectId,
+      sourceProjectId: contextSources.projectId,
+      workProjectId: works.projectId,
     })
     .from(documents)
     .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+    .leftJoin(works, eq(works.id, contextSources.workId))
     .where(eq(documents.id, documentId))
     .limit(1);
 
@@ -39,11 +41,12 @@ export async function touchDocumentActivity(
   if (scope?.workId) {
     await db.update(works).set({ updatedAt: now }).where(eq(works.id, scope.workId));
   }
-  if (scope?.projectId) {
+  const projectId = scope?.sourceProjectId ?? scope?.workProjectId;
+  if (projectId) {
     await db
       .update(projects)
       .set({ updatedAt: now, lastActivityAt: now })
-      .where(eq(projects.id, scope.projectId));
+      .where(eq(projects.id, projectId));
   }
 }
 

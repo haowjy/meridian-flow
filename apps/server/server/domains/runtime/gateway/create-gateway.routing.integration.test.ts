@@ -128,19 +128,25 @@ describe("createGateway collision warnings", () => {
     ]);
   });
 
-  it("forwards onWarning through createGatewayFromEnv options", async () => {
+  it("forwards construction callbacks through createGatewayFromEnv options", async () => {
     const warnings: TraceSpan[] = [];
+    const infos: Array<{ provider: string; model?: string; message: string }> = [];
     const mock = await createMockOpenAICompatibleServer();
     try {
       const { gateway } = await createGatewayFromEnv(
         { MODEL_PROVIDER: "mock" },
-        { onWarning: (span) => warnings.push(span), mockBaseUrl: mock.baseUrl },
+        {
+          onInfo: (info) => infos.push(info),
+          onWarning: (span) => warnings.push(span),
+          mockBaseUrl: mock.baseUrl,
+        },
       );
 
       const result = await gateway.generate({
         messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }],
       });
       expect(result.provider).toBe("mock");
+      expect(infos).toEqual([{ provider: "mock", model: "mock-llm-v1", message: "gateway: mock" }]);
       // Single mock provider — no collision, but the seam accepts callbacks.
       expect(warnings).toEqual([]);
     } finally {

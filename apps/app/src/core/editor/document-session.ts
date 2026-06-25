@@ -22,10 +22,10 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
@@ -144,7 +144,7 @@ export class DocumentSession {
     transportFactory,
   }: DocumentSessionOptions) {
     this.documentId = documentId;
-    this.document = new Y.Doc();
+    this.document = createCollabYDoc();
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {
       deleteStaleVersionedIndexedDb(documentId);

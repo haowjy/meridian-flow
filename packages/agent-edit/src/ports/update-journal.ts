@@ -1,0 +1,117 @@
+import type {
+  CompactionResult,
+  JournalSnapshot,
+  ReversalActor,
+  ReversalRecord,
+  UpdateMeta,
+} from "./types.js";
+
+export interface JournalBatchAppendEntry {
+  docId: string;
+  update: Uint8Array;
+  meta: UpdateMeta;
+  /** Present for agent edit writes that need durable per-write metadata. */
+  mutation?: {
+    threadId: string;
+    turnId: string;
+    /** Stable idempotency id for this write (normally WriteContext.tool_use_id). */
+    writeId?: string;
+    /** Pre-reserved durable ordinal rendered as w<N>. */
+    wId?: number;
+  };
+}
+
+export interface JournalBatchAppendResult {
+  seq: number;
+  /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
+  wId?: number;
+}
+
+export interface ActiveWriteSummary {
+  writeId: string;
+  handle: string;
+  wId: number;
+  turnId: string;
+  createdSeq: number;
+}
+
+export interface WriteMutationRow {
+  writeId: string;
+  handle: string;
+  wId: number;
+  turnId: string;
+  createdSeq: number;
+  status: "active" | "reversed";
+  undoUpdateSeq?: number;
+}
+
+export interface JournalReadOptions {
+  since?: number;
+  until?: number;
+}
+
+/** Ordered Yjs update log: append/read/checkpoint/compact only. */
+export interface UpdateJournal {
+  append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+  /** Append multiple Yjs updates in one all-or-nothing transaction. */
+  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
+  checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
+  compact(docId: string, before: Date): Promise<CompactionResult>;
+}
+
+/** Write-level reversal store: write ordinals, mutation metadata, and undo/redo rows. */
+export interface ReversalStore {
+  /** Reserve the next durable per-(document, thread) write ordinal. */
+  reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
+  /** Reversal reconstruction must see retained update rows instead of checkpoint-hidden live-load rows. */
+  readForReconstruction(docId: string): Promise<JournalSnapshot>;
+  /** Latest active write for this document/thread, if one exists. */
+  latestActiveWrite(documentId: string, threadId: string): Promise<ActiveWriteSummary | undefined>;
+  /** Active writes in durable write order. */
+  activeWriteSummary(documentId: string, threadId: string): Promise<ActiveWriteSummary[]>;
+  /** Earliest forward journal sequence for this write, regardless of current mutation status. */
+  writeMinCreatedSeq(
+    documentId: string,
+    threadId: string,
+    handle: string,
+  ): Promise<number | undefined>;
+  /** Concrete mutation rows for one document/thread/write handle, used to target cold reconstruction. */
+  mutationsForWrite(
+    documentId: string,
+    threadId: string,
+    handle: string,
+  ): Promise<WriteMutationRow[]>;
+  /** Batched version — fetches mutation rows for multiple handles in one query. */
+  mutationsForWrites(
+    documentId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Map<string, WriteMutationRow[]>>;
+  persistUndo(
+    docId: string,
+    undoUpdate: Uint8Array,
+    records: readonly ReversalRecord[],
+    actor?: ReversalActor,
+  ): Promise<void>;
+  persistRedo(
+    docId: string,
+    redoUpdate: Uint8Array,
+    ref: { threadId: string; undoUpdateSeq: number },
+    meta: UpdateMeta,
+  ): Promise<{ consumed: boolean; seq?: number }>;
+  readReversals(
+    docId: string,
+    opts?: { threadId?: string; status?: ReversalRecord["status"][] },
+  ): Promise<ReversalRecord[]>;
+}
+
+export function writeHandle(wId: number): string {
+  return `w${wId}`;
+}
+
+export function parseWriteHandle(handle: string): number | undefined {
+  if (!/^w[1-9]\d*$/.test(handle)) return undefined;
+  const ordinal = Number(handle.slice(1));
+  return Number.isSafeInteger(ordinal) ? ordinal : undefined;
+}

@@ -1,64 +1,116 @@
-# collab — document spine
+# collab — server-side document infrastructure
 
-DocumentSyncService is the live document spine: the Yjs CRDT substrate plus the
-markdown bijection that every Meridian Flow rich document round-trips through.
+The Yjs editing engine lives in `@meridian/agent-edit` (`packages/agent-edit/`).
+This server domain supplies concrete persistence/transport adapters and exposes a
+`CollabDomain` for context, upload, route, and WS callers.
 
-## Canonical-representation invariant
+## Current shape
 
-Two representations, two different jobs — not competing sources of truth:
+| Concern | Location | Status |
+|---|---|---|
+| Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
+| Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
+| Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade wiring over package codec/model plus journal/coordinator |
+| Full-document markdown SET/read | `collab/domain/markdown-document.ts` | Server-side engine over package primitives; not package public API |
+| Journal/mutation persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` with mutation queries, lifecycle, checkpoint, and latest-update helpers |
+| Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
+| Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
+| In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
+| Document write read models | `collab/domain/document-activity.ts` | Production post-write hook for activity/projection |
 
-- **Markdown is the canonical *semantic* representation.** It is the meaning of
-  the document and the interchange format LLMs and humans read. Every editor
-  construct MUST round-trip losslessly to readable markdown.
-- **Yjs is the canonical *runtime/merge* representation.** It is the CRDT
-  substrate that merges concurrent edits without conflict and carries per-edit
-  provenance (origin tags in the update log). Markdown strings cannot be
-  3-way-merged; Yjs is what makes concurrent agent+human editing and attribution
-  possible.
+## Domain behavior
 
-The ProseMirror schema is the bijection that keeps them in sync: every Y.Doc
-state has exactly one markdown rendering, and back.
+### Full-document SET
 
-### Schema rule (enforced at the adapter boundary)
+`writeFromMarkdown` and `writeDocument` intentionally do not add a package
+`set` command. `domain/markdown-document.ts` parses markdown with the package
+codec, clones the live Y.Doc into a draft, deletes the ProseMirror fragment
+contents, inserts the parsed blocks through the package model, appends the
+resulting Yjs update to the journal, then applies that update to the live doc.
+Mutating the draft before append keeps the live doc from advancing if
+persistence fails.
 
-No node or mark may be added to the document schema without a lossless markdown
-serializer+parser pair. The structural spec lives in `@meridian/prosemirror-schema`
-(specs only); the markdown syntax lives in this domain's schema adapter
-(`domain/mdx-bridge.ts`). Adding a spec to the package without a serializer here is
-a defect — it breaks the markdown-native guarantee.
+After a full-document write has appended to the journal and applied to the live
+Y.Doc, `setMarkdown` / `editMarkdown` fire the injected document-write hook. The
+production hook updates document activity rollups and `documents.markdownProjection`.
+It is awaited so callers see fresh read models when the hook succeeds, but hook
+failures are logged through `EventSink` and do not fail or roll back the
+committed journal write.
 
-### What lives where
+### Reads
 
-| Concern | Representation |
-|---|---|
-| Text, headings, styling, figures, math, tables | ProseMirror nodes/marks → markdown |
-| *Who* edited each span, and *when* | Yjs update-log origin tags (provenance metadata; not in the markdown body) |
+`readAsMarkdown` is a thin codec/model read under `DocumentCoordinator` access.
+It serializes raw markdown without block-hash view prefixes.
 
-## Transport — Hocuspocus-owned live documents
+### Lifecycle
 
-Live collaborative editing runs on **Hocuspocus** at `/ws/yjs`
-(`routes/ws/yjs.ts`). Hocuspocus owns the in-memory `Y.Doc` for connected
-clients; `hocuspocus-collab-adapter.ts` loads state from the durable update log,
-persists connection-originated updates with attribution, and debounces snapshot
-writes. The client uses `@hocuspocus/provider` via
-`hocuspocus-document-transport.ts`.
+`createServerDocumentLifecycle.ensureDocument(docId)` upserts the
+`document_yjs_heads` row and creates an empty Yjs checkpoint when the journal has
+no state. The Yjs tables FK to `documents.id`; callers are expected to create the
+`documents` row before ensuring collab state.
 
-`DocumentSyncService` retains a separate on-demand **mirror cache** for
-server-side markdown operations (`getOrCreateMirror`, `editFromMarkdown`,
-`applyUpdate`, checkpoints) — not a competing WebSocket owner. Facade
-`forgetMirror` unloads live Hocuspocus documents via `closeConnections`.
+### Origin translation
 
-## Deferred (post-v1) — explicit non-goals
+Public origins remain collab-shaped:
 
-Recorded so they are not built in a way that violates the invariant above:
+- `{ type: "agent", actorTurnId }` → `agent:<turnId>` with `actorTurnId`
+- `{ type: "user", userId/actorUserId }` → `human:<userId>`
+- `{ type: "import", userId, ... }` → `human:<userId>`; userless imports map to
+  `system`
+- `{ type: "system" }` → `system`
 
-- **Comments & suggestions as first-class annotations.** When built, their
-  *content* must be markdown-representable (e.g. a MyST directive or
-  CriticMarkup-style inline markup) so an LLM reading the doc sees them; Yjs
-  tracks authorship and accept/reject.
-- **Per-annotation visibility scoping** (agent-visible / human-only /
-  agent-editable). This means the agent-facing markdown becomes a *filtered
-  projection* of the full document, not the raw doc. The read seam
-  (`readAsMarkdown` / `ContextPort.read`) takes no audience parameter today;
-  adding `{ audience }` later is a purely additive change. Design from
-  "it's a filtered projection," not a single global markdown string.
+Attribution maps package `human:<userId>` back to API `originType: "user"`.
+
+### Hocuspocus persistence
+
+The WS route calls the collab domain hooks:
+
+- `loadHocuspocusDocument` replays checkpoint + updates via `loadDocumentState`.
+- `persistConnectionUpdate` appends the connection update to the journal outside
+  the coordinator; pending appends are tracked by document. It first rejects any
+  update carrying a struct in the reserved clientID band (see below): the update
+  is dropped and the document is flagged unsafe-for-checkpoint.
+- `storeHocuspocusDocument` drains pending appends for that document, captures
+  the latest persisted update seq, then writes a checkpoint from
+  `Y.encodeStateAsUpdate(document)`. The seq is captured before encoding so a
+  concurrent append is replayed instead of hidden by the checkpoint.
+- `drainHocuspocusPersistence` waits for tracked appends. Metrics report pending
+  depth, oldest pending age, failed/dropped append count, live docs, and open
+  Hocuspocus connections.
+- Connection-update appends are collaborative keystroke persistence, not
+  document-level write events, so they do not fire the activity/projection hook.
+
+### Reserved Yjs clientID band
+
+Yjs identifies CRDT items by `(clientID, clock)`; two writers sharing a clientID
+corrupt the doc permanently. The band `[0, RESERVED_CLIENT_ID_MAX]` (999, defined
+in `@meridian/prosemirror-schema`) is reserved for **server-authored reversal**
+writing — `composition.ts` injects `AGENT_EDIT_UNDO_CLIENT_ID` (999) into the
+agent-edit write tool. Two invariants keep the band exclusive:
+
+- **No live writer draws into the band.** Every content-authoring `Y.Doc` (the
+  browser editor and all server adapters) is built via `createCollabYDoc()`,
+  which re-rolls any clientID `<= 999`. agent-edit stays host-agnostic: its
+  forward runtime docs come from an injected `createRuntimeDoc` factory wired to
+  `createCollabYDoc` at this composition root.
+- **Inbound band updates are rejected at ingest.** `persistConnectionUpdate`
+  drops any connection update with a struct in the band and marks the doc
+  unsafe-for-checkpoint, so a forged/misbehaving client can't collide with the
+  reversal stream.
+
+Reversal is served entirely by cold reconstruction (no live `Y.UndoManager`).
+Cold-reconstruction latency stays interactive because checkpoint freshness is
+maintained by Hocuspocus's debounced store (`debounce: 2000, maxDebounce: 10000`
+in the WS route) — a checkpoint every ≤10s of active editing bounds the replay
+window.
+
+## Stable server-side helpers
+
+`document-activity.ts` contains DB helpers for document write read models:
+`touchDocumentActivity` and `updateMarkdownProjection`. `createCollabDomain`
+wires them through the facade document-write hook; the in-memory collab domain
+passes no hook.
+
+## Deferred cutover work
+
+- Keep schema-parity and TipTap extension work in the package cutover plan.

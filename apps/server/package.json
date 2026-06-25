@@ -11,13 +11,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests --config vitest.config.ts",
     "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts",
-    "smoke:phase4": "tsx scripts/phase4-smoke.ts",
-    "smoke:phase6": "tsx scripts/phase6-smoke.ts"
+    "smoke:phase4": "tsx scripts/phase4-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "catalog:",
     "@aws-sdk/client-s3": "^3.1062.0",
     "@aws-sdk/s3-request-presigner": "^3.1062.0",
+    "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",

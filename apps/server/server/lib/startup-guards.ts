@@ -1,12 +1,11 @@
 /**
  * Startup guards: pure config validation plus the boot-time assertion wrapper.
- * The checks fail fast for missing persistence, live model routing without real
- * provider keys, cloud object storage without credentials, and production auth
- * placeholders.
+ * The checks fail fast for missing persistence, cloud object storage without
+ * credentials, and production auth placeholders.
  */
-import type { BackendTier, ModelProvider, ObjectStoreProvider } from "./backend-policy.js";
+import type { ObjectStoreProvider } from "./backend-policy.js";
 
-const DEFAULT_DEV_SECRETS = new Set(["", "dev-openai-key", "dev-workos-key", "dev-workos-client"]);
+const DEFAULT_DEV_SECRETS = new Set(["", "dev-workos-key", "dev-workos-client"]);
 const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
 
 const PLACEHOLDER_SECRET_PATTERNS: Partial<Record<keyof ApiStartupEnv, RegExp[]>> = {
@@ -24,11 +23,6 @@ export type ApiStartupEnv = {
   NODE_ENV: "development" | "test" | "production";
   APP_ENV: "dev" | "staging" | "production";
   DATABASE_URL?: string;
-  MODEL_PROVIDER: ModelProvider;
-  backends: BackendTier;
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
   OBJECT_STORE_PROVIDER: ObjectStoreProvider;
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
@@ -87,30 +81,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   const allowWorkosTestApiKey = config.APP_ENV === "staging";
 
   requireValue(errors, "DATABASE_URL", config.DATABASE_URL, "required for persistence.");
-
-  const hasRealAnthropicKey = isRealSecret("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY);
-  const hasRealOpenAiKey = isRealSecret("OPENAI_API_KEY", config.OPENAI_API_KEY);
-  const hasRealDeepseekKey = isRealSecret("DEEPSEEK_API_KEY", config.DEEPSEEK_API_KEY);
-  if (config.MODEL_PROVIDER === "anthropic" && !hasRealAnthropicKey) {
-    errors.push(
-      "ANTHROPIC_API_KEY: required and must be non-placeholder when MODEL_PROVIDER=anthropic.",
-    );
-  }
-  if (config.MODEL_PROVIDER === "openai" && !hasRealOpenAiKey) {
-    errors.push("OPENAI_API_KEY: required and must be non-placeholder when MODEL_PROVIDER=openai.");
-  }
-  if (
-    config.backends === "live" &&
-    config.MODEL_PROVIDER === "auto" &&
-    !hasRealAnthropicKey &&
-    !hasRealOpenAiKey &&
-    !hasRealDeepseekKey
-  ) {
-    errors.push(
-      "MODEL_PROVIDER=auto requires at least one real provider key in live mode " +
-        "(ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY).",
-    );
-  }
 
   if (config.OBJECT_STORE_PROVIDER === "s3") {
     requireValue(
@@ -177,11 +147,6 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     NODE_ENV: env.NODE_ENV,
     APP_ENV: env.APP_ENV,
     DATABASE_URL: env.DATABASE_URL,
-    MODEL_PROVIDER: backends.model,
-    backends: backends.backends,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     OBJECT_STORE_PROVIDER: backends.objectStore,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,

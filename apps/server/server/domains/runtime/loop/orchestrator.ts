@@ -84,7 +84,6 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { readOpenRouterGenerationId } from "../gateway/adapters/openrouter/provider-data.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -92,13 +91,6 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import {
-  buildReconciliationStub,
-  createReconcileSignal,
-  type OpenRouterReconcileConfig,
-  reconcileInterruptedModelResult,
-  shouldPersistCancelledModelCall,
-} from "./cancel-settlement.js";
 import { type CheckpointArtifactFlushPort, createCheckpointSession } from "./checkpoint-session.js";
 import {
   type CheckpointAutoResumePolicy,
@@ -137,6 +129,11 @@ export interface OrchestratorRepositories {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
+export interface ResponseCommitEcho {
+  documentId: string;
+  text: string;
+}
+
 export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
@@ -157,8 +154,13 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
-  /** OpenRouter /generation reconciliation for interrupted turns without stream usage. */
-  openRouterReconcile?: OpenRouterReconcileConfig;
+  responseWrites: {
+    commitResponse(
+      responseId: string,
+      ctx: { threadId: ThreadId; turnId: TurnId },
+    ): Promise<ResponseCommitEcho[]>;
+    rollbackResponse(responseId: string): Promise<void>;
+  };
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -301,6 +303,21 @@ function createLocalTurn(input: {
   };
 }
 
+function createLocalSystemTurn(input: { threadId: ThreadId; prevTurnId: TurnId | null }): Turn {
+  const now = toIsoString(new Date());
+  return {
+    ...createLocalTurn({
+      threadId: input.threadId,
+      prevTurnId: input.prevTurnId,
+      role: "system",
+      status: "complete",
+    }),
+    finishReason: "end_turn",
+    completedAt: now,
+    createdAt: now,
+  };
+}
+
 // ── Emit helper ──
 // Appends one event to the durable journal and yields it. Used for
 // non-transactional events (stream.delta, tool.executing) that don't need
@@ -421,6 +438,7 @@ async function persistModelResponse(input: {
   turnAccounting: TurnAccounting;
   blockSeq: number;
 }): Promise<{
+  responseId: string;
   updatedTurn: Turn;
   createdBlocks: Block[];
   toolCalls: ReturnType<typeof collectToolCalls>;
@@ -449,7 +467,7 @@ async function persistModelResponse(input: {
       sequence: responseSeq,
       provider: result.provider,
       model: result.model,
-      providerRequestId: readOpenRouterGenerationId(result.providerData) ?? null,
+      providerRequestId: result.providerRequestId ?? null,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens ?? null,
@@ -518,12 +536,13 @@ async function persistModelResponse(input: {
     });
 
     return {
-      result: { updatedTurn, createdBlocks },
+      result: { responseId, updatedTurn, createdBlocks },
       events,
     };
   });
 
   return {
+    responseId: persistedResponse.result.responseId,
     updatedTurn: persistedResponse.result.updatedTurn,
     createdBlocks: persistedResponse.result.createdBlocks,
     toolCalls,
@@ -543,33 +562,24 @@ async function* settleAndFinalizeCancelled(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
-  provider: string;
-  generationId?: string;
 }): AsyncGenerator<OrchestratorEvent> {
   let currentAssistantTurn = input.currentAssistantTurn;
   let blockSeq = input.blockSeq;
-  let settleResult = input.result;
-  if (!settleResult && input.generationId) {
-    settleResult = buildReconciliationStub({
-      model: input.model,
-      provider: input.provider,
-      generationId: input.generationId,
-    });
-  }
+  const settlement = await input.deps.gateway.settleCancelledResult?.({
+    model: input.model,
+    ...(input.result ? { result: input.result } : {}),
+    ...(input.result?.providerRequestId
+      ? { providerRequestId: input.result.providerRequestId }
+      : {}),
+  });
 
-  if (settleResult && shouldPersistCancelledModelCall(settleResult)) {
-    const reconcileSignal = createReconcileSignal();
-    settleResult = await reconcileInterruptedModelResult(
-      input.deps.openRouterReconcile,
-      settleResult,
-      reconcileSignal,
-    );
+  if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
       currentAssistantTurn,
-      result: settleResult,
+      result: settlement.result,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq,
@@ -578,6 +588,7 @@ async function* settleAndFinalizeCancelled(input: {
     blockSeq = persistedResponse.nextBlockSeq;
     input.allBlocks.push(...persistedResponse.createdBlocks);
     yield* persistedResponse.events;
+    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId);
   }
 
   yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
@@ -633,6 +644,53 @@ async function persistPermissionDenial(input: {
     };
   });
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
+}
+
+async function persistResponseCommitEcho(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  turn: Turn;
+  echoes: readonly ResponseCommitEcho[];
+  blockSeq: number;
+}): Promise<{
+  turn: Turn | null;
+  blocks: Block[];
+  events: OrchestratorEvent[];
+  nextBlockSeq: number;
+}> {
+  const visibleEchoes = input.echoes.filter((echo) => echo.text.trim().length > 0);
+  if (visibleEchoes.length === 0) {
+    return { turn: null, blocks: [], events: [], nextBlockSeq: input.blockSeq };
+  }
+
+  const textContent = visibleEchoes.map((echo) => echo.text).join("\n\n");
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const systemTurn = createLocalSystemTurn({
+      threadId: input.threadId,
+      prevTurnId: input.turn.id,
+    });
+    const block = contentForBlockInput({
+      turnId: systemTurn.id,
+      blockType: "text",
+      sequence: 0,
+      textContent,
+      status: "complete",
+    });
+    return {
+      result: { turn: systemTurn, blocks: [localBlockFromEvent(block)] },
+      events: [
+        { type: "turn.created", turn: systemTurn },
+        { type: "block.upserted", block },
+      ],
+    };
+  });
+
+  return {
+    turn: persisted.result.turn,
+    blocks: persisted.result.blocks,
+    events: persisted.events,
+    nextBlockSeq: input.blockSeq,
+  };
 }
 
 async function completeTurn(input: {
@@ -716,6 +774,15 @@ async function* generateEvents(
   // Local state: accumulate turns + blocks to avoid re-reading the entire
   // thread from the DB on every tool-loop iteration.
   let currentAssistantTurn: Turn = assistantTurn;
+  let activeResponseId: string | undefined;
+
+  async function rollbackActiveResponse(): Promise<void> {
+    if (!activeResponseId) return;
+    const responseId = activeResponseId;
+    activeResponseId = undefined;
+    await deps.responseWrites.rollbackResponse(responseId);
+  }
+
   try {
     const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
@@ -798,7 +865,6 @@ async function* generateEvents(
       // usage can be persisted before turn.cancelled.
       let result: GenerateResult | undefined;
       let streamModel = request.model ?? "unknown";
-      let streamProvider = request.provider ?? "unknown";
       for await (const event of gateway.stream(request)) {
         if (input.signal?.aborted) {
           cancelRequested = true;
@@ -806,7 +872,6 @@ async function* generateEvents(
 
         if (event.type === "start") {
           streamModel = event.model;
-          streamProvider = event.provider;
         }
 
         const mapped = mapStreamEvent(event);
@@ -845,8 +910,6 @@ async function* generateEvents(
           allBlocks,
           result,
           model: result?.model ?? streamModel,
-          provider: result?.provider ?? streamProvider,
-          generationId: result ? readOpenRouterGenerationId(result.providerData) : undefined,
         });
         return;
       }
@@ -880,6 +943,7 @@ async function* generateEvents(
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
+      const responseId = persistedResponse.responseId;
       const toolCallsFromResult = persistedResponse.toolCalls;
       allBlocks.push(...persistedResponse.createdBlocks);
       yield* persistedResponse.events;
@@ -902,13 +966,18 @@ async function* generateEvents(
       // turn are numbered contiguously regardless of which iteration
       // created them.
       if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
+        activeResponseId = responseId;
         if (input.signal?.aborted) {
+          await rollbackActiveResponse();
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
 
+        // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+        // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
         for (const call of toolCallsFromResult) {
           if (input.signal?.aborted) {
+            await rollbackActiveResponse();
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
@@ -963,6 +1032,7 @@ async function* generateEvents(
             call,
             {
               thread,
+              responseId,
               state: checkpointState,
               checkpointSession,
               checkpointAutoResume,
@@ -974,7 +1044,33 @@ async function* generateEvents(
           currentAssistantTurn = checkpointState.currentTurn;
           blockSeq = checkpointState.blockSeqRef.value;
           yield* dispatched.events;
+          if (dispatched.cancelled || input.signal?.aborted) {
+            await rollbackActiveResponse();
+            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+            return;
+          }
         }
+        if (input.signal?.aborted) {
+          await rollbackActiveResponse();
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          return;
+        }
+        const commitEchoes = await deps.responseWrites.commitResponse(responseId, {
+          threadId: input.threadId,
+          turnId: currentAssistantTurn.id,
+        });
+        const persistedCommitEcho = await persistResponseCommitEcho({
+          deps,
+          threadId: input.threadId,
+          turn: currentAssistantTurn,
+          echoes: commitEchoes,
+          blockSeq,
+        });
+        blockSeq = persistedCommitEcho.nextBlockSeq;
+        if (persistedCommitEcho.turn) allTurns.push(persistedCommitEcho.turn);
+        allBlocks.push(...persistedCommitEcho.blocks);
+        yield* persistedCommitEcho.events;
+        activeResponseId = undefined;
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.
         continue;
@@ -993,6 +1089,13 @@ async function* generateEvents(
       return;
     }
   } catch (err) {
+    try {
+      await rollbackActiveResponse();
+    } catch (_rollbackError) {
+      // Keep the original turn failure visible. rollbackResponse invalidates
+      // staged runtimes before surfacing cleanup failures, so a second failure
+      // here should not hide the error that broke the response.
+    }
     // Unexpected exception (e.g. DB failure, tool crash). If the signal is
     // already aborted, treat as cancellation; otherwise finalize as error.
     yield* await finalizeTurnOnGeneratorFailure(deps, {
@@ -1002,6 +1105,7 @@ async function* generateEvents(
       signal: input.signal,
     });
   } finally {
+    await rollbackActiveResponse().catch(() => undefined);
     // Helper result delivery is flushed by callers after their live-turn registry
     // is cleared. Draining here would race queued helper system turns into a
     // still-running parent thread.

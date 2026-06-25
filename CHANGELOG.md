@@ -2,13 +2,92 @@
 
 ## [Unreleased]
 
-- Dev tooling: clarified migration drift remediation (migrate/apply-functions for simple catch-up, reset for divergence), removed duplicate env/git helpers, and added `pnpm dev:gc-dbs` for stale worktree DB cleanup.
+- Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+
+- Chat editing: a writer can now reverse the agent's edits themselves, not just
+  the agent. New authenticated endpoint reverses (undo/redo) at three
+  granularities — a single write (`w<N>`), a whole turn, or the entire thread —
+  and the reversal is attributed to the user. Reversing a turn/thread that was
+  undone in several steps now restores the whole scope in one call instead of
+  silently leaving part reversed.
+
+- Collab: agent/user undo now correctly marks the edit reversed in Postgres.
+  Previously the Drizzle journal matched reversal by the wrong key, so in
+  production an undone write stayed flagged active and undo availability drifted;
+  the document content reverted but the bookkeeping lied. A cross-adapter
+  conformance contract now pins in-memory and Postgres to the same behavior.
+
+- Dev (`pnpm dev`): Tailscale sharing works across multiple worktrees at once.
+  `tools/dev` now owns the Tailscale-serve → app mapping on deterministic
+  per-worktree ports, so each worktree's app/www gets its own stable
+  `https://<node>.ts.net:<port>` instead of two worktrees fighting over `:443`
+  and serving a proxy 404.
+
+- Server DB: completed the Drizzle thread repository contract for usage/cost
+  rollups. Threads now persist `total_cost_usd`; turns persist response count,
+  latest model/provider, reasoning/cache tokens, request/response metadata; model
+  responses persist reasoning/cache tokens; block rows persist provider metadata.
+  Drizzle now maps the same thread/turn/model-response semantics as the
+  in-memory conformance adapter, including decimal zero normalization.
+
+- `packages/agent-edit`: undo/redo now runs on a single cold reconstruction path;
+  the live `Y.UndoManager` ("hot") path is deleted. Behavior is unchanged for
+  callers — agent undo still reverts only the agent's edits and preserves
+  overlapping human edits. Public API drops `WriteTool.registry` and the
+  `undoRegistry` option; adds an optional `createRuntimeDoc` so the host controls
+  forward-write doc creation.
+
+- Collab: a Yjs clientID band `[0,999]` is reserved for server-authored reversal.
+  The browser editor and server docs draw their clientID outside the band, and
+  inbound collaboration updates carrying a band clientID are rejected at ingest —
+  so agent reversal authoring can never collide with a real collaborator's edit
+  stream.
+
+- Chat editing: the agent now edits documents through one `write(command=...)`
+  tool (create / view / insert / replace / undo / redo) backed by
+  `@meridian/agent-edit`. Edits land as real Yjs collaborator operations —
+  character-level, position-anchored — so multiple people and the agent can edit
+  the same document live, and undo/redo is native (never silently no-ops). The
+  old `read`/`edit`/full-replace `write` tools are gone.
+
+- `packages/agent-edit`: `write()` returns a structured `WriteOutcome`
+  (`command`, `status`, `isError`, `text`); hosts read the envelope instead of
+  parsing status out of the text. Package is host-agnostic: it requires an
+  injected ProseMirror schema and carries no Meridian dependency
+  (`@meridian/prosemirror-schema` is devDependency-only). Public API trimmed to
+  the supported surface. Yjs+ProseMirror is the v1 content model; a swappable
+  non-ProseMirror content model is deferred (GH #70).
+
+- Server collab: full-document markdown engine extracted out of `composition.ts`
+  into a focused module; `CollabDomain` split into narrow ports
+  (`AgentEditAccess`, `MarkdownDocumentStore`, `DocumentProjectionRefresher`,
+  `DocumentCheckpoints`, `DocumentAttribution`, `CollabTransport`).
+
+- Runtime gateway: cancelled-call settlement moved behind a provider-neutral
+  `Gateway.settleCancelledResult` hook; the orchestrator/loop no longer reference
+  any model provider by name, so a new provider needs only a gateway adapter.
+
+- Dev (`pnpm dev`): the per-worktree `DATABASE_URL` rewrite is injected directly
+  into the tmux pane instead of trusting the launching shell's direnv state — a
+  stale direnv cache no longer boots the server against the wrong database. The
+  resolved DB name is logged at launch.
+
+- Dev (`pnpm dev`): fail fast when the live database has drifted from the repo's
+  migration baseline (compares applied vs expected migration hashes) instead of
+  failing later, deep in feature code, on the first schema mismatch.
+
+- `packages/agent-edit`: scaffold `@meridian/agent-edit` with port interfaces
+  (`UpdateJournal`, `DocumentCoordinator`, `ActorSessionStore`, `Codec`,
+  `DocumentModel`, `ComponentSpec`) — types only, no implementations yet.
+
+- Dev tooling: clarified migration drift remediation (migrate/apply-functions
+  for simple catch-up, reset for divergence), removed duplicate env/git helpers,
+  and added `pnpm dev:gc-dbs` for stale worktree DB cleanup.
 
 - Test suite pruning: deleted low-value contract/helper tests, in-memory
   conformance wrappers, skipped DB conformance wrappers, and duplicate golden
   coverage; collapsed broad runtime, gateway, MDX, turn-reducer, and WS suites
-  to representative boundary cases; removed additional low-value dev-tool,
-  package, route-helper, context-helper, and app presentation tests.
+  to representative boundary cases.
 
 - Brand mark: compass needle on a cream-jade disc with hairline ring (disc-cream-ring);
   replaces the bare needle and cinnabar seal-square favicon. Proto route at

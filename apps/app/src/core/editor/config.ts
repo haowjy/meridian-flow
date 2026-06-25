@@ -24,15 +24,12 @@ import {
   MeridianHardBreak,
   MeridianHorizontalRule,
   MeridianImage,
+  MeridianJsxContainer,
+  MeridianJsxLeaf,
   MeridianLink,
   MeridianListItem,
-  MeridianMathDisplay,
   MeridianOrderedList,
   MeridianStrong,
-  MeridianTable,
-  MeridianTableCell,
-  MeridianTableHeader,
-  MeridianTableRow,
 } from "./extensions/meridian-extensions";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
@@ -229,12 +226,9 @@ export function createEditorExtensions({
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianMathDisplay,
-    MeridianTable,
-    MeridianTableRow,
-    MeridianTableCell,
-    MeridianTableHeader,
     MeridianImage,
+    MeridianJsxLeaf,
+    MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: figureRenderContext?.projectId,
       documentId: figureRenderContext?.documentId,

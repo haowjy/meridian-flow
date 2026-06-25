@@ -11,7 +11,7 @@ streaming `Gateway` port.
 
 | Concern | Detail |
 |---|---|
-| `Gateway` port | `stream(request) -> AsyncIterable<StreamEvent>`, `generate(request) -> GenerateResult`, optional `listModels()` |
+| `Gateway` port | `stream(request) -> AsyncIterable<StreamEvent>`, `generate(request) -> GenerateResult`, optional `settleCancelledResult()` and `listModels()` |
 | `ProviderAdapter` port | per-provider streaming implementation (Anthropic, OpenAI Responses, OpenAI-compatible) |
 | Routing | `ProviderRegistry` maps model IDs to adapters; `resolveRoute` picks adapter + model for a request |
 | Retry/fallback | exponential back-off and optional ordered fallback only before output has been emitted |
@@ -19,8 +19,8 @@ streaming `Gateway` port.
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptTimeoutMs` policy; `createGatewayFromEnv` for env-driven setup |
 | Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
-| OpenRouter | Restored via `openai-compatible` adapter (config entry). Provider-reported cost path via `/generation` enrichment. |
-| Cancel settlement | `cancel-settlement.ts` — soft-cancel/drain on user abort + cancel-on-disconnect (connectionToken ownership). Idempotent debits. |
+| OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
+| Cancel settlement | `Gateway.settleCancelledResult()` owns interrupted-call reconciliation and persist decisions. Generic token/missing-usage handling lives in `gateway/domain/cancel-settlement.ts`; OpenRouter-specific `/generation` settlement lives under `gateway/adapters/openrouter/`. The loop only asks the gateway to settle and then finalizes cancellation. |
 
 Canonical gateway types live in `gateway/domain/types.ts`.
 
@@ -49,8 +49,9 @@ skeleton and delegates the moving parts.
 `OrchestratorDeps` is fully required: gateway, repos, package repository, tool
 registry/executor, project preferences, permission gate, credit ledger,
 checkpoint artifact flush, child-run coordinator, checkpoint registry, and
-`EventSink` are all explicit dependencies. Disabled behavior is represented by
-explicit adapters (for example no-op sinks), not by omitted deps.
+`EventSink` are all explicit dependencies. Provider-specific model-call behavior
+stays behind the gateway port. Disabled behavior is represented by explicit
+adapters (for example no-op sinks), not by omitted deps.
 
 ## tools — registry, executor, and handlers
 
@@ -111,6 +112,10 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Model response lifecycle** — `persistModelResponse` mints the response id
+  used by tool handlers. After all tool results for that response are persisted,
+  the orchestrator commits response-scoped agent-edit writes; cancellation paths
+  roll the response buffer back before finalizing the turn as cancelled.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.

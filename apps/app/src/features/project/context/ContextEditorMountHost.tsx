@@ -28,12 +28,15 @@
  * React commits the unmount cleanup BEFORE the next render's mount effect for
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
-import { type ReactNode, useEffect, useRef } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
+
+const EditorView = lazy(() =>
+  import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
+);
 
 const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
 
@@ -126,33 +129,35 @@ export function ContextEditorMountHost({
 
   return (
     <div className="relative min-h-0 flex-1">
-      {trackedTabs.map((tab) => {
-        if (!mounted.has(tab.documentId)) return null;
-        const isActive = tab.documentId === activeTabId;
-        return (
-          <div
-            key={tab.documentId}
-            data-context-editor-document-id={tab.documentId}
-            className={cn(
-              // Each editor fills the host's frame; only the active one is
-              // visible. `hidden` keeps DOM/state alive without painting.
-              "absolute inset-0 flex min-h-0 flex-col",
-              isActive ? "" : "hidden",
-            )}
-            // Defensive: aria-hidden hides background editors from AT.
-            aria-hidden={!isActive}
-          >
-            {/* Filename chrome is host-owned: the context tab strip names the
-                active file, so EditorView renders no redundant header bar. */}
-            <EditorView
-              projectId={projectId}
-              documentId={tab.documentId}
-              schemaType={tab.schemaType}
-              toolbarLeading={isActive ? toolbarLeading : undefined}
-            />
-          </div>
-        );
-      })}
+      <Suspense fallback={null}>
+        {trackedTabs.map((tab) => {
+          if (!mounted.has(tab.documentId)) return null;
+          const isActive = tab.documentId === activeTabId;
+          return (
+            <div
+              key={tab.documentId}
+              data-context-editor-document-id={tab.documentId}
+              className={cn(
+                // Each editor fills the host's frame; only the active one is
+                // visible. `hidden` keeps DOM/state alive without painting.
+                "absolute inset-0 flex min-h-0 flex-col",
+                isActive ? "" : "hidden",
+              )}
+              // Defensive: aria-hidden hides background editors from AT.
+              aria-hidden={!isActive}
+            >
+              {/* Filename chrome is host-owned: the context tab strip names the
+                  active file, so EditorView renders no redundant header bar. */}
+              <EditorView
+                projectId={projectId}
+                documentId={tab.documentId}
+                schemaType={tab.schemaType}
+                toolbarLeading={isActive ? toolbarLeading : undefined}
+              />
+            </div>
+          );
+        })}
+      </Suspense>
     </div>
   );
 }

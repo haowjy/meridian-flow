@@ -16,7 +16,11 @@ import {
 import { createPaymentProviderFromEnv } from "../domains/billing/payment-provider-factory.js";
 import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
 import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
-import { createDocumentSyncService, type DocumentSyncService } from "../domains/collab/index.js";
+import {
+  type CollabDomain,
+  createCollabDomain,
+  createInMemoryCollabDomain,
+} from "../domains/collab/index.js";
 import {
   createCheckpointArtifactFlush,
   createDrizzleFigureDocumentRepository,
@@ -109,7 +113,10 @@ import {
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
-import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "./wired-core-tools.js";
 
 type AgentPackageStore = { readonly phase: "skeleton" };
 
@@ -124,7 +131,7 @@ export type AppServices = {
   hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
-  documentSync: DocumentSyncService;
+  documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -163,7 +170,7 @@ export type ProductionAppPorts = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   eventSink: EventSink;
-  documentSync: DocumentSyncService;
+  documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   runtimeTools: RuntimeToolRegistry;
   projects: ProjectBootstrapRepository;
@@ -188,7 +195,6 @@ export type ProductionAppPorts = {
   results: ResultRepository;
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
-  openRouterReconcile?: { apiKey: string; baseUrl?: string };
 };
 
 export async function createProductionAppPorts(input: {
@@ -199,6 +205,18 @@ export async function createProductionAppPorts(input: {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
   const { gateway } = await createGatewayFromEnv(environment, {
+    onInfo: (info) => {
+      emitEvent(eventSink, {
+        level: "info",
+        source: "gateway",
+        name: "gateway.resolved",
+        payload: {
+          message: info.message,
+          provider: info.provider,
+          model: info.model ?? null,
+        },
+      });
+    },
     onWarning: (span) => {
       emitEvent(eventSink, {
         level: "warn",
@@ -214,7 +232,7 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const documentSync = createDocumentSyncService({ db, documentAccess, eventSink });
+  const documentSync = createCollabDomain({ db, eventSink });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -290,12 +308,6 @@ export async function createProductionAppPorts(input: {
     results,
     promotionService,
     documentAccess,
-    openRouterReconcile: environment.OPENROUTER_API_KEY
-      ? {
-          apiKey: environment.OPENROUTER_API_KEY,
-          baseUrl: environment.OPENROUTER_BASE_URL,
-        }
-      : undefined,
   };
 }
 
@@ -308,9 +320,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const checkpointRegistry = createCheckpointRegistry();
   const toolRegistry = createToolRegistry();
+  const responseWrites = createAgentEditResponseWriteLifecycle({
+    documentSync: ports.documentSync,
+    eventSink: ports.eventSink,
+  });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
+    documentSync: ports.documentSync,
+    responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
@@ -401,7 +419,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
-    openRouterReconcile: ports.openRouterReconcile,
+    responseWrites,
   });
   runTurnProxy.bind(orchestrator);
 
@@ -460,50 +478,7 @@ export function createInMemoryAppServices(): AppServices {
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
 
-  const documentSync: DocumentSyncService = {
-    async writeDocument() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async editDocument() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    bindHocuspocus() {},
-    async loadHocuspocusDocument() {
-      return undefined;
-    },
-    persistConnectionUpdate() {},
-    async storeHocuspocusDocument() {},
-    async drainHocuspocusPersistence() {},
-    getPersistenceQueueMetrics() {
-      return { queues: [], liveDocumentCount: 0, openConnectionCount: 0 };
-    },
-
-    async getLastUpdateAttribution() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    forgetMirror() {},
-    async getOrCreateMirror() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async readAsMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async editFromMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async writeFromMarkdown() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async checkpoint() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async restore() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-    async listCheckpoints() {
-      throw new Error("in-memory document sync is not implemented");
-    },
-  };
+  const documentSync: CollabDomain = createInMemoryCollabDomain();
 
   const inMemoryThreadEventHub: ThreadEventHub = {
     publishPersistedEvent() {},
@@ -601,7 +576,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
-    contextPorts: createInMemoryUnifiedContextPortFactory(),
+    contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     projects: {
       async findPersonalProjectId() {
         return null;

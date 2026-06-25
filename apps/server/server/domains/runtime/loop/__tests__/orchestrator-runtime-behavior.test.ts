@@ -84,8 +84,6 @@ async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway =
 function runnableCoreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
-    read: handler,
-    edit: handler,
     write: handler,
     list: handler,
     search: handler,
@@ -177,6 +175,113 @@ describe("runtime orchestrator behavior", () => {
     expect(requestTools?.map((tool) => (tool.type === "function" ? tool.name : tool.kind))).toEqual(
       [...CORE_TOOL_NAMES],
     );
+  });
+
+  it("injects post-commit concurrent edit echoes into the next model context", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "saw the sync" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
+      },
+      responseWrites: {
+        async commitResponse() {
+          return [
+            {
+              documentId: "123e4567-e89b-12d3-a456-426614174000",
+              text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
+            },
+          ];
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    expect(requests).toHaveLength(2);
+    const secondRequestMessages = JSON.stringify(requests[1]?.messages);
+    expect(secondRequestMessages).toContain("concurrent edits");
+    expect(secondRequestMessages).not.toContain("Post-commit write sync for");
+    expect(secondRequestMessages).not.toContain("123e4567-e89b-12d3-a456-426614174000");
+    const echoMessage = requests[1]?.messages.find(
+      (message) =>
+        message.role === "system" &&
+        message.content.some(
+          (part) => part.type === "text" && part.text.includes("concurrent edits"),
+        ),
+    );
+    expect(echoMessage).toBeDefined();
+
+    const syncBlockEvent = events.find(
+      (event) =>
+        event.type === "block.upserted" &&
+        event.block.blockType === "text" &&
+        String(event.block.content).includes("human: abcd"),
+    ) as Extract<OrchestratorEvent, { type: "block.upserted" }> | undefined;
+    expect(syncBlockEvent).toBeDefined();
+    expect(syncBlockEvent?.block.responseId).toBeNull();
+    expect(String(syncBlockEvent?.block.content)).not.toContain("Post-commit write sync for");
+    expect(String(syncBlockEvent?.block.content)).not.toContain(
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
+    const syncTurnEvent = events.find(
+      (event) => event.type === "turn.created" && event.turn.id === syncBlockEvent?.block.turnId,
+    );
+    expect(syncTurnEvent).toMatchObject({ turn: { role: "system" } });
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
@@ -320,5 +425,159 @@ describe("runtime orchestrator behavior", () => {
     expect(handlerSawAbort).toBe(true);
     expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
     expect(events.some((event) => event.type === "tool.result")).toBe(false);
+  });
+
+  it("rolls back the active response when tool dispatch throws", async () => {
+    const gateway = gatewayFromResults([
+      {
+        content: [{ type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const rolledBack: string[] = [];
+    const committed: string[] = [];
+    let responseIdSeenByTool: string | undefined;
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      toolExecutor: {
+        executeTool: async (_call, ctx) => {
+          responseIdSeenByTool = ctx.responseId;
+          throw new Error("tool crashed after staging a write");
+        },
+      },
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      responseWrites: {
+        async commitResponse(responseId) {
+          committed.push(responseId);
+          return [];
+        },
+        async rollbackResponse(responseId) {
+          rolledBack.push(responseId);
+        },
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const guardedOrchestrator = createOrchestrator(deps);
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await guardedOrchestrator.runTurn({
+        threadId: thread.id,
+        userText: "write then crash",
+        tools: [
+          {
+            type: "function",
+            name: "write",
+            description: "Write",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    );
+
+    expect(responseIdSeenByTool).toBeDefined();
+    expect(rolledBack).toEqual([responseIdSeenByTool]);
+    expect(committed).toEqual([]);
+    expect(events.some((event) => event.type === "turn.error")).toBe(true);
+  });
+
+  it("rolls back when cancellation arrives after the final tool result but before response commit", async () => {
+    const gateway = gatewayFromResults([
+      {
+        content: [{ type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const rolledBack: string[] = [];
+    const committed: string[] = [];
+    let responseIdSeenByTool: string | undefined;
+    let toolFinished = false;
+    let postToolAbortReads = 0;
+    const signal = {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      get aborted() {
+        if (!toolFinished) return false;
+        postToolAbortReads += 1;
+        return postToolAbortReads >= 3;
+      },
+    } as unknown as AbortSignal;
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      toolExecutor: {
+        executeTool: async (_call, ctx) => {
+          responseIdSeenByTool = ctx.responseId;
+          toolFinished = true;
+          return { toolCallId: "call-write", output: "staged" };
+        },
+      },
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      responseWrites: {
+        async commitResponse(responseId) {
+          committed.push(responseId);
+          return [];
+        },
+        async rollbackResponse(responseId) {
+          rolledBack.push(responseId);
+        },
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const guardedOrchestrator = createOrchestrator(deps);
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await guardedOrchestrator.runTurn({
+        threadId: thread.id,
+        userText: "write then cancel",
+        tools: [
+          {
+            type: "function",
+            name: "write",
+            description: "Write",
+            inputSchema: { type: "object" },
+          },
+        ],
+        signal,
+      }),
+    );
+
+    expect(responseIdSeenByTool).toBeDefined();
+    expect(committed).toEqual([]);
+    expect(rolledBack).toEqual([responseIdSeenByTool]);
+    expect(events.some((event) => event.type === "tool.result")).toBe(true);
+    expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
   });
 });

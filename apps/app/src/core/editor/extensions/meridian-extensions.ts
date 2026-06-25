@@ -1,7 +1,7 @@
 /**
  * meridian-extensions — the project's customized TipTap node/mark extensions.
  *
- * Subclasses the base TipTap nodes/marks (lists, code, link, image, math, hard
+ * Subclasses the base TipTap nodes/marks (lists, code, link, image, hard
  * break, and the custom figure node with its React node view) to match the
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
@@ -18,16 +18,32 @@ import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
-import { Table } from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
-import { firstRowHeaderTablePlugin } from "./first-row-header-table";
+import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 
 type RenderAttrs = Record<string, unknown>;
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePropsAttr(value: string | null): JsonRecord {
+  if (!value) return {};
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isJsonRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function renderPropsAttr(value: unknown): string {
+  return JSON.stringify(isJsonRecord(value) ? value : {});
+}
 
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
@@ -60,11 +76,6 @@ export const MeridianListItem = ListItem.extend({
 
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
-});
-
-export const MeridianTableRow = TableRow.extend({
-  name: "table_row",
-  content: "(table_header)+ | (table_cell)+",
 });
 
 // ─── Customized extensions ──────────────────────────────────────────
@@ -106,49 +117,6 @@ export const MeridianOrderedList = OrderedList.extend({
   },
 });
 
-export const MeridianTable = Table.extend({
-  name: "table",
-  content: "table_row+",
-  group: "block",
-  isolating: true,
-
-  addProseMirrorPlugins() {
-    return [...(this.parent?.() ?? []), firstRowHeaderTablePlugin()];
-  },
-
-  addCommands() {
-    return {
-      ...this.parent?.(),
-      toggleHeaderColumn: () => () => false,
-      toggleHeaderRow: () => () => false,
-      toggleHeaderCell: () => () => false,
-      mergeCells: () => () => false,
-      splitCell: () => () => false,
-      mergeOrSplit: () => () => false,
-    };
-  },
-}).configure({ resizable: false });
-
-export const MeridianTableCell = TableCell.extend({
-  name: "table_cell",
-  content: "inline*",
-  isolating: true,
-
-  addAttributes() {
-    return {};
-  },
-});
-
-export const MeridianTableHeader = TableHeader.extend({
-  name: "table_header",
-  content: "inline*",
-  isolating: true,
-
-  addAttributes() {
-    return {};
-  },
-});
-
 export const MeridianImage = Image.extend({
   marks: "",
 
@@ -163,23 +131,86 @@ export const MeridianImage = Image.extend({
 
 // ─── Meridian-only extensions ─────────────────────────────────────────
 // Node types not in TipTap's standard library.
-// TODO: math_display — needs proper KaTeX/MathJax rendering integration
 // TODO: figure — needs full MyST directive support, currently renders via FigureNodeView
 
-export const MeridianMathDisplay = Node.create({
-  name: "math_display",
+export const MeridianJsxLeaf = Node.create({
+  name: "jsx_leaf",
   group: "block",
   content: "text*",
-  marks: "",
   code: true,
-  defining: true,
+
+  addAttributes() {
+    return {
+      name: {
+        default: undefined,
+        isRequired: true,
+        parseHTML: (element) => element.getAttribute("data-name"),
+        renderHTML: (attrs) => ({
+          "data-name": typeof attrs.name === "string" ? attrs.name : "",
+        }),
+      },
+      props: {
+        default: {},
+        parseHTML: (element) => parsePropsAttr(element.getAttribute("data-props")),
+        renderHTML: (attrs) => ({
+          "data-props": renderPropsAttr(attrs.props),
+        }),
+      },
+    };
+  },
 
   parseHTML() {
-    return [{ tag: "pre[data-type='math-display']" }];
+    return [{ tag: "div[data-type='jsx_leaf']" }];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(JsxLeafNodeView);
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ["pre", mergeAttributes(HTMLAttributes, { "data-type": "math-display" }), ["code", 0]];
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "jsx_leaf" }),
+      ["span", { "data-role": "jsx-leaf-content" }, 0],
+    ];
+  },
+});
+
+export const MeridianJsxContainer = Node.create({
+  name: "jsx_container",
+  group: "block",
+  content: "block+",
+
+  addAttributes() {
+    return {
+      name: {
+        default: undefined,
+        isRequired: true,
+        parseHTML: (element) => element.getAttribute("data-name"),
+        renderHTML: (attrs) => ({
+          "data-name": typeof attrs.name === "string" ? attrs.name : "",
+        }),
+      },
+      props: {
+        default: {},
+        parseHTML: (element) => parsePropsAttr(element.getAttribute("data-props")),
+        renderHTML: (attrs) => ({
+          "data-props": renderPropsAttr(attrs.props),
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-type='jsx_container']" }];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(JsxContainerNodeView);
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "jsx_container" }), 0];
   },
 });
 

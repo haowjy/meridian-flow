@@ -7,7 +7,7 @@ import {
   schemaTypeForFiletype,
   type ThreadUploadDocumentItem,
 } from "@meridian/contracts/protocol";
-import type { DocumentSyncPort } from "../../collab/ports/document-sync.js";
+import type { MarkdownDocumentStore } from "../../collab/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ThreadRepositories } from "../../threads/index.js";
@@ -30,7 +30,7 @@ const TEXT_MIME_SUFFIXES = ["+json", "+xml", "+yaml", "+yml"];
 
 export type ThreadUploadImportErrorCode =
   | "object_store_error"
-  | "mirror_error"
+  | "collab_error"
   | "repository_error";
 export interface ThreadUploadImportError {
   code: ThreadUploadImportErrorCode;
@@ -52,7 +52,7 @@ export interface ThreadUploadImportService {
 export interface ThreadUploadImportServiceDeps {
   repos: ThreadRepositories;
   uploadDocuments: ThreadUploadDocumentStore;
-  documentSync: DocumentSyncPort;
+  documentSync: MarkdownDocumentStore;
   objectStore: ObjectStorePort;
   generateId?: () => string;
   eventSink: EventSink;
@@ -185,21 +185,23 @@ export function createThreadUploadImportService(
               storageUrl,
             });
             if (editable) {
-              const mirror = await deps.documentSync.getOrCreateMirror(
+              const write = await deps.documentSync.writeFromMarkdown(
                 documentId,
                 markdownProjection,
-                filetype,
+                {
+                  type: "system",
+                },
               );
-              if (!mirror.ok)
+              if (!write.ok)
                 throw new UploadImportFailure(
-                  "mirror_error",
-                  errorMessage(mirror.error, "Failed to seed upload mirror"),
+                  "collab_error",
+                  errorMessage(write.error, "Failed to seed upload document"),
                 );
               const read = await deps.documentSync.readAsMarkdown(documentId);
               if (!read.ok)
                 throw new UploadImportFailure(
-                  "mirror_error",
-                  errorMessage(read.error, "Failed to read upload mirror"),
+                  "collab_error",
+                  errorMessage(read.error, "Failed to read upload document"),
                 );
               await deps.uploadDocuments.updateMarkdownProjection(documentId, read.value);
             }
@@ -211,7 +213,6 @@ export function createThreadUploadImportService(
           }),
         );
       } catch (error) {
-        if (editable && deps.documentSync.forgetMirror) deps.documentSync.forgetMirror(documentId);
         await deleteObjectBestEffort(deps.eventSink, deps.objectStore, storageUrl, {
           documentId,
           threadId: input.threadId,

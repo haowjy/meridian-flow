@@ -198,16 +198,12 @@ export async function startSmokeServer(options?: { port?: number }): Promise<Smo
   loadRepoEnv();
 
   const { gateway, cleanup } = await createGatewayFromEnv({
-    MODEL_PROVIDER: process.env.MODEL_PROVIDER as
-      | "mock"
-      | "anthropic"
-      | "openai"
-      | "auto"
-      | undefined,
+    MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     MODEL_CALL_TIMEOUT_MS: process.env.MODEL_CALL_TIMEOUT_MS,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   });
 
   const providerIds = providerIdsFromGateway(gateway);

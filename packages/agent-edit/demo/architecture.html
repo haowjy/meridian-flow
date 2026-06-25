@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@meridian/agent-edit architecture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 48px 24px;
+      }
+      h1,
+      h2 {
+        line-height: 1.15;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+        border-radius: 14px;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>@meridian/agent-edit architecture</h1>
+    <p>
+      The package is a host-agnostic agent editing core. Hosts provide ports for the update journal,
+      live document coordination, document lifecycle, actor sessions, codecs, and the document model.
+    </p>
+
+    <section class="grid" aria-label="major seams">
+      <article class="card">
+        <h2>Write path</h2>
+        <p>
+          <code>createWriteTool()</code> resolves commands, mutates an agent-local <code>Y.Doc</code>,
+          appends durable journal rows, syncs the live projection, and returns a structured outcome.
+        </p>
+      </article>
+      <article class="card">
+        <h2>Thread origins</h2>
+        <p>
+          Forward agent writes still use a stable <code>Symbol</code> per document/thread as the Yjs
+          transaction origin. The origin is only for attribution and same-actor filtering; durable
+          turn grouping comes from journal metadata.
+        </p>
+      </article>
+      <article class="card">
+        <h2>Undo/redo</h2>
+        <p>
+          Reversal is a single cold reconstruction path. It reads checkpoint plus retained updates,
+          selects target mutation rows by turn identity, reconstructs the reversal bytes, persists the
+          reversal/redo record, and syncs the live document.
+        </p>
+      </article>
+      <article class="card">
+        <h2>Compaction</h2>
+        <p>
+          <code>compact()</code> delegates to the journal adapter. It folds old retained updates into a
+          checkpoint and expires reversal records without mutating live documents.
+        </p>
+      </article>
+    </section>
+  </body>
+</html>

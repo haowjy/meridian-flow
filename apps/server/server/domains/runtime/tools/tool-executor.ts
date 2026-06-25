@@ -40,8 +40,8 @@
  *   2. Sequential: tools with `sequential: true` run one-at-a-time in array
  *      order, after all parallel tools have completed.
  *
- * This two-phase approach prevents file mutations (edit, write) from
- * interleaving with reads and other pure tools.
+ * This two-phase approach prevents document mutations (write) from
+ * interleaving with other tool calls.
  * The original array index is preserved so the orchestrator can map results
  * back to the model's output item order.
  */
@@ -310,8 +310,10 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
       // (the interface requires it), even if the caller doesn't supply one.
       const handlerContext: ToolHandlerContext = {
         signal: ctx.signal ?? new AbortController().signal,
+        toolCallId: call.id,
         threadId: ctx.threadId as string,
         turnId: ctx.turnId as string,
+        responseId: ctx.responseId,
         agentSlug: ctx.agentSlug,
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
@@ -378,11 +380,8 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
    *
    * ── Why two phases ──
    *
-   * File mutations (edit, write) are marked
-   * `sequential: true` because they must not interleave with concurrent
-   * reads of the same files. Running them after all parallel tools ensures
-   * that the model's read-before-edit pattern is safe: all reads complete
-   * before any write begins.
+   * Document mutations (`write`) are marked `sequential: true` because they
+   * must not interleave with concurrent tool calls against the same file.
    *
    * ── Index preservation ──
    *
