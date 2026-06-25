@@ -32,7 +32,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes. Content is markdown text, not a diff format.",
+          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
         // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
         // (WriteCommand). The chat layer uses `path` for context URIs; the
         // server handler resolves it to the package `file`/document id.
@@ -52,7 +52,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
             content: {
               type: "string",
               description:
-                "Markdown content (not a diff or patch format). Optional initial content for create; required for insert and replace. For replace: the new content that will replace the target; empty string deletes the target scope.",
+                "Markdown content. Optional initial content for create; required for insert and replace; empty string deletes in replace.",
             },
             find: {
               type: "string",
