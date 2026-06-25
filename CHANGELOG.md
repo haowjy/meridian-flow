@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+- Editor: document load no longer builds a throwaway TipTap editor before the
+  real collaboration session is available.
 
 - Chat editing: a writer can now reverse the agent's edits themselves, not just
   the agent. New authenticated endpoint reverses (undo/redo) at three
