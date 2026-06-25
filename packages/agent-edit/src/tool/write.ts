@@ -16,6 +16,7 @@ import type { ActorSession, ActorSessionStore } from "../ports/actor-session-sto
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type { SyncStateStore } from "../ports/sync-state-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
@@ -56,6 +57,7 @@ export interface CreateWriteToolOptions {
   codec: Codec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
+  syncStateStore?: SyncStateStore;
   idempotency?: {
     maxEntries?: number;
   };
@@ -136,6 +138,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
+    syncStateStore: options.syncStateStore,
   });
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
   const responseStaging = createResponseStaging({
@@ -372,7 +375,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!committed.ok) return committed.response;
 
-    markSynced(session, address.documentId, runtime);
+    runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       writeId: writeIdentity.handle,
       echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
@@ -387,7 +390,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    const synced = requireSynced(session, address.documentId, address.filePath);
+    const synced = await requireSynced(session, address.documentId, address.filePath, runtime);
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(
@@ -467,10 +470,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       structuralChange: hasStructuralChange(applied),
       ownTurnId: turnId,
+      committedSnapshot: runtimeStore.getCommittedSnapshot(session, address.documentId),
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
-    markSynced(session, address.documentId, runtime);
+    runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,

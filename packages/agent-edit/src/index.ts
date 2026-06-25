@@ -67,6 +67,7 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type { AgentEditModel, DocumentModel } from "./ports/model.js";
+export type { SyncState, SyncStateStore } from "./ports/sync-state-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,

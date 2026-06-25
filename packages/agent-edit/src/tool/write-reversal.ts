@@ -108,7 +108,12 @@ export function createWriteReversal(deps: {
 
   async function run(input: WriteReversalRunInput): Promise<InternalWriteResult> {
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
-    const synced = runtimeStore.requireSynced(input.session, input.docId);
+    const synced = await runtimeStore.requireSynced(
+      input.session,
+      input.docId,
+      input.docId,
+      runtime,
+    );
     if (!synced.ok) return synced.response;
     return runUndoOrRedo({ ...input, runtime });
   }

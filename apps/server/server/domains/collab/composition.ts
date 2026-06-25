@@ -9,6 +9,7 @@ import {
   type PersistedUpdate as JournalUpdate,
   mdxCodec,
   type ReversalStore,
+  type SyncStateStore,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
@@ -27,6 +28,7 @@ import { Err, Ok } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -84,6 +86,7 @@ export type CollabFacadeDeps = {
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
+  syncStateStore?: SyncStateStore;
 };
 
 type PendingAppend = {
@@ -96,6 +99,7 @@ const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
+  const syncStateStore = createDrizzleSyncStateStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -113,6 +117,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       boundHocuspocus = instance;
     },
     eventSink: deps.eventSink,
+    syncStateStore,
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -154,6 +159,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     model,
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+    syncStateStore: deps.syncStateStore,
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
   const pendingAppends = new Map<number, PendingAppend>();

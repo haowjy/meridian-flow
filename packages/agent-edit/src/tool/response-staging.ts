@@ -135,6 +135,10 @@ export function createResponseStaging(deps: {
         }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
+        const committedSnapshot = runtimeStore.getCommittedSnapshot(
+          docBuffer.session,
+          docBuffer.docId,
+        );
         const projected = await mutationCommit.projectToLive(docBuffer.runtime, {
           docId: docBuffer.docId,
           commandName: docBuffer.commandName,
@@ -142,6 +146,7 @@ export function createResponseStaging(deps: {
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
           turnId: lastTurnId,
+          committedSnapshot,
         });
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
