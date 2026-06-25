@@ -249,7 +249,7 @@ function blockHash(serialized: string): string {
   return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
-function truncateSerializedBlock(serialized: string): string {
+export function truncateSerializedBlock(serialized: string): string {
   const separator = serialized.indexOf("|");
   if (separator < 0) return truncateText(serialized);
   const hash = serialized.slice(0, separator);

@@ -1,7 +1,7 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
 
-import { snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type {
   ApplyEchoHunk,
@@ -347,7 +347,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         writeId: writeIdentity.handle,
-        echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
+        echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
       });
     }
 
@@ -374,7 +374,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     markSynced(session, address.documentId, runtime);
     return formatApplySuccess({
       writeId: writeIdentity.handle,
-      echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
+      echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
     });
   }
 
@@ -582,6 +582,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.turnId) return context.turnId;
     autoTurnCounter += 1;
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.toString(36)}`;
+  }
+
+  /** Create echo: model just wrote the content — return hash|truncated-preview per block. */
+  function truncateCreateEcho(doc: Y.Doc): string[] {
+    return renderer.renderBlockLines(doc).map(truncateSerializedBlock);
   }
 
   function remember(cacheKey: string, outcome: WriteOutcome): void {
