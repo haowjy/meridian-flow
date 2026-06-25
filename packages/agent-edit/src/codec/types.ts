@@ -93,4 +93,7 @@ export interface Codec {
 
   /** Batch version of serializeBlock — one runtime allocation for all blocks. */
   serializeBlocks(blocks: readonly Block[], hashes: readonly string[]): string[];
+
+  /** Serialize block bodies without hash prefixes for resolver/find matching. */
+  serializeBlockBodies(blocks: readonly Block[]): string[];
 }

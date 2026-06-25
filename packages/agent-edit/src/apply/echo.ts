@@ -2,6 +2,7 @@
 import * as Y from "yjs";
 
 import type { Codec } from "../codec/types.js";
+import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
 
@@ -40,12 +41,13 @@ const TRUNCATED_PREVIEW_LENGTH = 48;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
-  const blocks = model.getBlocks(doc);
-  if (blocks.length === 0) return [];
-  const hashes = model.getBlockIds(doc);
-  const pmBlocks = model.toProsemirrorBlocks(doc);
-  const serialized = codec.serializeBlocks(pmBlocks, hashes);
-  return blocks.map((_, i) => ({ hash: hashes[i], serialized: serialized[i] }));
+  const projection = projectDocumentBlocks(doc, model);
+  if (projection.blocks.length === 0) return [];
+  const serialized = codec.serializeBlocks(projection.pmBlocks, projection.hashes);
+  return projection.blocks.map((_, index) => ({
+    hash: projection.hashes[index],
+    serialized: serialized[index],
+  }));
 }
 
 /** Diff two block snapshots by stable block hash and serialized content. */
