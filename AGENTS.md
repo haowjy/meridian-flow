@@ -112,11 +112,12 @@ deliberate decisions.)
 another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
 -b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
 
-When work is merged or abandoned, use `pnpm dev:prune-worktrees` from a safe
-checkout instead of deleting worktrees by hand. It resolves linked Meridian work
-items, stops dev processes/routes, drops the worktree DB, removes the worktree,
-deletes the merged local branch, and marks the work item done. Start with
-`--auto --dry-run` or `--target <work-id|path|branch|pr> --dry-run`.
+Clean up merged or abandoned work with `pnpm dev:prune-worktrees` from a
+checkout you are not removing. Start with a dry run: `--auto --dry-run` for
+merged worktrees, or `--target <work-id|path|branch|pr> --dry-run` for one
+target. The command resolves work item ↔ worktree ↔ branch/PR, then stops the
+dev stack, drops the worktree DB, removes the worktree, deletes the merged
+local branch, and marks the work item done.
 
 ## Cross-repo linking
 
