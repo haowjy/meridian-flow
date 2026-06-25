@@ -32,7 +32,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a document; insert to add content; replace to replace or delete content; undo and redo to reverse or reapply this thread's document writes.",
+          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document; insert to add content; replace to replace or delete content (omit in and find to overwrite the entire document); undo and redo to reverse or reapply this thread's document writes. Content is markdown text, not a diff format.",
         // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
         // (WriteCommand). The chat layer uses `path` for context URIs; the
         // server handler resolves it to the package `file`/document id.
@@ -52,7 +52,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
             content: {
               type: "string",
               description:
-                "Markdown content. Optional initial content for create; required for insert and replace; empty string deletes in replace.",
+                "Markdown content (not a diff or patch format). Optional initial content for create; required for insert and replace. For replace: the new content that will replace the target; empty string deletes the target scope.",
             },
             find: {
               type: "string",
@@ -61,7 +61,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
             in: {
               type: "string",
               description:
-                "View range, replace target, or find scope (for example a block hash, hash range, or #section).",
+                "View range, replace target, or find scope (block hash, hash range, or #section). Omit for replace to overwrite the entire document.",
             },
             around: {
               type: "string",
