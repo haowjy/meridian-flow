@@ -1,6 +1,4 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
@@ -15,13 +13,7 @@ import {
 import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
-import { verifyTailscaleExternalRoutes } from "./lib/tailscale-external-routes";
-import {
-  findStaleTailscaleRoutes,
-  parseTailscaleServeStatusJson,
-  type TailscaleRouteBinding,
-  tailscaleRouteOffArgs,
-} from "./lib/tailscale-stale-routes";
+import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
   type ExpectedServiceName,
@@ -68,98 +60,6 @@ function isDevMode(value: string | null | undefined): value is DevMode {
 
 function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function commandErrorText(error: unknown): string {
-  if (typeof error === "object" && error !== null && "stderr" in error) {
-    const stderr = (error as { stderr?: Buffer | string }).stderr;
-    if (typeof stderr === "string" && stderr.trim()) return stderr.trim();
-    if (Buffer.isBuffer(stderr) && stderr.toString().trim()) return stderr.toString().trim();
-  }
-
-  return error instanceof Error ? error.message : String(error);
-}
-
-function readTailscaleStatusJson(args: string[]): unknown | null {
-  try {
-    const output = execFileSync("tailscale", args, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return JSON.parse(output) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function readTailscaleRouteBindings(): TailscaleRouteBinding[] {
-  const seen = new Set<string>();
-  const bindings: TailscaleRouteBinding[] = [];
-
-  for (const { args, modeOverride } of [
-    { args: ["serve", "status", "--json"], modeOverride: undefined },
-    { args: ["funnel", "status", "--json"], modeOverride: "funnel" as const },
-  ]) {
-    const status = readTailscaleStatusJson(args);
-    if (!status) continue;
-
-    for (const parsedBinding of parseTailscaleServeStatusJson(status)) {
-      const binding = modeOverride ? { ...parsedBinding, mode: modeOverride } : parsedBinding;
-      const key = `${binding.mode}:${binding.httpsPort}:${binding.localPort}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      bindings.push(binding);
-    }
-  }
-
-  return bindings;
-}
-
-function isLocalPortListening(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port });
-    const finish = (live: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(live);
-    };
-
-    socket.setTimeout(250);
-    socket.once("connect", () => finish(true));
-    socket.once("timeout", () => finish(false));
-    socket.once("error", () => finish(false));
-  });
-}
-
-async function pruneStaleTailscaleRoutes(): Promise<void> {
-  const bindings = readTailscaleRouteBindings();
-  if (bindings.length === 0) return;
-
-  const liveness = new Map<number, boolean>();
-  for (const localPort of [...new Set(bindings.map((binding) => binding.localPort))]) {
-    liveness.set(localPort, await isLocalPortListening(localPort));
-  }
-
-  const staleRoutes = findStaleTailscaleRoutes(bindings, (port) => liveness.get(port) ?? false);
-  let pruned = 0;
-
-  for (const route of staleRoutes) {
-    try {
-      execFileSync("tailscale", tailscaleRouteOffArgs(route), {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      pruned += 1;
-    } catch (error) {
-      const message = commandErrorText(error);
-      if (!/handler does not exist/i.test(message)) {
-        console.warn(`tailscale ${route.mode} --https=${route.httpsPort} off warning: ${message}`);
-      }
-    }
-  }
-
-  if (pruned > 0) {
-    console.log(`pruned ${pruned} stale tailscale route${pruned === 1 ? "" : "s"}`);
-  }
 }
 
 function readPortlessState(
@@ -328,6 +228,7 @@ async function printExistingSessionInfo({
   sessionName,
   mode,
   worktreePrefix,
+  tailscale,
   sharedPorts,
   nodeDnsName,
   branch,
@@ -338,6 +239,7 @@ async function printExistingSessionInfo({
   sessionName: string;
   mode: DevMode;
   worktreePrefix?: string;
+  tailscale: TailscaleDevLifecycle;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   nodeDnsName?: string;
   branch: string;
@@ -369,7 +271,7 @@ async function printExistingSessionInfo({
 
   let externalRoutes: ExternalDevRoute[];
   try {
-    externalRoutes = ensureTailscaleRoutesRegistered({ sharedPorts, nodeDnsName });
+    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
   } catch (error) {
     writeMetadataWithoutExternalRoutes({
       branch,
@@ -379,7 +281,7 @@ async function printExistingSessionInfo({
       createdAt,
     });
     failAndExit(
-      `dev session exists but Tailscale route verification failed: ${commandErrorText(error)}`,
+      `dev session exists but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
       "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
       sessionName,
       routeState.lines,
@@ -415,97 +317,6 @@ function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string):
   }
 }
 
-function externalRoutesForCleanup(
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-): ExternalDevRoute[] {
-  return sharedPorts.map((ports) => ({
-    service: ports.service,
-    mode: ports.externalMode,
-    httpsPort: ports.externalHttpsPort,
-  }));
-}
-
-function cleanupTailscaleRoutes(routes: ReadonlyArray<ExternalDevRoute>): void {
-  for (const route of routes) {
-    try {
-      execFileSync("tailscale", [route.mode, `--https=${route.httpsPort}`, "off"], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      const message = commandErrorText(error);
-      if (!/handler does not exist/i.test(message)) {
-        console.warn(`tailscale ${route.mode} --https=${route.httpsPort} off warning: ${message}`);
-      }
-    }
-  }
-}
-
-function tailscaleStatusDnsName(): string | undefined {
-  const status = readTailscaleStatusJson(["status", "--json"]);
-  if (typeof status !== "object" || status === null || !("Self" in status)) return undefined;
-
-  const self = (status as { Self?: { DNSName?: unknown } }).Self;
-  return typeof self?.DNSName === "string" ? self.DNSName.replace(/\.$/, "") : undefined;
-}
-
-function registerTailscaleRoutes(sharedPorts: ReadonlyArray<SharedDevServicePorts>): void {
-  for (const ports of sharedPorts) {
-    const command = ports.externalMode === "funnel" ? "funnel" : "serve";
-    const args = [
-      command,
-      "--bg",
-      "--yes",
-      `--https=${ports.externalHttpsPort}`,
-      `http://127.0.0.1:${ports.appBackendPort}`,
-    ];
-
-    try {
-      execFileSync("tailscale", args, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (error) {
-      throw new Error(
-        `tailscale ${command} --https=${ports.externalHttpsPort} failed: ${commandErrorText(error)}`,
-      );
-    }
-  }
-}
-
-function verifyRegisteredTailscaleRoutes({
-  sharedPorts,
-  nodeDnsName,
-}: {
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-  nodeDnsName?: string;
-}): ExternalDevRoute[] {
-  const verification = verifyTailscaleExternalRoutes({
-    sharedPorts,
-    bindings: readTailscaleRouteBindings(),
-    nodeDnsName,
-  });
-
-  if (!verification.ok) {
-    throw new Error(`Tailscale route verification failed: ${verification.errors.join("; ")}`);
-  }
-
-  return verification.routes;
-}
-
-function ensureTailscaleRoutesRegistered({
-  sharedPorts,
-  nodeDnsName,
-}: {
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-  nodeDnsName?: string;
-}): ExternalDevRoute[] {
-  if (sharedPorts.length === 0) return [];
-
-  try {
-    return verifyRegisteredTailscaleRoutes({ sharedPorts, nodeDnsName });
-  } catch {
-    registerTailscaleRoutes(sharedPorts);
-    return verifyRegisteredTailscaleRoutes({ sharedPorts, nodeDnsName });
-  }
-}
-
 function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: string[]): void {
   for (const sessionName of [...new Set(sessionNames.filter(Boolean))]) {
     killSessionIfPresent(tmuxStore, sessionName);
@@ -522,6 +333,7 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
 
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
+  const tailscale = new TailscaleDevLifecycle();
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
 
   const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -574,7 +386,7 @@ async function main(): Promise<void> {
   }
 
   if (cliOptions.stop) {
-    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutesForCleanup(sharedPorts));
+    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
     console.log(`stopped · ${identity.sessionName}`);
     return;
@@ -593,10 +405,10 @@ async function main(): Promise<void> {
   // request, long after this script reports the session healthy.
   await assertDevInfraReady();
 
-  const nodeDnsName = mode === "local" ? undefined : tailscaleStatusDnsName();
+  const nodeDnsName = mode === "local" ? undefined : tailscale.resolveNodeDnsName();
 
   if (cliOptions.restart) {
-    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutesForCleanup(sharedPorts));
+    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
@@ -615,8 +427,9 @@ async function main(): Promise<void> {
       sessionName: identity.sessionName,
       mode: runningMode,
       worktreePrefix,
+      tailscale,
       sharedPorts: runningSharedPorts,
-      nodeDnsName: runningMode === mode ? nodeDnsName : tailscaleStatusDnsName(),
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
       branch: previous?.branch ?? branchName,
       displayCommand: runningDevCommand.display,
       createdAt: previous?.createdAt,
@@ -639,8 +452,9 @@ async function main(): Promise<void> {
       sessionName: previous.sessionName,
       mode: runningMode,
       worktreePrefix: previousWorktreePrefix,
+      tailscale,
       sharedPorts: runningSharedPorts,
-      nodeDnsName: runningMode === mode ? nodeDnsName : tailscaleStatusDnsName(),
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
       branch: previous.branch,
       displayCommand: runningDevCommand.display,
       createdAt: previous.createdAt,
@@ -648,7 +462,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await pruneStaleTailscaleRoutes();
+  await tailscale.pruneStaleRoutes();
 
   const createResult = tmuxStore.createSession(identity.sessionName);
   if (createResult.status !== 0) {
@@ -689,7 +503,7 @@ async function main(): Promise<void> {
 
   let externalRoutes: ExternalDevRoute[];
   try {
-    externalRoutes = ensureTailscaleRoutesRegistered({ sharedPorts, nodeDnsName });
+    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
   } catch (error) {
     writeMetadataWithoutExternalRoutes({
       branch: branchName,
@@ -698,7 +512,7 @@ async function main(): Promise<void> {
       displayCommand: devCommand.display,
     });
     failAndExit(
-      `dev session started but Tailscale route verification failed: ${commandErrorText(error)}`,
+      `dev session started but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
       "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
       identity.sessionName,
       routeState.lines,
