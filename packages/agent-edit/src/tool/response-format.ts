@@ -24,6 +24,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     text: result.text,
+    ...(result.content ? { content: result.content } : {}),
   };
 }
 

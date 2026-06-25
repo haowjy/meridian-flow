@@ -38,7 +38,12 @@ export interface ToolDispatchContext {
 }
 
 export type ToolDispatchResult =
-  | { events: OrchestratorEvent[]; block: Block; cancelled?: false }
+  | {
+      events: OrchestratorEvent[];
+      block: Block;
+      metadata?: Record<string, unknown>;
+      cancelled?: false;
+    }
   | { events: OrchestratorEvent[]; cancelled: true };
 
 export async function dispatchToolCall(
@@ -180,5 +185,9 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
-  return { events, block: persistedToolResult.result };
+  return {
+    events,
+    block: persistedToolResult.result,
+    ...(execResult.metadata ? { metadata: execResult.metadata } : {}),
+  };
 }

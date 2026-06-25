@@ -113,6 +113,17 @@ function isHandlerErrorResult(
 }
 
 /**
+ * Type guard for handlers that return structured output with optional metadata.
+ * Pattern: `{ output: unknown, metadata?: Record<string, unknown> }`.
+ * Distinct from error results (which have `isError: true`).
+ */
+function isStructuredHandlerResult(
+  value: unknown,
+): value is { output: unknown; metadata?: Record<string, unknown> } {
+  return typeof value === "object" && value !== null && "output" in value && !("isError" in value);
+}
+
+/**
  * Normalizes a handler return value into a `ToolExecutionResult`.
  * If the handler returned a structured error (`{ isError: true, output: ... }`),
  * the output is used verbatim and `isError` is forwarded. Otherwise the
@@ -124,6 +135,13 @@ function successResult(toolCallId: string, output: unknown): ToolExecutionResult
       ? output.output
       : meridianErrorFromStructuredToolOutput(output.output as JsonValue);
     return { toolCallId, output: meridianErrorToJson(meridianError), isError: true };
+  }
+  if (isStructuredHandlerResult(output)) {
+    return {
+      toolCallId,
+      output: toJsonValue(output.output),
+      ...(output.metadata ? { metadata: output.metadata } : {}),
+    };
   }
   return { toolCallId, output: toJsonValue(output) };
 }
