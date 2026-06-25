@@ -58,4 +58,5 @@ apps/app/playwright-report/
 # agent scratch / work artifacts (benches, findings); never committed
 .meridian-work/
 
+.clipboard
 *.code-workspace
