@@ -10,12 +10,12 @@ import {
   buildMetadata,
   createDevSessionCommand,
   type DevSessionMetadata,
-  externalRoutesFromSharedPorts,
   sharedServiceNamesForMode,
 } from "./dev-session-plan";
 import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
+import { verifyTailscaleExternalRoutes } from "./lib/tailscale-external-routes";
 import {
   findStaleTailscaleRoutes,
   parseTailscaleServeStatusJson,
@@ -221,6 +221,29 @@ function writeJsonMetadata(metadata: DevSessionMetadata): void {
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 }
 
+function writeMetadataWithoutExternalRoutes({
+  branch,
+  sessionName,
+  mode,
+  displayCommand,
+  createdAt,
+}: {
+  branch: string;
+  sessionName: string;
+  mode: DevMode;
+  displayCommand: string;
+  createdAt?: string;
+}): void {
+  writeJsonMetadata({
+    branch: branch || "detached",
+    sessionName,
+    mode,
+    command: displayCommand,
+    createdAt: createdAt ?? new Date().toISOString(),
+    externalRoutes: [],
+  });
+}
+
 function resolveRequestedMode({
   explicitMode,
   requestedMode,
@@ -305,15 +328,23 @@ async function printExistingSessionInfo({
   sessionName,
   mode,
   worktreePrefix,
-  externalRoutes,
+  sharedPorts,
+  nodeDnsName,
+  branch,
+  displayCommand,
+  createdAt,
 }: {
   tmuxStore: TmuxSessionStore;
   sessionName: string;
   mode: DevMode;
   worktreePrefix?: string;
-  externalRoutes: ReadonlyArray<ExternalDevRoute>;
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
+  nodeDnsName?: string;
+  branch: string;
+  displayCommand: string;
+  createdAt?: string;
 }): Promise<void> {
-  const routeState = waitForPortlessState(tmuxStore, mode, 5_000, worktreePrefix, externalRoutes);
+  const routeState = waitForPortlessState(tmuxStore, mode, 5_000, worktreePrefix);
   if (!routeState.healthy) {
     failAndExit(
       `dev session exists but route checks failed: ${routeState.errors.join("; ")}`,
@@ -336,11 +367,41 @@ async function printExistingSessionInfo({
     );
   }
 
+  let externalRoutes: ExternalDevRoute[];
+  try {
+    externalRoutes = ensureTailscaleRoutesRegistered({ sharedPorts, nodeDnsName });
+  } catch (error) {
+    writeMetadataWithoutExternalRoutes({
+      branch,
+      sessionName,
+      mode,
+      displayCommand,
+      createdAt,
+    });
+    failAndExit(
+      `dev session exists but Tailscale route verification failed: ${commandErrorText(error)}`,
+      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+
+  writeJsonMetadata({
+    branch: branch || "detached",
+    sessionName,
+    mode,
+    command: displayCommand,
+    createdAt: createdAt ?? new Date().toISOString(),
+    externalRoutes,
+  });
+
   printSessionInfo({
     headline: "already running",
     sessionName,
     mode,
-    routeLines: routeState.lines,
+    routeLines: verifiedRouteState.lines,
   });
 }
 
@@ -352,6 +413,16 @@ function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string):
       process.exit(killResult.status ?? 1);
     }
   }
+}
+
+function externalRoutesForCleanup(
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
+): ExternalDevRoute[] {
+  return sharedPorts.map((ports) => ({
+    service: ports.service,
+    mode: ports.externalMode,
+    httpsPort: ports.externalHttpsPort,
+  }));
 }
 
 function cleanupTailscaleRoutes(routes: ReadonlyArray<ExternalDevRoute>): void {
@@ -398,6 +469,43 @@ function registerTailscaleRoutes(sharedPorts: ReadonlyArray<SharedDevServicePort
   }
 }
 
+function verifyRegisteredTailscaleRoutes({
+  sharedPorts,
+  nodeDnsName,
+}: {
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
+  nodeDnsName?: string;
+}): ExternalDevRoute[] {
+  const verification = verifyTailscaleExternalRoutes({
+    sharedPorts,
+    bindings: readTailscaleRouteBindings(),
+    nodeDnsName,
+  });
+
+  if (!verification.ok) {
+    throw new Error(`Tailscale route verification failed: ${verification.errors.join("; ")}`);
+  }
+
+  return verification.routes;
+}
+
+function ensureTailscaleRoutesRegistered({
+  sharedPorts,
+  nodeDnsName,
+}: {
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
+  nodeDnsName?: string;
+}): ExternalDevRoute[] {
+  if (sharedPorts.length === 0) return [];
+
+  try {
+    return verifyRegisteredTailscaleRoutes({ sharedPorts, nodeDnsName });
+  } catch {
+    registerTailscaleRoutes(sharedPorts);
+    return verifyRegisteredTailscaleRoutes({ sharedPorts, nodeDnsName });
+  }
+}
+
 function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: string[]): void {
   for (const sessionName of [...new Set(sessionNames.filter(Boolean))]) {
     killSessionIfPresent(tmuxStore, sessionName);
@@ -441,8 +549,6 @@ async function main(): Promise<void> {
     worktreeKey: repoRootRealpath,
     services: sharedServiceNamesForMode(mode),
   });
-  const nodeDnsName = mode === "local" ? undefined : tailscaleStatusDnsName();
-  const externalRoutes = externalRoutesFromSharedPorts(sharedPorts, nodeDnsName);
 
   if (cliOptions.print) {
     applyDevEnvToProcess(repoRoot);
@@ -468,7 +574,7 @@ async function main(): Promise<void> {
   }
 
   if (cliOptions.stop) {
-    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutes);
+    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutesForCleanup(sharedPorts));
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
     console.log(`stopped · ${identity.sessionName}`);
     return;
@@ -487,27 +593,57 @@ async function main(): Promise<void> {
   // request, long after this script reports the session healthy.
   await assertDevInfraReady();
 
+  const nodeDnsName = mode === "local" ? undefined : tailscaleStatusDnsName();
+
   if (cliOptions.restart) {
-    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutes);
+    cleanupTailscaleRoutes(previous?.externalRoutes ?? externalRoutesForCleanup(sharedPorts));
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
+    const runningSharedPorts = resolveSharedDevServicePorts({
+      mode: runningMode,
+      worktreeKey: repoRootRealpath,
+      services: sharedServiceNamesForMode(runningMode),
+    });
+    const runningDevCommand = createDevSessionCommand({
+      mode: runningMode,
+      sharedPorts: runningSharedPorts,
+      worktreePrefix,
+    });
     await printExistingSessionInfo({
       tmuxStore,
       sessionName: identity.sessionName,
       mode: runningMode,
       worktreePrefix,
-      externalRoutes: previous?.externalRoutes ?? externalRoutes,
+      sharedPorts: runningSharedPorts,
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscaleStatusDnsName(),
+      branch: previous?.branch ?? branchName,
+      displayCommand: runningDevCommand.display,
+      createdAt: previous?.createdAt,
     });
     return;
   } else if (previous?.sessionName && tmuxStore.sessionExists(previous.sessionName)) {
     const runningMode = isDevMode(previous.mode) ? previous.mode : mode;
+    const runningSharedPorts = resolveSharedDevServicePorts({
+      mode: runningMode,
+      worktreeKey: repoRootRealpath,
+      services: sharedServiceNamesForMode(runningMode),
+    });
+    const runningDevCommand = createDevSessionCommand({
+      mode: runningMode,
+      sharedPorts: runningSharedPorts,
+      worktreePrefix: previousWorktreePrefix,
+    });
     await printExistingSessionInfo({
       tmuxStore,
       sessionName: previous.sessionName,
       mode: runningMode,
       worktreePrefix: previousWorktreePrefix,
-      externalRoutes: previous?.externalRoutes ?? externalRoutes,
+      sharedPorts: runningSharedPorts,
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscaleStatusDnsName(),
+      branch: previous.branch,
+      displayCommand: runningDevCommand.display,
+      createdAt: previous.createdAt,
     });
     return;
   }
@@ -528,7 +664,7 @@ async function main(): Promise<void> {
     process.exit(runResult.status ?? 1);
   }
 
-  const routeState = waitForPortlessState(tmuxStore, mode, 20_000, worktreePrefix, externalRoutes);
+  const routeState = waitForPortlessState(tmuxStore, mode, 20_000, worktreePrefix);
   if (!routeState.healthy) {
     failAndExit(
       `dev session started but health checks failed: ${routeState.errors.join("; ")}`,
@@ -551,7 +687,25 @@ async function main(): Promise<void> {
     );
   }
 
-  registerTailscaleRoutes(sharedPorts);
+  let externalRoutes: ExternalDevRoute[];
+  try {
+    externalRoutes = ensureTailscaleRoutesRegistered({ sharedPorts, nodeDnsName });
+  } catch (error) {
+    writeMetadataWithoutExternalRoutes({
+      branch: branchName,
+      sessionName: identity.sessionName,
+      mode,
+      displayCommand: devCommand.display,
+    });
+    failAndExit(
+      `dev session started but Tailscale route verification failed: ${commandErrorText(error)}`,
+      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
+      identity.sessionName,
+      routeState.lines,
+    );
+  }
+
+  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
 
   writeJsonMetadata(
     buildMetadata({
@@ -567,7 +721,7 @@ async function main(): Promise<void> {
     headline: "started",
     sessionName: identity.sessionName,
     mode,
-    routeLines: routeState.lines,
+    routeLines: verifiedRouteState.lines,
   });
 }
 

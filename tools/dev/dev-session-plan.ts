@@ -244,20 +244,6 @@ export function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[]
     .map((service) => service.serviceName);
 }
 
-export function externalRoutesFromSharedPorts(
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-  nodeDnsName?: string,
-): ExternalDevRoute[] {
-  const host = nodeDnsName?.replace(/\.$/, "");
-
-  return sharedPorts.map((ports) => ({
-    service: ports.service,
-    mode: ports.externalMode,
-    httpsPort: ports.externalHttpsPort,
-    url: host ? `https://${host}:${ports.externalHttpsPort}` : undefined,
-  }));
-}
-
 export function buildMetadata({
   branch,
   sessionName,
