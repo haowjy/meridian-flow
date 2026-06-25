@@ -26,12 +26,13 @@ with a single unified `ContextPort` that resolves durable project schemes
   `ContextDocumentStore`, and `ContextTreeMutationStore` (for `move`/`delete`
   with CAS conformance).
 - **ContextFS** — the reference/production adapter: maps a slash-delimited file
-  tree onto `ContextDocumentStore` rows and `DocumentSyncPort` Yjs mirrors.
-- **Collab-aware document sync** (`context/collab-document-sync.ts`) — routes
-  agent/human writes through `DocumentSyncService` (validateAgentTurn,
-  touchDocumentActivity, corrupt-mirror recovery) while system/import writes
-  stay on the inner sync port. Atomic `edit()` preserves the read→transform→write
-  path.
+  tree onto `ContextDocumentStore` rows and the collab domain's Yjs document
+  state.
+- **Collab-aware markdown bridge** (`context/collab-document-sync.ts`) — maps
+  ContextFS provenance to collab origins. Agent/human writes use the richer
+  collab write APIs that return attribution metadata; system/import writes use
+  the markdown write API directly. Atomic `edit()` is preserved for agent/human
+  writes.
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
@@ -68,15 +69,16 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 - `ContextFS` owns normalized path ↔ folder/document resolution and creates
   missing folders on writes and `mkdir`.
-- Text documents are Yjs-canonical. Reads seed/get the mirror from the store's
-  markdown projection, then return `DocumentSyncPort.readAsMarkdown`. Writes
-  write through `DocumentSyncPort.writeFromMarkdown`, read back from Yjs, and
-  persist that projection into the store for listing/search.
+- Text documents are Yjs-canonical. Reads call the collab domain's
+  `readAsMarkdown` directly. Writes flow through collab markdown/write APIs,
+  read back from Yjs, and persist that projection into the store for
+  listing/search.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
-- Collab-aware writes (agent/human) route through `collab-document-sync.ts`
-  for `validateAgentTurn`, `touchDocumentActivity`, and corrupt-mirror recovery.
+- Collab-aware writes (agent/human) route through `collab-document-sync.ts` for
+  provenance mapping and attribution-bearing write results. Document-activity
+  touching is a separate post-write hook and is not part of this bridge yet.
 - Binary documents are storage-backed metadata rows. `read` rejects them as
   `io_error`; `stat`/`list` return binary refs with storage URL and MIME data.
 - `move`/`delete` use `ContextTreeMutationStore` with CAS location tokens

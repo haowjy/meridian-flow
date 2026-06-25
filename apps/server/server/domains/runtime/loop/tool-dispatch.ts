@@ -28,6 +28,7 @@ export interface ToolDispatchDeps {
 
 export interface ToolDispatchContext {
   thread: Thread;
+  responseId: string;
   state: CheckpointTurnState;
   checkpointSession: CheckpointSession;
   checkpointAutoResume: CheckpointAutoResumePolicy;
@@ -131,6 +132,7 @@ export async function dispatchToolCall(
     {
       threadId: ctx.state.threadId,
       turnId: ctx.state.currentTurn.id,
+      responseId: ctx.responseId,
       agentSlug: ctx.thread.currentAgent,
       signal: ctx.state.signal,
       checkpointTimeoutMs: ctx.checkpointAutoResume.timeoutMs,

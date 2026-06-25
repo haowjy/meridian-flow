@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 import { resolveAppUrl } from "./portless";
 
+// phase5/vertical-slice assert deterministic mock gateway text.
+process.env.MODEL_PROVIDER = "mock";
+
 const APP_URL = resolveAppUrl();
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = process.env.STATE_PATH ?? resolve(HERE, "../.auth/state.json");

@@ -18,8 +18,6 @@ import {
   resolveApiDevOriginForAppHost,
 } from "@/core/transport/dev-transport";
 
-const TS_NET_SUFFIX = ".ts.net";
-
 type RequestContext = {
   request?: Request;
 };
@@ -73,22 +71,6 @@ function publicAppHost(request: Request): string | undefined {
   );
 }
 
-function publicAppProtocol(request: Request): "http" | "https" {
-  const forwardedProto = firstHeaderValue(request.headers.get("x-forwarded-proto"));
-  if (forwardedProto === "http" || forwardedProto === "https") return forwardedProto;
-
-  try {
-    return new URL(request.url).protocol === "http:" ? "http" : "https";
-  } catch {
-    return "https";
-  }
-}
-
-function isTailnetHost(appHost: string): boolean {
-  const [rawHost] = appHost.toLowerCase().split(":");
-  return rawHost?.endsWith(TS_NET_SUFFIX) ?? false;
-}
-
 export function resolveSsrApiOrigin(request: Request): string | undefined {
   const configuredOrigin = configuredApiOrigin();
   if (configuredOrigin) return configuredOrigin;
@@ -103,12 +85,6 @@ export function resolveSsrApiOrigin(request: Request): string | undefined {
   const fallback = resolveApiDevOriginFallback();
   const appHost = publicAppHost(request);
   if (!appHost) return fallback;
-
-  // Tailnet dev exposes the app origin and relies on the app dev proxy for /api;
-  // there is no stable paired server tailnet host/port for SSR to derive.
-  if (isTailnetHost(appHost)) {
-    return `${publicAppProtocol(request)}://${appHost}`;
-  }
 
   return resolveApiDevOriginForAppHost(appHost, fallback);
 }

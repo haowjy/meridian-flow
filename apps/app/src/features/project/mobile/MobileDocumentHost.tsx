@@ -15,14 +15,17 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { EditorView } from "@/features/editor/EditorView";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
+
+const EditorView = lazy(() =>
+  import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
+);
 
 const MOBILE_DOCUMENT_OWNER = "mobile-project-document-host";
 
@@ -108,15 +111,24 @@ export function MobileDocumentHost({
 
   return (
     <div className="h-full min-h-0">
-      <EditorView
-        projectId={projectId}
-        documentId={activeTab.documentId}
-        schemaType={activeTab.schemaType}
-        editable={false}
-        showToolbar={false}
-        ariaLabel={t`Read-only live document`}
-        showCollaborationDecorations={false}
-      />
+      <Suspense
+        fallback={
+          <DocumentStatus tone="muted">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            <Trans>Opening document…</Trans>
+          </DocumentStatus>
+        }
+      >
+        <EditorView
+          projectId={projectId}
+          documentId={activeTab.documentId}
+          schemaType={activeTab.schemaType}
+          editable={false}
+          showToolbar={false}
+          ariaLabel={t`Read-only live document`}
+          showCollaborationDecorations={false}
+        />
+      </Suspense>
     </div>
   );
 }

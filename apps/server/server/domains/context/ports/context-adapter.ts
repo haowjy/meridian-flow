@@ -6,6 +6,7 @@
  */
 import type { Result } from "../../../shared/result.js";
 import type {
+  ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextReadResult,
   ContextWriteBinaryOptions,
@@ -66,10 +67,10 @@ export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitPreparedMove(
     prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+  ): Promise<Result<AdapterMoveResult, AdapterFault>>;
   commitPreparedDelete(
     token: ContextLocationToken,
-  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>>;
+  ): Promise<Result<AdapterDeleteResult, AdapterFault>>;
 }
 
 /**
@@ -89,6 +90,10 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
+  ensureTrackedDocument(
+    path: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextEnsureTrackedDocumentResult, AdapterFault>>;
   edit(
     path: string,
     transform: (content: string) => string,

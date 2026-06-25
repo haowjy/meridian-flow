@@ -1,0 +1,105 @@
+import type * as Y from "yjs";
+
+export interface ResolvedSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * Resolver → apply seam. Element references are live objects from one local Y.Doc;
+ * a ResolvedEdit must never escape the call that created it or cross process/doc boundaries.
+ */
+export type ResolvedEdit = { documentId: string; file: string } & (
+  | {
+      kind: "text";
+      element: Y.XmlElement;
+      span: ResolvedSpan;
+      newText: string;
+    }
+  | {
+      kind: "insert";
+      after?: Y.XmlElement;
+      newText: string;
+    }
+  | {
+      kind: "delete";
+      element: Y.XmlElement;
+    }
+);
+
+export type EditResolutionErrorCode =
+  | "not_found"
+  | "ambiguous_match"
+  | "invalid_write"
+  | "document_not_found";
+
+export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "internal_error";
+
+export type ApplyTier = 1 | 2 | 3;
+
+export interface AgentOrigin {
+  type: "agent";
+  actorTurnId: string;
+}
+
+export type ApplyTransactionOrigin = unknown;
+
+export type ConcurrentUpdateOrigin =
+  | AgentOrigin
+  | { type: "human"; userId?: string }
+  | { type: "system" };
+
+export interface ConcurrentUpdate {
+  update: Uint8Array;
+  origin: ConcurrentUpdateOrigin;
+}
+
+export interface ApplyEditsOptions {
+  /** Actor turn id used only to ignore this actor's own re-sync updates; never embedded in transaction origin. */
+  ownActorTurnId?: string;
+  /** State vector from the actor's last explicit sync (V_sync); defaults to the pre-apply doc vector. */
+  syncStateVector?: Uint8Array;
+  /** Re-sync updates from other actors, applied after local edits and before echo computation. */
+  concurrentUpdates?: readonly ConcurrentUpdate[];
+  concurrentCollapseThreshold?: number;
+}
+
+export interface AppliedEditSummary {
+  kind: ResolvedEdit["kind"];
+  tier: ApplyTier;
+  blockIds: string[];
+}
+
+export interface ApplyEchoHunk {
+  mode: "suppressed" | "truncated" | "full";
+  blocks: string[];
+}
+
+export interface ConcurrentEditInfo {
+  human: string[];
+  agent: string[];
+  collapsed?: boolean;
+  reviewCommand?: string;
+}
+
+export type ApplyResult =
+  | {
+      ok: true;
+      status: "success";
+      documentId: string;
+      file: string;
+      echo: ApplyEchoHunk[];
+      concurrentEdits?: ConcurrentEditInfo;
+      changedBlocks?: string[];
+      deletedBlocks?: string[];
+      appliedEdits?: AppliedEditSummary[];
+    }
+  | {
+      ok: false;
+      error: {
+        code: ApplyErrorCode;
+        message: string;
+        details?: Record<string, unknown>;
+        committedEdits?: number;
+      };
+    };

@@ -59,6 +59,7 @@ export function buildOpenRouterGenerateResult(acc: OpenRouterStreamAccumulator):
     providerData.generation !== undefined;
   return {
     ...result,
+    ...(acc.generationId ? { providerRequestId: acc.generationId } : {}),
     providerData: hasProviderData ? providerData : undefined,
   };
 }

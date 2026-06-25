@@ -28,13 +28,15 @@ export function matchesPhoneShellViewport({ width, height, pointer }: PhoneShell
 }
 
 export function usePhoneShell(): boolean | null {
-  const [isPhone, setIsPhone] = useState<boolean | null>(null);
+  const [isPhone, setIsPhone] = useState<boolean | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.matchMedia(PHONE_SHELL_QUERY).matches;
+  });
 
   useEffect(() => {
     const mql = window.matchMedia(PHONE_SHELL_QUERY);
     const onChange = () => setIsPhone(mql.matches);
     mql.addEventListener("change", onChange);
-    setIsPhone(mql.matches);
     return () => mql.removeEventListener("change", onChange);
   }, []);
 

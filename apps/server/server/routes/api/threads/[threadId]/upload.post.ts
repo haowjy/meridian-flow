@@ -30,7 +30,7 @@ function cleanFilename(filename: string): string {
 function importErrorToHttp(error: ThreadUploadImportError): never {
   switch (error.code) {
     case "object_store_error":
-    case "mirror_error":
+    case "collab_error":
       throw createError({ statusCode: 502, message: error.message });
     case "repository_error":
       throw createError({ statusCode: 500, message: error.message });

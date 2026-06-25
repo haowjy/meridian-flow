@@ -4,7 +4,6 @@
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { DocumentSyncPort } from "../../collab/ports/document-sync.js";
 import type {
   AdapterFault,
   AdapterFileRef,
@@ -12,6 +11,7 @@ import type {
   ContextSchemeAdapter,
 } from "../ports/context-adapter.js";
 import type {
+  ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
   ContextMoveResult,
@@ -38,8 +38,6 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (workId: string) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
-  /** Injected for cross-scheme move mirror eviction. */
-  documentSync?: DocumentSyncPort;
 }
 
 interface Dispatch extends ContextTreeDispatch {
@@ -133,7 +131,7 @@ async function callAdapter<T>(
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
-  const treeMover = new ContextTreeMover({ documentSync: deps.documentSync });
+  const treeMover = new ContextTreeMover();
 
   function authorityAllowed(workId: string): boolean {
     return deps.allowedAuthorities?.has(workId) ?? false;
@@ -211,6 +209,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: canonical });
       }
       return callAdapter(canonical, () => adapter.write(path, content, options));
+    },
+
+    async ensureTrackedDocument(
+      uri: string,
+      options?: ContextWriteOptions,
+    ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
+      const r = await resolve(uri);
+      if (!r.ok) return r;
+      const { adapter, path, canonical } = r.value;
+      if (!adapter.capabilities.writable) {
+        return Err({ code: "permission_denied", uri: canonical });
+      }
+      return callAdapter(canonical, () => adapter.ensureTrackedDocument(path, options));
     },
 
     async edit(

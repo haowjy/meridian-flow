@@ -7,13 +7,8 @@
 
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { SyncError } from "../../../collab/ports/document-sync.js";
-import {
-  type ContextCollabDocumentSync,
-  editCollabMarkdown,
-  ensureCollabMirror,
-  writeCollabMarkdown,
-} from "../../context/collab-document-sync.js";
+import type { MarkdownDocumentStore, SyncError } from "../../../collab/index.js";
+import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
   AdapterDeleteResult,
@@ -42,7 +37,7 @@ import type {
 export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
-  documentSync: ContextCollabDocumentSync;
+  documentSync: MarkdownDocumentStore;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
 }
@@ -57,8 +52,8 @@ const DEFAULT_EDITABLE_FILETYPE = "markdown";
  * single-node persistence to a {@link ContextDocumentStore}.
  *
  * Content is Yjs-canonical: folder tree and `markdown_projection` stay in the
- * store, but read/write content flows through DocumentSyncService. The store's
- * markdown is only a seed/search projection cache.
+ * store, but read/write content flows through the collab domain. The store's
+ * markdown is only a search/listing projection cache.
  *
  * v1 semantics are last-write-wins:
  * `ensureFolderId` find-then-create and the store's find-then-upsert are not
@@ -73,7 +68,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
-  private readonly documentSync: ContextCollabDocumentSync;
+  private readonly documentSync: MarkdownDocumentStore;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -93,19 +88,12 @@ export class ContextFS implements ContextSchemeAdapter {
       case "not_found":
         return {
           code: "io_error",
-          message: `Yjs mirror not found for document: ${error.documentId}`,
+          message: `Yjs document not found: ${error.documentId}`,
         };
       case "checkpoint_not_found":
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
         return { code: "io_error", message: error.message };
-      case "edit_not_found":
-        return { code: "io_error", message: `Edit text not found: ${error.oldText}` };
-      case "ambiguous_edit":
-        return {
-          code: "io_error",
-          message: `Edit text is ambiguous (${error.matchCount} matches): ${error.oldText}`,
-        };
     }
   }
 
@@ -190,10 +178,6 @@ export class ContextFS implements ContextSchemeAdapter {
       };
     }
 
-    const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
-    const mirror = await ensureCollabMirror(this.documentSync, doc.id, doc.markdown, filetype);
-    if (!mirror.ok) return mirror;
-
     const read = await this.documentSync.readAsMarkdown(doc.id);
     if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
     return Ok({ content: read.value, documentId: doc.id });
@@ -219,8 +203,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const write = await writeCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      seedMarkdown: doc.markdown,
-      filetype: doc.filetype ?? filetype,
       content,
       provenance: options?.origin,
     });
@@ -237,6 +219,31 @@ export class ContextFS implements ContextSchemeAdapter {
       markdown: write.markdown,
       updateSeq: write.updateSeq,
     });
+  }
+
+  async ensureTrackedDocument(
+    path: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
+    const { dir, filename } = splitPath(path);
+    if (!filename) {
+      return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
+    }
+    const folderId = await this.ensureFolderId(dir);
+    const { name, extension } = parseFilename(filename);
+    const filetype = filetypeForPath(filename);
+    const existing = await this.store.findDocument(folderId, name, extension);
+    if (existing && existing.fileType !== null) {
+      return {
+        ok: false,
+        error: { code: "io_error", message: `Cannot use binary file as markdown: ${path}` },
+      };
+    }
+    const doc =
+      existing ??
+      (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
+    if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
+    return Ok({ documentId: doc.id, created: !existing });
   }
 
   async edit(
@@ -269,8 +276,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const edited = await editCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      seedMarkdown: doc.markdown,
-      filetype,
       transform,
       provenance: options?.origin,
     });
@@ -397,24 +402,22 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async commitPreparedMove(
     prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+  ): Promise<Result<AdapterMoveResult, AdapterFault>> {
     const committed = await this.mutationStore.commitMove(prepared);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       path: prepared.destinationPath,
-      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
     });
   }
 
   private async commitPreparedDelete(
     token: ContextLocationToken,
-  ): Promise<Result<AdapterDeleteResult & { invalidatedDocumentIds: string[] }, AdapterFault>> {
+  ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
     const committed = await this.mutationStore.commitDelete(token);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       deletedNodeId: committed.value.deletedNodeId,
-      invalidatedDocumentIds: committed.value.invalidatedDocumentIds,
     });
   }
 }

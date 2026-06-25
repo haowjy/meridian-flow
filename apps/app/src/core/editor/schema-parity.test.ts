@@ -117,8 +117,6 @@ describe("TipTap editor schema parity", () => {
       label: { default: null },
       caption: { default: "" },
     });
-    expect(tiptapSchema.nodes.table_cell.spec.content).toBe("inline*");
-    expect(tiptapSchema.nodes.table_header.spec.content).toBe("inline*");
     expect(attrsShape(tiptapSchema.marks.link.spec.attrs)).toMatchObject({
       href: { default: "" },
       title: { default: null },

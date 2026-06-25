@@ -87,5 +87,28 @@ export default defineConfig(({ mode }) => {
       },
     },
     envDir: repoRoot,
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (
+                id.includes("yjs") ||
+                id.includes("y-protocols") ||
+                id.includes("y-prosemirror")
+              ) {
+                return "collab-yjs";
+              }
+              if (id.includes("@tiptap") || id.includes("prosemirror-")) {
+                return "editor-tiptap";
+              }
+              if (id.includes("@hocuspocus")) {
+                return "collab-transport";
+              }
+            }
+          },
+        },
+      },
+    },
   };
 });

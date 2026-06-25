@@ -59,6 +59,19 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
 
+## Worktree cleanup
+
+Merged or finished work leaves several linked resources behind. `pnpm dev:prune-worktrees` tears them down safely:
+
+```bash
+pnpm dev:prune-worktrees -- --auto             # plan cleanup for all merged worktrees
+pnpm dev:prune-worktrees -- --target <value>   # target by work id, path, branch, or PR number
+pnpm dev:prune-worktrees -- --auto --dry-run   # print plan without executing
+pnpm dev:prune-worktrees -- --auto --yes       # execute without confirmation
+```
+
+Per target, cleanup runs in order: stop dev stack → drop database → remove git worktree → delete local branch → mark Meridian work done. The resolver refuses primary worktree, current worktree, `main` branch, and unmerged branches.
+
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
 ## Git hooks (lefthook)
@@ -108,8 +121,13 @@ pnpm check          # lint + typecheck + test
 Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment).
 
 ```bash
-pnpm dev
-pnpm portless:list
+pnpm dev                  # start (tailscale serve by default)
+pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
+pnpm dev --funnel         # public internet via Tailscale Funnel
+pnpm dev --print          # dry-run: print the session plan (secrets redacted)
+pnpm dev --stop           # stop this worktree's tmux session + prune routes
+pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale/--funnel)
+pnpm portless:list        # live localhost HTTPS URLs
 ```
 
 ## Workstation: memory-safe ripgrep

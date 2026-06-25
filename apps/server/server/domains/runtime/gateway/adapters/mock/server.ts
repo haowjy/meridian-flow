@@ -300,6 +300,7 @@ function buildTextStreamChunks(id: string, model: string, text: string): string[
 function buildWriteToolCallStreamChunks(id: string, model: string, userText: string): string[] {
   const toolName = "write";
   const args = JSON.stringify({
+    command: "create",
     path: VERTICAL_SLICE_WRITE_PATH,
     content: verticalSliceWriteContent(userText),
   });
@@ -610,6 +611,7 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
                           function: {
                             name: "write",
                             arguments: JSON.stringify({
+                              command: "create",
                               path: VERTICAL_SLICE_WRITE_PATH,
                               content: verticalSliceWriteContent(userText),
                             }),

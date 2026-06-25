@@ -9,6 +9,7 @@
       "!**/.nx",
       "!**/.mars",
       "!**/.meridian",
+      "!**/.meridian-work",
       "!**/.codex-local",
       "!**/routeTree.gen.ts",
       "!apps/**/src/styles",
@@ -21,7 +22,8 @@
       "!.pi",
       "!.opencode",
       "!.cursor",
-      "!**/.context"
+      "!**/.context",
+      "!packages/agent-edit/demo/**/*.html"
     ]
   },
   "formatter": {

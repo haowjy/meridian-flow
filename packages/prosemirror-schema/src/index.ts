@@ -1,10 +1,12 @@
 /**
  * Purpose: Defines Meridian's shared ProseMirror document node/mark specs and builds the runtime Schema from them.
  * Why independent: These structural specs must be identical in server adapters and the frontend editor to keep y-prosemirror documents safe, so they live as a shared primitive instead of domain code.
- * MULTIPLE PURPOSES: structural node specs, structural mark specs, and schema construction.
+ * MULTIPLE PURPOSES: structural node specs, structural mark specs, schema construction, and shared Yjs collaboration protocol constants.
  */
+import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
+import { Doc } from "yjs";
 
 /**
  * Strip parseDOM/toDOM from an upstream spec. Our package exports only
@@ -71,37 +73,19 @@ const customNodes = {
     defining: true,
   },
 
-  table: {
-    content: "table_row+",
-    group: "block",
-    isolating: true,
-  },
-
-  // GFM tables are first-row-header only; rows are homogeneous (no header columns).
-  table_row: {
-    content: "(table_header)+ | (table_cell)+",
-  },
-
-  table_cell: {
-    content: "inline*",
-    isolating: true,
-  },
-
-  table_header: {
-    content: "inline*",
-    isolating: true,
-  },
-
-  // TODO: LaTeX math rendering — see docs/kb/decisions/editor-math.md
-  math_display: {
+  jsx_leaf: {
+    attrs: { name: {}, props: { default: {} } },
     content: "text*",
-    marks: "",
     group: "block",
     code: true,
-    defining: true,
   },
 
-  // TODO: MyST figure directives — see docs/kb/decisions/editor-figures.md
+  jsx_container: {
+    attrs: { name: {}, props: { default: {} } },
+    content: "block+",
+    group: "block",
+  },
+
   figure: {
     group: "block",
     attrs: {
@@ -151,9 +135,30 @@ const customMarks = {
  * the old version. Lives here because this package owns the schema shape the
  * version tracks — client and server must import the same value.
  */
-export const COLLAB_SCHEMA_VERSION = 2;
+export const COLLAB_SCHEMA_VERSION = 3;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
+
+/**
+ * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored
+ * Yjs writer streams (e.g. agent-edit reversal). Human/agent docs must never draw a
+ * clientID in this band, and inbound updates carrying structs from it are rejected at
+ * ingest. This is a Meridian convention — Yjs has no native reserved-range concept; the
+ * Yjs invariant we rely on is that one clientID is owned by exactly one live writer.
+ */
+export const RESERVED_CLIENT_ID_MAX = 999;
+/** The agent-edit reversal/mutation writer slot within the reserved band. */
+export const AGENT_EDIT_UNDO_CLIENT_ID = 999;
+export const isReservedClientId = (clientId: number): boolean => clientId <= RESERVED_CLIENT_ID_MAX;
+
+/** Construct a collab Y.Doc whose clientID is guaranteed outside the reserved band. */
+export function createCollabYDoc(options?: ConstructorParameters<typeof Doc>[0]): Doc {
+  const doc = new Doc(options);
+  while (isReservedClientId(doc.clientID)) {
+    doc.clientID = uint32();
+  }
+  return doc;
+}
 
 export const documentNodes = {
   ...basicNodeDefaults,

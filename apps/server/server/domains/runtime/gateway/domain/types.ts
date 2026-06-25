@@ -315,6 +315,8 @@ export interface GenerateResult {
   usage: Usage;
   model: string;
   provider: string;
+  /** Provider request/generation identifier when an adapter can expose one generically. */
+  providerRequestId?: string;
   providerData?: unknown;
 }
 

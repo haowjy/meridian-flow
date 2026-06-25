@@ -580,7 +580,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         treePathSegments(targetParentPath),
       );
       const now = new Date();
-      const invalidatedDocumentIds: string[] = [];
 
       if (input.source.kind === "file") {
         if (targetToken?.kind === "file") {
@@ -598,7 +597,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
-          invalidatedDocumentIds.push(targetToken.nodeId);
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -622,10 +620,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (moved.length !== 1) rollback("stale_source");
-        if (input.source.sourceId !== input.destinationSourceId) {
-          invalidatedDocumentIds.push(input.source.nodeId);
-        }
-        return Ok({ movedNodeId: input.source.nodeId, invalidatedDocumentIds });
+        return Ok({ movedNodeId: input.source.nodeId });
       }
 
       if (input.source.sourceId === input.destinationSourceId) {
@@ -647,32 +642,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: folders.id });
         if (movedRoot.length !== 1) rollback("stale_source");
-        return Ok({ movedNodeId: input.source.nodeId, invalidatedDocumentIds });
+        return Ok({ movedNodeId: input.source.nodeId });
       }
-
-      const documentRows = await currentDrizzleDb(this.db)
-        .select({ id: documents.id })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.contextSourceId, input.source.sourceId),
-            isNull(documents.deletedAt),
-            sql`${documents.folderId} IN (
-              WITH RECURSIVE subtree AS (
-                SELECT id FROM folders
-                WHERE id = ${input.source.nodeId}
-                  AND context_source_id = ${input.source.sourceId}
-                  AND deleted_at IS NULL
-                UNION ALL
-                SELECT f.id FROM folders f
-                JOIN subtree s ON f.parent_id = s.id
-                WHERE f.context_source_id = ${input.source.sourceId}
-                  AND f.deleted_at IS NULL
-              )
-              SELECT id FROM subtree
-            )`,
-          ),
-        );
 
       await this.runBeforeDestructiveWrite();
       const movedRoot = await currentDrizzleDb(this.db)
@@ -729,8 +700,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
-      invalidatedDocumentIds.push(...documentRows.map((row) => row.id));
-      return Ok({ movedNodeId: input.source.nodeId, invalidatedDocumentIds });
+      return Ok({ movedNodeId: input.source.nodeId });
     });
   }
 
@@ -759,7 +729,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (deleted.length !== 1) rollback("stale_source");
-        return Ok({ deletedNodeId: token.nodeId, invalidatedDocumentIds: [token.nodeId] });
+        return Ok({ deletedNodeId: token.nodeId });
       }
 
       const [childFolder] = await currentDrizzleDb(this.db)
@@ -818,7 +788,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         if (!sameLocation(still, token)) rollback("stale_source");
         rollback("invalid_operation");
       }
-      return Ok({ deletedNodeId: token.nodeId, invalidatedDocumentIds: [] });
+      return Ok({ deletedNodeId: token.nodeId });
     });
   }
 }

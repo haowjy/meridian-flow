@@ -7,12 +7,14 @@ import type { GatewayConfig, ModelInfo, ProviderConfig } from "../domain/index.j
 import { buildFromRegistry, MODEL_REGISTRY } from "./registry.js";
 
 export interface GatewayEnvInput {
-  MODEL_PROVIDER?: "mock" | "anthropic" | "openai" | "auto" | string;
+  /** Only "mock" has behavior; all other values are ignored so the registry decides. */
+  MODEL_PROVIDER?: string;
   MODEL_CALL_TIMEOUT_MS?: number;
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  OPENROUTER_BASE_URL?: string;
 }
 
 const MOCK_MODEL: ModelInfo = {
@@ -40,12 +42,21 @@ export function buildProviderConfigs(
     return { providers: [], defaultModel: undefined };
   }
 
-  return buildFromRegistry(MODEL_REGISTRY, {
+  const gatewayConfig = buildFromRegistry(MODEL_REGISTRY, {
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   });
+
+  if (!env.OPENROUTER_BASE_URL) return gatewayConfig;
+
+  return {
+    ...gatewayConfig,
+    providers: gatewayConfig.providers.map((provider) =>
+      provider.id === "openrouter" ? { ...provider, baseUrl: env.OPENROUTER_BASE_URL } : provider,
+    ),
+  };
 }
 
 /**

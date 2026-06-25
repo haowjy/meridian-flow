@@ -1,18 +1,26 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  buildProviderApiKeyGuardShell,
-  resolveAppEnvPassthroughKeys,
-} from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
-import { runGit } from "./lib/dev-env";
+import { waitForDevReadiness } from "./dev-readiness";
+import {
+  buildMetadata,
+  createDevSessionCommand,
+  type DevSessionMetadata,
+  sharedServiceNamesForMode,
+} from "./dev-session-plan";
+import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
+import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
+import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
+  type ExpectedServiceName,
+  type ExternalDevRoute,
   formatDevRouteLines,
   getExpectedServicesForMode,
+  resolveExpectedRouteUrls,
   validateExpectedRoutes,
 } from "./portless-routes";
 import { resolveSessionIdentity } from "./session-identity";
@@ -23,22 +31,10 @@ const repoRootRealpath = fs.realpathSync(repoRoot);
 const metadataPath = path.join(repoRoot, ".meridian", "dev-session.json");
 const logPath = "logs/portless.log";
 
-/**
- * Slim record of the running dev session, written to `.meridian/dev-session.json`
- * after a fresh launch. Read only to report the current mode on reuse and to let
- * `pnpm dev:restart` (`--preserve-mode`) recreate the mode that was running.
- */
-interface DevSessionMetadata {
-  sessionName: string;
-  mode: DevMode;
-  branch: string;
-  command: string;
-  createdAt: string;
-}
-
 interface PortlessState {
   lines: string[];
   servicePids: Record<string, number>;
+  serviceOrigins: Partial<Record<ExpectedServiceName, string>>;
   healthy: boolean;
   errors: string[];
 }
@@ -58,10 +54,6 @@ function detectWorktreePrefix(branchName: string): string | undefined {
   return branchToPortlessPrefix(branchName);
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 function isDevMode(value: string | null | undefined): value is DevMode {
   return value === "local" || value === "tailscale" || value === "funnel";
 }
@@ -70,77 +62,18 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function portlessEnvPrefix(shared: boolean): string {
-  const shareKeys = ["PORTLESS_TAILSCALE", "PORTLESS_FUNNEL"];
-  const commonKeys = [
-    "PORTLESS_LAN",
-    "PORTLESS_HTTPS",
-    "PORTLESS_TLD",
-    "PORTLESS_WILDCARD",
-    "PORTLESS_SYNC_HOSTS",
-    "PORTLESS_STATE_DIR",
-  ];
-
-  const passThroughKeys = shared ? [...shareKeys, ...commonKeys] : commonKeys;
-  const assignments = passThroughKeys
-    .filter((key) => process.env[key] !== undefined)
-    .map((key) => `${key}=${shellQuote(process.env[key] ?? "")}`);
-
-  return assignments.length > 0 ? `env ${assignments.join(" ")} ` : "";
-}
-
-function portlessShareFlag(mode: DevMode): string {
-  if (mode === "funnel") return "--funnel";
-  if (mode === "tailscale") return "--tailscale";
-  return "";
-}
-
-function appEnvPassthroughExports(): string {
-  const exports = resolveAppEnvPassthroughKeys(process.env).map(
-    (key) => `export ${key}=${shellQuote(process.env[key] ?? "")}`,
-  );
-
-  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
-}
-
-function envSourcePreamble(): string {
-  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}${buildProviderApiKeyGuardShell()}`;
-}
-
-function portlessCommandBody(mode: DevMode): string {
-  const shareFlag = portlessShareFlag(mode);
-  // Keep names in sync with SERVICE_HOST_SUFFIXES in portless-routes.ts; portless adds `.localhost`.
-  const services: Array<{ name: string; pkg: string; shared: boolean; sharedModeOnly?: boolean }> =
-    [
-      { name: "app.meridian", pkg: "@meridian/app", shared: true },
-      { name: "server.meridian", pkg: "@meridian/server", shared: false },
-      { name: "web.meridian", pkg: "@meridian/www", shared: true, sharedModeOnly: true },
-    ];
-
-  const commands = services
-    .filter((service) => mode !== "local" || !service.sharedModeOnly)
-    .map(({ name, pkg, shared }) => {
-      const flag = shared && shareFlag ? ` ${shareFlag}` : "";
-      return `${portlessEnvPrefix(shared)}pnpm exec portless run --name ${name}${flag} pnpm --filter ${pkg} dev`;
-    });
-
-  return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
-}
-
-function createPortlessCommand(mode: DevMode): string {
-  return `mkdir -p logs && ${envSourcePreamble()} && ${portlessCommandBody(mode)} 2>&1 | tee ${logPath}`;
-}
-
 function readPortlessState(
   tmuxStore: TmuxSessionStore,
   mode: DevMode,
   worktreePrefix?: string,
+  externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
 ): PortlessState {
   const result = tmuxStore.run("pnpm", ["portless:list"]);
   if (result.status !== 0) {
     return {
       lines: [],
       servicePids: {},
+      serviceOrigins: {},
       healthy: false,
       errors: [result.stderr.trim() || "pnpm portless:list failed"],
     };
@@ -148,8 +81,9 @@ function readPortlessState(
 
   const validation = validateExpectedRoutes({ output: result.stdout, mode, worktreePrefix });
   return {
-    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix),
+    lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
     servicePids: validation.servicePids,
+    serviceOrigins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix }),
     healthy: validation.ok,
     errors: validation.errors,
   };
@@ -160,13 +94,14 @@ function waitForPortlessState(
   mode: DevMode,
   timeoutMs: number,
   worktreePrefix?: string,
+  externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
 ): PortlessState {
   const deadline = Date.now() + timeoutMs;
-  let state = readPortlessState(tmuxStore, mode, worktreePrefix);
+  let state = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
 
   while (!state.healthy && Date.now() < deadline) {
     sleep(500);
-    state = readPortlessState(tmuxStore, mode, worktreePrefix);
+    state = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
   }
 
   return state;
@@ -186,24 +121,27 @@ function writeJsonMetadata(metadata: DevSessionMetadata): void {
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 }
 
-function buildMetadata({
+function writeMetadataWithoutExternalRoutes({
   branch,
   sessionName,
   mode,
-  command,
+  displayCommand,
+  createdAt,
 }: {
   branch: string;
   sessionName: string;
   mode: DevMode;
-  command: string;
-}): DevSessionMetadata {
-  return {
+  displayCommand: string;
+  createdAt?: string;
+}): void {
+  writeJsonMetadata({
+    branch: branch || "detached",
     sessionName,
     mode,
-    branch: branch || "detached",
-    command,
-    createdAt: new Date().toISOString(),
-  };
+    command: displayCommand,
+    createdAt: createdAt ?? new Date().toISOString(),
+    externalRoutes: [],
+  });
 }
 
 function resolveRequestedMode({
@@ -231,12 +169,14 @@ function printDryRun({
   branch,
   worktreeHash,
   portlessCommand,
+  sharedPorts,
 }: {
   sessionName: string;
   mode: DevMode;
   branch: string;
   worktreeHash: string;
   portlessCommand: string;
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
 }): void {
   console.log("[dry-run] dev session plan");
   console.log(`session: ${sessionName}`);
@@ -250,11 +190,21 @@ function printDryRun({
       .map((service) => service.name)
       .join(", ")}`,
   );
+  if (sharedPorts.length > 0) {
+    console.log(
+      `shared ports: ${sharedPorts
+        .map(
+          (ports) =>
+            `${ports.service}=backend:${ports.appBackendPort},${ports.externalMode}:${ports.externalHttpsPort}`,
+        )
+        .join(", ")}`,
+    );
+  }
 
   console.log("[dry-run] tmux commands:");
   console.log(`tmux has-session -t ${sessionName}`);
   console.log(`tmux new-session -d -s ${sessionName} -c ${repoRoot}`);
-  console.log(`tmux send-keys -t ${sessionName}:0 '${portlessCommand}' C-m`);
+  console.log(`tmux send-keys -t ${sessionName}:0 -- ${portlessCommand} C-m`);
 }
 
 function failAndExit(
@@ -271,6 +221,90 @@ function failAndExit(
     routeLines,
   });
   process.exit(1);
+}
+
+async function printExistingSessionInfo({
+  tmuxStore,
+  sessionName,
+  mode,
+  worktreePrefix,
+  tailscale,
+  sharedPorts,
+  nodeDnsName,
+  branch,
+  displayCommand,
+  createdAt,
+}: {
+  tmuxStore: TmuxSessionStore;
+  sessionName: string;
+  mode: DevMode;
+  worktreePrefix?: string;
+  tailscale: TailscaleDevLifecycle;
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
+  nodeDnsName?: string;
+  branch: string;
+  displayCommand: string;
+  createdAt?: string;
+}): Promise<void> {
+  const routeState = waitForPortlessState(tmuxStore, mode, 5_000, worktreePrefix);
+  if (!routeState.healthy) {
+    failAndExit(
+      `dev session exists but route checks failed: ${routeState.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  const readiness = await waitForDevReadiness({
+    origins: routeState.serviceOrigins,
+    timeoutMs: 5_000,
+  });
+  if (!readiness.ok) {
+    failAndExit(
+      `dev session exists but readiness checks failed: ${readiness.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  let externalRoutes: ExternalDevRoute[];
+  try {
+    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
+  } catch (error) {
+    writeMetadataWithoutExternalRoutes({
+      branch,
+      sessionName,
+      mode,
+      displayCommand,
+      createdAt,
+    });
+    failAndExit(
+      `dev session exists but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
+      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
+      sessionName,
+      routeState.lines,
+    );
+  }
+
+  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+
+  writeJsonMetadata({
+    branch: branch || "detached",
+    sessionName,
+    mode,
+    command: displayCommand,
+    createdAt: createdAt ?? new Date().toISOString(),
+    externalRoutes,
+  });
+
+  printSessionInfo({
+    headline: "already running",
+    sessionName,
+    mode,
+    routeLines: verifiedRouteState.lines,
+  });
 }
 
 function killSessionIfPresent(tmuxStore: TmuxSessionStore, sessionName: string): void {
@@ -299,6 +333,7 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
 
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
+  const tailscale = new TailscaleDevLifecycle();
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
 
   const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -321,15 +356,26 @@ async function main(): Promise<void> {
   const previous = readJsonMetadata();
   const worktreePrefix = detectWorktreePrefix(branchName);
   const previousWorktreePrefix = previous ? detectWorktreePrefix(previous.branch) : undefined;
-  const portlessCommand = createPortlessCommand(mode);
+  const sharedPorts = resolveSharedDevServicePorts({
+    mode,
+    worktreeKey: repoRootRealpath,
+    services: sharedServiceNamesForMode(mode),
+  });
 
   if (cliOptions.print) {
+    applyDevEnvToProcess(repoRoot);
+    const devCommand = createDevSessionCommand({
+      mode,
+      sharedPorts,
+      worktreePrefix,
+    });
     printDryRun({
       sessionName: identity.sessionName,
       mode,
       branch: branchName,
       worktreeHash: identity.worktreeHash,
-      portlessCommand,
+      portlessCommand: devCommand.display,
+      sharedPorts,
     });
     process.exit(0);
   }
@@ -340,10 +386,18 @@ async function main(): Promise<void> {
   }
 
   if (cliOptions.stop) {
+    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
     console.log(`stopped · ${identity.sessionName}`);
     return;
   }
+
+  applyDevEnvToProcess(repoRoot);
+  const devCommand = createDevSessionCommand({
+    mode,
+    sharedPorts,
+    worktreePrefix,
+  });
 
   // Fail fast if the dev database is unset or unreachable: the app servers boot
   // fine without Postgres (connections are lazy), so a stopped container would
@@ -351,29 +405,64 @@ async function main(): Promise<void> {
   // request, long after this script reports the session healthy.
   await assertDevInfraReady();
 
+  const nodeDnsName = mode === "local" ? undefined : tailscale.resolveNodeDnsName();
+
   if (cliOptions.restart) {
+    tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
-    const routeState = waitForPortlessState(tmuxStore, runningMode, 5_000, worktreePrefix);
-    printSessionInfo({
-      headline: "already running",
+    const runningSharedPorts = resolveSharedDevServicePorts({
+      mode: runningMode,
+      worktreeKey: repoRootRealpath,
+      services: sharedServiceNamesForMode(runningMode),
+    });
+    const runningDevCommand = createDevSessionCommand({
+      mode: runningMode,
+      sharedPorts: runningSharedPorts,
+      worktreePrefix,
+    });
+    await printExistingSessionInfo({
+      tmuxStore,
       sessionName: identity.sessionName,
       mode: runningMode,
-      routeLines: routeState.lines,
+      worktreePrefix,
+      tailscale,
+      sharedPorts: runningSharedPorts,
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
+      branch: previous?.branch ?? branchName,
+      displayCommand: runningDevCommand.display,
+      createdAt: previous?.createdAt,
     });
     return;
   } else if (previous?.sessionName && tmuxStore.sessionExists(previous.sessionName)) {
     const runningMode = isDevMode(previous.mode) ? previous.mode : mode;
-    const routeState = waitForPortlessState(tmuxStore, runningMode, 5_000, previousWorktreePrefix);
-    printSessionInfo({
-      headline: "already running",
+    const runningSharedPorts = resolveSharedDevServicePorts({
+      mode: runningMode,
+      worktreeKey: repoRootRealpath,
+      services: sharedServiceNamesForMode(runningMode),
+    });
+    const runningDevCommand = createDevSessionCommand({
+      mode: runningMode,
+      sharedPorts: runningSharedPorts,
+      worktreePrefix: previousWorktreePrefix,
+    });
+    await printExistingSessionInfo({
+      tmuxStore,
       sessionName: previous.sessionName,
       mode: runningMode,
-      routeLines: routeState.lines,
+      worktreePrefix: previousWorktreePrefix,
+      tailscale,
+      sharedPorts: runningSharedPorts,
+      nodeDnsName: runningMode === mode ? nodeDnsName : tailscale.resolveNodeDnsName(),
+      branch: previous.branch,
+      displayCommand: runningDevCommand.display,
+      createdAt: previous.createdAt,
     });
     return;
   }
+
+  await tailscale.pruneStaleRoutes();
 
   const createResult = tmuxStore.createSession(identity.sessionName);
   if (createResult.status !== 0) {
@@ -383,7 +472,7 @@ async function main(): Promise<void> {
     process.exit(createResult.status ?? 1);
   }
 
-  const runResult = tmuxStore.sendKeys(identity.sessionName, portlessCommand);
+  const runResult = tmuxStore.sendKeys(identity.sessionName, devCommand.executable);
   if (runResult.status !== 0) {
     console.error(runResult.stderr.trim() || "failed to start portless in tmux");
     process.exit(runResult.status ?? 1);
@@ -399,12 +488,46 @@ async function main(): Promise<void> {
     );
   }
 
+  const readiness = await waitForDevReadiness({
+    origins: routeState.serviceOrigins,
+    timeoutMs: 20_000,
+  });
+  if (!readiness.ok) {
+    failAndExit(
+      `dev session started but readiness checks failed: ${readiness.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      identity.sessionName,
+      routeState.lines,
+    );
+  }
+
+  let externalRoutes: ExternalDevRoute[];
+  try {
+    externalRoutes = tailscale.ensureExternalRoutes({ sharedPorts, nodeDnsName });
+  } catch (error) {
+    writeMetadataWithoutExternalRoutes({
+      branch: branchName,
+      sessionName: identity.sessionName,
+      mode,
+      displayCommand: devCommand.display,
+    });
+    failAndExit(
+      `dev session started but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
+      "inspect tailscale serve/funnel status and restart with pnpm dev --restart",
+      identity.sessionName,
+      routeState.lines,
+    );
+  }
+
+  const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+
   writeJsonMetadata(
     buildMetadata({
       branch: branchName,
       sessionName: identity.sessionName,
       mode,
-      command: portlessCommand,
+      displayCommand: devCommand.display,
+      externalRoutes,
     }),
   );
 
@@ -412,7 +535,7 @@ async function main(): Promise<void> {
     headline: "started",
     sessionName: identity.sessionName,
     mode,
-    routeLines: routeState.lines,
+    routeLines: verifiedRouteState.lines,
   });
 }
 
