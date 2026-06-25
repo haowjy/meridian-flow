@@ -31,7 +31,7 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return getBlockHash(block);
     },
 
-    getBlockIds(doc) {
+    getDocumentBlockIds(doc) {
       return blockHashesForDoc(doc);
     },
 

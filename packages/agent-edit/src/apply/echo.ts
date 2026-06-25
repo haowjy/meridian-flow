@@ -276,7 +276,7 @@ function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array):
 }
 
 function orderedHashes(model: AgentEditModel, doc: Y.Doc, hashes: ReadonlySet<string>): string[] {
-  const liveOrder = model.getBlockIds(doc);
+  const liveOrder = model.getDocumentBlockIds(doc);
   const live = liveOrder.filter((hash) => hashes.has(hash));
   const deleted = [...hashes].filter((hash) => !liveOrder.includes(hash)).sort();
   return [...live, ...deleted];
