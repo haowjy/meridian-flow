@@ -11,9 +11,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import type { Editor, Extensions, JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
@@ -32,24 +31,6 @@ import { cn } from "@/lib/utils";
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
 import "./editor.css";
-
-/**
- * Minimal valid schema used for the pre-session render.
- *
- * The real collaboration extensions (`Collaboration`, `CollaborationCursor`)
- * require the session's `Y.Doc` + awareness, which only exist after the mount
- * effect constructs the `DocumentSession`. `useEditor` runs its init effect in
- * hook-definition order — i.e. BEFORE that mount effect — so on the very first
- * render `session` is still `null`. Passing `extensions: []` here would build a
- * ProseMirror schema with no top `doc` node and throw "Schema is missing its
- * top node type ('doc')", permanently tripping the error boundary.
- *
- * `StarterKit` is already a transitive dependency (see `core/editor/config.ts`)
- * and supplies `doc`/`paragraph`/`text`, which is all this throwaway,
- * non-editable placeholder needs. Once the session arrives, `useEditor` is
- * re-keyed by `sessionVersion` and rebuilt with the real collab config.
- */
-const PLACEHOLDER_EXTENSIONS: Extensions = [StarterKit];
 
 export type EditorViewProps = {
   documentId: string;
@@ -93,7 +74,29 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
     : chain.insertContent(content).run();
 }
 
-export function EditorView({
+export function EditorView(props: EditorViewProps) {
+  const { documentId } = props;
+  const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
+
+  useEffect(() => {
+    // The session is owned by the app-level registry (lifecycle driven by the
+    // open-documents set), NOT by this view. We only *bind* to it here.
+    const session = getDocumentSessionRegistry().get(documentId);
+    setBoundSession(session);
+  }, [documentId]);
+
+  const session = boundSession?.documentId === documentId ? boundSession : null;
+
+  if (!session) return <PendingEditorShell {...props} />;
+
+  return <SessionEditorView key={documentId} {...props} session={session} />;
+}
+
+type SessionEditorViewProps = EditorViewProps & {
+  session: DocumentSession;
+};
+
+function SessionEditorView({
   documentId,
   projectId,
   schemaType = "document",
@@ -104,16 +107,14 @@ export function EditorView({
   showToolbar = true,
   ariaLabel,
   showCollaborationDecorations = true,
-}: EditorViewProps) {
-  const sessionRef = useRef<DocumentSession | null>(null);
+  session,
+}: SessionEditorViewProps) {
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sessionVersion, setSessionVersion] = useState(0);
   const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
-  const session = sessionRef.current;
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
@@ -178,71 +179,67 @@ export function EditorView({
 
   const editor = useEditor(
     {
-      ...(session
-        ? createEditorConfig({
-            document: session.document,
-            awareness: session.awareness,
-            schemaType,
-            cursorProvider: session.cursorProvider,
-            user,
-            editable,
-            autofocus: false,
-            figureRenderContext: { projectId, documentId },
-            showCollaborationDecorations,
-            editorProps: {
-              attributes: {
-                class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
-                "aria-label": ariaLabel ?? "Collaborative document editor",
-              },
-              handleTextInput(view, from, _to, text) {
-                if (!editable || text !== " ") return false;
-                const commandText = "/figure";
-                const textBefore = view.state.selection.$from.parent.textBetween(
-                  0,
-                  view.state.selection.$from.parentOffset,
-                  "\n",
-                  "\n",
-                );
-                if (!textBefore.endsWith(commandText)) return false;
-                view.dispatch(view.state.tr.delete(from - commandText.length, from));
-                figureInputRef.current?.click();
-                return true;
-              },
-              handleDrop(view, event) {
-                if (!editable) return false;
-                const file = droppedImageFile(event);
-                if (!file) return false;
-                event.preventDefault();
-                setDragActive(false);
-                const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-                void handleFigureFile(file, pos);
-                return true;
-              },
-              handleDOMEvents: {
-                dragenter(_view, event) {
-                  if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
-                  return false;
-                },
-                dragover(_view, event) {
-                  if (!editable || !droppedImageFile(event as DragEvent)) return false;
-                  event.preventDefault();
-                  setDragActive(true);
-                  return true;
-                },
-                dragleave(_view, event) {
-                  if (
-                    !(event.currentTarget as HTMLElement | null)?.contains(
-                      event.relatedTarget as Node,
-                    )
-                  ) {
-                    setDragActive(false);
-                  }
-                  return false;
-                },
-              },
+      ...createEditorConfig({
+        document: session.document,
+        awareness: session.awareness,
+        schemaType,
+        cursorProvider: session.cursorProvider,
+        user,
+        editable,
+        autofocus: false,
+        figureRenderContext: { projectId, documentId },
+        showCollaborationDecorations,
+        editorProps: {
+          attributes: {
+            class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
+            "aria-label": ariaLabel ?? "Collaborative document editor",
+          },
+          handleTextInput(view, from, _to, text) {
+            if (!editable || text !== " ") return false;
+            const commandText = "/figure";
+            const textBefore = view.state.selection.$from.parent.textBetween(
+              0,
+              view.state.selection.$from.parentOffset,
+              "\n",
+              "\n",
+            );
+            if (!textBefore.endsWith(commandText)) return false;
+            view.dispatch(view.state.tr.delete(from - commandText.length, from));
+            figureInputRef.current?.click();
+            return true;
+          },
+          handleDrop(view, event) {
+            if (!editable) return false;
+            const file = droppedImageFile(event);
+            if (!file) return false;
+            event.preventDefault();
+            setDragActive(false);
+            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+            void handleFigureFile(file, pos);
+            return true;
+          },
+          handleDOMEvents: {
+            dragenter(_view, event) {
+              if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
+              return false;
             },
-          })
-        : { editable: false, extensions: PLACEHOLDER_EXTENSIONS }),
+            dragover(_view, event) {
+              if (!editable || !droppedImageFile(event as DragEvent)) return false;
+              event.preventDefault();
+              setDragActive(true);
+              return true;
+            },
+            dragleave(_view, event) {
+              if (
+                !(event.currentTarget as HTMLElement | null)?.contains(event.relatedTarget as Node)
+              ) {
+                setDragActive(false);
+              }
+              return false;
+            },
+          },
+        },
+      }),
       immediatelyRender: false,
       shouldRerenderOnTransaction: false,
     },
@@ -251,7 +248,7 @@ export function EditorView({
       handleFigureFile,
       projectId,
       schemaType,
-      sessionVersion,
+      session,
       user,
       editable,
       ariaLabel,
@@ -260,26 +257,16 @@ export function EditorView({
   );
 
   useEffect(() => {
-    // The session is owned by the app-level registry (lifecycle driven by the
-    // open-documents set), NOT by this view. We only *bind* to it here. This is
-    // what lets the session — and its Yjs sync + transport subscription —
-    // survive this view unmounting when the user leaves the Context destination
-    // or this editor is evicted from the warm set; returning re-binds instantly.
-    const session = getDocumentSessionRegistry().get(documentId);
-    sessionRef.current = session;
-    setSessionVersion((version) => version + 1);
-
-    return () => {
-      const currentEditor = editorRef.current;
-      if (currentEditor && !currentEditor.isDestroyed) currentEditor.destroy();
-      // Do NOT destroy the session — the registry owns it.
-      if (sessionRef.current === session) sessionRef.current = null;
-    };
-  }, [documentId]);
-
-  useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  useEffect(() => {
+    return () => {
+      const currentEditor = editorRef.current;
+      editorRef.current = null;
+      if (currentEditor && !currentEditor.isDestroyed) currentEditor.destroy();
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -361,6 +348,31 @@ export function EditorView({
           </div>
         ) : null}
         <FigureUploadStatus state={figureUploadState} />
+      </div>
+    </section>
+  );
+}
+
+function PendingEditorShell({ className, toolbarLeading, showToolbar = true }: EditorViewProps) {
+  return (
+    <section
+      className={cn(
+        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
+        className,
+      )}
+    >
+      {showToolbar ? (
+        <div className="flex shrink-0 items-center border-b border-border bg-background px-2 py-1.5">
+          <EditorToolbar editor={null} figureUploadDisabled leading={toolbarLeading} />
+        </div>
+      ) : null}
+      <div
+        className="meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto"
+        data-stable-layout-scroll
+      >
+        <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+          <EditorContent editor={null} className="min-h-full" />
+        </div>
       </div>
     </section>
   );
