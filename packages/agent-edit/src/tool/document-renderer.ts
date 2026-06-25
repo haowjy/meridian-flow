@@ -1,7 +1,8 @@
 // Turns Y.Doc blocks into agent-facing text and parses agent input.
 import type * as Y from "yjs";
 
-import type { Block, Codec, ParsedContent } from "../codec/types.js";
+import type { Codec, ParsedContent } from "../codec/types.js";
+import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import type { ViewCommand } from "./types.js";
@@ -78,58 +79,28 @@ export function createDocumentRenderer(deps: {
   }
 
   function renderBlockLines(doc: Y.Doc, blocks?: readonly Y.XmlElement[]): string[] {
-    const selected = blocks ?? model.getBlocks(doc);
-    if (selected.length === 0) return [];
-    // Batch path: project PM tree + compute hashes once for the whole doc,
-    // then filter to the selected blocks. For full-doc renders (no `blocks`
-    // arg) this is O(D + B·S) instead of O(B·D + B·S).
-    if (!blocks) {
-      const hashes = model.getBlockIds(doc);
-      const pmBlocks = model.toProsemirrorBlocks(doc);
-      return codec.serializeBlocks(pmBlocks, hashes);
-    }
-    // Subset render: the blocks arg is a slice of the doc's blocks. Map them
-    // to their PM nodes + hashes via index lookup.
-    const allBlocks = model.getBlocks(doc);
-    const allHashes = model.getBlockIds(doc);
-    const allPmBlocks = model.toProsemirrorBlocks(doc);
-    const indexByBlock = new Map<Y.XmlElement, number>();
-    for (let i = 0; i < allBlocks.length; i++) indexByBlock.set(allBlocks[i], i);
-    const pmBlocks: Block[] = [];
-    const hashes: string[] = [];
-    for (const block of selected) {
-      const idx = indexByBlock.get(block);
-      if (idx !== undefined) {
-        pmBlocks.push(allPmBlocks[idx]);
-        hashes.push(allHashes[idx]);
-      }
-    }
+    const projection = projectDocumentBlocks(doc, model);
+    if (projection.blocks.length === 0) return [];
+    if (!blocks) return codec.serializeBlocks(projection.pmBlocks, projection.hashes);
+    const selected = projection.select(blocks);
+    const pmBlocks = selected.map((block) => block.pmBlock);
+    const hashes = selected.map((block) => block.hash);
     return codec.serializeBlocks(pmBlocks, hashes);
   }
 
   function renderOutline(doc: Y.Doc, blocks: readonly Y.XmlElement[], filePath: string): string {
     if (blocks.length === 0) return "";
-    const allBlocks = model.getBlocks(doc);
-    const allHashes = model.getBlockIds(doc);
-    const allPmBlocks = model.toProsemirrorBlocks(doc);
-    const indexByBlock = new Map<Y.XmlElement, number>();
-    for (let i = 0; i < allBlocks.length; i++) indexByBlock.set(allBlocks[i], i);
-    const headingBlocks: Block[] = [];
-    const headingHashes: string[] = [];
-    for (const block of blocks) {
-      if (!isHeading(block)) continue;
-      const idx = indexByBlock.get(block);
-      if (idx !== undefined) {
-        headingBlocks.push(allPmBlocks[idx]);
-        headingHashes.push(allHashes[idx]);
-      }
-    }
+    const projection = projectDocumentBlocks(doc, model);
+    const headingBlocks = projection.select(blocks).filter(({ block }) => isHeading(block));
     if (headingBlocks.length === 0) return renderBlocks(doc, blocks);
     const lines: string[] = [];
-    const serialized = codec.serializeBlocks(headingBlocks, headingHashes);
+    const serialized = codec.serializeBlocks(
+      headingBlocks.map((block) => block.pmBlock),
+      headingBlocks.map((block) => block.hash),
+    );
     for (let i = 0; i < headingBlocks.length; i++) {
       lines.push(serialized[i]);
-      lines.push(`write(command="view", file="${filePath}#${headingHashes[i]}")`);
+      lines.push(`write(command="view", file="${filePath}#${headingBlocks[i].hash}")`);
     }
     return lines.join("\n");
   }

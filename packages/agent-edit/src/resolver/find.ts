@@ -1,10 +1,9 @@
 import type * as Y from "yjs";
 
 import type { Codec } from "../codec/types.js";
+import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
-
-const EMPTY_PARAGRAPH_SENTINEL = "\u00a0";
 
 export interface FindContext {
   doc: Y.Doc;
@@ -77,42 +76,30 @@ export function findTextMatches(
 
 export function serializeBlockBody(ctx: FindContext, block: Y.XmlElement): string {
   const pmBlock = ctx.model.toProsemirrorBlock(ctx.doc, block);
-  const body = trimOneTrailingNewline(ctx.codec.serialize([pmBlock]));
-  return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+  return ctx.codec.serializeBlockBodies([pmBlock])[0] ?? "";
 }
 
 export function serializePmBlockBody(
   ctx: Pick<FindContext, "codec">,
   block: Parameters<Codec["serialize"]>[0][number],
 ): string {
-  const body = trimOneTrailingNewline(ctx.codec.serialize([block]));
-  return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+  return ctx.codec.serializeBlockBodies([block])[0] ?? "";
 }
 
 export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
-  // Batch path: project PM tree once for the whole doc, then filter to scope
-  // blocks by index. O(D + scope·S) instead of O(scope·D).
-  const allBlocks = ctx.model.getBlocks(ctx.doc);
-  const allPmBlocks = ctx.model.toProsemirrorBlocks(ctx.doc);
-  const indexByBlock = new Map<Y.XmlElement, number>();
-  for (let i = 0; i < allBlocks.length; i++) indexByBlock.set(allBlocks[i], i);
-
-  const runtime = ctx.codec;
+  const selected = projectDocumentBlocks(ctx.doc, ctx.model).select(scope.blocks);
+  const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.pmBlock));
   let cursor = 0;
-  return scope.blocks.map((block, index) => {
-    const idx = indexByBlock.get(block);
-    const pmBlock =
-      idx !== undefined ? allPmBlocks[idx] : ctx.model.toProsemirrorBlock(ctx.doc, block);
-    const body = trimOneTrailingNewline(runtime.serialize([pmBlock]));
-    const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+  return selected.map((block, index) => {
+    const body = bodies[index] ?? "";
     const entry = {
-      block,
-      index: scope.startIndex + index,
-      body: displayBody,
+      block: block.block,
+      index: block.index,
+      body,
       start: cursor,
-      end: cursor + displayBody.length,
+      end: cursor + body.length,
     };
-    cursor = entry.end + (index === scope.blocks.length - 1 ? 0 : 2);
+    cursor = entry.end + (index === selected.length - 1 ? 0 : 2);
     return entry;
   });
 }
@@ -194,10 +181,6 @@ function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean):
     if (predicate(items[index])) return index;
   }
   return -1;
-}
-
-function trimOneTrailingNewline(value: string): string {
-  return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
 function notFound(message: string): FindResult {

@@ -420,4 +420,15 @@ describe("hash-prefixed block serialization", () => {
     ).toBe("c3d4|\n```js\nconsole.log(1)\nconsole.log(2)\n```");
     expect(codec.serializeBlock(emptyParagraph(), "e5f6")).toBe("e5f6|");
   });
+
+  it("serializes block bodies without hash prefixes for resolver matching", () => {
+    const codec = markdownCodec({ schema });
+    expect(
+      codec.serializeBlockBodies([
+        paragraph(t("lone")),
+        schema.node("code_block", { language: "js" }, [t("console.log(1)\nconsole.log(2)")]),
+        emptyParagraph(),
+      ]),
+    ).toEqual(["lone", "```js\nconsole.log(1)\nconsole.log(2)\n```", ""]);
+  });
 });

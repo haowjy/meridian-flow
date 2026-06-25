@@ -104,6 +104,17 @@ export function createCodec(options: CreateCodecOptions): Codec {
     return ensureTrailingNewline(codec.serialize(block, ctx));
   };
 
+  const serializeBody = (block: PMNode, ctx: SerializeContext): string => {
+    const body = trimOneTrailingNewline(serializeOne(block, ctx));
+    return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+  };
+
+  const serializeBlockBodies = (blockList: readonly Block[]): string[] => {
+    const runtime = makeRuntime("");
+    const ctx = withRuntime<SerializeContext>({ schema, components }, runtime);
+    return blockList.map((block) => serializeBody(block, ctx));
+  };
+
   return {
     blocks,
     marks,
@@ -132,8 +143,7 @@ export function createCodec(options: CreateCodecOptions): Codec {
     },
 
     serializeBlock(block: Block, hash: string): string {
-      const body = trimOneTrailingNewline(this.serialize([block]));
-      const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+      const [displayBody = ""] = serializeBlockBodies([block]);
       if (displayBody.includes("\n")) return `${hash}|\n${displayBody}`;
       return `${hash}|${displayBody}`;
     },
@@ -142,13 +152,14 @@ export function createCodec(options: CreateCodecOptions): Codec {
       const runtime = makeRuntime("");
       const ctx = withRuntime<SerializeContext>({ schema, components }, runtime);
       return blocks.map((block, i) => {
-        const body = trimOneTrailingNewline(serializeOne(block, ctx));
-        const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+        const displayBody = serializeBody(block, ctx);
         const hash = hashes[i] ?? "";
         if (displayBody.includes("\n")) return `${hash}|\n${displayBody}`;
         return `${hash}|${displayBody}`;
       });
     },
+
+    serializeBlockBodies,
   };
 }
 
