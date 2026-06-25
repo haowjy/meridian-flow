@@ -169,6 +169,26 @@ function externalRouteUrl(route: ExternalDevRoute): string {
   return route.url ?? `https://<tailscale-node>:${route.httpsPort}`;
 }
 
+export function resolveExpectedRouteUrls({
+  output,
+  mode,
+  worktreePrefix,
+}: {
+  output: string;
+  mode: DevMode;
+  worktreePrefix?: string;
+}): Partial<Record<ExpectedServiceName, string>> {
+  const routes = readPortlessRoutes(output);
+  const urls: Partial<Record<ExpectedServiceName, string>> = {};
+
+  for (const service of getExpectedServicesForMode(mode)) {
+    const route = findRouteForService(routes, service, worktreePrefix);
+    if (route) urls[service.name] = route.url;
+  }
+
+  return urls;
+}
+
 /** Labeled full URLs for copy-paste; infra: `pnpm portless:list`. */
 export function formatDevRouteLines(
   output: string,

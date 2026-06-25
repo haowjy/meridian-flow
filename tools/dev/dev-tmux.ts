@@ -3,16 +3,19 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import { applyModeEnv, type DevMode, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
-import { runGit } from "./lib/dev-env";
-import { assertDevInfraReady } from "./lib/dev-infra";
+import { waitForDevReadiness } from "./dev-readiness";
 import {
-  resolveSharedDevServicePorts,
-  type SharedDevServiceName,
-  type SharedDevServicePorts,
-} from "./lib/dev-share-ports";
+  buildMetadata,
+  createDevSessionCommand,
+  type DevSessionMetadata,
+  externalRoutesFromSharedPorts,
+  sharedServiceNamesForMode,
+} from "./dev-session-plan";
+import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
+import { assertDevInfraReady } from "./lib/dev-infra";
+import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import {
   findStaleTailscaleRoutes,
   parseTailscaleServeStatusJson,
@@ -25,6 +28,7 @@ import {
   type ExternalDevRoute,
   formatDevRouteLines,
   getExpectedServicesForMode,
+  resolveExpectedRouteUrls,
   validateExpectedRoutes,
 } from "./portless-routes";
 import { resolveSessionIdentity } from "./session-identity";
@@ -35,23 +39,10 @@ const repoRootRealpath = fs.realpathSync(repoRoot);
 const metadataPath = path.join(repoRoot, ".meridian", "dev-session.json");
 const logPath = "logs/portless.log";
 
-/**
- * Slim record of the running dev session, written to `.meridian/dev-session.json`
- * after a fresh launch. Read only to report the current mode on reuse and to let
- * `pnpm dev:restart` (`--preserve-mode`) recreate the mode that was running.
- */
-interface DevSessionMetadata {
-  sessionName: string;
-  mode: DevMode;
-  branch: string;
-  command: string;
-  createdAt: string;
-  externalRoutes?: ExternalDevRoute[];
-}
-
 interface PortlessState {
   lines: string[];
   servicePids: Record<string, number>;
+  serviceOrigins: Partial<Record<ExpectedServiceName, string>>;
   healthy: boolean;
   errors: string[];
 }
@@ -69,10 +60,6 @@ function isLinkedWorktree(): boolean {
 function detectWorktreePrefix(branchName: string): string | undefined {
   if (!isLinkedWorktree()) return undefined;
   return branchToPortlessPrefix(branchName);
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function isDevMode(value: string | null | undefined): value is DevMode {
@@ -175,115 +162,6 @@ async function pruneStaleTailscaleRoutes(): Promise<void> {
   }
 }
 
-function portlessEnvPrefix(_shared: boolean): string {
-  const commonKeys = [
-    "PORTLESS_LAN",
-    "PORTLESS_HTTPS",
-    "PORTLESS_TLD",
-    "PORTLESS_WILDCARD",
-    "PORTLESS_SYNC_HOSTS",
-    "PORTLESS_STATE_DIR",
-  ];
-
-  const passThroughKeys = commonKeys;
-  const assignments = passThroughKeys
-    .filter((key) => process.env[key] !== undefined)
-    .map((key) => `${key}=${shellQuote(process.env[key] ?? "")}`);
-
-  return assignments.length > 0 ? `env ${assignments.join(" ")} ` : "";
-}
-
-function appEnvPassthroughExports(): string {
-  const exports = resolveAppEnvPassthroughKeys(process.env).map(
-    (key) => `export ${key}=${shellQuote(process.env[key] ?? "")}`,
-  );
-
-  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
-}
-
-function envSourcePreamble(): string {
-  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports()}`;
-}
-
-// Keep names in sync with SERVICE_HOST_SUFFIXES in portless-routes.ts; portless adds `.localhost`.
-const DEV_SERVICES: ReadonlyArray<{
-  serviceName: ExpectedServiceName;
-  portlessName: string;
-  pkg: string;
-  shared: boolean;
-  sharedModeOnly?: boolean;
-}> = [
-  { serviceName: "app", portlessName: "app.meridian", pkg: "@meridian/app", shared: true },
-  {
-    serviceName: "server",
-    portlessName: "server.meridian",
-    pkg: "@meridian/server",
-    shared: false,
-  },
-  {
-    serviceName: "www",
-    portlessName: "web.meridian",
-    pkg: "@meridian/www",
-    shared: true,
-    sharedModeOnly: true,
-  },
-];
-
-function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[] {
-  if (mode === "local") return [];
-
-  return DEV_SERVICES.filter(
-    (service): service is (typeof DEV_SERVICES)[number] & { serviceName: SharedDevServiceName } =>
-      service.shared && (service.serviceName === "app" || service.serviceName === "www"),
-  )
-    .filter((service) => mode !== "local" || !service.sharedModeOnly)
-    .map((service) => service.serviceName);
-}
-
-function sharedPortsByService(
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-): Map<SharedDevServiceName, SharedDevServicePorts> {
-  return new Map(sharedPorts.map((ports) => [ports.service, ports]));
-}
-
-function externalRoutesFromSharedPorts(
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-  nodeDnsName?: string,
-): ExternalDevRoute[] {
-  const host = nodeDnsName?.replace(/\.$/, "");
-
-  return sharedPorts.map((ports) => ({
-    service: ports.service,
-    mode: ports.externalMode,
-    httpsPort: ports.externalHttpsPort,
-    url: host ? `https://${host}:${ports.externalHttpsPort}` : undefined,
-  }));
-}
-
-function portlessCommandBody(
-  mode: DevMode,
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-): string {
-  const portsByService = sharedPortsByService(sharedPorts);
-  const commands = DEV_SERVICES.filter(
-    (service) => mode !== "local" || !service.sharedModeOnly,
-  ).map(({ serviceName, portlessName, pkg, shared }) => {
-    const servicePorts =
-      serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
-    const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
-    return `${portlessEnvPrefix(shared)}pnpm exec portless run --name ${portlessName}${appPortFlag} pnpm --filter ${pkg} dev`;
-  });
-
-  return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
-}
-
-function createPortlessCommand(
-  mode: DevMode,
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
-): string {
-  return `mkdir -p logs && ${envSourcePreamble()} && unset PORTLESS_TAILSCALE PORTLESS_FUNNEL && ${portlessCommandBody(mode, sharedPorts)} 2>&1 | tee ${logPath}`;
-}
-
 function readPortlessState(
   tmuxStore: TmuxSessionStore,
   mode: DevMode,
@@ -295,6 +173,7 @@ function readPortlessState(
     return {
       lines: [],
       servicePids: {},
+      serviceOrigins: {},
       healthy: false,
       errors: [result.stderr.trim() || "pnpm portless:list failed"],
     };
@@ -304,6 +183,7 @@ function readPortlessState(
   return {
     lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
     servicePids: validation.servicePids,
+    serviceOrigins: resolveExpectedRouteUrls({ output: result.stdout, mode, worktreePrefix }),
     healthy: validation.ok,
     errors: validation.errors,
   };
@@ -339,29 +219,6 @@ function readJsonMetadata(): DevSessionMetadata | null {
 function writeJsonMetadata(metadata: DevSessionMetadata): void {
   fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-}
-
-function buildMetadata({
-  branch,
-  sessionName,
-  mode,
-  command,
-  externalRoutes = [],
-}: {
-  branch: string;
-  sessionName: string;
-  mode: DevMode;
-  command: string;
-  externalRoutes?: ExternalDevRoute[];
-}): DevSessionMetadata {
-  return {
-    sessionName,
-    mode,
-    branch: branch || "detached",
-    command,
-    createdAt: new Date().toISOString(),
-    externalRoutes,
-  };
 }
 
 function resolveRequestedMode({
@@ -424,7 +281,7 @@ function printDryRun({
   console.log("[dry-run] tmux commands:");
   console.log(`tmux has-session -t ${sessionName}`);
   console.log(`tmux new-session -d -s ${sessionName} -c ${repoRoot}`);
-  console.log(`tmux send-keys -t ${sessionName}:0 '${portlessCommand}' C-m`);
+  console.log(`tmux send-keys -t ${sessionName}:0 -- ${portlessCommand} C-m`);
 }
 
 function failAndExit(
@@ -514,6 +371,7 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
+  applyDevEnvToProcess(repoRoot);
 
   const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const detachedHeadRef = runGit(repoRoot, ["rev-parse", "--short", "HEAD"]);
@@ -542,7 +400,11 @@ async function main(): Promise<void> {
   });
   const nodeDnsName = mode === "local" ? undefined : tailscaleStatusDnsName();
   const externalRoutes = externalRoutesFromSharedPorts(sharedPorts, nodeDnsName);
-  const portlessCommand = createPortlessCommand(mode, sharedPorts);
+  const devCommand = createDevSessionCommand({
+    mode,
+    sharedPorts,
+    worktreePrefix,
+  });
 
   if (cliOptions.print) {
     printDryRun({
@@ -550,7 +412,7 @@ async function main(): Promise<void> {
       mode,
       branch: branchName,
       worktreeHash: identity.worktreeHash,
-      portlessCommand,
+      portlessCommand: devCommand.display,
       sharedPorts,
     });
     process.exit(0);
@@ -621,7 +483,7 @@ async function main(): Promise<void> {
     process.exit(createResult.status ?? 1);
   }
 
-  const runResult = tmuxStore.sendKeys(identity.sessionName, portlessCommand);
+  const runResult = tmuxStore.sendKeys(identity.sessionName, devCommand.executable);
   if (runResult.status !== 0) {
     console.error(runResult.stderr.trim() || "failed to start portless in tmux");
     process.exit(runResult.status ?? 1);
@@ -637,6 +499,19 @@ async function main(): Promise<void> {
     );
   }
 
+  const readiness = await waitForDevReadiness({
+    origins: routeState.serviceOrigins,
+    timeoutMs: 20_000,
+  });
+  if (!readiness.ok) {
+    failAndExit(
+      `dev session started but readiness checks failed: ${readiness.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      identity.sessionName,
+      routeState.lines,
+    );
+  }
+
   registerTailscaleRoutes(sharedPorts);
 
   writeJsonMetadata(
@@ -644,7 +519,7 @@ async function main(): Promise<void> {
       branch: branchName,
       sessionName: identity.sessionName,
       mode,
-      command: portlessCommand,
+      displayCommand: devCommand.display,
       externalRoutes,
     }),
   );

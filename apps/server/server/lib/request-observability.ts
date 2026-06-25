@@ -83,6 +83,13 @@ export function shouldEmitUnexpectedRouteFailure(error: unknown): boolean {
   return !isHttpError || candidate.unhandled === true;
 }
 
+function isExpectedWsPlainHttpStatus(
+  context: RequestObservabilityContext,
+  statusCode: number,
+): boolean {
+  return statusCode === 426 && (context.route === "/api/threads/ws" || context.route === "/ws/yjs");
+}
+
 export function routeStatusEvent(
   context: RequestObservabilityContext,
   response: RequestObservabilityResponse,
@@ -90,6 +97,7 @@ export function routeStatusEvent(
 ): EventRecord | null {
   const statusCode = response.status ?? 200;
   if (statusCode < 400) return null;
+  if (isExpectedWsPlainHttpStatus(context, statusCode)) return null;
   return {
     timestamp: new Date(nowMs).toISOString(),
     level: statusCode >= 500 ? "error" : "warn",
