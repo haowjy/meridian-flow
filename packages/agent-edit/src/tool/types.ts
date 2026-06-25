@@ -2,6 +2,9 @@
 
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { WriteResultBlock } from "./internal-result.js";
+
+export type { WriteResultBlock };
 
 export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
 
@@ -114,6 +117,8 @@ export interface WriteOutcome {
   writeId?: string;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or view content. */
   text: string;
+  /** Multi-block content for structured tool_result. When set, takes priority over text. */
+  content?: WriteResultBlock[];
 }
 
 /** Hidden host/session context; not part of the LLM command params. */

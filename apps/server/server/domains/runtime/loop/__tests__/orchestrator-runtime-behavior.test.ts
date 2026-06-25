@@ -231,6 +231,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
+          return [];
         },
         async rollbackResponse() {},
       },
@@ -437,6 +438,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
+          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);
@@ -518,6 +520,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
+          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);

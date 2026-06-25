@@ -3,7 +3,11 @@
  * backed by Meridian context, collab, and thread services.
  */
 
-import type { ResponseStagedCreateOutcome, WriteCommand } from "@meridian/agent-edit";
+import type {
+  ConcurrentEditInfo,
+  ResponseStagedCreateOutcome,
+  WriteCommand,
+} from "@meridian/agent-edit";
 import { type DocumentAddress, formatDocumentFile, splitDocumentFile } from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
@@ -72,7 +76,7 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<void>;
+  ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
   rollbackResponse(responseId: string): Promise<void>;
 }
 
@@ -404,7 +408,7 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<void> {
+    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]> {
       const result = await deps.documentSync.agentEdit().commitResponse(responseId);
       await Promise.all(
         result.documents.map((document) =>
@@ -416,6 +420,16 @@ export function createAgentEditResponseWriteLifecycle(
       );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
+      return result.documents.flatMap((document) =>
+        document.concurrentEdits
+          ? [
+              {
+                documentId: document.documentId,
+                concurrentEdits: document.concurrentEdits,
+              },
+            ]
+          : [],
+      );
     },
 
     async rollbackResponse(responseId: string): Promise<void> {
@@ -506,7 +520,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if (MUTATING_WRITE_COMMANDS.has(parsed.command) && !stagedWrite) {
         await refreshProjectionAfterCommittedWrite(deps, address.documentId, ctx);
       }
-      return outcome.text;
+      return {
+        output: outcome.content ?? outcome.text,
+        ...(outcome.writeId || address.documentId
+          ? { metadata: { writeId: outcome.writeId, documentId: address.documentId } }
+          : {}),
+      };
     },
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };

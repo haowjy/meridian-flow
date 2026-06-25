@@ -25,6 +25,7 @@ import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
@@ -615,16 +616,22 @@ function parseFileAddress(
 }
 
 function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
-  const lines = ["status: success"];
-  if (input.writeId) lines.push(`write id: ${input.writeId}`);
+  const metaLines = ["status: success"];
+  if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
-    lines.push("", `deleted: ${input.deletedBlocks.join(", ")}`);
+    metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
   }
+  if (input.concurrentEdits) metaLines.push(...formatConcurrent(input.concurrentEdits));
+
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-  if (echoLines.length > 0) lines.push("", ...echoLines);
-  if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
+
+  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
+  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+
   return {
-    ...result("success", lines.join("\n")),
+    status: "success",
+    text: content.map((block) => block.text).join("\n\n"),
+    content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
   };
 }

@@ -34,6 +34,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
+export type { ConcurrentEditInfo } from "./apply/types.js";
 export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";
 export { markdownCodec } from "./codec/presets/markdown.js";
 export { mdxCodec } from "./codec/presets/mdx.js";
@@ -106,6 +107,7 @@ export type {
   WriteErrorStatus,
   WriteFunction,
   WriteOutcome,
+  WriteResultBlock,
   WriteStatus,
 } from "./tool/types.js";
 export type { ReverseInput } from "./tool/write.js";
