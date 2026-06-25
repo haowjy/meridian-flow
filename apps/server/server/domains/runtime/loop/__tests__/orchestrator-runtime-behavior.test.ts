@@ -177,7 +177,7 @@ describe("runtime orchestrator behavior", () => {
     );
   });
 
-  it("injects post-commit concurrent edit echoes into the next model context", async () => {
+  it("commits response without creating echo system turn", async () => {
     const requests: GenerateRequest[] = [];
     const gateway: Gateway = {
       ...gatewayStubDefaults,
@@ -202,7 +202,7 @@ describe("runtime orchestrator behavior", () => {
         yield {
           type: "end",
           result: {
-            content: [{ type: "text", text: "saw the sync" }],
+            content: [{ type: "text", text: "continued without sync echo" }],
             toolCalls: [],
             finishReason: "end_turn",
             usage: { inputTokens: 1, outputTokens: 1 },
@@ -218,6 +218,7 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const committed: string[] = [];
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
@@ -228,13 +229,8 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
       },
       responseWrites: {
-        async commitResponse() {
-          return [
-            {
-              documentId: "123e4567-e89b-12d3-a456-426614174000",
-              text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
-            },
-          ];
+        async commitResponse(responseId) {
+          committed.push(responseId);
         },
         async rollbackResponse() {},
       },
@@ -253,35 +249,17 @@ describe("runtime orchestrator behavior", () => {
     );
 
     expect(requests).toHaveLength(2);
-    const secondRequestMessages = JSON.stringify(requests[1]?.messages);
-    expect(secondRequestMessages).toContain("concurrent edits");
-    expect(secondRequestMessages).not.toContain("Post-commit write sync for");
-    expect(secondRequestMessages).not.toContain("123e4567-e89b-12d3-a456-426614174000");
-    const echoMessage = requests[1]?.messages.find(
-      (message) =>
-        message.role === "system" &&
-        message.content.some(
-          (part) => part.type === "text" && part.text.includes("concurrent edits"),
-        ),
+    expect(committed).toHaveLength(1);
+    const secondRequestSystemMessages = requests[1]?.messages.filter(
+      (message) => message.role === "system",
     );
-    expect(echoMessage).toBeDefined();
-
-    const syncBlockEvent = events.find(
-      (event) =>
-        event.type === "block.upserted" &&
-        event.block.blockType === "text" &&
-        String(event.block.content).includes("human: abcd"),
-    ) as Extract<OrchestratorEvent, { type: "block.upserted" }> | undefined;
-    expect(syncBlockEvent).toBeDefined();
-    expect(syncBlockEvent?.block.responseId).toBeNull();
-    expect(String(syncBlockEvent?.block.content)).not.toContain("Post-commit write sync for");
-    expect(String(syncBlockEvent?.block.content)).not.toContain(
-      "123e4567-e89b-12d3-a456-426614174000",
+    expect(JSON.stringify(secondRequestSystemMessages)).not.toContain("concurrent edits");
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "turn.created",
+        turn: expect.objectContaining({ role: "system" }),
+      }),
     );
-    const syncTurnEvent = events.find(
-      (event) => event.type === "turn.created" && event.turn.id === syncBlockEvent?.block.turnId,
-    );
-    expect(syncTurnEvent).toMatchObject({ turn: { role: "system" } });
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
@@ -459,7 +437,6 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);
@@ -541,7 +518,6 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return [];
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);

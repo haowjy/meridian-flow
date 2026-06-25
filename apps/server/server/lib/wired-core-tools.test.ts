@@ -56,7 +56,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
 }
 
 describe("agent-edit response write lifecycle", () => {
-  it("returns post-commit concurrent edit echoes instead of discarding them", async () => {
+  it("commits response after refreshing projections", async () => {
     const refreshed: string[] = [];
     const commitResult: ResponseCommitResult = {
       responseId: "response-1",
@@ -83,16 +83,14 @@ describe("agent-edit response write lifecycle", () => {
       eventSink: createInMemoryEventSink(),
     });
 
-    const echoes = await lifecycle.commitResponse("response-1", {
-      threadId: "thread-1",
-      turnId: "turn-1",
-    });
+    await expect(
+      lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
+    ).resolves.toBeUndefined();
 
     expect(refreshed).toEqual(["doc-1"]);
-    expect(echoes).toEqual([{ documentId: "doc-1", text: commitResult.documents[0]?.text }]);
   });
 
-  it("returns no post-commit echo when there are no concurrent edits", async () => {
+  it("commits response when there are no concurrent edits", async () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
@@ -110,7 +108,7 @@ describe("agent-edit response write lifecycle", () => {
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual([]);
+    ).resolves.toBeUndefined();
   });
 });
 

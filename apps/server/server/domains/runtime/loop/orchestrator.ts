@@ -129,11 +129,6 @@ export interface OrchestratorRepositories {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
-export interface ResponseCommitEcho {
-  documentId: string;
-  text: string;
-}
-
 export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
@@ -155,10 +150,7 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   responseWrites: {
-    commitResponse(
-      responseId: string,
-      ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<ResponseCommitEcho[]>;
+    commitResponse(responseId: string, ctx: { threadId: ThreadId; turnId: TurnId }): Promise<void>;
     rollbackResponse(responseId: string): Promise<void>;
   };
 }
@@ -300,21 +292,6 @@ function createLocalTurn(input: {
     blocks: [],
     siblingIds: [],
     responses: [],
-  };
-}
-
-function createLocalSystemTurn(input: { threadId: ThreadId; prevTurnId: TurnId | null }): Turn {
-  const now = toIsoString(new Date());
-  return {
-    ...createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: input.prevTurnId,
-      role: "system",
-      status: "complete",
-    }),
-    finishReason: "end_turn",
-    completedAt: now,
-    createdAt: now,
   };
 }
 
@@ -644,53 +621,6 @@ async function persistPermissionDenial(input: {
     };
   });
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
-}
-
-async function persistResponseCommitEcho(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  turn: Turn;
-  echoes: readonly ResponseCommitEcho[];
-  blockSeq: number;
-}): Promise<{
-  turn: Turn | null;
-  blocks: Block[];
-  events: OrchestratorEvent[];
-  nextBlockSeq: number;
-}> {
-  const visibleEchoes = input.echoes.filter((echo) => echo.text.trim().length > 0);
-  if (visibleEchoes.length === 0) {
-    return { turn: null, blocks: [], events: [], nextBlockSeq: input.blockSeq };
-  }
-
-  const textContent = visibleEchoes.map((echo) => echo.text).join("\n\n");
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const systemTurn = createLocalSystemTurn({
-      threadId: input.threadId,
-      prevTurnId: input.turn.id,
-    });
-    const block = contentForBlockInput({
-      turnId: systemTurn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent,
-      status: "complete",
-    });
-    return {
-      result: { turn: systemTurn, blocks: [localBlockFromEvent(block)] },
-      events: [
-        { type: "turn.created", turn: systemTurn },
-        { type: "block.upserted", block },
-      ],
-    };
-  });
-
-  return {
-    turn: persisted.result.turn,
-    blocks: persisted.result.blocks,
-    events: persisted.events,
-    nextBlockSeq: input.blockSeq,
-  };
 }
 
 async function completeTurn(input: {
@@ -1055,21 +985,10 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        const commitEchoes = await deps.responseWrites.commitResponse(responseId, {
+        await deps.responseWrites.commitResponse(responseId, {
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
         });
-        const persistedCommitEcho = await persistResponseCommitEcho({
-          deps,
-          threadId: input.threadId,
-          turn: currentAssistantTurn,
-          echoes: commitEchoes,
-          blockSeq,
-        });
-        blockSeq = persistedCommitEcho.nextBlockSeq;
-        if (persistedCommitEcho.turn) allTurns.push(persistedCommitEcho.turn);
-        allBlocks.push(...persistedCommitEcho.blocks);
-        yield* persistedCommitEcho.events;
         activeResponseId = undefined;
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.
