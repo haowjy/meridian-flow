@@ -20,7 +20,7 @@ export interface DocumentModel<BlockNode> {
   getBlockId(block: BlockNode): string;
 
   /** Canonical ordered hash list for a full document. */
-  getBlockIds(doc: Y.Doc): string[];
+  getDocumentBlockIds(doc: Y.Doc): string[];
 
   /** Get the text content of a block (for find/match). */
   getText(block: BlockNode): string;

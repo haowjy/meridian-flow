@@ -21,7 +21,7 @@ export interface DocumentBlockProjection {
 
 export function projectDocumentBlocks(doc: Y.Doc, model: AgentEditModel): DocumentBlockProjection {
   const blocks = model.getBlocks(doc);
-  const hashes = blocks.length === 0 ? [] : model.getBlockIds(doc);
+  const hashes = blocks.length === 0 ? [] : model.getDocumentBlockIds(doc);
   const pmBlocks = blocks.length === 0 ? [] : model.toProsemirrorBlocks(doc);
   const indexByBlock = new Map<Y.XmlElement, number>();
   for (let index = 0; index < blocks.length; index += 1) {
