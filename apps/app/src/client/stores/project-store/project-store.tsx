@@ -126,9 +126,13 @@ export function ProjectStoreProvider({
   const queryClient = useQueryClient();
   const [store] = useState(() => createProjectStore({ now, queryClient }));
 
+  // Keep `store.now` fresh via a timer instead of route-loader refetches.
   useEffect(() => {
-    store.setState((state) => (state.now === now ? state : { ...state, now }));
-  }, [store, now]);
+    const timer = setInterval(() => {
+      store.setState((state) => ({ ...state, now: Date.now() }));
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [store]);
 
   return <ProjectStoreContext.Provider value={store}>{children}</ProjectStoreContext.Provider>;
 }
