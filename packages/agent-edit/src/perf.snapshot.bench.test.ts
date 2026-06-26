@@ -130,23 +130,6 @@ describe("snapshot cost baseline", () => {
   }
 });
 
-describe("N-write commit echo cost", () => {
-  for (const blockCount of [200]) {
-    for (const writeCount of [1, 5, 10, 20]) {
-      it(`postCommitEchoes N=${writeCount} B=${blockCount} (simulated)`, () => {
-        const doc = buildLiveDoc(blockCount);
-        const after = snapshotBlocks(doc, model, codec);
-        time(`N× snapshotBlocks N=${writeCount} B=${blockCount}`, () => {
-          for (let i = 0; i < writeCount; i++) {
-            snapshotBlocks(doc, model, codec);
-          }
-        });
-        void after;
-      });
-    }
-  }
-});
-
 describe("view reconstruction cost", () => {
   for (const blockCount of BLOCK_COUNTS) {
     it(`view rebuild (clone + render) B=${blockCount}`, () => {

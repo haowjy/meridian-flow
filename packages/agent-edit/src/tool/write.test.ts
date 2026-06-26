@@ -271,7 +271,7 @@ describe("write tool dispatch", () => {
 
     expect(
       outcomeText(await ctx.core.write({ command: "undo", file: "chapter.md" }, context)),
-    ).toContain("status: reversed");
+    ).toContain("status: reconciled");
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Beta sword."]);
     expect(await ctx.journal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([

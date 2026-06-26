@@ -39,7 +39,6 @@ export interface MutationEchoInput {
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
   /** Precomputed post-re-sync snapshot — when supplied, skips the per-call snapshotBlocks. */
   afterSnapshot?: readonly BlockSnapshot[];
 }
@@ -75,7 +74,6 @@ export interface LocalMutationSyncInput {
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
   ownTurnId?: string;
   committedSnapshot?: Uint8Array;
 }
@@ -105,7 +103,6 @@ export interface MutationCommit {
   summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
-    options?: { regroundSuppressedText?: boolean },
   ): SyncedMutationSummary;
 }
 
@@ -169,27 +166,16 @@ export function createMutationCommit(deps: {
   function summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
-    options: { regroundSuppressedText?: boolean } = {},
   ): SyncedMutationSummary {
     const after = input.afterSnapshot ?? snapshotBlocks(input.runtime.doc, model, codec);
-    const baseEchoInput = {
+    const echo = computeEcho({
       before: input.before,
       after,
       agentTouchedHashes: input.touchedHashes,
       agentDeletedHashes: input.deletedHashes,
-      structuralChange: input.structuralChange,
-      concurrentTouchedHashes: concurrent.touchedHashes,
-    };
-    const echo = computeEcho(baseEchoInput);
-    const shouldRegroundSuppressedText = options.regroundSuppressedText ?? true;
-    const regroundingEcho =
-      !shouldRegroundSuppressedText ||
-      echo.length > 0 ||
-      (input.touchedHashes.size === 0 && input.deletedHashes.size === 0)
-        ? echo
-        : computeEcho({ ...baseEchoInput, structuralChange: true });
+    });
     return {
-      echo: regroundingEcho,
+      echo,
       concurrentEdits: concurrent.info,
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };

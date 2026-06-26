@@ -32,12 +32,9 @@ export interface EchoInput {
   after: readonly BlockSnapshot[];
   agentTouchedHashes: ReadonlySet<string>;
   agentDeletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
-  concurrentTouchedHashes: ReadonlySet<string>;
 }
 
 const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
-const TRUNCATED_PREVIEW_LENGTH = 48;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
@@ -125,50 +122,22 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   const changedWindows = changedBlockWindows(input);
   if (changedWindows.length === 0) return [];
 
-  const hunks = changedWindows.flatMap((window): ApplyEchoHunk[] => {
-    const hasConcurrentOverlap = window.some((index) =>
-      input.concurrentTouchedHashes.has(input.after[index]?.hash ?? ""),
-    );
-    const mode = hasConcurrentOverlap
-      ? "full"
-      : structuralChangeInWindow(input, window)
-        ? "truncated"
-        : undefined;
-    if (!mode) return [];
-    return [
-      {
-        mode,
-        blocks: window.map((index) =>
-          mode === "full"
-            ? (input.after[index]?.serialized ?? "")
-            : truncateSerializedBlock(input.after[index]?.serialized ?? ""),
-        ),
-      },
-    ];
-  });
-  return mergeEchoHunks(hunks);
-}
-
-function structuralChangeInWindow(input: EchoInput, window: readonly number[]): boolean {
-  if (!input.structuralChange) return false;
-
-  const beforeHashes = new Set(input.before.map((block) => block.hash));
-  const insertedInWindow = window.some(
-    (index) => !beforeHashes.has(input.after[index]?.hash ?? ""),
+  const beforeByHash = new Map(input.before.map((block) => [block.hash, block]));
+  const hunks = changedWindows.flatMap((window): ApplyEchoHunk[] =>
+    window.flatMap((index): ApplyEchoHunk[] => {
+      const block = input.after[index];
+      if (!block) return [];
+      const previous = beforeByHash.get(block.hash);
+      const mode = !previous || previous.serialized !== block.serialized ? "full" : "truncated";
+      return [
+        {
+          mode,
+          blocks: [mode === "full" ? block.serialized : truncateSerializedBlock(block.serialized)],
+        },
+      ];
+    }),
   );
-  if (insertedInWindow) return true;
-
-  const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
-  for (const hash of input.agentDeletedHashes) {
-    const deletedIndex = input.before.findIndex((block) => block.hash === hash);
-    if (deletedIndex < 0) continue;
-    const survivorIndexes = adjacentSurvivorIndexes(input.before, afterIndex, deletedIndex);
-    if (survivorIndexes.some((index) => window.includes(index))) return true;
-  }
-
-  const hasKnownStructuralHashes =
-    input.agentDeletedHashes.size > 0 || input.after.some((block) => !beforeHashes.has(block.hash));
-  return !hasKnownStructuralHashes;
+  return mergeEchoHunks(hunks);
 }
 
 function changedBlockWindows(input: EchoInput): number[][] {
@@ -251,19 +220,20 @@ function blockHash(serialized: string): string {
 
 export function truncateSerializedBlock(serialized: string): string {
   const separator = serialized.indexOf("|");
-  if (separator < 0) return truncateText(serialized);
+  if (separator < 0) return truncateWords(serialized);
   const hash = serialized.slice(0, separator);
   const body = serialized
     .slice(separator + 1)
     .replace(/^\n/, "")
     .replace(/\s+/g, " ")
     .trim();
-  return `${hash}|${truncateText(body)}`;
+  return `${hash}|${truncateWords(body)}`;
 }
 
-function truncateText(text: string): string {
-  if (text.length <= TRUNCATED_PREVIEW_LENGTH) return text;
-  return `${text.slice(0, TRUNCATED_PREVIEW_LENGTH - 3)}...`;
+function truncateWords(text: string, maxWords = 8): string {
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  if (words.length <= maxWords) return text;
+  return `${words.slice(0, maxWords).join(" ")}...`;
 }
 
 function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array): boolean {

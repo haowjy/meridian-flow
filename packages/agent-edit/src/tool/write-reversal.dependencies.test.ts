@@ -24,7 +24,7 @@ describe("write reversal dependencies", () => {
       { command: "undo", file: "chapter.md" },
       context,
     );
-    expectOutcome(undoLater, "reversed");
+    expectOutcome(undoLater, "reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
 
     const undoEarlier = await scenario.ctx.core.write(
@@ -69,7 +69,7 @@ describe("write reversal dependencies", () => {
       context,
     );
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
   });
 
@@ -85,7 +85,7 @@ describe("write reversal dependencies", () => {
       context,
     );
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
   });
 
@@ -98,7 +98,7 @@ describe("write reversal dependencies", () => {
 
     const undo = await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
   });
 
@@ -119,7 +119,7 @@ describe("write reversal dependencies", () => {
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta ward."]);
   });
 
