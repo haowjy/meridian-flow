@@ -6,6 +6,7 @@ import * as Y from "yjs";
 
 import { mdxCodec } from "../codec/presets/mdx.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
+import { computeEcho } from "./echo.js";
 import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
 
@@ -321,6 +322,69 @@ describe("applyEdits echo and concurrent edits", () => {
     expectNoOrphanedElements(local);
   });
 });
+
+describe("computeEcho", () => {
+  it("deduplicates overlapping windows in document order before tiering", () => {
+    const before = [
+      block("A", "ctx0"),
+      block("B", "old1"),
+      block("X", "deleted"),
+      block("C", "ctx2"),
+      block("D", "old3"),
+      block("E", "ctx4"),
+    ];
+    const after = [
+      block("A", "ctx0"),
+      block("B", "new1"),
+      block("C", "ctx2"),
+      block("D", "new3"),
+      block("E", "ctx4"),
+    ];
+
+    const echo = computeEcho({
+      before,
+      after,
+      agentTouchedHashes: new Set(["B", "D"]),
+      agentDeletedHashes: new Set(["X"]),
+    });
+    const lines = echo.flatMap((hunk) => hunk.blocks);
+
+    expect(lines).toEqual(["A|ctx0", "B|new1", "C|ctx2", "D|new3", "E|ctx4"]);
+    expect(lines.map((line) => line.split("|")[0])).toEqual(["A", "B", "C", "D", "E"]);
+    expect(new Set(lines.map((line) => line.split("|")[0])).size).toBe(lines.length);
+    expect(echo.map((hunk) => hunk.mode)).toEqual([
+      "truncated",
+      "full",
+      "truncated",
+      "full",
+      "truncated",
+    ]);
+  });
+
+  it("truncates unchanged in-window context to the first eight words", () => {
+    const longContext = "one two three four five six seven eight nine ten";
+    const shortContext = "short context stays unchanged";
+    const before = [block("A", longContext), block("B", "old center"), block("C", shortContext)];
+    const after = [block("A", longContext), block("B", "new center"), block("C", shortContext)];
+
+    const echo = computeEcho({
+      before,
+      after,
+      agentTouchedHashes: new Set(["B"]),
+      agentDeletedHashes: new Set(),
+    });
+
+    expect(echo).toEqual([
+      { mode: "truncated", blocks: ["A|one two three four five six seven eight..."] },
+      { mode: "full", blocks: ["B|new center"] },
+      { mode: "truncated", blocks: ["C|short context stays unchanged"] },
+    ]);
+  });
+});
+
+function block(hash: string, body: string) {
+  return { hash, serialized: `${hash}|${body}` };
+}
 
 function createDoc(markdown: string, clientID = 1): Y.Doc {
   const doc = new Y.Doc({ gc: false });
