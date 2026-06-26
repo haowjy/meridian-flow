@@ -1,6 +1,6 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
-import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
+import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { WriteResultBlock } from "./internal-result.js";
 
@@ -151,19 +151,10 @@ export type WriteRedoResult = RedoResult;
 export type TurnUndoResult = UndoResult;
 export type TurnRedoResult = RedoResult;
 
-export interface ResponseCommitWriteEcho {
-  writeId: string;
-  hunks: ApplyEchoHunk[];
-}
-
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
-  /** Adaptive post-commit echoes for staged writes, in original write order; suppressed writes are omitted. */
-  echo?: ResponseCommitWriteEcho[];
-  /** Exact model-facing text for the post-commit write echoes and concurrent-edit summary. */
-  text?: string;
 }
 
 export interface ResponseStagedCreateOutcome {

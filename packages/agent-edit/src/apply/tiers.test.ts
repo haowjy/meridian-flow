@@ -32,7 +32,7 @@ describe("applyEdits tier routing", () => {
     expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
     expect(model.getText(block)).toBe("Alpha blade.");
-    expect(result.ok && result.echo).toEqual([]);
+    expect(result.ok && result.echo).toEqual([{ mode: "full", blocks: ["0f7a|Alpha blade."] }]);
     expectNoOrphanedElements(doc);
   });
 
@@ -249,7 +249,7 @@ describe("applyEdits preflight safety", () => {
 });
 
 describe("applyEdits echo and concurrent edits", () => {
-  it("suppresses echo and lists a non-overlapping concurrent human edit", () => {
+  it("echoes the agent window and lists a non-overlapping concurrent human edit", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
     const local = cloneDoc(live, 2);
     const syncStateVector = Y.encodeStateVector(local);
@@ -274,7 +274,10 @@ describe("applyEdits echo and concurrent edits", () => {
 
     expectOk(result);
     expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
-    expect(result.ok && result.echo).toEqual([]);
+    expect(result.ok && result.echo).toEqual([
+      { mode: "full", blocks: ["0f7a|Alpha blade."] },
+      { mode: "truncated", blocks: ["d2a1|Beta waits."] },
+    ]);
     expect(blockTexts(local)).toEqual([
       "Alpha blade.",
       "Beta waits.",
@@ -309,8 +312,9 @@ describe("applyEdits echo and concurrent edits", () => {
 
     expectOk(result);
     expect(result.ok && result.concurrentEdits?.human).toEqual([alphaHash]);
-    expect(result.ok && result.echo).toHaveLength(1);
+    expect(result.ok && result.echo).toHaveLength(2);
     expect(result.ok && result.echo[0]?.mode).toBe("full");
+    expect(result.ok && result.echo[1]?.mode).toBe("truncated");
     expect(
       result.ok && result.echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`)),
     ).toBe(true);

@@ -118,7 +118,7 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(redo, "reversed");
+    expectOutcome(redo, "reconciled");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 
@@ -163,7 +163,7 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(redo, "reversed");
+    expectOutcome(redo, "reconciled");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);

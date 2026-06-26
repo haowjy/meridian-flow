@@ -237,11 +237,11 @@ describe("write reversal retention", () => {
     await scenario.simpleReplace("turn-user-seam");
 
     const undo = await scenario.ctx.core.undoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(undo)).toContain("status: reversed");
+    expect(outcomeText(undo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
 
     const redo = await scenario.ctx.core.redoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
   });
 
@@ -286,7 +286,7 @@ describe("write reversal retention", () => {
 
     const undo = await ctx.core.undoTurn("chapter.md", threadB);
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Thread A paragraph 1.",
       "Thread B paragraph 2.",

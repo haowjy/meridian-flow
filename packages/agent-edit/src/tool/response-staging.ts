@@ -1,24 +1,16 @@
 // Buffers model-response write updates until commit or rollback resolves their lifecycle.
 import * as Y from "yjs";
 
-import {
-  type BlockSnapshot,
-  type ConcurrentDetectionResult,
-  snapshotBlocks,
-} from "../apply/echo.js";
-import type { ApplyEchoHunk, ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { Codec } from "../codec/types.js";
+import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
-import { formatConcurrentCommitEcho } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   ResponseCommitResult,
-  ResponseCommitWriteEcho,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   WriteCommand,
@@ -48,10 +40,6 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -60,17 +48,9 @@ interface StagedResponseUpdate extends JournaledUpdate {
   writeId: string;
   writeOrdinal: number;
   durableWriteId: string;
-  echoInput: StagedWriteEchoInput;
   // Per-doc buffers lose insertion order across documents; commit derives the
   // journal batch by this response-local staging sequence.
   stageSeq: number;
-}
-
-interface StagedWriteEchoInput {
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
 }
 
 interface ResponseDocumentBuffer {
@@ -93,10 +73,9 @@ export function createResponseStaging(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
-  codec: Codec;
   ensureDocument?: (docId: string) => Promise<void>;
 }): ResponseStaging {
-  const { runtimeStore, mutationCommit, model, codec, ensureDocument } = deps;
+  const { runtimeStore, mutationCommit, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
 
   return {
@@ -151,20 +130,10 @@ export function createResponseStaging(deps: {
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
         updateCount += docBuffer.updates.length;
-        const echoes = postCommitEchoes(docBuffer, projected.concurrent);
-        const text =
-          echoes.length > 0 || projected.concurrent.info
-            ? formatConcurrentCommitEcho({
-                echoes,
-                concurrentEdits: projected.concurrent.info,
-              })
-            : undefined;
         documents.push({
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
           ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
-          ...(echoes.length > 0 ? { echo: echoes } : {}),
-          ...(text ? { text } : {}),
         });
       }
       responseBuffers.delete(responseId);
@@ -300,74 +269,9 @@ export function createResponseStaging(deps: {
         input.durableWriteId ?? `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
-      echoInput: {
-        before: input.before,
-        touchedHashes: input.touchedHashes,
-        deletedHashes: input.deletedHashes,
-        structuralChange: input.structuralChange,
-      },
       stageSeq: buffer.nextStageSeq,
     });
     buffer.nextStageSeq += 1;
-  }
-
-  function postCommitEchoes(
-    docBuffer: ResponseDocumentBuffer,
-    concurrent: ConcurrentDetectionResult,
-  ): ResponseCommitWriteEcho[] {
-    // One snapshot for the whole pass — the runtime doc is not mutated between
-    // staged-write echoes, so the `after` is identical for every write.
-    const afterSnapshot = snapshotBlocks(docBuffer.runtime.doc, model, codec);
-    const seenBlockKeys = new Set<string>();
-    return docBuffer.updates
-      .map((update) =>
-        tagEcho(
-          update.writeId,
-          mutationCommit.summarizeMutationEcho(
-            {
-              runtime: docBuffer.runtime,
-              before: update.echoInput.before,
-              touchedHashes: update.echoInput.touchedHashes,
-              deletedHashes: update.echoInput.deletedHashes,
-              structuralChange: update.echoInput.structuralChange,
-              afterSnapshot,
-            },
-            concurrent,
-            { regroundSuppressedText: false },
-          ).echo,
-        ),
-      )
-      .map((entry) => ({
-        writeId: entry.writeId,
-        hunks: dedupeEchoBlocks(entry.hunks, seenBlockKeys),
-      }))
-      .filter((entry) => entry.hunks.length > 0);
-  }
-
-  function tagEcho(writeId: string, echo: ApplyEchoHunk[]): ResponseCommitWriteEcho {
-    return { writeId, hunks: echo };
-  }
-
-  function dedupeEchoBlocks(
-    echo: readonly ApplyEchoHunk[],
-    seenBlockKeys: Set<string>,
-  ): ApplyEchoHunk[] {
-    return echo
-      .map((hunk) => ({
-        ...hunk,
-        blocks: hunk.blocks.filter((block) => {
-          const key = echoBlockKey(block);
-          if (seenBlockKeys.has(key)) return false;
-          seenBlockKeys.add(key);
-          return true;
-        }),
-      }))
-      .filter((hunk) => hunk.blocks.length > 0);
-  }
-
-  function echoBlockKey(block: string): string {
-    const hashEnd = block.indexOf("|");
-    return hashEnd > 0 ? block.slice(0, hashEnd) : block;
   }
 
   function responseJournalBatch(

@@ -19,7 +19,7 @@ describe("write reversal selectors", () => {
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
 
-    expect(outcomeText(undo)).toContain("status: reversed");
+    expect(outcomeText(undo)).toContain("status: reconciled");
     const [reversal] = await ctx.journal.readReversals("chapter.md", {
       threadId: THREAD_ID,
       status: ["reversed"],
@@ -37,7 +37,7 @@ describe("write reversal selectors", () => {
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
 
-    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toMatchObject([
       { turnId: "turn-mutation-status", writeIds: ["w1"], status: "redone" },
@@ -96,7 +96,7 @@ describe("write reversal selectors", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta arrives."]);
   });
 
@@ -220,7 +220,7 @@ describe("write reversal selectors", () => {
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(outcomeText(undo)).toContain("undo: 1 edit(s)");
     expect(scenario.blockTexts()).toEqual(["Base.", "One."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);

@@ -62,7 +62,6 @@ interface ApplyAccumulator {
   applied: AppliedEditSummary[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
-  structuralChange: boolean;
 }
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
@@ -89,7 +88,6 @@ export function applyEdits(
     applied: [],
     touchedHashes: new Set(),
     deletedHashes: new Set(),
-    structuralChange: false,
   };
 
   let committedEdits = 0;
@@ -133,8 +131,6 @@ export function applyEdits(
     after,
     agentTouchedHashes: accumulator.touchedHashes,
     agentDeletedHashes: accumulator.deletedHashes,
-    structuralChange: accumulator.structuralChange,
-    concurrentTouchedHashes: concurrent.touchedHashes,
   });
 
   return {
@@ -310,7 +306,6 @@ function executePlans(
         const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
         const blockIds = inserted.map((block) => model.getBlockId(block));
         for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
-        accumulator.structuralChange ||= blockIds.length > 0;
         accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
         break;
       }
@@ -318,7 +313,6 @@ function executePlans(
         model.deleteBlock(doc, plan.edit.element);
         if (plan.removesBlock) {
           accumulator.deletedHashes.add(plan.blockId);
-          accumulator.structuralChange = true;
         } else {
           accumulator.touchedHashes.add(plan.blockId);
         }

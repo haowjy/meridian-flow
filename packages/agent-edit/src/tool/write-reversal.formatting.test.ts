@@ -30,9 +30,9 @@ const noInternalIdCases: NoInternalIdCase[] = [
     run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
     assertExtra: ({ originalHash }, text) => {
       const lines = text.split("\n");
-      expect(lines.slice(0, 4)).toEqual(["status: reversed", "", "undo: 1 edit(s)", ""]);
-      expect(lines[4]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
-      expect(lines[4]?.split("|")[0]).not.toBe(originalHash);
+      expect(lines.slice(0, 3)).toEqual(["status: reconciled", "undo: 1 edit(s)", ""]);
+      expect(lines[3]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
+      expect(lines[3]?.split("|")[0]).not.toBe(originalHash);
     },
   },
   {
@@ -44,7 +44,7 @@ const noInternalIdCases: NoInternalIdCase[] = [
     },
     run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
     assertExtra: (_state, text) => {
-      expect(text.split("\n").slice(0, 4)).toEqual(["status: reversed", "", "redo: 1 edit(s)", ""]);
+      expect(text.split("\n").slice(0, 3)).toEqual(["status: reversed", "redo: 1 edit(s)", ""]);
     },
   },
   {

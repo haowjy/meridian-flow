@@ -3,12 +3,7 @@ import * as Y from "yjs";
 
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
-import type {
-  ApplyEchoHunk,
-  ApplyResult,
-  ConcurrentEditInfo,
-  ConcurrentUpdateOrigin,
-} from "../apply/types.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { Codec } from "../codec/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
@@ -145,7 +140,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     mutationCommit,
     model: options.model,
-    codec: options.codec,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
   const writeReversal = createWriteReversal({
@@ -312,7 +306,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
@@ -326,7 +319,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
-    const after = snapshotBlocks(runtime.doc, options.model, options.codec);
 
     if (context.responseId) {
       responseStaging.stageUpdate({
@@ -343,10 +335,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
-        before,
-        touchedHashes: new Set(after.map((block) => block.hash)),
-        deletedHashes: new Set(),
-        structuralChange: true,
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -431,17 +419,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeId: writeIdentity.handle,
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
-        before,
-        touchedHashes: new Set(applied.changedBlocks ?? []),
-        deletedHashes: new Set(applied.deletedBlocks ?? []),
-        structuralChange: hasStructuralChange(applied),
       });
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        structuralChange: hasStructuralChange(applied),
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -468,7 +451,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       before,
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
-      structuralChange: hasStructuralChange(applied),
       ownTurnId: turnId,
       committedSnapshot: runtimeStore.getCommittedSnapshot(session, address.documentId),
     });
@@ -695,10 +677,6 @@ function commandSelection(
 
 function isWriteHandle(value: string): boolean {
   return parseWriteHandle(value) !== undefined;
-}
-
-function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolean {
-  return result.appliedEdits?.some((edit) => edit.kind !== "text") ?? false;
 }
 
 function agentMeta(turnId: string): UpdateMeta {
