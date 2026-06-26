@@ -102,6 +102,29 @@ describe("write reversal formatting", () => {
     await assertExtra?.(state, text);
   });
 
+  it("returns undo and redo metadata and echo as separate structured content blocks", async () => {
+    const scenario = await ReversalScenario.view({
+      "chapter.md": "Alpha sword.\n\nBeta waits nearby.",
+    });
+    await scenario.simpleReplace("turn-structured-reversal");
+
+    const undo = await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(undo.content).toHaveLength(2);
+    expect(undo.content?.[0]).toEqual({
+      type: "text",
+      text: "status: reconciled\nundo: 1 edit(s)",
+    });
+    expect(undo.content?.[1]?.text).toMatch(/^[0-9a-f]{4}\|Alpha sword\.$/m);
+
+    const redo = await scenario.ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(redo.content).toHaveLength(2);
+    expect(redo.content?.[0]).toEqual({
+      type: "text",
+      text: "status: reconciled\nredo: 1 edit(s)",
+    });
+    expect(redo.content?.[1]?.text).toMatch(/^[0-9a-f]{4}\|Alpha blade\.$/m);
+  });
+
   it("preserves changed block hashes in reversal output without exposing storage ids", async () => {
     const scenario = await ReversalScenario.view({
       "chapter.md":

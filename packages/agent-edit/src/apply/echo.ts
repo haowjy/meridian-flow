@@ -119,25 +119,31 @@ export function applyConcurrentUpdates(
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */
 export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
-  const changedWindows = changedBlockWindows(input);
-  if (changedWindows.length === 0) return [];
+  const echoIndexes = uniqueEchoIndexes(input);
+  if (echoIndexes.length === 0) return [];
 
   const beforeByHash = new Map(input.before.map((block) => [block.hash, block]));
-  const hunks = changedWindows.flatMap((window): ApplyEchoHunk[] =>
-    window.flatMap((index): ApplyEchoHunk[] => {
-      const block = input.after[index];
-      if (!block) return [];
-      const previous = beforeByHash.get(block.hash);
-      const mode = !previous || previous.serialized !== block.serialized ? "full" : "truncated";
-      return [
-        {
-          mode,
-          blocks: [mode === "full" ? block.serialized : truncateSerializedBlock(block.serialized)],
-        },
-      ];
-    }),
-  );
+  const hunks = echoIndexes.flatMap((index): ApplyEchoHunk[] => {
+    const block = input.after[index];
+    if (!block) return [];
+    const previous = beforeByHash.get(block.hash);
+    const mode = !previous || previous.serialized !== block.serialized ? "full" : "truncated";
+    return [
+      {
+        mode,
+        blocks: [mode === "full" ? block.serialized : truncateSerializedBlock(block.serialized)],
+      },
+    ];
+  });
   return mergeEchoHunks(hunks);
+}
+
+function uniqueEchoIndexes(input: EchoInput): number[] {
+  const indexes = new Set<number>();
+  for (const window of changedBlockWindows(input)) {
+    for (const index of window) indexes.add(index);
+  }
+  return [...indexes].sort((left, right) => left - right);
 }
 
 function changedBlockWindows(input: EchoInput): number[][] {
