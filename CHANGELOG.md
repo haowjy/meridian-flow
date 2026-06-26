@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: simplified write echo to one per-block `v_pre` →
+  `v_post` content-diff path with word-based context truncation, removed
+  commit-time echo recomputation, and made undo/redo return the same structured
+  metadata+echo blocks as writes.
+
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
 - Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
   commands no longer emit Node DEP0169 from pnpm's bundled package-arg

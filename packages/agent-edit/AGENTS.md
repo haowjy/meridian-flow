@@ -43,13 +43,19 @@ the conflict via the concurrent-edits echo, it is not prevented.
 **Deferred commit (response staging) is an optimization, not a different model.**
 Instead of running the full lifecycle on every write, a response's writes are
 buffered and the lifecycle runs **once** at `commitResponse` — N writes collapse
-to **one** merge+sync per turn. Only the merge+sync collapses: post-commit echoes
-are still computed per staged write, in order, from the single post-re-sync
-snapshot using the same adaptive `computeEcho` tiers (suppressed / truncated /
-full). The document-level concurrent-edits summary (`human` vs `agent`) still
-comes from the one re-sync. Dropping those post-commit echoes (or aggregating them
-into one blob) leaves the agent blind to concurrent edits and structural insert
-context, so this package guards that contract.
+to **one** merge+sync per turn. Only the merge+sync collapses. Each staged write
+still returns its own model-facing echo immediately from the cumulative runtime
+state; commit time only reports the document-level concurrent-edits summary
+(`human` vs `agent`) from the one re-sync. Commit-time per-write echo
+recomputation is intentionally deleted.
+
+**Echo has one path.** `computeEcho(before, after, touched, deleted)` expands a
+±1 block window around touched/deleted hashes, then tiers each surviving
+post-write block by a direct `v_pre → v_post` serialized-content comparison:
+changed or inserted blocks echo full `hash|content`, identical context blocks use
+word truncation (about eight words), and blocks outside the window are omitted.
+Writes and undo/redo return the same two structured result blocks: metadata
+(status, write id / reversal count, concurrent edits) and echo lines.
 
 **`view` is a self-healing reconstruction — it never trusts local state.** Where
 the commit re-sync above is a *delta merge into* the runtime (it needs per-op
