@@ -127,7 +127,7 @@ describe("wired write tool", () => {
 
     await expect(
       writeText(single.write, { command: "redo", path: single.filePath, to: "w3" }, single.ctx),
-    ).resolves.toContain("status: reversed");
+    ).resolves.toContain("status: reconciled");
     expect(
       await writeText(single.write, { command: "view", path: single.filePath }, single.ctx),
     ).toContain("Three");
@@ -156,7 +156,7 @@ describe("wired write tool", () => {
         { command: "redo", path: range.filePath, from: "w2", to: "w5" },
         range.ctx,
       ),
-    ).resolves.toContain("status: reversed");
+    ).resolves.toContain("status: reconciled");
     const afterRangeRedo = await writeText(
       range.write,
       { command: "view", path: range.filePath },
