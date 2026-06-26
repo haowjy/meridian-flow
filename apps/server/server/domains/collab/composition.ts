@@ -2,12 +2,12 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import {
   type AgentEditCore,
+  createAgentEditCodec,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
-  mdxCodec,
   type ReversalStore,
   type SyncStateStore,
   type UpdateJournal,
@@ -16,6 +16,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -149,7 +150,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
-  const codec = mdxCodec({ schema });
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const agentEditCore: AgentEditCore = createAgentEditCore({
     journal: deps.journal,
@@ -168,7 +170,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   let nextPendingId = 1;
 
   const markdownDocuments = createMarkdownDocumentEngine({
-    codec,
+    codec: markupCodec,
     model,
     journal: deps.journal,
     coordinator: deps.coordinator,

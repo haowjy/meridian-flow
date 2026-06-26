@@ -9,7 +9,7 @@ import {
   snapshotBlocks,
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -110,7 +110,7 @@ export function createMutationCommit(deps: {
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }): MutationCommit {
   const { journal, coordinator, model, codec } = deps;
 

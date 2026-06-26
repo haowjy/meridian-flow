@@ -1,9 +1,11 @@
 // Three-tier Yjs apply path for resolved agent edits.
+
+import type { ParsedContent } from "@meridian/markup";
 import type { Node as PMNode } from "prosemirror-model";
 import { Fragment } from "prosemirror-model";
 import * as Y from "yjs";
-
-import type { Codec, ParsedContent, Span } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Span } from "../codec-types.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isLiveXmlElement } from "../resolver/block-hash.js";
 import {
@@ -70,7 +72,7 @@ type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 export function applyEdits(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
   options: ApplyEditsOptions = {},
@@ -167,7 +169,7 @@ function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
 function preflightEdit(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: ResolvedEdit,
 ):
   | { ok: true; plan: PlannedEdit }
@@ -185,7 +187,7 @@ function preflightEdit(
 function preflightTextEdit(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "text" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.element, "target");
@@ -238,7 +240,7 @@ function preflightTextEdit(
 function preflightInsert(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
 ): ReturnType<typeof preflightEdit> {
   if (edit.after) {
@@ -329,7 +331,7 @@ function textPlanStart(plan: Extract<PlannedEdit, { kind: "text" }>): number {
 function collectTierOneGroup(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edits: readonly ResolvedEdit[],
   startIndex: number,
   firstPlan: PlannedEdit,
@@ -407,7 +409,7 @@ function validateLiveBlock(
 }
 
 function parseContent(
-  codec: Codec,
+  codec: AgentEditCodec,
   content: string,
   operation: "text" | "insert",
 ):

@@ -1,4 +1,6 @@
 // Shared in-memory harness for write-tool module integration tests.
+
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -7,8 +9,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-
-import { mdxCodec } from "../../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../../codec-adapter.js";
 import { createAgentEditCore } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
@@ -20,7 +21,7 @@ import type { UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
-export const codec = mdxCodec({ schema });
+export const codec = createAgentEditCodec(mdxCodec({ schema }));
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };

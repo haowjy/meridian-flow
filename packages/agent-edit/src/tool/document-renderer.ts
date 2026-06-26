@@ -1,7 +1,8 @@
 // Turns Y.Doc blocks into agent-facing text and parses agent input.
-import type * as Y from "yjs";
 
-import type { Codec, ParsedContent } from "../codec/types.js";
+import type { ParsedContent } from "@meridian/markup";
+import type * as Y from "yjs";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
@@ -34,7 +35,7 @@ export type ParseForCommandResult =
 
 export function createDocumentRenderer(deps: {
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }): DocumentRenderer {
   const { model, codec } = deps;
 

@@ -1,17 +1,18 @@
 // Behavioral coverage for tier routing, update replay fidelity, and echo.
+
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
 import { computeEcho } from "./echo.js";
 import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 

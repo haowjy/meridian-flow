@@ -1,7 +1,7 @@
 // Projects a Yjs document into aligned block, hash, and ProseMirror arrays.
 import type * as Y from "yjs";
 
-import type { Block } from "../codec/types.js";
+import type { Block } from "../codec-types.js";
 import type { AgentEditModel } from "../ports/model.js";
 
 export interface ProjectedBlock {

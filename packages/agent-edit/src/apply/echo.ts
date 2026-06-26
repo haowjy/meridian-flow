@@ -1,7 +1,7 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import * as Y from "yjs";
 
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
@@ -37,7 +37,11 @@ export interface EchoInput {
 const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
-export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
+export function snapshotBlocks(
+  doc: Y.Doc,
+  model: AgentEditModel,
+  codec: AgentEditCodec,
+): BlockSnapshot[] {
   const projection = projectDocumentBlocks(doc, model);
   if (projection.blocks.length === 0) return [];
   const serialized = codec.serializeBlocks(projection.pmBlocks, projection.hashes);
@@ -80,7 +84,7 @@ export function diffSnapshots(
 export function applyConcurrentUpdates(
   doc: Y.Doc,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
   syncStateVector: Uint8Array = Y.encodeStateVector(doc),

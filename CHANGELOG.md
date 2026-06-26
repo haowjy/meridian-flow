@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- `packages/markup`: new `@meridian/markup` package — the codec (text ↔
+  ProseMirror, markdown + MDX) extracted out of `@meridian/agent-edit` into a
+  standalone leaf package with a composable builder/plugin API
+  (`createMarkupCodec().use(mdx()).build()`) and `markdownCodec`/`mdxCodec`
+  presets. MDX is the canonical format; MDX components are closure-captured by
+  the `mdx()` plugin rather than threaded through context. `@meridian/agent-edit`
+  now wraps it with a thin `AgentEditCodec` for hash-prefixed echo serialization,
+  and the editor (`apps/app`) and collab server (`apps/server`) consume the codec
+  directly. No behavior change — pure extraction.
+
 - `packages/agent-edit`: simplified write echo to one per-block `v_pre` →
   `v_post` content-diff path with word-based context truncation, removed
   commit-time echo recomputation, and made undo/redo return the same structured

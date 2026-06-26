@@ -1,7 +1,8 @@
+import { CodecParseError, type ParsedContent } from "@meridian/markup";
 import type { Node as PMNode } from "prosemirror-model";
 import type * as Y from "yjs";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
-import { type Codec, CodecParseError, type ParsedContent } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { lookupBlockHash } from "./block-hash.js";
@@ -36,7 +37,7 @@ export interface ResolveWriteParams {
 export interface ResolveWriteContext {
   doc: Y.Doc | null | undefined;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }
 
 export type ResolveWriteResult =

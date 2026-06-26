@@ -42,21 +42,22 @@ plain `docId: string`, no auth, URI schemes, storage, or collaboration-server
 types. `write(command="create")` requires this optional port; deployments that
 do not support creation get `invalid_write` instead of a thrown not-found.
 
-### Codec (`src/codec/types.ts` — interface, `src/codec/create-codec.ts` — assembly)
-Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
-inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
-owns the PM-mapping dispatch. `serialize`/`parse` are the two directions; the
-per-block render path is `serializeBlock` (with hash prefix), or the batch
-`serializeBlocks` which allocates one unified runtime for all hash-prefixed
-blocks. Resolver/find code uses `serializeBlockBodies` for the same block-body
-normalization without hash prefixes; callers should not reimplement trailing
-newline or empty-paragraph normalization.
-Pinned unified stringify options for canonical round-trip output. Concrete:
-`presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
-ProseMirror `Schema`; the package has no default Meridian schema.
+### AgentEditCodec (`src/codec-adapter.ts` — hash-prefixed adapter)
+Agent-edit consumes an `AgentEditCodec`: a thin wrapper around
+`@meridian/markup`'s `MarkupCodec`. `parse` and full-document `serialize`
+delegate directly to the pure markup codec. `serializeBlockBodies` delegates to
+`markup.serializeBlocks` for hashless resolver/find normalization; callers should
+not reimplement trailing-newline or empty-paragraph normalization. The adapter
+adds the agent-edit-only display forms `serializeBlock(block, hash)` and
+`serializeBlocks(blocks, hashes)`, formatting single-line blocks as `hash|body`
+and multiline blocks as `hash|\nbody`.
+
+Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
+component registry types live in `@meridian/markup`. Codec factories require the
+host's ProseMirror `Schema`; agent-edit has no default Meridian schema.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
-the schema explicitly. This keeps the package provably host-agnostic without
-server/infra dependency leaks. See `src/codec/create-codec.ts:29`.
+the schema explicitly. This keeps the package host-agnostic without server/infra
+dependency leaks.
 
 ### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
 Structural model port for what "block" means in Yjs. Carries the 3-tier apply
@@ -74,7 +75,7 @@ one block's result, so a per-block loop is **O(B²)**, not O(B):
 
 - `getBlockId(block)` resolves a unique hash against *all sibling blocks* (re-sorts and re-hashes every sibling per call).
 - `toProsemirrorBlock(doc, block)` rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
-- `Codec.serializeBlock` allocates its own unified runtime per block.
+- `AgentEditCodec.serializeBlock` does per-block serialization work.
 
 Every batched write touches all of these (snapshot, render, find). **Use the batch path for any multi-block op:**
 
@@ -125,10 +126,10 @@ from the live document and journal.
 
 ### Codec pipeline
 ```
-source string → unified parser → mdast → BlockCodec dispatch → MarkCodec dispatch → PM nodes
-PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
+@meridian/markup: source string → unified parser → mdast → BlockCodec dispatch → MarkCodec dispatch → PM nodes
+@meridian/markup: PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
 ```
-Block hash prefix added by `serializeBlock()` at render time (not stored as
+Block hash prefix added by `AgentEditCodec.serializeBlock()` at render time (not stored as
 attribute). Hash derived from Y.XmlElement CRDT item ID (`clientID + clock`).
 
 ### 3-tier apply (`src/apply/tiers.ts`)
@@ -176,7 +177,7 @@ appending when another session already used it.
 - **Block hash stable under edits.** Derived from CRDT item ID (assigned at
   element creation). Survives content edits, position shifts, reordering.
   Lost on type change or deletion (new element → new ID).
-- **Codec round-trip stability.** Arbitrary markdown/MDX normalizes on first
+- **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
@@ -321,7 +322,7 @@ paths so accidental UUID interpolation fails loudly.
 
 ## Testing
 
-Package tests cover block-hash stability, codec round-trip, resolver with
+Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, availability, and public turn seams), response

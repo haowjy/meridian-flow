@@ -7,17 +7,16 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
-  type Codec,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
-  type ParsedContent,
   type UpdateJournal,
   type UpdateMeta,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -48,7 +47,7 @@ type MarkdownWriteHook = (event: {
 }) => Promise<void>;
 
 type MarkdownDocumentEngineDeps = {
-  codec: Codec;
+  codec: MarkupCodec;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;

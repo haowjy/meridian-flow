@@ -1,14 +1,15 @@
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import type { ResolvedEdit } from "../apply/types.js";
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
