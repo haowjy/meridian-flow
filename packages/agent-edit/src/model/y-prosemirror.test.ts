@@ -1,9 +1,8 @@
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-
-import { mdxCodec } from "../codec/presets/mdx.js";
 import { yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();

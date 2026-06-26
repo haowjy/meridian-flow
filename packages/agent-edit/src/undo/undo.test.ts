@@ -1,4 +1,6 @@
 // Reconcile coverage for cold journal undo/redo reconstruction.
+
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -10,7 +12,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
@@ -18,7 +20,7 @@ import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";

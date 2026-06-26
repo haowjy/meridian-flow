@@ -1,8 +1,8 @@
+import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
-
-import type { ParsedContent, Span } from "../codec/types.js";
+import type { Span } from "../codec-types.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { blockHashesForDoc, getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";

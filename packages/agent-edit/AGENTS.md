@@ -1,14 +1,15 @@
 # @meridian/agent-edit
 
 Shared agent-editing core behind the `write(command=...)` tool surface. Built on
-port interfaces (`UpdateJournal`, `DocumentCoordinator`, `Codec`,
+port interfaces (`UpdateJournal`, `DocumentCoordinator`, `AgentEditCodec`,
 `AgentEditModel`, `ActorSessionStore`) so the same core works for Meridian web,
 desktop, MCP, and future products.
 
 ## What it is
 
-- **Codec** — BlockCodec/MarkCodec registration atop unified/remark. Pinned
-  stringify for canonical output. One per format (markdown, MDX, …).
+- **AgentEditCodec** — thin adapter over `@meridian/markup` that adds
+  hash-prefixed block serialization for echo/view. Pure markdown/MDX parsing and
+  serialization live in `@meridian/markup`.
 - **Resolver** — block-hash → Y.XmlElement, `find` with exact-match + NFC,
   scope lowering (block range, section, around).
 - **Apply** — 3-tier (Tier 1 Y.XmlText ops, Tier 2 per-block updateYFragment,
@@ -99,9 +100,9 @@ The **content editing model is ProseMirror today** — the `write` command gramm
 edits a block-structured markdown document represented as y-prosemirror. Making
 the content model swappable so the library can edit non-ProseMirror Yjs documents
 is an **intended future direction, deferred** (GH issue #70, "generic Yjs edit
-core"). The seams for it exist (`Codec`, structural `AgentEditModel`) but are
-not yet fully realized — the apply core still calls ProseMirror-specific
-operations, so y-prosemirror is the only working implementation. Do not
+core"). The seams for it exist (`AgentEditCodec`, structural
+`AgentEditModel`) but are not yet fully realized — the apply core still calls
+ProseMirror-specific operations, so y-prosemirror is the only working implementation. Do not
 over-claim it as done; do not delete the seams.
 
 ## Multi-block reads use the batch helpers
@@ -109,8 +110,9 @@ over-claim it as done; do not delete the seams.
 `snapshotBlocks`, `renderBlockLines`, `serializeScopeBlocks`, `lookupBlockHash`,
 and the per-staged-write echo all walk the document block list. The per-block
 helpers (`getBlockId`, `toProsemirrorBlock`, `serializeBlock`) each re-scan all
-siblings or rebuild the whole ProseMirror tree, so a per-block loop is O(B²) — on
-large chapters this is the dominant cost. Use the batch path
+siblings, rebuild the whole ProseMirror tree, or do per-block serialization
+work, so a per-block loop is O(B²) — on large chapters this is the dominant
+cost. Use the batch path
 (`projectDocumentBlocks`, `serializeBlocks`, `serializeBlockBodies`,
 `blockHashesForDoc`) which does the document-wide projection/stringify work once.
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) and the [performance
@@ -120,11 +122,12 @@ reference][perf].
 
 ## v1 scope
 
-y-prosemirror document model only. MDX and markdown codecs built in. Schema
-injection is explicit: `createCodec({ schema })` requires the host's ProseMirror
-schema; `@meridian/prosemirror-schema` is a devDependency only.
-Meridian server composes the package with the fiction schema from
-`@meridian/prosemirror-schema`.
+y-prosemirror document model only. Agent-edit depends on `@meridian/markup`
+for MDX/markdown codecs and wraps a host-built `MarkupCodec` with
+`createAgentEditCodec(markupCodec)`. Schema injection remains explicit:
+markup codec factories require the host's ProseMirror schema;
+`@meridian/prosemirror-schema` is a devDependency only. Meridian server composes
+the package with the fiction schema from `@meridian/prosemirror-schema`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts, architecture, invariants.
 → [system shape](https://github.com/haowjy/meridian-flow-docs/blob/main/work/agent-edit-write-loop/design/agent-edit-system-shape.md)

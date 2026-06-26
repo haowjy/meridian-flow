@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
@@ -49,7 +49,7 @@ export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
-  codec: Codec;
+  codec: AgentEditCodec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
   syncStateStore?: SyncStateStore;

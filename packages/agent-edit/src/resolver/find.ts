@@ -1,6 +1,6 @@
 import type * as Y from "yjs";
 
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
@@ -8,7 +8,7 @@ import type { BlockScope } from "./scope.js";
 export interface FindContext {
   doc: Y.Doc;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }
 
 export interface FindMatch {
@@ -81,7 +81,7 @@ export function serializeBlockBody(ctx: FindContext, block: Y.XmlElement): strin
 
 export function serializePmBlockBody(
   ctx: Pick<FindContext, "codec">,
-  block: Parameters<Codec["serialize"]>[0][number],
+  block: Parameters<AgentEditCodec["serialize"]>[0][number],
 ): string {
   return ctx.codec.serializeBlockBodies([block])[0] ?? "";
 }

@@ -1,19 +1,21 @@
 // Baseline timing harness for the snapshot/render/find hot paths.
 // Run: pnpm vitest run --root packages/agent-edit --testNamePattern "bench" 2>&1 | tail
 // Not a regression gate — captures before/after numbers for Q1–Q4.
+
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { snapshotBlocks } from "./apply/echo.js";
-import { mdxCodec } from "./codec/presets/mdx.js";
+import { createAgentEditCodec } from "./codec-adapter.js";
 import { yProsemirrorModel } from "./model/y-prosemirror.js";
 import { getBlockHash, lookupBlockHash } from "./resolver/block-hash.js";
 import { serializeScopeBlocks } from "./resolver/find.js";
 import { createDocumentRenderer } from "./tool/document-renderer.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 const renderer = createDocumentRenderer({ model, codec });
 

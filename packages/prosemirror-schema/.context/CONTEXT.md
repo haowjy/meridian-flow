@@ -36,8 +36,8 @@ Nodes:
 | `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
 | `image` | Inline image with `src`, `alt`, and `title` attrs. `src` defaults to an empty string. |
 | `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |
-| `table`, `table_row`, `table_cell`, `table_header` | TipTap-compatible table structure; cells currently contain `inline*`. |
-| `math_display` | Block math node, code-like and markless. Rendering is a future editor concern. |
+| `horizontal_rule` | Scene break / thematic break node for markdown `---` round-tripping. |
+| `jsx_leaf`, `jsx_container` | MDX component blocks with `name` and `props` attrs; leaf components contain `text*`, containers contain `block+`. |
 | `figure` | Atomic block with `src`, `alt`, `label`, and `caption` attrs for figure workflows. |
 
 Marks:
@@ -54,8 +54,8 @@ The server never renders TipTap DOM, but it does parse, diff, mirror, and
 serialize ProseMirror/Yjs documents. If the server schema is narrower than the
 editor schema, y-prosemirror updates can decode on one side and fail on the
 other. The shared package therefore follows the app editor's structural surface,
-including richer TipTap nodes such as figures, math, images, and tables, while
-leaving product UX and DOM rendering out of scope.
+including richer document nodes such as figures, MDX components, images, and
+markdown scene breaks, while leaving product UX and DOM rendering out of scope.
 
 ## Patterns
 
@@ -64,4 +64,4 @@ leaving product UX and DOM rendering out of scope.
 - Update the app editor extensions and `schema-parity.test.ts` with any schema
   shape change.
 - Keep provider/product behavior out of this package. Figure uploads, signed
-  URLs, math rendering, and table UI belong in app/editor or server domains.
+  URLs, MDX component rendering, and rich editing UI belong in app/editor or server domains.

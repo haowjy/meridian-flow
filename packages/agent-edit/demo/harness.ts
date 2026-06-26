@@ -2,18 +2,19 @@
 
 import {
   type AgentEditCore,
+  createAgentEditCodec,
   createAgentEditCore,
-  mdxCodec,
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 
 import { InMemoryCoordinator, InMemoryJournal } from "./fakes.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 const defaultContext: WriteContext = { sessionId: "demo-session", threadId: "demo-thread" };
 

@@ -35,22 +35,9 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 }
 
 export type { ConcurrentEditInfo } from "./apply/types.js";
-export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";
-export { markdownCodec } from "./codec/presets/markdown.js";
-export { mdxCodec } from "./codec/presets/mdx.js";
-export type {
-  Block,
-  BlockCodec,
-  Codec,
-  MarkAttrs,
-  MarkCodec,
-  ParseContext,
-  ParsedContent,
-  PMNode,
-  SerializeContext,
-  Span,
-} from "./codec/types.js";
-export { CodecParseError } from "./codec/types.js";
+export type { AgentEditCodec } from "./codec-adapter.js";
+export { createAgentEditCodec } from "./codec-adapter.js";
+export type { Block, Span } from "./codec-types.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
@@ -88,12 +75,6 @@ export type {
   WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
-export type {
-  ComponentRegistry,
-  ComponentSpec,
-  EditorSpec,
-  PropSpec,
-} from "./registry/component-registry.js";
 export type {
   RedoResult,
   ResponseCommitDocumentResult,

@@ -1,7 +1,8 @@
 // Structural document-model port for the agent editing core.
-import type * as Y from "yjs";
 
-import type { Block, ParsedContent, Span } from "../codec/types.js";
+import type { ParsedContent } from "@meridian/markup";
+import type * as Y from "yjs";
+import type { Block, Span } from "../codec-types.js";
 
 /**
  * Block-operation seam carrying block semantics and Tier 1/3 apply routing.

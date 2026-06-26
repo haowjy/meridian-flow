@@ -2,7 +2,7 @@
 import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type {
@@ -72,7 +72,7 @@ export function createWriteReversal(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
   undoClientId?: number;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
