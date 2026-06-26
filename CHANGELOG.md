@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+- Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
+  commands no longer emit Node DEP0169 from pnpm's bundled package-arg
+  resolver.
 - Editor: document load no longer builds a throwaway TipTap editor before the
   real collaboration session is available.
 
