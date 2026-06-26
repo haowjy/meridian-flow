@@ -76,8 +76,7 @@ one block's result, so a per-block loop is **O(B²)**, not O(B):
 - `toProsemirrorBlock(doc, block)` rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
 - `Codec.serializeBlock` allocates its own unified runtime per block.
 
-Every batched write touches all of these (snapshot, render, find) plus once per
-staged write in `postCommitEchoes`. **Use the batch path for any multi-block op:**
+Every batched write touches all of these (snapshot, render, find). **Use the batch path for any multi-block op:**
 
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
@@ -92,9 +91,9 @@ staged write in `postCommitEchoes`. **Use the batch path for any multi-block op:
 Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 `renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
 `serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
-(`resolver/block-hash.ts`), `afterSnapshot` precompute
-(`tool/mutation-commit.ts`), and `postCommitEchoes` memoizes one snapshot per
-response (`tool/response-staging.ts`). The Drizzle journal adapter commits a
+(`resolver/block-hash.ts`), and echo after-snapshots in
+`tool/mutation-commit.ts`. Response staging no longer recomputes per-write echoes
+at commit time. The Drizzle journal adapter commits a
 staged response in one multi-row INSERT via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
 batch API. See the [performance reference][perf] for measured numbers.
@@ -214,12 +213,18 @@ going blind to a concurrent human edit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
   advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
   touched. Deferred commit collapses **only** the merge+re-sync to once per turn
-  (N writes → 1) and must still emit that echo.
-- **Echoes are per-write, computed from the post-re-sync snapshot.** Even batched,
-  each staged write echoes via `computeEcho`'s adaptive tiers (suppress / truncated
-  / full) against the single post-re-sync snapshot — observationally identical to
-  applying the writes one at a time. Each block appears at most once across the
-  combined echo (dedup), in write order.
+  (N writes → 1); each staged write already emitted its per-write echo before
+  commit.
+- **Echoes are one per-write function.** `computeEcho(before, after, touched,
+  deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
+  each surviving post-write block independently: inserted or serialized-content
+  changed from `v_pre` to `v_post` → full `hash|content`; identical context →
+  first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
+  structural changes are not separate modes.
+- **Tool results use two content blocks.** Successful writes and undo/redo return
+  metadata in block 1 (`status`, write id or reversal count, concurrent edits)
+  and echo `hash|content` lines in block 2 when there are echo lines. Hosts should
+  prefer structured `content` over the joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
 - **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
@@ -270,16 +275,13 @@ after a journaled commit attempt, it is recover-only.
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into
 **one** lifecycle run at `commitResponse` (N writes → 1 merge+sync). Only the
-merge+re-sync is collapsed. After that single re-sync, the package computes the
-post-commit echo for each staged write, in original write order, using that
-write's pre-write snapshot and touched/deleted hash metadata against the one
-post-re-sync runtime snapshot. Suppressed per-write echoes are omitted; structural
-writes still produce truncated echoes even without concurrent edits; concurrent
-overlap at the write site produces a full echo. `documents[*].concurrentEdits` is
-the document-level human/agent touched-hash summary from the one re-sync and keeps
-the collapse-threshold behavior. The garbled character-level merge of two edits
-to the same text is accepted ("mangled-but-intact") — the model is told via this
-echo, not prevented. Mid-response, per-write echoes reflect the local runtime
+merge+re-sync is collapsed. Commit no longer recomputes per-write echoes; the
+model already received each write's echo when the write was staged.
+`documents[*].concurrentEdits` is the document-level human/agent touched-hash
+summary from the one re-sync and keeps the collapse-threshold behavior. The
+garbled character-level merge of two edits to the same text is accepted
+("mangled-but-intact") — the model is told through the write echo and concurrent
+summary, not prevented. Mid-response, per-write echoes reflect the local runtime
 (there is no per-write re-sync to live) — the accepted cost of the optimization,
 not a defect. An explicit `view` still reconstructs from canonical (see the
 sync-engine invariants), so the model can re-ground on live truth on demand.
@@ -327,8 +329,8 @@ staging/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
 
-Every successful mutating write returns a short handle line (`write id: w<N>`) even when its echo is otherwise suppressed. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
+Every successful mutating write returns a short handle line (`write id: w<N>`) in the metadata block. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 
-Post-commit response echoes label emitted hunks with the write handle (`w3: …`) so concurrent/reconciliation reports can be traced back to the write to undo. Suppressed echoes stay suppressed.
+Undo/redo echoes use the same two-block result format as writes: metadata first, echo lines second.
 
 Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.
