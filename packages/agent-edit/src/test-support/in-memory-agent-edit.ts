@@ -181,7 +181,9 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           record: copyReversalRecord({
             ...record,
             documentId: docId,
+            writeIds: [writeId],
             undoUpdateSeq: seq,
+            redoUpdateSeq: undefined,
           }),
           createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
         });
@@ -225,7 +227,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     for (const [key, stored] of group) {
       entry.reversals.set(key, {
         ...stored,
-        record: { ...stored.record, status: "redone" },
+        record: { ...stored.record, status: "redone", redoUpdateSeq: seq },
       });
       for (const writeId of stored.record.writeIds) {
         this.reactivateMutations(docId, ref.threadId, writeId, ref.undoUpdateSeq);
@@ -547,6 +549,7 @@ function copyReversalRecord(record: ReversalRecord): ReversalRecord {
     writeIds: [...record.writeIds],
     status: record.status,
     undoUpdateSeq: record.undoUpdateSeq,
+    ...(record.redoUpdateSeq !== undefined ? { redoUpdateSeq: record.redoUpdateSeq } : {}),
     ...(record.expiresAt ? { expiresAt: copyDate(record.expiresAt) } : {}),
     ...(record.reversedAt ? { reversedAt: copyDate(record.reversedAt) } : {}),
     ...(record.reversedByUserId ? { reversedByUserId: record.reversedByUserId } : {}),

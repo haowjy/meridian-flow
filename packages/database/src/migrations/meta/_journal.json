@@ -57,6 +57,13 @@
       "when": 1782577356032,
       "tag": "0007_magical_meggan",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782590864539,
+      "tag": "0008_tricky_sabra",
+      "breakpoints": true
     }
   ]
 }
