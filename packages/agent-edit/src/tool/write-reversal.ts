@@ -414,7 +414,7 @@ export function createWriteReversal(deps: {
       };
       await reversalStore.persistUndo(input.docId, input.update, [record], input.actor);
       if (input.actor.type === "user") {
-        await deps.undoNotificationPort?.record({
+        await recordUndoNotification({
           threadId: input.threadId,
           writeHandles: [...input.plan.writeIds],
           turnId: input.plan.turnId,
@@ -434,7 +434,7 @@ export function createWriteReversal(deps: {
     );
     if (!consumed.consumed) return { ok: false };
     if (input.actor.type === "user") {
-      await deps.undoNotificationPort?.record({
+      await recordUndoNotification({
         threadId: input.threadId,
         writeHandles: [...input.plan.writeIds],
         turnId: input.plan.turnId,
@@ -443,6 +443,21 @@ export function createWriteReversal(deps: {
       });
     }
     return { ok: true };
+  }
+
+  async function recordUndoNotification(input: Parameters<UndoNotificationPort["record"]>[0]) {
+    try {
+      await deps.undoNotificationPort?.record(input);
+    } catch (cause) {
+      console.error("agent-edit undo notification recording failed", {
+        threadId: input.threadId,
+        docId: input.docId,
+        turnId: input.turnId,
+        direction: input.direction,
+        writeHandleCount: input.writeHandles.length,
+        cause: formatCause(cause),
+      });
+    }
   }
 
   function invalidateRuntimeThread(docId: string, threadId: string): void {
