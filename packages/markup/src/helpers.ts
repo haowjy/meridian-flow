@@ -34,6 +34,8 @@ export type {
   MdastListItem,
   MdastParagraph,
   MdastRoot,
+  MdastTable,
+  MdastTableCell,
   MdastThematicBreak,
   MdxJsxAttribute,
 } from "./ast.js";

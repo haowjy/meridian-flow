@@ -20,7 +20,14 @@ import type {
   SerializeContext,
 } from "./types.js";
 
-const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "hard_break"]);
+const NON_CODEC_SCHEMA_NODES = new Set([
+  "doc",
+  "text",
+  "hard_break",
+  "table_row",
+  "table_header",
+  "table_cell",
+]);
 
 export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));

@@ -15,6 +15,7 @@ import {
   listItemCodec,
   orderedListCodec,
   paragraphCodec,
+  tableCodec,
 } from "./blocks/index.js";
 import {
   codeMarkCodec,
@@ -25,6 +26,7 @@ import {
 } from "./marks/index.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
+  tableCodec,
   paragraphCodec,
   headingCodec,
   codeBlockCodec,
