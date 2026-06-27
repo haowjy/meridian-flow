@@ -36,17 +36,17 @@
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
+    "@biomejs/biome": "^2.5.1",
     "@meridian/database": "workspace:*",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "catalog:",
     "ajv": "^8.20.0",
     "drizzle-orm": "catalog:",
-    "lefthook": "^2.1.8",
-    "nx": "^22.7.3",
-    "portless": "^0.13.0",
+    "lefthook": "^2.1.9",
+    "nx": "^23.0.1",
+    "portless": "^0.15.0",
     "postgres": "catalog:",
-    "tsx": "^4.22.3",
+    "tsx": "^4.22.4",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
