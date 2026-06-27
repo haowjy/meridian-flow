@@ -37,6 +37,10 @@
 - `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
   `strike` mark, and task-list state on `list_item` for markdown/Yjs
   round-tripping.
+- Chat editing: turn-scoped undo/redo can now reverse every document a turn touched.
+  The reverse API accepts `scope: "turn"` without `uri`, resolves affected
+  documents from the agent-edit journal, and returns a shared per-document
+  `TurnReversalOutcome` contract.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2

@@ -250,6 +250,20 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       .map(copyReversalRecord);
   }
 
+  async documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
+    const documentIds = new Set<string>();
+    for (const [documentId, entry] of this.data) {
+      if (
+        entry.mutations.some(
+          (mutation) => mutation.threadId === threadId && mutation.turnId === turnId,
+        )
+      ) {
+        documentIds.add(documentId);
+      }
+    }
+    return [...documentIds].sort();
+  }
+
   async latestActiveWrite(
     documentId: string,
     threadId: string,

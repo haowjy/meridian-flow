@@ -1,5 +1,6 @@
 import { parseWriteHandle, type ReversalSelection, type WriteOutcome } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { TurnReversalOutcome } from "@meridian/contracts/protocol";
+import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   createError,
   defineEventHandler,
@@ -41,6 +42,17 @@ export default defineEventHandler(async (event) => {
   const body = (await readBody<ReverseBody>(event)) ?? {};
   const input = parseReverseBody(body);
 
+  if (!input.uri) {
+    const outcome = await services.documentSync.reverseTurn({
+      threadId,
+      turnId: input.turnId,
+      direction: input.direction,
+      actor: { type: "user", userId: user.userId },
+    });
+    setResponseStatus(event, 200);
+    return outcome;
+  }
+
   const document = await readThreadContextDocument(
     {
       contextPorts: services.contextPorts,
@@ -71,14 +83,16 @@ export default defineEventHandler(async (event) => {
   return outcome;
 });
 
-function parseReverseBody(body: ReverseBody): {
-  uri: string;
+type ParsedReverseBody = {
+  uri?: string;
   direction: "undo" | "redo";
+  scope: "write" | "turn" | "thread";
   selection: ReversalSelection;
-} {
-  if (typeof body.uri !== "string" || body.uri.length === 0) {
-    throw createError({ statusCode: 400, message: "uri is required" });
-  }
+  turnId: TurnId;
+};
+
+function parseReverseBody(body: ReverseBody): ParsedReverseBody {
+  const uri = parseOptionalUri(body.uri);
   if (body.direction !== "undo" && body.direction !== "redo") {
     throw createError({ statusCode: 400, message: "direction must be undo or redo" });
   }
@@ -88,11 +102,34 @@ function parseReverseBody(body: ReverseBody): {
   if (body.target !== undefined && typeof body.target !== "string") {
     throw createError({ statusCode: 400, message: "target must be a string" });
   }
+  if (body.scope === "write" && !uri) {
+    throw createError({ statusCode: 400, message: "uri required for write scope" });
+  }
+  if (body.scope === "thread" && !uri) {
+    throw createError({ statusCode: 400, message: "uri required for thread scope" });
+  }
+  if (body.scope === "turn" && !uri && !body.target) {
+    throw createError({
+      statusCode: 400,
+      message: "target is required for turn scope without uri",
+    });
+  }
+
   return {
-    uri: body.uri,
+    ...(uri ? { uri } : {}),
     direction: body.direction,
+    scope: body.scope,
     selection: selectionFromScope(body.scope, body.target),
+    turnId: (body.target ?? "") as TurnId,
   };
+}
+
+function parseOptionalUri(uri: unknown): string | undefined {
+  if (uri === undefined) return undefined;
+  if (typeof uri !== "string" || uri.length === 0) {
+    throw createError({ statusCode: 400, message: "uri must be a non-empty string" });
+  }
+  return uri;
 }
 
 function selectionFromScope(
@@ -118,8 +155,12 @@ function selectionFromScope(
 
 function setReverseStatus(
   event: Parameters<typeof setResponseStatus>[0],
-  outcome: WriteOutcome,
+  outcome: WriteOutcome | TurnReversalOutcome,
 ): void {
+  if ("documents" in outcome) {
+    setResponseStatus(event, 200);
+    return;
+  }
   if (outcome.status === "reversed" || outcome.status === "reconciled") {
     setResponseStatus(event, 202);
     return;

@@ -247,6 +247,7 @@ function fakeReversalStore(input: {
   return {
     reserveWriteOrdinal: async () => 1,
     readForReconstruction: async () => input.snapshot,
+    documentsForTurn: async () => [],
     latestActiveWrite: async () => input.activeWrites?.at(-1),
     activeWriteSummary: async () => input.activeWrites ?? [],
     writeMinCreatedSeq: async (_documentId, _threadId, handle) =>

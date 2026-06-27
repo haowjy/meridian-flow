@@ -26,6 +26,10 @@ import {
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok } from "../../shared/result.js";
+import {
+  createDocumentUriResolver,
+  type DocumentUriResolver,
+} from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -43,6 +47,7 @@ import {
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
+import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import type {
   CheckpointInfo,
   CollabDomain,
@@ -87,6 +92,7 @@ export type CollabFacadeDeps = {
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
+  documentUriResolver?: DocumentUriResolver;
   syncStateStore?: SyncStateStore;
 };
 
@@ -119,6 +125,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     eventSink: deps.eventSink,
     syncStateStore,
+    documentUriResolver: createDocumentUriResolver(deps.db),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -372,6 +379,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
+    },
+
+    reverseTurn(input) {
+      return reverseTurnAcrossDocuments(
+        {
+          reversalStore: deps.journal,
+          agentEdit: agentEditCore,
+          resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          refreshDocumentProjection: (projection) =>
+            refreshDocumentProjection(projection.documentId, projection.threadId),
+        },
+        input,
+      );
     },
 
     async checkpoint(documentId, reason) {
