@@ -28,6 +28,27 @@
   metadata+echo blocks as writes.
 
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+
+- Collab/DB integrity pass (branch `db-collab-integrity-fixes`):
+  - `packages/agent-edit`: `requireSynced` now reconciles a persisted sync-state
+    row against the live document before authorizing a mutate. After a restart the
+    persisted snapshot is treated as a fast-start baseline only, so a stale `find`
+    can no longer resolve against human edits the agent never saw.
+  - `apps/server` collab: server journal `read()` guards against stale persisted
+    schema versions — heads stamp the running `COLLAB_SCHEMA_VERSION` on upsert and
+    `read()` throws `StaleDocumentSchemaError` instead of replaying CRDT bytes built
+    for an older ProseMirror schema. Rebuild-from-markdown recovery stays a follow-up.
+  - `@meridian/database`: added the `document_yjs_heads.latest_checkpoint_id` →
+    `document_yjs_checkpoints.id` foreign key (`ON DELETE SET NULL`), replacing a
+    comment that falsely claimed the FK already existed in custom SQL
+    (migration `0006`).
+  - `@meridian/database`: backfilled the missing `meta/0005_snapshot.json` so
+    `db:generate` no longer re-emits `agent_edit_sync_state` into the next
+    migration; the snapshot chain is consistent (`drizzle-kit check` + no-op
+    `db:generate` are clean).
+  - Dev tooling: `migration-lint` now exempts the real `0000_` baseline (not
+    `0001_`), cutting baseline noise from 125 warnings to 12 real follow-up
+    warnings.
 - Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
   commands no longer emit Node DEP0169 from pnpm's bundled package-arg
   resolver.
