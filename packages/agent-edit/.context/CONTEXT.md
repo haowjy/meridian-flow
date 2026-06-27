@@ -37,10 +37,10 @@ for the same docId (KeyedMutex on server, process-level lock on desktop).
 
 ### UndoNotificationPort (`src/tool/write-reversal.ts`)
 Optional host callback for user-triggered reversal delivery. Agent-edit passes
-`threadId`, `docId`, `turnId`, write handles, and direction after a successful
-user-actor undo/redo persist; hosts resolve `docId` to any product URI outside
-the package. Agent-actor reversals and hosts without the port keep the old
-behavior.
+`threadId`, `docId`, a representative `turnId`, write handles, direction, and
+`writeHandleTurns` (the per-handle turn mapping) after a successful user-actor
+undo/redo persist; hosts resolve `docId` to any product URI outside the package.
+Agent-actor reversals and hosts without the port keep the old behavior.
 
 ### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
 Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
@@ -185,7 +185,21 @@ doc+thread+turn reversal is still `status: "reversed"` inside the append
 transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
-**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged.
+Lineage has two distinct persisted authorities.
+`document_yjs_reversals.redo_update_seq` records the current active redo closure
+(state): handles that are active because of the same redo update must undo
+together. `document_yjs_reversal_ops` records durable reversal op identity
+(history): old undo/redo update seqs are exempt from dependency blocking even
+when the current state has moved on. Both authorities compact with the retained
+Yjs update log so closure and dependency checks only target retained update seqs.
+The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
+journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
+handles, candidate handles, and reversal-op seqs, then receive the undo closure or
+refusal verdict. The helper steps behind that API (compatible groups, boundary
+expansion, seq ownership, dependency evaluation) are private implementation
+details.
+
+**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
 
 
 ### CRDT-neutral seam, ProseMirror content currency

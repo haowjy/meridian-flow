@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import type { JournalSnapshot, PersistedUpdate, ReversalRecord } from "../ports/types.js";
 import type { WriteMutationRow } from "../ports/update-journal.js";
 
-export interface LineageHandleState {
+interface LineageHandleState {
   handle: string;
   forwardSeqs: number[];
   undoSeqs: number[];
@@ -13,7 +13,7 @@ export interface LineageHandleState {
   activeBoundary: string;
 }
 
-export interface ActiveClosure {
+interface ActiveClosure {
   handles: string[];
   forwardSeqs: ReadonlySet<number>;
   targetSeqs: ReadonlySet<number>;
@@ -21,11 +21,11 @@ export interface ActiveClosure {
   earliestForwardSeq: number;
 }
 
-export interface CompatibleLineageGroup extends ActiveClosure {
+interface CompatibleLineageGroup extends ActiveClosure {
   boundary: string;
 }
 
-export type DependencyVerdict = { ok: true } | { ok: false; blockingWriteIds: readonly string[] };
+type DependencyVerdict = { ok: true } | { ok: false; blockingWriteIds: readonly string[] };
 
 interface IdRange {
   client: number;
@@ -38,7 +38,77 @@ interface DecodedUpdateLike {
   ds?: { clients?: Map<number, readonly { clock: number; len: number }[]> };
 }
 
-export function activeClosureForHandles(input: {
+export type UndoClosure =
+  | { ok: true; handles: string[]; targetSeqs: ReadonlySet<number> }
+  | { ok: false; status: "nothing_to_undo" }
+  | {
+      ok: false;
+      status: "cant_undo_dependent";
+      blockingWriteIds: string[];
+      selectedWriteIds: string[];
+    };
+
+export function selectUndoClosure(input: {
+  snapshot: JournalSnapshot;
+  reversals: readonly ReversalRecord[];
+  /** All candidate handles' mutation rows, UNFILTERED (status + retention handled inside). */
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
+  /** Handles chosen by the active-write selection. */
+  selectedHandles: readonly string[];
+  /** All handles present in state — the expansion pool. */
+  candidateHandles: readonly string[];
+  reversalOpSeqs: ReadonlySet<number>;
+  isScopeSelection: boolean;
+}): UndoClosure {
+  const retained = retainedActiveRowsForHandles({
+    handles: input.candidateHandles,
+    rowsByHandle: input.rowsByHandle,
+    snapshot: input.snapshot,
+  });
+  const retainedSelected = input.selectedHandles.filter((handle) =>
+    retained.writeIds.includes(handle),
+  );
+  if (retainedSelected.length === 0) return { ok: false, status: "nothing_to_undo" };
+
+  const seedHandles = input.isScopeSelection
+    ? (compatibleLineageGroups({
+        handles: retainedSelected,
+        rowsByHandle: retained.rowsByHandle,
+        reversals: input.reversals,
+      })[0]?.handles ?? [])
+    : retainedSelected;
+
+  const closure = expandActiveClosureToCompatibleBoundary({
+    selectedHandles: seedHandles,
+    candidateHandles: retained.writeIds,
+    rowsByHandle: retained.rowsByHandle,
+    reversals: input.reversals,
+  });
+  if (!closure || closure.targetSeqs.size === 0) return { ok: false, status: "nothing_to_undo" };
+
+  if (![...closure.targetSeqs].every((seq) => snapshotRetainsSeq(input.snapshot, seq))) {
+    return { ok: false, status: "nothing_to_undo" };
+  }
+
+  const dependency = evaluateLineageDependencies({
+    snapshot: input.snapshot,
+    closure,
+    reversalOpSeqs: input.reversalOpSeqs,
+    seqToHandle: seqToHandleFromMutations(input.rowsByHandle, input.reversals),
+  });
+  if (!dependency.ok) {
+    return {
+      ok: false,
+      status: "cant_undo_dependent",
+      blockingWriteIds: [...dependency.blockingWriteIds],
+      selectedWriteIds: closure.handles,
+    };
+  }
+
+  return { ok: true, handles: closure.handles, targetSeqs: closure.targetSeqs };
+}
+
+function activeClosureForHandles(input: {
   handles: readonly string[];
   rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
   reversals: readonly ReversalRecord[];
@@ -75,7 +145,7 @@ export function activeClosureForHandles(input: {
   };
 }
 
-export function expandActiveClosureToCompatibleBoundary(input: {
+function expandActiveClosureToCompatibleBoundary(input: {
   selectedHandles: readonly string[];
   candidateHandles: readonly string[];
   rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
@@ -116,15 +186,7 @@ export function expandActiveClosureToCompatibleBoundary(input: {
   return closure;
 }
 
-export function lineageSeqsForHandles(input: {
-  handles: readonly string[];
-  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
-  reversals: readonly ReversalRecord[];
-}): ReadonlySet<number> {
-  return activeClosureForHandles(input)?.lineageSeqs ?? new Set<number>();
-}
-
-export function compatibleLineageGroups(input: {
+function compatibleLineageGroups(input: {
   handles: readonly string[];
   rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
   reversals: readonly ReversalRecord[];
@@ -148,7 +210,7 @@ export function compatibleLineageGroups(input: {
     .sort((left, right) => left.earliestForwardSeq - right.earliestForwardSeq);
 }
 
-export function evaluateLineageDependencies(input: {
+function evaluateLineageDependencies(input: {
   snapshot: JournalSnapshot;
   closure: ActiveClosure;
   seqToHandle?: ReadonlyMap<number, string>;
@@ -186,7 +248,7 @@ export function evaluateLineageDependencies(input: {
   };
 }
 
-export function seqToHandleFromMutations(
+function seqToHandleFromMutations(
   rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>,
   reversals: readonly ReversalRecord[],
 ): Map<number, string> {
@@ -229,6 +291,29 @@ function lineageStatesForHandles(input: {
       activeBoundary: activeRedoSeq === undefined ? "forward" : `redo:${activeRedoSeq}`,
     };
   });
+}
+
+function retainedActiveRowsForHandles(input: {
+  handles: readonly string[];
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
+  snapshot: JournalSnapshot;
+}): { writeIds: string[]; rowsByHandle: Map<string, WriteMutationRow[]> } {
+  const retainedSeqs = new Set(input.snapshot.updates.map((update) => update.seq));
+  const retained: { handle: string; rows: WriteMutationRow[] }[] = [];
+  for (const handle of input.handles) {
+    const rows = (input.rowsByHandle.get(handle) ?? []).filter((row) => row.status === "active");
+    if (rows.length > 0 && rows.every((row) => retainedSeqs.has(row.createdSeq))) {
+      retained.push({ handle, rows });
+    }
+  }
+  return {
+    writeIds: retained.map(({ handle }) => handle),
+    rowsByHandle: new Map(retained.map(({ handle, rows }) => [handle, rows])),
+  };
+}
+
+function snapshotRetainsSeq(snapshot: { updates: { seq: number }[] }, seq: number): boolean {
+  return snapshot.updates.some((update) => update.seq === seq);
 }
 
 function insertedIdRanges(updates: readonly PersistedUpdate[]): IdRange[] {
