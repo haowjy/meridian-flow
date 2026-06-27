@@ -71,6 +71,46 @@ const customNodes = {
   list_item: {
     content: "paragraph block*",
     defining: true,
+    attrs: { checked: { default: null } },
+  },
+
+  // GFM table cells are single-line inline markdown; one paragraph is the
+  // structural representation TipTap table commands expect. colspan/rowspan/
+  // colwidth stay because prosemirror-tables editing commands use them internally.
+  table: {
+    content: "table_row+",
+    group: "block",
+    tableRole: "table",
+    isolating: true,
+  },
+
+  table_row: {
+    content: "(table_header | table_cell)+",
+    tableRole: "row",
+  },
+
+  table_header: {
+    content: "paragraph",
+    tableRole: "header_cell",
+    isolating: true,
+    attrs: {
+      alignment: { default: null },
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      colwidth: { default: null },
+    },
+  },
+
+  table_cell: {
+    content: "paragraph",
+    tableRole: "cell",
+    isolating: true,
+    attrs: {
+      alignment: { default: null },
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      colwidth: { default: null },
+    },
   },
 
   jsx_leaf: {
@@ -125,6 +165,8 @@ const customMarks = {
     },
     inclusive: false,
   },
+
+  strike: {},
 } satisfies Record<string, MarkSpec>;
 
 // ─── Exports ────────────────────────────────────────────────────────
@@ -135,7 +177,7 @@ const customMarks = {
  * the old version. Lives here because this package owns the schema shape the
  * version tracks — client and server must import the same value.
  */
-export const COLLAB_SCHEMA_VERSION = 3;
+export const COLLAB_SCHEMA_VERSION = 4;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 

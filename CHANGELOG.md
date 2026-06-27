@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
+  `strike` mark, and task-list state on `list_item` for markdown/Yjs
+  round-tripping.
+
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no
