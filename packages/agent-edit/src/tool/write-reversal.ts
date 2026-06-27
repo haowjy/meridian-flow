@@ -106,6 +106,7 @@ export function createWriteReversal(deps: {
       undo: availability.undo,
       redo: availability.redo,
       ...(availability.undoWriteId ? { undoWriteId: availability.undoWriteId } : {}),
+      ...(availability.undoTarget ? { undoTarget: availability.undoTarget } : {}),
       ...(availability.redoWriteId ? { redoWriteId: availability.redoWriteId } : {}),
     };
   }

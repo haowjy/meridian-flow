@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Collab: grouped redo boundaries are now treated as atomic undo units; selecting one write from a grouped redo expands to every write in that redo so document content and reversal metadata stay in sync.
+
 - Collab: undo/redo now uses persisted reversal lineage instead of delete-set ownership guessing, so concurrent edits in other blocks or non-overlapping ranges survive repeated undo/redo cycles without corruption.
 
 - Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.

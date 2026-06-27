@@ -2,9 +2,15 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { blockTexts } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
-import { cloneDoc, context, model, THREAD_ID } from "./test-support/write-tool-harness.js";
+import {
+  cloneDoc,
+  context,
+  model,
+  REVERSAL_CLIENT_ID,
+  THREAD_ID,
+} from "./test-support/write-tool-harness.js";
 
 const actor = { type: "user", userId: "user-1" } as const;
 
@@ -271,9 +277,125 @@ describe("write reversal under concurrent edits", () => {
       redo: "reconciled",
       undoW2: "reconciled",
     });
+    expect(undoW2.text).toContain("undo: 2 edit(s)");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha sword.",
+      "Beta shield.",
+    ]);
+    await expectMutationStatuses(scenario, { w1: "reversed", w2: "reversed" });
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md")).join("\n")).not.toMatch(
+      /swordsword|shieldshield/,
+    );
+  });
 
-    const beforeFinalUndo = blockTexts(scenario.ctx.liveDoc("chapter.md"));
-    const undoW1 = await scenario.ctx.core.reverse({
+  it("expands sword→blade→saber when undo hits its grouped redo boundary", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await scenario.writeDependentSwordSaber();
+
+    const undoGroup = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w1", to: "w2" },
+      context,
+    );
+    expectOutcome(undoGroup, "reconciled");
+    const redoGroup = await scenario.ctx.core.write(
+      { command: "redo", file: "chapter.md" },
+      context,
+    );
+    expectOutcome(redoGroup, "reconciled");
+
+    const undoEarlier = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", to: "w1" },
+      context,
+    );
+
+    expectOutcome(undoEarlier, "reconciled");
+    expect(outcomeText(undoEarlier)).toContain("undo: 2 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
+  });
+
+  it("still refuses a non-grouped dependent write", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
+    await scenario.writeDependentSwordSaber();
+
+    const undoEarlier = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", to: "w1" },
+      context,
+    );
+
+    expectOutcome(undoEarlier, "cant_undo_dependent", true);
+    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
+    expect(scenario.blockTexts()).toEqual(["Alpha saber."]);
+  });
+
+  it("does not silently partial-undo a diverged turn scope", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword.\n\nBeta shield." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-diverged" },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "shield", content: "ward" },
+      { ...context, turnId: "turn-diverged" },
+    );
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward."]);
+
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "redo", file: "chapter.md" }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "redo", file: "chapter.md", to: "w1" }, context),
+      "reconciled",
+    );
+
+    const undoTurn = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      context,
+    );
+
+    expect(["reconciled", "cant_undo_dependent"]).toContain(undoTurn.status);
+    expect(scenario.blockTexts()).not.toEqual(["Alpha sword.", "Beta ward."]);
+  });
+
+  it("expands a grouped redo boundary when undo latest hits one handle", async () => {
+    const scenario = await groupedRedoScenario();
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+
+    expect(undo.status).toBe("reconciled");
+    expect(undo.text).toContain("undo: 3 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+      w3: "reversed",
+    });
+  });
+
+  it("expands a grouped redo boundary when undoing a single selected handle", async () => {
+    const scenario = await groupedRedoScenario();
+
+    const undo = await scenario.ctx.core.reverse({
       docId: "chapter.md",
       threadId: THREAD_ID,
       direction: "undo",
@@ -281,11 +403,95 @@ describe("write reversal under concurrent edits", () => {
       actor,
     });
 
-    expect(undoW1.status).toBe("cant_undo_dependent");
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(beforeFinalUndo);
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md")).join("\n")).not.toMatch(
-      /swordsword|shieldshield/,
-    );
+    expect(undo.status).toBe("reconciled");
+    expect(undo.text).toContain("undo: 3 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+      w3: "reversed",
+    });
+  });
+
+  it("expands a grouped redo boundary when undoing a selected range", async () => {
+    const scenario = await groupedRedoScenario();
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "range", from: "w1", to: "w2" },
+      actor,
+    });
+
+    expect(undo.status).toBe("reconciled");
+    expect(undo.text).toContain("undo: 3 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+      w3: "reversed",
+    });
+  });
+
+  it("keeps latest undo scoped to one write when no grouped redo boundary exists", async () => {
+    const scenario = await independentWriteScenario();
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+
+    expect(undo.status).toBe("reconciled");
+    expect(undo.text).toContain("undo: 1 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cloak."]);
+    await expectMutationStatuses(scenario, {
+      w1: "active",
+      w2: "active",
+      w3: "reversed",
+    });
+  });
+
+  it("keeps subset undo per-handle after writes are redone by separate redo ops", async () => {
+    const scenario = await independentWriteScenario();
+    for (const writeId of ["w1", "w2", "w3"]) {
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: writeId },
+        actor,
+      });
+    }
+    for (const writeId of ["w1", "w2", "w3"]) {
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "redo",
+        selection: { kind: "single", to: writeId },
+        actor,
+      });
+    }
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+
+    expect(undo.status).toBe("reconciled");
+    expect(undo.text).toContain("undo: 1 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cloak."]);
+    await expectMutationStatuses(scenario, {
+      w1: "active",
+      w2: "active",
+      w3: "reversed",
+    });
   });
 
   it("refuses an exact same-range concurrent replacement and leaves the human text intact", async () => {
@@ -342,6 +548,65 @@ describe("write reversal under concurrent edits", () => {
     );
   });
 });
+
+async function independentWriteScenario(): Promise<ReversalScenario> {
+  const scenario = await ReversalScenario.read({
+    "chapter.md": "Alpha sword.\n\nBeta shield.\n\nGamma cloak.",
+  });
+  await scenario.ctx.core.write(
+    { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+    { ...context, turnId: "turn-boundary-w1" },
+  );
+  await scenario.ctx.core.write(
+    { command: "replace", file: "chapter.md", find: "shield", content: "ward" },
+    { ...context, turnId: "turn-boundary-w2" },
+  );
+  await scenario.ctx.core.write(
+    { command: "replace", file: "chapter.md", find: "cloak", content: "cape" },
+    { ...context, turnId: "turn-boundary-w3" },
+  );
+  expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cape."]);
+  return scenario;
+}
+
+async function groupedRedoScenario(): Promise<ReversalScenario> {
+  const scenario = await independentWriteScenario();
+  const undoAll = await scenario.ctx.core.reverse({
+    docId: "chapter.md",
+    threadId: THREAD_ID,
+    direction: "undo",
+    selection: { kind: "all" },
+    actor,
+  });
+  expect(undoAll.status).toBe("reconciled");
+  expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
+
+  const redoAll = await scenario.ctx.core.reverse({
+    docId: "chapter.md",
+    threadId: THREAD_ID,
+    direction: "redo",
+    selection: { kind: "all" },
+    actor,
+  });
+  expect(redoAll.status).toBe("reconciled");
+  expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cape."]);
+  expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toMatchObject({
+    undo: true,
+    undoWriteId: "w3",
+    undoTarget: { writeIds: ["w1", "w2", "w3"] },
+  });
+  await expectMutationStatuses(scenario, { w1: "active", w2: "active", w3: "active" });
+  return scenario;
+}
+
+async function expectMutationStatuses(
+  scenario: ReversalScenario,
+  expected: Record<string, "active" | "reversed">,
+): Promise<void> {
+  for (const [writeId, status] of Object.entries(expected)) {
+    expect(await scenario.mutationsFor(writeId)).toMatchObject([{ status }]);
+  }
+}
 
 async function applyRemoteHumanEdit(
   live: Y.Doc,
