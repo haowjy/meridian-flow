@@ -125,6 +125,43 @@ describe("buildContext", () => {
     });
   });
 
+  it("injects undo notifications after working state", () => {
+    const context = buildContext({
+      thread: { ...thread(), workingState: { focus: "chapter" } as never },
+      turns: [],
+      blocks: [],
+      undoNotifications: [
+        {
+          id: "notification-1",
+          threadId: "thread-1" as never,
+          writeHandle: "w1",
+          turnId: "turn-1" as never,
+          uri: "manuscript://arc/chapter-3.mdx",
+          direction: "undo",
+          createdAt: new Date(createdAt),
+        },
+      ],
+    });
+
+    expect(context.messages[1]).toMatchObject({
+      role: "system",
+      content: [{ type: "text", text: expect.stringContaining("Working state:") }],
+    });
+    expect(context.messages[2]).toMatchObject({
+      role: "system",
+      content: [
+        {
+          type: "text",
+          text: [
+            "The writer reversed the following edits before this message:",
+            "- chapter-3.mdx (manuscript://arc/chapter-3.mdx)",
+            "They are signaling these changes were unwanted.",
+          ].join("\n"),
+        },
+      ],
+    });
+  });
+
   it("keeps assistant tool_use blocks immediately before same-turn tool_results", () => {
     const userTurn = turn("turn-user", "user");
     const assistantTurn = turn("turn-assistant", "assistant");

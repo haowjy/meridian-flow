@@ -111,6 +111,10 @@ import {
   type ThreadRuntimeService,
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import {
+  createDrizzlePendingUndoNotificationRepository,
+  type PendingUndoNotificationRepository,
+} from "../domains/undo-notifications/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
@@ -161,6 +165,7 @@ export type AppServices = {
   figureAssets: FigureAssetService;
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
+  undoNotifications: PendingUndoNotificationRepository;
 };
 
 export type ProductionAppPorts = {
@@ -195,6 +200,7 @@ export type ProductionAppPorts = {
   results: ResultRepository;
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
+  undoNotifications: PendingUndoNotificationRepository;
 };
 
 export async function createProductionAppPorts(input: {
@@ -232,7 +238,12 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const documentSync = createCollabDomain({ db, eventSink });
+  const undoNotifications = createDrizzlePendingUndoNotificationRepository(db);
+  const documentSync = createCollabDomain({
+    db,
+    eventSink,
+    pendingUndoNotifications: undoNotifications,
+  });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -308,6 +319,7 @@ export async function createProductionAppPorts(input: {
     results,
     promotionService,
     documentAccess,
+    undoNotifications,
   };
 }
 
@@ -420,6 +432,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
+    undoNotifications: ports.undoNotifications,
   });
   runTurnProxy.bind(orchestrator);
 
@@ -469,6 +482,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     figureAssets: ports.figureAssets,
     results: ports.results,
     documentAccess: ports.documentAccess,
+    undoNotifications: ports.undoNotifications,
   };
 }
 
@@ -477,6 +491,7 @@ export function createInMemoryAppServices(): AppServices {
   const packageRepository = createInMemoryPackageStore();
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
+  const undoNotifications = createInMemoryPendingUndoNotificationRepository();
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
 
@@ -806,7 +821,34 @@ export function createInMemoryAppServices(): AppServices {
       },
       async requireOwnedDocument() {},
     },
+    undoNotifications,
     modelRequestDebug,
+  };
+}
+
+function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificationRepository {
+  const rows: Awaited<ReturnType<PendingUndoNotificationRepository["consumeForThread"]>> = [];
+  return {
+    async record(input) {
+      rows.push(
+        ...input.writeHandles.map((writeHandle) => ({
+          id: crypto.randomUUID(),
+          threadId: input.threadId as never,
+          writeHandle,
+          turnId: input.turnId as never,
+          uri: input.uri,
+          direction: input.direction,
+          createdAt: new Date(),
+        })),
+      );
+    },
+    async consumeForThread(threadId) {
+      const consumed = rows.filter((row) => row.threadId === threadId);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (rows[index]?.threadId === threadId) rows.splice(index, 1);
+      }
+      return consumed;
+    },
   };
 }
 

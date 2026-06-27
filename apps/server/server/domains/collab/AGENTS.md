@@ -18,6 +18,8 @@ the update journal, and the live-document coordinator.
   surface.
 - **Agent-edit adapters** — `drizzle-journal.ts` (`UpdateJournal`,
   mutation metadata queries, server lifecycle, checkpoints, latest attribution),
+  plus the user undo-notification adapter that resolves document ids to context
+  URIs before recording pending LLM notifications,
   `hocuspocus-coordinator.ts` (`DocumentCoordinator`),
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
   (test/app fakes).

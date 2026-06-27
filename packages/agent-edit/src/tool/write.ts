@@ -45,7 +45,7 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
-import { createWriteReversal } from "./write-reversal.js";
+import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -72,6 +72,8 @@ export interface CreateWriteToolOptions {
    * Y.Doc for standalone use.
    */
   createRuntimeDoc?: () => Y.Doc;
+  /** Host-owned notification sink for user-triggered undo/redo context. */
+  undoNotificationPort?: UndoNotificationPort;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
 }
@@ -151,6 +153,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
     undoClientId,
+    undoNotificationPort: options.undoNotificationPort,
     onInvariantViolation: options.onInvariantViolation,
   });
 

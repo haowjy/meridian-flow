@@ -30,6 +30,16 @@ import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { UndoRedoOutcome, WriteCommand, WriteRedoResult, WriteUndoResult } from "./types.js";
 
+export interface UndoNotificationPort {
+  record(input: {
+    threadId: string;
+    writeHandles: string[];
+    turnId: string;
+    docId: string;
+    direction: "undo" | "redo";
+  }): Promise<void>;
+}
+
 export interface WriteReversal {
   run(input: WriteReversalRunInput): Promise<InternalWriteResult>;
   runWriteReversal(
@@ -75,6 +85,7 @@ export function createWriteReversal(deps: {
   model: AgentEditModel;
   codec: AgentEditCodec;
   undoClientId?: number;
+  undoNotificationPort?: UndoNotificationPort;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
   const {
@@ -391,6 +402,15 @@ export function createWriteReversal(deps: {
         ...(input.actor.type === "user" ? { reversedByUserId: input.actor.userId } : {}),
       };
       await reversalStore.persistUndo(input.docId, input.update, [record], input.actor);
+      if (input.actor.type === "user") {
+        await deps.undoNotificationPort?.record({
+          threadId: input.threadId,
+          writeHandles: [...input.plan.writeIds],
+          turnId: input.plan.turnId,
+          docId: input.docId,
+          direction: input.direction,
+        });
+      }
       return { ok: true };
     }
     const undoUpdateSeq = input.plan.redoGroup?.undoUpdateSeq;
@@ -401,7 +421,17 @@ export function createWriteReversal(deps: {
       { threadId: input.threadId, undoUpdateSeq },
       { origin: "system", seq: 0 },
     );
-    return consumed.consumed ? { ok: true } : { ok: false };
+    if (!consumed.consumed) return { ok: false };
+    if (input.actor.type === "user") {
+      await deps.undoNotificationPort?.record({
+        threadId: input.threadId,
+        writeHandles: [...input.plan.writeIds],
+        turnId: input.plan.turnId,
+        docId: input.docId,
+        direction: input.direction,
+      });
+    }
+    return { ok: true };
   }
 
   function invalidateRuntimeThread(docId: string, threadId: string): void {

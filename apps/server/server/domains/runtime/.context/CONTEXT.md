@@ -39,7 +39,7 @@ skeleton and delegates the moving parts.
 | `tool-dispatch.ts` | Permission check, tool execution ordering, result event shaping. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `checkpoints.ts` | `CheckpointRegistry` factory; process-local pending checkpoint promises plus restart recovery from the event journal. No module-global registry state. |
-| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked. |
+| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; can inject one-turn transient undo notifications after working state. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -112,6 +112,10 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Undo notifications** — `runTurn` consumes pending user undo/redo rows once
+  per turn before the first model call, coalesces by write handle (last
+  direction wins), and injects net undone edits only into the first context
+  build. Mid-stream undos remain pending for the next turn.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes; cancellation paths

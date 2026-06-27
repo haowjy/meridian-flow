@@ -168,4 +168,90 @@ describe("write host reverse", () => {
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
   });
+  it("records undo notifications for user reversals only", async () => {
+    const records: Array<{
+      threadId: string;
+      writeHandles: string[];
+      turnId: string;
+      docId: string;
+      direction: "undo" | "redo";
+    }> = [];
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record(input) {
+            records.push(input);
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-user-notification" },
+    );
+
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+    });
+
+    expect(records).toEqual([
+      {
+        threadId: THREAD_ID,
+        writeHandles: ["w1"],
+        turnId: "turn-user-notification",
+        docId: "chapter.md",
+        direction: "undo",
+      },
+    ]);
+  });
+
+  it("records redo notifications for user reversals", async () => {
+    const records: Array<{ direction: "undo" | "redo"; writeHandles: string[] }> = [];
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record(input) {
+            records.push({ direction: input.direction, writeHandles: input.writeHandles });
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-redo-notification" },
+    );
+
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor,
+    });
+
+    expect(records).toEqual([
+      { direction: "undo", writeHandles: ["w1"] },
+      { direction: "redo", writeHandles: ["w1"] },
+    ]);
+  });
 });
