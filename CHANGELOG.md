@@ -403,21 +403,17 @@
   deletes older per-document IndexedDB entries.
 - Added a soft live-document session cap warning in `DocumentSessionRegistry`
   (no hard eviction).
-- Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`, persisted
-  `schema_version` on Yjs heads, and rebuild-from-markdown recovery when a stored
-  head is on an older version.
+- Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema` and
+  `schema_version` on `document_yjs_heads`; server journal writes stamp the current
+  version on head upsert and `read()` throws `StaleDocumentSchemaError` when a
+  stored head is older than the running schema (loud guard, not silent replay).
+  Rebuild-from-markdown stale-schema recovery remains a planned follow-up.
 - Extended collab persistence metrics with live document and open connection counts;
   shutdown drain emits the augmented payload.
 - Fixed `storeDocument` checkpoint writes clobbering `latestUpdateSeq` via targeted
   `setLatestCheckpointId` updates on the document store port.
 - Made Hocuspocus shutdown drain a quiescence loop so async close work cannot leave
   persistence queues or in-flight stores behind.
-- Unified stale-schema / decode recovery in `resetAndSeedFromMarkdownProjection` and
-  wired it through facade `getOrCreateMirror` for server read/write paths.
-- `forgetMirror` now clears the inner mirror cache (callers only invalidate metadata;
-  no out-of-band Yjs content mutation).
-- Added DB-backed collab correctness tests (stale-schema recovery, checkpoint head
-  safety, single-persist local writes) and replaced the mock stale-schema unit test.
 
 ## Dev portless app stability (2026-06-17, branch h/v3)
 
