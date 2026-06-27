@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
+  works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
+  ProseMirror construction) behind the model adapter, so the editing protocol no
+  longer hard-codes the Yjs document model. No change to how edits, undo/redo, or
+  echoes behave.
+- `packages/agent-edit`: the agent `write` command schema is one Zod source. The
+  `view` command is renamed to **`read`**; the model-facing tool schema is
+  generated from the same schema; and validation is now strict — unknown or
+  command-irrelevant fields are rejected instead of silently stripped.
+
 - `packages/markup`: new `@meridian/markup` package — the codec (text ↔
   ProseMirror, markdown + MDX) extracted out of `@meridian/agent-edit` into a
   standalone leaf package with a composable builder/plugin API
