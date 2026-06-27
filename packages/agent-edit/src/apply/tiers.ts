@@ -4,8 +4,10 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Node as PMNode } from "prosemirror-model";
 import { Fragment } from "prosemirror-model";
 import * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
+import { unwrapBlock } from "../model/block-ref.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isLiveXmlElement } from "../resolver/block-hash.js";
 import {
@@ -190,10 +192,11 @@ function preflightTextEdit(
   codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "text" }>,
 ): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.element, "target");
+  const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
   const span = { from: edit.span.start, to: edit.span.end };
-  const text = model.getText(edit.element);
+  const block = unwrapBlock(edit.block);
+  const text = model.getText(block);
   if (span.from < 0 || span.to < span.from || span.to > text.length) {
     return {
       ok: false,
@@ -205,16 +208,16 @@ function preflightTextEdit(
   const parsed = parseContent(codec, edit.newText, "text");
   if (!parsed.ok) return parsed;
 
-  const pmBlock = model.toProsemirrorBlock(doc, edit.element);
-  if (pmBlock.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, pmBlock.type.name);
+  const pmBlock = model.toProsemirrorBlock(doc, block);
+  if (pmBlock.type.name !== block.nodeName) {
+    return blockTypeMismatch(block.nodeName, pmBlock.type.name);
   }
 
-  const sameMarkContext = spanWithinSingleMarkContext(collectTextRuns(edit.element), span);
+  const sameMarkContext = spanWithinSingleMarkContext(collectTextRuns(block), span);
   if (sameMarkContext && isPlainTextReplacement(parsed.parsed, edit.newText)) {
     return {
       ok: true,
-      plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(edit.element) },
+      plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(block) },
     };
   }
 
@@ -228,12 +231,12 @@ function preflightTextEdit(
     };
   }
   const replacement = replaceFlatText(pmBlock, span, inline.nodes);
-  if (replacement.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, replacement.type.name);
+  if (replacement.type.name !== block.nodeName) {
+    return blockTypeMismatch(block.nodeName, replacement.type.name);
   }
   return {
     ok: true,
-    plan: { kind: "text", tier: 2, edit, replacement, blockId: model.getBlockId(edit.element) },
+    plan: { kind: "text", tier: 2, edit, replacement, blockId: model.getBlockId(block) },
   };
 }
 
@@ -263,11 +266,12 @@ function preflightDelete(
   model: AgentEditModel,
   edit: Extract<ResolvedEdit, { kind: "delete" }>,
 ): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.element, "target");
+  const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
-  const pmBlock = model.toProsemirrorBlock(doc, edit.element);
-  if (pmBlock.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, pmBlock.type.name);
+  const block = unwrapBlock(edit.block);
+  const pmBlock = model.toProsemirrorBlock(doc, block);
+  if (pmBlock.type.name !== block.nodeName) {
+    return blockTypeMismatch(block.nodeName, pmBlock.type.name);
   }
   return {
     ok: true,
@@ -275,7 +279,7 @@ function preflightDelete(
       kind: "delete",
       tier: 3,
       edit,
-      blockId: model.getBlockId(edit.element),
+      blockId: model.getBlockId(block),
       removesBlock: model.getBlocks(doc).length > 1,
     },
   };
@@ -289,7 +293,7 @@ function executePlans(
 ): void {
   const ordered = [...plans].sort((left, right) => {
     if (left.kind !== "text" || right.kind !== "text") return 0;
-    if (left.edit.element !== right.edit.element) return 0;
+    if (left.edit.block !== right.edit.block) return 0;
     return textPlanStart(right) - textPlanStart(left);
   });
 
@@ -297,22 +301,26 @@ function executePlans(
     switch (plan.kind) {
       case "text":
         if (plan.tier === 1) {
-          model.applyTextEdit(doc, plan.edit.element, plan.span, plan.edit.newText);
+          model.applyTextEdit(doc, unwrapBlock(plan.edit.block), plan.span, plan.edit.newText);
         } else {
-          model.applyBlockDiff(doc, plan.edit.element, plan.replacement);
+          model.applyBlockDiff(doc, unwrapBlock(plan.edit.block), plan.replacement);
         }
         accumulator.touchedHashes.add(plan.blockId);
         accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
         break;
       case "insert": {
-        const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
+        const inserted = model.insertBlocks(
+          doc,
+          plan.edit.after ? unwrapBlock(plan.edit.after) : null,
+          plan.parsed,
+        );
         const blockIds = inserted.map((block) => model.getBlockId(block));
         for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
         accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
         break;
       }
       case "delete":
-        model.deleteBlock(doc, plan.edit.element);
+        model.deleteBlock(doc, unwrapBlock(plan.edit.block));
         if (plan.removesBlock) {
           accumulator.deletedHashes.add(plan.blockId);
         } else {
@@ -344,7 +352,7 @@ function collectTierOneGroup(
 
   for (let index = startIndex + 1; index < edits.length; index += 1) {
     const candidate = edits[index];
-    if (candidate.kind !== "text" || candidate.element !== firstPlan.edit.element) break;
+    if (candidate.kind !== "text" || candidate.block !== firstPlan.edit.block) break;
     const planned = preflightEdit(doc, model, codec, candidate);
     if (!planned.ok) return planned;
     if (planned.plan.kind !== "text" || planned.plan.tier !== 1) break;
@@ -361,8 +369,8 @@ function validateNoSameTurnTombstones(
   model: AgentEditModel,
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
-  const shadowBlocks = [...model.getBlocks(doc)];
-  const removed = new Set<Y.XmlElement>();
+  const shadowBlocks = [...model.getBlocks(doc)] as unknown as BlockRef[];
+  const removed = new Set<BlockRef>();
 
   for (const edit of edits) {
     const refs = referencedElements(edit);
@@ -370,13 +378,13 @@ function validateNoSameTurnTombstones(
       if (removed.has(ref)) {
         return applyError("not_found", "Target block was removed earlier in this turn");
       }
-      if (!isLiveXmlElement(ref) || !shadowBlocks.includes(ref)) {
+      if (!isLiveXmlElement(unwrapBlock(ref)) || !shadowBlocks.includes(ref)) {
         return applyError("not_found", "Target block is no longer live in this document");
       }
     }
     if (edit.kind === "delete" && shadowBlocks.length > 1) {
-      removed.add(edit.element);
-      shadowBlocks.splice(shadowBlocks.indexOf(edit.element), 1);
+      removed.add(edit.block);
+      shadowBlocks.splice(shadowBlocks.indexOf(edit.block), 1);
     }
     if (edit.kind === "insert") {
       // Inserts create fresh blocks only at execution time; the shadow pass only
@@ -386,11 +394,11 @@ function validateNoSameTurnTombstones(
   return { ok: true };
 }
 
-function referencedElements(edit: ResolvedEdit): Y.XmlElement[] {
+function referencedElements(edit: ResolvedEdit): BlockRef[] {
   switch (edit.kind) {
     case "text":
     case "delete":
-      return [edit.element];
+      return [edit.block];
     case "insert":
       return edit.after ? [edit.after] : [];
   }
@@ -399,10 +407,11 @@ function referencedElements(edit: ResolvedEdit): Y.XmlElement[] {
 function validateLiveBlock(
   doc: Y.Doc,
   model: AgentEditModel,
-  block: Y.XmlElement,
+  block: BlockRef,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {
-  if (!isLiveXmlElement(block) || !model.getBlocks(doc).includes(block)) {
+  const element = unwrapBlock(block);
+  if (!isLiveXmlElement(element) || !model.getBlocks(doc).includes(element)) {
     return { ok: false, code: "not_found", message: `${label} block is no longer live` };
   }
   return { ok: true };

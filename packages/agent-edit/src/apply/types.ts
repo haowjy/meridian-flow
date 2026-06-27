@@ -1,4 +1,4 @@
-import type * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 
 export interface ResolvedSpan {
   start: number;
@@ -6,24 +6,24 @@ export interface ResolvedSpan {
 }
 
 /**
- * Resolver → apply seam. Element references are live objects from one local Y.Doc;
+ * Resolver → apply seam. Block references are live objects from one local Y.Doc;
  * a ResolvedEdit must never escape the call that created it or cross process/doc boundaries.
  */
 export type ResolvedEdit = { documentId: string; file: string } & (
   | {
       kind: "text";
-      element: Y.XmlElement;
+      block: BlockRef;
       span: ResolvedSpan;
       newText: string;
     }
   | {
       kind: "insert";
-      after?: Y.XmlElement;
+      after?: BlockRef;
       newText: string;
     }
   | {
       kind: "delete";
-      element: Y.XmlElement;
+      block: BlockRef;
     }
 );
 

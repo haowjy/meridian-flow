@@ -24,7 +24,7 @@ describe("resolveWrite", () => {
 
     expect(edits).toHaveLength(1);
     expect(edits[0]).toMatchObject({ kind: "text", span: { start: 2, end: 7 }, newText: "blade" });
-    expect(edits[0].kind === "text" ? edits[0].element : null).toBe(blocks[1]);
+    expect(edits[0].kind === "text" ? edits[0].block : null).toBe(blocks[1]);
   });
 
   it("lowers insertion anchors to the after-block contract", () => {
@@ -52,7 +52,7 @@ describe("resolveWrite", () => {
     expect(edits.map((edit) => edit.kind)).toEqual(["text", "text"]);
     expect(edits[1]).toMatchObject({
       kind: "text",
-      element: omega,
+      block: omega,
       span: { start: 0, end: "ends Omega".length },
       newText: "ends *Omega*!",
     });
@@ -78,8 +78,8 @@ describe("resolveWrite", () => {
 
     const fewer = expectOk(resolve(doc, { command: "replace", content: "One", in: range }));
     expect(fewer.map((edit) => edit.kind)).toEqual(["text", "delete", "delete"]);
-    expect(fewer[0].kind === "text" ? fewer[0].element : null).toBe(alpha);
-    expect(fewer[1].kind === "delete" ? fewer[1].element : null).toBe(beta);
+    expect(fewer[0].kind === "text" ? fewer[0].block : null).toBe(alpha);
+    expect(fewer[1].kind === "delete" ? fewer[1].block : null).toBe(beta);
 
     const more = expectOk(
       resolve(createDoc("Alpha\n\nBeta"), {
@@ -110,7 +110,7 @@ describe("resolveWrite", () => {
     );
 
     expect(replace).toHaveLength(1);
-    expect(replace[0]).toMatchObject({ kind: "text", element: blocks[4] });
+    expect(replace[0]).toMatchObject({ kind: "text", block: blocks[4] });
   });
 
   it("returns representative resolution errors", () => {

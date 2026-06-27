@@ -4,6 +4,7 @@ import type * as Y from "yjs";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
+import { toRef } from "../model/block-ref.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { lookupBlockHash } from "./block-hash.js";
 import {
@@ -119,7 +120,7 @@ function resolveInsert(
         documentId: params.documentAddress.documentId,
         file: params.documentAddress.filePath,
         kind: "insert",
-        ...(lowered.after ? { after: lowered.after } : {}),
+        ...(lowered.after ? { after: toRef(lowered.after) } : {}),
         newText: params.content,
       },
     ],
@@ -239,7 +240,7 @@ function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteR
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element,
+      block: toRef(element),
     })),
   };
 }
@@ -304,7 +305,7 @@ function lowerPlainTextFindMatches(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "text",
-      element,
+      block: toRef(element),
       span: { start, end },
       newText: params.content,
     });
@@ -400,7 +401,7 @@ function replaceScope(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "insert",
-      ...(anchor ? { after: anchor } : {}),
+      ...(anchor ? { after: toRef(anchor) } : {}),
       newText: serializeReplacementBlocks(ctx, pendingInsert),
     });
     pendingInsert = [];
@@ -416,7 +417,7 @@ function replaceScope(
         documentId: params.documentAddress.documentId,
         file: params.documentAddress.filePath,
         kind: "text",
-        element: oldBlock,
+        block: toRef(oldBlock),
         span: { start: 0, end: ctx.model.getText(oldBlock).length },
         newText: serializePmBlockBody(ctx, newBlock),
       });
@@ -427,7 +428,7 @@ function replaceScope(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element: oldBlock,
+      block: toRef(oldBlock),
     });
     pendingInsert.push(newBlock);
   }
@@ -438,7 +439,7 @@ function replaceScope(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element: oldBlocks[index],
+      block: toRef(oldBlocks[index]),
     });
   }
 
