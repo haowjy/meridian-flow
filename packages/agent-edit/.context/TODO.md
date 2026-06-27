@@ -8,7 +8,12 @@ internally and let a second implementation force the contract shapes.
 Source of truth: design doc `agent-edit-write-loop/design/crdt-text-port.md`
 (meridian-flow-docs work area).
 
-## Now — Step 1: de-Yjs the edit payload
+## Active — de-Yjs the resolver→apply path (one effort, two phases)
+
+End-state: `resolver/*` and the `apply/*` content path import no `yjs`/`prosemirror-*`;
+PM/Yjs live only in the model adapter (`model/`) and runtime/undo plumbing.
+
+### Phase 1: de-Yjs the edit payload
 
 `ResolvedEdit` carries an opaque, branded `BlockRef` instead of `Y.XmlElement`;
 `apply/types.ts` stops importing `yjs`. `BlockRef` is the **branded live element**,
@@ -16,10 +21,10 @@ never a fresh wrapper — object identity must stay intact so `===` grouping,
 tombstone `Set`/`indexOf`, the descending sort, and `validateLiveBlock` keep
 working. The adapter owns the sole `unwrap(ref)`.
 
-Scope boundary: Step 1 de-Yjs's the edit *payload* only. `doc: Y.Doc` threading
-and the model's mutation-verb signatures stay Yjs for now — those move in Step 2.
+Land Phase 1 as a green checkpoint commit (verify identity invariants) before
+starting Phase 2.
 
-## Next — Step 2: concentrate Yjs/PM behind `ports/model.ts`
+### Phase 2: concentrate Yjs/PM behind `ports/model.ts`
 
 Goal: resolver + apply stop importing `yjs`. Pull behind the `AgentEditModel` seam:
 
