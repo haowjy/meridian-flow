@@ -244,6 +244,12 @@ describe("markdown codec round-trip corpus", () => {
     expect(codec.parse(" \n\t").blocks[0]?.type.name).toBe("paragraph");
     expect(codec.parse(" \n\t").blocks[0]?.childCount).toBe(0);
   });
+
+  it("serializes all-empty documents to an empty string", () => {
+    expect(codec.serialize([emptyParagraph()])).toBe("");
+    expect(codec.serialize([emptyParagraph(), emptyParagraph()])).toBe("");
+    expect(codec.serializeBlocks([emptyParagraph()])).toEqual([""]);
+  });
 });
 
 describe("mdx codec round-trip corpus", () => {
