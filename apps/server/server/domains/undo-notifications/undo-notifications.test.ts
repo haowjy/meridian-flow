@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { coalescePendingUndoNotifications, type PendingUndoNotification } from "./index.js";
 
 const base = {
-  id: "notification-1",
+  id: 1,
   threadId: "00000000-0000-4000-8000-000000000001" as never,
   turnId: "00000000-0000-4000-8000-000000000002" as never,
   uri: "manuscript://chapter-1.md",
@@ -16,7 +16,7 @@ function notification(
   direction: PendingUndoNotification["direction"],
   uri = base.uri,
 ): PendingUndoNotification {
-  return { ...base, id: `${uri}-${writeHandle}-${direction}`, uri, writeHandle, direction };
+  return { ...base, id: 1, uri, writeHandle, direction };
 }
 
 describe("coalescePendingUndoNotifications", () => {

@@ -329,7 +329,7 @@ describe("runtime orchestrator behavior", () => {
           consumeCount += 1;
           return [
             {
-              id: "notification-1",
+              id: 1,
               threadId: threadId as never,
               writeHandle: "w1",
               turnId: "00000000-0000-4000-8000-000000000001" as never,

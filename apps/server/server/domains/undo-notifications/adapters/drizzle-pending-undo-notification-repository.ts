@@ -55,7 +55,7 @@ function mapRow(row: PendingUndoRow): PendingUndoNotification {
 function comparePendingUndoRows(left: PendingUndoRow, right: PendingUndoRow): number {
   const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
   if (createdAt !== 0) return createdAt;
-  return left.id.localeCompare(right.id);
+  return left.id - right.id;
 }
 
 function turnByWriteHandle(
