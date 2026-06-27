@@ -49,7 +49,7 @@ const components = {
 
 const t = (text: string, marks?: readonly ReturnType<typeof schema.marks.strong.create>[]) =>
   schema.text(text, marks);
-const m = (name: "strong" | "em" | "code" | "link", attrs?: Record<string, unknown>) =>
+const m = (name: "strong" | "em" | "code" | "link" | "strike", attrs?: Record<string, unknown>) =>
   schema.marks[name].create(attrs);
 const paragraph = (...children: PMNode[]) => schema.node("paragraph", null, children);
 const emptyParagraph = () => schema.node("paragraph");
@@ -87,6 +87,7 @@ describe("codec presets", () => {
       "code",
       "em",
       "link",
+      "strike",
       "strong",
     ]);
   });
@@ -102,6 +103,7 @@ describe("codec presets", () => {
       "code",
       "em",
       "link",
+      "strike",
       "strong",
     ]);
   });
@@ -176,6 +178,18 @@ describe("markdown codec round-trip corpus", () => {
 
   it("stabilizes link labels containing closing brackets", () => {
     expectStable(codec, "[a\\]b](https://x.test)");
+  });
+
+  it("stabilizes GFM tables with alignment, empty cells, escaped pipes, and strike", () => {
+    expectStable(
+      codec,
+      [
+        "| Left | Center | Right |",
+        "| :--- | :----: | ----: |",
+        "| a |  | c |",
+        "| has \\| pipe | ~~gone~~ | **bold** |",
+      ].join("\n"),
+    );
   });
 
   it("stabilizes lists, blockquotes, thematic breaks, and ordered-list starts", () => {
