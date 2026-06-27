@@ -27,11 +27,11 @@ export interface PendingUndoNotificationRepository {
 export function coalesceUndoNotifications(
   notifications: readonly PendingUndoNotification[],
 ): PendingUndoNotification[] {
-  const byWrite = new Map<string, PendingUndoNotification>();
+  const byDocumentWrite = new Map<string, PendingUndoNotification>();
   for (const notification of notifications) {
-    byWrite.set(notification.writeHandle, notification);
+    byDocumentWrite.set(`${notification.uri}::${notification.writeHandle}`, notification);
   }
-  return [...byWrite.values()].filter((notification) => notification.direction === "undo");
+  return [...byDocumentWrite.values()].filter((notification) => notification.direction === "undo");
 }
 
 export { createDrizzlePendingUndoNotificationRepository } from "./adapters/drizzle-pending-undo-notification-repository.js";

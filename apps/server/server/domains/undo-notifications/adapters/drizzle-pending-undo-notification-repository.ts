@@ -2,10 +2,10 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { pendingUndoNotifications } from "@meridian/database/schema";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { PendingUndoNotification, PendingUndoNotificationRepository } from "../index.js";
 
-type DrizzlePendingUndoDb = Pick<Database, "insert" | "select" | "delete" | "transaction">;
+type DrizzlePendingUndoDb = Pick<Database, "insert" | "delete">;
 
 export function createDrizzlePendingUndoNotificationRepository(
   db: DrizzlePendingUndoDb,
@@ -24,18 +24,11 @@ export function createDrizzlePendingUndoNotificationRepository(
       );
     },
     async consumeForThread(threadId) {
-      return db.transaction(async (tx) => {
-        const rows = await tx
-          .select()
-          .from(pendingUndoNotifications)
-          .where(eq(pendingUndoNotifications.threadId, threadId as ThreadId))
-          .orderBy(asc(pendingUndoNotifications.createdAt), asc(pendingUndoNotifications.id));
-        if (rows.length === 0) return [];
-        await tx
-          .delete(pendingUndoNotifications)
-          .where(eq(pendingUndoNotifications.threadId, threadId as ThreadId));
-        return rows.map(mapRow);
-      });
+      const rows = await db
+        .delete(pendingUndoNotifications)
+        .where(eq(pendingUndoNotifications.threadId, threadId as ThreadId))
+        .returning();
+      return rows.sort(comparePendingUndoRows).map(mapRow);
     },
   };
 }
@@ -52,4 +45,10 @@ function mapRow(row: PendingUndoRow): PendingUndoNotification {
     direction: row.direction,
     createdAt: row.createdAt,
   };
+}
+
+function comparePendingUndoRows(left: PendingUndoRow, right: PendingUndoRow): number {
+  const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
+  if (createdAt !== 0) return createdAt;
+  return left.id.localeCompare(right.id);
 }
