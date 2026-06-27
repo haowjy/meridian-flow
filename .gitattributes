@@ -1,0 +1,8 @@
+# Drizzle migration snapshots are generated artifacts (drizzle-kit writes the full
+# schema as JSON on every migration). They must stay tracked — db:generate diffs
+# against them and a missing one silently corrupts the next migration — but they are
+# not hand-reviewed. Mark generated so GitHub collapses them in PR diffs and drops
+# them from language stats; `-diff` suppresses the multi-thousand-line textual diff.
+# Scoped to *_snapshot.json only — _journal.json is tiny and worth reviewing (it
+# names which migration was added).
+packages/database/src/migrations/meta/*_snapshot.json linguist-generated=true -diff

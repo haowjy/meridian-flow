@@ -28,6 +28,33 @@
   metadata+echo blocks as writes.
 
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+
+- Collab/DB integrity pass (branch `db-collab-integrity-fixes`):
+  - `packages/agent-edit`: `requireSynced` now reconciles a persisted sync-state
+    row against the live document before authorizing a mutate. After a restart the
+    persisted snapshot is treated as a fast-start baseline only, so a stale `find`
+    can no longer resolve against human edits the agent never saw.
+  - `apps/server` collab: server journal `read()` guards against stale persisted
+    schema versions — heads stamp the running `COLLAB_SCHEMA_VERSION` on upsert and
+    `read()` throws `StaleDocumentSchemaError` instead of replaying CRDT bytes built
+    for an older ProseMirror schema. Rebuild-from-markdown recovery stays a follow-up.
+  - `@meridian/database`: added the `document_yjs_heads.latest_checkpoint_id` →
+    `document_yjs_checkpoints.id` foreign key (`ON DELETE SET NULL`), replacing a
+    comment that falsely claimed the FK already existed in custom SQL
+    (migration `0006`).
+  - `@meridian/database`: backfilled the missing `meta/0005_snapshot.json` so
+    `db:generate` no longer re-emits `agent_edit_sync_state` into the next
+    migration; the snapshot chain is consistent (`drizzle-kit check` + no-op
+    `db:generate` are clean).
+  - Dev tooling: `migration-lint` now exempts the real `0000_` baseline (not
+    `0001_`), cutting baseline noise from 125 warnings to 12 real follow-up
+    warnings. It also gains `--strict` (warnings fail) and `--changed <ref>`
+    (lint only migrations changed since a ref); a CI `migration-checks` job runs
+    `drizzle-kit check` (always blocking) and scoped migration-lint on PRs
+    (`--strict` only when merging to `main`/`staging`), and pre-commit lints
+    staged migration SQL.
+  - `apps/server` collab: head `schema_version` advances monotonically on upsert,
+    so a downgraded server cannot stamp it backward and erase the stale-schema fence.
 - Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
   commands no longer emit Node DEP0169 from pnpm's bundled package-arg
   resolver.
@@ -403,21 +430,17 @@
   deletes older per-document IndexedDB entries.
 - Added a soft live-document session cap warning in `DocumentSessionRegistry`
   (no hard eviction).
-- Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`, persisted
-  `schema_version` on Yjs heads, and rebuild-from-markdown recovery when a stored
-  head is on an older version.
+- Added shared `COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema` and
+  `schema_version` on `document_yjs_heads`; server journal writes stamp the current
+  version on head upsert and `read()` throws `StaleDocumentSchemaError` when a
+  stored head is older than the running schema (loud guard, not silent replay).
+  Rebuild-from-markdown stale-schema recovery remains a planned follow-up.
 - Extended collab persistence metrics with live document and open connection counts;
   shutdown drain emits the augmented payload.
 - Fixed `storeDocument` checkpoint writes clobbering `latestUpdateSeq` via targeted
   `setLatestCheckpointId` updates on the document store port.
 - Made Hocuspocus shutdown drain a quiescence loop so async close work cannot leave
   persistence queues or in-flight stores behind.
-- Unified stale-schema / decode recovery in `resetAndSeedFromMarkdownProjection` and
-  wired it through facade `getOrCreateMirror` for server read/write paths.
-- `forgetMirror` now clears the inner mirror cache (callers only invalidate metadata;
-  no out-of-band Yjs content mutation).
-- Added DB-backed collab correctness tests (stale-schema recovery, checkpoint head
-  safety, single-persist local writes) and replaced the mock stale-schema unit test.
 
 ## Dev portless app stability (2026-06-17, branch h/v3)
 

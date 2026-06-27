@@ -2,7 +2,7 @@
 
 Local-dev-only utilities. Not loaded by the application runtime.
 
-**Onboarding:** [DEVELOPMENT.md](../../DEVELOPMENT.md). **Rules when editing this module:** [AGENTS.md](../AGENTS.md).
+**Onboarding:** [DEVELOPMENT.md](../../../DEVELOPMENT.md). **Rules when editing this module:** [AGENTS.md](../AGENTS.md).
 
 ## What this module owns
 
@@ -114,7 +114,31 @@ Plain HTTP hits to WebSocket routes (`/api/threads/ws`, `/ws/yjs`) produce 426 U
 
 ## Migration tooling
 
-`migration-lint.ts` scans generated Drizzle SQL for risky production patterns (renames, drops, unsafe `SET NOT NULL`, etc.). Warnings are non-blocking; errors block.
+`migration-lint.ts` scans generated Drizzle SQL for risky production patterns
+(renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, indexes
+without `CONCURRENTLY`, table-wide deletes/updates). A line can opt out with
+`-- migration-lint: skip <RULE_ID>` when the migration is intentionally safe.
+
+Supported modes:
+
+| Mode | Use |
+|---|---|
+| `--all` | Lint every `packages/database/src/migrations/*.sql` file. Used by `pnpm db:migration-lint`. |
+| `--staged` | Lint staged migration SQL only. Used by pre-commit. |
+| `--changed <ref>` | Lint migration SQL added/modified/renamed since `<ref>...HEAD`. Used by PR CI. |
+| `--strict` | Promote warnings to blocking failures. |
+
+Policy:
+
+- Errors always exit non-zero.
+- Warnings exit non-zero only with `--strict`.
+- The squashed `0000_` baseline is warning-exempt; `DELETE_WITHOUT_WHERE` remains
+  an error there too.
+- CI `migration-checks` always runs `drizzle-kit check` as a blocking journal /
+  snapshot-chain check. PRs then run `migration-lint --changed origin/$BASE`;
+  `--strict` is added only when the PR targets `main` or `staging`.
+- Pre-commit runs `migration-lint --staged` when migration SQL is staged. It
+  blocks errors, not warnings.
 
 ## Conventions
 
@@ -126,6 +150,6 @@ Plain HTTP hits to WebSocket routes (`/api/threads/ws`, `/ws/yjs`) produce 426 U
 
 ## Related documentation
 
-- [`DEVELOPMENT.md`](../../DEVELOPMENT.md) — env, worktrees, hooks, command reference
-- [`packages/database/README.md`](../../packages/database/README.md)
-- [`tests/smoke/README.md`](../../tests/smoke/README.md)
+- [`DEVELOPMENT.md`](../../../DEVELOPMENT.md) — env, worktrees, hooks, command reference
+- [`packages/database/README.md`](../../../packages/database/README.md)
+- [`tests/smoke/README.md`](../../../tests/smoke/README.md)

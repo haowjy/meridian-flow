@@ -39,6 +39,8 @@ the update journal, and the live-document coordinator.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc and serializes
   through the package codec/model. Context/storage projections are caches for
   listing and search, not a second live-document owner.
+- Stale-schema reads fail loud and head stamping is monotonic; rebuild recovery
+  is not built. Keep that lifecycle invariant in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)

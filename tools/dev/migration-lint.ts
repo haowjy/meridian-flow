@@ -9,7 +9,9 @@
  * Usage:
  *   tsx tools/dev/migration-lint.ts packages/database/src/migrations/0005_example.sql
  *   tsx tools/dev/migration-lint.ts --all
+ *   tsx tools/dev/migration-lint.ts --all --strict
  *   tsx tools/dev/migration-lint.ts --staged
+ *   tsx tools/dev/migration-lint.ts --changed origin/main
  *
  * Override a rule in a migration file with a comment on the violating line:
  *   ALTER TABLE "foo" RENAME COLUMN "old" TO "new"; -- migration-lint: skip RENAME_COLUMN
@@ -89,7 +91,7 @@ function lintFile(filePath: string): Finding[] {
   const findings: Finding[] = [];
   const content = readFileSync(filePath, "utf8");
   const lines = content.split("\n");
-  const isInitialSchema = path.basename(filePath).startsWith("0001_");
+  const isInitialSchema = path.basename(filePath).startsWith("0000_");
 
   for (let i = 0; i < lines.length; i++) {
     const lineContent = lines[i];
@@ -145,7 +147,21 @@ function migrationFilesIn(dir: string): string[] {
     .map((file) => path.join(dir, file));
 }
 
-function report(findings: Finding[]): void {
+function isMigrationSqlFile(file: string): boolean {
+  return file.endsWith(".sql") && file.includes("/migrations/");
+}
+
+function changedMigrationFiles(ref: string): string[] {
+  const output = execSync(`git diff --name-only --diff-filter=AMR ${ref}...HEAD`, {
+    encoding: "utf8",
+  });
+  return output
+    .split("\n")
+    .map((file) => file.trim())
+    .filter(isMigrationSqlFile);
+}
+
+function report(findings: Finding[], strict = false): void {
   if (findings.length === 0) {
     console.log("✓ No issues found.");
     return;
@@ -157,19 +173,57 @@ function report(findings: Finding[]): void {
   console.log(formatFindings(findings));
 
   const errorCount = findings.filter((finding) => finding.severity === "error").length;
+  const warningCount = findings.filter((finding) => finding.severity === "warning").length;
+
   if (errorCount > 0) {
     console.log(
       `\n  ${errorCount} error(s) must be fixed or annotated with a migration-lint skip.`,
     );
     process.exit(1);
   }
+
+  if (strict && warningCount > 0) {
+    console.log(`\n  ${warningCount} warning(s) block under --strict.`);
+    process.exit(1);
+  }
+}
+
+function parseOptions(args: string[]): { strict: boolean; changedRef?: string } {
+  const strict = args.includes("--strict");
+  const changedIdx = args.indexOf("--changed");
+  if (changedIdx === -1) {
+    return { strict };
+  }
+
+  const changedRef = args[changedIdx + 1];
+  if (!changedRef || changedRef.startsWith("--")) {
+    console.error("Error: --changed requires a git ref (e.g. origin/main).");
+    process.exit(1);
+  }
+
+  return { strict, changedRef };
 }
 
 function main(): void {
   const args = process.argv.slice(2);
+  const { strict, changedRef } = parseOptions(args);
+
+  if (changedRef) {
+    const changed = changedMigrationFiles(changedRef);
+    if (changed.length === 0) {
+      console.log("✓ No changed migrations.");
+      return;
+    }
+
+    report(changed.flatMap(lintFile), strict);
+    return;
+  }
 
   if (args.includes("--all")) {
-    report(MIGRATION_DIRS.flatMap((dir) => migrationFilesIn(dir).flatMap(lintFile)));
+    report(
+      MIGRATION_DIRS.flatMap((dir) => migrationFilesIn(dir).flatMap(lintFile)),
+      strict,
+    );
     return;
   }
 
@@ -177,26 +231,27 @@ function main(): void {
     const staged = execSync("git diff --cached --name-only", { encoding: "utf8" })
       .split("\n")
       .map((file) => file.trim())
-      .filter((file) => file.endsWith(".sql") && file.includes("/migrations/"));
+      .filter(isMigrationSqlFile);
 
     if (staged.length === 0) {
       console.log("✓ No staged migration files.");
       return;
     }
 
-    report(staged.flatMap(lintFile));
+    report(staged.flatMap(lintFile), strict);
     return;
   }
 
   const files = args.filter((arg) => !arg.startsWith("--"));
   if (files.length === 0) {
     console.log("Usage: tsx tools/dev/migration-lint.ts <migration.sql> [...]");
-    console.log("       tsx tools/dev/migration-lint.ts --all");
+    console.log("       tsx tools/dev/migration-lint.ts --all [--strict]");
     console.log("       tsx tools/dev/migration-lint.ts --staged");
+    console.log("       tsx tools/dev/migration-lint.ts --changed <ref> [--strict]");
     process.exit(1);
   }
 
-  report(files.flatMap(lintFile));
+  report(files.flatMap(lintFile), strict);
 }
 
 main();

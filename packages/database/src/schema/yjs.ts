@@ -198,7 +198,12 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   schemaVersion: integer("schema_version").notNull().default(3),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
-  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),
+  // SET NULL is effectively unreachable: checkpoints delete only via document cascade,
+  // which also deletes the head row.
+  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
+    () => documentYjsCheckpoints.id,
+    { onDelete: "set null" },
+  ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -220,5 +225,3 @@ export const documentRestorePoints = pgTable("document_restore_points", {
     }),
   createdAt: createdAt(),
 });
-
-// document_yjs_heads.latest_checkpoint_id FK added in custom SQL
