@@ -10,7 +10,10 @@ import {
 } from "nitro/h3";
 import type { AppServices } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
-import { readThreadContextDocument } from "../../../../../lib/thread-context-route.js";
+import {
+  readThreadContextDocument,
+  resolveThreadContextPort,
+} from "../../../../../lib/thread-context-route.js";
 
 type ReverseBody = {
   uri?: unknown;
@@ -43,6 +46,7 @@ export default defineEventHandler(async (event) => {
   const input = parseReverseBody(body);
 
   if (!input.uri) {
+    await resolveThreadContextPort(services, threadId, user.userId);
     const outcome = await services.documentSync.reverseTurn({
       threadId,
       turnId: input.turnId,
@@ -108,10 +112,10 @@ function parseReverseBody(body: ReverseBody): ParsedReverseBody {
   if (body.scope === "thread" && !uri) {
     throw createError({ statusCode: 400, message: "uri required for thread scope" });
   }
-  if (body.scope === "turn" && !uri && !body.target) {
+  if (body.scope === "turn" && !body.target) {
     throw createError({
       statusCode: 400,
-      message: "target is required for turn scope without uri",
+      message: "target is required for turn scope",
     });
   }
 
@@ -145,7 +149,7 @@ function selectionFromScope(
   }
   if (scope === "turn") {
     if (target === "") throw createError({ statusCode: 400, message: "target must not be empty" });
-    return target === undefined ? { kind: "turn" } : { kind: "turn", turnId: target };
+    return { kind: "turn", turnId: target };
   }
   if (target !== undefined) {
     throw createError({ statusCode: 400, message: "thread scope does not accept target" });

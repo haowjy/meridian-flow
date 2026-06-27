@@ -52,7 +52,7 @@ function makeApp(
     async () =>
       options.turnReverseOutcome ?? {
         status: "reversed",
-        documents: [{ uri: "manuscript://chapter.md", status: "reversed", writeIds: ["w1"] }],
+        documents: [{ uri: "manuscript://chapter.md", status: "reversed" }],
       },
   );
   const getAvailability = vi.fn(async () => options.availability ?? { undo: true, redo: false });
@@ -150,6 +150,22 @@ describe("thread context reverse routes", () => {
     expect(refreshed).toEqual([{ documentId, threadId }]);
   });
 
+  it("returns 404 before uri-less turn reversal for a thread owned by another user", async () => {
+    const { app, reverseTurn } = makeApp({ threadUserId: "user-2" });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { direction: "undo", scope: "turn", target: "turn-1" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(reverseTurn).not.toHaveBeenCalled();
+  });
+
   it("accepts turn-scope reversal without a uri", async () => {
     const { app, reverse, reverseTurn } = makeApp();
     auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
@@ -174,6 +190,22 @@ describe("thread context reverse routes", () => {
       direction: "undo",
       actor: { type: "user", userId },
     });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
+  it("requires target for turn-scope reversal even with a uri", async () => {
+    const { app, reverse } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { uri: "manuscript://chapter.md", direction: "undo", scope: "turn" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: "target is required for turn scope" });
     expect(reverse).not.toHaveBeenCalled();
   });
 
