@@ -113,7 +113,11 @@ describe("markdownTableClipboardParser", () => {
     );
   });
 
-  it("returns undefined when pasting inside a table cell so the table is not split", () => {
+  // Inside a table the parser declines (returns undefined) so it never builds a
+  // nested-table slice that would split the surrounding table. Paste then falls
+  // back to ProseMirror's default plain-text handling. (Pristine literal-text
+  // paste inside a cell is stock-editor behavior, tracked under #92.)
+  it("declines to convert inside a table cell, deferring to default paste", () => {
     const parser = markdownTableClipboardParser(schema);
     const cellContext = resolveInside(
       schema.node("doc", null, [
