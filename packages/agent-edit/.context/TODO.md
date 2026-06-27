@@ -34,20 +34,21 @@ Below is what remains deferred.
   content target exists, so the abstraction would be cosmetic over one impl. The
   `Codec` / `DocumentModel<Block>` seams are preserved.
 
-- **Public `DocumentPort`/`HistoryPort` as frozen contracts.** The seam is
-  internal, deliberately unfrozen until a second implementation reveals its shape.
+- **Public `DocumentPort`/`HistoryPort` as frozen contracts.** (Issue #83.) The
+  seam is internal, deliberately unfrozen until a second implementation reveals
+  its shape.
 
 - **Tool registry + capability gating.** Over one closed command set a registry is
   indirection without decoupling; with one full-capability impl, capability gating
   gates nothing and can't be tested. Wait for a second tool surface / impl. (Zod
   single source, `read` rename, and the query/write/history split already landed.)
 
-- **`HistoryPort` as a real seam.** Undo is Yjs-married cold reconstruction
-  (journal + binary updates + `UndoManager`); a 2-method port hides almost none of
-  it. Keep undo Yjs-internal until a second backend needs it.
+- **`HistoryPort` as a real seam.** (Issue #83.) Undo is Yjs-married cold
+  reconstruction (journal + binary updates + `UndoManager`); a 2-method port hides
+  almost none of it. Keep undo Yjs-internal until a second backend needs it.
 
-- **OSS packaging.** `yjs` as a peer dep (today a direct dep); engine source
-  importing no Yjs.
+- **OSS packaging.** (Issue #84.) `yjs` as a peer dep (today a direct dep); engine
+  source importing no Yjs.
 
 - **Tier-2 surgical formatting.** Replace the `updateYFragment` reconcile with a
   mark-aware sequence diff (parse → plain-text edit + `format` range diff, tree
