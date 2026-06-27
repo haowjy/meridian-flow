@@ -277,7 +277,7 @@ function blockTexts(doc: Y.Doc): string[] {
 }
 
 function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
+  return codec.serialize(model.projectBlocks(doc));
 }
 
 function caseCleanReverse(): MatrixCase {

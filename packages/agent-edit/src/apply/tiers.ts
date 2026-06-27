@@ -3,7 +3,7 @@
 import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Block, Span } from "../codec-types.js";
+import type { Span } from "../codec-types.js";
 import type { DocHandle } from "../doc-handle.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
 import {
@@ -23,6 +23,8 @@ import type {
   ResolvedEdit,
 } from "./types.js";
 
+type Ref = BlockRef;
+
 type PlannedEdit =
   | {
       kind: "text";
@@ -35,7 +37,7 @@ type PlannedEdit =
       kind: "text";
       tier: 2;
       edit: Extract<ResolvedEdit, { kind: "text" }>;
-      replacement: Block;
+      span: Span;
       blockId: string;
     }
   | {
@@ -96,7 +98,15 @@ export function applyEdits(
     }
 
     try {
-      model.transact(doc, () => executePlans(doc, model, group.plans, accumulator), origin);
+      let executionFailure: ApplyFailure | undefined;
+      model.transact(
+        doc,
+        () => {
+          executionFailure = executePlans(doc, model, codec, group.plans, accumulator);
+        },
+        origin,
+      );
+      if (executionFailure) return executionFailure;
     } catch (cause) {
       return applyError(
         "partial_failure",
@@ -197,36 +207,17 @@ function preflightTextEdit(
   const parsed = parseContent(codec, edit.newText, "text");
   if (!parsed.ok) return parsed;
 
-  const pmBlock = model.toProsemirrorBlock(doc, block);
-  const blockType = model.getBlockType(block);
-  if (pmBlock.type.name !== blockType) {
-    return blockTypeMismatch(blockType, pmBlock.type.name);
-  }
-
   const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
-  if (sameMarkContext && isPlainTextReplacement(parsed.parsed, edit.newText)) {
+  if (sameMarkContext && model.isPlainTextReplacement(parsed.parsed, edit.newText)) {
     return {
       ok: true,
       plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(block) },
     };
   }
 
-  const inline = inlineReplacement(parsed.parsed);
-  if (!inline.ok) return inline;
-  if (!canReplaceInline(pmBlock)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits with formatting are not supported for ${pmBlock.type.name} blocks`,
-    };
-  }
-  const replacement = replaceFlatText(pmBlock, span, inline.nodes);
-  if (replacement.type.name !== blockType) {
-    return blockTypeMismatch(blockType, replacement.type.name);
-  }
   return {
     ok: true,
-    plan: { kind: "text", tier: 2, edit, replacement, blockId: model.getBlockId(block) },
+    plan: { kind: "text", tier: 2, edit, span, blockId: model.getBlockId(block) },
   };
 }
 
@@ -259,11 +250,6 @@ function preflightDelete(
   const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
   const block = edit.block;
-  const pmBlock = model.toProsemirrorBlock(doc, block);
-  const blockType = model.getBlockType(block);
-  if (pmBlock.type.name !== blockType) {
-    return blockTypeMismatch(blockType, pmBlock.type.name);
-  }
   return {
     ok: true,
     plan: {
@@ -279,9 +265,10 @@ function preflightDelete(
 function executePlans(
   doc: DocHandle,
   model: AgentEditModel,
+  codec: AgentEditCodec,
   plans: readonly PlannedEdit[],
   accumulator: ApplyAccumulator,
-): void {
+): ApplyFailure | undefined {
   const ordered = [...plans].sort((left, right) => {
     if (left.kind !== "text" || right.kind !== "text") return 0;
     if (left.edit.block !== right.edit.block) return 0;
@@ -294,7 +281,14 @@ function executePlans(
         if (plan.tier === 1) {
           model.applyTextEdit(doc, plan.edit.block, plan.span, plan.edit.newText);
         } else {
-          model.applyBlockDiff(doc, plan.edit.block, plan.replacement);
+          const applied = model.applyInlineReplacement(
+            doc,
+            plan.edit.block,
+            plan.span,
+            plan.edit.newText,
+            codec,
+          );
+          if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
         }
         accumulator.touchedHashes.add(plan.blockId);
         accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
@@ -357,7 +351,7 @@ function validateNoSameTurnTombstones(
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
   const shadowBlocks = [...model.getBlocks(doc)];
-  const removed = new Set<BlockRef>();
+  const removed = new Set<Ref>();
 
   for (const edit of edits) {
     const refs = referencedElements(edit);
@@ -381,7 +375,7 @@ function validateNoSameTurnTombstones(
   return { ok: true };
 }
 
-function referencedElements(edit: ResolvedEdit): BlockRef[] {
+function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
     case "text":
     case "delete":
@@ -394,7 +388,7 @@ function referencedElements(edit: ResolvedEdit): BlockRef[] {
 function validateLiveBlock(
   doc: DocHandle,
   model: AgentEditModel,
-  block: BlockRef,
+  block: Ref,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {
   if (!model.isLive(block) || !model.getBlocks(doc).includes(block)) {
@@ -429,94 +423,6 @@ function parseContent(
   }
 }
 
-function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
-  if (source.length === 0) return true;
-  if (parsed.blocks.length !== 1) return false;
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) return false;
-  if (block.textContent !== source) return false;
-  let plain = true;
-  block.descendants((node) => {
-    if (node.isText) {
-      if (node.marks.length > 0) plain = false;
-      return false;
-    }
-    if (node.type.name !== "hard_break") plain = false;
-    return !plain;
-  });
-  return plain;
-}
-
-function inlineReplacement(
-  parsed: ParsedContent,
-): { ok: true; nodes: Block[] } | { ok: false; code: ApplyErrorCode; message: string } {
-  if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
-  if (parsed.blocks.length !== 1) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: "Text edits cannot introduce multiple blocks; use an insert/delete structural edit",
-    };
-  }
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
-    };
-  }
-  const nodes: Block[] = [];
-  block.forEach((child) => {
-    nodes.push(child);
-  });
-  return { ok: true, nodes };
-}
-
-function canReplaceInline(block: Block): boolean {
-  return block.isTextblock && block.type.name !== "code_block";
-}
-
-function replaceFlatText(block: Block, span: Span, replacement: readonly Block[]): Block {
-  let cursor = 0;
-  let inserted = false;
-  const children: Block[] = [];
-
-  const insertReplacement = () => {
-    if (inserted) return;
-    children.push(...replacement);
-    inserted = true;
-  };
-
-  block.forEach((child) => {
-    if (!child.isText) {
-      if (cursor >= span.from && cursor <= span.to) insertReplacement();
-      children.push(child);
-      return;
-    }
-    const text = child.text ?? "";
-    const start = cursor;
-    const end = cursor + text.length;
-    if (end <= span.from || start >= span.to) {
-      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
-      children.push(child);
-      cursor = end;
-      return;
-    }
-
-    const keepLeft = Math.max(0, span.from - start);
-    const keepRight = Math.max(0, end - span.to);
-    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
-    insertReplacement();
-    if (keepRight > 0)
-      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
-    cursor = end;
-  });
-  if (!inserted) insertReplacement();
-
-  return block.type.create(block.attrs, children, block.marks);
-}
-
 function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): boolean {
   if (span.from === span.to) return insertionPointHasContext(runs, span.from);
   const covered = runs.filter((run) => span.from < run.start + run.length && span.to > run.start);
@@ -528,18 +434,6 @@ function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): bool
 function insertionPointHasContext(runs: readonly TextRun[], offset: number): boolean {
   if (runs.length === 0) return offset === 0;
   return runs.some((run) => offset >= run.start && offset <= run.start + run.length);
-}
-
-function blockTypeMismatch(
-  actual: string,
-  expected: string,
-): { ok: false; code: ApplyErrorCode; message: string; details: Record<string, unknown> } {
-  return {
-    ok: false,
-    code: "not_found",
-    message: `Block type changed from ${actual} to ${expected}; re-view before writing`,
-    details: { actual, expected },
-  };
 }
 
 function orderedLiveHashes(after: readonly BlockSnapshot[], hashes: ReadonlySet<string>): string[] {

@@ -54,7 +54,7 @@ export function humanText(
 }
 
 export function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
+  return codec.serialize(model.projectBlocks(doc));
 }
 
 export function documentBytes(doc: Y.Doc): number[] {

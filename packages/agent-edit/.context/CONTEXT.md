@@ -74,18 +74,18 @@ The per-block helpers each re-scan the **whole document block list** to produce
 one block's result, so a per-block loop is **O(B²)**, not O(B):
 
 - `getBlockId(block)` resolves a unique hash against *all sibling blocks* (re-sorts and re-hashes every sibling per call).
-- `toProsemirrorBlock(doc, block)` rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
+- Single-block codec projection rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
 - `AgentEditCodec.serializeBlock` does per-block serialization work.
 
 Every batched write touches all of these (snapshot, render, find). **Use the batch path for any multi-block op:**
 
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
-| `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getDocumentBlockIds` + `toProsemirrorBlocks` + index maps in render/find/echo paths | aligned full-document block/hash/PM projection |
+| `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getDocumentBlockIds` + index maps in residual codec-bound paths | aligned full-document block/hash/codec projection |
 | `getDocumentBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
-| `toProsemirrorBlocks(doc)` | per-block `toProsemirrorBlock` | project the PM tree |
-| `serializeBlocks(blocks, hashes)` | per-block `serializeBlock` | allocate one unified runtime |
-| `serializeBlockBodies(blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
+| `model.projectBlocks(doc)` | single-block codec projection loops | project the codec block tree once |
+| `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed view/echo lines |
+| `model.serializeBlockBodies(doc, codec, blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
 | `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
 | `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
 
@@ -134,13 +134,15 @@ attribute). Hash derived from Y.XmlElement CRDT item ID (`clientID + clock`).
 
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
-references, parses content, computes offsets, checks Tier 1 eligibility.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations.
+references, parses content, computes offsets, checks Tier 1 eligibility with
+neutral inline runs plus the model-owned plain-text replacement query. Phase 2
+(inside `doc.transact()`) applies pre-computed operations; Tier 2 formatted text
+replacement is delegated to the adapter-owned `applyInlineReplacement` verb.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary or formatting change | Per-block updateYFragment |
+| 2 | `text` crosses mark boundary or formatting change | Adapter-owned inline replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Fragment-level Y.XmlElement insert/delete |
 
 Last-block edge case: deleting the only remaining block clears text instead of

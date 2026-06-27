@@ -3,7 +3,6 @@ import * as Y from "yjs";
 
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../doc-handle.js";
-import { projectDocumentBlocks } from "../model/block-projection.js";
 import { unwrapDoc } from "../model/doc-handle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
@@ -44,11 +43,12 @@ export function snapshotBlocks(
   model: AgentEditModel,
   codec: AgentEditCodec,
 ): BlockSnapshot[] {
-  const projection = projectDocumentBlocks(doc, model);
-  if (projection.blocks.length === 0) return [];
-  const serialized = codec.serializeBlocks(projection.pmBlocks, projection.hashes);
-  return projection.blocks.map((_, index) => ({
-    hash: projection.hashes[index],
+  const blocks = model.getBlocks(doc);
+  if (blocks.length === 0) return [];
+  const hashes = model.getDocumentBlockIds(doc);
+  const serialized = model.serializeBlockLines(doc, codec);
+  return blocks.map((_, index) => ({
+    hash: hashes[index],
     serialized: serialized[index],
   }));
 }
