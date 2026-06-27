@@ -146,12 +146,8 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
                 <li key={doc.uri} className="flex min-w-0 items-center gap-2">
                   <DocumentName document={doc} onOpenContextUri={openContextUri} />
                   {state.statusText ? (
-                    <span className="min-w-0 flex-1 truncate text-ink-subtle">
-                      {state.statusText}
-                    </span>
-                  ) : (
-                    <span className="min-w-0 flex-1" aria-hidden />
-                  )}
+                    <span className="shrink truncate text-ink-subtle">{state.statusText}</span>
+                  ) : null}
                   <button
                     type="button"
                     disabled={state.disposition === "disabled" || pending || turnPending}
