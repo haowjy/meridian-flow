@@ -90,7 +90,7 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   }
 
   if (input.undoNotifications?.length) {
-    messages.push(system(formatUndoNotificationMessage(input.undoNotifications)));
+    messages.push(undoNotificationSystemMessage(input.undoNotifications));
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -236,7 +236,15 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-function formatUndoNotificationMessage(notifications: readonly PendingUndoNotification[]): string {
+export function undoNotificationSystemMessage(
+  notifications: readonly PendingUndoNotification[],
+): Message {
+  return system(formatUndoNotificationMessage(notifications));
+}
+
+export function formatUndoNotificationMessage(
+  notifications: readonly PendingUndoNotification[],
+): string {
   const lines = notifications.map((notification) => {
     const filename = filenameFromUri(notification.uri);
     return `- ${filename} (${notification.uri || notification.writeHandle})`;

@@ -325,7 +325,7 @@ describe("runtime orchestrator behavior", () => {
       },
       undoNotifications: {
         async record() {},
-        async peekForThread(threadId) {
+        async consumeForThread(threadId) {
           consumeCount += 1;
           return [
             {
@@ -338,10 +338,6 @@ describe("runtime orchestrator behavior", () => {
               createdAt: new Date("2026-06-27T00:00:00.000Z"),
             },
           ];
-        },
-        async deleteByIds() {},
-        async consumeForThread() {
-          return [];
         },
       },
     });
@@ -373,8 +369,7 @@ describe("runtime orchestrator behavior", () => {
       reason: "test",
     });
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    let peekCount = 0;
-    let deleteCount = 0;
+    let consumeCount = 0;
     const deps = createTestOrchestratorDeps({
       gateway: textGateway(),
       repos,
@@ -383,24 +378,8 @@ describe("runtime orchestrator behavior", () => {
       checkpointRegistry: createCheckpointRegistry(),
       undoNotifications: {
         async record() {},
-        async peekForThread(threadId) {
-          peekCount += 1;
-          return [
-            {
-              id: "notification-1",
-              threadId: threadId as never,
-              writeHandle: "w1",
-              turnId: "00000000-0000-4000-8000-000000000001" as never,
-              uri: "manuscript://chapter-1.md",
-              direction: "undo",
-              createdAt: new Date("2026-06-27T00:00:00.000Z"),
-            },
-          ];
-        },
-        async deleteByIds() {
-          deleteCount += 1;
-        },
         async consumeForThread() {
+          consumeCount += 1;
           return [];
         },
       },
@@ -422,8 +401,7 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(peekCount).toBe(1);
-    expect(deleteCount).toBe(0);
+    expect(consumeCount).toBe(0);
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {

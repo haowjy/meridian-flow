@@ -112,6 +112,7 @@ import {
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import {
+  coalescePendingUndoNotifications,
   createDrizzlePendingUndoNotificationRepository,
   type PendingUndoNotificationRepository,
 } from "../domains/undo-notifications/index.js";
@@ -842,19 +843,17 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
         })),
       );
     },
-    async peekForThread(threadId) {
-      return rows.filter((row) => row.threadId === threadId);
-    },
-    async deleteByIds(ids) {
-      const idSet = new Set(ids);
-      for (let index = rows.length - 1; index >= 0; index -= 1) {
-        if (idSet.has(rows[index]?.id ?? "")) rows.splice(index, 1);
-      }
-    },
     async consumeForThread(threadId) {
       const consumed = rows.filter((row) => row.threadId === threadId);
-      await this.deleteByIds(consumed.map((row) => row.id));
-      return consumed;
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (rows[index]?.threadId === threadId) rows.splice(index, 1);
+      }
+      consumed.sort((left, right) => {
+        const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
+        if (createdAt !== 0) return createdAt;
+        return left.id.localeCompare(right.id);
+      });
+      return coalescePendingUndoNotifications(consumed);
     },
   };
 }
