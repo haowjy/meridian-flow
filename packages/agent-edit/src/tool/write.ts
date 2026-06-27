@@ -7,6 +7,7 @@ import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
+import { toDocHandle } from "../model/doc-handle.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
@@ -249,12 +250,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
     markSynced(session, address.documentId, runtime);
 
-    const selection = renderer.selectViewBlocks(runtime.doc, command, address);
+    const selection = renderer.selectViewBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
     if (command.format === "outline") {
-      return success(renderer.renderOutline(runtime.doc, selection.blocks, address.filePath));
+      return success(
+        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+      );
     }
-    return success(renderer.renderBlocks(runtime.doc, selection.blocks));
+    return success(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
   }
 
   async function create(
@@ -273,7 +276,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    const existingBlocks = options.model.getBlocks(runtime.doc);
+    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
     if (existingBlocks.length > 0 && !overwriting) {
       return status(
         "invalid_write",
@@ -291,7 +294,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       address.filePath,
       (liveDoc) =>
-        options.model.getBlocks(liveDoc).length > 0 && !overwriting
+        options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
           ? status(
               "invalid_write",
               `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
@@ -310,10 +313,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
       // Insert first so old blocks are no longer the only ones, then delete.
-      options.model.insertBlocks(runtime.doc, null, parsed.parsed);
+      options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       if (overwriting) {
         for (const block of existingBlocks) {
-          options.model.deleteBlock(runtime.doc, block);
+          options.model.deleteBlock(toDocHandle(runtime.doc), block);
         }
       }
     }, origin);
@@ -382,22 +385,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(
-      { doc: runtime.doc, model: options.model, codec: options.codec },
+      { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
       { ...command, documentAddress: address },
     );
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
 
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
-      ownActorTurnId: turnId,
-      syncStateVector: synced.stateVector,
-    });
+    const applied = applyEdits(
+      toDocHandle(runtime.doc),
+      options.model,
+      options.codec,
+      resolved.edits,
+      origin,
+      {
+        ownActorTurnId: turnId,
+        syncStateVector: synced.stateVector,
+      },
+    );
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
 
@@ -573,7 +583,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   /** Create echo: model just wrote the content — return hash|truncated-preview per block. */
   function truncateCreateEcho(doc: Y.Doc): string[] {
-    return renderer.renderBlockLines(doc).map(truncateSerializedBlock);
+    return renderer.renderBlockLines(toDocHandle(doc)).map(truncateSerializedBlock);
   }
 
   function remember(cacheKey: string, outcome: WriteOutcome): void {

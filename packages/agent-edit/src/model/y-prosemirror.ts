@@ -2,6 +2,7 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import type { Span } from "../codec-types.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
 import {
@@ -10,8 +11,9 @@ import {
   getTopLevelXmlBlocks,
   isLiveXmlElement,
   lookupBlockHash,
-} from "../resolver/block-hash.js";
-import { unwrapBlock } from "./block-ref.js";
+} from "./block-hash.js";
+import { toRef, unwrapBlock } from "./block-ref.js";
+import { unwrapDoc } from "./doc-handle.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 interface TextSegment {
@@ -31,55 +33,76 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
     schema,
 
     getBlocks(doc) {
-      return getTopLevelXmlBlocks(doc);
+      return getTopLevelXmlBlocks(unwrapDoc(doc)).map(toRef);
     },
 
     getBlockId(block) {
-      return getBlockHash(block);
+      return getBlockHash(unwrapBlock(block));
     },
 
     getDocumentBlockIds(doc) {
-      return blockHashesForDoc(doc);
+      return blockHashesForDoc(unwrapDoc(doc));
     },
 
     lookupBlock(doc, hash) {
-      return lookupBlockHash(doc, hash);
+      const lookup = lookupBlockHash(unwrapDoc(doc), hash);
+      if (!lookup.ok) {
+        return lookup.matches
+          ? { ok: false, reason: lookup.reason, matches: lookup.matches.map(toRef) }
+          : { ok: false, reason: lookup.reason };
+      }
+      return { ok: true, hash: lookup.hash, block: toRef(lookup.block) };
     },
 
     isLive(block) {
-      return isLiveXmlElement(block);
+      return isLiveXmlElement(unwrapBlock(block));
+    },
+
+    getBlockType(block) {
+      return unwrapBlock(block).nodeName;
+    },
+
+    getHeadingLevel(block) {
+      const element = unwrapBlock(block);
+      return element.nodeName === "heading"
+        ? Number(element.getAttribute("level") ?? 1)
+        : undefined;
     },
 
     getText(block) {
-      return collectText(block);
+      return collectText(unwrapBlock(block));
     },
 
     inlineRuns(block) {
       return collectTextRuns(unwrapBlock(block));
     },
 
+    transact(doc, fn, origin) {
+      unwrapDoc(doc).transact(fn, origin);
+    },
+
     applyTextEdit(_doc, block, span, newText) {
-      applyTextEdit(block, span, newText);
+      applyTextEdit(unwrapBlock(block), span, newText);
     },
 
     insertBlocks(doc, after, parsed) {
-      return insertBlocks(doc, after, parsed);
+      return insertBlocks(unwrapDoc(doc), after ? unwrapBlock(after) : null, parsed).map(toRef);
     },
 
     deleteBlock(doc, block) {
-      deleteBlock(doc, block);
+      deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
     applyBlockDiff(doc, block, replacement) {
-      applyBlockDiff(doc, block, replacement);
+      applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
     },
 
     toProsemirrorBlock(doc, block) {
-      return toProsemirrorBlock(doc, block, schema);
+      return toProsemirrorBlock(unwrapDoc(doc), unwrapBlock(block), schema);
     },
 
     toProsemirrorBlocks(doc) {
-      return prosemirrorBlocksForDoc(doc, schema);
+      return prosemirrorBlocksForDoc(unwrapDoc(doc), schema);
     },
   };
 }
@@ -92,9 +115,14 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }
 
-export function toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement, schema: Schema): PMNode {
+export function toProsemirrorBlock(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  schema: Schema,
+): PMNode {
+  const element = unwrapBlock(toRef(block));
   const blocks = getTopLevelXmlBlocks(doc);
-  const index = blocks.indexOf(block);
+  const index = blocks.indexOf(element);
   if (index < 0) throw new Error("Y.XmlElement is not a top-level block in this document");
   const pmBlock = prosemirrorRootOf(doc, schema).child(index);
   if (!pmBlock) throw new Error("ProseMirror block not found for Y.XmlElement");
@@ -111,7 +139,8 @@ export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
   return blocks;
 }
 
-export function applyTextEdit(block: Y.XmlElement, span: Span, newText: string): void {
+export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
+  block = unwrapBlock(toRef(block));
   const text = collectText(block);
   if (span.from < 0 || span.to < span.from || span.to > text.length) {
     throw new RangeError(
@@ -133,7 +162,12 @@ export function applyTextEdit(block: Y.XmlElement, span: Span, newText: string):
   insertion.text.insert(insertion.offset, newText, insertAttrs);
 }
 
-export function applyBlockDiff(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
+export function applyBlockDiff(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  replacement: PMNode,
+): void {
+  block = unwrapBlock(toRef(block));
   if (block.nodeName !== replacement.type.name) {
     throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
   }
@@ -142,13 +176,14 @@ export function applyBlockDiff(doc: Y.Doc, block: Y.XmlElement, replacement: PMN
 
 export function insertBlocks(
   doc: Y.Doc,
-  after: Y.XmlElement | null,
+  after: Y.XmlElement | BlockRef | null,
   parsed: ParsedContent,
 ): Y.XmlElement[] {
   const fragment = fragmentOf(doc);
   const blocks = getTopLevelXmlBlocks(doc);
-  const index = after === null ? 0 : blocks.indexOf(after) + 1;
-  if (after !== null && index === 0) {
+  const afterElement = after === null ? null : unwrapBlock(toRef(after));
+  const index = afterElement === null ? 0 : blocks.indexOf(afterElement) + 1;
+  if (afterElement !== null && index === 0) {
     throw new Error("Cannot insert after a block that is not in the document");
   }
   const inserted = parsed.blocks.map((block) => pmNodeToYElement(block, createBindingMetadata()));
@@ -156,7 +191,8 @@ export function insertBlocks(
   return inserted;
 }
 
-export function deleteBlock(doc: Y.Doc, block: Y.XmlElement): void {
+export function deleteBlock(doc: Y.Doc, block: Y.XmlElement | BlockRef): void {
+  block = unwrapBlock(toRef(block));
   const fragment = fragmentOf(doc);
   const blocks = getTopLevelXmlBlocks(doc);
   const index = blocks.indexOf(block);

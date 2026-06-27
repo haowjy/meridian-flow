@@ -35,11 +35,15 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 }
 
 export type { ConcurrentEditInfo } from "./apply/types.js";
+export type { BlockRef } from "./block-ref.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
+export type { DocHandle } from "./doc-handle.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export { toRef, unwrapBlock } from "./model/block-ref.js";
+export { toDocHandle, unwrapDoc } from "./model/doc-handle.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {

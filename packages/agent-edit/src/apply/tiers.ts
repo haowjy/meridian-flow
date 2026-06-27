@@ -1,13 +1,10 @@
-// Three-tier Yjs apply path for resolved agent edits.
+// Three-tier apply path for resolved agent edits.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { Node as PMNode } from "prosemirror-model";
-import { Fragment } from "prosemirror-model";
-import * as Y from "yjs";
 import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Span } from "../codec-types.js";
-import { unwrapBlock } from "../model/block-ref.js";
+import type { Block, Span } from "../codec-types.js";
+import type { DocHandle } from "../doc-handle.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
 import {
   applyConcurrentUpdates,
@@ -38,7 +35,7 @@ type PlannedEdit =
       kind: "text";
       tier: 2;
       edit: Extract<ResolvedEdit, { kind: "text" }>;
-      replacement: PMNode;
+      replacement: Block;
       blockId: string;
     }
   | {
@@ -63,9 +60,9 @@ interface ApplyAccumulator {
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
-/** Apply resolved edits to an agent-local Y.Doc using the three-tier mutation plan. */
+/** Apply resolved edits to an agent-local document using the three-tier mutation plan. */
 export function applyEdits(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
@@ -76,7 +73,6 @@ export function applyEdits(
   if (editList.length === 0)
     return applyError("invalid_write", "applyEdits requires at least one edit");
 
-  const beforeApplyStateVector = options.syncStateVector ?? Y.encodeStateVector(doc);
   const turnSafety = validateNoSameTurnTombstones(doc, model, editList);
   if (!turnSafety.ok) return turnSafety;
 
@@ -100,7 +96,7 @@ export function applyEdits(
     }
 
     try {
-      doc.transact(() => executePlans(doc, model, group.plans, accumulator), origin);
+      model.transact(doc, () => executePlans(doc, model, group.plans, accumulator), origin);
     } catch (cause) {
       return applyError(
         "partial_failure",
@@ -119,7 +115,7 @@ export function applyEdits(
     codec,
     (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
     ownAgentOrigin(origin, options.ownActorTurnId),
-    options.syncStateVector ?? beforeApplyStateVector,
+    options.syncStateVector,
     options.concurrentCollapseThreshold,
   );
   const after = snapshotBlocks(doc, model, codec);
@@ -162,7 +158,7 @@ function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
 }
 
 function preflightEdit(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edit: ResolvedEdit,
@@ -180,7 +176,7 @@ function preflightEdit(
 }
 
 function preflightTextEdit(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "text" }>,
@@ -188,7 +184,7 @@ function preflightTextEdit(
   const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
   const span = { from: edit.span.start, to: edit.span.end };
-  const block = unwrapBlock(edit.block);
+  const block = edit.block;
   const text = model.getText(block);
   if (span.from < 0 || span.to < span.from || span.to > text.length) {
     return {
@@ -202,8 +198,9 @@ function preflightTextEdit(
   if (!parsed.ok) return parsed;
 
   const pmBlock = model.toProsemirrorBlock(doc, block);
-  if (pmBlock.type.name !== block.nodeName) {
-    return blockTypeMismatch(block.nodeName, pmBlock.type.name);
+  const blockType = model.getBlockType(block);
+  if (pmBlock.type.name !== blockType) {
+    return blockTypeMismatch(blockType, pmBlock.type.name);
   }
 
   const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
@@ -224,8 +221,8 @@ function preflightTextEdit(
     };
   }
   const replacement = replaceFlatText(pmBlock, span, inline.nodes);
-  if (replacement.type.name !== block.nodeName) {
-    return blockTypeMismatch(block.nodeName, replacement.type.name);
+  if (replacement.type.name !== blockType) {
+    return blockTypeMismatch(blockType, replacement.type.name);
   }
   return {
     ok: true,
@@ -234,7 +231,7 @@ function preflightTextEdit(
 }
 
 function preflightInsert(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
@@ -255,16 +252,17 @@ function preflightInsert(
 }
 
 function preflightDelete(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   edit: Extract<ResolvedEdit, { kind: "delete" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
-  const block = unwrapBlock(edit.block);
+  const block = edit.block;
   const pmBlock = model.toProsemirrorBlock(doc, block);
-  if (pmBlock.type.name !== block.nodeName) {
-    return blockTypeMismatch(block.nodeName, pmBlock.type.name);
+  const blockType = model.getBlockType(block);
+  if (pmBlock.type.name !== blockType) {
+    return blockTypeMismatch(blockType, pmBlock.type.name);
   }
   return {
     ok: true,
@@ -279,7 +277,7 @@ function preflightDelete(
 }
 
 function executePlans(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   plans: readonly PlannedEdit[],
   accumulator: ApplyAccumulator,
@@ -294,26 +292,22 @@ function executePlans(
     switch (plan.kind) {
       case "text":
         if (plan.tier === 1) {
-          model.applyTextEdit(doc, unwrapBlock(plan.edit.block), plan.span, plan.edit.newText);
+          model.applyTextEdit(doc, plan.edit.block, plan.span, plan.edit.newText);
         } else {
-          model.applyBlockDiff(doc, unwrapBlock(plan.edit.block), plan.replacement);
+          model.applyBlockDiff(doc, plan.edit.block, plan.replacement);
         }
         accumulator.touchedHashes.add(plan.blockId);
         accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
         break;
       case "insert": {
-        const inserted = model.insertBlocks(
-          doc,
-          plan.edit.after ? unwrapBlock(plan.edit.after) : null,
-          plan.parsed,
-        );
+        const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
         const blockIds = inserted.map((block) => model.getBlockId(block));
         for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
         accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
         break;
       }
       case "delete":
-        model.deleteBlock(doc, unwrapBlock(plan.edit.block));
+        model.deleteBlock(doc, plan.edit.block);
         if (plan.removesBlock) {
           accumulator.deletedHashes.add(plan.blockId);
         } else {
@@ -330,7 +324,7 @@ function textPlanStart(plan: Extract<PlannedEdit, { kind: "text" }>): number {
 }
 
 function collectTierOneGroup(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edits: readonly ResolvedEdit[],
@@ -358,11 +352,11 @@ function collectTierOneGroup(
 }
 
 function validateNoSameTurnTombstones(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
-  const shadowBlocks = [...model.getBlocks(doc)] as unknown as BlockRef[];
+  const shadowBlocks = [...model.getBlocks(doc)];
   const removed = new Set<BlockRef>();
 
   for (const edit of edits) {
@@ -371,7 +365,7 @@ function validateNoSameTurnTombstones(
       if (removed.has(ref)) {
         return applyError("not_found", "Target block was removed earlier in this turn");
       }
-      if (!model.isLive(unwrapBlock(ref)) || !shadowBlocks.includes(ref)) {
+      if (!model.isLive(ref) || !shadowBlocks.includes(ref)) {
         return applyError("not_found", "Target block is no longer live in this document");
       }
     }
@@ -398,13 +392,12 @@ function referencedElements(edit: ResolvedEdit): BlockRef[] {
 }
 
 function validateLiveBlock(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   block: BlockRef,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {
-  const element = unwrapBlock(block);
-  if (!model.isLive(element) || !model.getBlocks(doc).includes(element)) {
+  if (!model.isLive(block) || !model.getBlocks(doc).includes(block)) {
     return { ok: false, code: "not_found", message: `${label} block is no longer live` };
   }
   return { ok: true };
@@ -456,7 +449,7 @@ function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean 
 
 function inlineReplacement(
   parsed: ParsedContent,
-): { ok: true; nodes: PMNode[] } | { ok: false; code: ApplyErrorCode; message: string } {
+): { ok: true; nodes: Block[] } | { ok: false; code: ApplyErrorCode; message: string } {
   if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
   if (parsed.blocks.length !== 1) {
     return {
@@ -473,21 +466,21 @@ function inlineReplacement(
       message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
     };
   }
-  const nodes: PMNode[] = [];
+  const nodes: Block[] = [];
   block.forEach((child) => {
     nodes.push(child);
   });
   return { ok: true, nodes };
 }
 
-function canReplaceInline(block: PMNode): boolean {
+function canReplaceInline(block: Block): boolean {
   return block.isTextblock && block.type.name !== "code_block";
 }
 
-function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
+function replaceFlatText(block: Block, span: Span, replacement: readonly Block[]): Block {
   let cursor = 0;
   let inserted = false;
-  const children: PMNode[] = [];
+  const children: Block[] = [];
 
   const insertReplacement = () => {
     if (inserted) return;
@@ -521,7 +514,7 @@ function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode
   });
   if (!inserted) insertReplacement();
 
-  return block.type.create(block.attrs, Fragment.from(children), block.marks);
+  return block.type.create(block.attrs, children, block.marks);
 }
 
 function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): boolean {

@@ -9,8 +9,8 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { snapshotBlocks } from "./apply/echo.js";
 import { createAgentEditCodec } from "./codec-adapter.js";
+import { getBlockHash, lookupBlockHash } from "./model/block-hash.js";
 import { yProsemirrorModel } from "./model/y-prosemirror.js";
-import { getBlockHash, lookupBlockHash } from "./resolver/block-hash.js";
 import { serializeScopeBlocks } from "./resolver/find.js";
 import { createDocumentRenderer } from "./tool/document-renderer.js";
 

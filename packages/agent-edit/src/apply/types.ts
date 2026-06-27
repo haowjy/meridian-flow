@@ -6,7 +6,7 @@ export interface ResolvedSpan {
 }
 
 /**
- * Resolver → apply seam. Block references are live objects from one local Y.Doc;
+ * Resolver → apply seam. Block references are live objects from one local document;
  * a ResolvedEdit must never escape the call that created it or cross process/doc boundaries.
  */
 export type ResolvedEdit = { documentId: string; file: string } & (

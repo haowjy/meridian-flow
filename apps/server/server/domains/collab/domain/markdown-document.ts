@@ -11,6 +11,7 @@ import {
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
+  toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
   type YProsemirrorDocumentModel,
@@ -94,9 +95,11 @@ export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
   function serializeDoc(doc: Y.Doc): string {
-    const blocks = deps.model.getBlocks(doc);
+    const blocks = deps.model.getBlocks(toDocHandle(doc));
     if (blocks.length === 0) return "";
-    return deps.codec.serialize(blocks.map((block) => deps.model.toProsemirrorBlock(doc, block)));
+    return deps.codec.serialize(
+      blocks.map((block) => deps.model.toProsemirrorBlock(toDocHandle(doc), block)),
+    );
   }
 
   function parseMarkdown(
@@ -127,7 +130,7 @@ export function createMarkdownDocumentEngine(
     draft.transact(() => {
       const fragment = fragmentOf(draft);
       if (fragment.length > 0) fragment.delete(0, fragment.length);
-      deps.model.insertBlocks(draft, null, parsed);
+      deps.model.insertBlocks(toDocHandle(draft), null, parsed);
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const meta = deps.metaForOrigin(origin);

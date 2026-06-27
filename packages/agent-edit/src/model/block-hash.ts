@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 
 const DEFAULT_HASH_LENGTH = 4;
@@ -37,15 +38,16 @@ export function getTopLevelXmlBlocks(doc: Y.Doc): Y.XmlElement[] {
 }
 
 /** Immutable CRDT item ID assigned by Yjs when the block element is created. */
-export function getBlockItemId(block: Y.XmlElement): BlockItemId {
+export function getBlockItemId(block: Y.XmlElement | BlockRef): BlockItemId {
   const item = itemFor(block);
   return { clientID: item.id.client, clock: item.id.clock };
 }
 
 /** Stable block hash, unique among currently live sibling blocks. */
-export function getBlockHash(block: Y.XmlElement): string {
+export function getBlockHash(block: Y.XmlElement | BlockRef): string {
   const siblings = siblingBlocks(block);
-  return uniqueHashFor(block, siblings.length > 0 ? siblings : [block]);
+  const element = block as unknown as Y.XmlElement;
+  return uniqueHashFor(element, siblings.length > 0 ? siblings : [element]);
 }
 
 /** Compute hashes for all top-level blocks in one pass — O(B log B), not O(B² log B). */
@@ -74,7 +76,7 @@ export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
   return { ok: false, reason: "not_found" };
 }
 
-export function isLiveXmlElement(block: Y.XmlElement): boolean {
+export function isLiveXmlElement(block: Y.XmlElement | BlockRef): boolean {
   const integrated = block as IntegratedXmlElement;
   return integrated._item !== null && !integrated._item.deleted;
 }
@@ -107,18 +109,18 @@ function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
   return hashes;
 }
 
-function siblingBlocks(block: Y.XmlElement): Y.XmlElement[] {
+function siblingBlocks(block: Y.XmlElement | BlockRef): Y.XmlElement[] {
   const item = itemFor(block);
   const parent = item.parent;
   if (parent instanceof Y.XmlFragment || parent instanceof Y.XmlElement) {
     return parent.toArray().filter((value): value is Y.XmlElement => value instanceof Y.XmlElement);
   }
-  const doc = (block as IntegratedXmlElement).doc;
+  const doc = (block as unknown as IntegratedXmlElement).doc;
   return doc ? getTopLevelXmlBlocks(doc) : [];
 }
 
-function itemFor(block: Y.XmlElement): YItemLike {
-  const item = (block as IntegratedXmlElement)._item;
+function itemFor(block: Y.XmlElement | BlockRef): YItemLike {
+  const item = (block as unknown as IntegratedXmlElement)._item;
   if (!item) {
     throw new Error(
       "Cannot derive a block hash before the Y.XmlElement is integrated into a Y.Doc",

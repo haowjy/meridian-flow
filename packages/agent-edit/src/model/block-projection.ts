@@ -1,29 +1,33 @@
-// Projects a Yjs document into aligned block, hash, and ProseMirror arrays.
-import type * as Y from "yjs";
+// Projects a document into aligned block, hash, and codec-block arrays.
 
+import type { BlockRef } from "../block-ref.js";
 import type { Block } from "../codec-types.js";
+import type { DocHandle } from "../doc-handle.js";
 import type { AgentEditModel } from "../ports/model.js";
 
 export interface ProjectedBlock {
-  block: Y.XmlElement;
+  block: BlockRef;
   index: number;
   hash: string;
   pmBlock: Block;
 }
 
 export interface DocumentBlockProjection {
-  blocks: readonly Y.XmlElement[];
+  blocks: readonly BlockRef[];
   hashes: readonly string[];
   pmBlocks: readonly Block[];
-  indexByBlock: ReadonlyMap<Y.XmlElement, number>;
-  select(blocks: readonly Y.XmlElement[]): ProjectedBlock[];
+  indexByBlock: ReadonlyMap<BlockRef, number>;
+  select(blocks: readonly BlockRef[]): ProjectedBlock[];
 }
 
-export function projectDocumentBlocks(doc: Y.Doc, model: AgentEditModel): DocumentBlockProjection {
+export function projectDocumentBlocks(
+  doc: DocHandle,
+  model: AgentEditModel,
+): DocumentBlockProjection {
   const blocks = model.getBlocks(doc);
   const hashes = blocks.length === 0 ? [] : model.getDocumentBlockIds(doc);
   const pmBlocks = blocks.length === 0 ? [] : model.toProsemirrorBlocks(doc);
-  const indexByBlock = new Map<Y.XmlElement, number>();
+  const indexByBlock = new Map<BlockRef, number>();
   for (let index = 0; index < blocks.length; index += 1) {
     indexByBlock.set(blocks[index], index);
   }
@@ -33,7 +37,7 @@ export function projectDocumentBlocks(doc: Y.Doc, model: AgentEditModel): Docume
     hashes,
     pmBlocks,
     indexByBlock,
-    select(selectedBlocks: readonly Y.XmlElement[]): ProjectedBlock[] {
+    select(selectedBlocks: readonly BlockRef[]): ProjectedBlock[] {
       const selected: ProjectedBlock[] = [];
       for (const block of selectedBlocks) {
         const index = indexByBlock.get(block);
