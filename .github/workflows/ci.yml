@@ -76,6 +76,11 @@ jobs:
     # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      # `drizzle-kit check` validates the snapshot chain offline and never
+      # connects, but the shared drizzle.config.ts requires DATABASE_URL to be
+      # set. A placeholder satisfies that without provisioning a database.
+      DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder
     steps:
       - uses: actions/checkout@v4
         with:
