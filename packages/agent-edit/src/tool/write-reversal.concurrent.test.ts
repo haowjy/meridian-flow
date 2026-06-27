@@ -18,7 +18,7 @@ type StepState = {
 };
 
 describe("write reversal under concurrent edits", () => {
-  it("safely refuses an unrelated block interleaved into undo → redo → undo", async () => {
+  it("preserves an unrelated block interleaved into undo → redo → undo", async () => {
     // Observed on 2026-06-27 after 26aae187:
     //   undo   => reconciled, ["Agent target.", "Human target. Human edit."]
     //   redo   => reconciled, ["Agent revised.", "Human target. Human edit."]
@@ -75,20 +75,20 @@ describe("write reversal under concurrent edits", () => {
       },
       {
         step: "undo-2",
-        status: "cant_undo_dependent",
-        blocks: ["Agent revised.", "Human target. Human edit."],
-        mutationStatus: "active",
+        status: "reconciled",
+        blocks: ["Agent target.", "Human target. Human edit."],
+        mutationStatus: "reversed",
       },
       {
         step: "redo-2",
-        status: "nothing_to_redo",
+        status: "reconciled",
         blocks: ["Agent revised.", "Human target. Human edit."],
         mutationStatus: "active",
       },
     ]);
   });
 
-  it("safely refuses same-block different-range edits interleaved into a repeatable cycle", async () => {
+  it("preserves same-block different-range edits interleaved into a repeatable cycle", async () => {
     // Observed on 2026-06-27 after 26aae187:
     //   undo   => reconciled, ["Alpha sword and ward."]
     //   redo   => reconciled, ["Alpha blade and ward."]
@@ -142,15 +142,88 @@ describe("write reversal under concurrent edits", () => {
       },
       {
         step: "undo-2",
-        status: "cant_undo_dependent",
-        blocks: ["Alpha blade and ward."],
-        mutationStatus: "active",
+        status: "reconciled",
+        blocks: ["Alpha sword and ward."],
+        mutationStatus: "reversed",
       },
       {
         step: "redo-2",
-        status: "nothing_to_redo",
+        status: "reconciled",
         blocks: ["Alpha blade and ward."],
         mutationStatus: "active",
+      },
+    ]);
+  });
+
+  it("keeps a multi-cycle undo/redo/undo/redo/undo correct with a foreign edit", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Agent target.\n\nHuman target.",
+    });
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Agent target.", content: "Agent revised." },
+      { ...context, turnId: "turn-concurrent-multi-cycle" },
+    );
+
+    await applyRemoteHumanEdit(
+      scenario.ctx.liveDoc("chapter.md"),
+      scenario.ctx.journal,
+      (remote) => {
+        const block = model.getBlocks(remote)[1];
+        if (!block) throw new Error("expected second block");
+        model.applyTextEdit(
+          remote,
+          block,
+          { from: "Human target.".length, to: "Human target.".length },
+          " Human edit.",
+        );
+      },
+    );
+
+    const states = await collectCycleStates(scenario, "w1", [
+      "undo",
+      "redo",
+      "undo",
+      "redo",
+      "undo",
+    ]);
+
+    expect(
+      states.map(({ step, status, blocks, mutationStatus }) => ({
+        step,
+        status,
+        blocks,
+        mutationStatus,
+      })),
+    ).toEqual([
+      {
+        step: "undo",
+        status: "reconciled",
+        blocks: ["Agent target.", "Human target. Human edit."],
+        mutationStatus: "reversed",
+      },
+      {
+        step: "redo",
+        status: "reconciled",
+        blocks: ["Agent revised.", "Human target. Human edit."],
+        mutationStatus: "active",
+      },
+      {
+        step: "undo-2",
+        status: "reconciled",
+        blocks: ["Agent target.", "Human target. Human edit."],
+        mutationStatus: "reversed",
+      },
+      {
+        step: "redo-2",
+        status: "reconciled",
+        blocks: ["Agent revised.", "Human target. Human edit."],
+        mutationStatus: "active",
+      },
+      {
+        step: "undo-3",
+        status: "reconciled",
+        blocks: ["Agent target.", "Human target. Human edit."],
+        mutationStatus: "reversed",
       },
     ]);
   });
@@ -232,6 +305,7 @@ async function applyRemoteHumanEdit(
 async function collectCycleStates(
   scenario: ReversalScenario,
   writeId: string,
+  directions: readonly ("undo" | "redo")[] = ["undo", "redo", "undo", "redo"],
 ): Promise<StepState[]> {
   const states: StepState[] = [];
   const record = async (step: string, status: string) => {
@@ -249,41 +323,21 @@ async function collectCycleStates(
     });
   };
 
-  const undo = await scenario.ctx.core.reverse({
-    docId: "chapter.md",
-    threadId: THREAD_ID,
-    direction: "undo",
-    selection: { kind: "single", to: writeId },
-    actor,
-  });
-  await record("undo", undo.status);
-
-  const redo = await scenario.ctx.core.reverse({
-    docId: "chapter.md",
-    threadId: THREAD_ID,
-    direction: "redo",
-    selection: { kind: "single", to: writeId },
-    actor,
-  });
-  await record("redo", redo.status);
-
-  const secondUndo = await scenario.ctx.core.reverse({
-    docId: "chapter.md",
-    threadId: THREAD_ID,
-    direction: "undo",
-    selection: { kind: "single", to: writeId },
-    actor,
-  });
-  await record("undo-2", secondUndo.status);
-
-  const secondRedo = await scenario.ctx.core.reverse({
-    docId: "chapter.md",
-    threadId: THREAD_ID,
-    direction: "redo",
-    selection: { kind: "single", to: writeId },
-    actor,
-  });
-  await record("redo-2", secondRedo.status);
+  const counts = { undo: 0, redo: 0 };
+  for (const direction of directions) {
+    counts[direction] += 1;
+    const result = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction,
+      selection: { kind: "single", to: writeId },
+      actor,
+    });
+    await record(
+      counts[direction] === 1 ? direction : `${direction}-${counts[direction]}`,
+      result.status,
+    );
+  }
 
   return states;
 }

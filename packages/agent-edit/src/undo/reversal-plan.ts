@@ -7,6 +7,13 @@ import {
   type WriteMutationRow,
 } from "../ports/update-journal.js";
 import { evaluateRedoEligibility } from "./reconstruction.js";
+import {
+  activeClosureForHandles,
+  type CompatibleLineageGroup,
+  compatibleLineageGroups,
+  evaluateLineageDependencies,
+  seqToHandleFromMutations,
+} from "./reversal-lineage.js";
 
 export type ReversalSelection =
   | { kind: "latest" }
@@ -31,8 +38,15 @@ export type ReversalPlan =
       targetSeqs: ReadonlySet<number>;
       snapshot: JournalSnapshot;
       redoGroup?: { undoUpdateSeq: number };
+      undoGroups?: readonly CompatibleLineageGroup[];
     }
-  | { ok: false; status: ReversalPlanStatus; message?: string; blockingWriteIds?: string[] };
+  | {
+      ok: false;
+      status: ReversalPlanStatus;
+      message?: string;
+      blockingWriteIds?: string[];
+      selectedWriteIds?: string[];
+    };
 
 export async function planUndo(input: {
   reversalStore: ReversalStore;
@@ -53,15 +67,57 @@ export async function planUndo(input: {
     state.snapshot,
     "active",
   );
-  const targetSeqs = mutationSeqs(retained.rows);
-  if (targetSeqs.size === 0) return { ok: false, status: "nothing_to_undo" };
+  if (retained.rows.length === 0) return { ok: false, status: "nothing_to_undo" };
+
+  const groups = compatibleLineageGroups({
+    handles: retained.writeIds,
+    rowsByHandle: retained.rowsByHandle,
+    reversals: state.reversals,
+  });
+  const selectedGroup = isScopeSelection(input.selection)
+    ? groups[0]
+    : activeClosureForHandles({
+        handles: retained.writeIds,
+        rowsByHandle: retained.rowsByHandle,
+        reversals: state.reversals,
+      });
+  if (!selectedGroup || selectedGroup.targetSeqs.size === 0) {
+    return { ok: false, status: "nothing_to_undo" };
+  }
+  if (![...selectedGroup.targetSeqs].every((seq) => snapshotRetainsSeq(state.snapshot, seq))) {
+    return { ok: false, status: "nothing_to_undo" };
+  }
+
+  const allRowsByHandle = await input.reversalStore.mutationsForWrites(
+    input.docId,
+    input.threadId,
+    handlesInState(state, retained.writeIds),
+  );
+  const dependency = evaluateLineageDependencies({
+    snapshot: state.snapshot,
+    closure: selectedGroup,
+    seqToHandle: seqToHandleFromMutations(allRowsByHandle, state.reversals),
+  });
+  if (!dependency.ok) {
+    return {
+      ok: false,
+      status: "cant_undo_dependent",
+      blockingWriteIds: [...dependency.blockingWriteIds],
+      selectedWriteIds: selectedGroup.handles,
+    };
+  }
+
+  const groupRows = selectedGroup.handles.flatMap(
+    (handle) => retained.rowsByHandle.get(handle) ?? [],
+  );
   return {
     ok: true,
     direction: "undo",
-    writeIds: retained.writeIds,
-    turnId: retained.rows[0]?.turnId ?? "unknown",
-    targetSeqs,
+    writeIds: selectedGroup.handles,
+    turnId: groupRows[0]?.turnId ?? retained.rows[0]?.turnId ?? "unknown",
+    targetSeqs: selectedGroup.targetSeqs,
     snapshot: state.snapshot,
+    ...(groups.length > 1 ? { undoGroups: groups } : {}),
   };
 }
 
@@ -132,7 +188,11 @@ async function retainedRowsForHandles(
   snapshot: JournalSnapshot,
   status: WriteMutationRow["status"],
   undoUpdateSeq?: number,
-): Promise<{ writeIds: string[]; rows: WriteMutationRow[] }> {
+): Promise<{
+  writeIds: string[];
+  rows: WriteMutationRow[];
+  rowsByHandle: Map<string, WriteMutationRow[]>;
+}> {
   const retainedSeqs = new Set(snapshot.updates.map((update) => update.seq));
   const rowsByHandle = await reversalStore.mutationsForWrites(docId, threadId, handles);
   const retained: { handle: string; rows: WriteMutationRow[] }[] = [];
@@ -149,11 +209,28 @@ async function retainedRowsForHandles(
   return {
     writeIds: retained.map(({ handle }) => handle),
     rows: retained.flatMap(({ rows }) => rows),
+    rowsByHandle: new Map(retained.map(({ handle, rows }) => [handle, rows])),
   };
 }
 
 function mutationSeqs(rows: readonly WriteMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
+}
+
+function isScopeSelection(selection: ReversalSelection): boolean {
+  return selection.kind === "turn" || selection.kind === "all";
+}
+
+function handlesInState(
+  state: Awaited<ReturnType<typeof loadState>>,
+  selectedHandles: readonly string[],
+): string[] {
+  const handles = new Set(selectedHandles);
+  for (const write of state.activeWrites) handles.add(write.handle);
+  for (const reversal of state.reversals) {
+    for (const writeId of reversal.writeIds) handles.add(writeId);
+  }
+  return [...handles].filter((handle) => parseWriteHandle(handle) !== undefined);
 }
 
 function selectActiveWrites(
