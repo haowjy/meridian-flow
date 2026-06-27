@@ -19,7 +19,7 @@ export function createModelRequestDebugStoreFromEnv(): ModelRequestDebugStore {
   }
 
   if (!startupLogged) {
-    console.log("[@meridian/server] model-request debug capture: enabled");
+    console.info("[@meridian/server] model-request debug capture: enabled");
     startupLogged = true;
   }
 
