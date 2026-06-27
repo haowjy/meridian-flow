@@ -30,5 +30,3 @@ export interface ReversalOutcome {
   status: WriteStatus;
   documents: DocumentReversalResult[];
 }
-
-export type TurnReversalOutcome = ReversalOutcome;
