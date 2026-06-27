@@ -54,9 +54,11 @@
   button, a, [role="button"] {
     touch-action: manipulation;
   }
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading);
-  }
+  /* Generic headings inherit their context's body font (Inter in app chrome,
+     Noto Serif in prose surfaces) and are distinguished by size + weight only —
+     matching stock ProseMirror/TipTap, which ship no heading font. The display
+     face (--font-heading) is opt-in via the `font-heading` utility on branding
+     surfaces (login hero, logo), not the default for content headings. */
 }
 
 /* Paper grain — a very subtle fixed fractal-noise overlay that gives the rice-
@@ -219,17 +221,19 @@
   font-family: var(--font-prose);
   @apply min-w-0 w-full text-answer text-answer-foreground break-words;
 
+  /* Headings inherit the prose body face (--font-prose) — same model as the
+     editor so rendered markdown and the editing surface stay in sync. */
   & h1 {
-    @apply font-heading mt-6 mb-3 text-[1.5rem] leading-[1.18] font-semibold tracking-prose-heading text-foreground first:mt-0;
+    @apply mt-6 mb-3 text-[1.5rem] leading-[1.18] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
   & h2 {
-    @apply font-heading mt-6 mb-2.5 text-[1.25rem] leading-[1.25] font-semibold tracking-prose-subheading text-foreground first:mt-0;
+    @apply mt-6 mb-2.5 text-[1.25rem] leading-[1.25] font-semibold tracking-prose-subheading text-foreground first:mt-0;
   }
   & h3 {
-    @apply font-heading mt-5 mb-2 text-[1.05rem] leading-[1.3] font-semibold text-foreground first:mt-0;
+    @apply mt-5 mb-2 text-[1.05rem] leading-[1.3] font-semibold text-foreground first:mt-0;
   }
   & h4 {
-    @apply font-heading mt-4 mb-2 text-[0.95rem] leading-[1.35] font-semibold text-foreground first:mt-0;
+    @apply mt-4 mb-2 text-[0.95rem] leading-[1.35] font-semibold text-foreground first:mt-0;
   }
   & p {
     @apply my-2 first:mt-0 last:mb-0;

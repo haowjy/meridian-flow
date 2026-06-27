@@ -165,7 +165,7 @@ export function SettingsDialog() {
       ) : (
         <DialogContent className="flex h-[540px] max-w-3xl gap-0 overflow-hidden p-0">
           <aside className="flex w-52 shrink-0 flex-col gap-4 border-r border-border-subtle bg-surface-subtle px-3 py-4">
-            <DialogTitle className="px-2 font-heading text-lg font-semibold tracking-tight">
+            <DialogTitle className="px-2 text-lg font-semibold tracking-tight">
               <Trans>Settings</Trans>
             </DialogTitle>
             <DialogDescription className="sr-only">

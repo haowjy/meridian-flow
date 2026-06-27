@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: content headings now share their context's body font (Noto Serif in
+  prose surfaces, Inter in app chrome) instead of a separate display serif —
+  distinguished by size + weight only, in the editor and rendered markdown. The
+  Cormorant Garamond display face is now opt-in for branding surfaces only.
+
 - `apps/app`: toolbar list buttons work again — bullet/ordered list commands now
   target the renamed `list_item` node instead of throwing "no node type named
   'listItem'". Guarded by an editor command test.
