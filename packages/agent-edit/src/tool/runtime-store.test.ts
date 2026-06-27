@@ -53,6 +53,45 @@ describe("runtime store", () => {
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha saber waits."]);
   });
 
+  it("reports concurrent human edits after restart using the persisted committed detection baseline", async () => {
+    const syncStateStore = new MemorySyncStateStore();
+    const initial = harness({ "chapter.md": "Alpha sword waits." });
+    const core = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+    await core.write({ command: "read", file: "chapter.md" }, context);
+    await core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      context,
+    );
+    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
+
+    humanText(initial.liveDoc("chapter.md"), 0, { from: 12, to: 17 }, "marches");
+
+    const restarted = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+
+    const followup = await restarted.write(
+      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
+      context,
+    );
+
+    expect(outcomeText(followup)).toContain("status: success");
+    expect(outcomeText(followup)).toContain("concurrent edits:");
+    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha saber marches."]);
+  });
+
   it("re-syncs persisted restart state before replace so stale find text cannot merge into unseen human edits", async () => {
     const syncStateStore = new MemorySyncStateStore();
     const initial = harness({ "chapter.md": "Alpha sword waits." });

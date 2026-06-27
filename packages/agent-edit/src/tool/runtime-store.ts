@@ -272,6 +272,15 @@ export function createRuntimeStore(deps: {
         // Persisted state is a fast-start baseline only — merge live truth before mutate.
         const reconciled = await syncLocalFromLive(session, docId, runtime, "read");
         if (!reconciled.ok) return reconciled;
+        // markSynced (inside syncLocalFromLive) seeded session.documents with a synthesized
+        // committedSnapshot; restore the durable cross-restart detection baseline.
+        const synced = session.documents.get(docId);
+        if (synced) {
+          session.documents.set(docId, {
+            stateVector: synced.stateVector,
+            committedSnapshot: persisted.committedSnapshot,
+          });
+        }
         return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
       }
       session.documents.set(docId, {
