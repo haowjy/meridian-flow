@@ -434,6 +434,106 @@ describe("write reversal under concurrent edits", () => {
     });
   });
 
+  it("expands a turn-scoped undo to the shared redo boundary instead of persisting a partial reversal", async () => {
+    const scenario = await twoTurnInsertScenario();
+    await undoRangeAndRedoAll(scenario);
+
+    const undoTurnB = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "turn", turnId: "turn-b" },
+      actor,
+    });
+
+    expect(["reconciled", "reversed"]).toContain(undoTurnB.status);
+    expect(undoTurnB.text).toContain("undo: 2 edit(s)");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+    });
+  });
+
+  it("keeps whole-scope undo consistent after a grouped redo", async () => {
+    const scenario = await twoTurnInsertScenario();
+    await undoRangeAndRedoAll(scenario);
+
+    const undoAll = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "all" },
+      actor,
+    });
+
+    expect(["reconciled", "reversed"]).toContain(undoAll.status);
+    expect(undoAll.text).toContain("undo: 2 edit(s)");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+    });
+  });
+
+  it("keeps turn-scoped undo narrow when writes were redone in separate redo operations", async () => {
+    const scenario = await twoTurnInsertScenario();
+    await expectUndoRedoStatus(scenario, "undo", { kind: "single", to: "w2" });
+    await expectUndoRedoStatus(scenario, "undo", { kind: "single", to: "w1" });
+    await expectUndoRedoStatus(scenario, "redo", { kind: "single", to: "w1" });
+    await expectUndoRedoStatus(scenario, "redo", { kind: "single", to: "w2" });
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+
+    const undoTurnB = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "turn", turnId: "turn-b" },
+      actor,
+    });
+
+    expect(["reconciled", "reversed"]).toContain(undoTurnB.status);
+    expect(undoTurnB.text).toContain("undo: 1 edit(s)");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+    await expectMutationStatuses(scenario, {
+      w1: "active",
+      w2: "reversed",
+    });
+  });
+
+  it("expands a turn-scoped redo to the shared undo boundary instead of leaving a partial redo", async () => {
+    const scenario = await twoTurnInsertScenario();
+    const undoRange = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "range", from: "w1", to: "w2" },
+      actor,
+    });
+    expect(["reconciled", "reversed"]).toContain(undoRange.status);
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+    await expectMutationStatuses(scenario, {
+      w1: "reversed",
+      w2: "reversed",
+    });
+
+    const redoTurnB = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "turn", turnId: "turn-b" },
+      actor,
+    });
+
+    expect(redoTurnB.status).toBe("reconciled");
+    expect(redoTurnB.text).toContain("redo: 2 edit(s)");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+    await expectMutationStatuses(scenario, {
+      w1: "active",
+      w2: "active",
+    });
+  });
+
   it("keeps latest undo scoped to one write when no grouped redo boundary exists", async () => {
     const scenario = await independentWriteScenario();
 
@@ -597,6 +697,53 @@ async function groupedRedoScenario(): Promise<ReversalScenario> {
   });
   await expectMutationStatuses(scenario, { w1: "active", w2: "active", w3: "active" });
   return scenario;
+}
+
+async function twoTurnInsertScenario(): Promise<ReversalScenario> {
+  const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+  await scenario.ctx.core.write(
+    { command: "insert", file: "chapter.md", content: "One." },
+    { ...context, turnId: "turn-a" },
+  );
+  await scenario.ctx.core.write(
+    { command: "insert", file: "chapter.md", content: "Two." },
+    { ...context, turnId: "turn-b" },
+  );
+  expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+  await expectMutationStatuses(scenario, {
+    w1: "active",
+    w2: "active",
+  });
+  return scenario;
+}
+
+async function undoRangeAndRedoAll(scenario: ReversalScenario): Promise<void> {
+  await expectUndoRedoStatus(scenario, "undo", { kind: "range", from: "w1", to: "w2" });
+  expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+  await expectUndoRedoStatus(scenario, "redo", { kind: "all" });
+  expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
+  await expectMutationStatuses(scenario, {
+    w1: "active",
+    w2: "active",
+  });
+}
+
+async function expectUndoRedoStatus(
+  scenario: ReversalScenario,
+  direction: "undo" | "redo",
+  selection:
+    | { kind: "single"; to: string }
+    | { kind: "range"; from: string; to: string }
+    | { kind: "all" },
+): Promise<void> {
+  const result = await scenario.ctx.core.reverse({
+    docId: "chapter.md",
+    threadId: THREAD_ID,
+    direction,
+    selection,
+    actor,
+  });
+  expect(["reconciled", "reversed"]).toContain(result.status);
 }
 
 async function expectMutationStatuses(
