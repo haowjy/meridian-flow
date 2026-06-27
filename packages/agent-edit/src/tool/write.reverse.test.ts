@@ -9,7 +9,7 @@ const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
   it("undoes the latest write when write scope has no target", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "One." },
       { ...context, turnId: "turn-one" },
@@ -35,7 +35,7 @@ describe("write host reverse", () => {
   });
 
   it("undoes a targeted write by id", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "One." },
       { ...context, turnId: "turn-one" },
@@ -54,7 +54,7 @@ describe("write host reverse", () => {
   });
 
   it("undoes all writes in a turn", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "One." },
       { ...context, turnId: "turn-target" },
@@ -81,7 +81,7 @@ describe("write host reverse", () => {
   });
 
   it("undoes the whole thread", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(["One.", "Two."], "turn-thread");
 
     const undo = await scenario.ctx.core.reverse({
@@ -97,7 +97,7 @@ describe("write host reverse", () => {
   });
 
   it("redoes a reversed turn", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "One." },
       { ...context, turnId: "turn-redo" },
@@ -118,12 +118,12 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(redo, "reversed");
+    expectOutcome(redo, "reconciled");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 
   it("redoes all reversed groups in a turn", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "One." },
       { ...context, turnId: "turn-redo-groups" },
@@ -163,7 +163,7 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(redo, "reversed");
+    expectOutcome(redo, "reconciled");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One.", "Two."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);

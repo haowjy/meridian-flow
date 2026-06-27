@@ -2,11 +2,37 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
+  works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
+  ProseMirror construction) behind the model adapter, so the editing protocol no
+  longer hard-codes the Yjs document model. No change to how edits, undo/redo, or
+  echoes behave.
+- `packages/agent-edit`: the agent `write` command schema is one Zod source. The
+  `view` command is renamed to **`read`**; the model-facing tool schema is
+  generated from the same schema; and validation is now strict — unknown or
+  command-irrelevant fields are rejected instead of silently stripped.
+
+- `packages/markup`: new `@meridian/markup` package — the codec (text ↔
+  ProseMirror, markdown + MDX) extracted out of `@meridian/agent-edit` into a
+  standalone leaf package with a composable builder/plugin API
+  (`createMarkupCodec().use(mdx()).build()`) and `markdownCodec`/`mdxCodec`
+  presets. MDX is the canonical format; MDX components are closure-captured by
+  the `mdx()` plugin rather than threaded through context. `@meridian/agent-edit`
+  now wraps it with a thin `AgentEditCodec` for hash-prefixed echo serialization,
+  and the editor (`apps/app`) and collab server (`apps/server`) consume the codec
+  directly. No behavior change — pure extraction.
+
+- `packages/agent-edit`: simplified write echo to one per-block `v_pre` →
+  `v_post` content-diff path with word-based context truncation, removed
+  commit-time echo recomputation, and made undo/redo return the same structured
+  metadata+echo blocks as writes.
+
+- Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
 - Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
   commands no longer emit Node DEP0169 from pnpm's bundled package-arg
   resolver.
-
-- Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
+- Editor: document load no longer builds a throwaway TipTap editor before the
+  real collaboration session is available.
 
 - Chat editing: a writer can now reverse the agent's edits themselves, not just
   the agent. New authenticated endpoint reverses (undo/redo) at three

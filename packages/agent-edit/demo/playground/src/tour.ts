@@ -26,8 +26,8 @@ export async function runScriptedTour({ env, log }: TourOptions) {
     file: TOUR_DOC,
     content: TOUR_SEED,
   });
-  await step(env, log, "tour: view (refreshes block-hash snapshot)", {
-    command: "view",
+  await step(env, log, "tour: read (refreshes block-hash snapshot)", {
+    command: "read",
     file: TOUR_DOC,
     format: "full",
   });

@@ -22,6 +22,7 @@ import { type Components, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { AssistantTurn } from "./AssistantTurn";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
+import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
   threadId: string;
@@ -47,15 +48,18 @@ export function TurnList({
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
-  const lastAssistantIdx = findLastAssistantIndex(turns);
+  const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
+  const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
   // Whether the current tail is a live assistant turn whose internal block
   // mutations should keep the list pinned to the bottom while we autoscroll.
-  const tailTurn = turns[turns.length - 1];
+  const tailTurn = visibleTurns[visibleTurns.length - 1];
   const isTailLive =
     tailTurn?.role === "assistant" &&
     (tailTurn.status === "streaming" || tailTurn.status === "pending");
   const initialTopMostItemIndex =
-    turns.length > 0 ? ({ index: turns.length - 1, align: "end" } as const) : undefined;
+    visibleTurns.length > 0
+      ? ({ index: visibleTurns.length - 1, align: "end" } as const)
+      : undefined;
 
   const followOutput = useCallback((isAtBottom: boolean) => {
     atBottomRef.current = isAtBottom;
@@ -86,14 +90,14 @@ export function TurnList({
   );
 
   useEffect(() => {
-    if (tailFollowRevision === 0 || turns.length === 0) return;
+    if (tailFollowRevision === 0 || visibleTurns.length === 0) return;
     atBottomRef.current = true;
     virtuosoRef.current?.scrollToIndex({
-      index: turns.length - 1,
+      index: visibleTurns.length - 1,
       align: "end",
       behavior: "smooth",
     });
-  }, [tailFollowRevision, turns.length]);
+  }, [tailFollowRevision, visibleTurns.length]);
 
   // While the tail turn is live, content height grows as deltas arrive. Stay
   // pinned to the bottom whenever the user has not scrolled away. Use the
@@ -118,9 +122,9 @@ export function TurnList({
       components={components}
       computeItemKey={(_idx, turn) => turn.id}
       customScrollParent={scrollParent ?? undefined}
-      data={turns}
+      data={visibleTurns}
       data-chat-virtual-list
-      data-settled-turn-count={turns.length}
+      data-settled-turn-count={visibleTurns.length}
       followOutput={followOutput}
       initialTopMostItemIndex={initialTopMostItemIndex}
       itemContent={itemContent}

@@ -24,6 +24,7 @@
     "@lingui/react": "^6.1.0",
     "@meridian/contracts": "workspace:*",
     "@meridian/design-tokens": "workspace:*",
+    "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "@tanstack/react-query": "^5.100.14",
     "@tanstack/react-router": "^1.170.7",

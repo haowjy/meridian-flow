@@ -1,14 +1,15 @@
 /** Recovery/redo integration tests using the Drizzle journal against local Postgres. */
 import {
+  createAgentEditCodec,
   createAgentEditCore,
   type DocumentCoordinator,
   DocumentNotFoundError,
-  mdxCodec,
   type ReversalStore,
   type UpdateJournal,
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -46,7 +47,7 @@ const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -211,7 +212,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
       const turnContext = { ...context, turnId: TURN_A };
 
-      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
         "Alpha sword.",
       );
       expect(
@@ -288,7 +289,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
         "Alpha sword.",
       );
       expect(
@@ -329,7 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         undoClientId: REVERSAL_CLIENT_ID,
       });
       expect(
-        outcomeText(await restarted.write({ command: "view", file: DOC_ID }, context)),
+        outcomeText(await restarted.write({ command: "read", file: DOC_ID }, context)),
       ).toContain("Alpha sword.");
 
       const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));

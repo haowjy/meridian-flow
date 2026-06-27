@@ -1,19 +1,21 @@
 // Baseline timing harness for the snapshot/render/find hot paths.
 // Run: pnpm vitest run --root packages/agent-edit --testNamePattern "bench" 2>&1 | tail
 // Not a regression gate — captures before/after numbers for Q1–Q4.
+
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { snapshotBlocks } from "./apply/echo.js";
-import { mdxCodec } from "./codec/presets/mdx.js";
+import { createAgentEditCodec } from "./codec-adapter.js";
+import { getBlockHash, lookupBlockHash } from "./model/block-hash.js";
 import { yProsemirrorModel } from "./model/y-prosemirror.js";
-import { getBlockHash, lookupBlockHash } from "./resolver/block-hash.js";
 import { serializeScopeBlocks } from "./resolver/find.js";
 import { createDocumentRenderer } from "./tool/document-renderer.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 const renderer = createDocumentRenderer({ model, codec });
 
@@ -120,38 +122,20 @@ describe("snapshot cost baseline", () => {
       });
     });
 
-    it(`toProsemirrorBlock per-block B=${blockCount}`, () => {
+    it(`projectBlocks B=${blockCount}`, () => {
       const doc = buildLiveDoc(blockCount);
-      const blocks = model.getBlocks(doc);
-      time(`toProsemirrorBlock loop B=${blockCount}`, () => {
-        for (const block of blocks) model.toProsemirrorBlock(doc, block);
+      time(`projectBlocks B=${blockCount}`, () => {
+        model.projectBlocks(doc);
       });
     });
   }
 });
 
-describe("N-write commit echo cost", () => {
-  for (const blockCount of [200]) {
-    for (const writeCount of [1, 5, 10, 20]) {
-      it(`postCommitEchoes N=${writeCount} B=${blockCount} (simulated)`, () => {
-        const doc = buildLiveDoc(blockCount);
-        const after = snapshotBlocks(doc, model, codec);
-        time(`N× snapshotBlocks N=${writeCount} B=${blockCount}`, () => {
-          for (let i = 0; i < writeCount; i++) {
-            snapshotBlocks(doc, model, codec);
-          }
-        });
-        void after;
-      });
-    }
-  }
-});
-
-describe("view reconstruction cost", () => {
+describe("read reconstruction cost", () => {
   for (const blockCount of BLOCK_COUNTS) {
-    it(`view rebuild (clone + render) B=${blockCount}`, () => {
+    it(`read rebuild (clone + render) B=${blockCount}`, () => {
       const live = buildLiveDoc(blockCount);
-      time(`view clone+render B=${blockCount}`, () => {
+      time(`read clone+render B=${blockCount}`, () => {
         const runtime = buildRuntimeFromLive(live);
         renderer.renderBlockLines(runtime);
       });

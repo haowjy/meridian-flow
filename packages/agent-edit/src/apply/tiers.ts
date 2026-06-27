@@ -1,11 +1,10 @@
-// Three-tier Yjs apply path for resolved agent edits.
-import type { Node as PMNode } from "prosemirror-model";
-import { Fragment } from "prosemirror-model";
-import * as Y from "yjs";
+// Three-tier apply path for resolved agent edits.
 
-import type { Codec, ParsedContent, Span } from "../codec/types.js";
-import type { AgentEditModel } from "../ports/model.js";
-import { isLiveXmlElement } from "../resolver/block-hash.js";
+import type { ParsedContent } from "@meridian/markup";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Span } from "../codec-types.js";
+import type { BlockRef, DocHandle } from "../handles.js";
+import type { AgentEditModel, TextRun } from "../ports/model.js";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
@@ -23,11 +22,7 @@ import type {
   ResolvedEdit,
 } from "./types.js";
 
-interface TextRun {
-  start: number;
-  length: number;
-  attrsKey: string;
-}
+type Ref = BlockRef;
 
 type PlannedEdit =
   | {
@@ -41,7 +36,7 @@ type PlannedEdit =
       kind: "text";
       tier: 2;
       edit: Extract<ResolvedEdit, { kind: "text" }>;
-      replacement: PMNode;
+      span: Span;
       blockId: string;
     }
   | {
@@ -62,16 +57,15 @@ interface ApplyAccumulator {
   applied: AppliedEditSummary[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
-  structuralChange: boolean;
 }
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
-/** Apply resolved edits to an agent-local Y.Doc using the three-tier mutation plan. */
+/** Apply resolved edits to an agent-local document using the three-tier mutation plan. */
 export function applyEdits(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
   options: ApplyEditsOptions = {},
@@ -80,7 +74,6 @@ export function applyEdits(
   if (editList.length === 0)
     return applyError("invalid_write", "applyEdits requires at least one edit");
 
-  const beforeApplyStateVector = options.syncStateVector ?? Y.encodeStateVector(doc);
   const turnSafety = validateNoSameTurnTombstones(doc, model, editList);
   if (!turnSafety.ok) return turnSafety;
 
@@ -89,7 +82,6 @@ export function applyEdits(
     applied: [],
     touchedHashes: new Set(),
     deletedHashes: new Set(),
-    structuralChange: false,
   };
 
   let committedEdits = 0;
@@ -105,7 +97,15 @@ export function applyEdits(
     }
 
     try {
-      doc.transact(() => executePlans(doc, model, group.plans, accumulator), origin);
+      let executionFailure: ApplyFailure | undefined;
+      model.transact(
+        doc,
+        () => {
+          executionFailure = executePlans(doc, model, codec, group.plans, accumulator);
+        },
+        origin,
+      );
+      if (executionFailure) return executionFailure;
     } catch (cause) {
       return applyError(
         "partial_failure",
@@ -124,7 +124,7 @@ export function applyEdits(
     codec,
     (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
     ownAgentOrigin(origin, options.ownActorTurnId),
-    options.syncStateVector ?? beforeApplyStateVector,
+    options.syncStateVector,
     options.concurrentCollapseThreshold,
   );
   const after = snapshotBlocks(doc, model, codec);
@@ -133,8 +133,6 @@ export function applyEdits(
     after,
     agentTouchedHashes: accumulator.touchedHashes,
     agentDeletedHashes: accumulator.deletedHashes,
-    structuralChange: accumulator.structuralChange,
-    concurrentTouchedHashes: concurrent.touchedHashes,
   });
 
   return {
@@ -169,9 +167,9 @@ function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
 }
 
 function preflightEdit(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: ResolvedEdit,
 ):
   | { ok: true; plan: PlannedEdit }
@@ -187,15 +185,16 @@ function preflightEdit(
 }
 
 function preflightTextEdit(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "text" }>,
 ): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.element, "target");
+  const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
   const span = { from: edit.span.start, to: edit.span.end };
-  const text = model.getText(edit.element);
+  const block = edit.block;
+  const text = model.getText(block);
   if (span.from < 0 || span.to < span.from || span.to > text.length) {
     return {
       ok: false,
@@ -207,42 +206,24 @@ function preflightTextEdit(
   const parsed = parseContent(codec, edit.newText, "text");
   if (!parsed.ok) return parsed;
 
-  const pmBlock = model.toProsemirrorBlock(doc, edit.element);
-  if (pmBlock.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, pmBlock.type.name);
-  }
-
-  const sameMarkContext = spanWithinSingleMarkContext(collectTextRuns(edit.element), span);
-  if (sameMarkContext && isPlainTextReplacement(parsed.parsed, edit.newText)) {
+  const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
+  if (sameMarkContext && model.isPlainTextReplacement(parsed.parsed, edit.newText)) {
     return {
       ok: true,
-      plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(edit.element) },
+      plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(block) },
     };
   }
 
-  const inline = inlineReplacement(parsed.parsed);
-  if (!inline.ok) return inline;
-  if (!canReplaceInline(pmBlock)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits with formatting are not supported for ${pmBlock.type.name} blocks`,
-    };
-  }
-  const replacement = replaceFlatText(pmBlock, span, inline.nodes);
-  if (replacement.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, replacement.type.name);
-  }
   return {
     ok: true,
-    plan: { kind: "text", tier: 2, edit, replacement, blockId: model.getBlockId(edit.element) },
+    plan: { kind: "text", tier: 2, edit, span, blockId: model.getBlockId(block) },
   };
 }
 
 function preflightInsert(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
 ): ReturnType<typeof preflightEdit> {
   if (edit.after) {
@@ -261,37 +242,35 @@ function preflightInsert(
 }
 
 function preflightDelete(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   edit: Extract<ResolvedEdit, { kind: "delete" }>,
 ): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.element, "target");
+  const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
-  const pmBlock = model.toProsemirrorBlock(doc, edit.element);
-  if (pmBlock.type.name !== edit.element.nodeName) {
-    return blockTypeMismatch(edit.element.nodeName, pmBlock.type.name);
-  }
+  const block = edit.block;
   return {
     ok: true,
     plan: {
       kind: "delete",
       tier: 3,
       edit,
-      blockId: model.getBlockId(edit.element),
+      blockId: model.getBlockId(block),
       removesBlock: model.getBlocks(doc).length > 1,
     },
   };
 }
 
 function executePlans(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
+  codec: AgentEditCodec,
   plans: readonly PlannedEdit[],
   accumulator: ApplyAccumulator,
-): void {
+): ApplyFailure | undefined {
   const ordered = [...plans].sort((left, right) => {
     if (left.kind !== "text" || right.kind !== "text") return 0;
-    if (left.edit.element !== right.edit.element) return 0;
+    if (left.edit.block !== right.edit.block) return 0;
     return textPlanStart(right) - textPlanStart(left);
   });
 
@@ -299,9 +278,16 @@ function executePlans(
     switch (plan.kind) {
       case "text":
         if (plan.tier === 1) {
-          model.applyTextEdit(doc, plan.edit.element, plan.span, plan.edit.newText);
+          model.applyTextEdit(doc, plan.edit.block, plan.span, plan.edit.newText);
         } else {
-          model.applyBlockDiff(doc, plan.edit.element, plan.replacement);
+          const applied = model.applyInlineReplacement(
+            doc,
+            plan.edit.block,
+            plan.span,
+            plan.edit.newText,
+            codec,
+          );
+          if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
         }
         accumulator.touchedHashes.add(plan.blockId);
         accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
@@ -310,15 +296,13 @@ function executePlans(
         const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
         const blockIds = inserted.map((block) => model.getBlockId(block));
         for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
-        accumulator.structuralChange ||= blockIds.length > 0;
         accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
         break;
       }
       case "delete":
-        model.deleteBlock(doc, plan.edit.element);
+        model.deleteBlock(doc, plan.edit.block);
         if (plan.removesBlock) {
           accumulator.deletedHashes.add(plan.blockId);
-          accumulator.structuralChange = true;
         } else {
           accumulator.touchedHashes.add(plan.blockId);
         }
@@ -333,9 +317,9 @@ function textPlanStart(plan: Extract<PlannedEdit, { kind: "text" }>): number {
 }
 
 function collectTierOneGroup(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   edits: readonly ResolvedEdit[],
   startIndex: number,
   firstPlan: PlannedEdit,
@@ -348,7 +332,7 @@ function collectTierOneGroup(
 
   for (let index = startIndex + 1; index < edits.length; index += 1) {
     const candidate = edits[index];
-    if (candidate.kind !== "text" || candidate.element !== firstPlan.edit.element) break;
+    if (candidate.kind !== "text" || candidate.block !== firstPlan.edit.block) break;
     const planned = preflightEdit(doc, model, codec, candidate);
     if (!planned.ok) return planned;
     if (planned.plan.kind !== "text" || planned.plan.tier !== 1) break;
@@ -361,12 +345,12 @@ function collectTierOneGroup(
 }
 
 function validateNoSameTurnTombstones(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   edits: readonly ResolvedEdit[],
 ): { ok: true } | ApplyFailure {
   const shadowBlocks = [...model.getBlocks(doc)];
-  const removed = new Set<Y.XmlElement>();
+  const removed = new Set<Ref>();
 
   for (const edit of edits) {
     const refs = referencedElements(edit);
@@ -374,13 +358,13 @@ function validateNoSameTurnTombstones(
       if (removed.has(ref)) {
         return applyError("not_found", "Target block was removed earlier in this turn");
       }
-      if (!isLiveXmlElement(ref) || !shadowBlocks.includes(ref)) {
+      if (!model.isLive(ref) || !shadowBlocks.includes(ref)) {
         return applyError("not_found", "Target block is no longer live in this document");
       }
     }
     if (edit.kind === "delete" && shadowBlocks.length > 1) {
-      removed.add(edit.element);
-      shadowBlocks.splice(shadowBlocks.indexOf(edit.element), 1);
+      removed.add(edit.block);
+      shadowBlocks.splice(shadowBlocks.indexOf(edit.block), 1);
     }
     if (edit.kind === "insert") {
       // Inserts create fresh blocks only at execution time; the shadow pass only
@@ -390,30 +374,30 @@ function validateNoSameTurnTombstones(
   return { ok: true };
 }
 
-function referencedElements(edit: ResolvedEdit): Y.XmlElement[] {
+function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
     case "text":
     case "delete":
-      return [edit.element];
+      return [edit.block];
     case "insert":
       return edit.after ? [edit.after] : [];
   }
 }
 
 function validateLiveBlock(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  block: Y.XmlElement,
+  block: Ref,
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {
-  if (!isLiveXmlElement(block) || !model.getBlocks(doc).includes(block)) {
+  if (!model.isLive(block) || !model.getBlocks(doc).includes(block)) {
     return { ok: false, code: "not_found", message: `${label} block is no longer live` };
   }
   return { ok: true };
 }
 
 function parseContent(
-  codec: Codec,
+  codec: AgentEditCodec,
   content: string,
   operation: "text" | "insert",
 ):
@@ -438,124 +422,6 @@ function parseContent(
   }
 }
 
-function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
-  if (source.length === 0) return true;
-  if (parsed.blocks.length !== 1) return false;
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) return false;
-  if (block.textContent !== source) return false;
-  let plain = true;
-  block.descendants((node) => {
-    if (node.isText) {
-      if (node.marks.length > 0) plain = false;
-      return false;
-    }
-    if (node.type.name !== "hard_break") plain = false;
-    return !plain;
-  });
-  return plain;
-}
-
-function inlineReplacement(
-  parsed: ParsedContent,
-): { ok: true; nodes: PMNode[] } | { ok: false; code: ApplyErrorCode; message: string } {
-  if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
-  if (parsed.blocks.length !== 1) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: "Text edits cannot introduce multiple blocks; use an insert/delete structural edit",
-    };
-  }
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
-    };
-  }
-  const nodes: PMNode[] = [];
-  block.forEach((child) => {
-    nodes.push(child);
-  });
-  return { ok: true, nodes };
-}
-
-function canReplaceInline(block: PMNode): boolean {
-  return block.isTextblock && block.type.name !== "code_block";
-}
-
-function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
-  let cursor = 0;
-  let inserted = false;
-  const children: PMNode[] = [];
-
-  const insertReplacement = () => {
-    if (inserted) return;
-    children.push(...replacement);
-    inserted = true;
-  };
-
-  block.forEach((child) => {
-    if (!child.isText) {
-      if (cursor >= span.from && cursor <= span.to) insertReplacement();
-      children.push(child);
-      return;
-    }
-    const text = child.text ?? "";
-    const start = cursor;
-    const end = cursor + text.length;
-    if (end <= span.from || start >= span.to) {
-      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
-      children.push(child);
-      cursor = end;
-      return;
-    }
-
-    const keepLeft = Math.max(0, span.from - start);
-    const keepRight = Math.max(0, end - span.to);
-    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
-    insertReplacement();
-    if (keepRight > 0)
-      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
-    cursor = end;
-  });
-  if (!inserted) insertReplacement();
-
-  return block.type.create(block.attrs, Fragment.from(children), block.marks);
-}
-
-function collectTextRuns(block: Y.XmlElement): TextRun[] {
-  const runs: TextRun[] = [];
-  let flatOffset = 0;
-  const visit = (type: Y.XmlElement | Y.XmlText) => {
-    if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>) {
-        const text = typeof delta.insert === "string" ? delta.insert : "";
-        const length = text.length;
-        if (length > 0) {
-          runs.push({
-            start: flatOffset,
-            length,
-            attrsKey: stableAttrsKey(delta.attributes),
-          });
-          flatOffset += length;
-        }
-      }
-      return;
-    }
-    for (const child of type.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(block);
-  return runs;
-}
-
 function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): boolean {
   if (span.from === span.to) return insertionPointHasContext(runs, span.from);
   const covered = runs.filter((run) => span.from < run.start + run.length && span.to > run.start);
@@ -567,33 +433,6 @@ function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): bool
 function insertionPointHasContext(runs: readonly TextRun[], offset: number): boolean {
   if (runs.length === 0) return offset === 0;
   return runs.some((run) => offset >= run.start && offset <= run.start + run.length);
-}
-
-function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
-  if (!attrs) return "";
-  return JSON.stringify(sortRecord(attrs));
-}
-
-function sortRecord(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortRecord);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, sortRecord(nested)]),
-  );
-}
-
-function blockTypeMismatch(
-  actual: string,
-  expected: string,
-): { ok: false; code: ApplyErrorCode; message: string; details: Record<string, unknown> } {
-  return {
-    ok: false,
-    code: "not_found",
-    message: `Block type changed from ${actual} to ${expected}; re-view before writing`,
-    details: { actual, expected },
-  };
 }
 
 function orderedLiveHashes(after: readonly BlockSnapshot[], hashes: ReadonlySet<string>): string[] {

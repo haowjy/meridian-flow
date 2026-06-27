@@ -6,6 +6,7 @@ import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
+import type { SyncStateStore } from "../ports/sync-state-store.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
@@ -54,8 +55,10 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     filePath?: string,
-  ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult };
+    runtime?: RuntimeDocumentState,
+  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
 }
 
 export interface RuntimeEvictOptions {
@@ -72,6 +75,7 @@ const EMPTY_UPDATE_LENGTH = 2;
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
   createRuntimeDoc: () => Y.Doc;
+  syncStateStore?: SyncStateStore;
 }): RuntimeStore {
   const { coordinator, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
@@ -88,6 +92,7 @@ export function createRuntimeStore(deps: {
     syncLocalFromLive,
     requireSynced,
     markSynced,
+    getCommittedSnapshot,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -110,7 +115,12 @@ export function createRuntimeStore(deps: {
   ): void {
     docsNeedingRecovery.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
-    markSynced(session, docId, runtime);
+    const stateVector = Y.encodeStateVector(runtime.doc);
+    // At commit, synced and committed snapshots are the same — both
+    // represent the runtime state after the commit resolved.
+    const snapshot = Y.encodeStateAsUpdate(runtime.doc);
+    session.documents.set(docId, { stateVector, committedSnapshot: snapshot });
+    persistSyncState(session, docId, stateVector, snapshot, snapshot);
   }
 
   function evictResponseRuntimes(
@@ -229,28 +239,81 @@ export function createRuntimeStore(deps: {
     return { ok: true };
   }
 
-  function requireSynced(
+  async function requireSynced(
     session: ActorSession,
     docId: string,
     filePath = docId,
-  ): { ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult } {
-    const state = session.documents.get(docId);
-    if (!state) {
+    runtime?: RuntimeDocumentState,
+  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
+    // If the doc needs recovery (invalidated/evicted), don't use stale state
+    // — force a read to rebuild from live/journal.
+    if (docsNeedingRecovery.has(docId)) {
       return {
         ok: false,
         response: {
           status: "not_found",
-          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="view", file="${filePath}") to re-sync.`,
+          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
         },
       };
     }
-    return { ok: true, stateVector: state.stateVector };
+
+    const state = session.documents.get(docId);
+    if (state) return { ok: true, stateVector: state.stateVector };
+
+    const persisted = await deps.syncStateStore?.load(docId, session.threadId);
+    if (persisted) {
+      session.documents.set(docId, {
+        stateVector: persisted.stateVector,
+        committedSnapshot: persisted.committedSnapshot,
+      });
+      // Restore runtime from the SYNCED snapshot (which matches stateVector),
+      // not the committed snapshot (which is older — detection baseline only).
+      if (runtime) {
+        const restored = createRuntimeDoc();
+        Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
+        runtime.doc = restored;
+        runtimeDocs.set(runtimeKey(session, docId), runtime);
+      }
+      return { ok: true, stateVector: persisted.stateVector };
+    }
+
+    return {
+      ok: false,
+      response: {
+        status: "not_found",
+        text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
+      },
+    };
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
-    session.documents.set(docId, {
-      stateVector: Y.encodeStateVector(runtime.doc),
-    });
+    const existing = session.documents.get(docId);
+    const stateVector = Y.encodeStateVector(runtime.doc);
+    // Preserve the committed snapshot (detection baseline) — only attachRuntime advances it.
+    // If no committed snapshot exists yet (first read), use current state as initial baseline.
+    const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
+    const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    session.documents.set(docId, { stateVector, committedSnapshot });
+    persistSyncState(session, docId, stateVector, syncedSnapshot, committedSnapshot);
+  }
+
+  function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {
+    return session.documents.get(docId)?.committedSnapshot;
+  }
+
+  function persistSyncState(
+    session: ActorSession,
+    docId: string,
+    stateVector: Uint8Array,
+    syncedSnapshot: Uint8Array,
+    committedSnapshot: Uint8Array,
+  ): void {
+    // Best-effort persistence — FK violations (staged creates before the
+    // document row exists) are expected and harmless; the state will be
+    // persisted on the next successful save after commit creates the doc.
+    void deps.syncStateStore
+      ?.save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
+      .catch(() => undefined);
   }
 
   async function recoverLiveDocFromJournal(

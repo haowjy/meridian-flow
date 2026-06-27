@@ -1,15 +1,16 @@
 # @meridian/agent-edit
 
 Shared agent-editing core behind the `write(command=...)` tool surface. Built on
-port interfaces (`UpdateJournal`, `DocumentCoordinator`, `Codec`,
+port interfaces (`UpdateJournal`, `DocumentCoordinator`, `AgentEditCodec`,
 `AgentEditModel`, `ActorSessionStore`) so the same core works for Meridian web,
 desktop, MCP, and future products.
 
 ## What it is
 
-- **Codec** — BlockCodec/MarkCodec registration atop unified/remark. Pinned
-  stringify for canonical output. One per format (markdown, MDX, …).
-- **Resolver** — block-hash → Y.XmlElement, `find` with exact-match + NFC,
+- **AgentEditCodec** — thin adapter over `@meridian/markup` that adds
+  hash-prefixed block serialization for echo/read. Pure markdown/MDX parsing and
+  serialization live in `@meridian/markup`.
+- **Resolver** — block-hash → neutral `BlockRef`/`DocHandle`, `find` with exact-match + NFC,
   scope lowering (block range, section, around).
 - **Apply** — 3-tier (Tier 1 Y.XmlText ops, Tier 2 per-block updateYFragment,
   Tier 3 fragment insert/delete), preflight-before-mutate discipline, echo +
@@ -43,24 +44,30 @@ the conflict via the concurrent-edits echo, it is not prevented.
 **Deferred commit (response staging) is an optimization, not a different model.**
 Instead of running the full lifecycle on every write, a response's writes are
 buffered and the lifecycle runs **once** at `commitResponse` — N writes collapse
-to **one** merge+sync per turn. Only the merge+sync collapses: post-commit echoes
-are still computed per staged write, in order, from the single post-re-sync
-snapshot using the same adaptive `computeEcho` tiers (suppressed / truncated /
-full). The document-level concurrent-edits summary (`human` vs `agent`) still
-comes from the one re-sync. Dropping those post-commit echoes (or aggregating them
-into one blob) leaves the agent blind to concurrent edits and structural insert
-context, so this package guards that contract.
+to **one** merge+sync per turn. Only the merge+sync collapses. Each staged write
+still returns its own model-facing echo immediately from the cumulative runtime
+state; commit time only reports the document-level concurrent-edits summary
+(`human` vs `agent`) from the one re-sync. Commit-time per-write echo
+recomputation is intentionally deleted.
 
-**`view` is a self-healing reconstruction — it never trusts local state.** Where
+**Echo has one path.** `computeEcho(before, after, touched, deleted)` expands a
+±1 block window around touched/deleted hashes, then tiers each surviving
+post-write block by a direct `v_pre → v_post` serialized-content comparison:
+changed or inserted blocks echo full `hash|content`, identical context blocks use
+word truncation (about eight words), and blocks outside the window are omitted.
+Writes and undo/redo return the same two structured result blocks: metadata
+(status, write id / reversal count, concurrent edits) and echo lines.
+
+**`read` is a self-healing reconstruction — it never trusts local state.** Where
 the commit re-sync above is a *delta merge into* the runtime (it needs per-op
-origins to attribute human-vs-agent), `view` instead **rebuilds** the runtime
+origins to attribute human-vs-agent), `read` instead **rebuilds** the runtime
 from canonical (live) and replays the response's pending staged edits:
-`runtime = canonical ⊕ replay(pending)`. So a `view` is a read that can never
+`runtime = canonical ⊕ replay(pending)`. So a `read` is a read that can never
 carry runtime drift forward or corrupt the doc; at turn start (nothing pending)
-it is exactly canonical. `view` and `find` therefore read the same doc — the
+it is exactly canonical. `read` and `find` therefore read the same doc — the
 model always sees concurrent human edits *and* its own in-flight edits, and can
 re-ground on live truth on demand. (The reversal path still uses the delta merge
-`syncLocalFromLive`; `view` does not.)
+`syncLocalFromLive`; `read` does not.)
 
 **Sequential tool dispatch is part of the contract.** The host runs the model's
 tool calls one at a time, so writes apply to the runtime sequentially and two
@@ -79,7 +86,7 @@ adapters or in the MCP distribution package.
 Model-facing text uses the host-supplied display path (`file` / `filePath`),
 never the internal `documentId`. Long UUID-like document ids are storage,
 journal, runtime, and coordination identity only; they must not appear in tool
-responses, view commands, re-sync hints, or creation guidance shown to the
+responses, read commands, re-sync hints, or creation guidance shown to the
 agent. Tests should prefer UUID-like internal ids with friendly paths so a leak
 is obvious.
 
@@ -89,22 +96,39 @@ detection, and the host infra ports (`UpdateJournal`, `DocumentCoordinator`,
 `DocumentLifecycle`, `ActorSessionStore`, codecs, coordinators — Hocuspocus /
 in-process mutex). None of that needs ProseMirror.
 
-The **content editing model is ProseMirror today** — the `write` command grammar
-edits a block-structured markdown document represented as y-prosemirror. Making
-the content model swappable so the library can edit non-ProseMirror Yjs documents
-is an **intended future direction, deferred** (GH issue #70, "generic Yjs edit
-core"). The seams for it exist (`Codec`, structural `AgentEditModel`) but are
-not yet fully realized — the apply core still calls ProseMirror-specific
-operations, so y-prosemirror is the only working implementation. Do not
-over-claim it as done; do not delete the seams.
+The **kernel is CRDT-neutral, not ProseMirror-neutral**. Resolver/apply carry
+opaque `DocHandle`/`BlockRef` handles; Yjs mechanics stay behind the model
+adapter and runtime/undo plumbing. ProseMirror remains the codec's content
+currency: `codec-types.ts` defines `Block` as `PMNode`, `ParsedContent` transits
+the kernel, and resolver code still inspects PM block shape (`type.name`,
+`isTextblock`, heading level, serialized bodies). Making the content model
+swappable is an **intended future direction, deferred** (see
+[`.context/TODO.md`](.context/TODO.md)); do not over-claim it as done, and do
+not delete the seams.
+
+## Multi-block reads use the batch helpers
+
+`snapshotBlocks`, `renderBlockLines`, `serializeScopeBlocks`, `lookupBlockHash`,
+and the per-staged-write echo all walk the document block list. The per-block helpers (`getBlockId`, single-block projection/serialization) each
+re-scan all siblings, rebuild the whole ProseMirror tree, or do per-block
+serialization work, so a per-block loop is O(B²) — on large chapters this is the
+dominant cost. Use the batch path (model `projectBlocks`,
+`serializeBlockLines`, `serializeBlockBodies`, `getDocumentBlockIds`, and
+`blockHashesForDoc` inside the adapter) which does the document-wide
+projection/stringify work once.
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) and the [performance
+reference][perf].
+
+[perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
 
 ## v1 scope
 
-y-prosemirror document model only. MDX and markdown codecs built in. Schema
-injection is explicit: `createCodec({ schema })` requires the host's ProseMirror
-schema; `@meridian/prosemirror-schema` is a devDependency only.
-Meridian server composes the package with the fiction schema from
-`@meridian/prosemirror-schema`.
+y-prosemirror document model only. Agent-edit depends on `@meridian/markup`
+for MDX/markdown codecs and wraps a host-built `MarkupCodec` with
+`createAgentEditCodec(markupCodec)`. Schema injection remains explicit:
+markup codec factories require the host's ProseMirror schema;
+`@meridian/prosemirror-schema` is a devDependency only. Meridian server composes
+the package with the fiction schema from `@meridian/prosemirror-schema`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts, architecture, invariants.
 → [system shape](https://github.com/haowjy/meridian-flow-docs/blob/main/work/agent-edit-write-loop/design/agent-edit-system-shape.md)

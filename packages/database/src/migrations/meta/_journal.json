@@ -36,6 +36,13 @@
       "when": 1782275181426,
       "tag": "0004_high_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782395030547,
+      "tag": "0005_agent_edit_sync_state",
+      "breakpoints": true
     }
   ]
 }

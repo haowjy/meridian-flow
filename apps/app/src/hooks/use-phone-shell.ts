@@ -12,7 +12,7 @@
  * hover, but hover capability does not make a phone-sized viewport usable with
  * the desktop 3-column shell.
  */
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export type PhoneShellViewport = {
   width: number;
@@ -28,17 +28,21 @@ export function matchesPhoneShellViewport({ width, height, pointer }: PhoneShell
 }
 
 export function usePhoneShell(): boolean | null {
-  const [isPhone, setIsPhone] = useState<boolean | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.matchMedia(PHONE_SHELL_QUERY).matches;
-  });
+  return useSyncExternalStore(subscribePhoneShell, getPhoneShellSnapshot, getServerSnapshot);
+}
 
-  useEffect(() => {
-    const mql = window.matchMedia(PHONE_SHELL_QUERY);
-    const onChange = () => setIsPhone(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
+function subscribePhoneShell(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const mql = window.matchMedia(PHONE_SHELL_QUERY);
+  mql.addEventListener("change", onStoreChange);
+  return () => mql.removeEventListener("change", onStoreChange);
+}
 
-  return isPhone;
+function getPhoneShellSnapshot(): boolean | null {
+  if (typeof window === "undefined") return null;
+  return window.matchMedia(PHONE_SHELL_QUERY).matches;
+}
+
+function getServerSnapshot(): null {
+  return null;
 }

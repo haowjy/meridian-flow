@@ -1,9 +1,8 @@
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-
-import { mdxCodec } from "../codec/presets/mdx.js";
 import { yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
@@ -19,6 +18,12 @@ describe("yProsemirrorModel block hashes", () => {
     const replayed = new Y.Doc();
     Y.applyUpdate(replayed, Y.encodeStateAsUpdate(first));
     expect(blockHashes(replayed)).toEqual(blockHashes(first));
+  });
+
+  it("guards exact block hash strings for a known document", () => {
+    const doc = createDoc("# One\n\nAlpha\n\nBeta");
+
+    expect(blockHashes(doc)).toEqual(["0f7a", "ef62", "9e93"]);
   });
 
   it("keeps a block hash stable when that block text changes", () => {
@@ -65,5 +70,5 @@ function createDoc(markdown: string): Y.Doc {
 }
 
 function blockHashes(doc: Y.Doc): string[] {
-  return model.getBlocks(doc).map((block) => model.getBlockId(block));
+  return model.getDocumentBlockIds(doc);
 }

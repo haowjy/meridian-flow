@@ -169,6 +169,25 @@ export const agentEditWidCounters = pgTable(
   (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
 );
 
+export const agentEditSyncState = pgTable(
+  "agent_edit_sync_state",
+  {
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    stateVector: byteaColumn("state_vector").notNull(),
+    syncedSnapshot: byteaColumn("synced_snapshot").notNull(),
+    committedSnapshot: byteaColumn("committed_snapshot").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
+);
+
 export const documentYjsHeads = pgTable("document_yjs_heads", {
   documentId: uuid("document_id")
     .$type<DocumentId>()

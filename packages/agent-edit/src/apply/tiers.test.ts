@@ -1,16 +1,20 @@
 // Behavioral coverage for tier routing, update replay fidelity, and echo.
+
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
+import type { BlockRef } from "../handles.js";
+import { toRef } from "../handles.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
+import { computeEcho } from "./echo.js";
 import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 
@@ -32,7 +36,7 @@ describe("applyEdits tier routing", () => {
     expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
     expect(model.getText(block)).toBe("Alpha blade.");
-    expect(result.ok && result.echo).toEqual([]);
+    expect(result.ok && result.echo).toEqual([{ mode: "full", blocks: ["0f7a|Alpha blade."] }]);
     expectNoOrphanedElements(doc);
   });
 
@@ -52,7 +56,7 @@ describe("applyEdits tier routing", () => {
     expectOk(result);
     expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
-    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
     expectNoOrphanedElements(doc);
   });
 
@@ -72,7 +76,7 @@ describe("applyEdits tier routing", () => {
     expectOk(result);
     expect(calls).toEqual([2]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
-    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
     expectNoOrphanedElements(doc);
   });
 
@@ -109,7 +113,7 @@ describe("applyEdits tier routing", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "insert",
-        after: alpha,
+        after: toRef(alpha),
         newText: "Inserted",
       },
       origin,
@@ -120,7 +124,7 @@ describe("applyEdits tier routing", () => {
       doc,
       model,
       codec,
-      { documentId: "doc-1", file: "chapter.md", kind: "delete", element: beta },
+      { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(beta) },
       origin,
     );
     expectOk(del);
@@ -154,7 +158,7 @@ describe("applyEdits update fidelity", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "insert",
-        after: baseModel.getBlocks(doc)[0],
+        after: toRef(baseModel.getBlocks(doc)[0]),
         newText: "Inserted",
       }),
       3,
@@ -166,7 +170,7 @@ describe("applyEdits update fidelity", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "delete",
-        element: baseModel.getBlocks(doc)[1],
+        block: toRef(baseModel.getBlocks(doc)[1]),
       }),
       3,
     ],
@@ -218,7 +222,7 @@ describe("applyEdits preflight safety", () => {
       baseModel,
       codec,
       [
-        { documentId: "doc-1", file: "chapter.md", kind: "delete", element: alpha },
+        { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(alpha) },
         textEdit(alpha, { start: 0, end: 5 }, "Changed"),
       ],
       origin,
@@ -249,7 +253,7 @@ describe("applyEdits preflight safety", () => {
 });
 
 describe("applyEdits echo and concurrent edits", () => {
-  it("suppresses echo and lists a non-overlapping concurrent human edit", () => {
+  it("echoes the agent window and lists a non-overlapping concurrent human edit", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
     const local = cloneDoc(live, 2);
     const syncStateVector = Y.encodeStateVector(local);
@@ -274,7 +278,10 @@ describe("applyEdits echo and concurrent edits", () => {
 
     expectOk(result);
     expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
-    expect(result.ok && result.echo).toEqual([]);
+    expect(result.ok && result.echo).toEqual([
+      { mode: "full", blocks: ["0f7a|Alpha blade."] },
+      { mode: "truncated", blocks: ["d2a1|Beta waits."] },
+    ]);
     expect(blockTexts(local)).toEqual([
       "Alpha blade.",
       "Beta waits.",
@@ -309,14 +316,78 @@ describe("applyEdits echo and concurrent edits", () => {
 
     expectOk(result);
     expect(result.ok && result.concurrentEdits?.human).toEqual([alphaHash]);
-    expect(result.ok && result.echo).toHaveLength(1);
+    expect(result.ok && result.echo).toHaveLength(2);
     expect(result.ok && result.echo[0]?.mode).toBe("full");
+    expect(result.ok && result.echo[1]?.mode).toBe("truncated");
     expect(
       result.ok && result.echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`)),
     ).toBe(true);
     expectNoOrphanedElements(local);
   });
 });
+
+describe("computeEcho", () => {
+  it("deduplicates overlapping windows in document order before tiering", () => {
+    const before = [
+      block("A", "ctx0"),
+      block("B", "old1"),
+      block("X", "deleted"),
+      block("C", "ctx2"),
+      block("D", "old3"),
+      block("E", "ctx4"),
+    ];
+    const after = [
+      block("A", "ctx0"),
+      block("B", "new1"),
+      block("C", "ctx2"),
+      block("D", "new3"),
+      block("E", "ctx4"),
+    ];
+
+    const echo = computeEcho({
+      before,
+      after,
+      agentTouchedHashes: new Set(["B", "D"]),
+      agentDeletedHashes: new Set(["X"]),
+    });
+    const lines = echo.flatMap((hunk) => hunk.blocks);
+
+    expect(lines).toEqual(["A|ctx0", "B|new1", "C|ctx2", "D|new3", "E|ctx4"]);
+    expect(lines.map((line) => line.split("|")[0])).toEqual(["A", "B", "C", "D", "E"]);
+    expect(new Set(lines.map((line) => line.split("|")[0])).size).toBe(lines.length);
+    expect(echo.map((hunk) => hunk.mode)).toEqual([
+      "truncated",
+      "full",
+      "truncated",
+      "full",
+      "truncated",
+    ]);
+  });
+
+  it("truncates unchanged in-window context to the first eight words", () => {
+    const longContext = "one two three four five six seven eight nine ten";
+    const shortContext = "short context stays unchanged";
+    const before = [block("A", longContext), block("B", "old center"), block("C", shortContext)];
+    const after = [block("A", longContext), block("B", "new center"), block("C", shortContext)];
+
+    const echo = computeEcho({
+      before,
+      after,
+      agentTouchedHashes: new Set(["B"]),
+      agentDeletedHashes: new Set(),
+    });
+
+    expect(echo).toEqual([
+      { mode: "truncated", blocks: ["A|one two three four five six seven eight..."] },
+      { mode: "full", blocks: ["B|new center"] },
+      { mode: "truncated", blocks: ["C|short context stays unchanged"] },
+    ]);
+  });
+});
+
+function block(hash: string, body: string) {
+  return { hash, serialized: `${hash}|${body}` };
+}
 
 function createDoc(markdown: string, clientID = 1): Y.Doc {
   const doc = new Y.Doc({ gc: false });
@@ -336,11 +407,18 @@ function cloneDoc(source: Y.Doc, clientID: number): Y.Doc {
 }
 
 function textEdit(
-  element: Y.XmlElement,
+  element: BlockRef,
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: "doc-1", file: "chapter.md", kind: "text", element, span, newText };
+  return {
+    documentId: "doc-1",
+    file: "chapter.md",
+    kind: "text",
+    block: toRef(element),
+    span,
+    newText,
+  };
 }
 
 function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[] } {
@@ -354,9 +432,9 @@ function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[
         calls.push(1);
         base.applyTextEdit(doc, block, span, newText);
       },
-      applyBlockDiff(doc, block, replacement) {
+      applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
         calls.push(2);
-        base.applyBlockDiff(doc, block, replacement);
+        return base.applyInlineReplacement(doc, block, span, replacementMarkup, codec);
       },
       insertBlocks(doc, after, parsed) {
         calls.push(3);
@@ -388,13 +466,7 @@ function blockTexts(doc: Y.Doc): string[] {
 }
 
 function documentJson(doc: Y.Doc): unknown {
-  return schema
-    .node(
-      "doc",
-      null,
-      baseModel.getBlocks(doc).map((block) => baseModel.toProsemirrorBlock(doc, block)),
-    )
-    .toJSON();
+  return schema.node("doc", null, baseModel.projectBlocks(doc)).toJSON();
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

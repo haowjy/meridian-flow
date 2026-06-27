@@ -30,9 +30,9 @@ const noInternalIdCases: NoInternalIdCase[] = [
     run: ({ ctx }) => ctx.core.write({ command: "undo", file: "chapter.md" }, context),
     assertExtra: ({ originalHash }, text) => {
       const lines = text.split("\n");
-      expect(lines.slice(0, 4)).toEqual(["status: reversed", "", "undo: 1 edit(s)", ""]);
-      expect(lines[4]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
-      expect(lines[4]?.split("|")[0]).not.toBe(originalHash);
+      expect(lines.slice(0, 3)).toEqual(["status: reconciled", "undo: 1 edit(s)", ""]);
+      expect(lines[3]).toMatch(/^[0-9a-f]{4}\|Beta waits in the clearing, sword drawn\.$/);
+      expect(lines[3]?.split("|")[0]).not.toBe(originalHash);
     },
   },
   {
@@ -44,7 +44,7 @@ const noInternalIdCases: NoInternalIdCase[] = [
     },
     run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
     assertExtra: (_state, text) => {
-      expect(text.split("\n").slice(0, 4)).toEqual(["status: reversed", "", "redo: 1 edit(s)", ""]);
+      expect(text.split("\n").slice(0, 3)).toEqual(["status: reversed", "redo: 1 edit(s)", ""]);
     },
   },
   {
@@ -78,7 +78,7 @@ const noInternalIdCases: NoInternalIdCase[] = [
 
 describe("write reversal formatting", () => {
   it("returns write ids in immediate results even when the echo is suppressed", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
 
     const write = await scenario.ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -102,8 +102,31 @@ describe("write reversal formatting", () => {
     await assertExtra?.(state, text);
   });
 
+  it("returns undo and redo metadata and echo as separate structured content blocks", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Alpha sword.\n\nBeta waits nearby.",
+    });
+    await scenario.simpleReplace("turn-structured-reversal");
+
+    const undo = await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(undo.content).toHaveLength(2);
+    expect(undo.content?.[0]).toEqual({
+      type: "text",
+      text: "status: reconciled\nundo: 1 edit(s)",
+    });
+    expect(undo.content?.[1]?.text).toMatch(/^[0-9a-f]{4}\|Alpha sword\.$/m);
+
+    const redo = await scenario.ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(redo.content).toHaveLength(2);
+    expect(redo.content?.[0]).toEqual({
+      type: "text",
+      text: "status: reconciled\nredo: 1 edit(s)",
+    });
+    expect(redo.content?.[1]?.text).toMatch(/^[0-9a-f]{4}\|Alpha blade\.$/m);
+  });
+
   it("preserves changed block hashes in reversal output without exposing storage ids", async () => {
-    const scenario = await ReversalScenario.view({
+    const scenario = await ReversalScenario.read({
       "chapter.md":
         "Beta waits in the clearing, sword drawn.\n\nThe wind carries the scent of rain.",
     });

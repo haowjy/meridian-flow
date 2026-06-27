@@ -1,10 +1,10 @@
-import type { Node as PMNode } from "prosemirror-model";
-import type * as Y from "yjs";
+import { CodecParseError, type ParsedContent } from "@meridian/markup";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
-import { type Codec, CodecParseError, type ParsedContent } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
-import { lookupBlockHash } from "./block-hash.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -34,9 +34,9 @@ export interface ResolveWriteParams {
 }
 
 export interface ResolveWriteContext {
-  doc: Y.Doc | null | undefined;
+  doc: DocHandle | null | undefined;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }
 
 export type ResolveWriteResult =
@@ -159,7 +159,7 @@ function resolveReplace(
 }
 
 interface ConcreteResolveContext extends ResolveWriteContext {
-  doc: Y.Doc;
+  doc: DocHandle;
 }
 
 function normalizeParams(params: ResolveWriteParams): NormalizedParams {
@@ -213,15 +213,15 @@ function validateSectionContent(
 function lowerInsertPosition(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-): ResolveWriteFailure | { ok: true; after?: Y.XmlElement } {
+): ResolveWriteFailure | { ok: true; after?: BlockRef } {
   const blocks = ctx.model.getBlocks(ctx.doc);
   if (params.after) {
-    const lookup = lookupBlockHash(ctx.doc, params.after);
+    const lookup = ctx.model.lookupBlock(ctx.doc, params.after);
     if (!lookup.ok) return error("not_found", `Block hash "${params.after}" was not found`);
     return { ok: true, after: lookup.block };
   }
   if (params.before) {
-    const lookup = lookupBlockHash(ctx.doc, params.before);
+    const lookup = ctx.model.lookupBlock(ctx.doc, params.before);
     if (!lookup.ok) return error("not_found", `Block hash "${params.before}" was not found`);
     const index = blocks.indexOf(lookup.block);
     if (index < 0) return error("not_found", `Block hash "${params.before}" was not found`);
@@ -238,13 +238,13 @@ function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteR
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element,
+      block: element,
     })),
   };
 }
 
 interface FindMatchGroup {
-  elements: Y.XmlElement[];
+  elements: BlockRef[];
   startIndex: number;
   endIndex: number;
   rangeStart: number;
@@ -303,7 +303,7 @@ function lowerPlainTextFindMatches(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "text",
-      element,
+      block: element,
       span: { start, end },
       newText: params.content,
     });
@@ -389,9 +389,9 @@ function replaceScope(
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const newBlocks = parsed.blocks;
-  let anchor: Y.XmlElement | undefined =
+  let anchor: BlockRef | undefined =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
-  let pendingInsert: PMNode[] = [];
+  let pendingInsert: Block[] = [];
 
   const flushInsert = () => {
     if (pendingInsert.length === 0) return;
@@ -409,13 +409,16 @@ function replaceScope(
   for (let index = 0; index < sharedCount; index += 1) {
     const oldBlock = oldBlocks[index];
     const newBlock = newBlocks[index];
-    if (oldBlock.nodeName === newBlock.type.name && reusableAttrs(oldBlock, newBlock)) {
+    if (
+      ctx.model.getBlockType(oldBlock) === newBlock.type.name &&
+      reusableAttrs(ctx, oldBlock, newBlock)
+    ) {
       flushInsert();
       edits.push({
         documentId: params.documentAddress.documentId,
         file: params.documentAddress.filePath,
         kind: "text",
-        element: oldBlock,
+        block: oldBlock,
         span: { start: 0, end: ctx.model.getText(oldBlock).length },
         newText: serializePmBlockBody(ctx, newBlock),
       });
@@ -426,7 +429,7 @@ function replaceScope(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element: oldBlock,
+      block: oldBlock,
     });
     pendingInsert.push(newBlock);
   }
@@ -437,7 +440,7 @@ function replaceScope(
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "delete",
-      element: oldBlocks[index],
+      block: oldBlocks[index],
     });
   }
 
@@ -449,15 +452,17 @@ function replaceScope(
   return { ok: true, edits };
 }
 
-function reusableAttrs(oldBlock: Y.XmlElement, newBlock: PMNode): boolean {
-  if (oldBlock.nodeName !== newBlock.type.name) return false;
-  if (isHeading(oldBlock)) return headingLevel(oldBlock) === Number(newBlock.attrs.level ?? 1);
+function reusableAttrs(ctx: ConcreteResolveContext, oldBlock: BlockRef, newBlock: Block): boolean {
+  if (ctx.model.getBlockType(oldBlock) !== newBlock.type.name) return false;
+  if (isHeading(ctx.model, oldBlock)) {
+    return headingLevel(ctx.model, oldBlock) === Number(newBlock.attrs.level ?? 1);
+  }
   return true;
 }
 
 function serializeReplacementBlocks(
   ctx: Pick<ConcreteResolveContext, "codec">,
-  blocks: PMNode[],
+  blocks: Block[],
 ): string {
   return trimOneTrailingNewline(ctx.codec.serialize(blocks));
 }

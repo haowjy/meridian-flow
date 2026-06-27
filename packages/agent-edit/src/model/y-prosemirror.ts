@@ -1,10 +1,19 @@
+import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
-
-import type { ParsedContent, Span } from "../codec/types.js";
-import type { AgentEditModel } from "../ports/model.js";
-import { blockHashesForDoc, getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Block, Span } from "../codec-types.js";
+import type { BlockRef } from "../handles.js";
+import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
+import type { AgentEditModel, InlineReplacementResult, TextRun } from "../ports/model.js";
+import {
+  blockHashesForDoc,
+  getBlockHash,
+  getTopLevelXmlBlocks,
+  isLiveXmlElement,
+  lookupBlockHash,
+} from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 interface TextSegment {
@@ -24,43 +33,87 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
     schema,
 
     getBlocks(doc) {
-      return getTopLevelXmlBlocks(doc);
+      return getTopLevelXmlBlocks(unwrapDoc(doc)).map(toRef);
     },
 
     getBlockId(block) {
-      return getBlockHash(block);
+      return getBlockHash(unwrapBlock(block));
     },
 
-    getBlockIds(doc) {
-      return blockHashesForDoc(doc);
+    getDocumentBlockIds(doc) {
+      return blockHashesForDoc(unwrapDoc(doc));
+    },
+
+    lookupBlock(doc, hash) {
+      const lookup = lookupBlockHash(unwrapDoc(doc), hash);
+      if (!lookup.ok) return { ok: false, reason: lookup.reason };
+      return { ok: true, block: toRef(lookup.block) };
+    },
+
+    isLive(block) {
+      return isLiveXmlElement(unwrapBlock(block));
+    },
+
+    getBlockType(block) {
+      return unwrapBlock(block).nodeName;
+    },
+
+    getHeadingLevel(block) {
+      const element = unwrapBlock(block);
+      return element.nodeName === "heading"
+        ? Number(element.getAttribute("level") ?? 1)
+        : undefined;
     },
 
     getText(block) {
-      return collectText(block);
+      return collectText(unwrapBlock(block));
+    },
+
+    inlineRuns(block) {
+      return collectTextRuns(unwrapBlock(block));
+    },
+
+    transact(doc, fn, origin) {
+      unwrapDoc(doc).transact(fn, origin);
     },
 
     applyTextEdit(_doc, block, span, newText) {
-      applyTextEdit(block, span, newText);
+      applyTextEdit(unwrapBlock(block), span, newText);
     },
 
     insertBlocks(doc, after, parsed) {
-      return insertBlocks(doc, after, parsed);
+      return insertBlocks(unwrapDoc(doc), after ? unwrapBlock(after) : null, parsed).map(toRef);
     },
 
     deleteBlock(doc, block) {
-      deleteBlock(doc, block);
+      deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyBlockDiff(doc, block, replacement) {
-      applyBlockDiff(doc, block, replacement);
+    isPlainTextReplacement(parsed, source) {
+      return isPlainTextReplacement(parsed, source);
     },
 
-    toProsemirrorBlock(doc, block) {
-      return toProsemirrorBlock(doc, block, schema);
+    applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
+      return applyInlineReplacement(
+        unwrapDoc(doc),
+        unwrapBlock(block),
+        span,
+        replacementMarkup,
+        codec,
+        schema,
+      );
     },
 
-    toProsemirrorBlocks(doc) {
-      return prosemirrorBlocksForDoc(doc, schema);
+    projectBlocks(doc) {
+      return prosemirrorBlocksForDoc(unwrapDoc(doc), schema);
+    },
+
+    serializeBlockLines(doc, codec, blocks) {
+      return serializeBlockLines(unwrapDoc(doc), codec, schema, blocks);
+    },
+
+    serializeBlockBodies(doc, codec, blocks) {
+      return serializeBlockBodies(unwrapDoc(doc), codec, schema, blocks);
     },
   };
 }
@@ -73,9 +126,14 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }
 
-export function toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement, schema: Schema): PMNode {
+export function toProsemirrorBlock(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  schema: Schema,
+): PMNode {
+  const element = unwrapBlock(toRef(block));
   const blocks = getTopLevelXmlBlocks(doc);
-  const index = blocks.indexOf(block);
+  const index = blocks.indexOf(element);
   if (index < 0) throw new Error("Y.XmlElement is not a top-level block in this document");
   const pmBlock = prosemirrorRootOf(doc, schema).child(index);
   if (!pmBlock) throw new Error("ProseMirror block not found for Y.XmlElement");
@@ -92,7 +150,8 @@ export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
   return blocks;
 }
 
-export function applyTextEdit(block: Y.XmlElement, span: Span, newText: string): void {
+export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
+  block = unwrapBlock(toRef(block));
   const text = collectText(block);
   if (span.from < 0 || span.to < span.from || span.to > text.length) {
     throw new RangeError(
@@ -114,22 +173,229 @@ export function applyTextEdit(block: Y.XmlElement, span: Span, newText: string):
   insertion.text.insert(insertion.offset, newText, insertAttrs);
 }
 
-export function applyBlockDiff(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
+export function applyBlockDiff(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  replacement: PMNode,
+): void {
+  block = unwrapBlock(toRef(block));
   if (block.nodeName !== replacement.type.name) {
     throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
   }
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
+export function applyInlineReplacement(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  span: Span,
+  replacementMarkup: string,
+  codec: AgentEditCodec,
+  schema: Schema,
+): InlineReplacementResult {
+  const element = unwrapBlock(toRef(block));
+  const current = toProsemirrorBlock(doc, element, schema);
+  const blockType = element.nodeName;
+  if (current.type.name !== blockType) {
+    return blockTypeMismatch(blockType, current.type.name);
+  }
+
+  let parsed: ParsedContent;
+  try {
+    parsed = replacementMarkup.length === 0 ? { blocks: [] } : codec.parse(replacementMarkup);
+  } catch (cause) {
+    return parseFailure(cause);
+  }
+
+  const inline = inlineReplacement(parsed);
+  if (!inline.ok) return inline;
+  if (!canReplaceInline(current)) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Text edits with formatting are not supported for ${current.type.name} blocks`,
+    };
+  }
+  const replacement = replaceFlatText(current, span, inline.nodes);
+  if (replacement.type.name !== blockType) {
+    return blockTypeMismatch(blockType, replacement.type.name);
+  }
+  applyBlockDiff(doc, element, replacement);
+  return { ok: true };
+}
+
+function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
+  if (source.length === 0) return true;
+  if (parsed.blocks.length !== 1) return false;
+  const block = parsed.blocks[0];
+  if (!block?.isTextblock) return false;
+  if (block.textContent !== source) return false;
+  let plain = true;
+  block.descendants((node) => {
+    if (node.isText) {
+      if (node.marks.length > 0) plain = false;
+      return false;
+    }
+    if (node.type.name !== "hard_break") plain = false;
+    return !plain;
+  });
+  return plain;
+}
+
+function inlineReplacement(
+  parsed: ParsedContent,
+): { ok: true; nodes: Block[] } | { ok: false; code: "invalid_write"; message: string } {
+  if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
+  if (parsed.blocks.length !== 1) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: "Text edits cannot introduce multiple blocks; use an insert/delete structural edit",
+    };
+  }
+  const block = parsed.blocks[0];
+  if (!block?.isTextblock) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
+    };
+  }
+  const nodes: Block[] = [];
+  block.forEach((child) => {
+    nodes.push(child);
+  });
+  return { ok: true, nodes };
+}
+
+function canReplaceInline(block: PMNode): boolean {
+  return block.isTextblock && block.type.name !== "code_block";
+}
+
+function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
+  let cursor = 0;
+  let inserted = false;
+  const children: PMNode[] = [];
+
+  const insertReplacement = () => {
+    if (inserted) return;
+    children.push(...replacement);
+    inserted = true;
+  };
+
+  block.forEach((child) => {
+    if (!child.isText) {
+      if (cursor >= span.from && cursor <= span.to) insertReplacement();
+      children.push(child);
+      return;
+    }
+    const text = child.text ?? "";
+    const start = cursor;
+    const end = cursor + text.length;
+    if (end <= span.from || start >= span.to) {
+      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
+      children.push(child);
+      cursor = end;
+      return;
+    }
+
+    const keepLeft = Math.max(0, span.from - start);
+    const keepRight = Math.max(0, end - span.to);
+    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
+    insertReplacement();
+    if (keepRight > 0) {
+      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
+    }
+    cursor = end;
+  });
+  if (!inserted) insertReplacement();
+
+  return block.type.create(block.attrs, children, block.marks);
+}
+
+function serializeBlockLines(
+  doc: Y.Doc,
+  codec: AgentEditCodec,
+  schema: Schema,
+  selectedBlocks?: readonly BlockRef[],
+): string[] {
+  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
+  if (blocks.length === 0) return [];
+  const hashes = blockHashesForDoc(doc);
+  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
+  if (!selectedBlocks) return codec.serializeBlocks(pmBlocks, hashes);
+  const indexByBlock = new Map<BlockRef, number>();
+  blocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selectedPmBlocks: PMNode[] = [];
+  const selectedHashes: string[] = [];
+  for (const block of selectedBlocks) {
+    const index = indexByBlock.get(block);
+    if (index === undefined) continue;
+    selectedPmBlocks.push(pmBlocks[index]);
+    selectedHashes.push(hashes[index]);
+  }
+  return codec.serializeBlocks(selectedPmBlocks, selectedHashes);
+}
+
+function serializeBlockBodies(
+  doc: Y.Doc,
+  codec: AgentEditCodec,
+  schema: Schema,
+  selectedBlocks: readonly BlockRef[],
+): string[] {
+  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
+  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
+  const indexByBlock = new Map<BlockRef, number>();
+  blocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selectedPmBlocks: PMNode[] = [];
+  for (const block of selectedBlocks) {
+    const index = indexByBlock.get(block);
+    if (index !== undefined) selectedPmBlocks.push(pmBlocks[index]);
+  }
+  return codec.serializeBlockBodies(selectedPmBlocks);
+}
+
+function parseFailure(cause: unknown): InlineReplacementResult {
+  const record = cause instanceof Error ? cause : undefined;
+  const details: Record<string, unknown> = {};
+  const line = (cause as { line?: unknown } | null)?.line;
+  const column = (cause as { column?: unknown } | null)?.column;
+  if (typeof line === "number") details.line = line;
+  if (typeof column === "number") details.column = column;
+  return {
+    ok: false,
+    code: "invalid_write",
+    message: record?.message ?? String(cause),
+    ...(Object.keys(details).length > 0 ? { details } : {}),
+  };
+}
+
+function blockTypeMismatch(
+  actual: string,
+  expected: string,
+): { ok: false; code: "not_found"; message: string; details: Record<string, unknown> } {
+  return {
+    ok: false,
+    code: "not_found",
+    message: `Block type changed from ${actual} to ${expected}; re-read before writing`,
+    details: { actual, expected },
+  };
+}
+
 export function insertBlocks(
   doc: Y.Doc,
-  after: Y.XmlElement | null,
+  after: Y.XmlElement | BlockRef | null,
   parsed: ParsedContent,
 ): Y.XmlElement[] {
   const fragment = fragmentOf(doc);
   const blocks = getTopLevelXmlBlocks(doc);
-  const index = after === null ? 0 : blocks.indexOf(after) + 1;
-  if (after !== null && index === 0) {
+  const afterElement = after === null ? null : unwrapBlock(toRef(after));
+  const index = afterElement === null ? 0 : blocks.indexOf(afterElement) + 1;
+  if (afterElement !== null && index === 0) {
     throw new Error("Cannot insert after a block that is not in the document");
   }
   const inserted = parsed.blocks.map((block) => pmNodeToYElement(block, createBindingMetadata()));
@@ -137,7 +403,8 @@ export function insertBlocks(
   return inserted;
 }
 
-export function deleteBlock(doc: Y.Doc, block: Y.XmlElement): void {
+export function deleteBlock(doc: Y.Doc, block: Y.XmlElement | BlockRef): void {
+  block = unwrapBlock(toRef(block));
   const fragment = fragmentOf(doc);
   const blocks = getTopLevelXmlBlocks(doc);
   const index = blocks.indexOf(block);
@@ -181,6 +448,36 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   };
   visit(block);
   return segments;
+}
+
+function collectTextRuns(block: Y.XmlElement): TextRun[] {
+  const runs: TextRun[] = [];
+  let flatOffset = 0;
+  const visit = (type: Y.XmlElement | Y.XmlText) => {
+    if (type instanceof Y.XmlText) {
+      for (const delta of type.toDelta() as Array<{
+        insert?: string;
+        attributes?: Record<string, unknown>;
+      }>) {
+        const text = typeof delta.insert === "string" ? delta.insert : "";
+        const length = text.length;
+        if (length > 0) {
+          runs.push({
+            start: flatOffset,
+            length,
+            attrsKey: stableAttrsKey(delta.attributes),
+          });
+          flatOffset += length;
+        }
+      }
+      return;
+    }
+    for (const child of type.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(block);
+  return runs;
 }
 
 function clearText(type: Y.XmlElement | Y.XmlText): void {
@@ -284,6 +581,21 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
+}
+
+function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
+  if (!attrs) return "";
+  return JSON.stringify(sortRecord(attrs));
+}
+
+function sortRecord(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortRecord);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortRecord(nested)]),
+  );
 }
 
 function createBindingMetadata(): BindingMetadata {

@@ -9,7 +9,8 @@ The persistence seam is split by concern:
   `read`, checkpoint, and compact.
 - `ReversalStore` owns write-level reversal state: write ordinal reservation,
   active/reversed write metadata queries, `readForReconstruction(docId)`,
-  `persistUndo`, `persistRedo`, and `readReversals`.
+  per-handle `mutationsForWrite` and the batch `mutationsForWrites` (one query for
+  multiple handles), `persistUndo`, `persistRedo`, and `readReversals`.
 
 `readForReconstruction` is the domain-level retained-log read used by cold
 undo/redo so checkpoint mechanics stay adapter-local; reversal code no longer
@@ -41,25 +42,65 @@ plain `docId: string`, no auth, URI schemes, storage, or collaboration-server
 types. `write(command="create")` requires this optional port; deployments that
 do not support creation get `invalid_write` instead of a thrown not-found.
 
-### Codec (`src/codec/types.ts` — interface, `src/codec/create-codec.ts` — assembly)
-Composed from BlockCodec (one per PM block node type) + MarkCodec (one per PM
-inline mark). Layers on unified/remark: unified owns parse/stringify, the codec
-owns the PM-mapping dispatch. `serialize`/`parse` are the two directions.
-Pinned unified stringify options for canonical round-trip output. Concrete:
-`presets/markdown.ts`, `presets/mdx.ts`. Codec factories require the host's
-ProseMirror `Schema`; the package has no default Meridian schema.
+### AgentEditCodec (`src/codec-adapter.ts` — hash-prefixed adapter)
+Agent-edit consumes an `AgentEditCodec`: a thin wrapper around
+`@meridian/markup`'s `MarkupCodec`. `parse` and full-document `serialize`
+delegate directly to the pure markup codec. `serializeBlockBodies` delegates to
+`markup.serializeBlocks` for hashless resolver/find normalization; callers should
+not reimplement trailing-newline or empty-paragraph normalization. The adapter
+adds the agent-edit-only display forms `serializeBlock(block, hash)` and
+`serializeBlocks(blocks, hashes)`, formatting single-line blocks as `hash|body`
+and multiline blocks as `hash|\nbody`.
+
+Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
+component registry types live in `@meridian/markup`. Codec factories require the
+host's ProseMirror `Schema`; agent-edit has no default Meridian schema.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
-the schema explicitly. This keeps the package provably host-agnostic without
-server/infra dependency leaks. See `src/codec/create-codec.ts:29`.
+the schema explicitly. This keeps the package host-agnostic without server/infra
+dependency leaks.
 
 ### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
-Structural model port for what "block" means in Yjs. Carries the 3-tier apply
-implementation: `getBlocks`, `getBlockId` (hash from CRDT item ID), `getText`,
-`applyTextEdit` (Tier 1/2), `insertBlocks` (Tier 3), `deleteBlock` (Tier 3), plus
-the current ProseMirror projection hooks `toProsemirrorBlock` and `applyBlockDiff`.
-v1 is y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
-composition root supplies Meridian's fiction schema. Hosts depend on the
-structural `AgentEditModel` port, not the concrete y-prosemirror model type.
+Structural model port for what "block" means to the editing core. The kernel
+sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
+objects. The seam carries block lookup/identity, text inspection, Tier 1/3
+mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement`, and
+batch projection/serialization (`projectBlocks`, `serializeBlockLines`,
+`serializeBlockBodies`). v1 is y-prosemirror only. `yProsemirrorModel(schema)` is
+explicit; the server composition root supplies Meridian's fiction schema. Hosts
+depend on the structural `AgentEditModel` port, not the concrete
+y-prosemirror model type.
+
+### Batch paths — preferred for multi-block operations
+
+The per-block helpers each re-scan the **whole document block list** to produce
+one block's result, so a per-block loop is **O(B²)**, not O(B):
+
+- `getBlockId(block)` resolves a unique hash against *all sibling blocks* (re-sorts and re-hashes every sibling per call).
+- Single-block codec projection rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
+- `AgentEditCodec.serializeBlock` does per-block serialization work.
+
+Every batched write touches all of these (snapshot, render, find). **Use the batch path for any multi-block op:**
+
+| Batch | Replaces (do not loop) | Does once |
+|---|---|---|
+| `getDocumentBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
+| `model.projectBlocks(doc)` | single-block codec projection loops | project the codec block tree once |
+| `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed read/echo lines |
+| `model.serializeBlockBodies(doc, codec, blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
+| `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
+| `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
+
+Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
+`renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
+`serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
+(`resolver/block-hash.ts`), and echo after-snapshots in
+`tool/mutation-commit.ts`. Response staging no longer recomputes per-write echoes
+at commit time. The Drizzle journal adapter commits a
+staged response in one multi-row INSERT via `appendBatch` (per-update
+`appendMutation` was deleted). The in-memory test journal implements the same
+batch API. See the [performance reference][perf] for measured numbers.
+
+[perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent
@@ -86,25 +127,30 @@ from the live document and journal.
 
 ### Codec pipeline
 ```
-source string → unified parser → mdast → BlockCodec dispatch → MarkCodec dispatch → PM nodes
-PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
+@meridian/markup: source string → unified parser → mdast → BlockCodec dispatch → MarkCodec dispatch → PM nodes
+@meridian/markup: PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
 ```
-Block hash prefix added by `serializeBlock()` at render time (not stored as
-attribute). Hash derived from Y.XmlElement CRDT item ID (`clientID + clock`).
+Block hash prefix added by `AgentEditCodec.serializeBlock()` at render time (not stored as
+attribute). In the built-in adapter the hash is derived from the adapter-internal
+Y.XmlElement CRDT item ID (`clientID + clock`); kernel callers see only the
+neutral `BlockRef`.
 
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
-references, parses content, computes offsets, checks Tier 1 eligibility.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations.
+references, parses content, computes offsets, checks Tier 1 eligibility with
+neutral inline runs plus the model-owned plain-text replacement query. Phase 2
+(inside `doc.transact()`) applies pre-computed operations; Tier 2 formatted text
+replacement is delegated to the adapter-owned `applyInlineReplacement` verb.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary or formatting change | Per-block updateYFragment |
-| 3 | `insert` / `delete` | Fragment-level Y.XmlElement insert/delete |
+| 2 | `text` crosses mark boundary or formatting change | Adapter-owned inline replacement + per-block updateYFragment |
+| 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
-structurally deleting (preserves ProseMirror `doc(block+)` invariant).
+structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
+internally).
 
 ### Undo/redo (`src/undo/`)
 
@@ -132,12 +178,24 @@ appending when another session already used it.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged.
 
+
+### CRDT-neutral seam, ProseMirror content currency
+
+The resolver→apply kernel is neutral across the CRDT axis: Yjs documents and
+blocks are carried as opaque `DocHandle`/`BlockRef` handles, and resolver/apply
+code asks `AgentEditModel` for identity, lookup, mutation, projection, and
+serialization. That does **not** mean the package is ProseMirror-neutral.
+`codec-types.ts` still aliases `Block = PMNode`, `ParsedContent` still transits
+the kernel, and resolver code still inspects PM block shape (`type.name`,
+`isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
+deferred in [TODO.md](TODO.md).
+
 ## Key invariants
 
 - **Block hash stable under edits.** Derived from CRDT item ID (assigned at
   element creation). Survives content edits, position shifts, reordering.
   Lost on type change or deletion (new element → new ID).
-- **Codec round-trip stability.** Arbitrary markdown/MDX normalizes on first
+- **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
@@ -158,33 +216,39 @@ going blind to a concurrent human edit.
   per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
 - **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
-  runtime has seen") is set by `markSynced` on view / create / write / commit. A
+  runtime has seen") is set by `markSynced` on read / create / write / commit. A
   mutating write requires a prior sync (`requireSynced`) or returns
-  `document_not_synced` ("run view").
-- **`view` is a self-healing reconstruction, not a merge.** Every `view` discards
+  `document_not_synced` ("run read").
+- **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays the response's pending
   staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
-  accumulated local state, so a `view` is a read that can never carry runtime drift
+  accumulated local state, so a `read` is a read that can never carry runtime drift
   forward or corrupt the doc. At turn start (no pending) it is exactly canonical.
-  The reversal path still uses the delta merge `syncLocalFromLive`; `view` does not.
-- **`view` and `find` read the same doc.** Both resolve against the runtime, so the
-  model can always `find` what `view` showed it. This is *why* `view` replays
-  pending: otherwise a write after a mid-response `view` could re-match
+  The reversal path still uses the delta merge `syncLocalFromLive`; `read` does not.
+- **`read` and `find` read the same doc.** Both resolve against the runtime, so the
+  model can always `find` what `read` showed it. This is *why* `read` replays
+  pending: otherwise a write after a mid-response `read` could re-match
   already-edited text and self-mangle at commit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
   advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
   touched. Deferred commit collapses **only** the merge+re-sync to once per turn
-  (N writes → 1) and must still emit that echo.
-- **Echoes are per-write, computed from the post-re-sync snapshot.** Even batched,
-  each staged write echoes via `computeEcho`'s adaptive tiers (suppress / truncated
-  / full) against the single post-re-sync snapshot — observationally identical to
-  applying the writes one at a time. Each block appears at most once across the
-  combined echo (dedup), in write order.
+  (N writes → 1); each staged write already emitted its per-write echo before
+  commit.
+- **Echoes are one per-write function.** `computeEcho(before, after, touched,
+  deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
+  each surviving post-write block independently: inserted or serialized-content
+  changed from `v_pre` to `v_post` → full `hash|content`; identical context →
+  first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
+  structural changes are not separate modes.
+- **Tool results use two content blocks.** Successful writes and undo/redo return
+  metadata in block 1 (`status`, write id or reversal count, concurrent edits)
+  and echo `hash|content` lines in block 2 when there are echo lines. Hosts should
+  prefer structured `content` over the joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
 - **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
   updates one at a time, attributing each touched block to human vs agent by
-  persisted origin (the update bytes don't carry it). `view`'s rebuild can't
+  persisted origin (the update bytes don't carry it). `read`'s rebuild can't
   attribute, so it is not used for the commit re-sync.
 - **Sequential tool dispatch is load-bearing.** The host dispatches tool calls one
   at a time; writes apply to the runtime sequentially, so overlapping *self*-writes
@@ -193,7 +257,7 @@ going blind to a concurrent human edit.
   self-mangle at commit.
 - **The staging buffer is the durable commit source, not the runtime doc.** The
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
-  to live exactly once; `view`'s replay touches only the runtime and never
+  to live exactly once; `read`'s replay touches only the runtime and never
   double-commits.
 - **`find` reconciliation happens in serialized markdown space.** Matches resolve to
   serialized block ranges. The resolver splices the requested replacement into the
@@ -217,7 +281,7 @@ staged state. Journal append, live-doc sync, concurrent-edit merge, and
 projection refresh are deferred to `commitResponse(responseId)`, which appends
 the buffered updates in one journal batch and then applies one aggregate Yjs
 update per document. Journal batch failure leaves the buffer retryable and
-invalidates staged runtimes so ordinary later views do not see phantom edits. If
+invalidates staged runtimes so ordinary later reads do not see phantom edits. If
 the journal batch lands, the whole response is durable and remains the latest
 undoable turn even when the post-commit live projection fails. In that case
 `commitResponse(responseId)` recovers live docs from the journal, rebuilds and
@@ -230,18 +294,15 @@ after a journaled commit attempt, it is recover-only.
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into
 **one** lifecycle run at `commitResponse` (N writes → 1 merge+sync). Only the
-merge+re-sync is collapsed. After that single re-sync, the package computes the
-post-commit echo for each staged write, in original write order, using that
-write's pre-write snapshot and touched/deleted hash metadata against the one
-post-re-sync runtime snapshot. Suppressed per-write echoes are omitted; structural
-writes still produce truncated echoes even without concurrent edits; concurrent
-overlap at the write site produces a full echo. `documents[*].concurrentEdits` is
-the document-level human/agent touched-hash summary from the one re-sync and keeps
-the collapse-threshold behavior. The garbled character-level merge of two edits
-to the same text is accepted ("mangled-but-intact") — the model is told via this
-echo, not prevented. Mid-response, per-write echoes reflect the local runtime
+merge+re-sync is collapsed. Commit no longer recomputes per-write echoes; the
+model already received each write's echo when the write was staged.
+`documents[*].concurrentEdits` is the document-level human/agent touched-hash
+summary from the one re-sync and keeps the collapse-threshold behavior. The
+garbled character-level merge of two edits to the same text is accepted
+("mangled-but-intact") — the model is told through the write echo and concurrent
+summary, not prevented. Mid-response, per-write echoes reflect the local runtime
 (there is no per-write re-sync to live) — the accepted cost of the optimization,
-not a defect. An explicit `view` still reconstructs from canonical (see the
+not a defect. An explicit `read` still reconstructs from canonical (see the
 sync-engine invariants), so the model can re-ground on live truth on demand.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
@@ -257,7 +318,7 @@ the response buffer so a later empty commit still carries the cleanup signal.
 human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
 The host resolves that path to an internal `documentId` and passes both into the
 package. `documentId` is only storage/journal/runtime/coordinator identity;
-model-facing text must render the display `file` / `filePath`, including view
+model-facing text must render the display `file` / `filePath`, including read
 commands, creation guidance, not-found messages, and re-sync hints. The package
 stays host-agnostic: it does not invent display paths, it only echoes the path
 the host supplied. Tests should prefer UUID-like document ids plus friendly
@@ -268,7 +329,7 @@ paths so accidental UUID interpolation fails loudly.
 - **Tool versioning** deferred (GH issue #68). Seam kept clean — pure
   resolvers, stable `ResolvedEdit`, version-agnostic apply layer. No version
   pinning until a v2 exists.
-- **View auto-budget/truncation** deferred. Current `view` returns full
+- **Read auto-budget/truncation** deferred. Current `read` returns full
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
@@ -279,7 +340,7 @@ paths so accidental UUID interpolation fails loudly.
 
 ## Testing
 
-Package tests cover block-hash stability, codec round-trip, resolver with
+Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, availability, and public turn seams), response
@@ -287,8 +348,8 @@ staging/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
 
-Every successful mutating write returns a short handle line (`write id: w<N>`) even when its echo is otherwise suppressed. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
+Every successful mutating write returns a short handle line (`write id: w<N>`) in the metadata block. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 
-Post-commit response echoes label emitted hunks with the write handle (`w3: …`) so concurrent/reconciliation reports can be traced back to the write to undo. Suppressed echoes stay suppressed.
+Undo/redo echoes use the same two-block result format as writes: metadata first, echo lines second.
 
 Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

@@ -9,7 +9,9 @@
  * `createWiredCoreToolRegistrations`, keeping this runtime-domain catalogue free
  * of ContextPort or other app-layer adapter imports.
  */
+import { WriteCommandSchema } from "@meridian/agent-edit";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
+import { z } from "zod";
 import type { ToolRegistration } from "./types.js";
 
 /** Canonical list of runnable core tool names. */
@@ -24,6 +26,61 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
+function writeToolInputSchema(): Record<string, unknown> {
+  return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+}
+
+function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {
+  const transformed = renameSchemaProperty(schema, "file", "path") as Record<string, unknown>;
+  stripSchemaProperty(transformed, "documentId");
+  stripSchemaProperty(transformed, "tool_use_id");
+  // All gateway adapters forward this object as the provider JSON Schema:
+  // OpenAI Responses and OpenAI-compatible chat accept arbitrary schema records,
+  // while Anthropic's SDK type requires an object root and allows composition
+  // keywords. Keep the discriminated oneOf branches strict; do not seal the
+  // union wrapper itself, because that makes every branch unsatisfiable.
+  transformed.type = "object";
+  return transformed;
+}
+
+function renameSchemaProperty(schema: unknown, from: string, to: string): unknown {
+  if (Array.isArray(schema)) return schema.map((item) => renameSchemaProperty(item, from, to));
+  if (!schema || typeof schema !== "object") return schema;
+  const record = schema as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    record[key] = renameSchemaProperty(value, from, to);
+  }
+  const properties = record.properties;
+  if (properties && typeof properties === "object" && from in properties) {
+    const propertyRecord = properties as Record<string, unknown>;
+    propertyRecord[to] = propertyRecord[from];
+    delete propertyRecord[from];
+  }
+  const required = record.required;
+  if (Array.isArray(required)) {
+    record.required = required.map((value) => (value === from ? to : value));
+  }
+  return record;
+}
+
+function stripSchemaProperty(schema: unknown, property: string): void {
+  if (Array.isArray(schema)) {
+    for (const item of schema) stripSchemaProperty(item, property);
+    return;
+  }
+  if (!schema || typeof schema !== "object") return;
+  const record = schema as Record<string, unknown>;
+  const properties = record.properties;
+  if (properties && typeof properties === "object") {
+    delete (properties as Record<string, unknown>)[property];
+  }
+  const required = record.required;
+  if (Array.isArray(required)) {
+    record.required = required.filter((value) => value !== property);
+  }
+  for (const value of Object.values(record)) stripSchemaProperty(value, property);
+}
+
 export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
   return [
     {
@@ -32,82 +89,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
-        // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
-        // (WriteCommand). The chat layer uses `path` for context URIs; the
-        // server handler resolves it to the package `file`/document id.
-        inputSchema: {
-          type: "object",
-          properties: {
-            command: {
-              type: "string",
-              enum: ["create", "view", "insert", "replace", "undo", "redo"],
-              description: "Command to run: create, view, insert, replace, undo, or redo.",
-            },
-            path: {
-              type: "string",
-              description:
-                "Context URI or bare manuscript path for the document. May include a #fragment for view/section targeting.",
-            },
-            content: {
-              type: "string",
-              description:
-                "Markdown content. Optional initial content for create; required for insert and replace; empty string deletes in replace.",
-            },
-            find: {
-              type: "string",
-              description: "Exact text to find for find-based insert/replace. Not a regex.",
-            },
-            overwrite: {
-              type: "boolean",
-              description:
-                "For create only: overwrite the document if it already exists instead of erroring.",
-            },
-            in: {
-              type: "string",
-              description:
-                "View range, replace target, or find scope (block hash, hash range, or #section).",
-            },
-            around: {
-              type: "string",
-              description: "Fuzzy scope around a known block hash for view/find operations.",
-            },
-            after: {
-              type: "string",
-              description: "Insert block content after this block hash.",
-            },
-            before: {
-              type: "string",
-              description: "Insert block content before this block hash.",
-            },
-            all: {
-              type: "boolean",
-              description: "Apply to all matches for find, or undo/redo all available turns.",
-            },
-            to: {
-              type: "string",
-              description:
-                "Undo/redo selector: a single write handle (for example w3), or the inclusive range end when from is also set.",
-            },
-            from: {
-              type: "string",
-              description:
-                "Undo/redo selector: inclusive range start write handle (for example w2). Requires to.",
-            },
-            last: {
-              type: "integer",
-              minimum: 1,
-              description: "Number of recent turns to undo or redo.",
-            },
-            format: {
-              type: "string",
-              enum: ["auto", "full", "outline"],
-              description: "View output format. Defaults to auto.",
-            },
-          },
-          required: ["command", "path"],
-          additionalProperties: false,
-        },
+          "Document edit tool. Use command=read to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
+        inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
       sequential: true,
@@ -119,7 +102,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "list",
         description:
-          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="view").',
+          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {
@@ -142,7 +125,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description:
-          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="view").',
+          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {

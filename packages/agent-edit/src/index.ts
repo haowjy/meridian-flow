@@ -34,24 +34,14 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
-export { createCodec, requiredBlockNamesForSchema } from "./codec/create-codec.js";
-export { markdownCodec } from "./codec/presets/markdown.js";
-export { mdxCodec } from "./codec/presets/mdx.js";
-export type {
-  Block,
-  BlockCodec,
-  Codec,
-  MarkAttrs,
-  MarkCodec,
-  ParseContext,
-  ParsedContent,
-  PMNode,
-  SerializeContext,
-  Span,
-} from "./codec/types.js";
-export { CodecParseError } from "./codec/types.js";
+export type { ConcurrentEditInfo } from "./apply/types.js";
+export type { AgentEditCodec } from "./codec-adapter.js";
+export { createAgentEditCodec } from "./codec-adapter.js";
+export type { Block, Span } from "./codec-types.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export type { BlockRef, DocHandle } from "./handles.js";
+export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
@@ -65,7 +55,8 @@ export {
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
-export type { AgentEditModel, DocumentModel } from "./ports/model.js";
+export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
+export type { SyncState, SyncStateStore } from "./ports/sync-state-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -86,12 +77,8 @@ export type {
   WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
-export type {
-  ComponentRegistry,
-  ComponentSpec,
-  EditorSpec,
-  PropSpec,
-} from "./registry/component-registry.js";
+export type { WriteCommandCategory } from "./tool/command-schema.js";
+export { WriteCommandSchema, writeCommandCategory } from "./tool/command-schema.js";
 export type {
   RedoResult,
   ResponseCommitDocumentResult,
@@ -106,6 +93,7 @@ export type {
   WriteErrorStatus,
   WriteFunction,
   WriteOutcome,
+  WriteResultBlock,
   WriteStatus,
 } from "./tool/types.js";
 export type { ReverseInput } from "./tool/write.js";

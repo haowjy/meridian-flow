@@ -2,19 +2,21 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import {
   type AgentEditCore,
+  createAgentEditCodec,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
   isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
-  mdxCodec,
   type ReversalStore,
+  type SyncStateStore,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -27,6 +29,7 @@ import { Err, Ok } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -84,6 +87,7 @@ export type CollabFacadeDeps = {
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
+  syncStateStore?: SyncStateStore;
 };
 
 type PendingAppend = {
@@ -96,6 +100,7 @@ const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
+  const syncStateStore = createDrizzleSyncStateStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -113,6 +118,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       boundHocuspocus = instance;
     },
     eventSink: deps.eventSink,
+    syncStateStore,
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -144,7 +150,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
-  const codec = mdxCodec({ schema });
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const agentEditCore: AgentEditCore = createAgentEditCore({
     journal: deps.journal,
@@ -154,6 +161,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     model,
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+    syncStateStore: deps.syncStateStore,
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
   const pendingAppends = new Map<number, PendingAppend>();
@@ -162,7 +170,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   let nextPendingId = 1;
 
   const markdownDocuments = createMarkdownDocumentEngine({
-    codec,
+    codec: markupCodec,
     model,
     journal: deps.journal,
     coordinator: deps.coordinator,

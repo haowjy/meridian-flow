@@ -16,9 +16,9 @@ describe("document renderer", () => {
     expect(full).toContain("|Alpha sword.");
 
     const headingHash = hashAt(doc, 2);
-    const section = renderer.selectViewBlocks(
+    const section = renderer.selectReadBlocks(
       doc,
-      { command: "view", file: `chapter.md#${headingHash}` },
+      { command: "read", file: `chapter.md#${headingHash}` },
       { filePath: "chapter.md", fragment: headingHash },
     );
 
@@ -29,7 +29,7 @@ describe("document renderer", () => {
     expect(sectionText).toContain("|Beta waits.");
 
     const outline = renderer.renderOutline(doc, model.getBlocks(doc), "chapter.md");
-    expect(outline).toContain(`write(command="view", file="chapter.md#${headingHash}")`);
+    expect(outline).toContain(`write(command="read", file="chapter.md#${headingHash}")`);
   });
 
   it("selects around windows with radius three and clamps at document edges", () => {
@@ -39,10 +39,10 @@ describe("document renderer", () => {
     const nearStartHash = hashAt(doc, 1);
     const nearEndHash = hashAt(doc, 7);
 
-    const middle = selectedViewText(renderer, doc, middleHash);
-    const middleWithHashPrefix = selectedViewText(renderer, doc, `#${middleHash}`);
-    const nearStart = selectedViewText(renderer, doc, nearStartHash);
-    const nearEnd = selectedViewText(renderer, doc, nearEndHash);
+    const middle = selectedReadText(renderer, doc, middleHash);
+    const middleWithHashPrefix = selectedReadText(renderer, doc, `#${middleHash}`);
+    const nearStart = selectedReadText(renderer, doc, nearStartHash);
+    const nearEnd = selectedReadText(renderer, doc, nearEndHash);
 
     expect(renderedBlockBodies(middle)).toEqual([
       "Block 2",
@@ -71,14 +71,14 @@ describe("document renderer", () => {
   });
 });
 
-function selectedViewText(
+function selectedReadText(
   renderer: ReturnType<typeof createDocumentRenderer>,
   doc: ReturnType<typeof createDoc>,
   around: string,
 ): string {
-  const selection = renderer.selectViewBlocks(
+  const selection = renderer.selectReadBlocks(
     doc,
-    { command: "view", file: "chapter.md", around },
+    { command: "read", file: "chapter.md", around },
     { filePath: "chapter.md" },
   );
   if (!selection.ok) throw new Error(selection.message);

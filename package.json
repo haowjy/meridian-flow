@@ -40,6 +40,7 @@
     "@meridian/database": "workspace:*",
     "@playwright/test": "^1.60.0",
     "@types/node": "catalog:",
+    "ajv": "^8.20.0",
     "drizzle-orm": "catalog:",
     "lefthook": "^2.1.8",
     "nx": "^22.7.3",

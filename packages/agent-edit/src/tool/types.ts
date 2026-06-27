@@ -1,90 +1,26 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
-import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
+import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { WriteResultBlock } from "./internal-result.js";
 
-export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
+export type { WriteResultBlock };
 
-export type ViewFormat = "auto" | "full" | "outline";
+import type { z } from "zod";
+import type { WriteCommandSchema } from "./command-schema.js";
 
-interface IdempotentCommand {
-  /** Host/tool-call idempotency key. Replays return the original plain-text response. */
-  tool_use_id?: string;
-}
-
-interface FileCommand extends IdempotentCommand {
-  /** Model-facing document path, optionally with a #fragment for view/replace scopes. */
-  file: string;
-  /** Host-side document identity. Omit only in standalone hosts where file is also the storage key. */
-  documentId?: string;
-}
-
-export type CreateCommand = FileCommand & {
-  command: "create";
-  content?: string;
-  /** When true, overwrites the document if it already exists instead of erroring. */
-  overwrite?: boolean;
-};
-
-export type ViewCommand = FileCommand & {
-  command: "view";
-  /** Continuation or explicit range (`a1b2..c3d4`, `a1b2..`) for view. */
-  in?: string;
-  /** Fuzzy view around a block hash. */
-  around?: string;
-  format?: ViewFormat;
-};
-
-export type InsertCommand = FileCommand & {
-  command: "insert";
-  content: string;
-  after?: string;
-  before?: string;
-  find?: string;
-  /** Scope for find-based insert; invalid without find. */
-  in?: string;
-  around?: string;
-  all?: boolean;
-};
-
-export type ReplaceCommand = FileCommand & {
-  command: "replace";
-  /** Replacement text. Empty string is deletion. */
-  content: string;
-  /** Target block/range without find; search scope with find. */
-  in?: string;
-  find?: string;
-  around?: string;
-  all?: boolean;
-};
-
-export type UndoCommand = FileCommand & {
-  command: "undo";
-  /** Single write handle, or range end when from is also set. */
-  to?: string;
-  /** Inclusive range start; requires to. */
-  from?: string;
-  last?: number;
-  all?: boolean;
-};
-
-export type RedoCommand = FileCommand & {
-  command: "redo";
-  /** Single write handle, or range end when from is also set. */
-  to?: string;
-  /** Inclusive range start; requires to. */
-  from?: string;
-  last?: number;
-  all?: boolean;
-};
-
-export type WriteCommand =
-  | CreateCommand
-  | ViewCommand
-  | InsertCommand
-  | ReplaceCommand
-  | UndoCommand
-  | RedoCommand;
+export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+export type WriteCommandName = WriteCommand["command"];
+export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
+export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
+export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
+export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
+export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
+export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
+export type ReadFormat = ReadCommand["format"];
+export type QueryWriteCommand = ReadCommand;
+export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
+export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
 export type WriteErrorStatus =
   | "not_found"
@@ -112,8 +48,10 @@ export interface WriteOutcome {
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
-  /** The exact LLM-facing text: status line, echo, concurrent edits, or view content. */
+  /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
   text: string;
+  /** Multi-block content for structured tool_result. When set, takes priority over text. */
+  content?: WriteResultBlock[];
 }
 
 /** Hidden host/session context; not part of the LLM command params. */
@@ -146,19 +84,10 @@ export type WriteRedoResult = RedoResult;
 export type TurnUndoResult = UndoResult;
 export type TurnRedoResult = RedoResult;
 
-export interface ResponseCommitWriteEcho {
-  writeId: string;
-  hunks: ApplyEchoHunk[];
-}
-
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
-  /** Adaptive post-commit echoes for staged writes, in original write order; suppressed writes are omitted. */
-  echo?: ResponseCommitWriteEcho[];
-  /** Exact model-facing text for the post-commit write echoes and concurrent-edit summary. */
-  text?: string;
 }
 
 export interface ResponseStagedCreateOutcome {
