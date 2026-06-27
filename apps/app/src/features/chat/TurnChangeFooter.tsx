@@ -9,26 +9,22 @@
 import { t } from "@lingui/core/macro";
 import type {
   DocumentReversalResult,
-  JsonValue,
+  ReversalOutcome,
   Turn,
   WriteStatus,
 } from "@meridian/contracts/protocol";
 import { ChevronDown, LoaderCircle, Redo2, Undo2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
-import type { ReversalDirection, WriteOutcome } from "@/client/api/reverse-api";
+import type { ReversalDirection } from "@/client/api/reverse-api";
 import {
   useReverseDocumentMutation,
   useReverseTurnMutation,
 } from "@/client/query/useReverseMutation";
+import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
-
-type WrittenDocument = {
-  path: string;
-  uri: string;
-};
+import { turnWrittenDocuments, type WrittenDocument } from "./turn-written-documents";
 
 export type TurnChangeFooterProps = {
   threadId: string;
@@ -77,7 +73,7 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
       });
       setRows((prev) => ({
         ...prev,
-        [doc.uri]: stateFromStatus(direction, outcome, current),
+        [doc.uri]: stateFromDocumentResult(direction, outcome.documents[0], current),
       }));
     } catch (error) {
       setRows((prev) => ({
@@ -97,11 +93,11 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
       setRows((prev) => {
         const next = { ...prev };
         for (const result of outcome.documents) {
-          next[result.uri] = stateFromStatus(turnDirection, result, prev[result.uri]);
+          next[result.uri] = stateFromDocumentResult(turnDirection, result, prev[result.uri]);
         }
         if (outcome.documents.length === 0) {
           for (const doc of documents) {
-            next[doc.uri] = stateFromStatus(turnDirection, outcome, prev[doc.uri]);
+            next[doc.uri] = stateFromOutcomeStatus(turnDirection, outcome, prev[doc.uri]);
           }
         }
         return next;
@@ -206,7 +202,7 @@ function DocumentName({
   document: WrittenDocument;
   onOpenContextUri: ((uri: string) => void) | null;
 }) {
-  const label = basename(displayPath(document.uri, document.path));
+  const label = basename(displayContextPath(document.uri, document.path));
   if (!onOpenContextUri) {
     return <span className="min-w-0 flex-1 truncate font-mono text-ink-strong">{label}</span>;
   }
@@ -221,57 +217,29 @@ function DocumentName({
   );
 }
 
-export function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
-  const documents = new Map<string, WrittenDocument>();
-  const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
-  for (const segment of groupDeliverySegments(sortedBlocks)) {
-    const tools =
-      segment.kind === "tool-run" ? segment.tools : segment.kind === "tool" ? [segment.tool] : [];
-    for (const tool of tools) {
-      const path = successfulWritePath(tool);
-      if (!path) continue;
-      const uri = resolveWriteUri(path);
-      if (!documents.has(uri)) {
-        documents.set(uri, { path, uri });
-      }
-    }
-  }
-  return [...documents.values()];
+function stateFromDocumentResult(
+  direction: ReversalDirection,
+  result: Pick<DocumentReversalResult, "status" | "text"> | undefined,
+  previous: RowState | undefined,
+): RowState {
+  if (!result) return stateFromStatus(direction, "internal_error", undefined, previous);
+  return stateFromStatus(direction, result.status, result.text, previous);
 }
 
-function resolveWriteUri(path: string): string {
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)) return path;
-  return `manuscript://${path.replace(/^\/+/, "")}`;
-}
-
-function successfulWritePath(tool: ToolView): string | null {
-  if (tool.toolName !== "write" && tool.toolName !== "edit") return null;
-  if (!writeResultSucceeded(tool)) return null;
-  const input = tool.input;
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const path = (input as Record<string, JsonValue>).path;
-  return typeof path === "string" && path.length > 0 ? path : null;
-}
-
-function writeResultSucceeded(tool: ToolView): boolean {
-  if (tool.status !== "complete" || tool.isError) return false;
-  const output = tool.output;
-  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
-  const result = output as Record<string, JsonValue>;
-  return result.status === "success" && result.isError !== true;
-}
-
-function displayPath(uri: string, fallback: string): string {
-  const match = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(.*)$/.exec(uri);
-  return match ? `/${match[1].replace(/^\/+/, "")}` : fallback;
+function stateFromOutcomeStatus(
+  direction: ReversalDirection,
+  outcome: Pick<ReversalOutcome, "status">,
+  previous: RowState | undefined,
+): RowState {
+  return stateFromStatus(direction, outcome.status, undefined, previous);
 }
 
 function stateFromStatus(
   direction: ReversalDirection,
-  result: Pick<WriteOutcome | DocumentReversalResult, "status" | "text">,
+  status: WriteStatus,
+  text: string | undefined,
   previous: RowState | undefined,
 ): RowState {
-  const { status, text } = result;
   const fallback = previous ?? { disposition: direction === "undo" ? "applied" : "reversed" };
   if (status === "reversed" || status === "reconciled") {
     return { disposition: direction === "undo" ? "reversed" : "applied" };

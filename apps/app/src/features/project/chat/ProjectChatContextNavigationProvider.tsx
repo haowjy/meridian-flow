@@ -5,10 +5,8 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback } from "react";
 
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { ChatContextNavigationProvider } from "@/features/chat/ChatContextNavigation";
-
-import { contextRouteTargetFromUri } from "./context-uri-route";
+import { contextRouteTargetFromUri } from "@/lib/context-uri";
 
 type SelectContextPath = (
   path: string,
@@ -17,17 +15,14 @@ type SelectContextPath = (
 ) => void;
 
 export function ProjectChatContextNavigationProvider({
-  projectId,
-  activeThreadId,
+  activeWorkId,
   onSelectContextPath,
   children,
 }: {
-  projectId: string;
-  activeThreadId: string | null;
+  activeWorkId: string | null;
   onSelectContextPath?: SelectContextPath;
   children: ReactNode;
 }) {
-  const activeWorkId = useContextWorkId(projectId, activeThreadId);
   const openContextUri = useCallback(
     (uri: string) => {
       if (!onSelectContextPath) return;
