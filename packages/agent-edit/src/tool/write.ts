@@ -20,6 +20,7 @@ import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { WriteResultBlock } from "./internal-result.js";
@@ -154,18 +155,25 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
 
   const write: WriteFunction = async (command, context = {}) => {
+    const parsed = WriteCommandSchema.safeParse(command);
+    const commandName = parsed.success ? parsed.data.command : fallbackCommandName(command);
+    if (!parsed.success) {
+      return toOutcome(commandName, status("invalid_write", writeSchemaError(parsed.error)));
+    }
+
+    const validCommand = parsed.data;
     const session = await resolveSession(context);
-    const toolUseId = command.tool_use_id ?? context.tool_use_id;
+    const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
     const cacheKey = toolUseId ? `${session.id}\u0000${toolUseId}` : undefined;
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
       if (cached !== undefined) return cached;
     }
 
-    const result = await dispatch(command, session, context).catch((cause: unknown) =>
+    const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
       internalError(cause),
     );
-    const outcome = toOutcome(command.command, result);
+    const outcome = toOutcome(validCommand.command, result);
     if (cacheKey) remember(cacheKey, outcome);
     return outcome;
   };
@@ -191,16 +199,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<InternalWriteResult> {
     switch (command.command) {
       case "read":
+        // Query command. Not pure: read rebuilds runtime and replays staged updates.
         return read(command, session, context);
       case "create":
         return create(command, session, context);
       case "insert":
       case "replace":
+        // Mutating commands lower to ResolvedEdit before applying.
         return mutate(command, session, context);
       case "undo":
-        return undoOrRedo(command, session, "undo", context);
       case "redo":
-        return undoOrRedo(command, session, "redo", context);
+        return undoOrRedo(command, session, command.command, context);
     }
   }
 
@@ -695,4 +704,31 @@ function agentMeta(turnId: string): UpdateMeta {
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
+}
+
+function fallbackCommandName(command: unknown): WriteCommand["command"] {
+  if (typeof command === "object" && command !== null && "command" in command) {
+    const value = (command as { command?: unknown }).command;
+    switch (value) {
+      case "create":
+      case "read":
+      case "insert":
+      case "replace":
+      case "undo":
+      case "redo":
+        return value;
+    }
+  }
+  return "read";
+}
+
+function writeSchemaError(error: {
+  issues: Array<{ path: PropertyKey[]; message: string }>;
+}): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+      return `${path}${issue.message}`;
+    })
+    .join("; ");
 }
