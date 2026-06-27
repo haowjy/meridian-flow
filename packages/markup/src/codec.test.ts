@@ -180,6 +180,49 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, "[a\\]b](https://x.test)");
   });
 
+  it("parses mixed task list item checked attrs", () => {
+    const doc = parsedDoc(codec, "- [x] a\n- plain\n- [ ] b\n");
+    const list = doc.firstChild;
+    expect(list?.type.name).toBe("bullet_list");
+    expect(
+      [...Array(list?.childCount ?? 0)].map((_, index) => list?.child(index).attrs.checked),
+    ).toEqual([true, null, false]);
+  });
+
+  it("parses GFM table headers, body cells, and per-column alignment", () => {
+    const doc = parsedDoc(
+      codec,
+      "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a | b | c |\n",
+    );
+    const table = doc.firstChild;
+    expect(table?.type.name).toBe("table");
+
+    const headerRow = table?.child(0);
+    const bodyRow = table?.child(1);
+    expect(
+      [...Array(headerRow?.childCount ?? 0)].map((_, index) => headerRow?.child(index).type.name),
+    ).toEqual(["table_header", "table_header", "table_header"]);
+    expect(
+      [...Array(bodyRow?.childCount ?? 0)].map((_, index) => bodyRow?.child(index).type.name),
+    ).toEqual(["table_cell", "table_cell", "table_cell"]);
+    expect(
+      [...Array(headerRow?.childCount ?? 0)].map(
+        (_, index) => headerRow?.child(index).attrs.alignment,
+      ),
+    ).toEqual(["left", null, "right"]);
+    expect(
+      [...Array(bodyRow?.childCount ?? 0)].map((_, index) => bodyRow?.child(index).attrs.alignment),
+    ).toEqual(["left", null, "right"]);
+  });
+
+  it("parses strikethrough as strike marks", () => {
+    const doc = parsedDoc(codec, "~~gone~~");
+    const text = doc.firstChild?.firstChild;
+    expect(text?.type.name).toBe("text");
+    expect(text?.text).toBe("gone");
+    expect(text?.marks.map((mark) => mark.type.name)).toEqual(["strike"]);
+  });
+
   it("stabilizes GFM tables with alignment, empty cells, escaped pipes, and strike", () => {
     expectStable(
       codec,
