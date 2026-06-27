@@ -200,6 +200,10 @@ function assertHeadSchemaCurrent(docId: string, storedVersion: number | null): v
   }
 }
 
+async function assertReadableHead(db: JournalDb, docId: string): Promise<void> {
+  assertHeadSchemaCurrent(docId, await readHeadSchemaVersion(db, docId));
+}
+
 async function upsertHead(
   db: JournalDb,
   documentId: string,
@@ -636,7 +640,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       docId,
       opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
     ): Promise<JournalSnapshot> {
-      assertHeadSchemaCurrent(docId, await readHeadSchemaVersion(db, docId));
+      await assertReadableHead(db, docId);
 
       const latest = await latestCheckpoint(db, docId);
       const fromCheckpoint = opts.fromCheckpoint ?? true;
@@ -858,6 +862,8 @@ export function createServerDocumentLifecycle(
 ): DocumentLifecycle {
   return {
     async ensureDocument(docId) {
+      // Never stamp a head before verifying the stored head is not stale.
+      await assertReadableHead(db, docId);
       const snapshot = await journal.read(docId);
       await upsertHead(db, docId);
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
