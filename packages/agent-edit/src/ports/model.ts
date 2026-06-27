@@ -59,6 +59,15 @@ export interface DocumentModel {
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
 
+  /** Encode the document's current CRDT state vector (sync cursor). */
+  encodeStateVector(doc: DocHandle): Uint8Array;
+
+  /** Apply a concurrent CRDT update with its persisted origin metadata. */
+  applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
+
+  /** True if `after` reflects CRDT progress past `before`. */
+  stateVectorAdvanced(before: Uint8Array, after: Uint8Array): boolean;
+
   /**
    * Apply a text edit within a block (Tier 1 / Tier 2 routing).
    * Mutates doc in place; span must refer to valid offsets in getText(block).

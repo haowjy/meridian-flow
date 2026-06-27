@@ -1,9 +1,6 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
-import * as Y from "yjs";
-
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
-import { unwrapDoc } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
 
@@ -89,7 +86,7 @@ export function applyConcurrentUpdates(
   codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
-  syncStateVector: Uint8Array = Y.encodeStateVector(unwrapDoc(doc)),
+  syncStateVector: Uint8Array = model.encodeStateVector(doc),
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
@@ -97,8 +94,8 @@ export function applyConcurrentUpdates(
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
-    Y.applyUpdate(unwrapDoc(doc), item.update, item.origin);
-    if (!stateVectorAdvanced(syncStateVector, Y.encodeStateVector(unwrapDoc(doc)))) continue;
+    model.applyUpdate(doc, item.update, item.origin);
+    if (!model.stateVectorAdvanced(syncStateVector, model.encodeStateVector(doc))) continue;
     const after = snapshotBlocks(doc, model, codec);
     const diff = diffSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
@@ -246,15 +243,6 @@ function truncateWords(text: string, maxWords = 8): string {
   const words = text.split(/\s+/).filter((word) => word.length > 0);
   if (words.length <= maxWords) return text;
   return `${words.slice(0, maxWords).join(" ")}...`;
-}
-
-function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array): boolean {
-  const before = Y.decodeStateVector(beforeVector);
-  const after = Y.decodeStateVector(afterVector);
-  for (const [client, clock] of after) {
-    if (clock > (before.get(client) ?? 0)) return true;
-  }
-  return false;
 }
 
 function orderedHashes(
