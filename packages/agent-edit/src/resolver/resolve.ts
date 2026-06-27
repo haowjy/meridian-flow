@@ -1,10 +1,9 @@
 import { CodecParseError, type ParsedContent } from "@meridian/markup";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
-import type { DocHandle } from "../doc-handle.js";
 import type { DocumentAddress } from "../document-address.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
   findTextMatches,

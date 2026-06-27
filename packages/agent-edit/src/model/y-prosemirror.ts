@@ -2,9 +2,10 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
+import type { BlockRef } from "../handles.js";
+import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type { AgentEditModel, InlineReplacementResult, TextRun } from "../ports/model.js";
 import {
   blockHashesForDoc,
@@ -13,8 +14,6 @@ import {
   isLiveXmlElement,
   lookupBlockHash,
 } from "./block-hash.js";
-import { toRef, unwrapBlock } from "./block-ref.js";
-import { unwrapDoc } from "./doc-handle.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 interface TextSegment {
@@ -47,12 +46,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     lookupBlock(doc, hash) {
       const lookup = lookupBlockHash(unwrapDoc(doc), hash);
-      if (!lookup.ok) {
-        return lookup.matches
-          ? { ok: false, reason: lookup.reason, matches: lookup.matches.map(toRef) }
-          : { ok: false, reason: lookup.reason };
-      }
-      return { ok: true, hash: lookup.hash, block: toRef(lookup.block) };
+      if (!lookup.ok) return { ok: false, reason: lookup.reason };
+      return { ok: true, block: toRef(lookup.block) };
     },
 
     isLive(block) {

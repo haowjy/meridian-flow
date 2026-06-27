@@ -1,4 +1,4 @@
-import type { BlockRef } from "../block-ref.js";
+import type { BlockRef } from "../handles.js";
 
 export interface ResolvedSpan {
   start: number;

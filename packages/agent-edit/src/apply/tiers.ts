@@ -1,10 +1,9 @@
 // Three-tier apply path for resolved agent edits.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
-import type { DocHandle } from "../doc-handle.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
 import {
   applyConcurrentUpdates,
