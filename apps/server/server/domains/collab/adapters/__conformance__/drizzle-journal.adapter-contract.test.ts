@@ -29,6 +29,7 @@ const CONCURRENT_TURNS = [
 ] as const;
 const MISSING_THREAD_ID = "00000000-0000-4000-8000-0000000002ff";
 const STALE_SCHEMA_DOC_ID = "00000000-0000-4000-8000-000000000213";
+const NEWER_SCHEMA_DOC_ID = "00000000-0000-4000-8000-000000000214";
 const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -584,6 +585,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .sort((a, b) => a - b);
       expect(wIds).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    it("does not decrease head schema_version on upsert (monotonic fence)", async () => {
+      const newerVersion = COLLAB_SCHEMA_VERSION + 1;
+
+      await db.insert(documents).values({
+        id: NEWER_SCHEMA_DOC_ID,
+        contextSourceId: CONTEXT_SOURCE_ID,
+        name: "newer-schema",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db.insert(documentYjsHeads).values({
+        documentId: NEWER_SCHEMA_DOC_ID,
+        schemaVersion: newerVersion,
+        latestUpdateSeq: 0,
+      });
+
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+      const update = appendText(doc, "Alpha");
+      const seq = await journal.append(NEWER_SCHEMA_DOC_ID, update, { origin: "system", seq: 0 });
+      await journal.checkpoint(NEWER_SCHEMA_DOC_ID, Y.encodeStateAsUpdate(doc), seq);
+
+      const [newerHead] = await db
+        .select({ schemaVersion: documentYjsHeads.schemaVersion })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, NEWER_SCHEMA_DOC_ID));
+      expect(newerHead?.schemaVersion).toBe(newerVersion);
+
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), seq);
+      const [currentHead] = await db
+        .select({ schemaVersion: documentYjsHeads.schemaVersion })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, DOC_ID));
+      expect(currentHead?.schemaVersion).toBe(COLLAB_SCHEMA_VERSION);
     });
 
     it("throws StaleDocumentSchemaError when head schema_version is older than current", async () => {
