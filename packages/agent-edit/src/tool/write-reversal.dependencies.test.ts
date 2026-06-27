@@ -173,7 +173,7 @@ describe("write reversal dependencies", () => {
     expect(outcomeText(undo)).not.toMatch(/document|thread|undo update seq|Yjs|struct|delete set/i);
     expect(blockTexts(live)).toEqual(["Base."]);
   });
-  it("still refuses sword→blade→saber after undo/redo cycling the dependent group", async () => {
+  it("expands sword→blade→saber after undo/redo cycling the dependent group", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
@@ -196,9 +196,9 @@ describe("write reversal dependencies", () => {
       context,
     );
 
-    expectOutcome(undoEarlier, "cant_undo_dependent", true);
-    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
-    expect(scenario.blockTexts()).toEqual(["Alpha saber."]);
+    expectOutcome(undoEarlier, "reconciled");
+    expect(outcomeText(undoEarlier)).toContain("undo: 2 edit(s)");
+    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
   });
 
   it("does not silently partial-undo a diverged turn scope", async () => {

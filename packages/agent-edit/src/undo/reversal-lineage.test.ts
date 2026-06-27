@@ -8,6 +8,7 @@ import {
   activeClosureForHandles,
   compatibleLineageGroups,
   evaluateLineageDependencies,
+  expandActiveClosureToCompatibleBoundary,
   seqToHandleFromMutations,
 } from "./reversal-lineage.js";
 
@@ -25,6 +26,29 @@ describe("reversal lineage", () => {
     expect(closure && [...closure.targetSeqs]).toEqual([4]);
     expect(closure && [...closure.lineageSeqs]).toEqual([1, 3, 4]);
     expect(closure?.earliestForwardSeq).toBe(1);
+  });
+
+  it("expands selected handles across a shared active redo boundary", () => {
+    const rows = new Map([
+      ["w1", [mutation("w1", 1)]],
+      ["w2", [mutation("w2", 2)]],
+      ["w3", [mutation("w3", 3)]],
+    ]);
+    const reversals = [
+      reversal("w1", "redone", 5, 8),
+      reversal("w2", "redone", 5, 8),
+      reversal("w3", "redone", 6, 9),
+    ];
+
+    const closure = expandActiveClosureToCompatibleBoundary({
+      selectedHandles: ["w2"],
+      candidateHandles: ["w1", "w2", "w3"],
+      rowsByHandle: rows,
+      reversals,
+    });
+
+    expect(closure?.handles).toEqual(["w1", "w2"]);
+    expect(closure && [...closure.targetSeqs]).toEqual([8]);
   });
 
   it("partitions selected handles by active cycle boundary", () => {

@@ -8,10 +8,10 @@ import {
 } from "../ports/update-journal.js";
 import { evaluateRedoEligibility } from "./reconstruction.js";
 import {
-  activeClosureForHandles,
   type CompatibleLineageGroup,
   compatibleLineageGroups,
   evaluateLineageDependencies,
+  expandActiveClosureToCompatibleBoundary,
   seqToHandleFromMutations,
 } from "./reversal-lineage.js";
 
@@ -59,25 +59,33 @@ export async function planUndo(input: {
   if (!selected.ok) return selected;
   if (selected.writes.length === 0) return { ok: false, status: "nothing_to_undo" };
 
+  const candidateHandles = handlesInState(state, selected.writeIds);
   const retained = await retainedRowsForHandles(
     input.reversalStore,
     input.docId,
     input.threadId,
-    selected.writeIds,
+    candidateHandles,
     state.snapshot,
     "active",
   );
-  if (retained.rows.length === 0) return { ok: false, status: "nothing_to_undo" };
+  const retainedSelectedWriteIds = selected.writeIds.filter((handle) =>
+    retained.writeIds.includes(handle),
+  );
+  if (retainedSelectedWriteIds.length === 0) return { ok: false, status: "nothing_to_undo" };
 
+  const groupHandles = isScopeSelection(input.selection)
+    ? retainedSelectedWriteIds
+    : retained.writeIds;
   const groups = compatibleLineageGroups({
-    handles: retained.writeIds,
+    handles: groupHandles,
     rowsByHandle: retained.rowsByHandle,
     reversals: state.reversals,
   });
   const selectedGroup = isScopeSelection(input.selection)
     ? groups[0]
-    : activeClosureForHandles({
-        handles: retained.writeIds,
+    : expandActiveClosureToCompatibleBoundary({
+        selectedHandles: retainedSelectedWriteIds,
+        candidateHandles: retained.writeIds,
         rowsByHandle: retained.rowsByHandle,
         reversals: state.reversals,
       });
@@ -91,12 +99,12 @@ export async function planUndo(input: {
   const allRowsByHandle = await input.reversalStore.mutationsForWrites(
     input.docId,
     input.threadId,
-    handlesInState(state, retained.writeIds),
+    candidateHandles,
   );
   const reversalOpSeqs = await input.reversalStore.reversalOpSeqsForHandles(
     input.docId,
     input.threadId,
-    selectedGroup.handles,
+    candidateHandles,
   );
   const dependency = evaluateLineageDependencies({
     snapshot: state.snapshot,

@@ -75,6 +75,47 @@ export function activeClosureForHandles(input: {
   };
 }
 
+export function expandActiveClosureToCompatibleBoundary(input: {
+  selectedHandles: readonly string[];
+  candidateHandles: readonly string[];
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
+  reversals: readonly ReversalRecord[];
+}): ActiveClosure | undefined {
+  const states = lineageStatesForHandles({
+    handles: input.candidateHandles,
+    rowsByHandle: input.rowsByHandle,
+    reversals: input.reversals,
+  });
+  const statesByHandle = new Map(states.map((state) => [state.handle, state]));
+  const selected = new Set(input.selectedHandles);
+  const boundarySeqs = new Set<number>();
+
+  for (const handle of selected) {
+    const state = statesByHandle.get(handle);
+    if (state?.activeRedoSeq !== undefined) boundarySeqs.add(state.activeRedoSeq);
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const state of states) {
+      if (state.activeRedoSeq === undefined || !boundarySeqs.has(state.activeRedoSeq)) continue;
+      if (!selected.has(state.handle)) {
+        selected.add(state.handle);
+        changed = true;
+      }
+    }
+  }
+
+  const handles = sortWriteHandles([...selected]);
+  const closure = activeClosureForHandles({
+    handles,
+    rowsByHandle: input.rowsByHandle,
+    reversals: input.reversals,
+  });
+  return closure;
+}
+
 export function lineageSeqsForHandles(input: {
   handles: readonly string[];
   rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>;
