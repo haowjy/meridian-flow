@@ -49,6 +49,31 @@ describe("TurnChangeFooter", () => {
     container.remove();
   });
 
+  it("counts only write/edit calls with successful tool results", () => {
+    renderFooter(
+      turnWithBlocks([
+        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1"),
+        toolResultBlock(2, "call-1", "success"),
+        toolUseBlock(3, "edit", "/missing.mdx", "call-2"),
+        toolResultBlock(4, "call-2", "not_found"),
+      ]),
+    );
+
+    expect(button("📝 1 file changed")).toBeDefined();
+    expect(container.textContent).not.toContain("missing.mdx");
+  });
+
+  it("does not render when every write/edit tool result failed", () => {
+    renderFooter(
+      turnWithBlocks([
+        toolUseBlock(1, "edit", "/missing.mdx", "call-1"),
+        toolResultBlock(2, "call-1", "invalid_write"),
+      ]),
+    );
+
+    expect(container.textContent).toBe("");
+  });
+
   it("flips a document Undo action to Redo after the reverse succeeds", async () => {
     documentMutateAsync.mockResolvedValue({ status: "reversed" });
     renderFooter(turnWithPaths(["/chapter-1.mdx"]));
@@ -161,7 +186,16 @@ describe("TurnChangeFooter", () => {
 });
 
 function turnWithPaths(paths: string[]): Turn {
-  return turnWithBlocks(paths.map((path, index) => toolUseBlock(index + 1, "write", path)));
+  return turnWithBlocks(
+    paths.flatMap((path, index) => {
+      const sequence = index * 2 + 1;
+      const toolCallId = `call-${index + 1}`;
+      return [
+        toolUseBlock(sequence, "write", path, toolCallId),
+        toolResultBlock(sequence + 1, toolCallId, "success"),
+      ];
+    }),
+  );
 }
 
 function turnWithBlocks(blocks: Block[]): Turn {
@@ -185,14 +219,41 @@ function turnWithBlocks(blocks: Block[]): Turn {
   };
 }
 
-function toolUseBlock(sequence: number, toolName: string, path: string): Block {
+function toolUseBlock(
+  sequence: number,
+  toolName: string,
+  path: string,
+  toolCallId = `call-${sequence}`,
+): Block {
   return {
     id: `block-${sequence}`,
     turnId: "turn-1",
     responseId: null,
     blockType: "tool_use",
     sequence,
-    content: { toolName, input: { path } },
+    content: { toolCallId, toolName, input: { path } },
+    status: "complete",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function toolResultBlock(
+  sequence: number,
+  toolCallId: string,
+  status: "success" | "not_found" | "invalid_write",
+): Block {
+  return {
+    id: `block-${sequence}`,
+    turnId: "turn-1",
+    responseId: null,
+    blockType: "tool_result",
+    sequence,
+    content: {
+      toolCallId,
+      toolName: "write",
+      output: { status, isError: status !== "success", text: `status: ${status}` },
+      isError: status !== "success",
+    },
     status: "complete",
     createdAt: "2026-01-01T00:00:00.000Z",
   };

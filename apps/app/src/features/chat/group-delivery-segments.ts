@@ -178,7 +178,7 @@ function toolCallIdForResult(block: Block): string | null {
 
 function readToolFields(content: Record<string, JsonValue>): ToolFields {
   return {
-    toolCallId: stringField(content, "toolCallId"),
+    toolCallId: stringField(content, "toolCallId") ?? stringField(content, "toolUseId"),
     toolName: stringField(content, "toolName"),
     input: jsonField(content, "input"),
     output: jsonField(content, "output"),
