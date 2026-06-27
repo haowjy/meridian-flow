@@ -38,23 +38,42 @@ describe("createToolRegistry core tools", () => {
       expect(registration?.execution.type).toBe("server");
     }
 
-    expect(registry.getRegistration("write")?.definition.inputSchema).toMatchObject({
-      required: ["command", "path"],
-      properties: {
-        command: { enum: ["create", "read", "insert", "replace", "undo", "redo"] },
-        path: { type: "string" },
-        content: { type: "string" },
-        find: { type: "string" },
-        in: { type: "string" },
-        around: { type: "string" },
-        after: { type: "string" },
-        before: { type: "string" },
-        all: { type: "boolean" },
-        to: { type: "string" },
-        from: { type: "string" },
-        last: { type: "integer", minimum: 1 },
-        format: { enum: ["auto", "full", "outline"] },
-      },
+    const writeSchema = registry.getRegistration("write")?.definition.inputSchema as {
+      oneOf?: Array<{
+        required?: string[];
+        additionalProperties?: boolean;
+        properties?: Record<string, unknown>;
+      }>;
+    };
+    expect(writeSchema.oneOf?.map((variant) => variant.properties?.command)).toEqual([
+      { type: "string", const: "create" },
+      { type: "string", const: "read" },
+      { type: "string", const: "insert" },
+      { type: "string", const: "replace" },
+      { type: "string", const: "undo" },
+      { type: "string", const: "redo" },
+    ]);
+    for (const variant of writeSchema.oneOf ?? []) {
+      expect(variant.required).toContain("command");
+      expect(variant.required).toContain("path");
+      expect(variant.additionalProperties).toBe(false);
+      expect(variant.properties).toHaveProperty("path");
+      expect(variant.properties).not.toHaveProperty("file");
+      expect(variant.properties).not.toHaveProperty("documentId");
+      expect(variant.properties).not.toHaveProperty("tool_use_id");
+    }
+    expect(writeSchema.oneOf?.[1]?.properties).toMatchObject({
+      in: { anyOf: expect.arrayContaining([{ type: "string" }, { type: "number" }]) },
+      around: { type: "string" },
+      format: { enum: ["auto", "full", "outline"] },
+    });
+    expect(writeSchema.oneOf?.[2]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[3]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[4]?.properties).toMatchObject({
+      to: { type: "string" },
+      from: { type: "string" },
+      last: { type: "integer", minimum: 1 },
+      all: { type: "boolean" },
     });
     expect(registry.getRegistration("list")?.definition.inputSchema).toMatchObject({
       required: ["path"],

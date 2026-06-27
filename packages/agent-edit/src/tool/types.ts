@@ -6,88 +6,21 @@ import type { WriteResultBlock } from "./internal-result.js";
 
 export type { WriteResultBlock };
 
-export type WriteCommandName = "create" | "read" | "insert" | "replace" | "undo" | "redo";
+import type { z } from "zod";
+import type { WriteCommandSchema } from "./command-schema.js";
 
-export type ReadFormat = "auto" | "full" | "outline";
-
-interface IdempotentCommand {
-  /** Host/tool-call idempotency key. Replays return the original plain-text response. */
-  tool_use_id?: string;
-}
-
-interface FileCommand extends IdempotentCommand {
-  /** Model-facing document path, optionally with a #fragment for read/replace scopes. */
-  file: string;
-  /** Host-side document identity. Omit only in standalone hosts where file is also the storage key. */
-  documentId?: string;
-}
-
-export type CreateCommand = FileCommand & {
-  command: "create";
-  content?: string;
-  /** When true, overwrites the document if it already exists instead of erroring. */
-  overwrite?: boolean;
-};
-
-export type ReadCommand = FileCommand & {
-  command: "read";
-  /** Continuation or explicit range (`a1b2..c3d4`, `a1b2..`) for read. */
-  in?: string;
-  /** Fuzzy read around a block hash. */
-  around?: string;
-  format?: ReadFormat;
-};
-
-export type InsertCommand = FileCommand & {
-  command: "insert";
-  content: string;
-  after?: string;
-  before?: string;
-  find?: string;
-  /** Scope for find-based insert; invalid without find. */
-  in?: string;
-  around?: string;
-  all?: boolean;
-};
-
-export type ReplaceCommand = FileCommand & {
-  command: "replace";
-  /** Replacement text. Empty string is deletion. */
-  content: string;
-  /** Target block/range without find; search scope with find. */
-  in?: string;
-  find?: string;
-  around?: string;
-  all?: boolean;
-};
-
-export type UndoCommand = FileCommand & {
-  command: "undo";
-  /** Single write handle, or range end when from is also set. */
-  to?: string;
-  /** Inclusive range start; requires to. */
-  from?: string;
-  last?: number;
-  all?: boolean;
-};
-
-export type RedoCommand = FileCommand & {
-  command: "redo";
-  /** Single write handle, or range end when from is also set. */
-  to?: string;
-  /** Inclusive range start; requires to. */
-  from?: string;
-  last?: number;
-  all?: boolean;
-};
-
-export type WriteCommand =
-  | CreateCommand
-  | ReadCommand
-  | InsertCommand
-  | ReplaceCommand
-  | UndoCommand
-  | RedoCommand;
+export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+export type WriteCommandName = WriteCommand["command"];
+export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
+export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
+export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
+export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
+export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
+export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
+export type ReadFormat = ReadCommand["format"];
+export type QueryWriteCommand = ReadCommand;
+export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
+export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
 export type WriteErrorStatus =
   | "not_found"
