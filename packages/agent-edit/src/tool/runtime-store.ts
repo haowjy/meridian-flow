@@ -213,8 +213,8 @@ export function createRuntimeStore(deps: {
     }
   }
 
-  async function syncLocalFromLive(
-    session: ActorSession,
+  async function mergeLiveIntoRuntime(
+    _session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
@@ -235,8 +235,47 @@ export function createRuntimeStore(deps: {
       },
     );
     if (isInternalWriteResult(response)) return { ok: false, response };
+    return { ok: true };
+  }
+
+  async function syncLocalFromLive(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+    commandName: WriteCommand["command"],
+  ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
+    const merged = await mergeLiveIntoRuntime(session, docId, runtime, commandName);
+    if (!merged.ok) return merged;
     markSynced(session, docId, runtime);
     return { ok: true };
+  }
+
+  async function hydrateFromPersistedRestart(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+    persisted: {
+      stateVector: Uint8Array;
+      syncedSnapshot: Uint8Array;
+      committedSnapshot: Uint8Array;
+    },
+  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
+    const restored = createRuntimeDoc();
+    Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
+    runtime.doc = restored;
+    runtimeDocs.set(runtimeKey(session, docId), runtime);
+
+    const merged = await mergeLiveIntoRuntime(session, docId, runtime, "read");
+    if (!merged.ok) return merged;
+
+    const stateVector = Y.encodeStateVector(runtime.doc);
+    const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    session.documents.set(docId, {
+      stateVector,
+      committedSnapshot: persisted.committedSnapshot,
+    });
+    persistSyncState(session, docId, stateVector, syncedSnapshot, persisted.committedSnapshot);
+    return { ok: true, stateVector };
   }
 
   async function requireSynced(
@@ -245,8 +284,6 @@ export function createRuntimeStore(deps: {
     filePath = docId,
     runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    // If the doc needs recovery (invalidated/evicted), don't use stale state
-    // — force a read to rebuild from live/journal.
     if (docsNeedingRecovery.has(docId)) {
       return {
         ok: false,
@@ -262,27 +299,7 @@ export function createRuntimeStore(deps: {
 
     const persisted = await deps.syncStateStore?.load(docId, session.threadId);
     if (persisted) {
-      // Restore runtime from the SYNCED snapshot (which matches stateVector),
-      // not the committed snapshot (which is older — detection baseline only).
-      if (runtime) {
-        const restored = createRuntimeDoc();
-        Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
-        runtime.doc = restored;
-        runtimeDocs.set(runtimeKey(session, docId), runtime);
-        // Persisted state is a fast-start baseline only — merge live truth before mutate.
-        const reconciled = await syncLocalFromLive(session, docId, runtime, "read");
-        if (!reconciled.ok) return reconciled;
-        // markSynced (inside syncLocalFromLive) seeded session.documents with a synthesized
-        // committedSnapshot; restore the durable cross-restart detection baseline.
-        const synced = session.documents.get(docId);
-        if (synced) {
-          session.documents.set(docId, {
-            stateVector: synced.stateVector,
-            committedSnapshot: persisted.committedSnapshot,
-          });
-        }
-        return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
-      }
+      if (runtime) return hydrateFromPersistedRestart(session, docId, runtime, persisted);
       session.documents.set(docId, {
         stateVector: persisted.stateVector,
         committedSnapshot: persisted.committedSnapshot,
