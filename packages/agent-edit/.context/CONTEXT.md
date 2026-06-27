@@ -33,6 +33,13 @@ for the same docId (KeyedMutex on server, process-level lock on desktop).
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
 
+### UndoNotificationPort (`src/tool/write-reversal.ts`)
+Optional host callback for user-triggered reversal delivery. Agent-edit passes
+`threadId`, `docId`, `turnId`, write handles, and direction after a successful
+user-actor undo/redo persist; hosts resolve `docId` to any product URI outside
+the package. Agent-actor reversals and hosts without the port keep the old
+behavior.
+
 ### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
 Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
 brings a live document into existence so `DocumentCoordinator.withDocument(docId)`

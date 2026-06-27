@@ -50,6 +50,13 @@
       "when": 1782580000000,
       "tag": "0006_agent_edit_thread_turn_index",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782577356032,
+      "tag": "0007_magical_meggan",
+      "breakpoints": true
     }
   ]
 }
