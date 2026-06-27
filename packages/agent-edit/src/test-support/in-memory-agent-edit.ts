@@ -387,13 +387,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   ): JournalSnapshot {
     const entry = this.entry(docId);
     const fromCheckpoint = opts.fromCheckpoint ?? true;
-    const checkpointUpToSeq = fromCheckpoint ? (entry.checkpoint?.upToSeq ?? 0) : 0;
     const checkpoint = fromCheckpoint
       ? entry.checkpoint
-      : entry.checkpoints
-          .filter((candidate) => candidate.upToSeq === 0)
-          .sort((left, right) => right.upToSeq - left.upToSeq)
-          .at(0);
+      : this.selectReconstructionCheckpoint(entry);
+    const checkpointUpToSeq = checkpoint?.upToSeq ?? 0;
     return {
       checkpoint: checkpoint ? copyBytes(checkpoint.state) : null,
       updates: entry.updates
@@ -471,6 +468,16 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
 
   debugEntry(docId: string): JournalEntry | undefined {
     return this.data.get(docId);
+  }
+
+  private selectReconstructionCheckpoint(entry: JournalEntry): StoredCheckpoint | null {
+    const minRetainedSeq = Math.min(...entry.updates.map((update) => update.seq));
+    let selected: StoredCheckpoint | null = null;
+    for (const checkpoint of entry.checkpoints) {
+      if (checkpoint.upToSeq >= minRetainedSeq) continue;
+      if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
+    }
+    return selected ?? entry.checkpoint;
   }
 
   private appendMutationSync(
