@@ -234,8 +234,8 @@ importers:
         specifier: ^2.3.0
         version: 2.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react-virtuoso:
-        specifier: ^4.18.9
-        version: 4.18.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 4.18.7
+        version: 4.18.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       streamdown:
         specifier: ^2.5.0
         version: 2.5.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -5352,8 +5352,8 @@ packages:
       '@types/react':
         optional: true
 
-  react-virtuoso@4.18.9:
-    resolution: {integrity: sha512-hnS+4ip23UfMOAbiEfkpUu9OHau9SAYWgu3fUcKKnCmngV4eorkPSMm7/4XzjLqj4EKwIXk6Jeyd1azIbVnMkQ==}
+  react-virtuoso@4.18.7:
+    resolution: {integrity: sha512-xNF5zDGEEIMB7cKwcen/pLig0YDf6OnfFrVgKFa7sHPf9fRem0CaLshyObbBcP88jzn0enavL39EgplgdyT21g==}
     peerDependencies:
       react: '>=16 || >=17 || >= 18 || >= 19'
       react-dom: '>=16 || >=17 || >= 18 || >=19'
@@ -11255,7 +11255,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
-  react-virtuoso@4.18.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  react-virtuoso@4.18.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)

@@ -65,7 +65,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-reverse-portal": "^2.3.0",
-    "react-virtuoso": "^4.18.9",
+    "react-virtuoso": "4.18.7",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.6.0",
     "y-indexeddb": "9.0.12",
