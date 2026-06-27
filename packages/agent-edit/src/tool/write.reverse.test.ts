@@ -284,7 +284,7 @@ describe("write host reverse", () => {
     const records: Array<{
       threadId: string;
       writeHandles: string[];
-      turnId: string;
+      writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
       docId: string;
       direction: "undo" | "redo";
     }> = [];
@@ -322,7 +322,7 @@ describe("write host reverse", () => {
       {
         threadId: THREAD_ID,
         writeHandles: ["w1"],
-        turnId: "turn-user-notification",
+        writeHandleTurns: [{ writeHandle: "w1", turnId: "turn-user-notification" }],
         docId: "chapter.md",
         direction: "undo",
       },
@@ -401,7 +401,7 @@ describe("write host reverse", () => {
         expect.objectContaining({
           threadId: THREAD_ID,
           docId: "chapter.md",
-          turnId: "turn-notification-failure",
+          representativeTurnId: "turn-notification-failure",
           direction: "undo",
           writeHandleCount: 1,
           cause: "notification insert failed",

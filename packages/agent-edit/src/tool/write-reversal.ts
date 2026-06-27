@@ -26,7 +26,7 @@ export interface UndoNotificationPort {
   record(input: {
     threadId: string;
     writeHandles: string[];
-    turnId: string;
+    writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
     docId: string;
     direction: "undo" | "redo";
   }): Promise<void>;
@@ -372,22 +372,25 @@ export function createWriteReversal(deps: {
     actor: ReversalActor;
   }): Promise<{ ok: true } | { ok: false }> {
     if (input.direction === "undo") {
-      const record: ReversalRecord = {
+      const turnByHandle = new Map(
+        input.plan.writeTurnIds.map((entry) => [entry.writeHandle, entry.turnId]),
+      );
+      const records: ReversalRecord[] = input.plan.writeIds.map((writeId) => ({
         documentId: input.docId,
-        turnId: input.plan.turnId,
+        turnId: turnByHandle.get(writeId) ?? input.plan.turnId,
         threadId: input.threadId,
-        writeIds: input.plan.writeIds,
+        writeIds: [writeId],
         status: "reversed",
         undoUpdateSeq: 0,
         reversedAt: new Date(),
         ...(input.actor.type === "user" ? { reversedByUserId: input.actor.userId } : {}),
-      };
-      await reversalStore.persistUndo(input.docId, input.update, [record], input.actor);
+      }));
+      await reversalStore.persistUndo(input.docId, input.update, records, input.actor);
       if (input.actor.type === "user") {
         await recordUndoNotification({
           threadId: input.threadId,
           writeHandles: [...input.plan.writeIds],
-          turnId: input.plan.turnId,
+          writeHandleTurns: input.plan.writeTurnIds,
           docId: input.docId,
           direction: input.direction,
         });
@@ -407,7 +410,7 @@ export function createWriteReversal(deps: {
       await recordUndoNotification({
         threadId: input.threadId,
         writeHandles: [...input.plan.writeIds],
-        turnId: input.plan.turnId,
+        writeHandleTurns: input.plan.writeTurnIds,
         docId: input.docId,
         direction: input.direction,
       });
@@ -422,7 +425,7 @@ export function createWriteReversal(deps: {
       console.error("agent-edit undo notification recording failed", {
         threadId: input.threadId,
         docId: input.docId,
-        turnId: input.turnId,
+        representativeTurnId: representativeTurnId(input.writeHandleTurns),
         direction: input.direction,
         writeHandleCount: input.writeHandles.length,
         cause: formatCause(cause),
@@ -433,6 +436,12 @@ export function createWriteReversal(deps: {
   function invalidateRuntimeThread(docId: string, threadId: string): void {
     runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
   }
+}
+
+function representativeTurnId(
+  writeHandleTurns: readonly { writeHandle: string; turnId: string }[],
+): string | undefined {
+  return writeHandleTurns[0]?.turnId;
 }
 
 function formatDependentUndoRefusal(

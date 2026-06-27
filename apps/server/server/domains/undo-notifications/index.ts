@@ -17,7 +17,7 @@ export interface PendingUndoNotificationRepository {
   record(input: {
     threadId: string;
     writeHandles: string[];
-    turnId: string;
+    writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
     uri: string;
     direction: UndoNotificationDirection;
   }): Promise<void>;
