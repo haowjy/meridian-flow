@@ -55,9 +55,33 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
   };
 }
 
+function responseFinalizerWithCommit(commitResult: ResponseCommitResult) {
+  return {
+    finalizeResponseCommit: async () => ({
+      documents: commitResult.documents,
+      stagedCreates: commitResult.stagedCreates,
+    }),
+    finalizeResponseRollback: async () => ({
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+  };
+}
+
+function noopResponseFinalizer() {
+  return {
+    finalizeResponseCommit: async () => ({
+      documents: [],
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+    finalizeResponseRollback: async () => ({
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+  };
+}
+
 describe("agent-edit response write lifecycle", () => {
-  it("commits response after refreshing projections", async () => {
-    const refreshed: string[] = [];
+  it("commits response through the collab finalizer and maps concurrent edits", async () => {
+    const finalized: string[] = [];
     const commitResult: ResponseCommitResult = {
       responseId: "response-1",
       documentCount: 1,
@@ -74,18 +98,27 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () => agentEditCoreWithCommit(commitResult),
-        refreshDocumentProjection: async ({ documentId }) => {
-          refreshed.push(documentId);
+        refreshDocumentProjection: async () => {
+          throw new Error("response lifecycle should not refresh projections directly");
         },
+        finalizeResponseCommit: async (responseId, ctx) => {
+          const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
+          for (const document of result.documents) {
+            finalized.push(`${responseId}:${document.documentId}:${ctx.threadId}:${ctx.turnId}`);
+          }
+          return { documents: result.documents, stagedCreates: result.stagedCreates };
+        },
+        finalizeResponseRollback: async () => ({
+          stagedCreates: { committed: [], discarded: [] },
+        }),
       },
-      eventSink: createInMemoryEventSink(),
     });
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual([{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }]);
 
-    expect(refreshed).toEqual(["doc-1"]);
+    expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
   });
 
   it("commits response when there are no concurrent edits", async () => {
@@ -100,8 +133,14 @@ describe("agent-edit response write lifecycle", () => {
             stagedCreates: { committed: [], discarded: [] },
           }),
         refreshDocumentProjection: async () => {},
+        ...responseFinalizerWithCommit({
+          responseId: "response-1",
+          documentCount: 1,
+          updateCount: 1,
+          documents: [{ documentId: "doc-1", updateCount: 1 }],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
       },
-      eventSink: createInMemoryEventSink(),
     });
 
     await expect(
@@ -240,6 +279,7 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
     documentSync: {
       agentEdit: () => input.core,
       refreshDocumentProjection: async () => {},
+      ...noopResponseFinalizer(),
     },
     responseWrites: { trackStagedCreate: () => {} },
     eventSink: createInMemoryEventSink(),

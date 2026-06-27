@@ -322,7 +322,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    eventSink: ports.eventSink,
   });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,

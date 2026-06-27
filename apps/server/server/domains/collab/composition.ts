@@ -39,7 +39,12 @@ import {
   syncErrorMessage,
 } from "./domain/markdown-document.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import type { CollabDomain, DocumentWriteHook } from "./index.js";
+import type {
+  CollabDomain,
+  DocumentWriteHook,
+  ResponseWriteCommitFinalizeResult,
+  ResponseWriteRollbackFinalizeResult,
+} from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
@@ -159,6 +164,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
+    source = "collab.document_write",
   ): Promise<void> {
     try {
       const read = await markdownDocuments.readAsMarkdown(documentId);
@@ -166,6 +172,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         emitProjectionRefreshFailure({
           documentId,
           threadId,
+          source,
           payload: {
             code: read.error.code,
             message: syncErrorMessage(read.error),
@@ -173,11 +180,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         });
         return;
       }
-      await runDocumentWriteHook({ documentId, threadId, markdown: read.value });
+      await runDocumentWriteHook({ documentId, threadId, markdown: read.value }, source);
     } catch (cause) {
       emitProjectionRefreshFailure({
         documentId,
         threadId,
+        source,
         payload: unknownToEventPayload(cause),
       });
     }
@@ -185,6 +193,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
   async function runDocumentWriteHook(
     event: Omit<Parameters<DocumentWriteHook>[0], "at">,
+    source = "collab.document_write",
   ): Promise<void> {
     if (!deps.documentWriteHook) return;
     const hookEvent = { ...event, at: new Date() };
@@ -197,7 +206,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       if (!deps.eventSink) return;
       emitEvent(deps.eventSink, {
         level: "error",
-        source: "collab.document_write",
+        source,
         name: "post_write_hook.failed",
         payload: {
           documentId: hookEvent.documentId,
@@ -211,12 +220,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   function emitProjectionRefreshFailure(input: {
     documentId: DocumentId;
     threadId?: ThreadId;
+    source: string;
     payload: Record<string, unknown>;
   }): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
       level: "error",
-      source: "collab.document_write",
+      source: input.source,
       name: "projection_refresh.failed",
       payload: {
         documentId: input.documentId,
@@ -224,6 +234,45 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         ...input.payload,
       },
     });
+  }
+
+  async function finalizeResponseCommit(
+    responseId: string,
+    ctx: { threadId: ThreadId; turnId: TurnId },
+  ): Promise<ResponseWriteCommitFinalizeResult> {
+    const result = await agentEditCore.commitResponse(responseId);
+    await Promise.all(
+      result.documents.map((document) =>
+        refreshDocumentProjection(
+          document.documentId as DocumentId,
+          ctx.threadId,
+          "collab.response_finalize",
+        ),
+      ),
+    );
+    return {
+      documents: result.documents.map((document) => ({
+        documentId: document.documentId as DocumentId,
+        updateCount: document.updateCount,
+        ...(document.concurrentEdits ? { concurrentEdits: document.concurrentEdits } : {}),
+      })),
+      stagedCreates: {
+        committed: result.stagedCreates.committed as DocumentId[],
+        discarded: result.stagedCreates.discarded as DocumentId[],
+      },
+    };
+  }
+
+  async function finalizeResponseRollback(
+    responseId: string,
+  ): Promise<ResponseWriteRollbackFinalizeResult> {
+    const result = await agentEditCore.rollbackResponse(responseId);
+    return {
+      stagedCreates: {
+        committed: result.stagedCreates.committed as DocumentId[],
+        discarded: result.stagedCreates.discarded as DocumentId[],
+      },
+    };
   }
 
   async function latestUpdateSeq(documentId: string): Promise<number> {
@@ -271,6 +320,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     refreshDocumentProjection(input) {
       return refreshDocumentProjection(input.documentId, input.threadId);
     },
+
+    finalizeResponseCommit,
+
+    finalizeResponseRollback,
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
