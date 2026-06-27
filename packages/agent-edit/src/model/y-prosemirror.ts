@@ -3,8 +3,9 @@ import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, TextRun } from "../ports/model.js";
 import { blockHashesForDoc, getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
+import { unwrapBlock } from "./block-ref.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 interface TextSegment {
@@ -37,6 +38,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getText(block) {
       return collectText(block);
+    },
+
+    inlineRuns(block) {
+      return collectTextRuns(unwrapBlock(block));
     },
 
     applyTextEdit(_doc, block, span, newText) {
@@ -183,6 +188,36 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   return segments;
 }
 
+function collectTextRuns(block: Y.XmlElement): TextRun[] {
+  const runs: TextRun[] = [];
+  let flatOffset = 0;
+  const visit = (type: Y.XmlElement | Y.XmlText) => {
+    if (type instanceof Y.XmlText) {
+      for (const delta of type.toDelta() as Array<{
+        insert?: string;
+        attributes?: Record<string, unknown>;
+      }>) {
+        const text = typeof delta.insert === "string" ? delta.insert : "";
+        const length = text.length;
+        if (length > 0) {
+          runs.push({
+            start: flatOffset,
+            length,
+            attrsKey: stableAttrsKey(delta.attributes),
+          });
+          flatOffset += length;
+        }
+      }
+      return;
+    }
+    for (const child of type.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(block);
+  return runs;
+}
+
 function clearText(type: Y.XmlElement | Y.XmlText): void {
   if (type instanceof Y.XmlText) {
     type.delete(0, type.length);
@@ -284,6 +319,21 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
+}
+
+function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
+  if (!attrs) return "";
+  return JSON.stringify(sortRecord(attrs));
+}
+
+function sortRecord(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortRecord);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortRecord(nested)]),
+  );
 }
 
 function createBindingMetadata(): BindingMetadata {
