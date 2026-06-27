@@ -28,6 +28,7 @@ type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired
 type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
 type UndoNotificationDirection = "undo" | "redo";
+type ReversalOpDirection = "undo" | "redo";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -116,6 +117,35 @@ export const documentYjsReversals = pgTable(
       "document_yjs_reversals_status_valid",
       sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
     ),
+  ],
+);
+
+export const documentYjsReversalOps = pgTable(
+  "document_yjs_reversal_ops",
+  {
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    // No FK: compaction prunes update rows while retaining reversal history until matching pruning.
+    updateSeq: bigint("update_seq", { mode: "number" }).notNull(),
+    handle: text("handle").notNull(),
+    direction: text("direction").$type<ReversalOpDirection>().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.documentId, table.threadId, table.updateSeq, table.handle],
+    }),
+    index("document_yjs_reversal_ops_document_thread_handle").on(
+      table.documentId,
+      table.threadId,
+      table.handle,
+    ),
+    check("document_yjs_reversal_ops_direction_valid", sql`${table.direction} IN ('undo', 'redo')`),
   ],
 );
 
