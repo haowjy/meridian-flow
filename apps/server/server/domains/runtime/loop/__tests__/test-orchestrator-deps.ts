@@ -81,6 +81,10 @@ export function createTestOrchestratorDeps(
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     undoNotifications: {
       async record() {},
+      async peekForThread() {
+        return [];
+      },
+      async deleteByIds() {},
       async consumeForThread() {
         return [];
       },
