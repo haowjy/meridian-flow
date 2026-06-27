@@ -26,6 +26,7 @@ describe("write reversal selectors", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
 
     // The regression: a second undo after redo must still reverse, not bail with
@@ -35,6 +36,7 @@ describe("write reversal selectors", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
 
     const secondRedo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(secondRedo)).toContain("status: reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 
