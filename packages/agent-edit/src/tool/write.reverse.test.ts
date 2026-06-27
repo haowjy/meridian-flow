@@ -122,6 +122,118 @@ describe("write host reverse", () => {
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 
+  it("supports undo → redo → undo again for turn-scoped reversal", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-cycle" },
+    );
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "turn", turnId: "turn-cycle" },
+      actor,
+    });
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const redo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "turn", turnId: "turn-cycle" },
+      actor,
+    });
+    expectOutcome(redo, "reconciled");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoWriteId: "w1",
+    });
+
+    const secondUndo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "turn", turnId: "turn-cycle" },
+      actor,
+    });
+    expectOutcome(secondUndo, "reversed");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const secondRedo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "turn", turnId: "turn-cycle" },
+      actor,
+    });
+    expectOutcome(secondRedo, "reconciled");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+  });
+
+  it("supports undo → redo → undo again for single-write reversal", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-single-cycle" },
+    );
+
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: "w1" },
+        actor,
+      }),
+      "reversed",
+    );
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "redo",
+        selection: { kind: "single", to: "w1" },
+        actor,
+      }),
+      "reconciled",
+    );
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: true,
+      redo: false,
+      undoWriteId: "w1",
+    });
+
+    const secondUndo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "single", to: "w1" },
+      actor,
+    });
+    expectOutcome(secondUndo, "reversed");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const secondRedo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "single", to: "w1" },
+      actor,
+    });
+    expectOutcome(secondRedo, "reconciled");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+  });
+
   it("redoes all reversed groups in a turn", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
