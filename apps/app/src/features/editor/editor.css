@@ -3,9 +3,9 @@
  * documents. Geometry and color are expressed through Ink & Jade variables so
  * the editor follows the app theme without embedding component logic.
  *
- * Long-form manuscript reading: Noto Serif prose, a calm ~68ch measure, and
- * generous leading. The prose stays undecorated — the cinnabar signature lives
- * only in chrome, never in the manuscript itself.
+ * Long-form manuscript reading: the single app font (Inter), a calm ~68ch
+ * measure, and generous leading. The prose stays undecorated — the cinnabar
+ * signature lives only in chrome, never in the manuscript itself.
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
@@ -18,7 +18,7 @@
   min-height: 100%;
   outline: none;
   max-width: 68ch;
-  font-family: var(--font-prose);
+  /* Font family inherits the single app default (Inter) from `body`. */
 }
 
 .meridian-editor .ProseMirror > * + * {
@@ -32,11 +32,9 @@
 .meridian-editor .ProseMirror h5,
 .meridian-editor .ProseMirror h6 {
   color: var(--color-foreground);
-  /* Headings share the body face (--font-prose) and are distinguished by size +
+  /* Headings inherit the single app font (Inter) and are distinguished by size +
      weight only — matching stock ProseMirror/TipTap, which ship no heading font
-     and let headings inherit body type. A separate display face is a branding
-     choice we deliberately keep out of the editing surface. */
-  font-family: var(--font-prose);
+     and let headings inherit body type. */
   font-weight: 600;
   line-height: 1.15;
 }

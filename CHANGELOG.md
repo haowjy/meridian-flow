@@ -2,10 +2,12 @@
 
 ## [Unreleased]
 
-- `apps/app`: content headings now share their context's body font (Noto Serif in
-  prose surfaces, Inter in app chrome) instead of a separate display serif —
-  distinguished by size + weight only, in the editor and rendered markdown. The
-  Cormorant Garamond display face is now opt-in for branding surfaces only.
+- `apps/app`: one font everywhere — **Inter** is now the single typeface across UI
+  chrome, the editor, rendered markdown, conversation turns, and headings.
+  Headings/emphasis differ by size + weight only. Dropped the Noto Serif prose
+  face and the Cormorant Garamond display face (and their font downloads); the
+  `--font-heading`/`--font-prose` tokens are gone. (`apps/www` keeps a Fraunces
+  landing hero as an isolated marketing exception.)
 
 - `apps/app`: toolbar list buttons work again — bullet/ordered list commands now
   target the renamed `list_item` node instead of throwing "no node type named

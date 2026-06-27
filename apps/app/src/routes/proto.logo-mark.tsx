@@ -184,9 +184,7 @@ function LoginPanel({ frame, glow }: { frame: FrameId; glow: boolean }) {
   return (
     <div className="flex flex-col items-start gap-3 rounded-md bg-ink-deep p-6">
       <LogoMark frame={frame} glow={glow} ground="dark" className="size-20" />
-      <span className="font-heading text-3xl font-semibold tracking-tight text-cream">
-        Meridian
-      </span>
+      <span className="text-3xl font-semibold tracking-tight text-cream">Meridian</span>
     </div>
   );
 }

@@ -45,19 +45,25 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css` instead of liter
 
 ## Typography
 
-Three fonts, three jobs — loaded via Google Fonts in each app's root layout:
+One font everywhere in the app — **Inter** — loaded via Google Fonts in the app
+root layout:
 
 | Role | Font | Use |
 |---|---|---|
-| Display | Cormorant Garamond | Headings, chapter titles, wordmark, login hero |
-| Prose / body | Noto Serif | Manuscript editor, rendered markdown, conversation turns |
-| UI chrome | Inter | Sidebar, buttons, badges, labels, metadata, composer chrome |
+| Everything | Inter | UI chrome, manuscript editor, rendered markdown, conversation turns, headings, login |
 
-Long-form text must prioritize readability and stable rhythm (~68ch measure, generous leading). Markdown and streaming answers share the same prose token layer so final and in-progress text do not visually jump.
+Headings and emphasis are differentiated by **size + weight only**, never by a
+separate family — matching stock ProseMirror/TipTap (which ship no heading font).
+Long-form text must prioritize readability and stable rhythm (~68ch measure,
+generous leading). Markdown and streaming answers share the same prose token
+layer so final and in-progress text do not visually jump.
+
+The marketing site (`apps/www`) keeps a **Fraunces** landing hero as a
+deliberate, isolated branding exception.
 
 ## Login
 
-Branded split hero (deep ink ground, needle mark, Cormorant wordmark, corner seal chop). Credentials and account creation are **WorkOS AuthKit hosted sign-in** — the right card hands off to WorkOS; Meridian owns visual identity, not the auth form. Dev login remains available in development.
+Branded split hero (deep ink ground, needle mark, Inter wordmark, corner seal chop). Credentials and account creation are **WorkOS AuthKit hosted sign-in** — the right card hands off to WorkOS; Meridian owns visual identity, not the auth form. Dev login remains available in development.
 
 ## Layout
 
