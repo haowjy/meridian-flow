@@ -14,8 +14,9 @@ const base = {
 function notification(
   writeHandle: string,
   direction: PendingUndoNotification["direction"],
+  uri = base.uri,
 ): PendingUndoNotification {
-  return { ...base, id: `${writeHandle}-${direction}`, writeHandle, direction };
+  return { ...base, id: `${uri}-${writeHandle}-${direction}`, uri, writeHandle, direction };
 }
 
 describe("coalesceUndoNotifications", () => {
@@ -31,6 +32,18 @@ describe("coalesceUndoNotifications", () => {
     ).toEqual([
       { writeHandle: "w2", direction: "undo" },
       { writeHandle: "w3", direction: "undo" },
+    ]);
+  });
+
+  it("keeps same write handles independent across documents", () => {
+    expect(
+      coalesceUndoNotifications([
+        notification("w1", "undo", "manuscript://doc-a.md"),
+        notification("w1", "undo", "manuscript://doc-b.md"),
+      ]).map((row) => ({ uri: row.uri, writeHandle: row.writeHandle, direction: row.direction })),
+    ).toEqual([
+      { uri: "manuscript://doc-a.md", writeHandle: "w1", direction: "undo" },
+      { uri: "manuscript://doc-b.md", writeHandle: "w1", direction: "undo" },
     ]);
   });
 });
