@@ -1,10 +1,4 @@
-import type {
-  DocumentId,
-  DocumentRestorePointId,
-  ThreadId,
-  TurnId,
-  UserId,
-} from "@meridian/contracts";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -19,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { byteaColumn, createdAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
@@ -67,7 +61,6 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
-    actorAgentRunId: uuid("actor_agent_run_id"),
     createdAt: createdAt(),
   },
   (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
@@ -89,6 +82,7 @@ export const documentYjsReversals = pgTable(
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
     // No FK: compaction can delete the undo update row after expiring reversal metadata.
@@ -133,6 +127,7 @@ export const agentEditMutations = pgTable(
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    // Durable idempotency key for the edit mutation, distinct from reversal handles.
     writeId: text("write_id").notNull(),
     status: text("status").$type<MutationStatus>().notNull().default("active"),
     createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
@@ -200,25 +195,6 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   latestStateVector: byteaColumn("latest_state_vector"),
   latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const documentRestorePoints = pgTable("document_restore_points", {
-  id: idColumn<DocumentRestorePointId>(),
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  checkpointId: bigint("checkpoint_id", { mode: "number" }).references(
-    () => documentYjsCheckpoints.id,
-  ),
-  upToSeq: bigint("up_to_seq", { mode: "number" }),
-  createdByUserId: uuid("created_by_user_id")
-    .$type<UserId>()
-    .references(() => users.id, {
-      onDelete: "set null",
-    }),
-  createdAt: createdAt(),
 });
 
 // document_yjs_heads.latest_checkpoint_id FK added in custom SQL
