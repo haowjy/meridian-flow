@@ -7,7 +7,6 @@
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatScreen } from "../chat/ChatScreen";
-import { ProjectChatContextNavigationProvider } from "../chat/ProjectChatContextNavigationProvider";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {
@@ -25,17 +24,12 @@ export function MobileChatHost({
 }: MobileChatHostProps) {
   return (
     <MobileKeyboardAware>
-      <ProjectChatContextNavigationProvider
+      <ChatScreen
         projectId={projectId}
-        activeThreadId={activeThreadId}
+        threadId={activeThreadId}
+        onSelectThread={onSelectThread}
         onSelectContextPath={onSelectContextPath}
-      >
-        <ChatScreen
-          projectId={projectId}
-          threadId={activeThreadId}
-          onSelectThread={onSelectThread}
-        />
-      </ProjectChatContextNavigationProvider>
+      />
     </MobileKeyboardAware>
   );
 }

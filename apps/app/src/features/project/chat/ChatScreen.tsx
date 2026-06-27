@@ -4,6 +4,7 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
@@ -12,6 +13,7 @@ import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
 import type { ChatPlacement } from "./ChatSurface";
 import { resolveChatThreadId } from "./chat-thread-resolution";
+import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
 
@@ -29,6 +31,7 @@ export type ChatScreenProps = {
    */
   writeThreadToRoute?: boolean;
   placement?: ChatPlacement;
+  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
 /**
@@ -46,6 +49,7 @@ export function ChatScreen({
   onSelectThread,
   writeThreadToRoute = true,
   placement = "center",
+  onSelectContextPath,
 }: ChatScreenProps) {
   const pendingThreadId = useThreadStore((state) => {
     for (const [tid, ps] of Object.entries(state.pendingStreamByThreadId)) {
@@ -91,6 +95,7 @@ export function ChatScreen({
       threadId={resolvedThreadId}
       onSelectThread={onSelectThread}
       placement={placement}
+      onSelectContextPath={onSelectContextPath}
     />
   );
 }
@@ -100,11 +105,13 @@ function ChatScreenLoaded({
   threadId,
   onSelectThread,
   placement,
+  onSelectContextPath,
 }: {
   projectId: string;
   threadId: string;
   onSelectThread: (threadId: string) => void;
   placement: ChatPlacement;
+  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 }) {
   const {
     thread: snapshotThread,
@@ -140,15 +147,20 @@ function ChatScreenLoaded({
       ) : null}
 
       <div className="min-h-0 flex-1">
-        <ChatView
-          threadId={threadId}
-          projectId={projectId}
-          activeThread={thread}
-          snapshotLiveState={snapshotLiveState}
-          snapshotNextSeq={snapshotNextSeq}
-          placement={placement}
-          key={`${projectId}:${threadId}`}
-        />
+        <ProjectChatContextNavigationProvider
+          activeWorkId={thread?.workId ?? null}
+          onSelectContextPath={onSelectContextPath}
+        >
+          <ChatView
+            threadId={threadId}
+            projectId={projectId}
+            activeThread={thread}
+            snapshotLiveState={snapshotLiveState}
+            snapshotNextSeq={snapshotNextSeq}
+            placement={placement}
+            key={`${projectId}:${threadId}`}
+          />
+        </ProjectChatContextNavigationProvider>
       </div>
     </div>
   );

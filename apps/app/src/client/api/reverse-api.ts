@@ -6,25 +6,11 @@
  * non-error outcomes that still use HTTP 200, so callers must branch on
  * `status` rather than treating a resolved fetch as success.
  */
-import {
-  apiThreadContextReversePath,
-  type JsonValue,
-  type TurnReversalOutcome,
-  type WriteStatus,
-} from "@meridian/contracts/protocol";
+import { apiThreadContextReversePath, type ReversalOutcome } from "@meridian/contracts/protocol";
 
 import { postJson } from "./http-client";
 
 export type ReversalDirection = "undo" | "redo";
-
-export type WriteOutcome = {
-  command: string;
-  status: WriteStatus;
-  isError: boolean;
-  writeId?: string;
-  text: string;
-  content?: JsonValue[];
-};
 
 export type ReverseDocumentInput = {
   turnId: string;
@@ -40,8 +26,8 @@ export type ReverseTurnInput = {
 export function reverseDocument(
   threadId: string,
   input: ReverseDocumentInput,
-): Promise<WriteOutcome> {
-  return postJson<WriteOutcome>(apiThreadContextReversePath(threadId), {
+): Promise<ReversalOutcome> {
+  return postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), {
     scope: "turn",
     target: input.turnId,
     direction: input.direction,
@@ -49,11 +35,8 @@ export function reverseDocument(
   });
 }
 
-export function reverseTurn(
-  threadId: string,
-  input: ReverseTurnInput,
-): Promise<TurnReversalOutcome> {
-  return postJson<TurnReversalOutcome>(apiThreadContextReversePath(threadId), {
+export function reverseTurn(threadId: string, input: ReverseTurnInput): Promise<ReversalOutcome> {
+  return postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), {
     scope: "turn",
     target: input.turnId,
     direction: input.direction,
