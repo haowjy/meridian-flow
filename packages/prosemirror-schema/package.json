@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "lib0": "^0.2.114",
+    "lib0": "^0.2.117",
     "prosemirror-model": "^1.25.9",
     "prosemirror-schema-basic": "^1.2.4",
     "yjs": "13.6.31"
