@@ -32,7 +32,11 @@
 .meridian-editor .ProseMirror h5,
 .meridian-editor .ProseMirror h6 {
   color: var(--color-foreground);
-  font-family: var(--font-heading);
+  /* Headings share the body face (--font-prose) and are distinguished by size +
+     weight only — matching stock ProseMirror/TipTap, which ship no heading font
+     and let headings inherit body type. A separate display face is a branding
+     choice we deliberately keep out of the editing surface. */
+  font-family: var(--font-prose);
   font-weight: 600;
   line-height: 1.15;
 }
