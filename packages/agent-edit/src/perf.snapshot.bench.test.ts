@@ -131,11 +131,11 @@ describe("snapshot cost baseline", () => {
   }
 });
 
-describe("view reconstruction cost", () => {
+describe("read reconstruction cost", () => {
   for (const blockCount of BLOCK_COUNTS) {
-    it(`view rebuild (clone + render) B=${blockCount}`, () => {
+    it(`read rebuild (clone + render) B=${blockCount}`, () => {
       const live = buildLiveDoc(blockCount);
-      time(`view clone+render B=${blockCount}`, () => {
+      time(`read clone+render B=${blockCount}`, () => {
         const runtime = buildRuntimeFromLive(live);
         renderer.renderBlockLines(runtime);
       });

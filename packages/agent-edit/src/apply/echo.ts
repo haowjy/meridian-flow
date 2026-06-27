@@ -116,7 +116,7 @@ export function applyConcurrentUpdates(
       human: human.length > 0 ? ["*"] : [],
       agent: agent.length > 0 ? ["*"] : [],
       collapsed: true,
-      reviewCommand: 'write(command="view", file="<current>")',
+      reviewCommand: 'write(command="read", file="<current>")',
     };
     return { info: collapsed, touchedHashes };
   }

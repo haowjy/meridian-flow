@@ -56,15 +56,15 @@ async function collectEvents(
 }
 
 describe("smoke: in-process turn", () => {
-  it("runs write view through wired ContextPort tools and persists the turn lifecycle", async () => {
+  it("runs write read through wired ContextPort tools and persists the turn lifecycle", async () => {
     const gateway = createScriptedGateway([
       {
         content: [
           {
             type: "tool_use",
-            toolCallId: "call-view-smoke",
+            toolCallId: "call-read-smoke",
             toolName: "write",
-            input: { command: "view", path: FILE_URI },
+            input: { command: "read", path: FILE_URI },
           },
         ],
         toolCalls: [],
@@ -131,7 +131,7 @@ describe("smoke: in-process turn", () => {
     expect(gateway.getStreamCallCount()).toBe(2);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "tool.result", toolCallId: "call-view-smoke" }),
+        expect.objectContaining({ type: "tool.result", toolCallId: "call-read-smoke" }),
         expect.objectContaining({ type: "turn.completed" }),
       ]),
     );
@@ -144,7 +144,7 @@ describe("smoke: in-process turn", () => {
     const blocks = await repos.blocks.listByTurn(assistantTurn?.id ?? "missing");
     const toolResultBlock = blocks.find((block) => block.blockType === "tool_result");
     expect(toolResultBlock?.content).toMatchObject({
-      toolCallId: "call-view-smoke",
+      toolCallId: "call-read-smoke",
       output: expect.stringContaining(FILE_CONTENT),
     });
   });

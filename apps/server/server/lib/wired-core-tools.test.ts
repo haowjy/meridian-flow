@@ -13,7 +13,7 @@ type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unk
 
 function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditCore {
   return {
-    write: async () => ({ command: "view", status: "success", isError: false, text: "" }),
+    write: async () => ({ command: "read", status: "success", isError: false, text: "" }),
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({
@@ -119,7 +119,7 @@ describe("wired write tool", () => {
     ).resolves.toContain("status: reversed");
     const afterSingleUndo = await writeText(
       single.write,
-      { command: "view", path: single.filePath },
+      { command: "read", path: single.filePath },
       single.ctx,
     );
     expect(afterSingleUndo).toContain("One");
@@ -129,7 +129,7 @@ describe("wired write tool", () => {
       writeText(single.write, { command: "redo", path: single.filePath, to: "w3" }, single.ctx),
     ).resolves.toContain("status: reconciled");
     expect(
-      await writeText(single.write, { command: "view", path: single.filePath }, single.ctx),
+      await writeText(single.write, { command: "read", path: single.filePath }, single.ctx),
     ).toContain("Three");
 
     const range = await seededWiredWrite();
@@ -142,7 +142,7 @@ describe("wired write tool", () => {
     ).resolves.toContain("status: reversed");
     const afterRangeUndo = await writeText(
       range.write,
-      { command: "view", path: range.filePath },
+      { command: "read", path: range.filePath },
       range.ctx,
     );
     expect(afterRangeUndo).toContain("One");
@@ -159,7 +159,7 @@ describe("wired write tool", () => {
     ).resolves.toContain("status: reconciled");
     const afterRangeRedo = await writeText(
       range.write,
-      { command: "view", path: range.filePath },
+      { command: "read", path: range.filePath },
       range.ctx,
     );
     for (const restored of ["One", "Two", "Three", "Four", "Five"]) {
@@ -174,18 +174,18 @@ describe("wired write tool", () => {
     const write = wiredWriteHandler({ documentId, filePath, core: harness.core });
     const ctx = toolContext();
 
-    const initialView = await writeText(write, { command: "view", path: filePath }, ctx);
+    const initialRead = await writeText(write, { command: "read", path: filePath }, ctx);
     const insert = await writeText(
       write,
       { command: "insert", path: filePath, content: "Beta" },
       ctx,
     );
-    const updatedView = await writeText(write, { command: "view", path: filePath }, ctx);
-    const missing = JSON.stringify(await write({ command: "view", path: "missing.md" }, ctx));
+    const updatedRead = await writeText(write, { command: "read", path: filePath }, ctx);
+    const missing = JSON.stringify(await write({ command: "read", path: "missing.md" }, ctx));
 
-    expect(initialView).toContain("Alpha");
-    expect(updatedView).toContain("Beta");
-    expect([initialView, insert, updatedView, missing].join("\n")).not.toContain(documentId);
+    expect(initialRead).toContain("Alpha");
+    expect(updatedRead).toContain("Beta");
+    expect([initialRead, insert, updatedRead, missing].join("\n")).not.toContain(documentId);
   });
 });
 
@@ -224,7 +224,7 @@ async function seededWiredWrite() {
   const write = wiredWriteHandler({ documentId, filePath, core: harness.core });
   const ctx = toolContext();
 
-  await write({ command: "view", path: filePath }, ctx);
+  await write({ command: "read", path: filePath }, ctx);
   for (const content of ["One", "Two", "Three", "Four", "Five"]) {
     await write({ command: "insert", path: filePath, content }, ctx);
   }

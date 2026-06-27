@@ -9,7 +9,7 @@ import { context, REVERSAL_CLIENT_ID, THREAD_ID } from "./test-support/write-too
 
 describe("write reversal selectors", () => {
   it("flips mutation status when undoing and redoing a write", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
     const { ctx } = scenario;
     await scenario.simpleReplace("turn-mutation-status");
 
@@ -45,7 +45,7 @@ describe("write reversal selectors", () => {
   });
 
   it("defaults to the latest write in a multi-write turn and redoes in stack order", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -69,7 +69,7 @@ describe("write reversal selectors", () => {
   });
 
   it("undoes and redoes a write whose update is hidden by a checkpoint", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -101,7 +101,7 @@ describe("write reversal selectors", () => {
   });
 
   it("targets one write without disturbing later writes", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(["A.", "B.", "C."]);
 
     await scenario.ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
@@ -113,7 +113,7 @@ describe("write reversal selectors", () => {
   });
 
   it("targets an inclusive write range", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(["One.", "Two.", "Three.", "Four.", "Five."]);
 
     const undo = await scenario.ctx.core.write(
@@ -126,7 +126,7 @@ describe("write reversal selectors", () => {
   });
 
   it("targets write ranges by numeric ordinal past w10", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(Array.from({ length: 11 }, (_, index) => `Block ${index + 1}.`));
 
     const undo = await scenario.ctx.core.write(
@@ -151,7 +151,7 @@ describe("write reversal selectors", () => {
   });
 
   it("targets a range across turns", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(["One.", "Two."], "turn-a");
     await scenario.appendBlocks(["Three.", "Four."], "turn-b");
 
@@ -170,7 +170,7 @@ describe("write reversal selectors", () => {
   });
 
   it("redoes a grouped undo by undo update sequence", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -193,19 +193,19 @@ describe("write reversal selectors", () => {
   });
 
   it("supports last and all selectors", async () => {
-    const last = await ReversalScenario.view({ "chapter.md": "Base." });
+    const last = await ReversalScenario.read({ "chapter.md": "Base." });
     await last.appendBlocks(["One.", "Two.", "Three.", "Four."]);
     await last.ctx.core.write({ command: "undo", file: "chapter.md", last: 2 }, context);
     expect(last.blockTexts()).toEqual(["Base.", "One.", "Two."]);
 
-    const all = await ReversalScenario.view({ "chapter.md": "Base." });
+    const all = await ReversalScenario.read({ "chapter.md": "Base." });
     await all.appendBlocks(["One.", "Two.", "Three."]);
     await all.ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
     expect(all.blockTexts()).toEqual(["Base."]);
   });
 
   it("undo all skips compacted-away writes and reverses the retained subset", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Base." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     const { ctx } = scenario;
     await scenario.appendBlocks(["One."]);
     const afterW1 = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));

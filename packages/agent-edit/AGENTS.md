@@ -86,7 +86,7 @@ adapters or in the MCP distribution package.
 Model-facing text uses the host-supplied display path (`file` / `filePath`),
 never the internal `documentId`. Long UUID-like document ids are storage,
 journal, runtime, and coordination identity only; they must not appear in tool
-responses, view commands, re-sync hints, or creation guidance shown to the
+responses, read commands, re-sync hints, or creation guidance shown to the
 agent. Tests should prefer UUID-like internal ids with friendly paths so a leak
 is obvious.
 

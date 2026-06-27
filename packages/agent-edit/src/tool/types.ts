@@ -6,9 +6,9 @@ import type { WriteResultBlock } from "./internal-result.js";
 
 export type { WriteResultBlock };
 
-export type WriteCommandName = "create" | "view" | "insert" | "replace" | "undo" | "redo";
+export type WriteCommandName = "create" | "read" | "insert" | "replace" | "undo" | "redo";
 
-export type ViewFormat = "auto" | "full" | "outline";
+export type ReadFormat = "auto" | "full" | "outline";
 
 interface IdempotentCommand {
   /** Host/tool-call idempotency key. Replays return the original plain-text response. */
@@ -16,7 +16,7 @@ interface IdempotentCommand {
 }
 
 interface FileCommand extends IdempotentCommand {
-  /** Model-facing document path, optionally with a #fragment for view/replace scopes. */
+  /** Model-facing document path, optionally with a #fragment for read/replace scopes. */
   file: string;
   /** Host-side document identity. Omit only in standalone hosts where file is also the storage key. */
   documentId?: string;
@@ -29,13 +29,13 @@ export type CreateCommand = FileCommand & {
   overwrite?: boolean;
 };
 
-export type ViewCommand = FileCommand & {
-  command: "view";
-  /** Continuation or explicit range (`a1b2..c3d4`, `a1b2..`) for view. */
+export type ReadCommand = FileCommand & {
+  command: "read";
+  /** Continuation or explicit range (`a1b2..c3d4`, `a1b2..`) for read. */
   in?: string;
-  /** Fuzzy view around a block hash. */
+  /** Fuzzy read around a block hash. */
   around?: string;
-  format?: ViewFormat;
+  format?: ReadFormat;
 };
 
 export type InsertCommand = FileCommand & {
@@ -83,7 +83,7 @@ export type RedoCommand = FileCommand & {
 
 export type WriteCommand =
   | CreateCommand
-  | ViewCommand
+  | ReadCommand
   | InsertCommand
   | ReplaceCommand
   | UndoCommand
@@ -115,7 +115,7 @@ export interface WriteOutcome {
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
-  /** The exact LLM-facing text: status line, echo, concurrent edits, or view content. */
+  /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];

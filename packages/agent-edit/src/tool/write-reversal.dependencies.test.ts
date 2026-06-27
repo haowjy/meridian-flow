@@ -14,7 +14,7 @@ import { context, model, REVERSAL_CLIENT_ID } from "./test-support/write-tool-ha
 
 describe("write reversal dependencies", () => {
   it("refuses the swordblade case when a later undone write consumed the selected write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -41,7 +41,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("refuses the swordsaber case while the dependent later write is still active", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -58,7 +58,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("allows a range that contains the dependent write cluster", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -74,7 +74,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("allows all when it contains the dependent write cluster", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -90,7 +90,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("allows the default newest single undo in a dependent cluster", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -103,7 +103,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("does not refuse a non-overlapping earlier write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword.\n\nBeta shield." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -124,7 +124,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("preserves same-area human edits when undoing a selected write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -146,7 +146,7 @@ describe("write reversal dependencies", () => {
   });
 
   it("refuses undo with generic wording when an untracked later edit depends on the write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );

@@ -220,7 +220,7 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
   switch (command) {
     case "create":
       return { ...base, command, content, overwrite };
-    case "view":
+    case "read":
       return {
         ...base,
         command,
@@ -252,7 +252,7 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
 function isWriteCommandName(command: string): command is WriteCommand["command"] {
   switch (command) {
     case "create":
-    case "view":
+    case "read":
     case "insert":
     case "replace":
     case "undo":
@@ -525,7 +525,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         // Only attach documentId metadata for staged mutating writes (create/insert/replace
         // within a response). This is used by the orchestrator to track which tool_result
         // block to backfill concurrent edit info into after commitResponse. Non-mutating
-        // commands (view/undo/redo) must NOT overwrite the backfill target.
+        // commands (read/undo/redo) must NOT overwrite the backfill target.
         ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
       };
     },

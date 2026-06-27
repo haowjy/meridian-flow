@@ -18,13 +18,13 @@ export function documentNotFound(
   commandName: WriteCommand["command"],
   filePath: string,
 ): InternalWriteResult {
-  if (commandName === "view") {
+  if (commandName === "read") {
     return status(
       "document_not_found",
       `File not found. Check the path, or use write(command="create", file="${filePath}") to make a new one.`,
     );
   }
-  return status("document_not_found", "File not found. View the project to find the right path.");
+  return status("document_not_found", "File not found. Read the project to find the right path.");
 }
 
 export function isInternalWriteResult(value: unknown): value is InternalWriteResult {
