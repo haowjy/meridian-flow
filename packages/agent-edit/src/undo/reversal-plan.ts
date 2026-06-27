@@ -7,13 +7,7 @@ import {
   type WriteMutationRow,
 } from "../ports/update-journal.js";
 import { evaluateRedoEligibility } from "./reconstruction.js";
-import {
-  type CompatibleLineageGroup,
-  compatibleLineageGroups,
-  evaluateLineageDependencies,
-  expandActiveClosureToCompatibleBoundary,
-  seqToHandleFromMutations,
-} from "./reversal-lineage.js";
+import { selectUndoClosure } from "./reversal-lineage.js";
 
 export type ReversalSelection =
   | { kind: "latest" }
@@ -45,7 +39,6 @@ export type ReversalPlan =
       targetSeqs: ReadonlySet<number>;
       snapshot: JournalSnapshot;
       redoGroup?: { undoUpdateSeq: number };
-      undoGroups?: readonly CompatibleLineageGroup[];
     }
   | {
       ok: false;
@@ -67,77 +60,39 @@ export async function planUndo(input: {
   if (selected.writes.length === 0) return { ok: false, status: "nothing_to_undo" };
 
   const candidateHandles = handlesInState(state, selected.writeIds);
-  const retained = await retainedRowsForHandles(
-    input.reversalStore,
-    input.docId,
-    input.threadId,
-    candidateHandles,
-    state.snapshot,
-    "active",
-  );
-  const retainedSelectedWriteIds = selected.writeIds.filter((handle) =>
-    retained.writeIds.includes(handle),
-  );
-  if (retainedSelectedWriteIds.length === 0) return { ok: false, status: "nothing_to_undo" };
+  const [rowsByHandle, reversalOpSeqs] = await Promise.all([
+    input.reversalStore.mutationsForWrites(input.docId, input.threadId, candidateHandles),
+    input.reversalStore.reversalOpSeqsForHandles(input.docId, input.threadId, candidateHandles),
+  ]);
 
-  const seedGroups = compatibleLineageGroups({
-    handles: retainedSelectedWriteIds,
-    rowsByHandle: retained.rowsByHandle,
-    reversals: state.reversals,
-  });
-  const selectedHandles = isScopeSelection(input.selection)
-    ? (seedGroups[0]?.handles ?? [])
-    : retainedSelectedWriteIds;
-  const selectedGroup = expandActiveClosureToCompatibleBoundary({
-    selectedHandles,
-    candidateHandles: retained.writeIds,
-    rowsByHandle: retained.rowsByHandle,
-    reversals: state.reversals,
-  });
-  if (!selectedGroup || selectedGroup.targetSeqs.size === 0) {
-    return { ok: false, status: "nothing_to_undo" };
-  }
-  if (![...selectedGroup.targetSeqs].every((seq) => snapshotRetainsSeq(state.snapshot, seq))) {
-    return { ok: false, status: "nothing_to_undo" };
-  }
-
-  const allRowsByHandle = await input.reversalStore.mutationsForWrites(
-    input.docId,
-    input.threadId,
-    candidateHandles,
-  );
-  const reversalOpSeqs = await input.reversalStore.reversalOpSeqsForHandles(
-    input.docId,
-    input.threadId,
-    candidateHandles,
-  );
-  const dependency = evaluateLineageDependencies({
+  const closure = selectUndoClosure({
     snapshot: state.snapshot,
-    closure: selectedGroup,
+    reversals: state.reversals,
+    rowsByHandle,
+    selectedHandles: selected.writeIds,
+    candidateHandles,
     reversalOpSeqs,
-    seqToHandle: seqToHandleFromMutations(allRowsByHandle, state.reversals),
+    isScopeSelection: isScopeSelection(input.selection),
   });
-  if (!dependency.ok) {
+
+  if (!closure.ok) {
+    if (closure.status === "nothing_to_undo") return { ok: false, status: "nothing_to_undo" };
     return {
       ok: false,
       status: "cant_undo_dependent",
-      blockingWriteIds: [...dependency.blockingWriteIds],
-      selectedWriteIds: selectedGroup.handles,
+      blockingWriteIds: closure.blockingWriteIds,
+      selectedWriteIds: closure.selectedWriteIds,
     };
   }
 
-  const groupRows = selectedGroup.handles.flatMap(
-    (handle) => retained.rowsByHandle.get(handle) ?? [],
-  );
   return {
     ok: true,
     direction: "undo",
-    writeIds: selectedGroup.handles,
-    turnId: groupRows[0]?.turnId ?? retained.rows[0]?.turnId ?? "unknown",
-    writeTurnIds: writeTurnIdsForHandles(selectedGroup.handles, retained.rowsByHandle),
-    targetSeqs: selectedGroup.targetSeqs,
+    writeIds: closure.handles,
+    turnId: rowsByHandle.get(closure.handles[0] ?? "")?.[0]?.turnId ?? "unknown",
+    writeTurnIds: writeTurnIdsForHandles(closure.handles, rowsByHandle),
+    targetSeqs: closure.targetSeqs,
     snapshot: state.snapshot,
-    ...(seedGroups.length > 1 ? { undoGroups: seedGroups } : {}),
   };
 }
 
