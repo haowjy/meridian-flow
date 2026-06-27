@@ -1,7 +1,6 @@
 import type * as Y from "yjs";
 
 import type { DocumentModel } from "../ports/model.js";
-import { lookupBlockHash } from "./block-hash.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
 
@@ -95,7 +94,7 @@ export function slugForHeadingText(text: string): string {
 
 function resolveAround(ctx: ScopeContext, around: string): ScopeResult {
   const hash = around.startsWith("#") ? around.slice(1) : around;
-  const lookup = lookupBlockHash(ctx.doc, hash);
+  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
   if (!lookup.ok) return notFound(`Block hash "${hash}" was not found`);
   const blocks = ctx.model.getBlocks(ctx.doc);
   const index = blocks.indexOf(lookup.block);
@@ -112,7 +111,7 @@ function resolveAround(ctx: ScopeContext, around: string): ScopeResult {
 }
 
 function resolveSingleHash(ctx: ScopeContext, hash: string): ScopeResult {
-  const lookup = lookupBlockHash(ctx.doc, hash);
+  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
   if (!lookup.ok) return notFound(`Block hash "${hash}" was not found`);
   const blocks = ctx.model.getBlocks(ctx.doc);
   const index = blocks.indexOf(lookup.block);
@@ -120,7 +119,7 @@ function resolveSingleHash(ctx: ScopeContext, hash: string): ScopeResult {
 }
 
 function resolveHashAsBlockOrSection(ctx: ScopeContext, hash: string): ScopeResult {
-  const lookup = lookupBlockHash(ctx.doc, hash);
+  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
   if (!lookup.ok) return notFound(`Block hash "${hash}" was not found`);
   const blocks = ctx.model.getBlocks(ctx.doc);
   const index = blocks.indexOf(lookup.block);
@@ -135,7 +134,7 @@ function resolveStringRange(ctx: ScopeContext, input: string): ScopeResult {
   const [startHash, endHash] = input.split("..");
   if (!startHash) return invalid("Range start is required");
   const blocks = ctx.model.getBlocks(ctx.doc);
-  const start = lookupBlockHash(ctx.doc, startHash);
+  const start = ctx.model.lookupBlock(ctx.doc, startHash);
   if (!start.ok) return notFound(`Range start block "${startHash}" was not found`);
   const startIndex = blocks.indexOf(start.block);
   const endIndex = endHash ? blockIndexForHash(ctx, endHash) : blocks.length - 1;
@@ -169,7 +168,7 @@ function tupleEndpointIndex(ctx: ScopeContext, value: unknown): number | null {
 }
 
 function blockIndexForHash(ctx: ScopeContext, hash: string): number | null {
-  const lookup = lookupBlockHash(ctx.doc, hash);
+  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
   if (!lookup.ok) return null;
   const index = ctx.model.getBlocks(ctx.doc).indexOf(lookup.block);
   return index < 0 ? null : index;

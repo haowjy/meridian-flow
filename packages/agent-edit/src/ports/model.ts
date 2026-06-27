@@ -11,6 +11,10 @@ export interface TextRun {
   attrsKey: string;
 }
 
+export type BlockLookup<BlockNode> =
+  | { ok: true; hash: string; block: BlockNode }
+  | { ok: false; reason: "not_found" | "ambiguous"; matches?: BlockNode[] };
+
 /**
  * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
  * This is the intended swap point for eventually editing non-ProseMirror Yjs
@@ -29,6 +33,12 @@ export interface DocumentModel<BlockNode> {
 
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: Y.Doc): string[];
+
+  /** Resolve an agent-visible block hash against the current document. */
+  lookupBlock(doc: Y.Doc, hash: string): BlockLookup<BlockNode>;
+
+  /** True when the block reference still points at a live integrated block. */
+  isLive(block: BlockNode): boolean;
 
   /** Get the text content of a block (for find/match). */
   getText(block: BlockNode): string;
