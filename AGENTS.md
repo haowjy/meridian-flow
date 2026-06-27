@@ -107,8 +107,9 @@ Commit continuously as you develop — frequent, small, logically-scoped commits
 create a verifiable history trail where each step is independently reviewable and
 revertible. After each self-contained change that passes checks
 (typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
-(This governs local commit cadence; opening PRs and pushing remain separate,
-deliberate decisions.)
+(This governs local commit cadence.) When a feature branch (never `main`) is
+complete and passes the full gate (`pnpm check` green), push it and open/update
+its PR without asking.
 
 ## Worktree discipline
 
