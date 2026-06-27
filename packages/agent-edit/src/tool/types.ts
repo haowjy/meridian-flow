@@ -23,6 +23,7 @@ export type UndoRedoOutcome =
   | "nothing_to_redo"
   | "expired";
 
+// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 export type { WriteResultBlock };
 
