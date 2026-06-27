@@ -611,12 +611,50 @@ function mapRedoReapplyUpdates(
     if (seqToHandle.has(update.seq) || update.meta.origin !== "system") continue;
     for (const [handle, insertedRanges] of insertedRangesByHandle) {
       if (!deleteSetIntersects(update, insertedRanges)) continue;
+      if (
+        !hasExclusiveReversalLineage({
+          snapshot,
+          handle,
+          candidateSeq: update.seq,
+          insertedRanges,
+          rows: rowsByHandle.get(handle) ?? [],
+          seqToHandle,
+        })
+      ) {
+        continue;
+      }
       seqToHandle.set(update.seq, handle);
       reapplySeqToHandle.set(update.seq, handle);
       break;
     }
   }
   return reapplySeqToHandle;
+}
+
+function hasExclusiveReversalLineage(input: {
+  snapshot: JournalSnapshot;
+  handle: string;
+  candidateSeq: number;
+  insertedRanges: readonly IdRange[];
+  rows: readonly { createdSeq: number; handle: string }[];
+  seqToHandle: ReadonlyMap<number, string>;
+}): boolean {
+  const earliestForwardSeq = Math.min(...input.rows.map((row) => row.createdSeq));
+  if (!Number.isFinite(earliestForwardSeq)) return false;
+
+  for (const update of input.snapshot.updates) {
+    if (update.seq <= earliestForwardSeq || update.seq >= input.candidateSeq) continue;
+
+    const knownHandle = input.seqToHandle.get(update.seq);
+    if (knownHandle !== undefined) {
+      if (knownHandle !== input.handle) return false;
+      continue;
+    }
+
+    if (update.meta.origin !== "system") return false;
+    if (!deleteSetIntersects(update, input.insertedRanges)) return false;
+  }
+  return true;
 }
 
 function targetSeqsIncludingOwnReapply(
