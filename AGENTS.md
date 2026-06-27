@@ -55,6 +55,10 @@ No raw hex/color outside `design-tokens`.
 comments: explain the *weird* — hidden constraints, non-obvious invariants,
 workarounds. Don't explain what the code does; explain why it's surprising.
 
+**Debugging.** Temporary console probes are allowed while diagnosing, but must
+use the marked convention in [docs/debugging.md](docs/debugging.md) and be
+deleted or converted to durable observability before push.
+
 
 ## Documentation
 

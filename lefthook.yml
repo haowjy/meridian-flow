@@ -9,5 +9,7 @@ pre-commit:
 
 pre-push:
   commands:
+    debug-probes:
+      run: node tools/ci/check-debug-probes.mjs
     test:
       run: pnpm --filter @meridian/database test
