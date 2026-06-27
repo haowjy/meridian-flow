@@ -3,6 +3,8 @@ packages:
   - 'packages/*'
   # Throwaway demo playground for @meridian/agent-edit (see demo/README.md).
   - 'packages/agent-edit/demo/playground'
+allowBuilds:
+  nx: true
 
 catalog:
   '@anthropic-ai/sdk': ^0.106.0
