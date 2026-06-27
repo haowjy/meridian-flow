@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- `apps/app`: toolbar list buttons work again — bullet/ordered list commands now
+  target the renamed `list_item` node instead of throwing "no node type named
+  'listItem'". Guarded by an editor command test.
+
+- `apps/app`: pasting a GFM markdown table now inserts a real table instead of
+  plain-text paragraphs. Plain prose paste is untouched (conservative
+  header+delimiter detection only).
+
+- `apps/app`: fenced code blocks now render on a distinct warm code surface with
+  syntax highlighting, replacing the near-white unstyled box. Syntax colors are
+  design tokens (no vendor highlight.js theme).
+
 - `apps/app`: TipTap document schema now includes GFM table nodes, `strike`, and
   task-list `list_item.checked` state, with schema-parity coverage for table roles.
 
