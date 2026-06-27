@@ -129,7 +129,9 @@ function buildMarkupCodec(
     serialize(blockList: PMNode[]): string {
       const runtime = makeRuntime("");
       const ctx = withRuntime<SerializeContext>({ schema }, runtime);
-      return blockList.map((block) => serializeOne(block, ctx)).join("\n");
+      const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
+      if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
+      return result;
     },
 
     parse(content: string) {
