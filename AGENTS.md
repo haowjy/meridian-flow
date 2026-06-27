@@ -55,6 +55,10 @@ No raw hex/color outside `design-tokens`.
 comments: explain the *weird* — hidden constraints, non-obvious invariants,
 workarounds. Don't explain what the code does; explain why it's surprising.
 
+**Debugging.** Temporary console probes are allowed while diagnosing, but must
+use the marked convention in [docs/debugging.md](docs/debugging.md) and be
+deleted or converted to durable observability before push.
+
 
 ## Documentation
 
@@ -103,8 +107,9 @@ Commit continuously as you develop — frequent, small, logically-scoped commits
 create a verifiable history trail where each step is independently reviewable and
 revertible. After each self-contained change that passes checks
 (typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
-(This governs local commit cadence; opening PRs and pushing remain separate,
-deliberate decisions.)
+(This governs local commit cadence.) When a feature branch (never `main`) is
+complete and passes the full gate (`pnpm check` green), push it and open/update
+its PR without asking.
 
 ## Worktree discipline
 
