@@ -5,6 +5,7 @@
  * visualViewport bridge around them so desktop chat behavior and subscriptions
  * remain unchanged.
  */
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatScreen } from "../chat/ChatScreen";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
@@ -12,12 +13,23 @@ export type MobileChatHostProps = {
   projectId: string;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
+  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
-export function MobileChatHost({ projectId, activeThreadId, onSelectThread }: MobileChatHostProps) {
+export function MobileChatHost({
+  projectId,
+  activeThreadId,
+  onSelectThread,
+  onOpenContextPath,
+}: MobileChatHostProps) {
   return (
     <MobileKeyboardAware>
-      <ChatScreen projectId={projectId} threadId={activeThreadId} onSelectThread={onSelectThread} />
+      <ChatScreen
+        projectId={projectId}
+        threadId={activeThreadId}
+        onSelectThread={onSelectThread}
+        onOpenContextPath={onOpenContextPath}
+      />
     </MobileKeyboardAware>
   );
 }

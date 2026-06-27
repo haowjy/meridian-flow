@@ -1,0 +1,345 @@
+/**
+ * TurnChangeFooter — compact per-turn summary and undo/redo controls.
+ *
+ * Scans settled assistant turns for write/edit tool calls, gathers the touched
+ * documents into one footer, and calls the thread reverse API for per-document
+ * or whole-turn undo/redo. Document content refresh is handled by Yjs sync; the
+ * footer keeps only local affordance state.
+ */
+import { t } from "@lingui/core/macro";
+import type {
+  Block,
+  DocumentReversalResult,
+  JsonValue,
+  ProjectContextTreeScheme,
+  Turn,
+  WriteStatus,
+} from "@meridian/contracts/protocol";
+import { blockContentRecord } from "@meridian/contracts/protocol";
+import { ChevronDown, LoaderCircle, Redo2, Undo2 } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+
+import type { ReversalDirection, WriteOutcome } from "@/client/api/reverse-api";
+import {
+  useReverseDocumentMutation,
+  useReverseTurnMutation,
+} from "@/client/query/useReverseMutation";
+import { cn } from "@/lib/utils";
+
+export type WrittenDocument = {
+  path: string;
+  uri: string;
+  nav: ContextNavigationTarget | null;
+};
+
+export type ContextNavigationTarget = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+};
+
+export type TurnChangeFooterProps = {
+  threadId: string;
+  turn: Turn;
+  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
+};
+
+type RowState = {
+  disposition: "applied" | "reversed" | "disabled";
+  statusText?: string;
+};
+
+const CONTEXT_SCHEMES = new Set<ProjectContextTreeScheme>([
+  "manuscript",
+  "kb",
+  "work",
+  "uploads",
+  "user",
+]);
+
+export function TurnChangeFooter({ threadId, turn, onOpenContextPath }: TurnChangeFooterProps) {
+  const panelId = useId();
+  const documents = useMemo(() => turnWrittenDocuments(turn), [turn]);
+  const [expanded, setExpanded] = useState(false);
+  const [rows, setRows] = useState<Record<string, RowState>>({});
+  const [pendingUri, setPendingUri] = useState<string | null>(null);
+  const [turnPending, setTurnPending] = useState(false);
+  const documentMutation = useReverseDocumentMutation(threadId);
+  const turnMutation = useReverseTurnMutation(threadId);
+
+  if (documents.length === 0) return null;
+
+  const rowState = (uri: string): RowState => rows[uri] ?? { disposition: "applied" };
+  const allReversed = documents.every((doc) => rowState(doc.uri).disposition === "reversed");
+  const summary = `${documentIcon} ${fileCountLabel(documents.length)}${allReversed ? ` ${t`(all undone)`}` : ""}`;
+  const turnDirection: ReversalDirection = allReversed ? "redo" : "undo";
+
+  async function reverseOne(doc: WrittenDocument) {
+    const current = rowState(doc.uri);
+    if (current.disposition === "disabled" || pendingUri || turnPending) return;
+    const direction: ReversalDirection = current.disposition === "reversed" ? "redo" : "undo";
+    setPendingUri(doc.uri);
+    try {
+      const outcome = await documentMutation.mutateAsync({
+        turnId: turn.id,
+        uri: doc.uri,
+        direction,
+      });
+      setRows((prev) => ({
+        ...prev,
+        [doc.uri]: stateFromWriteOutcome(direction, outcome, current),
+      }));
+    } catch (error) {
+      setRows((prev) => ({
+        ...prev,
+        [doc.uri]: { ...current, statusText: errorMessage(error) },
+      }));
+    } finally {
+      setPendingUri(null);
+    }
+  }
+
+  async function reverseAll() {
+    if (turnPending || pendingUri) return;
+    setTurnPending(true);
+    try {
+      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction: turnDirection });
+      setRows((prev) => {
+        const next = { ...prev };
+        for (const result of outcome.documents) {
+          next[result.uri] = stateFromDocumentResult(turnDirection, result, prev[result.uri]);
+        }
+        if (outcome.documents.length === 0) {
+          for (const doc of documents) {
+            next[doc.uri] = stateFromStatus(turnDirection, outcome.status, prev[doc.uri]);
+          }
+        }
+        return next;
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      setRows((prev) =>
+        Object.fromEntries(
+          documents.map((doc) => [
+            doc.uri,
+            { ...(prev[doc.uri] ?? { disposition: "applied" }), statusText: message },
+          ]),
+        ),
+      );
+    } finally {
+      setTurnPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={() => setExpanded((value) => !value)}
+        className="focus-ring -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-card"
+      >
+        <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">{summary}</span>
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 text-ink-subtle transition-transform",
+            expanded && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {expanded ? (
+        <div id={panelId} className="mt-2 space-y-1.5 border-t border-border pt-2">
+          <ul className="space-y-1">
+            {documents.map((doc) => {
+              const state = rowState(doc.uri);
+              const pending = pendingUri === doc.uri;
+              return (
+                <li key={doc.uri} className="flex min-w-0 items-center gap-2">
+                  <DocumentName document={doc} onOpenContextPath={onOpenContextPath} />
+                  {state.statusText ? (
+                    <span className="min-w-0 flex-1 truncate text-ink-subtle">
+                      {state.statusText}
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1" aria-hidden />
+                  )}
+                  <button
+                    type="button"
+                    disabled={state.disposition === "disabled" || pending || turnPending}
+                    onClick={() => void reverseOne(doc)}
+                    className="focus-ring inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-2 font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
+                  >
+                    {pending ? (
+                      <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                    ) : state.disposition === "reversed" ? (
+                      <Redo2 className="size-3.5" aria-hidden />
+                    ) : (
+                      <Undo2 className="size-3.5" aria-hidden />
+                    )}
+                    {state.disposition === "reversed" ? t`Redo` : t`Undo`}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              disabled={turnPending || Boolean(pendingUri)}
+              onClick={() => void reverseAll()}
+              className="focus-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
+            >
+              {turnPending ? (
+                <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+              ) : turnDirection === "redo" ? (
+                <Redo2 className="size-3.5" aria-hidden />
+              ) : (
+                <Undo2 className="size-3.5" aria-hidden />
+              )}
+              {turnDirection === "redo" ? t`Redo all` : t`Undo all`}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DocumentName({
+  document,
+  onOpenContextPath,
+}: {
+  document: WrittenDocument;
+  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
+}) {
+  const nav = document.nav;
+  const label = basename(nav?.path ?? document.path);
+  if (!nav || !onOpenContextPath) {
+    return <span className="min-w-0 flex-1 truncate font-mono text-ink-strong">{label}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenContextPath(nav.path, nav.scheme)}
+      className="focus-ring min-w-0 flex-1 truncate rounded-sm text-left font-mono text-ink-strong underline-offset-2 hover:underline"
+    >
+      {label}
+    </button>
+  );
+}
+
+export function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
+  const documents = new Map<string, WrittenDocument>();
+  for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
+    const path = writePathFromBlock(block);
+    if (!path) continue;
+    const uri = resolveWriteUri(path);
+    if (!documents.has(uri)) {
+      documents.set(uri, { path, uri, nav: contextNavigationTarget(uri) });
+    }
+  }
+  return [...documents.values()];
+}
+
+export function resolveWriteUri(path: string): string {
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)) return path;
+  return `manuscript://${path.replace(/^\/+/, "")}`;
+}
+
+function writePathFromBlock(block: Block): string | null {
+  if (block.blockType !== "tool_use") return null;
+  const content = blockContentRecord(block);
+  if (content.toolName !== "write" && content.toolName !== "edit") return null;
+  const input = content.input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const path = (input as Record<string, JsonValue>).path;
+  return typeof path === "string" && path.length > 0 ? path : null;
+}
+
+function contextNavigationTarget(uri: string): ContextNavigationTarget | null {
+  const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(.*)$/.exec(uri);
+  if (!match) return null;
+  const scheme = match[1] as ProjectContextTreeScheme;
+  if (!CONTEXT_SCHEMES.has(scheme)) return null;
+  const path = `/${match[2].replace(/^\/+/, "")}`;
+  return { scheme, path };
+}
+
+function stateFromWriteOutcome(
+  direction: ReversalDirection,
+  outcome: WriteOutcome,
+  previous: RowState,
+): RowState {
+  return stateFromStatus(direction, outcome.status, previous, outcome.text);
+}
+
+function stateFromDocumentResult(
+  direction: ReversalDirection,
+  result: DocumentReversalResult,
+  previous: RowState | undefined,
+): RowState {
+  return stateFromStatus(direction, result.status, previous, result.text);
+}
+
+function stateFromStatus(
+  direction: ReversalDirection,
+  status: WriteStatus,
+  previous: RowState | undefined,
+  text?: string,
+): RowState {
+  const fallback = previous ?? { disposition: direction === "undo" ? "applied" : "reversed" };
+  if (status === "reversed" || status === "reconciled") {
+    return { disposition: direction === "undo" ? "reversed" : "applied" };
+  }
+  if (status === "nothing_to_undo") return { disposition: "reversed" };
+  if (status === "nothing_to_redo") return { disposition: "applied" };
+  if (status === "expired") {
+    return { disposition: "disabled", statusText: t`Can no longer be undone` };
+  }
+  if (status === "cant_undo_dependent") {
+    return { ...fallback, statusText: t`A later edit depends on this` };
+  }
+  if (status === "partial") {
+    return { ...fallback, statusText: t`Some files could not be updated` };
+  }
+  if (status === "success") return fallback;
+  return { ...fallback, statusText: text || statusLabel(status) };
+}
+
+function statusLabel(status: WriteStatus): string {
+  switch (status) {
+    case "not_found":
+      return t`Edit not found`;
+    case "ambiguous_match":
+      return t`More than one edit matched`;
+    case "invalid_write":
+      return t`Edit cannot be reversed`;
+    case "document_not_found":
+      return t`Document not found`;
+    case "partial_failure":
+      return t`Some files could not be updated`;
+    case "internal_error":
+      return t`Undo failed`;
+    default:
+      return status;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : t`Undo failed`;
+}
+
+function fileCountLabel(count: number): string {
+  return count === 1 ? t`1 file changed` : t`${count} files changed`;
+}
+
+function basename(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const parts = trimmed.split("/").filter(Boolean);
+  return parts.at(-1) ?? trimmed;
+}
+
+const documentIcon = "📝";
