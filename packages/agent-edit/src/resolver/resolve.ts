@@ -6,7 +6,6 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { toRef } from "../model/block-ref.js";
 import type { AgentEditModel } from "../ports/model.js";
-import { lookupBlockHash } from "./block-hash.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -218,12 +217,12 @@ function lowerInsertPosition(
 ): ResolveWriteFailure | { ok: true; after?: Y.XmlElement } {
   const blocks = ctx.model.getBlocks(ctx.doc);
   if (params.after) {
-    const lookup = lookupBlockHash(ctx.doc, params.after);
+    const lookup = ctx.model.lookupBlock(ctx.doc, params.after);
     if (!lookup.ok) return error("not_found", `Block hash "${params.after}" was not found`);
     return { ok: true, after: lookup.block };
   }
   if (params.before) {
-    const lookup = lookupBlockHash(ctx.doc, params.before);
+    const lookup = ctx.model.lookupBlock(ctx.doc, params.before);
     if (!lookup.ok) return error("not_found", `Block hash "${params.before}" was not found`);
     const index = blocks.indexOf(lookup.block);
     if (index < 0) return error("not_found", `Block hash "${params.before}" was not found`);

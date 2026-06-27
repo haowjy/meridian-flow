@@ -4,7 +4,13 @@ import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirro
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
-import { blockHashesForDoc, getBlockHash, getTopLevelXmlBlocks } from "../resolver/block-hash.js";
+import {
+  blockHashesForDoc,
+  getBlockHash,
+  getTopLevelXmlBlocks,
+  isLiveXmlElement,
+  lookupBlockHash,
+} from "../resolver/block-hash.js";
 import { unwrapBlock } from "./block-ref.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
@@ -34,6 +40,14 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getDocumentBlockIds(doc) {
       return blockHashesForDoc(doc);
+    },
+
+    lookupBlock(doc, hash) {
+      return lookupBlockHash(doc, hash);
+    },
+
+    isLive(block) {
+      return isLiveXmlElement(block);
     },
 
     getText(block) {

@@ -9,7 +9,6 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import { unwrapBlock } from "../model/block-ref.js";
 import type { AgentEditModel, TextRun } from "../ports/model.js";
-import { isLiveXmlElement } from "../resolver/block-hash.js";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
@@ -372,7 +371,7 @@ function validateNoSameTurnTombstones(
       if (removed.has(ref)) {
         return applyError("not_found", "Target block was removed earlier in this turn");
       }
-      if (!isLiveXmlElement(unwrapBlock(ref)) || !shadowBlocks.includes(ref)) {
+      if (!model.isLive(unwrapBlock(ref)) || !shadowBlocks.includes(ref)) {
         return applyError("not_found", "Target block is no longer live in this document");
       }
     }
@@ -405,7 +404,7 @@ function validateLiveBlock(
   label: string,
 ): { ok: true } | { ok: false; code: ApplyErrorCode; message: string } {
   const element = unwrapBlock(block);
-  if (!isLiveXmlElement(element) || !model.getBlocks(doc).includes(element)) {
+  if (!model.isLive(element) || !model.getBlocks(doc).includes(element)) {
     return { ok: false, code: "not_found", message: `${label} block is no longer live` };
   }
   return { ok: true };
