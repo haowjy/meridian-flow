@@ -8,6 +8,7 @@ export type MdastBlock =
   | MdastCode
   | MdastList
   | MdastListItem
+  | MdastTable
   | MdastThematicBreak
   | MdastJsxFlow
   | MdastUnknown;
@@ -15,6 +16,7 @@ export type MdastInline =
   | MdastText
   | MdastStrong
   | MdastEmphasis
+  | MdastDelete
   | MdastInlineCode
   | MdastLink
   | MdastBreak
@@ -34,6 +36,11 @@ export interface MdastStrong {
 
 export interface MdastEmphasis {
   type: "emphasis";
+  children: MdastInline[];
+}
+
+export interface MdastDelete {
+  type: "delete";
   children: MdastInline[];
 }
 
@@ -93,7 +100,24 @@ export interface MdastList {
 export interface MdastListItem {
   type: "listItem";
   spread: boolean;
+  checked?: boolean | null;
   children: MdastBlock[];
+}
+
+export interface MdastTable {
+  type: "table";
+  align: ("left" | "center" | "right" | null)[];
+  children: MdastTableRow[];
+}
+
+export interface MdastTableRow {
+  type: "tableRow";
+  children: MdastTableCell[];
+}
+
+export interface MdastTableCell {
+  type: "tableCell";
+  children: MdastInline[];
 }
 
 export interface MdastThematicBreak {
