@@ -60,6 +60,8 @@ export interface ReversalRecord {
   status: ReversalStatus;
   /** Journal sequence of the persisted undo update (for durable redo). */
   undoUpdateSeq: number;
+  /** Journal sequence of the redo update currently re-applying this row, when redone. */
+  redoUpdateSeq?: number;
   expiresAt?: Date;
   reversedAt?: Date;
   reversedByUserId?: string;

@@ -94,6 +94,8 @@ export const documentYjsReversals = pgTable(
     status: text("status").$type<ReversalStatus>().notNull(),
     // No FK: compaction can delete the undo update row after expiring reversal metadata.
     undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
+    // Current redo re-apply update for redone rows; cleared on the next undo cycle.
+    redoUpdateSeq: bigint("redo_update_seq", { mode: "number" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     reversedAt: timestamp("reversed_at", { withTimezone: true }),
     reversedByUserId: uuid("reversed_by_user_id")

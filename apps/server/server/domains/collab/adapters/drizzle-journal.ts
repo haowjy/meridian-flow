@@ -157,6 +157,7 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
     writeIds: row.writeId ? [row.writeId] : [row.turnId],
     status: row.status,
     undoUpdateSeq: row.undoUpdateSeq,
+    ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
     ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
     ...(row.reversedAt ? { reversedAt: row.reversedAt } : {}),
     ...(row.reversedByUserId ? { reversedByUserId: row.reversedByUserId } : {}),
@@ -777,6 +778,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
+                redoUpdateSeq: null,
                 expiresAt: record.expiresAt ?? null,
                 reversedAt: record.reversedAt ?? null,
                 reversedByUserId: asUserId(record.reversedByUserId) ?? null,
@@ -790,6 +792,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 set: {
                   status: record.status,
                   undoUpdateSeq,
+                  redoUpdateSeq: null,
                   expiresAt: record.expiresAt ?? null,
                   reversedAt: record.reversedAt ?? null,
                   reversedByUserId: asUserId(record.reversedByUserId) ?? null,
@@ -834,7 +837,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
         await txDb
           .update(documentYjsReversals)
-          .set({ status: "redone" })
+          .set({ status: "redone", redoUpdateSeq: seq })
           .where(
             and(
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
