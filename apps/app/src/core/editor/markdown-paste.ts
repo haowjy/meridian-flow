@@ -1,7 +1,7 @@
 /** Markdown paste helpers for conservative GFM table clipboard handling. */
 
 import { mdxCodec } from "@meridian/markup";
-import { Fragment, type Schema, Slice } from "@tiptap/pm/model";
+import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
 const TABLE_DELIMITER_CELL = /^:?-{1,}:?$/;
@@ -24,16 +24,29 @@ export function looksLikeMarkdownTable(text: string): boolean {
 export function markdownTableClipboardParser(
   schema?: Schema,
 ): NonNullable<EditorProps["clipboardTextParser"]> {
-  return (text, _context, _plain, view) => {
+  return (text, _context, plain, view) => {
+    if (plain) return fallbackToPlainPaste();
     if (!looksLikeMarkdownTable(text)) return fallbackToPlainPaste();
 
     try {
       const { blocks } = mdxCodec({ schema: schema ?? view.state.schema }).parse(text);
-      return Slice.maxOpen(Fragment.fromArray(blocks));
+      const meaningfulBlocks = blocks.filter(isMeaningfulBlock);
+      if (
+        meaningfulBlocks.length === 0 ||
+        !meaningfulBlocks.every((block) => block.type.name === "table")
+      ) {
+        return fallbackToPlainPaste();
+      }
+
+      return new Slice(Fragment.fromArray(meaningfulBlocks), 0, 0);
     } catch {
       return fallbackToPlainPaste();
     }
   };
+}
+
+function isMeaningfulBlock(block: PMNode): boolean {
+  return !(block.type.name === "paragraph" && block.childCount === 0);
 }
 
 function looksLikeTableHeader(line: string): boolean {

@@ -35,6 +35,7 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { markdownTableClipboardParser } from "./markdown-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {
@@ -256,11 +257,17 @@ export function createEditorConfig({
   autofocus = false,
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
+  const resolvedSchemaType = schemaType ?? "document";
+  const resolvedEditorProps =
+    resolvedSchemaType === "document"
+      ? { clipboardTextParser: markdownTableClipboardParser(), ...editorProps }
+      : editorProps;
+
   return {
     extensions: createEditorExtensions({
       document,
       awareness,
-      schemaType,
+      schemaType: resolvedSchemaType,
       cursorProvider,
       user,
       figureRenderContext,
@@ -268,6 +275,6 @@ export function createEditorConfig({
     }),
     editable,
     autofocus,
-    ...(editorProps ? { editorProps } : {}),
+    ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),
   };
 }

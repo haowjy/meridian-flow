@@ -55,12 +55,46 @@ describe("markdownTableClipboardParser", () => {
     ).toBeUndefined();
   });
 
-  it("builds a table Slice from table markdown", () => {
+  it("returns undefined for table markdown when plain paste is requested", () => {
+    const parser = markdownTableClipboardParser(schema);
+
+    expect(parser(tableMarkdown, undefined as never, true, editorViewFor(schema))).toBeUndefined();
+  });
+
+  it("builds a closed table Slice from table markdown", () => {
     const parser = markdownTableClipboardParser(schema);
     const slice = parser(tableMarkdown, undefined as never, false, editorViewFor(schema));
 
     expect(slice).toBeDefined();
+    expect((slice as Slice).openStart).toBe(0);
+    expect((slice as Slice).openEnd).toBe(0);
     expect(containsNodeType(slice as Slice, "table")).toBe(true);
+  });
+
+  it("builds a table Slice from CRLF table markdown", () => {
+    const parser = markdownTableClipboardParser(schema);
+    const slice = parser(
+      "| A | B |\r\n| --- | --- |\r\n| 1 | 2 |\r\n",
+      undefined as never,
+      false,
+      editorViewFor(schema),
+    );
+
+    expect(slice).toBeDefined();
+    expect(containsNodeType(slice as Slice, "table")).toBe(true);
+  });
+
+  it.each([
+    [
+      "fenced code containing table-looking lines",
+      "```\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```\n",
+    ],
+    ["paragraph plus markdown punctuation", "alpha | beta\n- | -\nC | D"],
+    ["prose mixed with a table", `Before the table.\n\n${tableMarkdown}`],
+  ])("returns undefined for %s", (_name, markdown) => {
+    const parser = markdownTableClipboardParser(schema);
+
+    expect(parser(markdown, undefined as never, false, editorViewFor(schema))).toBeUndefined();
   });
 
   it("preserves the parsed table structure", () => {
