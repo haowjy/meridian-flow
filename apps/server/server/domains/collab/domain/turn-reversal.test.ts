@@ -4,17 +4,11 @@ import { reverseTurn } from "./turn-reversal.js";
 
 describe("reverseTurn", () => {
   it("reverses each document in a turn and aggregates successful undo", async () => {
-    const store = fakeStore({
-      documents: ["doc-a", "doc-b"],
-      active: {
-        "doc-a": [{ handle: "w1", turnId: "turn-1" }],
-        "doc-b": [{ handle: "w2", turnId: "turn-1" }],
-      },
-    });
+    const store = fakeStore({ documents: ["doc-a", "doc-b"] });
     const reverse = vi.fn(async ({ docId }) =>
       outcome(docId === "doc-a" ? "reversed" : "nothing_to_undo"),
     );
-    const refresh = vi.fn(async () => undefined);
+    const refresh = vi.fn(async (_input: { documentId: string; threadId: string }) => undefined);
 
     const result = await reverseTurn(
       {
@@ -26,37 +20,26 @@ describe("reverseTurn", () => {
       { threadId: "thread-1", turnId: "turn-1", direction: "undo", actor: { type: "agent" } },
     );
 
-    expect(reverse).toHaveBeenCalledTimes(2);
-    expect(reverse).toHaveBeenNthCalledWith(1, {
-      docId: "doc-a",
-      threadId: "thread-1",
-      direction: "undo",
-      selection: { kind: "turn", turnId: "turn-1" },
-      actor: { type: "agent" },
-    });
     expect(result).toEqual({
       status: "reversed",
       documents: [
-        { uri: "manuscript://doc-a.md", status: "reversed", writeIds: ["w1"], text: "reversed" },
+        { uri: "manuscript://doc-a.md", status: "reversed", text: "reversed" },
         {
           uri: "manuscript://doc-b.md",
           status: "nothing_to_undo",
-          writeIds: ["w2"],
           text: "nothing_to_undo",
         },
       ],
     });
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(result.documents.map((document) => document.uri)).toEqual([
+      "manuscript://doc-a.md",
+      "manuscript://doc-b.md",
+    ]);
+    expect(refresh.mock.calls.map(([input]) => input.documentId)).toEqual(["doc-a"]);
   });
 
   it("keeps mixed per-document statuses instead of throwing", async () => {
-    const store = fakeStore({
-      documents: ["doc-a", "doc-b"],
-      active: {
-        "doc-a": [{ handle: "w1", turnId: "turn-1" }],
-        "doc-b": [{ handle: "w2", turnId: "turn-1" }],
-      },
-    });
+    const store = fakeStore({ documents: ["doc-a", "doc-b"] });
     const reverse = vi
       .fn()
       .mockResolvedValueOnce(outcome("reversed"))
@@ -74,24 +57,43 @@ describe("reverseTurn", () => {
     expect(result.status).toBe("partial");
     expect(result.documents.map((document) => document.status)).toEqual(["reversed", "expired"]);
   });
+
+  it("redoes each document in a turn and aggregates successful redo", async () => {
+    const store = fakeStore({ documents: ["doc-a", "doc-b"] });
+    const reverse = vi.fn(async ({ docId }) =>
+      outcome(docId === "doc-a" ? "reconciled" : "nothing_to_redo"),
+    );
+    const refresh = vi.fn(async (_input: { documentId: string; threadId: string }) => undefined);
+
+    const result = await reverseTurn(
+      {
+        reversalStore: store,
+        agentEdit: { reverse } as Pick<AgentEditCore, "reverse">,
+        resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
+        refreshDocumentProjection: refresh,
+      },
+      { threadId: "thread-1", turnId: "turn-1", direction: "redo", actor: { type: "agent" } },
+    );
+
+    expect(result).toEqual({
+      status: "reconciled",
+      documents: [
+        { uri: "manuscript://doc-a.md", status: "reconciled", text: "reconciled" },
+        {
+          uri: "manuscript://doc-b.md",
+          status: "nothing_to_redo",
+          text: "nothing_to_redo",
+        },
+      ],
+    });
+    expect(refresh.mock.calls.map(([input]) => input.documentId)).toEqual(["doc-a"]);
+  });
 });
 
-type FakeWrite = { handle: string; turnId: string };
-
-function fakeStore(input: {
-  documents: string[];
-  active?: Record<string, FakeWrite[]>;
-}): ReversalStore {
+function fakeStore(input: { documents: string[] }): ReversalStore {
   return {
     documentsForTurn: async () => input.documents,
-    activeWriteSummary: async (documentId) =>
-      (input.active?.[documentId] ?? []).map((write, index) => ({
-        writeId: `${write.handle}-durable`,
-        handle: write.handle,
-        wId: index + 1,
-        turnId: write.turnId,
-        createdSeq: index + 1,
-      })),
+    activeWriteSummary: async () => [],
     readReversals: async () => [],
     reserveWriteOrdinal: async () => 1,
     readForReconstruction: async () => ({ checkpoint: null, updates: [] }),

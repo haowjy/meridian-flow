@@ -512,9 +512,6 @@ importers:
 
   packages/agent-edit:
     dependencies:
-      '@meridian/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@meridian/markup':
         specifier: workspace:*
         version: link:../markup
