@@ -1,7 +1,13 @@
 /** Markdown paste helpers for conservative GFM table clipboard handling. */
 
 import { mdxCodec } from "@meridian/markup";
-import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
+import {
+  Fragment,
+  type Node as PMNode,
+  type ResolvedPos,
+  type Schema,
+  Slice,
+} from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
 const TABLE_DELIMITER_CELL = /^:?-{1,}:?$/;
@@ -24,8 +30,9 @@ export function looksLikeMarkdownTable(text: string): boolean {
 export function markdownTableClipboardParser(
   schema?: Schema,
 ): NonNullable<EditorProps["clipboardTextParser"]> {
-  return (text, _context, plain, view) => {
+  return (text, $context, plain, view) => {
     if (plain) return fallbackToPlainPaste();
+    if (!canHostTable($context)) return fallbackToPlainPaste();
     if (!looksLikeMarkdownTable(text)) return fallbackToPlainPaste();
 
     try {
@@ -47,6 +54,17 @@ export function markdownTableClipboardParser(
 
 function isMeaningfulBlock(block: PMNode): boolean {
   return !(block.type.name === "paragraph" && block.childCount === 0);
+}
+
+// A top-level table can't live inside a code block or another table, so paste
+// destinations inside those must fall back to plain text — otherwise inserting a
+// closed table slice splits the surrounding table / code block.
+function canHostTable($context: ResolvedPos): boolean {
+  for (let depth = $context.depth; depth >= 0; depth -= 1) {
+    const spec = $context.node(depth).type.spec;
+    if (spec.code || spec.tableRole) return false;
+  }
+  return true;
 }
 
 function looksLikeTableHeader(line: string): boolean {

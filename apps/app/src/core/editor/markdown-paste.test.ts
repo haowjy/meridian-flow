@@ -1,6 +1,6 @@
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { Fragment, Node as PMNode, Schema, Slice } from "@tiptap/pm/model";
+import type { Fragment, Node as PMNode, ResolvedPos, Schema, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +9,11 @@ import { looksLikeMarkdownTable, markdownTableClipboardParser } from "./markdown
 const schema = buildDocumentSchema();
 
 const tableMarkdown = "| Stat | Value |\n| :-- | --: |\n| Strength | 128 |\n";
+
+// A caret inside a normal top-level paragraph — a destination that can host a table.
+const paragraphContext = resolveInside(
+  schema.node("doc", null, [schema.node("paragraph", null, schema.text("x"))]),
+);
 
 describe("looksLikeMarkdownTable", () => {
   it("accepts GFM tables with outer pipes", () => {
@@ -51,19 +56,19 @@ describe("markdownTableClipboardParser", () => {
     const parser = markdownTableClipboardParser(schema);
 
     expect(
-      parser("A sentence with *stars*.", undefined as never, false, editorViewFor(schema)),
+      parser("A sentence with *stars*.", paragraphContext, false, editorViewFor(schema)),
     ).toBeUndefined();
   });
 
   it("returns undefined for table markdown when plain paste is requested", () => {
     const parser = markdownTableClipboardParser(schema);
 
-    expect(parser(tableMarkdown, undefined as never, true, editorViewFor(schema))).toBeUndefined();
+    expect(parser(tableMarkdown, paragraphContext, true, editorViewFor(schema))).toBeUndefined();
   });
 
   it("builds a closed table Slice from table markdown", () => {
     const parser = markdownTableClipboardParser(schema);
-    const slice = parser(tableMarkdown, undefined as never, false, editorViewFor(schema));
+    const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
 
     expect(slice).toBeDefined();
     expect((slice as Slice).openStart).toBe(0);
@@ -75,7 +80,7 @@ describe("markdownTableClipboardParser", () => {
     const parser = markdownTableClipboardParser(schema);
     const slice = parser(
       "| A | B |\r\n| --- | --- |\r\n| 1 | 2 |\r\n",
-      undefined as never,
+      paragraphContext,
       false,
       editorViewFor(schema),
     );
@@ -94,12 +99,12 @@ describe("markdownTableClipboardParser", () => {
   ])("returns undefined for %s", (_name, markdown) => {
     const parser = markdownTableClipboardParser(schema);
 
-    expect(parser(markdown, undefined as never, false, editorViewFor(schema))).toBeUndefined();
+    expect(parser(markdown, paragraphContext, false, editorViewFor(schema))).toBeUndefined();
   });
 
   it("preserves the parsed table structure", () => {
     const parser = markdownTableClipboardParser(schema);
-    const slice = parser(tableMarkdown, undefined as never, false, editorViewFor(schema));
+    const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
     if (!slice) throw new Error("expected markdown table slice");
 
     const originalBlocks = mdxCodec({ schema }).parse(tableMarkdown).blocks;
@@ -107,10 +112,48 @@ describe("markdownTableClipboardParser", () => {
       originalBlocks.map((node) => node.toJSON()),
     );
   });
+
+  it("returns undefined when pasting inside a table cell so the table is not split", () => {
+    const parser = markdownTableClipboardParser(schema);
+    const cellContext = resolveInside(
+      schema.node("doc", null, [
+        schema.node("table", null, [
+          schema.node("table_row", null, [
+            schema.node("table_cell", null, [schema.node("paragraph", null, schema.text("x"))]),
+          ]),
+        ]),
+      ]),
+    );
+
+    expect(parser(tableMarkdown, cellContext, false, editorViewFor(schema))).toBeUndefined();
+  });
+
+  it("returns undefined when pasting inside a code block so literal text is kept", () => {
+    const parser = markdownTableClipboardParser(schema);
+    const codeContext = resolveInside(
+      schema.node("doc", null, [schema.node("code_block", null, schema.text("x"))]),
+    );
+
+    expect(parser(tableMarkdown, codeContext, false, editorViewFor(schema))).toBeUndefined();
+  });
 });
 
 function editorViewFor(schema: Schema): EditorView {
   return { state: { schema } } as EditorView;
+}
+
+// Resolve a position inside the document's first textblock.
+function resolveInside(doc: PMNode): ResolvedPos {
+  let pos: number | null = null;
+  doc.descendants((node, nodePos) => {
+    if (pos !== null) return false;
+    if (node.isTextblock) {
+      pos = nodePos + 1;
+      return false;
+    }
+    return true;
+  });
+  return doc.resolve(pos ?? 1);
 }
 
 function containsNodeType(slice: Slice, typeName: string): boolean {
