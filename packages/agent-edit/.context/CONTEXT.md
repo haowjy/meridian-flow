@@ -219,6 +219,21 @@ going blind to a concurrent human edit.
   runtime has seen") is set by `markSynced` on read / create / write / commit. A
   mutating write requires a prior sync (`requireSynced`) or returns
   `document_not_synced` ("run read").
+- **Persisted sync state is a restart baseline, reconciled before mutate.**
+  `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`) let a
+  post-restart write skip an explicit `read`, but `requireSynced` treats a loaded row
+  as a *baseline only*: `hydrateFromPersistedRestart` restores the runtime from
+  `syncedSnapshot`, merges live truth (`mergeLiveIntoRuntime`), and only on success
+  persists **once**, keeping the original `committedSnapshot`. A failed reconcile
+  seeds/persists nothing, so no stale state survives to be trusted on the next call.
+- **`committedSnapshot` is the durable concurrent-detection baseline — never
+  synthesize it on reconcile.** It is the snapshot the *next process* compares live
+  state against to attribute concurrent human edits, and it advances **only** via
+  `attachRuntime` on a real commit. The restart reconcile must preserve the persisted
+  `committedSnapshot`; deriving a fresh one from the post-reconcile runtime corrupts
+  the durable store and makes the agent blind to human edits made before the restart.
+  Tests for this must assert the durable `SyncStateStore` row, not in-memory
+  `session.documents` — the in-memory copy can look right while the durable one is wrong.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays the response's pending
   staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts

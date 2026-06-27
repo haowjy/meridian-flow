@@ -49,6 +49,18 @@ It serializes raw markdown without block-hash view prefixes.
 no state. The Yjs tables FK to `documents.id`; callers are expected to create the
 `documents` row before ensuring collab state.
 
+**Stale-schema guard (invariant).** `document_yjs_heads.schema_version` is stamped
+with the running `COLLAB_SCHEMA_VERSION` on every head upsert, and the journal
+read path refuses to replay bytes from an older schema: `journal.read()` (and thus
+`loadDocumentState`, the cold-open `persistedState`, and `recover`) calls
+`assertReadableHead` and throws `StaleDocumentSchemaError` when the stored version
+is behind. This converts silent y-prosemirror corruption on a schema bump into a
+loud, detectable failure. The rule is explicit, not incidental: `ensureDocument`
+must `assertReadableHead` **before** `upsertHead` — stamping the current version
+first would erase the evidence and silently disable the guard. (Recovery/rebuild
+from a trusted source on a stale version is a documented follow-up, not yet built;
+the guard only blocks.)
+
 ### Origin translation
 
 Public origins remain collab-shaped:
