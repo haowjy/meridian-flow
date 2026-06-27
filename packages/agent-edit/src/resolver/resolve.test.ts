@@ -1,14 +1,18 @@
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { mdxCodec } from "@meridian/markup";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import * as Y from "yjs";
 import type { ResolvedEdit } from "../apply/types.js";
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
@@ -23,7 +27,7 @@ describe("resolveWrite", () => {
 
     expect(edits).toHaveLength(1);
     expect(edits[0]).toMatchObject({ kind: "text", span: { start: 2, end: 7 }, newText: "blade" });
-    expect(edits[0].kind === "text" ? edits[0].element : null).toBe(blocks[1]);
+    expect(edits[0].kind === "text" ? edits[0].block : null).toBe(blocks[1]);
   });
 
   it("lowers insertion anchors to the after-block contract", () => {
@@ -51,7 +55,7 @@ describe("resolveWrite", () => {
     expect(edits.map((edit) => edit.kind)).toEqual(["text", "text"]);
     expect(edits[1]).toMatchObject({
       kind: "text",
-      element: omega,
+      block: omega,
       span: { start: 0, end: "ends Omega".length },
       newText: "ends *Omega*!",
     });
@@ -77,8 +81,8 @@ describe("resolveWrite", () => {
 
     const fewer = expectOk(resolve(doc, { command: "replace", content: "One", in: range }));
     expect(fewer.map((edit) => edit.kind)).toEqual(["text", "delete", "delete"]);
-    expect(fewer[0].kind === "text" ? fewer[0].element : null).toBe(alpha);
-    expect(fewer[1].kind === "delete" ? fewer[1].element : null).toBe(beta);
+    expect(fewer[0].kind === "text" ? fewer[0].block : null).toBe(alpha);
+    expect(fewer[1].kind === "delete" ? fewer[1].block : null).toBe(beta);
 
     const more = expectOk(
       resolve(createDoc("Alpha\n\nBeta"), {
@@ -109,7 +113,7 @@ describe("resolveWrite", () => {
     );
 
     expect(replace).toHaveLength(1);
-    expect(replace[0]).toMatchObject({ kind: "text", element: blocks[4] });
+    expect(replace[0]).toMatchObject({ kind: "text", block: blocks[4] });
   });
 
   it("returns representative resolution errors", () => {
@@ -138,8 +142,8 @@ describe("resolveWrite", () => {
   });
 });
 
-function createDoc(markdown: string): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
+function createDoc(markdown: string) {
+  const doc = createCollabYDoc({ gc: false });
   doc.clientID = 1;
   const parsed = codec.parse(markdown);
   const root = schema.node("doc", null, parsed.blocks);
@@ -171,7 +175,7 @@ function aroundNeedleDoc(): string {
 }
 
 function resolve(
-  doc: Y.Doc,
+  doc: ReturnType<typeof createDoc>,
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(

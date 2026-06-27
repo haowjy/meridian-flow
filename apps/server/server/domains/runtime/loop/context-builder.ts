@@ -50,7 +50,7 @@ import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.j
 import { isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export const RUNTIME_URI_SYSTEM_INSTRUCTION =
-  "Context file URI rules: bare file paths resolve as manuscript:// project workspace files. Use explicit kb:// URIs for project knowledge-base files. Use write with command=create/view/insert/replace/undo/redo for document content; use list and search for discovery.";
+  "Context file URI rules: bare file paths resolve as manuscript:// project workspace files. Use explicit kb:// URIs for project knowledge-base files. Use write with command=create/read/insert/replace/undo/redo for document content; use list and search for discovery.";
 
 export interface BuildContextInput {
   thread: Thread;

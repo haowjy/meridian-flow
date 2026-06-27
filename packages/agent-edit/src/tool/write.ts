@@ -1,21 +1,18 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
 
-import { snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
-import type {
-  ApplyEchoHunk,
-  ApplyResult,
-  ConcurrentEditInfo,
-  ConcurrentUpdateOrigin,
-} from "../apply/types.js";
-import type { Codec } from "../codec/types.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type { SyncStateStore } from "../ports/sync-state-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
@@ -23,14 +20,17 @@ import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
+  ReadCommand,
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
@@ -39,7 +39,6 @@ import type {
   TurnUndoResult,
   UndoCommand,
   UndoResult,
-  ViewCommand,
   WriteCommand,
   WriteContext,
   WriteErrorStatus,
@@ -52,9 +51,10 @@ export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
-  codec: Codec;
+  codec: AgentEditCodec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
+  syncStateStore?: SyncStateStore;
   idempotency?: {
     maxEntries?: number;
   };
@@ -135,13 +135,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
+    syncStateStore: options.syncStateStore,
   });
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
   const responseStaging = createResponseStaging({
     runtimeStore,
     mutationCommit,
     model: options.model,
-    codec: options.codec,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
   });
   const writeReversal = createWriteReversal({
@@ -155,18 +155,25 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
 
   const write: WriteFunction = async (command, context = {}) => {
+    const parsed = WriteCommandSchema.safeParse(command);
+    const commandName = parsed.success ? parsed.data.command : fallbackCommandName(command);
+    if (!parsed.success) {
+      return toOutcome(commandName, status("invalid_write", writeSchemaError(parsed.error)));
+    }
+
+    const validCommand = parsed.data;
     const session = await resolveSession(context);
-    const toolUseId = command.tool_use_id ?? context.tool_use_id;
+    const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
     const cacheKey = toolUseId ? `${session.id}\u0000${toolUseId}` : undefined;
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
       if (cached !== undefined) return cached;
     }
 
-    const result = await dispatch(command, session, context).catch((cause: unknown) =>
+    const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
       internalError(cause),
     );
-    const outcome = toOutcome(command.command, result);
+    const outcome = toOutcome(validCommand.command, result);
     if (cacheKey) remember(cacheKey, outcome);
     return outcome;
   };
@@ -191,17 +198,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     switch (command.command) {
-      case "view":
-        return view(command, session, context);
+      case "read":
+        // Query command. Not pure: read rebuilds runtime and replays staged updates.
+        return read(command, session, context);
       case "create":
         return create(command, session, context);
       case "insert":
       case "replace":
+        // Mutating commands lower to ResolvedEdit before applying.
         return mutate(command, session, context);
       case "undo":
-        return undoOrRedo(command, session, "undo", context);
       case "redo":
-        return undoOrRedo(command, session, "redo", context);
+        return undoOrRedo(command, session, command.command, context);
     }
   }
 
@@ -224,8 +232,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return session;
   }
 
-  async function view(
-    command: ViewCommand,
+  async function read(
+    command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -251,12 +259,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
     markSynced(session, address.documentId, runtime);
 
-    const selection = renderer.selectViewBlocks(runtime.doc, command, address);
+    const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
     if (command.format === "outline") {
-      return success(renderer.renderOutline(runtime.doc, selection.blocks, address.filePath));
+      return success(
+        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+      );
     }
-    return success(renderer.renderBlocks(runtime.doc, selection.blocks));
+    return success(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
   }
 
   async function create(
@@ -275,7 +285,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    const existingBlocks = options.model.getBlocks(runtime.doc);
+    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
     if (existingBlocks.length > 0 && !overwriting) {
       return status(
         "invalid_write",
@@ -293,7 +303,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       address.filePath,
       (liveDoc) =>
-        options.model.getBlocks(liveDoc).length > 0 && !overwriting
+        options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
           ? status(
               "invalid_write",
               `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
@@ -308,21 +318,19 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
       // Insert first so old blocks are no longer the only ones, then delete.
-      options.model.insertBlocks(runtime.doc, null, parsed.parsed);
+      options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       if (overwriting) {
         for (const block of existingBlocks) {
-          options.model.deleteBlock(runtime.doc, block);
+          options.model.deleteBlock(toDocHandle(runtime.doc), block);
         }
       }
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
-    const after = snapshotBlocks(runtime.doc, options.model, options.codec);
 
     if (context.responseId) {
       responseStaging.stageUpdate({
@@ -339,15 +347,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
-        before,
-        touchedHashes: new Set(after.map((block) => block.hash)),
-        deletedHashes: new Set(),
-        structuralChange: true,
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         writeId: writeIdentity.handle,
-        echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
+        echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
       });
     }
 
@@ -371,10 +375,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
     if (!committed.ok) return committed.response;
 
-    markSynced(session, address.documentId, runtime);
+    runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       writeId: writeIdentity.handle,
-      echo: [{ mode: "truncated", blocks: renderer.renderBlockLines(runtime.doc) }],
+      echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
     });
   }
 
@@ -386,26 +390,33 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    const synced = requireSynced(session, address.documentId, address.filePath);
+    const synced = await requireSynced(session, address.documentId, address.filePath, runtime);
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(
-      { doc: runtime.doc, model: options.model, codec: options.codec },
+      { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
       { ...command, documentAddress: address },
     );
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
 
-    const before = snapshotBlocks(runtime.doc, options.model, options.codec);
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const applied = applyEdits(runtime.doc, options.model, options.codec, resolved.edits, origin, {
-      ownActorTurnId: turnId,
-      syncStateVector: synced.stateVector,
-    });
+    const applied = applyEdits(
+      toDocHandle(runtime.doc),
+      options.model,
+      options.codec,
+      resolved.edits,
+      origin,
+      {
+        ownActorTurnId: turnId,
+        syncStateVector: synced.stateVector,
+      },
+    );
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
 
@@ -427,17 +438,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeId: writeIdentity.handle,
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
-        before,
-        touchedHashes: new Set(applied.changedBlocks ?? []),
-        deletedHashes: new Set(applied.deletedBlocks ?? []),
-        structuralChange: hasStructuralChange(applied),
       });
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        structuralChange: hasStructuralChange(applied),
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -464,12 +470,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       before,
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
-      structuralChange: hasStructuralChange(applied),
       ownTurnId: turnId,
+      committedSnapshot: runtimeStore.getCommittedSnapshot(session, address.documentId),
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
-    markSynced(session, address.documentId, runtime);
+    runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,
@@ -584,6 +590,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.toString(36)}`;
   }
 
+  /** Create echo: model just wrote the content — return hash|truncated-preview per block. */
+  function truncateCreateEcho(doc: Y.Doc): string[] {
+    return renderer.renderBlockLines(toDocHandle(doc)).map(truncateSerializedBlock);
+  }
+
   function remember(cacheKey: string, outcome: WriteOutcome): void {
     idempotency.set(cacheKey, outcome);
     while (idempotency.size > maxIdempotencyEntries) {
@@ -610,16 +621,22 @@ function parseFileAddress(
 }
 
 function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
-  const lines = ["status: success"];
-  if (input.writeId) lines.push(`write id: ${input.writeId}`);
+  const metaLines = ["status: success"];
+  if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
-    lines.push("", `deleted: ${input.deletedBlocks.join(", ")}`);
+    metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
   }
+  if (input.concurrentEdits) metaLines.push(...formatConcurrent(input.concurrentEdits));
+
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-  if (echoLines.length > 0) lines.push("", ...echoLines);
-  if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
+
+  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
+  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+
   return {
-    ...result("success", lines.join("\n")),
+    status: "success",
+    text: content.map((block) => block.text).join("\n\n"),
+    content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
   };
 }
@@ -629,10 +646,10 @@ function errorResponse(
   message: string,
   filePath: string,
 ): InternalWriteResult {
-  const needsView = code === "not_found" && !message.includes('write(command="view"');
+  const needsRead = code === "not_found" && !message.includes('write(command="read"');
   return status(
     code,
-    needsView ? `${message}. Run write(command="view", file="${filePath}") to re-sync.` : message,
+    needsRead ? `${message}. Run write(command="read", file="${filePath}") to re-sync.` : message,
   );
 }
 
@@ -681,14 +698,37 @@ function isWriteHandle(value: string): boolean {
   return parseWriteHandle(value) !== undefined;
 }
 
-function hasStructuralChange(result: Extract<ApplyResult, { ok: true }>): boolean {
-  return result.appliedEdits?.some((edit) => edit.kind !== "text") ?? false;
-}
-
 function agentMeta(turnId: string): UpdateMeta {
   return { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 };
 }
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
+}
+
+function fallbackCommandName(command: unknown): WriteCommand["command"] {
+  if (typeof command === "object" && command !== null && "command" in command) {
+    const value = (command as { command?: unknown }).command;
+    switch (value) {
+      case "create":
+      case "read":
+      case "insert":
+      case "replace":
+      case "undo":
+      case "redo":
+        return value;
+    }
+  }
+  return "read";
+}
+
+function writeSchemaError(error: {
+  issues: Array<{ path: PropertyKey[]; message: string }>;
+}): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+      return `${path}${issue.message}`;
+    })
+    .join("; ");
 }

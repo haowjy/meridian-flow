@@ -1,7 +1,9 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import * as Y from "yjs";
 
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { DocHandle } from "../handles.js";
+import { unwrapDoc } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
 
@@ -31,21 +33,24 @@ export interface EchoInput {
   after: readonly BlockSnapshot[];
   agentTouchedHashes: ReadonlySet<string>;
   agentDeletedHashes: ReadonlySet<string>;
-  structuralChange: boolean;
-  concurrentTouchedHashes: ReadonlySet<string>;
 }
 
 const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
-const TRUNCATED_PREVIEW_LENGTH = 48;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
-export function snapshotBlocks(doc: Y.Doc, model: AgentEditModel, codec: Codec): BlockSnapshot[] {
+export function snapshotBlocks(
+  doc: DocHandle,
+  model: AgentEditModel,
+  codec: AgentEditCodec,
+): BlockSnapshot[] {
   const blocks = model.getBlocks(doc);
   if (blocks.length === 0) return [];
-  const hashes = model.getBlockIds(doc);
-  const pmBlocks = model.toProsemirrorBlocks(doc);
-  const serialized = codec.serializeBlocks(pmBlocks, hashes);
-  return blocks.map((_, i) => ({ hash: hashes[i], serialized: serialized[i] }));
+  const hashes = model.getDocumentBlockIds(doc);
+  const serialized = model.serializeBlockLines(doc, codec);
+  return blocks.map((_, index) => ({
+    hash: hashes[index],
+    serialized: serialized[index],
+  }));
 }
 
 /** Diff two block snapshots by stable block hash and serialized content. */
@@ -79,12 +84,12 @@ export function diffSnapshots(
  * origin, so callers pass the journal/live-sync origin beside each update.
  */
 export function applyConcurrentUpdates(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
-  codec: Codec,
+  codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
-  syncStateVector: Uint8Array = Y.encodeStateVector(doc),
+  syncStateVector: Uint8Array = Y.encodeStateVector(unwrapDoc(doc)),
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
@@ -92,8 +97,8 @@ export function applyConcurrentUpdates(
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
-    Y.applyUpdate(doc, item.update, item.origin);
-    if (!stateVectorAdvanced(syncStateVector, Y.encodeStateVector(doc))) continue;
+    Y.applyUpdate(unwrapDoc(doc), item.update, item.origin);
+    if (!stateVectorAdvanced(syncStateVector, Y.encodeStateVector(unwrapDoc(doc)))) continue;
     const after = snapshotBlocks(doc, model, codec);
     const diff = diffSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
@@ -111,7 +116,7 @@ export function applyConcurrentUpdates(
       human: human.length > 0 ? ["*"] : [],
       agent: agent.length > 0 ? ["*"] : [],
       collapsed: true,
-      reviewCommand: 'write(command="view", file="<current>")',
+      reviewCommand: 'write(command="read", file="<current>")',
     };
     return { info: collapsed, touchedHashes };
   }
@@ -120,53 +125,31 @@ export function applyConcurrentUpdates(
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */
 export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
-  const changedWindows = changedBlockWindows(input);
-  if (changedWindows.length === 0) return [];
+  const echoIndexes = uniqueEchoIndexes(input);
+  if (echoIndexes.length === 0) return [];
 
-  const hunks = changedWindows.flatMap((window): ApplyEchoHunk[] => {
-    const hasConcurrentOverlap = window.some((index) =>
-      input.concurrentTouchedHashes.has(input.after[index]?.hash ?? ""),
-    );
-    const mode = hasConcurrentOverlap
-      ? "full"
-      : structuralChangeInWindow(input, window)
-        ? "truncated"
-        : undefined;
-    if (!mode) return [];
+  const beforeByHash = new Map(input.before.map((block) => [block.hash, block]));
+  const hunks = echoIndexes.flatMap((index): ApplyEchoHunk[] => {
+    const block = input.after[index];
+    if (!block) return [];
+    const previous = beforeByHash.get(block.hash);
+    const mode = !previous || previous.serialized !== block.serialized ? "full" : "truncated";
     return [
       {
         mode,
-        blocks: window.map((index) =>
-          mode === "full"
-            ? (input.after[index]?.serialized ?? "")
-            : truncateSerializedBlock(input.after[index]?.serialized ?? ""),
-        ),
+        blocks: [mode === "full" ? block.serialized : truncateSerializedBlock(block.serialized)],
       },
     ];
   });
   return mergeEchoHunks(hunks);
 }
 
-function structuralChangeInWindow(input: EchoInput, window: readonly number[]): boolean {
-  if (!input.structuralChange) return false;
-
-  const beforeHashes = new Set(input.before.map((block) => block.hash));
-  const insertedInWindow = window.some(
-    (index) => !beforeHashes.has(input.after[index]?.hash ?? ""),
-  );
-  if (insertedInWindow) return true;
-
-  const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
-  for (const hash of input.agentDeletedHashes) {
-    const deletedIndex = input.before.findIndex((block) => block.hash === hash);
-    if (deletedIndex < 0) continue;
-    const survivorIndexes = adjacentSurvivorIndexes(input.before, afterIndex, deletedIndex);
-    if (survivorIndexes.some((index) => window.includes(index))) return true;
+function uniqueEchoIndexes(input: EchoInput): number[] {
+  const indexes = new Set<number>();
+  for (const window of changedBlockWindows(input)) {
+    for (const index of window) indexes.add(index);
   }
-
-  const hasKnownStructuralHashes =
-    input.agentDeletedHashes.size > 0 || input.after.some((block) => !beforeHashes.has(block.hash));
-  return !hasKnownStructuralHashes;
+  return [...indexes].sort((left, right) => left - right);
 }
 
 function changedBlockWindows(input: EchoInput): number[][] {
@@ -247,21 +230,22 @@ function blockHash(serialized: string): string {
   return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
-function truncateSerializedBlock(serialized: string): string {
+export function truncateSerializedBlock(serialized: string): string {
   const separator = serialized.indexOf("|");
-  if (separator < 0) return truncateText(serialized);
+  if (separator < 0) return truncateWords(serialized);
   const hash = serialized.slice(0, separator);
   const body = serialized
     .slice(separator + 1)
     .replace(/^\n/, "")
     .replace(/\s+/g, " ")
     .trim();
-  return `${hash}|${truncateText(body)}`;
+  return `${hash}|${truncateWords(body)}`;
 }
 
-function truncateText(text: string): string {
-  if (text.length <= TRUNCATED_PREVIEW_LENGTH) return text;
-  return `${text.slice(0, TRUNCATED_PREVIEW_LENGTH - 3)}...`;
+function truncateWords(text: string, maxWords = 8): string {
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  if (words.length <= maxWords) return text;
+  return `${words.slice(0, maxWords).join(" ")}...`;
 }
 
 function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array): boolean {
@@ -273,8 +257,12 @@ function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array):
   return false;
 }
 
-function orderedHashes(model: AgentEditModel, doc: Y.Doc, hashes: ReadonlySet<string>): string[] {
-  const liveOrder = model.getBlocks(doc).map((block) => model.getBlockId(block));
+function orderedHashes(
+  model: AgentEditModel,
+  doc: DocHandle,
+  hashes: ReadonlySet<string>,
+): string[] {
+  const liveOrder = model.getDocumentBlockIds(doc);
   const live = liveOrder.filter((hash) => hashes.has(hash));
   const deleted = [...hashes].filter((hash) => !liveOrder.includes(hash)).sort();
   return [...live, ...deleted];

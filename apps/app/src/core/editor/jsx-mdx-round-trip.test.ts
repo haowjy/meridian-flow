@@ -4,7 +4,7 @@
  *
  * @vitest-environment jsdom
  */
-import { type ComponentRegistry, mdxCodec, type PMNode } from "@meridian/agent-edit";
+import { type ComponentRegistry, mdxCodec, type PMNode } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";

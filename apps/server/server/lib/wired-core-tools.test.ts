@@ -13,7 +13,7 @@ type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unk
 
 function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditCore {
   return {
-    write: async () => ({ command: "view", status: "success", isError: false, text: "" }),
+    write: async () => ({ command: "read", status: "success", isError: false, text: "" }),
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({
@@ -56,7 +56,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
 }
 
 describe("agent-edit response write lifecycle", () => {
-  it("returns post-commit concurrent edit echoes instead of discarding them", async () => {
+  it("commits response after refreshing projections", async () => {
     const refreshed: string[] = [];
     const commitResult: ResponseCommitResult = {
       responseId: "response-1",
@@ -67,8 +67,6 @@ describe("agent-edit response write lifecycle", () => {
           documentId: "doc-1",
           updateCount: 1,
           concurrentEdits: { human: ["abcd"], agent: [] },
-          echo: [{ writeId: "w1", hunks: [{ mode: "full", blocks: ["abcd|Who---—"] }] }],
-          text: "status: success\n\nabcd|Who---—\n\nconcurrent edits:\n  human: abcd",
         },
       ],
       stagedCreates: { committed: [], discarded: [] },
@@ -83,16 +81,14 @@ describe("agent-edit response write lifecycle", () => {
       eventSink: createInMemoryEventSink(),
     });
 
-    const echoes = await lifecycle.commitResponse("response-1", {
-      threadId: "thread-1",
-      turnId: "turn-1",
-    });
+    await expect(
+      lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
+    ).resolves.toEqual([{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }]);
 
     expect(refreshed).toEqual(["doc-1"]);
-    expect(echoes).toEqual([{ documentId: "doc-1", text: commitResult.documents[0]?.text }]);
   });
 
-  it("returns no post-commit echo when there are no concurrent edits", async () => {
+  it("commits response when there are no concurrent edits", async () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
@@ -119,27 +115,35 @@ describe("wired write tool", () => {
     const single = await seededWiredWrite();
 
     await expect(
-      single.write({ command: "undo", path: single.filePath, to: "w3" }, single.ctx),
+      writeText(single.write, { command: "undo", path: single.filePath, to: "w3" }, single.ctx),
     ).resolves.toContain("status: reversed");
-    const afterSingleUndo = String(
-      await single.write({ command: "view", path: single.filePath }, single.ctx),
+    const afterSingleUndo = await writeText(
+      single.write,
+      { command: "read", path: single.filePath },
+      single.ctx,
     );
     expect(afterSingleUndo).toContain("One");
     expect(afterSingleUndo).not.toContain("Three");
 
     await expect(
-      single.write({ command: "redo", path: single.filePath, to: "w3" }, single.ctx),
-    ).resolves.toContain("status: reversed");
-    expect(await single.write({ command: "view", path: single.filePath }, single.ctx)).toContain(
-      "Three",
-    );
+      writeText(single.write, { command: "redo", path: single.filePath, to: "w3" }, single.ctx),
+    ).resolves.toContain("status: reconciled");
+    expect(
+      await writeText(single.write, { command: "read", path: single.filePath }, single.ctx),
+    ).toContain("Three");
 
     const range = await seededWiredWrite();
     await expect(
-      range.write({ command: "undo", path: range.filePath, from: "w2", to: "w5" }, range.ctx),
+      writeText(
+        range.write,
+        { command: "undo", path: range.filePath, from: "w2", to: "w5" },
+        range.ctx,
+      ),
     ).resolves.toContain("status: reversed");
-    const afterRangeUndo = String(
-      await range.write({ command: "view", path: range.filePath }, range.ctx),
+    const afterRangeUndo = await writeText(
+      range.write,
+      { command: "read", path: range.filePath },
+      range.ctx,
     );
     expect(afterRangeUndo).toContain("One");
     for (const removed of ["Two", "Three", "Four", "Five"]) {
@@ -147,10 +151,16 @@ describe("wired write tool", () => {
     }
 
     await expect(
-      range.write({ command: "redo", path: range.filePath, from: "w2", to: "w5" }, range.ctx),
-    ).resolves.toContain("status: reversed");
-    const afterRangeRedo = String(
-      await range.write({ command: "view", path: range.filePath }, range.ctx),
+      writeText(
+        range.write,
+        { command: "redo", path: range.filePath, from: "w2", to: "w5" },
+        range.ctx,
+      ),
+    ).resolves.toContain("status: reconciled");
+    const afterRangeRedo = await writeText(
+      range.write,
+      { command: "read", path: range.filePath },
+      range.ctx,
     );
     for (const restored of ["One", "Two", "Three", "Four", "Five"]) {
       expect(afterRangeRedo).toContain(restored);
@@ -164,16 +174,48 @@ describe("wired write tool", () => {
     const write = wiredWriteHandler({ documentId, filePath, core: harness.core });
     const ctx = toolContext();
 
-    const initialView = String(await write({ command: "view", path: filePath }, ctx));
-    const insert = String(await write({ command: "insert", path: filePath, content: "Beta" }, ctx));
-    const updatedView = String(await write({ command: "view", path: filePath }, ctx));
-    const missing = JSON.stringify(await write({ command: "view", path: "missing.md" }, ctx));
+    const initialRead = await writeText(write, { command: "read", path: filePath }, ctx);
+    const insert = await writeText(
+      write,
+      { command: "insert", path: filePath, content: "Beta" },
+      ctx,
+    );
+    const updatedRead = await writeText(write, { command: "read", path: filePath }, ctx);
+    const missing = JSON.stringify(await write({ command: "read", path: "missing.md" }, ctx));
 
-    expect(initialView).toContain("Alpha");
-    expect(updatedView).toContain("Beta");
-    expect([initialView, insert, updatedView, missing].join("\n")).not.toContain(documentId);
+    expect(initialRead).toContain("Alpha");
+    expect(updatedRead).toContain("Beta");
+    expect([initialRead, insert, updatedRead, missing].join("\n")).not.toContain(documentId);
   });
 });
+
+async function writeText(
+  write: TestWriteHandler,
+  input: unknown,
+  ctx: ToolHandlerContext,
+): Promise<string> {
+  return toolResultText(await write(input, ctx));
+}
+
+function toolResultText(result: unknown): string {
+  const output =
+    typeof result === "object" && result !== null && "output" in result
+      ? (result as { output?: unknown }).output
+      : result;
+  if (Array.isArray(output)) {
+    return output
+      .map((block) =>
+        typeof block === "object" &&
+        block !== null &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string"
+          ? (block as { text: string }).text
+          : JSON.stringify(block),
+      )
+      .join("\n\n");
+  }
+  return String(output);
+}
 
 async function seededWiredWrite() {
   const documentId = crypto.randomUUID();
@@ -182,7 +224,7 @@ async function seededWiredWrite() {
   const write = wiredWriteHandler({ documentId, filePath, core: harness.core });
   const ctx = toolContext();
 
-  await write({ command: "view", path: filePath }, ctx);
+  await write({ command: "read", path: filePath }, ctx);
   for (const content of ["One", "Two", "Three", "Four", "Five"]) {
     await write({ command: "insert", path: filePath, content }, ctx);
   }

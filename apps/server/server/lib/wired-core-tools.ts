@@ -3,8 +3,17 @@
  * backed by Meridian context, collab, and thread services.
  */
 
-import type { ResponseStagedCreateOutcome, WriteCommand } from "@meridian/agent-edit";
-import { type DocumentAddress, formatDocumentFile, splitDocumentFile } from "@meridian/agent-edit";
+import type {
+  ConcurrentEditInfo,
+  ResponseStagedCreateOutcome,
+  WriteCommand,
+} from "@meridian/agent-edit";
+import {
+  type DocumentAddress,
+  formatDocumentFile,
+  splitDocumentFile,
+  WriteCommandSchema,
+} from "@meridian/agent-edit";
 import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   checkpointRequestFromAskUser,
@@ -30,7 +39,6 @@ import {
 import {
   type CheckpointToolHandlerContext,
   createCoreToolRegistrations,
-  type ResponseCommitEcho,
   type ToolHandlerContext,
   type ToolRegistration,
 } from "../domains/runtime/index.js";
@@ -73,11 +81,11 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<ResponseCommitEcho[]>;
+  ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
   rollbackResponse(responseId: string): Promise<void>;
 }
 
-const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
+const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
   "insert",
   "replace",
@@ -137,127 +145,31 @@ function asRecord(input: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function optionalString(
-  input: Record<string, unknown>,
-  key: string,
-): string | ToolErrorOutput | undefined {
-  const value = input[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") return toolError({ message: `${String(key)} must be a string` });
-  return value;
-}
-
-function optionalBoolean(
-  input: Record<string, unknown>,
-  key: string,
-): boolean | ToolErrorOutput | undefined {
-  const value = input[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== "boolean") return toolError({ message: `${String(key)} must be a boolean` });
-  return value;
-}
-
-function optionalPositiveInteger(
-  input: Record<string, unknown>,
-  key: string,
-): number | ToolErrorOutput | undefined {
-  const value = input[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    return toolError({ message: `${String(key)} must be a positive integer` });
-  }
-  return value;
-}
-
 function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutput {
   const record = asRecord(input);
   if (!record) return toolError({ message: "write input must be an object" });
 
-  const { command, path } = record;
-  if (typeof command !== "string" || !isWriteCommandName(command)) {
-    return toolError({ message: "command is required" });
-  }
+  const { path, ...packageInput } = record;
   if (typeof path !== "string" || path.length === 0) {
     return toolError({ message: "path is required" });
   }
 
-  const content = optionalString(record, "content");
-  if (isToolError(content)) return content;
-  const find = optionalString(record, "find");
-  if (isToolError(find)) return find;
-  const inScope = optionalString(record, "in");
-  if (isToolError(inScope)) return inScope;
-  const around = optionalString(record, "around");
-  if (isToolError(around)) return around;
-  const after = optionalString(record, "after");
-  if (isToolError(after)) return after;
-  const before = optionalString(record, "before");
-  if (isToolError(before)) return before;
-  const to = optionalString(record, "to");
-  if (isToolError(to)) return to;
-  const from = optionalString(record, "from");
-  if (isToolError(from)) return from;
-  const overwrite = optionalBoolean(record, "overwrite");
-  if (isToolError(overwrite)) return overwrite;
-  const all = optionalBoolean(record, "all");
-  if (isToolError(all)) return all;
-  const last = optionalPositiveInteger(record, "last");
-  if (isToolError(last)) return last;
-  const format = optionalString(record, "format");
-  if (isToolError(format)) return format;
-  if (format !== undefined && !["auto", "full", "outline"].includes(format)) {
-    return toolError({ message: "format must be auto, full, or outline" });
-  }
+  const parsed = WriteCommandSchema.safeParse({ ...packageInput, file: path });
+  if (!parsed.success) return toolError({ message: writeSchemaError(parsed.error) });
 
-  if ((command === "insert" || command === "replace") && content === undefined) {
-    return toolError({ message: "content is required" });
-  }
-
-  const base = { command, path, tool_use_id: undefined };
-  switch (command) {
-    case "create":
-      return { ...base, command, content, overwrite };
-    case "view":
-      return {
-        ...base,
-        command,
-        in: inScope,
-        around,
-        format: format as "auto" | "full" | "outline",
-      };
-    case "insert":
-      return {
-        ...base,
-        command,
-        content: content ?? "",
-        find,
-        in: inScope,
-        around,
-        after,
-        before,
-        all,
-      };
-    case "replace":
-      return { ...base, command, content: content ?? "", find, in: inScope, around, all };
-    case "undo":
-      return { ...base, command, to, from, last, all };
-    case "redo":
-      return { ...base, command, to, from, last, all };
-  }
+  const { file: _file, documentId: _documentId, tool_use_id: _toolUseId, ...command } = parsed.data;
+  return { ...command, path } as ModelWriteCommand;
 }
 
-function isWriteCommandName(command: string): command is WriteCommand["command"] {
-  switch (command) {
-    case "create":
-    case "view":
-    case "insert":
-    case "replace":
-    case "undo":
-    case "redo":
-      return true;
-    default:
-      return false;
-  }
+function writeSchemaError(error: {
+  issues: Array<{ path: PropertyKey[]; message: string }>;
+}): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.map((part) => (part === "file" ? "path" : part)).join(".");
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join("; ");
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput {
@@ -405,7 +317,7 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<ResponseCommitEcho[]> {
+    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]> {
       const result = await deps.documentSync.agentEdit().commitResponse(responseId);
       await Promise.all(
         result.documents.map((document) =>
@@ -418,7 +330,14 @@ export function createAgentEditResponseWriteLifecycle(
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
       return result.documents.flatMap((document) =>
-        document.text ? [{ documentId: document.documentId, text: document.text }] : [],
+        document.concurrentEdits
+          ? [
+              {
+                documentId: document.documentId,
+                concurrentEdits: document.concurrentEdits,
+              },
+            ]
+          : [],
       );
     },
 
@@ -507,10 +426,17 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         (parsed.command === "create" ||
           parsed.command === "insert" ||
           parsed.command === "replace");
-      if (MUTATING_WRITE_COMMANDS.has(parsed.command) && !stagedWrite) {
+      if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
         await refreshProjectionAfterCommittedWrite(deps, address.documentId, ctx);
       }
-      return outcome.text;
+      return {
+        output: outcome.content ?? outcome.text,
+        // Only attach documentId metadata for staged mutating writes (create/insert/replace
+        // within a response). This is used by the orchestrator to track which tool_result
+        // block to backfill concurrent edit info into after commitResponse. Non-mutating
+        // commands (read/undo/redo) must NOT overwrite the backfill target.
+        ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
+      };
     },
     list: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = input as { path?: string };

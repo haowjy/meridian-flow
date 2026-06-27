@@ -15,7 +15,7 @@ The sword hummed beneath the old shrine.
 
 Moonlight pooled across the floor.`;
 
-type CommandKind = "create" | "view" | "insert" | "replace" | "undo" | "redo";
+type CommandKind = "create" | "read" | "insert" | "replace" | "undo" | "redo";
 
 interface LogEntry {
   id: number;
@@ -202,7 +202,7 @@ interface CommandPanelProps {
 }
 
 function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanelProps) {
-  const [kind, setKind] = useState<CommandKind>("view");
+  const [kind, setKind] = useState<CommandKind>("read");
   const [find, setFind] = useState("sword");
   const [content, setContent] = useState("");
   const [after, setAfter] = useState("");
@@ -211,7 +211,7 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
   const [around, setAround] = useState("");
   const [all, setAll] = useState(false);
   const [turnId, setTurnId] = useState("");
-  const [viewFormat, setViewFormat] = useState<"full" | "outline">("full");
+  const [viewFormat, setReadFormat] = useState<"full" | "outline">("full");
 
   const hashOptions = useMemo(() => blocks.map((b) => b.hash), [blocks]);
 
@@ -246,7 +246,7 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
           command
           <select value={kind} onChange={(e) => setKind(e.target.value as CommandKind)}>
             <option value="create">create</option>
-            <option value="view">view</option>
+            <option value="read">read</option>
             <option value="insert">insert</option>
             <option value="replace">replace</option>
             <option value="undo">undo</option>
@@ -259,14 +259,14 @@ function CommandPanel({ docId, setDocId, blocks, onRun, disabled }: CommandPanel
         </label>
       </div>
 
-      {kind === "view" && (
+      {kind === "read" && (
         <>
           <div className="row">
             <label>
               format
               <select
                 value={viewFormat}
-                onChange={(e) => setViewFormat(e.target.value as "full" | "outline")}
+                onChange={(e) => setReadFormat(e.target.value as "full" | "outline")}
               >
                 <option value="full">full</option>
                 <option value="outline">outline</option>
@@ -419,9 +419,9 @@ function buildCommand(input: {
   switch (kind) {
     case "create":
       return { command: "create", file: docId, content: input.content };
-    case "view":
+    case "read":
       return {
-        command: "view",
+        command: "read",
         file: docId,
         format: input.viewFormat,
         ...(input.inHash ? { in: input.inHash } : {}),

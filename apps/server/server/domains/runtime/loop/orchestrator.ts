@@ -62,6 +62,7 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
+import type { ConcurrentEditInfo } from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -129,11 +130,6 @@ export interface OrchestratorRepositories {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
-export interface ResponseCommitEcho {
-  documentId: string;
-  text: string;
-}
-
 export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
@@ -158,9 +154,31 @@ export interface OrchestratorDeps {
     commitResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<ResponseCommitEcho[]>;
+    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
     rollbackResponse(responseId: string): Promise<void>;
   };
+}
+
+function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        (item as { type?: unknown }).type === "text" &&
+        typeof (item as { text?: unknown }).text === "string",
+    )
+  );
+}
+
+function formatConcurrentEdits(info: ConcurrentEditInfo): string {
+  const lines = ["concurrent edits:"];
+  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
+  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
+  if (info.reviewCommand) lines.push(info.reviewCommand);
+  return lines.join("\n");
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -300,21 +318,6 @@ function createLocalTurn(input: {
     blocks: [],
     siblingIds: [],
     responses: [],
-  };
-}
-
-function createLocalSystemTurn(input: { threadId: ThreadId; prevTurnId: TurnId | null }): Turn {
-  const now = toIsoString(new Date());
-  return {
-    ...createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: input.prevTurnId,
-      role: "system",
-      status: "complete",
-    }),
-    finishReason: "end_turn",
-    completedAt: now,
-    createdAt: now,
   };
 }
 
@@ -646,53 +649,6 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
-async function persistResponseCommitEcho(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  turn: Turn;
-  echoes: readonly ResponseCommitEcho[];
-  blockSeq: number;
-}): Promise<{
-  turn: Turn | null;
-  blocks: Block[];
-  events: OrchestratorEvent[];
-  nextBlockSeq: number;
-}> {
-  const visibleEchoes = input.echoes.filter((echo) => echo.text.trim().length > 0);
-  if (visibleEchoes.length === 0) {
-    return { turn: null, blocks: [], events: [], nextBlockSeq: input.blockSeq };
-  }
-
-  const textContent = visibleEchoes.map((echo) => echo.text).join("\n\n");
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const systemTurn = createLocalSystemTurn({
-      threadId: input.threadId,
-      prevTurnId: input.turn.id,
-    });
-    const block = contentForBlockInput({
-      turnId: systemTurn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent,
-      status: "complete",
-    });
-    return {
-      result: { turn: systemTurn, blocks: [localBlockFromEvent(block)] },
-      events: [
-        { type: "turn.created", turn: systemTurn },
-        { type: "block.upserted", block },
-      ],
-    };
-  });
-
-  return {
-    turn: persisted.result.turn,
-    blocks: persisted.result.blocks,
-    events: persisted.events,
-    nextBlockSeq: input.blockSeq,
-  };
-}
-
 async function completeTurn(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -973,6 +929,8 @@ async function* generateEvents(
           return;
         }
 
+        const writeBlocksByDocument = new Map<string, Block>();
+
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
         for (const call of toolCallsFromResult) {
@@ -1044,6 +1002,9 @@ async function* generateEvents(
           currentAssistantTurn = checkpointState.currentTurn;
           blockSeq = checkpointState.blockSeqRef.value;
           yield* dispatched.events;
+          if (!dispatched.cancelled && typeof dispatched.metadata?.documentId === "string") {
+            writeBlocksByDocument.set(dispatched.metadata.documentId, dispatched.block);
+          }
           if (dispatched.cancelled || input.signal?.aborted) {
             await rollbackActiveResponse();
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
@@ -1055,22 +1016,59 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        const commitEchoes = await deps.responseWrites.commitResponse(responseId, {
+        const concurrentEdits = await deps.responseWrites.commitResponse(responseId, {
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
         });
-        const persistedCommitEcho = await persistResponseCommitEcho({
-          deps,
-          threadId: input.threadId,
-          turn: currentAssistantTurn,
-          echoes: commitEchoes,
-          blockSeq,
-        });
-        blockSeq = persistedCommitEcho.nextBlockSeq;
-        if (persistedCommitEcho.turn) allTurns.push(persistedCommitEcho.turn);
-        allBlocks.push(...persistedCommitEcho.blocks);
-        yield* persistedCommitEcho.events;
         activeResponseId = undefined;
+
+        // Backfill concurrent edit info into the last write tool_result block per document.
+        for (const { documentId, concurrentEdits: edits } of concurrentEdits) {
+          const block = writeBlocksByDocument.get(documentId);
+          if (!block) continue;
+          const content = block.content as {
+            toolCallId?: string;
+            output?: unknown;
+            isError?: boolean;
+          } | null;
+          if (!content?.output) continue;
+
+          const output = content.output;
+          if (!isTextContentBlockArray(output)) continue;
+
+          const [metadataBlock, ...remainingBlocks] = output;
+          const updatedOutput = [
+            {
+              ...metadataBlock,
+              text: `${metadataBlock.text}\n${formatConcurrentEdits(edits)}`,
+            },
+            ...remainingBlocks,
+          ];
+          const updatedContent = { ...content, output: updatedOutput };
+          const updatedBlockRow = contentForBlockInput({
+            id: block.id,
+            turnId: block.turnId,
+            responseId: block.responseId,
+            blockType: "tool_result",
+            sequence: block.sequence,
+            content: updatedContent,
+            provider: block.provider,
+            status: "complete",
+          });
+          const persistedBackfill = await persistAndAppendEvents(
+            deps,
+            input.threadId,
+            async () => ({
+              result: localBlockFromEvent(updatedBlockRow),
+              events: [{ type: "block.upserted", block: updatedBlockRow }],
+            }),
+          );
+          const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
+          if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
+          writeBlocksByDocument.set(documentId, persistedBackfill.result);
+          yield* persistedBackfill.events;
+        }
+
         // After all tool results are persisted, loop back to build context
         // with the updated blocks and make the next model call.
         continue;

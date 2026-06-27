@@ -7,12 +7,33 @@
  */
 
 /**
+ * Detects content block arrays: `[{type: "text", text: "..."}, ...]`.
+ * These are produced by the write tool for structured tool_result blocks
+ * and should be joined into a single string for providers that don't
+ * support multi-block tool results natively.
+ */
+function isContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        item.type === "text" &&
+        typeof item.text === "string",
+    )
+  );
+}
+
+/**
  * Normalize a tool output value into a non-empty string suitable for
  * provider API consumption.
  *
  * Rules:
  * - Strings pass through unless empty (then stringify as "").
  * - null/undefined → "null" (both providers accept this).
+ * - Content block arrays → joined text blocks.
  * - Objects/arrays/numbers/booleans → JSON.stringify().
  * - If JSON.stringify fails (cyclic objects, BigInts, etc.), fall back to
  *   String(output) and, if that's empty, "null".
@@ -23,6 +44,12 @@
 export function safeToolOutput(output: unknown): string {
   if (typeof output === "string") return output.length > 0 ? output : JSON.stringify("");
   if (output === null || output === undefined) return "null";
+
+  // Content block arrays are joined into a single string for providers
+  // that don't support multi-block tool results (OpenAI, OpenRouter).
+  if (isContentBlockArray(output)) {
+    return output.map((block) => block.text).join("\n\n");
+  }
 
   try {
     const serialized = JSON.stringify(output);

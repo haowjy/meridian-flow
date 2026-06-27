@@ -3,8 +3,8 @@ import { context, harness } from "./write-tool-harness.js";
 
 export async function responseStagingHarness(responseId: string) {
   const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "Beta." });
-  await ctx.core.write({ command: "view", file: "alpha.md" }, context);
-  await ctx.core.write({ command: "view", file: "beta.md" }, context);
+  await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+  await ctx.core.write({ command: "read", file: "beta.md" }, context);
 
   return {
     ctx,

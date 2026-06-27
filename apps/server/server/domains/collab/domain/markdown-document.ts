@@ -7,17 +7,17 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
-  type Codec,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
-  type ParsedContent,
+  toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -48,7 +48,7 @@ type MarkdownWriteHook = (event: {
 }) => Promise<void>;
 
 type MarkdownDocumentEngineDeps = {
-  codec: Codec;
+  codec: MarkupCodec;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
@@ -95,9 +95,8 @@ export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
   function serializeDoc(doc: Y.Doc): string {
-    const blocks = deps.model.getBlocks(doc);
-    if (blocks.length === 0) return "";
-    return deps.codec.serialize(blocks.map((block) => deps.model.toProsemirrorBlock(doc, block)));
+    if (deps.model.getBlocks(toDocHandle(doc)).length === 0) return "";
+    return deps.codec.serialize(deps.model.projectBlocks(toDocHandle(doc)));
   }
 
   function parseMarkdown(
@@ -128,7 +127,7 @@ export function createMarkdownDocumentEngine(
     draft.transact(() => {
       const fragment = fragmentOf(draft);
       if (fragment.length > 0) fragment.delete(0, fragment.length);
-      deps.model.insertBlocks(draft, null, parsed);
+      deps.model.insertBlocks(toDocHandle(draft), null, parsed);
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const meta = deps.metaForOrigin(origin);

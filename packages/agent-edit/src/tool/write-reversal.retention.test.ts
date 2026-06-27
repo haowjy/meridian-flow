@@ -19,7 +19,7 @@ import {
 
 describe("write reversal retention", () => {
   it("undoes a later write first, then a checkpointed earlier write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -44,7 +44,7 @@ describe("write reversal retention", () => {
   });
 
   it("refuses redo when any in-memory reversal row in the group is no longer reversed", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -64,7 +64,7 @@ describe("write reversal retention", () => {
   });
 
   it("blocks redo after a forward write follows an undo", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
     const { ctx } = scenario;
     await scenario.simpleReplace("turn-redo-gate");
     await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
@@ -91,7 +91,7 @@ describe("write reversal retention", () => {
   });
 
   it("validates ranges and unknown handles without crashing", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       context,
@@ -116,7 +116,7 @@ describe("write reversal retention", () => {
   });
 
   it("treats cold undo target drift as a non-retained write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -148,7 +148,7 @@ describe("write reversal retention", () => {
   });
 
   it("treats cold redo target drift as a non-retained write", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
@@ -185,7 +185,7 @@ describe("write reversal retention", () => {
   });
 
   it("reports undo availability only while active mutation updates are retained", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
     await scenario.simpleReplace("turn-availability");
 
     expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
@@ -206,7 +206,7 @@ describe("write reversal retention", () => {
   });
 
   it("reports redo unavailable when compaction drops retained reversal rows", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword waits." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword waits." });
     await scenario.simpleReplace("turn-redo-compacted-prefix");
     const stateAfterForwardWrite = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
     await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
@@ -230,18 +230,18 @@ describe("write reversal retention", () => {
   });
 
   it("exposes user turn undo and redo seams by document and thread", async () => {
-    const scenario = await ReversalScenario.view(
+    const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
     await scenario.simpleReplace("turn-user-seam");
 
     const undo = await scenario.ctx.core.undoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(undo)).toContain("status: reversed");
+    expect(outcomeText(undo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
 
     const redo = await scenario.ctx.core.redoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(redo)).toContain("status: reversed");
+    expect(outcomeText(redo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
   });
 
@@ -253,7 +253,7 @@ describe("write reversal retention", () => {
     });
     const { ctx } = scenario;
 
-    await ctx.core.write({ command: "view", file: "chapter.md" }, contextB);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, contextB);
     await ctx.core.write(
       {
         command: "replace",
@@ -263,7 +263,7 @@ describe("write reversal retention", () => {
       },
       { ...contextB, turnId: "turn-b-1" },
     );
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       {
         command: "replace",
@@ -273,7 +273,7 @@ describe("write reversal retention", () => {
       },
       { ...context, turnId: "turn-a" },
     );
-    await ctx.core.write({ command: "view", file: "chapter.md" }, contextB);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, contextB);
     await ctx.core.write(
       {
         command: "replace",
@@ -286,7 +286,7 @@ describe("write reversal retention", () => {
 
     const undo = await ctx.core.undoTurn("chapter.md", threadB);
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Thread A paragraph 1.",
       "Thread B paragraph 2.",

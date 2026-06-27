@@ -1,4 +1,6 @@
 // Reconcile coverage for cold journal undo/redo reconstruction.
+
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -10,7 +12,9 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
-import { mdxCodec } from "../codec/presets/mdx.js";
+import { createAgentEditCodec } from "../codec-adapter.js";
+import type { BlockRef } from "../handles.js";
+import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
@@ -18,7 +22,7 @@ import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";
@@ -195,7 +199,7 @@ function applyAgentText(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "text", element: block, span, newText },
+    { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(block), span, newText },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -212,7 +216,13 @@ function applyAgentInsert(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "insert", after, newText },
+    {
+      documentId: DOC_ID,
+      file: FILE,
+      kind: "insert",
+      ...(after ? { after: toRef(after) } : {}),
+      newText,
+    },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -250,11 +260,11 @@ function humanDeleteBlock(ctx: ScenarioContext, blockIndex: number): void {
 }
 
 function textEdit(
-  element: Y.XmlElement,
+  element: BlockRef,
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: DOC_ID, file: FILE, kind: "text", element, span, newText };
+  return { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(element), span, newText };
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {
@@ -267,7 +277,7 @@ function blockTexts(doc: Y.Doc): string[] {
 }
 
 function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
+  return codec.serialize(model.projectBlocks(doc));
 }
 
 function caseCleanReverse(): MatrixCase {

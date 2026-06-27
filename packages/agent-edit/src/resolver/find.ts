@@ -1,19 +1,16 @@
-import type * as Y from "yjs";
-
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
-const EMPTY_PARAGRAPH_SENTINEL = "\u00a0";
-
 export interface FindContext {
-  doc: Y.Doc;
+  doc: DocHandle;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
 }
 
 export interface FindMatch {
-  elements: Y.XmlElement[];
+  elements: BlockRef[];
   startIndex: number;
   endIndex: number;
   rangeSource: string;
@@ -34,7 +31,7 @@ export type FindResult =
     };
 
 interface SerializedBlockEntry {
-  block: Y.XmlElement;
+  block: BlockRef;
   index: number;
   body: string;
   start: number;
@@ -75,45 +72,43 @@ export function findTextMatches(
   };
 }
 
-export function serializeBlockBody(ctx: FindContext, block: Y.XmlElement): string {
-  const pmBlock = ctx.model.toProsemirrorBlock(ctx.doc, block);
-  const body = trimOneTrailingNewline(ctx.codec.serialize([pmBlock]));
-  return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+export function serializeBlockBody(ctx: FindContext, block: BlockRef): string {
+  return ctx.model.serializeBlockBodies(ctx.doc, ctx.codec, [block])[0] ?? "";
 }
 
 export function serializePmBlockBody(
   ctx: Pick<FindContext, "codec">,
-  block: Parameters<Codec["serialize"]>[0][number],
+  block: Parameters<AgentEditCodec["serialize"]>[0][number],
 ): string {
-  const body = trimOneTrailingNewline(ctx.codec.serialize([block]));
-  return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
+  return ctx.codec.serializeBlockBodies([block])[0] ?? "";
 }
 
 export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
-  // Batch path: project PM tree once for the whole doc, then filter to scope
-  // blocks by index. O(D + scope·S) instead of O(scope·D).
   const allBlocks = ctx.model.getBlocks(ctx.doc);
-  const allPmBlocks = ctx.model.toProsemirrorBlocks(ctx.doc);
-  const indexByBlock = new Map<Y.XmlElement, number>();
-  for (let i = 0; i < allBlocks.length; i++) indexByBlock.set(allBlocks[i], i);
-
-  const runtime = ctx.codec;
+  const indexByBlock = new Map<BlockRef, number>();
+  allBlocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selected = scope.blocks
+    .map((block) => ({ block, index: indexByBlock.get(block) }))
+    .filter((entry): entry is { block: BlockRef; index: number } => entry.index !== undefined);
+  const bodies = ctx.model.serializeBlockBodies(
+    ctx.doc,
+    ctx.codec,
+    selected.map((entry) => entry.block),
+  );
   let cursor = 0;
-  return scope.blocks.map((block, index) => {
-    const idx = indexByBlock.get(block);
-    const pmBlock =
-      idx !== undefined ? allPmBlocks[idx] : ctx.model.toProsemirrorBlock(ctx.doc, block);
-    const body = trimOneTrailingNewline(runtime.serialize([pmBlock]));
-    const displayBody = body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
-    const entry = {
-      block,
-      index: scope.startIndex + index,
-      body: displayBody,
+  return selected.map((entry, bodyIndex) => {
+    const body = bodies[bodyIndex] ?? "";
+    const serialized = {
+      block: entry.block,
+      index: entry.index,
+      body,
       start: cursor,
-      end: cursor + displayBody.length,
+      end: cursor + body.length,
     };
-    cursor = entry.end + (index === scope.blocks.length - 1 ? 0 : 2);
-    return entry;
+    cursor = serialized.end + (bodyIndex === selected.length - 1 ? 0 : 2);
+    return serialized;
   });
 }
 
@@ -194,10 +189,6 @@ function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean):
     if (predicate(items[index])) return index;
   }
   return -1;
-}
-
-function trimOneTrailingNewline(value: string): string {
-  return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
 function notFound(message: string): FindResult {

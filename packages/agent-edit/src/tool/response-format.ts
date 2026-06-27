@@ -1,13 +1,7 @@
 // Formats shared write and reversal responses for the tool surface.
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import type {
-  ResponseCommitWriteEcho,
-  WriteCommandName,
-  WriteErrorStatus,
-  WriteOutcome,
-  WriteStatus,
-} from "./types.js";
+import type { WriteCommandName, WriteErrorStatus, WriteOutcome, WriteStatus } from "./types.js";
 
 export function status(code: WriteStatus, message?: string): InternalWriteResult {
   return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
@@ -24,22 +18,8 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     text: result.text,
+    ...(result.content ? { content: result.content } : {}),
   };
-}
-
-export function formatConcurrentCommitEcho(input: {
-  echoes: readonly ResponseCommitWriteEcho[];
-  concurrentEdits?: ConcurrentEditInfo;
-}): string {
-  const lines = ["status: success"];
-  const echoLines = input.echoes
-    .flatMap((entry) =>
-      entry.hunks.flatMap((hunk) => hunk.blocks.map((block) => `${entry.writeId}: ${block}`)),
-    )
-    .filter((line) => line.length > 0);
-  if (echoLines.length > 0) lines.push("", ...echoLines);
-  if (input.concurrentEdits) lines.push("", ...formatConcurrent(input.concurrentEdits));
-  return lines.join("\n");
 }
 
 export function formatConcurrent(info: ConcurrentEditInfo): string[] {

@@ -2,7 +2,8 @@
 import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
-import type { Codec } from "../codec/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type {
@@ -23,9 +24,9 @@ import {
   type ReversalPlan,
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
-import type { InternalWriteResult } from "./internal-result.js";
+import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
-import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
+import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { UndoRedoOutcome, WriteCommand, WriteRedoResult, WriteUndoResult } from "./types.js";
 
@@ -72,7 +73,7 @@ export function createWriteReversal(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
-  codec: Codec;
+  codec: AgentEditCodec;
   undoClientId?: number;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
@@ -108,7 +109,12 @@ export function createWriteReversal(deps: {
 
   async function run(input: WriteReversalRunInput): Promise<InternalWriteResult> {
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
-    const synced = runtimeStore.requireSynced(input.session, input.docId);
+    const synced = await runtimeStore.requireSynced(
+      input.session,
+      input.docId,
+      input.docId,
+      runtime,
+    );
     if (!synced.ok) return synced.response;
     return runUndoOrRedo({ ...input, runtime });
   }
@@ -184,14 +190,20 @@ export function createWriteReversal(deps: {
 
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
     const outcome = reversal.status;
-    const lines = [`status: ${outcome}`];
-    if (targetCount > 0) lines.push("", `${input.direction}: ${targetCount} edit(s)`);
+    const metaLines = [`status: ${outcome}`];
+    if (targetCount > 0) metaLines.push(`${input.direction}: ${targetCount} edit(s)`);
+    if (reversal.sync?.concurrentEdits)
+      metaLines.push(...formatConcurrent(reversal.sync.concurrentEdits));
+
     const echoLines =
       reversal.sync?.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0) ?? [];
-    if (echoLines.length > 0) lines.push("", ...echoLines);
-    if (reversal.sync?.concurrentEdits)
-      lines.push("", ...formatConcurrent(reversal.sync.concurrentEdits));
-    return result(outcome, lines.join("\n"));
+    const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
+    if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+    return {
+      status: outcome,
+      text: content.map((block) => block.text).join("\n\n"),
+      content,
+    };
   }
 
   function resolvedScopeSelection(
@@ -230,7 +242,7 @@ export function createWriteReversal(deps: {
       return { ok: true, status: plan.status };
     }
 
-    const before = snapshotBlocks(input.runtime.doc, model, codec);
+    const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
     const guard =
       input.direction === "undo"
         ? await guardDependentUndo({
@@ -309,7 +321,10 @@ export function createWriteReversal(deps: {
 
     Y.applyUpdate(input.runtime.doc, reconstructed.update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(input.runtime.doc);
-    const ownDiff = diffSnapshots(before, snapshotBlocks(input.runtime.doc, model, codec));
+    const ownDiff = diffSnapshots(
+      before,
+      snapshotBlocks(toDocHandle(input.runtime.doc), model, codec),
+    );
 
     const sync = await mutationCommit.syncAfterLocalMutation({
       docId: input.docId,
@@ -321,7 +336,6 @@ export function createWriteReversal(deps: {
       before,
       touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
       deletedHashes: ownDiff.deleted,
-      structuralChange: ownDiff.deleted.size > 0 || ownDiff.inserted.size > 0,
     });
     if (!sync.ok) return { ok: false, response: sync.response };
     return {
