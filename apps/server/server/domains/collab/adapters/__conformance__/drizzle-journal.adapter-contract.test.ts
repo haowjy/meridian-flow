@@ -202,6 +202,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const journal = createDrizzleJournal(db);
       const doc = new Y.Doc({ gc: false });
       doc.clientID = LIVE_CLIENT_ID;
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), 0);
 
       const updateA = appendText(doc, "Alpha");
       const seqA = await journal.append(DOC_ID, updateA, {
@@ -225,7 +226,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(bounded.updates.map((update) => update.seq)).toEqual([seqB, seqC]);
 
       const initial = await journal.read(DOC_ID);
-      expect(initial.checkpoint).toBeNull();
+      expect(initial.checkpoint).toBeInstanceOf(Uint8Array);
       expect(initial.updates.map((update) => update.seq)).toEqual([seqA, seqB, seqC]);
       expect(initial.updates[0]?.meta).toEqual({
         origin: `agent:${TURN_A}`,
@@ -244,12 +245,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
       const fullLogAfterCheckpoint = await journal.readForReconstruction(DOC_ID);
-      expect(fullLogAfterCheckpoint.checkpoint).toBeNull();
+      expect(fullLogAfterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(fullLogAfterCheckpoint.updates.map((update) => update.seq)).toEqual([
         seqA,
         seqB,
         seqC,
       ]);
+      expect(
+        textFromSnapshot(fullLogAfterCheckpoint.checkpoint, fullLogAfterCheckpoint.updates),
+      ).toBe("Alpha Beta Gamma");
 
       const updateD = appendText(doc, " Delta");
       const seqD = await journal.append(DOC_ID, updateD, {

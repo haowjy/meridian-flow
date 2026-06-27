@@ -174,19 +174,24 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
-async function latestBaselineCheckpoint(db: JournalDb, documentId: string) {
+async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
+  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
+    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
+
+  const checkpointConditions = [eq(documentYjsCheckpoints.documentId, asDocumentId(documentId))];
+  if (minRetainedSeq !== null) {
+    checkpointConditions.push(lt(documentYjsCheckpoints.upToSeq, minRetainedSeq));
+  }
+
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        eq(documentYjsCheckpoints.upToSeq, 0),
-      ),
-    )
-    .orderBy(desc(documentYjsCheckpoints.id))
+    .where(and(...checkpointConditions))
+    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
-  return row ?? null;
+  return row ?? (await latestCheckpoint(db, documentId));
 }
 
 async function upsertHead(
@@ -637,10 +642,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       docId,
       opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
     ): Promise<JournalSnapshot> {
-      const latest = await latestCheckpoint(db, docId);
       const fromCheckpoint = opts.fromCheckpoint ?? true;
-      const conditions = [eq(documentYjsUpdates.documentId, asDocumentId(docId))];
-      if (fromCheckpoint) conditions.push(gt(documentYjsUpdates.id, latest?.upToSeq ?? 0));
+      const checkpoint = fromCheckpoint
+        ? await latestCheckpoint(db, docId)
+        : await reconstructionCheckpoint(db, docId);
+      const conditions = [
+        eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
+      ];
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
       if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
 
@@ -650,7 +659,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .where(and(...conditions))
         .orderBy(asc(documentYjsUpdates.id));
 
-      const checkpoint = fromCheckpoint ? latest : await latestBaselineCheckpoint(db, docId);
       return {
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),

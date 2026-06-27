@@ -18,6 +18,73 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("write reversal retention", () => {
+  it("undoes a retained later replacement after compaction folded an earlier replacement", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword.\n\nBeta shield." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-compacted-replace" },
+    );
+    await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "ward", find: "shield" },
+      { ...context, turnId: "turn-retained-replace" },
+    );
+
+    const undoLater = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expectOutcome(undoLater, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+
+    const undoCompacted = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expectOutcome(undoCompacted, "nothing_to_undo");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+
+    const redoLater = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expectOutcome(redoLater, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward."]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
+
+    const undoAll = await ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      context,
+    );
+    expectOutcome(undoAll, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("undoes a retained later insert after compaction folded an earlier insert", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, turnId: "turn-compacted-insert" },
+    );
+    await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Gamma." },
+      { ...context, turnId: "turn-retained-insert" },
+    );
+
+    const undoLater = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undoLater, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Alpha.", "Beta."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
   it("undoes a later write first, then a checkpointed earlier write", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
