@@ -2,8 +2,7 @@
 
 Use temporary console probes when they help you understand a live bug quickly.
 Keep them disposable: delete them before pushing, or convert useful signals into
-durable observability through the server `EventSink` or agent debug trace
-capture.
+durable observability through the server `EventSink`.
 
 ## Temporary Probes
 
@@ -19,6 +18,8 @@ Rules:
 - Put `// TEMP-DEBUG: remove before push` immediately above the console line.
 - Prefix the message with `[temp-debug:<area>]`.
 - Log one compact metadata object.
+- Pre-push blocks `TEMP-DEBUG`, `[temp-debug:...]`, `console.log(`, and
+  `console.debug(` in product source, even when the console call is unmarked.
 - Do not log secrets, cookies, raw prompts, raw model output, uploaded content,
   tool arguments, or tool results.
 - Remove the probe before pushing, or convert it into durable observability.
@@ -29,18 +30,20 @@ If the signal would help another agent tomorrow, use structured observability
 instead of `console.log`.
 
 - Server diagnostics go through `EventSink` / `emitEvent`.
-- Prompt and agent-run diagnostics should go through the agent debug trace
-  capture path, not ordinary searchable logs.
+- Model-request diagnostics can use the existing model-request debug capture
+  path when that is the right level of detail. Broader prompt and agent-run
+  trace capture is not implemented yet; until it exists, use safe metadata in
+  `EventSink` events and keep protected content out of ordinary searchable logs.
 - Client-only probes can use temporary console output while diagnosing; durable
   client diagnostics need an explicit dev/debug transport before they become
   observable to LLMs.
 
 ## Cleanup
 
-Find temporary probes:
+Find the same product-source patterns that pre-push blocks:
 
 ```bash
-rg -n "TEMP-DEBUG|\\[temp-debug:|console\\.log\\(|console\\.debug\\(" apps/app/src apps/server/server packages
+node tools/ci/check-debug-probes.mjs
 ```
 
 Pre-push runs `node tools/ci/check-debug-probes.mjs` and blocks temporary probes

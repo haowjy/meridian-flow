@@ -5,7 +5,13 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-const SEARCH_ROOTS = ["apps/app/src", "apps/server/server", "packages"];
+const SEARCH_ROOTS = [
+  "apps/app/src",
+  "apps/server/server",
+  "apps/server/src",
+  "apps/www/src",
+  "packages",
+];
 const PATTERNS = [/TEMP-DEBUG/, /\[temp-debug:/, /console\.log\(/, /console\.debug\(/];
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"]);
 const EXCLUDED_PARTS = new Set([
@@ -17,7 +23,7 @@ const EXCLUDED_PARTS = new Set([
   "demo",
   "e2e",
 ]);
-const EXCLUDED_SUFFIXES = [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".bench.test.ts"];
+const EXCLUDED_FILE_PATTERN = /\.(test|spec|bench\.test)\.(js|jsx|mjs|cjs|ts|tsx)$/;
 
 function hasExcludedPart(filePath) {
   const parts = filePath.split(path.sep);
@@ -26,7 +32,7 @@ function hasExcludedPart(filePath) {
 
 function shouldSkipFile(filePath) {
   if (hasExcludedPart(filePath)) return true;
-  if (EXCLUDED_SUFFIXES.some((suffix) => filePath.endsWith(suffix))) return true;
+  if (EXCLUDED_FILE_PATTERN.test(filePath)) return true;
   return !SOURCE_EXTENSIONS.has(path.extname(filePath));
 }
 
@@ -61,7 +67,7 @@ if (findings.length === 0) {
 console.error("Temporary console/debug statements remain in product source.");
 console.error("");
 console.error(
-  "Delete them before pushing, or convert useful signals into durable observability via EventSink / agent debug trace capture.",
+  "Delete them before pushing, or convert useful server signals into durable observability via EventSink.",
 );
 console.error("");
 console.error("Allowed temporary form while diagnosing:");
