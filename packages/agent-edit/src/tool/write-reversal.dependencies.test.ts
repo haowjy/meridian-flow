@@ -173,4 +173,72 @@ describe("write reversal dependencies", () => {
     expect(outcomeText(undo)).not.toMatch(/document|thread|undo update seq|Yjs|struct|delete set/i);
     expect(blockTexts(live)).toEqual(["Base."]);
   });
+  it("still refuses sword→blade→saber after undo/redo cycling the dependent group", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await scenario.writeDependentSwordSaber();
+
+    const undoGroup = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", from: "w1", to: "w2" },
+      context,
+    );
+    expectOutcome(undoGroup, "reconciled");
+    const redoGroup = await scenario.ctx.core.write(
+      { command: "redo", file: "chapter.md" },
+      context,
+    );
+    expectOutcome(redoGroup, "reconciled");
+
+    const undoEarlier = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", to: "w1" },
+      context,
+    );
+
+    expectOutcome(undoEarlier, "cant_undo_dependent", true);
+    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
+    expect(scenario.blockTexts()).toEqual(["Alpha saber."]);
+  });
+
+  it("does not silently partial-undo a diverged turn scope", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword.\n\nBeta shield." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-diverged" },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "shield", content: "ward" },
+      { ...context, turnId: "turn-diverged" },
+    );
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward."]);
+
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "redo", file: "chapter.md" }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context),
+      "reconciled",
+    );
+    expectOutcome(
+      await scenario.ctx.core.write({ command: "redo", file: "chapter.md", to: "w1" }, context),
+      "reconciled",
+    );
+
+    const undoTurn = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      context,
+    );
+
+    expect(["reconciled", "cant_undo_dependent"]).toContain(undoTurn.status);
+    expect(scenario.blockTexts()).not.toEqual(["Alpha sword.", "Beta ward."]);
+  });
 });
