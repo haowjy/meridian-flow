@@ -42,13 +42,14 @@ const ReactQueryDevtools = import.meta.env.DEV
 
 /**
  * Decide where to send an UNAUTHENTICATED request, server-side.
- * Returns `/api/auth/dev-login` when dev-autologin is enabled; otherwise WorkOS sign-in.
+ * Returns the `/dev-login` intermediary screen when dev-autologin is enabled (it
+ * runs the dev-login script on a known, addressable path); otherwise WorkOS sign-in.
  */
 const resolveUnauthRedirect = createServerFn({ method: "GET" })
   .inputValidator((data: { returnPathname: string }) => data)
   .handler(async ({ data }): Promise<{ to: string } | { href: string }> => {
     if (isDevAutologinEnabled()) {
-      return { to: "/api/auth/dev-login" };
+      return { to: "/dev-login" };
     }
 
     const href = await getSignInUrl({ data: { returnPathname: data.returnPathname } });
