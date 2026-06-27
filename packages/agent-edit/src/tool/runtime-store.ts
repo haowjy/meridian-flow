@@ -273,6 +273,10 @@ export function createRuntimeStore(deps: {
         Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
         runtime.doc = restored;
         runtimeDocs.set(runtimeKey(session, docId), runtime);
+        // Persisted state is a fast-start baseline only — merge live truth before mutate.
+        const reconciled = await syncLocalFromLive(session, docId, runtime, "read");
+        if (!reconciled.ok) return reconciled;
+        return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
       }
       return { ok: true, stateVector: persisted.stateVector };
     }
