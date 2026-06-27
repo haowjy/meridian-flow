@@ -1,5 +1,4 @@
-import { parseWriteHandle, type ReversalSelection, type WriteOutcome } from "@meridian/agent-edit";
-import type { TurnReversalOutcome } from "@meridian/contracts/protocol";
+import { parseWriteHandle, type ReversalSelection } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   createError,
@@ -8,6 +7,11 @@ import {
   readBody,
   setResponseStatus,
 } from "nitro/h3";
+import {
+  aggregateStatus,
+  documentReversalResult,
+  isSuccessfulReversal,
+} from "../../../../../domains/collab/domain/turn-reversal.js";
 import type { AppServices } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import {
@@ -77,14 +81,21 @@ export default defineEventHandler(async (event) => {
     actor: { type: "user", userId: user.userId },
   });
 
-  setReverseStatus(event, outcome);
-  if (outcome.status === "reversed" || outcome.status === "reconciled") {
+  if (isSuccessfulReversal(outcome)) {
     await services.documentSync.refreshDocumentProjection({
       documentId: document.documentId as DocumentId,
       threadId,
     });
   }
-  return outcome;
+  const documents = [
+    await documentReversalResult({
+      documentId: document.documentId,
+      outcome,
+      resolveDocumentUri: async () => input.uri ?? null,
+    }),
+  ];
+  setResponseStatus(event, 200);
+  return { status: aggregateStatus(input.direction, documents), documents };
 });
 
 type ParsedReverseBody = {
@@ -155,31 +166,4 @@ function selectionFromScope(
     throw createError({ statusCode: 400, message: "thread scope does not accept target" });
   }
   return { kind: "all" };
-}
-
-function setReverseStatus(
-  event: Parameters<typeof setResponseStatus>[0],
-  outcome: WriteOutcome | TurnReversalOutcome,
-): void {
-  if ("documents" in outcome) {
-    setResponseStatus(event, 200);
-    return;
-  }
-  if (outcome.status === "reversed" || outcome.status === "reconciled") {
-    setResponseStatus(event, 202);
-    return;
-  }
-  if (outcome.status === "cant_undo_dependent") {
-    throw createError({ statusCode: 409, message: outcome.text });
-  }
-  if (outcome.status === "invalid_write") {
-    throw createError({ statusCode: 400, message: outcome.text });
-  }
-  if (outcome.status === "document_not_found") {
-    throw createError({ statusCode: 404, message: "Document not found" });
-  }
-  if (outcome.status === "internal_error") {
-    throw createError({ statusCode: 500, message: "Edit reversal failed" });
-  }
-  setResponseStatus(event, 200);
 }

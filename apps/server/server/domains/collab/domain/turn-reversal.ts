@@ -1,6 +1,11 @@
 /** Turn-level reversal orchestration across every document a thread turn touched. */
-import type { AgentEditCore, ReversalActor, ReversalStore } from "@meridian/agent-edit";
-import type { DocumentReversalResult, TurnReversalOutcome } from "@meridian/contracts/protocol";
+import type {
+  AgentEditCore,
+  ReversalActor,
+  ReversalStore,
+  WriteOutcome,
+} from "@meridian/agent-edit";
+import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 
 export interface ReverseTurnInput {
@@ -20,7 +25,7 @@ export interface ReverseTurnDeps {
 export async function reverseTurn(
   deps: ReverseTurnDeps,
   input: ReverseTurnInput,
-): Promise<TurnReversalOutcome> {
+): Promise<ReversalOutcome> {
   const documentIds = await deps.reversalStore.documentsForTurn(input.threadId, input.turnId);
   if (documentIds.length === 0) {
     return {
@@ -38,23 +43,37 @@ export async function reverseTurn(
       selection: { kind: "turn", turnId: input.turnId },
       actor: input.actor,
     });
-    if (outcome.status === "reversed" || outcome.status === "reconciled") {
+    if (isSuccessfulReversal(outcome)) {
       await deps.refreshDocumentProjection?.({
         documentId: documentId as DocumentId,
         threadId: input.threadId,
       });
     }
-    documents.push({
-      uri: (await deps.resolveDocumentUri(documentId)) ?? documentId,
-      status: outcome.status,
-      ...(outcome.text ? { text: outcome.text } : {}),
-    });
+    documents.push(
+      await documentReversalResult({
+        documentId,
+        outcome,
+        resolveDocumentUri: deps.resolveDocumentUri,
+      }),
+    );
   }
 
   return { status: aggregateStatus(input.direction, documents), documents };
 }
 
-function aggregateStatus(
+export async function documentReversalResult(input: {
+  documentId: string;
+  outcome: Pick<WriteOutcome, "status" | "text">;
+  resolveDocumentUri: (documentId: string) => Promise<string | null>;
+}): Promise<DocumentReversalResult> {
+  return {
+    uri: (await input.resolveDocumentUri(input.documentId)) ?? input.documentId,
+    status: input.outcome.status,
+    ...(input.outcome.text ? { text: input.outcome.text } : {}),
+  };
+}
+
+export function aggregateStatus(
   direction: "undo" | "redo",
   documents: readonly Pick<DocumentReversalResult, "status">[],
 ): DocumentReversalResult["status"] {
@@ -66,4 +85,8 @@ function aggregateStatus(
   if (statuses.every((status) => status === success || status === noOp)) return success;
   if (statuses.every((status) => status === "expired")) return "expired";
   return "partial";
+}
+
+export function isSuccessfulReversal(outcome: Pick<WriteOutcome, "status">): boolean {
+  return outcome.status === "reversed" || outcome.status === "reconciled";
 }
