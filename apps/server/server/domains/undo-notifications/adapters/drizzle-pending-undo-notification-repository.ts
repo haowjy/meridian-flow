@@ -17,11 +17,12 @@ export function createDrizzlePendingUndoNotificationRepository(
   return {
     async record(input) {
       if (input.writeHandles.length === 0) return;
+      const turnByHandle = turnByWriteHandle(input.writeHandleTurns);
       await db.insert(pendingUndoNotifications).values(
         input.writeHandles.map((writeHandle) => ({
           threadId: input.threadId as ThreadId,
           writeHandle,
-          turnId: input.turnId as TurnId,
+          turnId: requireTurnId(writeHandle, turnByHandle) as TurnId,
           uri: input.uri,
           direction: input.direction,
         })),
@@ -55,4 +56,16 @@ function comparePendingUndoRows(left: PendingUndoRow, right: PendingUndoRow): nu
   const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
   if (createdAt !== 0) return createdAt;
   return left.id.localeCompare(right.id);
+}
+
+function turnByWriteHandle(
+  writeHandleTurns: readonly { writeHandle: string; turnId: string }[],
+): ReadonlyMap<string, string> {
+  return new Map(writeHandleTurns.map((entry) => [entry.writeHandle, entry.turnId]));
+}
+
+function requireTurnId(writeHandle: string, turns: ReadonlyMap<string, string>): string {
+  const turnId = turns.get(writeHandle);
+  if (!turnId) throw new Error(`missing undo notification turn for ${writeHandle}`);
+  return turnId;
 }

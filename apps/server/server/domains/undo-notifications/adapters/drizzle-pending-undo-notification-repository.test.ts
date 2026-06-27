@@ -97,14 +97,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await repo.record({
         threadId: THREAD_ID,
         writeHandles: ["w1", "w2"],
-        turnId: TURN_ID,
+        writeHandleTurns: [
+          { writeHandle: "w1", turnId: TURN_ID },
+          { writeHandle: "w2", turnId: TURN_ID },
+        ],
         uri: "manuscript://chapter-1.md",
         direction: "undo",
       });
       await repo.record({
         threadId: OTHER_THREAD_ID,
         writeHandles: ["w3"],
-        turnId: OTHER_TURN_ID,
+        writeHandleTurns: [{ writeHandle: "w3", turnId: OTHER_TURN_ID }],
         uri: "manuscript://chapter-2.md",
         direction: "redo",
       });

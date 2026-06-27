@@ -29,12 +29,19 @@ export type ReversalPlanStatus =
   | "cant_undo_dependent"
   | "invalid_write";
 
+export interface WriteTurnId {
+  writeHandle: string;
+  turnId: string;
+}
+
 export type ReversalPlan =
   | {
       ok: true;
       direction: "undo" | "redo";
       writeIds: string[];
+      // Representative seed turn for grouping/reports; grouped reversals can span turns.
       turnId: string;
+      writeTurnIds: readonly WriteTurnId[];
       targetSeqs: ReadonlySet<number>;
       snapshot: JournalSnapshot;
       redoGroup?: { undoUpdateSeq: number };
@@ -127,6 +134,7 @@ export async function planUndo(input: {
     direction: "undo",
     writeIds: selectedGroup.handles,
     turnId: groupRows[0]?.turnId ?? retained.rows[0]?.turnId ?? "unknown",
+    writeTurnIds: writeTurnIdsForHandles(selectedGroup.handles, retained.rowsByHandle),
     targetSeqs: selectedGroup.targetSeqs,
     snapshot: state.snapshot,
     ...(seedGroups.length > 1 ? { undoGroups: seedGroups } : {}),
@@ -179,6 +187,7 @@ export async function planRedo(input: {
     direction: "redo",
     writeIds: group.writeIds,
     turnId: group.turnId,
+    writeTurnIds: writeTurnIdsForHandles(group.writeIds, retained.rowsByHandle),
     targetSeqs,
     snapshot: state.snapshot,
     redoGroup: { undoUpdateSeq: group.undoUpdateSeq },
@@ -233,6 +242,16 @@ async function retainedRowsForHandles(
 
 function mutationSeqs(rows: readonly WriteMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
+}
+
+function writeTurnIdsForHandles(
+  handles: readonly string[],
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>,
+): WriteTurnId[] {
+  return handles.map((writeHandle) => ({
+    writeHandle,
+    turnId: rowsByHandle.get(writeHandle)?.[0]?.turnId ?? "unknown",
+  }));
 }
 
 function isScopeSelection(selection: ReversalSelection): boolean {
