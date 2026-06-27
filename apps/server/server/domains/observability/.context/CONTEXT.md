@@ -17,8 +17,8 @@ records; adapters decide where safe records go.
   events until production composition binds the real sink.
 - **`LocalEventSink`** — local/prod-default adapter: always writes structured
   JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set.
-  The factory retains 14 daily files by default; override with
-  `LOG_RETENTION_DAYS`.
+  When JSONL mirroring is enabled, the factory retains 14 daily files by default;
+  override with `LOG_RETENTION_DAYS`.
 - **`InMemoryEventSink`** / **`NoopEventSink`** — tests and disabled paths.
 
 ## Wiring
@@ -28,11 +28,11 @@ request observability, crash policy, and app composition all use the same sink;
 `lib/app.ts` binds the env-selected concrete sink once the app singleton starts.
 
 `lib/event-sink-factory.ts` reads `EVENT_PROVIDER` (`local` → stdout + optional
-JSONL, `none`/`noop` → no-op). `LOG_RETENTION_DAYS` controls local JSONL
-retention and must be a positive integer; pruning runs when the sink rolls to a
-new UTC daily file. External provider policy is deliberately not wired into
-production composition yet; inject another `EventSink` later without changing
-route or domain code.
+JSONL, `none`/`noop` → no-op). When `LOG_DIR` is set, `LOG_RETENTION_DAYS`
+controls local JSONL retention and must be a positive integer; pruning runs when
+the sink rolls to a new UTC daily file. External provider policy is deliberately
+not wired into production composition yet; inject another `EventSink` later
+without changing route or domain code.
 
 There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit

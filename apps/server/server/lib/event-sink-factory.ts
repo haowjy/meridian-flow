@@ -24,9 +24,10 @@ export function createEventSinkFromEnv(): EventSink {
   const provider = process.env.EVENT_PROVIDER ?? "local";
   if (provider === "none" || provider === "noop") return createNoopEventSink();
   if (provider === "local") {
+    const dir = process.env.LOG_DIR || undefined;
     return createLocalEventSink({
-      dir: process.env.LOG_DIR || undefined,
-      retentionDays: localLogRetentionDays(),
+      dir,
+      retentionDays: dir ? localLogRetentionDays() : undefined,
     });
   }
   throw new Error(`Unsupported EVENT_PROVIDER: ${provider}`);
