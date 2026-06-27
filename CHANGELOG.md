@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-- `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
+- Dev tooling: `migration-lint` gains `--strict` (warnings fail) and `--changed
+  <ref>` (lint only migrations added or modified since a git ref).
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no
   longer hard-codes the Yjs document model. No change to how edits, undo/redo, or
