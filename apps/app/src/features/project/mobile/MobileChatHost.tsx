@@ -7,29 +7,35 @@
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatScreen } from "../chat/ChatScreen";
+import { ProjectChatContextNavigationProvider } from "../chat/ProjectChatContextNavigationProvider";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {
   projectId: string;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
+  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
 export function MobileChatHost({
   projectId,
   activeThreadId,
   onSelectThread,
-  onOpenContextPath,
+  onSelectContextPath,
 }: MobileChatHostProps) {
   return (
     <MobileKeyboardAware>
-      <ChatScreen
+      <ProjectChatContextNavigationProvider
         projectId={projectId}
-        threadId={activeThreadId}
-        onSelectThread={onSelectThread}
-        onOpenContextPath={onOpenContextPath}
-      />
+        activeThreadId={activeThreadId}
+        onSelectContextPath={onSelectContextPath}
+      >
+        <ChatScreen
+          projectId={projectId}
+          threadId={activeThreadId}
+          onSelectThread={onSelectThread}
+        />
+      </ProjectChatContextNavigationProvider>
     </MobileKeyboardAware>
   );
 }
