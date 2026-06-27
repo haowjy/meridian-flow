@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Chat: assistant turns that edited files now show a "N files changed" footer.
+  Expand it to see each file, click a filename to open it in the editor, and
+  undo/redo per file or all at once. Already-undone or expired edits show the
+  right state.
+- Chat editing: when a writer undoes the agent's edits and then sends another
+  message, the model is told which edits were reversed (net undo/redo state,
+  injected once on the next turn) so it stops redoing unwanted work.
+
 - Chat editing: turn-scoped undo/redo can now reverse every document a turn touched.
   The reverse API accepts `scope: "turn"` without `uri`, resolves affected
   documents from the agent-edit journal, and returns a shared per-document
