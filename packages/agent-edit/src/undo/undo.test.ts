@@ -13,6 +13,7 @@ import * as Y from "yjs";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
+import { toRef } from "../model/block-ref.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
@@ -197,7 +198,7 @@ function applyAgentText(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "text", element: block, span, newText },
+    { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(block), span, newText },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -214,7 +215,13 @@ function applyAgentInsert(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "insert", after, newText },
+    {
+      documentId: DOC_ID,
+      file: FILE,
+      kind: "insert",
+      ...(after ? { after: toRef(after) } : {}),
+      newText,
+    },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -256,7 +263,7 @@ function textEdit(
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: DOC_ID, file: FILE, kind: "text", element, span, newText };
+  return { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(element), span, newText };
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

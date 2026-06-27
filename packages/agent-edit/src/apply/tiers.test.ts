@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodec } from "../codec-adapter.js";
+import { toRef } from "../model/block-ref.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
 import { computeEcho } from "./echo.js";
 import { applyEdits } from "./tiers.js";
@@ -111,7 +112,7 @@ describe("applyEdits tier routing", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "insert",
-        after: alpha,
+        after: toRef(alpha),
         newText: "Inserted",
       },
       origin,
@@ -122,7 +123,7 @@ describe("applyEdits tier routing", () => {
       doc,
       model,
       codec,
-      { documentId: "doc-1", file: "chapter.md", kind: "delete", element: beta },
+      { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(beta) },
       origin,
     );
     expectOk(del);
@@ -156,7 +157,7 @@ describe("applyEdits update fidelity", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "insert",
-        after: baseModel.getBlocks(doc)[0],
+        after: toRef(baseModel.getBlocks(doc)[0]),
         newText: "Inserted",
       }),
       3,
@@ -168,7 +169,7 @@ describe("applyEdits update fidelity", () => {
         documentId: "doc-1",
         file: "chapter.md",
         kind: "delete",
-        element: baseModel.getBlocks(doc)[1],
+        block: toRef(baseModel.getBlocks(doc)[1]),
       }),
       3,
     ],
@@ -220,7 +221,7 @@ describe("applyEdits preflight safety", () => {
       baseModel,
       codec,
       [
-        { documentId: "doc-1", file: "chapter.md", kind: "delete", element: alpha },
+        { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(alpha) },
         textEdit(alpha, { start: 0, end: 5 }, "Changed"),
       ],
       origin,
@@ -409,7 +410,14 @@ function textEdit(
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: "doc-1", file: "chapter.md", kind: "text", element, span, newText };
+  return {
+    documentId: "doc-1",
+    file: "chapter.md",
+    kind: "text",
+    block: toRef(element),
+    span,
+    newText,
+  };
 }
 
 function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[] } {
