@@ -10,8 +10,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +36,6 @@ export type ChatSurfaceProps = {
    * centered chat owns no close (its rail toggles live in the PaneHeader).
    */
   onCloseDock?: () => void;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 export function ChatSurface({
@@ -48,7 +45,6 @@ export function ChatSurface({
   placement,
   visible,
   onCloseDock,
-  onOpenContextPath,
 }: ChatSurfaceProps) {
   return (
     <div
@@ -90,7 +86,6 @@ export function ChatSurface({
         // Only the centered (destination-owning) chat may write its fallback
         // thread to the route. A dock must not, or it hijacks navigation.
         writeThreadToRoute={placement === "center"}
-        onOpenContextPath={onOpenContextPath}
       />
     </div>
   );
