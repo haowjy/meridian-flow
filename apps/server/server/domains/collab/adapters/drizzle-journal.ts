@@ -225,7 +225,9 @@ async function upsertHead(
     .onConflictDoUpdate({
       target: documentYjsHeads.documentId,
       set: {
-        schemaVersion: COLLAB_SCHEMA_VERSION,
+        // Heads advance schema_version monotonically so a downgraded server cannot
+        // erase the stale-schema fence by stamping an older COLLAB_SCHEMA_VERSION.
+        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${COLLAB_SCHEMA_VERSION})`,
         ...(input.latestUpdateSeq !== undefined ? { latestUpdateSeq: input.latestUpdateSeq } : {}),
         ...(input.latestStateVector !== undefined
           ? {
