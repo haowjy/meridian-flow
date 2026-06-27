@@ -262,10 +262,6 @@ export function createRuntimeStore(deps: {
 
     const persisted = await deps.syncStateStore?.load(docId, session.threadId);
     if (persisted) {
-      session.documents.set(docId, {
-        stateVector: persisted.stateVector,
-        committedSnapshot: persisted.committedSnapshot,
-      });
       // Restore runtime from the SYNCED snapshot (which matches stateVector),
       // not the committed snapshot (which is older — detection baseline only).
       if (runtime) {
@@ -278,6 +274,10 @@ export function createRuntimeStore(deps: {
         if (!reconciled.ok) return reconciled;
         return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
       }
+      session.documents.set(docId, {
+        stateVector: persisted.stateVector,
+        committedSnapshot: persisted.committedSnapshot,
+      });
       return { ok: true, stateVector: persisted.stateVector };
     }
 
