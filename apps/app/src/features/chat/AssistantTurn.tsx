@@ -24,7 +24,8 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnChangeFooter, turnWrittenDocuments } from "./TurnChangeFooter";
+import { TurnChangeFooter } from "./TurnChangeFooter";
+import { turnWrittenDocuments } from "./turn-written-documents";
 
 export type AssistantTurnProps = {
   threadId?: string;

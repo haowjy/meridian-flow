@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contextRouteTargetFromUri } from "./context-uri-route";
+import { contextRouteTargetFromUri } from "@/lib/context-uri";
 
 describe("contextRouteTargetFromUri", () => {
   it("maps non-work canonical URIs to route path tuples", () => {

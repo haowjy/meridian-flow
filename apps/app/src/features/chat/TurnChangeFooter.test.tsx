@@ -58,9 +58,9 @@ describe("TurnChangeFooter", () => {
     renderFooter(
       turnWithBlocks([
         toolUseBlock(1, "write", "/chapter-1.mdx", "call-1"),
-        toolResultBlock(2, "call-1", "success"),
+        toolResultBlock(2, "call-1"),
         toolUseBlock(3, "edit", "/missing.mdx", "call-2"),
-        toolResultBlock(4, "call-2", "not_found"),
+        toolResultBlock(4, "call-2", { isError: true }),
       ]),
     );
 
@@ -72,7 +72,7 @@ describe("TurnChangeFooter", () => {
     renderFooter(
       turnWithBlocks([
         toolUseBlock(1, "edit", "/missing.mdx", "call-1"),
-        toolResultBlock(2, "call-1", "invalid_write"),
+        toolResultBlock(2, "call-1", { isError: true }),
       ]),
     );
 
@@ -80,7 +80,10 @@ describe("TurnChangeFooter", () => {
   });
 
   it("flips a document Undo action to Redo after the reverse succeeds", async () => {
-    documentMutateAsync.mockResolvedValue({ status: "reversed" });
+    documentMutateAsync.mockResolvedValue({
+      status: "reversed",
+      documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
+    });
     renderFooter(turnWithPaths(["/chapter-1.mdx"]));
     expandFooter();
 
@@ -95,8 +98,50 @@ describe("TurnChangeFooter", () => {
     expect(button("Redo").disabled).toBe(false);
   });
 
+  it("exercises a document undo-redo-undo cycle with normalized reversal outcomes", async () => {
+    documentMutateAsync
+      .mockResolvedValueOnce({
+        status: "reversed",
+        documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
+      })
+      .mockResolvedValueOnce({
+        status: "reconciled",
+        documents: [{ uri: "manuscript://chapter-1.mdx", status: "reconciled" }],
+      })
+      .mockResolvedValueOnce({
+        status: "reversed",
+        documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
+      });
+    renderFooter(turnWithPaths(["/chapter-1.mdx"]));
+    expandFooter();
+
+    await click(button("Undo"));
+    await click(button("Redo"));
+    await click(button("Undo"));
+
+    expect(documentMutateAsync).toHaveBeenNthCalledWith(1, {
+      turnId: "turn-1",
+      uri: "manuscript://chapter-1.mdx",
+      direction: "undo",
+    });
+    expect(documentMutateAsync).toHaveBeenNthCalledWith(2, {
+      turnId: "turn-1",
+      uri: "manuscript://chapter-1.mdx",
+      direction: "redo",
+    });
+    expect(documentMutateAsync).toHaveBeenNthCalledWith(3, {
+      turnId: "turn-1",
+      uri: "manuscript://chapter-1.mdx",
+      direction: "undo",
+    });
+    expect(button("Redo").disabled).toBe(false);
+  });
+
   it("treats nothing_to_undo as already undone and offers Redo", async () => {
-    documentMutateAsync.mockResolvedValue({ status: "nothing_to_undo" });
+    documentMutateAsync.mockResolvedValue({
+      status: "nothing_to_undo",
+      documents: [{ uri: "kb://world/rules.md", status: "nothing_to_undo" }],
+    });
     renderFooter(turnWithPaths(["kb://world/rules.md"]));
     expandFooter();
 
@@ -106,7 +151,10 @@ describe("TurnChangeFooter", () => {
   });
 
   it("disables the row and explains when an undo has expired", async () => {
-    documentMutateAsync.mockResolvedValue({ status: "expired" });
+    documentMutateAsync.mockResolvedValue({
+      status: "expired",
+      documents: [{ uri: "work://work-1/notes/beat.md", status: "expired" }],
+    });
     renderFooter(turnWithPaths(["work://work-1/notes/beat.md"]));
     expandFooter();
 
@@ -258,7 +306,7 @@ function turnWithPaths(paths: string[]): Turn {
       const toolCallId = `call-${index + 1}`;
       return [
         toolUseBlock(sequence, "write", path, toolCallId),
-        toolResultBlock(sequence + 1, toolCallId, "success"),
+        toolResultBlock(sequence + 1, toolCallId),
       ];
     }),
   );
@@ -306,8 +354,9 @@ function toolUseBlock(
 function toolResultBlock(
   sequence: number,
   toolCallId: string,
-  status: "success" | "not_found" | "invalid_write",
+  options: { isError?: boolean } = {},
 ): Block {
+  const isError = options.isError ?? false;
   return {
     id: `block-${sequence}`,
     turnId: "turn-1",
@@ -316,9 +365,8 @@ function toolResultBlock(
     sequence,
     content: {
       toolCallId,
-      toolName: "write",
-      output: { status, isError: status !== "success", text: `status: ${status}` },
-      isError: status !== "success",
+      output: isError ? { error: "invalid_write" } : [{ type: "text", text: "Wrote document" }],
+      isError,
     },
     status: "complete",
     createdAt: "2026-01-01T00:00:00.000Z",
