@@ -9,7 +9,7 @@
  * block-content replace, not a remount.
  */
 import { Trans } from "@lingui/react/macro";
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import type { Block, ProjectContextTreeScheme, Turn } from "@meridian/contracts/protocol";
 import { memo } from "react";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
@@ -24,12 +24,14 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
+import { TurnChangeFooter } from "./TurnChangeFooter";
 
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 function AssistantTurnComponent({
@@ -37,6 +39,7 @@ function AssistantTurnComponent({
   turn,
   isLatestAssistant = false,
   onRespondToCheckpoint,
+  onOpenContextPath,
 }: AssistantTurnProps) {
   const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
   const segments = partitionTurnSegments(sortedBlocks);
@@ -63,6 +66,14 @@ function AssistantTurnComponent({
           onRespondToCheckpoint={onRespondToCheckpoint}
         />
       ))}
+
+      {turn.status === "complete" ? (
+        <TurnChangeFooter
+          threadId={threadId ?? turn.threadId}
+          turn={turn}
+          onOpenContextPath={onOpenContextPath}
+        />
+      ) : null}
 
       {isLive ? <LiveTurnStatusBar /> : null}
       {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
@@ -186,7 +197,8 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.threadId === next.threadId &&
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToCheckpoint === next.onRespondToCheckpoint
+    prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
+    prev.onOpenContextPath === next.onOpenContextPath
   );
 }
 

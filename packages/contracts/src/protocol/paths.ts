@@ -115,6 +115,10 @@ export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: 
   return `${API_THREADS_PATH}/${threadId}/recent-documents${query ? `?${query}` : ""}`;
 }
 
+export function apiThreadContextReversePath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/context/reverse`;
+}
+
 export function apiThreadModelRequestsDebugPath(
   threadId: string,
   opts?: { turnId?: string },
