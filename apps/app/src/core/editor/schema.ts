@@ -18,6 +18,10 @@ export const DOCUMENT_NODE_NAMES = [
   "bullet_list",
   "ordered_list",
   "list_item",
+  "table",
+  "table_row",
+  "table_header",
+  "table_cell",
   "jsx_leaf",
   "jsx_container",
   "image",
@@ -27,7 +31,7 @@ export const DOCUMENT_NODE_NAMES = [
   "text",
 ] as const;
 
-export const DOCUMENT_MARK_NAMES = ["strong", "em", "code", "link"] as const;
+export const DOCUMENT_MARK_NAMES = ["strong", "em", "code", "link", "strike"] as const;
 
 export type DocumentNodeName = (typeof DOCUMENT_NODE_NAMES)[number];
 export type DocumentMarkName = (typeof DOCUMENT_MARK_NAMES)[number];

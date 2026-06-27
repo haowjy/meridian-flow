@@ -18,6 +18,10 @@ import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
+import { Table } from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
@@ -72,10 +76,64 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
 
 export const MeridianListItem = ListItem.extend({
   name: "list_item",
+
+  addAttributes() {
+    return {
+      checked: {
+        default: null,
+        parseHTML: (element) => {
+          const checkbox = element.querySelector('input[type="checkbox"]');
+          return checkbox ? (checkbox as HTMLInputElement).checked : null;
+        },
+        renderHTML: (attrs) =>
+          attrs.checked === null ? {} : { "data-checked": attrs.checked ? "true" : "false" },
+      },
+    };
+  },
 });
 
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
+});
+
+export const MeridianTable = Table.extend({
+  name: "table",
+  content: "table_row+",
+});
+
+export const MeridianTableRow = TableRow.extend({
+  name: "table_row",
+  content: "(table_header | table_cell)+",
+});
+
+export const MeridianTableHeader = TableHeader.extend({
+  name: "table_header",
+  content: "paragraph",
+
+  addAttributes() {
+    const attrs: Record<string, unknown> = { ...(this.parent?.() ?? {}) };
+    delete attrs.align;
+
+    return {
+      alignment: { default: null },
+      ...attrs,
+    };
+  },
+});
+
+export const MeridianTableCell = TableCell.extend({
+  name: "table_cell",
+  content: "paragraph",
+
+  addAttributes() {
+    const attrs: Record<string, unknown> = { ...(this.parent?.() ?? {}) };
+    delete attrs.align;
+
+    return {
+      alignment: { default: null },
+      ...attrs,
+    };
+  },
 });
 
 // ─── Customized extensions ──────────────────────────────────────────

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: TipTap document schema now includes GFM table nodes, `strike`, and
+  task-list `list_item.checked` state, with schema-parity coverage for table roles.
+
 - `packages/markup`: markdown codecs now recognize the v3 `strike` mark and
   mdast GFM table/task-list shapes as codec inputs.
 
