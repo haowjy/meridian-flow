@@ -26,6 +26,7 @@ import {
   isImageFile,
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
+import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
 import { cn } from "@/lib/utils";
 
 import { EditorToolbar } from "./EditorToolbar";
@@ -194,6 +195,8 @@ function SessionEditorView({
             class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
+          clipboardTextParser:
+            schemaType === "document" ? markdownTableClipboardParser() : undefined,
           handleTextInput(view, from, _to, text) {
             if (!editable || text !== " ") return false;
             const commandText = "/figure";
