@@ -37,6 +37,8 @@
 - `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
   `strike` mark, and task-list state on `list_item` for markdown/Yjs
   round-tripping.
+- Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.
+
 - Chat: assistant turns that edited files now show a "N files changed" footer.
   Expand it to see each file, click a filename to open it in the editor, and
   undo/redo per file or all at once. Already-undone or expired edits show the

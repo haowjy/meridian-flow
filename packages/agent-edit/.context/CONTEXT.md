@@ -25,7 +25,9 @@ Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 use the same store to plan against retained update rows and mutation metadata.
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
-atomically.
+atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
+`persistRedo` sets it to the redo update seq for every row in the group, and
+`persistUndo` clears it when the same write enters a new undo cycle.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
