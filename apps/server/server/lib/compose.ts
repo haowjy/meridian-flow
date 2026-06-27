@@ -835,12 +835,15 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
   const rows: Awaited<ReturnType<PendingUndoNotificationRepository["consumeForThread"]>> = [];
   return {
     async record(input) {
+      const turnByHandle = new Map(
+        input.writeHandleTurns.map((entry) => [entry.writeHandle, entry.turnId]),
+      );
       rows.push(
         ...input.writeHandles.map((writeHandle) => ({
           id: crypto.randomUUID(),
           threadId: input.threadId as never,
           writeHandle,
-          turnId: input.turnId as never,
+          turnId: requireUndoNotificationTurnId(writeHandle, turnByHandle) as never,
           uri: input.uri,
           direction: input.direction,
           createdAt: new Date(),
@@ -860,6 +863,15 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
       return coalescePendingUndoNotifications(consumed);
     },
   };
+}
+
+function requireUndoNotificationTurnId(
+  writeHandle: string,
+  turns: ReadonlyMap<string, string>,
+): string {
+  const turnId = turns.get(writeHandle);
+  if (!turnId) throw new Error(`missing undo notification turn for ${writeHandle}`);
+  return turnId;
 }
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";

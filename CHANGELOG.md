@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Collab: grouped undo/redo notifications now carry each write handle's original turn id
+  instead of collapsing mixed-turn groups onto the seed turn.
+
 - Collab: grouped redo boundaries are now treated as atomic undo units; selecting one write from a grouped redo expands to every write in that redo so document content and reversal metadata stay in sync.
 
 - Collab: undo/redo now uses persisted reversal lineage instead of delete-set ownership guessing, so concurrent edits in other blocks or non-overlapping ranges survive repeated undo/redo cycles without corruption.

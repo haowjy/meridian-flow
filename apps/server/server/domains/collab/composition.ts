@@ -114,7 +114,11 @@ function createUndoNotificationPort(deps: {
             level: "warn",
             source: "collab.undo_notifications",
             name: "document_uri_missing",
-            payload: { docId: input.docId, threadId: input.threadId, turnId: input.turnId },
+            payload: {
+              docId: input.docId,
+              threadId: input.threadId,
+              representativeTurnId: input.writeHandleTurns[0]?.turnId,
+            },
           });
         }
         return;
@@ -122,7 +126,7 @@ function createUndoNotificationPort(deps: {
       await deps.repository.record({
         threadId: input.threadId,
         writeHandles: input.writeHandles,
-        turnId: input.turnId,
+        writeHandleTurns: input.writeHandleTurns,
         uri,
         direction: input.direction,
       });
