@@ -1,5 +1,5 @@
 /** Adapter-contract tests for the Drizzle UpdateJournal & ReversalStore against local Postgres. */
-import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -28,6 +28,7 @@ const CONCURRENT_TURNS = [
   "00000000-0000-4000-8000-000000000212",
 ] as const;
 const MISSING_THREAD_ID = "00000000-0000-4000-8000-0000000002ff";
+const STALE_SCHEMA_DOC_ID = "00000000-0000-4000-8000-000000000213";
 const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -59,6 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { asc, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
     const { expectReversalMutationStatusContract } = await import(
       "./journal-reversal-mutation-status-contract.js"
     );
@@ -582,6 +584,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .sort((a, b) => a - b);
       expect(wIds).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    it("throws StaleDocumentSchemaError when head schema_version is older than current", async () => {
+      const staleVersion = COLLAB_SCHEMA_VERSION - 1;
+      expect(staleVersion).toBeGreaterThan(0);
+
+      await db.insert(documents).values({
+        id: STALE_SCHEMA_DOC_ID,
+        contextSourceId: CONTEXT_SOURCE_ID,
+        name: "stale-schema",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db.insert(documentYjsHeads).values({
+        documentId: STALE_SCHEMA_DOC_ID,
+        schemaVersion: staleVersion,
+        latestUpdateSeq: 0,
+      });
+
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+      await journal.append(STALE_SCHEMA_DOC_ID, appendText(doc, "Alpha"), {
+        origin: "system",
+        seq: 0,
+      });
+
+      await expect(journal.read(STALE_SCHEMA_DOC_ID)).rejects.toBeInstanceOf(
+        StaleDocumentSchemaError,
+      );
+      await expect(journal.readForReconstruction(STALE_SCHEMA_DOC_ID)).rejects.toBeInstanceOf(
+        StaleDocumentSchemaError,
+      );
+
+      await db
+        .update(documentYjsHeads)
+        .set({ schemaVersion: COLLAB_SCHEMA_VERSION })
+        .where(eq(documentYjsHeads.documentId, STALE_SCHEMA_DOC_ID));
+
+      const snapshot = await journal.read(STALE_SCHEMA_DOC_ID);
+      expect(snapshot.updates).toHaveLength(1);
+      await expect(journal.readForReconstruction(STALE_SCHEMA_DOC_ID)).resolves.toBeDefined();
     });
 
     it("replays updates appended after checkpoint state was captured", async () => {

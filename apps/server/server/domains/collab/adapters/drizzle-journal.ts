@@ -859,9 +859,8 @@ export function createServerDocumentLifecycle(
   return {
     async ensureDocument(docId) {
       const snapshot = await journal.read(docId);
-      if (snapshot.checkpoint || snapshot.updates.length > 0) return;
-
       await upsertHead(db, docId);
+      if (snapshot.checkpoint || snapshot.updates.length > 0) return;
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
       const emptyDoc = createCollabYDoc({ gc: false });
