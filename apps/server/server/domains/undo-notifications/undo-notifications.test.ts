@@ -1,7 +1,7 @@
-/** Unit coverage for undo-notification coalescing semantics. */
+/** Unit coverage for undo-notification consumption semantics. */
 import { describe, expect, it } from "vitest";
 
-import { coalesceUndoNotifications, type PendingUndoNotification } from "./index.js";
+import { coalescePendingUndoNotifications, type PendingUndoNotification } from "./index.js";
 
 const base = {
   id: "notification-1",
@@ -19,10 +19,10 @@ function notification(
   return { ...base, id: `${uri}-${writeHandle}-${direction}`, uri, writeHandle, direction };
 }
 
-describe("coalesceUndoNotifications", () => {
+describe("coalescePendingUndoNotifications", () => {
   it("uses last direction per write and reports only net undone edits", () => {
     expect(
-      coalesceUndoNotifications([
+      coalescePendingUndoNotifications([
         notification("w1", "undo"),
         notification("w1", "redo"),
         notification("w2", "redo"),
@@ -37,7 +37,7 @@ describe("coalesceUndoNotifications", () => {
 
   it("keeps same write handles independent across documents", () => {
     expect(
-      coalesceUndoNotifications([
+      coalescePendingUndoNotifications([
         notification("w1", "undo", "manuscript://doc-a.md"),
         notification("w1", "undo", "manuscript://doc-b.md"),
       ]).map((row) => ({ uri: row.uri, writeHandle: row.writeHandle, direction: row.direction })),

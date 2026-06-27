@@ -112,10 +112,12 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
-- **Undo notifications** — `runTurn` consumes pending user undo/redo rows once
-  per turn before the first model call, coalesces by write handle (last
-  direction wins), and injects net undone edits only into the first context
-  build. Mid-stream undos remain pending for the next turn.
+- **Undo notifications** — `runTurn` atomically consumes pending user undo/redo
+  rows once, immediately before the first provider stream, after the request has
+  been built and debug capture has succeeded. The undo-notifications repository
+  owns coalescing by write handle (last direction wins), and the runtime injects
+  net undone edits only into the first model request. Mid-stream undos remain
+  pending for the next turn.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes; cancellation paths
