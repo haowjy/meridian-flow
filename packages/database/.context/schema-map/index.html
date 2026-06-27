@@ -75,7 +75,7 @@
       <p class="muted text-xs">Drizzle schema · <code>packages/database/src/schema</code> · click any table for detail</p>
       <p class="muted text-[11px] mt-0.5">
         Map regenerated <strong>2026-06-18</strong> · DB layer last changed
-        <strong>2026-06-16</strong> (<code>d864bab9</code>). Regenerated on demand,
+        <strong>2026-06-27</strong> (<code>cf9ec532</code>). Regenerated on demand,
         not auto-maintained — if the DB layer is newer than the regen date, treat
         as stale and rebuild from <code>../../src/schema/*.ts</code>.
       </p>
@@ -741,10 +741,12 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
-  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }), // FK in custom SQL
+  latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
+    () => documentYjsCheckpoints.id,
+    { onDelete: "set null" },
+  ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
-// document_yjs_heads.latest_checkpoint_id FK added in custom SQL
 </script>
 
 <script type="text/plain" data-code="document_restore_points">
@@ -1104,7 +1106,7 @@ const DETAIL = {
     desc: 'One agent/user turn within a thread. parent_turn_id self-FK (deferred) forms the turn tree; partial unique enforces a single root turn per thread. Carries token/cost/millicredit rollups.',
     cols: [C('id','uuid PK',''), C('thread_id','uuid FK → threads','onDelete restrict'), C('parent_turn_id','uuid','self-FK (deferred)'), C('agent_definition_id','uuid FK → agent_definitions','set null'), C('role','text','user | assistant | system | compaction'), C('total_millicredits','bigint','cost rollup'), C('completed_at','timestamptz','nullable Date')],
     rels: ['→ threads (thread_id)', '→ turns (parent_turn_id, self, deferred)', '→ agent_definitions (agent_definition_id)', 'Parent of model_responses, turn_blocks'],
-    flags: ['deferred-fk'],
+    flags: [],
   },
   model_responses: {
     title: 'model_responses', group: 'Threads, Turns & Events', src: `${SRC}/agent-threads.ts:207-245`,
@@ -1146,21 +1148,21 @@ const DETAIL = {
     desc: 'Per-project agent definitions. base_definition_id self-FK (custom SQL) links a customized agent to its package base. Unique slug per project.',
     cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('slug','text','unique per project'), C('mode','text','primary | …'), C('source_type','text','builtin | package | user'), C('base_definition_id','uuid','self-FK (custom SQL)'), C('enabled','boolean','')],
     rels: ['→ projects (project_id)', '→ agent_definitions (base_definition_id, self)', 'Joined to skills via agent_skills; nests via agent_subagents; referenced by turns'],
-    flags: ['deferred-fk'],
+    flags: [],
   },
   skills: {
     title: 'skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:57-95`,
     desc: 'Per-project skills (principle | guardrail | reference). base_skill_id self-FK (custom SQL). is_global flags project-wide always-on skills.',
     cols: [C('id','uuid PK',''), C('project_id','uuid FK → projects','cascade'), C('slug','text','unique per project'), C('type','text','principle | guardrail | reference'), C('is_global','boolean',''), C('source_type','text','builtin | package | user'), C('base_skill_id','uuid','self-FK (custom SQL)')],
     rels: ['→ projects (project_id)', '→ skills (base_skill_id, self)', 'Joined to agents via agent_skills'],
-    flags: ['deferred-fk'],
+    flags: [],
   },
   user_installed_skills: {
     title: 'user_installed_skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:97-123`,
     desc: 'User-level (cross-project) installed skills. base_skill_id self-FK. Unique slug per user.',
     cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('slug','text','unique per user'), C('type','text',''), C('source_type','text','default user'), C('base_skill_id','uuid','self-FK')],
     rels: ['→ users (user_id)', '→ user_installed_skills (base_skill_id, self)'],
-    flags: ['deferred-fk'],
+    flags: [],
   },
   agent_skills: {
     title: 'agent_skills', group: 'Agent Packages', src: `${SRC}/agent-packages.ts:125-147`,
@@ -1220,10 +1222,10 @@ const DETAIL = {
   },
   document_yjs_heads: {
     title: 'document_yjs_heads', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:53-63`,
-    desc: 'One head row per document (document_id is both PK and FK). Points at the latest update sequence / checkpoint. latest_checkpoint_id FK added in custom SQL.',
-    cols: [C('document_id','uuid PK = FK → documents','cascade'), C('fragment_name','text','default prosemirror'), C('latest_update_seq','bigint',''), C('latest_checkpoint_id','bigint','FK in custom SQL'), C('updated_at','timestamptz','Date')],
-    rels: ['→ documents (document_id, PK=FK)', '→ document_yjs_checkpoints (latest_checkpoint_id, custom SQL)'],
-    flags: ['deferred-fk'],
+    desc: 'One head row per document (document_id is both PK and FK). Points at the latest update sequence / checkpoint; latest_checkpoint_id is a Drizzle-declared FK.',
+    cols: [C('document_id','uuid PK = FK → documents','cascade'), C('fragment_name','text','default prosemirror'), C('latest_update_seq','bigint',''), C('latest_checkpoint_id','bigint','FK → document_yjs_checkpoints'), C('updated_at','timestamptz','Date')],
+    rels: ['→ documents (document_id, PK=FK)', '→ document_yjs_checkpoints (latest_checkpoint_id)'],
+    flags: [],
   },
   document_restore_points: {
     title: 'document_restore_points', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:65-82`,

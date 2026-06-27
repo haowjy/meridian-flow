@@ -4,6 +4,9 @@ pre-commit:
     biome:
       glob: "*.{js,ts,jsx,tsx,json}"
       run: pnpm biome check --staged --no-errors-on-unmatched
+    migration-lint:
+      glob: "packages/database/src/migrations/*.sql"
+      run: pnpm exec tsx tools/dev/migration-lint.ts --staged
     typecheck:
       run: pnpm typecheck
 

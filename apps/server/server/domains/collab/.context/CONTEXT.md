@@ -49,6 +49,31 @@ It serializes raw markdown without block-hash view prefixes.
 no state. The Yjs tables FK to `documents.id`; callers are expected to create the
 `documents` row before ensuring collab state.
 
+`document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK to
+`document_yjs_checkpoints.id` (`ON DELETE SET NULL`). In production, checkpoints
+are append-only: compaction deletes retained update rows, not checkpoint rows, and
+checkpoints disappear with their parent document cascade. The `SET NULL` action is
+a defensive database behavior, not an ordinary lifecycle path.
+
+**Stale-schema guard (invariant).** `document_yjs_heads.schema_version` is stamped
+with the running `COLLAB_SCHEMA_VERSION` on every head upsert, but upsert uses a
+monotonic `greatest(stored, current)` assignment so a downgraded server cannot
+stamp the head backward and erase the fence. The journal read path refuses to
+replay bytes from an older schema: `journal.read()` (and thus
+`loadDocumentState`, the cold-open `persistedState`, and `recover`) calls
+`assertReadableHead` and throws `StaleDocumentSchemaError` when the stored version
+is behind. This converts silent y-prosemirror corruption on a schema bump into a
+loud, detectable failure. The rule is explicit, not incidental: `ensureDocument`
+must `assertReadableHead` **before** `upsertHead` — stamping the current version
+first would erase the evidence and silently disable the guard.
+
+Recovery/rebuild from a trusted source on a stale version is deferred to
+[#94](https://github.com/haowjy/meridian-flow/issues/94); the guard only blocks.
+The guard is still one-sided: a server older than the stored head version preserves
+the newer fence but does not reject replay. Rejecting newer-than-current heads is
+tracked in [#95](https://github.com/haowjy/meridian-flow/issues/95) because it
+needs a rollout compatibility decision.
+
 ### Origin translation
 
 Public origins remain collab-shaped:

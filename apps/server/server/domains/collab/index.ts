@@ -129,3 +129,8 @@ export type CollabDomain = CollabTransport &
   DocumentAttribution;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";
+export {
+  isStaleDocumentSchemaError,
+  isStaleSchema,
+  StaleDocumentSchemaError,
+} from "./domain/stale-schema.js";

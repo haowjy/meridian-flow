@@ -1,7 +1,7 @@
 # Meridian Flow Database Layer — Orientation Map
 
 > **Map last regenerated:** 2026-06-18
-> **Database layer last changed:** 2026-06-16 (`d864bab9`)
+> **Database layer last changed:** 2026-06-27 (`cf9ec532`)
 >
 > "Database layer last changed" is derived from
 > `git log -1 --date=short --format=%cd -- packages/database/src` (the schema /
@@ -13,6 +13,10 @@
 > regenerate. To regenerate: re-derive this orientation text and the interactive
 > view ([`schema-map/index.html`](schema-map/index.html)) from the current
 > [`../src/schema/*.ts`](../src/schema) definitions.
+>
+> Current migration workflow and generated-snapshot rules live in
+> [`CONTEXT.md`](CONTEXT.md). Prefer that page over this generated map for
+> migration-gate policy.
 
 ---
 
@@ -37,7 +41,7 @@ The only runtime configuration seam for the main app is **`DATABASE_URL`**. Dev 
 | `../src/schema/` | All table/view definitions |
 | `../src/schema/drizzle.ts` | drizzle-kit entry (re-exports schema modules) |
 | `../src/schema/index.ts` | Runtime `schema` object passed to Drizzle client |
-| `../src/migrations/` | Generated SQL + `meta/_journal.json` |
+| `../src/migrations/` | Generated SQL + `meta/_journal.json` + required `meta/*_snapshot.json` |
 | `../src/functions/` | PL/pgSQL source (applied separately) |
 | `../scripts/apply-functions.ts` | Applies function SQL via raw postgres-js |
 | `../drizzle.config.ts` | drizzle-kit config (`schemaFilter: ["public"]`) |
@@ -392,9 +396,15 @@ export default defineConfig({
 
 | File | Content |
 |------|---------|
-| `0000_careless_rockslide.sql` | Full baseline schema + extensions (`pg_trgm`) + functions/triggers |
-| `0001_tidy_siren.sql` | `ALTER TABLE user_preferences DROP COLUMN onboarding_state` |
-| `meta/_journal.json` | Two entries (idx 0 and 1) |
+| `0000_thankful_tarantula.sql` | Full baseline schema + extensions (`pg_trgm`) |
+| `0001_serious_red_skull.sql` | Agent-edit mutation / reversal persistence |
+| `0002_silent_phalanx.sql` | Agent-edit write-id counters and mutation seq widening |
+| `0003_youthful_nightmare.sql` | Thread / turn / model-response defaults and constraints |
+| `0004_high_mastermind.sql` | Write-level undo handles and reversal metadata |
+| `0005_agent_edit_sync_state.sql` | Persisted agent-edit restart sync state |
+| `0006_faithful_thunderbolt_ross.sql` | `document_yjs_heads.latest_checkpoint_id` FK |
+| `meta/_journal.json` | Ordered migration journal; review with every generated migration |
+| `meta/*_snapshot.json` | Required generated Drizzle snapshots; never delete |
 
 ### `pnpm db:*` scripts (repo root `package.json`)
 
@@ -503,7 +513,8 @@ apps/www   ──(WEB_DATABASE_URL)──►  same or separate DB; only waitlist
 7. **Timestamp binding** — never pass JS `Date` into raw `sql` fragments; use typed comparators or explicit PG casts.
 8. **Test isolation** — DB tests target throwaway `*test*` databases, not shared dev `meridian`.
 9. **Post-migrate functions** — schema changes affecting PL/pgSQL require updating `src/functions/` and running `db:apply-functions`.
-10. **Migration discipline** — run `pnpm db:migration-lint` on new SQL; baseline uses squashed history — prefer additive migrations.
+10. **Migration discipline** — run `drizzle-kit check` and `pnpm db:migration-lint` on new SQL; baseline uses squashed history — prefer additive migrations.
+11. **Drizzle snapshots are required** — keep `meta/*_snapshot.json` tracked even though `.gitattributes` marks them generated.
 
 ---
 
@@ -511,25 +522,25 @@ apps/www   ──(WEB_DATABASE_URL)──►  same or separate DB; only waitlist
 
 | Item | Notes |
 |------|-------|
-| **Missing `packages/database/.context/CONTEXT.md`** | qi-layer expects it; only `AGENTS.md` + `README.md` exist today |
-| **`AGENTS.md` says "squashed to single baseline"** | Journal has **two** migrations (`0000` + `0001`); wording is stale |
 | **`billing/.context/CONTEXT.md` references `lib/` shared** | Actual path is `apps/server/server/shared/drizzle-transaction.ts` |
 | **`users` + `thread_works` use `mode:"string"`** | Rest of schema uses Date mode — intentional or legacy? Inconsistent for mappers |
 | **`createDrizzlePackageStore` is a stub** | Returns in-memory store despite production wiring (`drizzle-package-store.ts:3–5`) |
 | **Dual transaction systems** | ALS (`runInDrizzleTransaction`) vs direct `db.transaction()` coexist; no single documented rule for when to use which |
 | **`credit-ledger.debit` not wrapped in ALS** | Works via PL/pgSQL atomicity, but won't join an outer app transaction if one is added later |
 | **`packages/database` event-journal vs server event-writer** | Two append implementations; server path is production, package helper may be legacy/test |
-| **No `.context/CONTEXT.md` under `packages/database`** | High-value addition for timestamp-mode policy and migration workflow |
+| **Interactive schema-map drift** | `schema-map/index.html` is regenerated with this map and may be stale until the next full regeneration |
 
 ---
 
 ## Quick “next DB change” checklist
 
 1. Edit schema in `packages/database/src/schema/*.ts`
-2. `pnpm db:generate` → review SQL in `src/migrations/`
-3. `pnpm db:migration-lint`
-4. If functions/triggers changed → update `src/functions/` + `pnpm db:apply-functions`
-5. Update adapters if port contracts or column modes shift
-6. For timestamp comparisons in adapters: **typed `eq`/`lt`/…** or **`::timestamptz` cast**, never raw `Date` in `sql`
-7. For multi-table domain ops: use **`repos.transaction()`** or **`runInDrizzleTransaction`** + **`currentDrizzleDb`** consistently
-8. Run conformance tests with `RUN_DB_TESTS=1 DATABASE_URL=...meridian_test...`
+2. `pnpm db:generate` → review SQL in `src/migrations/` and `_journal.json`
+3. Keep the generated `meta/*_snapshot.json` tracked
+4. `pnpm --filter @meridian/database exec drizzle-kit check`
+5. `pnpm db:migration-lint`
+6. If functions/triggers changed → update `src/functions/` + `pnpm db:apply-functions`
+7. Update adapters if port contracts or column modes shift
+8. For timestamp comparisons in adapters: **typed `eq`/`lt`/…** or **`::timestamptz` cast**, never raw `Date` in `sql`
+9. For multi-table domain ops: use **`repos.transaction()`** or **`runInDrizzleTransaction`** + **`currentDrizzleDb`** consistently
+10. Run conformance tests with `RUN_DB_TESTS=1 DATABASE_URL=...meridian_test...`

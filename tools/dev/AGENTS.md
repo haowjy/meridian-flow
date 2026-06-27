@@ -13,6 +13,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
 - Worktree cleanup (`pnpm dev:prune-worktrees`)
+- Migration SQL linting (`migration-lint.ts`, CI/pre-commit gate policy)
 - `pnpm bootstrap` and dev-data seeding
 
 ## Rules
@@ -24,6 +25,9 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Silent fallback is forbidden in worktree mode.** If a tool cannot derive the worktree-scoped DB, it must throw/exit loudly. Silent fallback to a shared DB would re-introduce the cross-worktree blast radius.
 - **`drop-db` must always go through `isReservedDatabase`** against the full set of main-checkout DB names. New "main-like" databases get protected by extending `RESERVED_DATABASES` in `lib/dev-db.ts` (or the registry), not by patching the CLI.
 - **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` apply committed migrations via `prepare-db.ts`; `db:push` is for disposable local experiments only and never carries `--force`.
+- **Migration-lint policy is explicit.** Errors always block; warnings block only
+  under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
+  `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.
 - **Command construction: canonical env first.** `applyDevEnvToProcess(repoRoot)` must run _before_ `createDevSessionCommand` — the tmux command must consume resolved worktree-scoped URLs, never ambient `.env` + ad-hoc pass-through. The call order in `dev-tmux.ts` is the canonical pattern; do not invert it.
