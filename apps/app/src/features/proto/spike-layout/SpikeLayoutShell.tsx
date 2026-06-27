@@ -73,20 +73,14 @@ export function SpikeLayoutShell() {
   const bumpEditorMounts = useCallback(() => {
     editorMountsRef.current += 1;
     force((n) => n + 1);
-    // eslint-disable-next-line no-console
-    console.log("[spike] EDITOR MOUNT", editorMountsRef.current);
   }, []);
   const bumpChatMounts = useCallback(() => {
     chatMountsRef.current += 1;
     force((n) => n + 1);
-    // eslint-disable-next-line no-console
-    console.log("[spike] CHAT MOUNT", chatMountsRef.current);
   }, []);
   const bumpRailMounts = useCallback(() => {
     railMountsRef.current += 1;
     force((n) => n + 1);
-    // eslint-disable-next-line no-console
-    console.log("[spike] RAIL MOUNT", railMountsRef.current);
   }, []);
 
   // -------- Project state --------
