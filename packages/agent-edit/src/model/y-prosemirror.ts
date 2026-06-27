@@ -77,6 +77,18 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       unwrapDoc(doc).transact(fn, origin);
     },
 
+    encodeStateVector(doc) {
+      return Y.encodeStateVector(unwrapDoc(doc));
+    },
+
+    applyUpdate(doc, update, origin) {
+      Y.applyUpdate(unwrapDoc(doc), update, origin);
+    },
+
+    stateVectorAdvanced(beforeVector, afterVector) {
+      return stateVectorAdvanced(beforeVector, afterVector);
+    },
+
     applyTextEdit(_doc, block, span, newText) {
       applyTextEdit(unwrapBlock(block), span, newText);
     },
@@ -148,6 +160,15 @@ export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
     blocks.push(root.child(i));
   }
   return blocks;
+}
+
+function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array): boolean {
+  const before = Y.decodeStateVector(beforeVector);
+  const after = Y.decodeStateVector(afterVector);
+  for (const [client, clock] of after) {
+    if (clock > (before.get(client) ?? 0)) return true;
+  }
+  return false;
 }
 
 export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
