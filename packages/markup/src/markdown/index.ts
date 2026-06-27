@@ -16,7 +16,13 @@ import {
   orderedListCodec,
   paragraphCodec,
 } from "./blocks/index.js";
-import { codeMarkCodec, emMarkCodec, linkMarkCodec, strongMarkCodec } from "./marks/index.js";
+import {
+  codeMarkCodec,
+  emMarkCodec,
+  linkMarkCodec,
+  strikeMarkCodec,
+  strongMarkCodec,
+} from "./marks/index.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   paragraphCodec,
@@ -35,6 +41,7 @@ export const markdownMarkCodecs: readonly MarkCodec[] = [
   emMarkCodec,
   codeMarkCodec,
   linkMarkCodec,
+  strikeMarkCodec,
 ];
 
 export const markdownRequiredBlockNames: readonly string[] = Object.freeze(

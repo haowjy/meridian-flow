@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/markup`: markdown codecs now recognize the v3 `strike` mark and
+  mdast GFM table/task-list shapes as codec inputs.
+
 - `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
   `strike` mark, and task-list state on `list_item` for markdown/Yjs
   round-tripping.
