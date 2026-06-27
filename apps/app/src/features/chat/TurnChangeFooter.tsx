@@ -8,13 +8,11 @@
  */
 import { t } from "@lingui/core/macro";
 import type {
-  Block,
   DocumentReversalResult,
   JsonValue,
   Turn,
   WriteStatus,
 } from "@meridian/contracts/protocol";
-import { blockContentRecord } from "@meridian/contracts/protocol";
 import { ChevronDown, LoaderCircle, Redo2, Undo2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
@@ -25,6 +23,7 @@ import {
 } from "@/client/query/useReverseMutation";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
 type WrittenDocument = {
   path: string;
@@ -216,14 +215,19 @@ function DocumentName({
   );
 }
 
-function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
+export function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
   const documents = new Map<string, WrittenDocument>();
-  for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
-    const path = writePathFromBlock(block);
-    if (!path) continue;
-    const uri = resolveWriteUri(path);
-    if (!documents.has(uri)) {
-      documents.set(uri, { path, uri });
+  const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
+  for (const segment of groupDeliverySegments(sortedBlocks)) {
+    const tools =
+      segment.kind === "tool-run" ? segment.tools : segment.kind === "tool" ? [segment.tool] : [];
+    for (const tool of tools) {
+      const path = successfulWritePath(tool);
+      if (!path) continue;
+      const uri = resolveWriteUri(path);
+      if (!documents.has(uri)) {
+        documents.set(uri, { path, uri });
+      }
     }
   }
   return [...documents.values()];
@@ -234,14 +238,21 @@ function resolveWriteUri(path: string): string {
   return `manuscript://${path.replace(/^\/+/, "")}`;
 }
 
-function writePathFromBlock(block: Block): string | null {
-  if (block.blockType !== "tool_use") return null;
-  const content = blockContentRecord(block);
-  if (content.toolName !== "write" && content.toolName !== "edit") return null;
-  const input = content.input;
+function successfulWritePath(tool: ToolView): string | null {
+  if (tool.toolName !== "write" && tool.toolName !== "edit") return null;
+  if (!writeResultSucceeded(tool)) return null;
+  const input = tool.input;
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const path = (input as Record<string, JsonValue>).path;
   return typeof path === "string" && path.length > 0 ? path : null;
+}
+
+function writeResultSucceeded(tool: ToolView): boolean {
+  if (tool.status !== "complete" || tool.isError) return false;
+  const output = tool.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
+  const result = output as Record<string, JsonValue>;
+  return result.status === "success" && result.isError !== true;
 }
 
 function displayPath(uri: string, fallback: string): string {
