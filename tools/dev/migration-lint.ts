@@ -89,7 +89,7 @@ function lintFile(filePath: string): Finding[] {
   const findings: Finding[] = [];
   const content = readFileSync(filePath, "utf8");
   const lines = content.split("\n");
-  const isInitialSchema = path.basename(filePath).startsWith("0001_");
+  const isInitialSchema = path.basename(filePath).startsWith("0000_");
 
   for (let i = 0; i < lines.length; i++) {
     const lineContent = lines[i];
