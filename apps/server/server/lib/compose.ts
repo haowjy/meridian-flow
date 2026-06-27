@@ -846,11 +846,18 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
         })),
       );
     },
+    async peekForThread(threadId) {
+      return rows.filter((row) => row.threadId === threadId);
+    },
+    async deleteByIds(ids) {
+      const idSet = new Set(ids);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (idSet.has(rows[index]?.id ?? "")) rows.splice(index, 1);
+      }
+    },
     async consumeForThread(threadId) {
       const consumed = rows.filter((row) => row.threadId === threadId);
-      for (let index = rows.length - 1; index >= 0; index -= 1) {
-        if (rows[index]?.threadId === threadId) rows.splice(index, 1);
-      }
+      await this.deleteByIds(consumed.map((row) => row.id));
       return consumed;
     },
   };

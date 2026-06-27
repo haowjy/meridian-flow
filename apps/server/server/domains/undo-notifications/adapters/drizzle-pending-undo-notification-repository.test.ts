@@ -109,13 +109,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "redo",
       });
 
+      const peeked = await repo.peekForThread(THREAD_ID);
+      expect(peeked.map((row) => row.writeHandle)).toEqual(["w1", "w2"]);
+      await repo.deleteByIds([peeked[0]?.id ?? ""]);
+      expect((await repo.peekForThread(THREAD_ID)).map((row) => row.writeHandle)).toEqual(["w2"]);
+
       const consumed = await repo.consumeForThread(THREAD_ID);
       expect(
         consumed.map((row) => ({ writeHandle: row.writeHandle, direction: row.direction })),
-      ).toEqual([
-        { writeHandle: "w1", direction: "undo" },
-        { writeHandle: "w2", direction: "undo" },
-      ]);
+      ).toEqual([{ writeHandle: "w2", direction: "undo" }]);
       expect(await repo.consumeForThread(THREAD_ID)).toEqual([]);
       expect((await repo.consumeForThread(OTHER_THREAD_ID)).map((row) => row.writeHandle)).toEqual([
         "w3",

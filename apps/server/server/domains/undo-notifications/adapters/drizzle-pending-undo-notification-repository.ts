@@ -2,10 +2,10 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { pendingUndoNotifications } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { PendingUndoNotification, PendingUndoNotificationRepository } from "../index.js";
 
-type DrizzlePendingUndoDb = Pick<Database, "insert" | "delete">;
+type DrizzlePendingUndoDb = Pick<Database, "select" | "insert" | "delete">;
 
 export function createDrizzlePendingUndoNotificationRepository(
   db: DrizzlePendingUndoDb,
@@ -22,6 +22,19 @@ export function createDrizzlePendingUndoNotificationRepository(
           direction: input.direction,
         })),
       );
+    },
+    async peekForThread(threadId) {
+      const rows = await db
+        .select()
+        .from(pendingUndoNotifications)
+        .where(eq(pendingUndoNotifications.threadId, threadId as ThreadId));
+      return rows.sort(comparePendingUndoRows).map(mapRow);
+    },
+    async deleteByIds(ids) {
+      if (ids.length === 0) return;
+      await db
+        .delete(pendingUndoNotifications)
+        .where(inArray(pendingUndoNotifications.id, [...ids]));
     },
     async consumeForThread(threadId) {
       const rows = await db
