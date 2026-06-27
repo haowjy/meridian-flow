@@ -22,7 +22,6 @@ export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 export interface DocumentReversalResult {
   uri: string;
   status: WriteStatus;
-  writeIds: string[];
   text?: string;
 }
 
