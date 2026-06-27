@@ -5,17 +5,17 @@ packages:
   - 'packages/agent-edit/demo/playground'
 
 catalog:
-  typescript: ^6.0.3
-  vitest: ^4.1.7
-  vite: ^8.0.14
-  '@types/node': ^24.12.4
-  '@anthropic-ai/sdk': ^0.100.1
-  postgres: ^3.4.9
-  drizzle-orm: ^0.45.2
-  drizzle-kit: ^0.31.10
-  react: ^19.2.6
-  react-dom: ^19.2.6
-  '@types/react': ^19.2.15
+  '@anthropic-ai/sdk': ^0.106.0
+  '@types/node': ^26.0.1
+  '@types/react': ^19.2.17
   '@types/react-dom': ^19.2.3
-  '@vitejs/plugin-react': ^6.0.2
-  nitro: ^3.0.260429-beta
+  '@vitejs/plugin-react': ^6.0.3
+  drizzle-kit: ^0.31.10
+  drizzle-orm: ^0.45.2
+  nitro: 3.0.260610-beta
+  postgres: ^3.4.9
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  typescript: ^6.0.3
+  vite: ^8.1.0
+  vitest: ^4.1.9

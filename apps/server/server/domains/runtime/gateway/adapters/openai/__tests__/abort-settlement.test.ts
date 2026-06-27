@@ -18,6 +18,7 @@ describe("OpenAI aborted partial without usage", () => {
         output_index: 0,
         content_index: 0,
         sequence_number: 0,
+        logprobs: [],
       },
       acc,
     )) {

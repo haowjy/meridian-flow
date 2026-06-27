@@ -26,7 +26,19 @@ export function linguiMacroBabelPlugin(): Plugin {
         plugins: ["@lingui/babel-plugin-lingui-macro"],
       });
       if (!result?.code) return null;
-      return { code: result.code, map: result.map ?? null };
+      return {
+        code: result.code,
+        map: result.map
+          ? {
+              ...result.map,
+              names: [...result.map.names],
+              sources: [...result.map.sources],
+              sourcesContent: result.map.sourcesContent
+                ? [...result.map.sourcesContent]
+                : undefined,
+            }
+          : undefined,
+      };
     },
   };
 }

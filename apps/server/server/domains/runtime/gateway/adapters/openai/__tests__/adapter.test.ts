@@ -257,8 +257,8 @@ describe("OpenAI Responses adapter", () => {
   it("emits reasoning.delta events", () => {
     const { events, acc } = collectEvents(
       {
-        type: "response.reasoning.delta",
-        delta: { text: "Analyzing the problem..." },
+        type: "response.reasoning_text.delta",
+        delta: "Analyzing the problem...",
         item_id: "item_1",
         output_index: 0,
         content_index: 0,

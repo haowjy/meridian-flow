@@ -20,9 +20,9 @@
  *   `output_index` but NOT `call_id` (confirmed in SDK types). This is why
  *   argument deltas are buffered in `pendingDeltas` until the durable `call_id`
  *   arrives via `response.output_item.added` or a later event.
- * - SDK event literal `response.reasoning.*` is the source of truth; current
- *   OpenAI docs navigation shows `reasoning_text`/`reasoning_summary_*`
- *   families — treat the SDK literals as authoritative.
+ * - SDK v6 renamed the streaming event literals from `response.reasoning.*`
+ *   to `response.reasoning_text.*`; keep the accumulator keyed by output item
+ *   identity so the external Meridian contract does not change.
  */
 
 import type { Usage } from "@meridian/contracts/runtime";
@@ -272,16 +272,10 @@ export function* eventsFromResponseStreamEvent(
       break;
     }
 
-    case "response.reasoning.delta": {
-      // The SDK type for reasoning delta is `delta: unknown`
-      // (ResponseReasoningDeltaEvent). In practice the payload has varied
-      // between plain strings and objects with a `text` field. Normalize both
-      // shapes to canonical reasoning.delta text without leaking provider shape
-      // to the rest of the runtime.
-      //
-      // Note: the installed SDK uses the literal `response.reasoning.delta`;
-      // current OpenAI docs navigation shows a `reasoning_text` family. Treat
-      // the SDK literals as authoritative.
+    case "response.reasoning_text.delta": {
+      // OpenAI SDK v6 exposes reasoning text as its own stream family. Keep the
+      // object fallback because older recorded/mock events used `{ text }` deltas
+      // and the normalization is harmless at this provider boundary.
       const text =
         typeof event.delta === "string"
           ? event.delta
@@ -482,7 +476,7 @@ export function* eventsFromResponseStreamEvent(
       break;
     }
 
-    case "response.reasoning.done": {
+    case "response.reasoning_text.done": {
       // Reasoning.done supplies the final full reasoning text for an item. Store
       // it authoritatively, preserving any item metadata already reconciled.
       const entry = findReasoningItemEntry(acc, {
