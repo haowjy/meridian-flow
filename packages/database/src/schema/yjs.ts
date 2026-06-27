@@ -27,6 +27,7 @@ import { users } from "./users";
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
+type UndoNotificationDirection = "undo" | "redo";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -157,6 +158,32 @@ export const agentEditMutations = pgTable(
     index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
     index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
     check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
+  ],
+);
+
+export const pendingUndoNotifications = pgTable(
+  "pending_undo_notifications",
+  {
+    id: idColumn(),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    writeHandle: text("write_handle").notNull(),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    uri: text("uri").notNull(),
+    direction: text("direction").$type<UndoNotificationDirection>().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("pending_undo_notifications_thread").on(table.threadId),
+    check(
+      "pending_undo_notifications_direction_valid",
+      sql`${table.direction} IN ('undo', 'redo')`,
+    ),
   ],
 );
 

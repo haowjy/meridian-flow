@@ -85,6 +85,11 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import {
+  coalesceUndoNotifications,
+  type PendingUndoNotification,
+  type PendingUndoNotificationRepository,
+} from "../../undo-notifications/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -150,6 +155,7 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
+  undoNotifications: PendingUndoNotificationRepository;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -681,6 +687,7 @@ async function buildGenerateRequest(input: {
   turns: Turn[];
   blocks: Block[];
   gatewaySignal?: AbortSignal;
+  undoNotifications?: readonly PendingUndoNotification[];
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -697,6 +704,7 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    undoNotifications: input.undoNotifications,
   });
 
   return {
@@ -744,6 +752,11 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    const undoNotifications = coalesceUndoNotifications(
+      await deps.undoNotifications.consumeForThread(input.threadId),
+    );
+    let pendingUndoNotificationsForFirstCall: readonly PendingUndoNotification[] | undefined =
+      undoNotifications.length > 0 ? undoNotifications : undefined;
     const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -797,7 +810,9 @@ async function* generateEvents(
         turns: allTurns,
         blocks: allBlocks,
         gatewaySignal: gatewayAbort.signal,
+        undoNotifications: pendingUndoNotificationsForFirstCall,
       });
+      pendingUndoNotificationsForFirstCall = undefined;
       thread = built.thread;
       const request = built.request;
 
