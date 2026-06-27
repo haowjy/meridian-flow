@@ -18,6 +18,7 @@ type ComparableNodeSpec = {
   code?: boolean;
   defining?: boolean;
   isolating?: boolean;
+  tableRole?: string;
   draggable?: boolean;
   selectable?: boolean;
 };
@@ -39,6 +40,7 @@ type NodeShape = {
   code?: boolean;
   defining?: boolean;
   isolating?: boolean;
+  tableRole?: string;
   draggable?: boolean;
   selectable?: boolean;
 };
@@ -73,6 +75,7 @@ function nodeShape(node: { spec: unknown }): NodeShape {
     code: spec.code,
     defining: spec.defining,
     isolating: spec.isolating,
+    tableRole: spec.tableRole,
     draggable: spec.draggable,
     selectable: spec.selectable,
   };

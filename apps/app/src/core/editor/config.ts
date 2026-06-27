@@ -30,6 +30,10 @@ import {
   MeridianListItem,
   MeridianOrderedList,
   MeridianStrong,
+  MeridianTable,
+  MeridianTableCell,
+  MeridianTableHeader,
+  MeridianTableRow,
 } from "./extensions/meridian-extensions";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
@@ -117,7 +121,6 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   italic: false,
   listItem: false,
   orderedList: false,
-  strike: false,
 } as const;
 
 const CODE_STARTER_KIT_OPTIONS = {
@@ -225,6 +228,10 @@ export function createEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianHorizontalRule,
+    MeridianTable,
+    MeridianTableRow,
+    MeridianTableHeader,
+    MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
     MeridianImage,
     MeridianJsxLeaf,
