@@ -57,8 +57,11 @@ function isMeaningfulBlock(block: PMNode): boolean {
 }
 
 // A top-level table can't live inside a code block or another table, so paste
-// destinations inside those must fall back to plain text — otherwise inserting a
-// closed table slice splits the surrounding table / code block.
+// destinations inside those must decline — otherwise inserting a closed table
+// slice splits the surrounding table / code block. Declining hands off to
+// ProseMirror's default plain-text paste (same as if this feature were absent);
+// pristine literal-text paste inside a cell is a separate stock-editor concern
+// tracked under #92.
 function canHostTable($context: ResolvedPos): boolean {
   for (let depth = $context.depth; depth >= 0; depth -= 1) {
     const spec = $context.node(depth).type.spec;
