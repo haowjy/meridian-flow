@@ -228,6 +228,66 @@ describe("write reversal under concurrent edits", () => {
     ]);
   });
 
+  it("refuses p1393 foreign system lineage after undo all → redo → undo w2", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Alpha sword.\n\nBeta shield.",
+    });
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-p1393-w1" },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "shield", content: "ward" },
+      { ...context, turnId: "turn-p1393-w2" },
+    );
+
+    const undoAll = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "all" },
+      actor,
+    });
+    const redo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "all" },
+      actor,
+    });
+    const undoW2 = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "single", to: "w2" },
+      actor,
+    });
+    expect({
+      undoAll: undoAll.status,
+      redo: redo.status,
+      undoW2: undoW2.status,
+    }).toEqual({
+      undoAll: "reconciled",
+      redo: "reconciled",
+      undoW2: "reconciled",
+    });
+
+    const beforeFinalUndo = blockTexts(scenario.ctx.liveDoc("chapter.md"));
+    const undoW1 = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "single", to: "w1" },
+      actor,
+    });
+
+    expect(undoW1.status).toBe("cant_undo_dependent");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(beforeFinalUndo);
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md")).join("\n")).not.toMatch(
+      /swordsword|shieldshield/,
+    );
+  });
+
   it("refuses an exact same-range concurrent replacement and leaves the human text intact", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Alpha sword.",

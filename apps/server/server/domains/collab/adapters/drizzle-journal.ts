@@ -22,6 +22,7 @@ import {
   agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
+  documentYjsReversalOps,
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
@@ -715,6 +716,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 lt(documentYjsUpdates.createdAt, before),
               ),
             );
+          await txDb
+            .delete(documentYjsReversalOps)
+            .where(
+              and(
+                eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
+                lte(documentYjsReversalOps.updateSeq, compactedThroughSeq),
+              ),
+            );
         }
 
         const expired = await txDb
@@ -772,6 +781,13 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                   reversedByUserId: asUserId(record.reversedByUserId) ?? null,
                 },
               });
+            await txDb.insert(documentYjsReversalOps).values({
+              documentId: asDocumentId(docId),
+              threadId: asThreadId(record.threadId),
+              updateSeq: undoUpdateSeq,
+              handle: writeId,
+              direction: "undo",
+            });
           }
           for (const writeId of record.writeIds) {
             await reverseMutationsForWrite(txDb, {
@@ -809,6 +825,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         }
 
         const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
+        await txDb.insert(documentYjsReversalOps).values(
+          reversals.map((reversal) => ({
+            documentId: asDocumentId(docId),
+            threadId: asThreadId(ref.threadId),
+            updateSeq: seq,
+            handle: reversal.writeId,
+            direction: "redo" as const,
+          })),
+        );
         await txDb
           .update(documentYjsReversals)
           .set({ status: "redone", redoUpdateSeq: seq })
@@ -830,6 +855,21 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
         return { consumed: true, seq };
       });
+    },
+
+    async reversalOpSeqsForHandles(docId, threadId, handles) {
+      if (handles.length === 0) return new Set<number>();
+      const rows = await db
+        .select({ updateSeq: documentYjsReversalOps.updateSeq })
+        .from(documentYjsReversalOps)
+        .where(
+          and(
+            eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
+            eq(documentYjsReversalOps.threadId, asThreadId(threadId)),
+            inArray(documentYjsReversalOps.handle, [...handles]),
+          ),
+        );
+      return new Set(rows.map((row) => Number(row.updateSeq)));
     },
 
     async readReversals(docId, opts = {}) {

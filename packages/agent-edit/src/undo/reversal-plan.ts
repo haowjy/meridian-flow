@@ -93,9 +93,15 @@ export async function planUndo(input: {
     input.threadId,
     handlesInState(state, retained.writeIds),
   );
+  const reversalOpSeqs = await input.reversalStore.reversalOpSeqsForHandles(
+    input.docId,
+    input.threadId,
+    selectedGroup.handles,
+  );
   const dependency = evaluateLineageDependencies({
     snapshot: state.snapshot,
     closure: selectedGroup,
+    reversalOpSeqs,
     seqToHandle: seqToHandleFromMutations(allRowsByHandle, state.reversals),
   });
   if (!dependency.ok) {

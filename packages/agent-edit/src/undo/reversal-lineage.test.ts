@@ -50,7 +50,7 @@ describe("reversal lineage", () => {
   });
 
   it("blocks non-lineage deletes after the earliest forward seq and exempts lineage seqs", () => {
-    const updates = textUpdates();
+    const updates = textUpdates({ lastOrigin: "human:user" });
     const rows = new Map([["w1", [mutation("w1", 1)]]]);
     const reversals = [reversal("w1", "redone", 2, 4)];
     const closure = activeClosureForHandles({ handles: ["w1"], rowsByHandle: rows, reversals });
@@ -60,6 +60,38 @@ describe("reversal lineage", () => {
       snapshot: { checkpoint: null, updates },
       closure,
       seqToHandle: seqToHandleFromMutations(rows, reversals),
+    });
+
+    expect(verdict).toEqual({ ok: false, blockingWriteIds: ["a later edit"] });
+  });
+
+  it("exempts an own superseded system op by durable op lineage", () => {
+    const updates = textUpdates({ lastOrigin: "system" });
+    const rows = new Map([["w1", [mutation("w1", 1)]]]);
+    const reversals = [reversal("w1", "redone", 2, 4)];
+    const closure = activeClosureForHandles({ handles: ["w1"], rowsByHandle: rows, reversals });
+    if (!closure) throw new Error("expected closure");
+
+    const verdict = evaluateLineageDependencies({
+      snapshot: { checkpoint: null, updates },
+      closure,
+      reversalOpSeqs: new Set([2, 4, 5]),
+    });
+
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it("blocks a foreign system op that consumes selected content", () => {
+    const updates = textUpdates({ lastOrigin: "system" });
+    const rows = new Map([["w1", [mutation("w1", 1)]]]);
+    const reversals = [reversal("w1", "redone", 2, 4)];
+    const closure = activeClosureForHandles({ handles: ["w1"], rowsByHandle: rows, reversals });
+    if (!closure) throw new Error("expected closure");
+
+    const verdict = evaluateLineageDependencies({
+      snapshot: { checkpoint: null, updates },
+      closure,
+      reversalOpSeqs: new Set([2, 4]),
     });
 
     expect(verdict).toEqual({ ok: false, blockingWriteIds: ["a later edit"] });
@@ -88,7 +120,7 @@ function reversal(
   };
 }
 
-function textUpdates(): PersistedUpdate[] {
+function textUpdates(input: { lastOrigin: string }): PersistedUpdate[] {
   const doc = new Y.Doc({ gc: false });
   const text = doc.getText("t");
   const rows: PersistedUpdate[] = [];
@@ -100,6 +132,6 @@ function textUpdates(): PersistedUpdate[] {
   push(1, "agent:turn", () => text.insert(0, "blade"));
   push(2, "system", () => text.delete(0, 5));
   push(4, "system", () => text.insert(0, "blade"));
-  push(5, "human:user", () => text.delete(0, 5));
+  push(5, input.lastOrigin, () => text.delete(0, 5));
   return rows;
 }

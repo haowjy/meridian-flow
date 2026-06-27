@@ -70,6 +70,7 @@ export async function expectReversalMutationStatusContract({
     undoUpdateSeq: firstUndoSeq,
     redoUpdateSeq: undefined,
   });
+  await expectOpSeqs(journal, docId, threadId, ["w1"], [firstUndoSeq]);
 
   const firstRedo = await persistRedoForUndo(journal, doc, docId, threadId, firstUndoSeq, " Redo");
   await expectMutation(journal, docId, threadId, "w1", {
@@ -87,6 +88,7 @@ export async function expectReversalMutationStatusContract({
     undoUpdateSeq: firstUndoSeq,
     redoUpdateSeq: firstRedo,
   });
+  await expectOpSeqs(journal, docId, threadId, ["w1"], [firstUndoSeq, firstRedo]);
 
   const secondUndoSeq = await persistUndoForHandles(journal, doc, {
     docId,
@@ -101,6 +103,7 @@ export async function expectReversalMutationStatusContract({
     undoUpdateSeq: secondUndoSeq,
     redoUpdateSeq: undefined,
   });
+  await expectOpSeqs(journal, docId, threadId, ["w1"], [firstUndoSeq, firstRedo, secondUndoSeq]);
 
   const secondRedo = await persistRedoForUndo(
     journal,
@@ -116,6 +119,13 @@ export async function expectReversalMutationStatusContract({
     undoUpdateSeq: secondUndoSeq,
     redoUpdateSeq: secondRedo,
   });
+  await expectOpSeqs(
+    journal,
+    docId,
+    threadId,
+    ["w1"],
+    [firstUndoSeq, firstRedo, secondUndoSeq, secondRedo],
+  );
 
   const groupedUndoSeq = await persistUndoForHandles(journal, doc, {
     docId,
@@ -151,6 +161,21 @@ export async function expectReversalMutationStatusContract({
       redoUpdateSeq: groupedRedo,
     });
   }
+  await expectOpSeqs(
+    journal,
+    docId,
+    threadId,
+    ["w1"],
+    [firstUndoSeq, firstRedo, secondUndoSeq, secondRedo, groupedUndoSeq, groupedRedo],
+  );
+  await expectOpSeqs(journal, docId, threadId, ["w2"], [groupedUndoSeq, groupedRedo]);
+  await expectOpSeqs(
+    journal,
+    docId,
+    threadId,
+    ["w1", "w2"],
+    [firstUndoSeq, firstRedo, secondUndoSeq, secondRedo, groupedUndoSeq, groupedRedo],
+  );
 }
 
 async function persistUndoForHandles(
@@ -223,6 +248,18 @@ async function expectMutation(
     createdSeq: expected.createdSeq,
   });
   expect(rows[0]?.undoUpdateSeq).toBe(expected.undoUpdateSeq);
+}
+
+async function expectOpSeqs(
+  journal: ReversalStore,
+  docId: string,
+  threadId: string,
+  handles: readonly string[],
+  expected: readonly number[],
+): Promise<void> {
+  expect(
+    [...(await journal.reversalOpSeqsForHandles(docId, threadId, handles))].sort((a, b) => a - b),
+  ).toEqual(expected);
 }
 
 async function expectReversal(

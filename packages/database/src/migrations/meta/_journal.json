@@ -64,6 +64,13 @@
       "when": 1782590864539,
       "tag": "0008_tricky_sabra",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782592386338,
+      "tag": "0009_eager_psylocke",
+      "breakpoints": true
     }
   ]
 }
