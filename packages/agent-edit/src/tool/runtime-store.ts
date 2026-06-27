@@ -246,13 +246,13 @@ export function createRuntimeStore(deps: {
     runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
     // If the doc needs recovery (invalidated/evicted), don't use stale state
-    // — force a view to rebuild from live/journal.
+    // — force a read to rebuild from live/journal.
     if (docsNeedingRecovery.has(docId)) {
       return {
         ok: false,
         response: {
           status: "not_found",
-          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="view", file="${filePath}") to re-sync.`,
+          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
         },
       };
     }
@@ -281,7 +281,7 @@ export function createRuntimeStore(deps: {
       ok: false,
       response: {
         status: "not_found",
-        text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="view", file="${filePath}") to re-sync.`,
+        text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
       },
     };
   }
@@ -290,7 +290,7 @@ export function createRuntimeStore(deps: {
     const existing = session.documents.get(docId);
     const stateVector = Y.encodeStateVector(runtime.doc);
     // Preserve the committed snapshot (detection baseline) — only attachRuntime advances it.
-    // If no committed snapshot exists yet (first view), use current state as initial baseline.
+    // If no committed snapshot exists yet (first read), use current state as initial baseline.
     const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
     const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     session.documents.set(docId, { stateVector, committedSnapshot });

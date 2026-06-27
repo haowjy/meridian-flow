@@ -32,7 +32,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=view to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
+          "Document edit tool. Use command=read to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
         // Keep this JSON Schema in sync with packages/agent-edit/src/tool/types.ts
         // (WriteCommand). The chat layer uses `path` for context URIs; the
         // server handler resolves it to the package `file`/document id.
@@ -41,13 +41,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
           properties: {
             command: {
               type: "string",
-              enum: ["create", "view", "insert", "replace", "undo", "redo"],
-              description: "Command to run: create, view, insert, replace, undo, or redo.",
+              enum: ["create", "read", "insert", "replace", "undo", "redo"],
+              description: "Command to run: create, read, insert, replace, undo, or redo.",
             },
             path: {
               type: "string",
               description:
-                "Context URI or bare manuscript path for the document. May include a #fragment for view/section targeting.",
+                "Context URI or bare manuscript path for the document. May include a #fragment for read/section targeting.",
             },
             content: {
               type: "string",
@@ -66,11 +66,11 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
             in: {
               type: "string",
               description:
-                "View range, replace target, or find scope (block hash, hash range, or #section).",
+                "Read range, replace target, or find scope (block hash, hash range, or #section).",
             },
             around: {
               type: "string",
-              description: "Fuzzy scope around a known block hash for view/find operations.",
+              description: "Fuzzy scope around a known block hash for read/find operations.",
             },
             after: {
               type: "string",
@@ -119,7 +119,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "list",
         description:
-          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="view").',
+          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {
@@ -142,7 +142,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description:
-          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="view").',
+          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {

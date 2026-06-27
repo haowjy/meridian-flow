@@ -212,7 +212,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
       const turnContext = { ...context, turnId: TURN_A };
 
-      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
         "Alpha sword.",
       );
       expect(
@@ -289,7 +289,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "view", file: DOC_ID }, context))).toContain(
+      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
         "Alpha sword.",
       );
       expect(
@@ -330,7 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         undoClientId: REVERSAL_CLIENT_ID,
       });
       expect(
-        outcomeText(await restarted.write({ command: "view", file: DOC_ID }, context)),
+        outcomeText(await restarted.write({ command: "read", file: DOC_ID }, context)),
       ).toContain("Alpha sword.");
 
       const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));

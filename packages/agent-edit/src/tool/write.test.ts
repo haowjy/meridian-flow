@@ -51,7 +51,7 @@ describe("write tool dispatch", () => {
       model,
     });
 
-    await core.write({ command: "view", file: "chapter.md" }, context);
+    await core.write({ command: "read", file: "chapter.md" }, context);
     const write = await core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
@@ -90,7 +90,7 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
     expect(
-      renderedBlockBodies(await ctx.core.write({ command: "view", file: "new.md" }, context)),
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "new.md" }, context)),
     ).toEqual(["# Draft", "Opening line."]);
 
     const snapshot = await ctx.journal.read("new.md");
@@ -119,7 +119,7 @@ describe("write tool dispatch", () => {
   it("overwrites an existing document when create uses overwrite=true", async () => {
     const ctx = harness({ "chapter.md": "Old content.\n\nSecond paragraph." });
 
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const result = await ctx.core.write(
       {
         command: "create",
@@ -161,16 +161,16 @@ describe("write tool dispatch", () => {
       context,
     );
     expect(outcomeText(unsynced)).toContain(
-      `Run write(command="view", file="${MODEL_PATH}") to re-sync.`,
+      `Run write(command="read", file="${MODEL_PATH}") to re-sync.`,
     );
     expect(outcomeText(unsynced)).not.toContain(INTERNAL_DOCUMENT_ID);
 
-    const view = await ctx.core.write(
-      { command: "view", documentId: INTERNAL_DOCUMENT_ID, file: MODEL_PATH, format: "outline" },
+    const read = await ctx.core.write(
+      { command: "read", documentId: INTERNAL_DOCUMENT_ID, file: MODEL_PATH, format: "outline" },
       context,
     );
-    expect(outcomeText(view)).toContain(`write(command="view", file="${MODEL_PATH}#`);
-    expect(outcomeText(view)).not.toContain(INTERNAL_DOCUMENT_ID);
+    expect(outcomeText(read)).toContain(`write(command="read", file="${MODEL_PATH}#`);
+    expect(outcomeText(read)).not.toContain(INTERNAL_DOCUMENT_ID);
 
     const replace = await ctx.core.write(
       {
@@ -200,7 +200,7 @@ describe("write tool dispatch", () => {
 
   it("inserts by block hash, by find, and deduplicates tool_use_id", async () => {
     const ctx = harness({ "chapter.md": "Alpha.\n\nOmega." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
 
     const byHash = await ctx.core.write(
@@ -240,7 +240,7 @@ describe("write tool dispatch", () => {
 
   it("keeps fallback turn ids distinct across runtime eviction", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha" },
       context,
@@ -251,7 +251,7 @@ describe("write tool dispatch", () => {
     expect(firstTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
 
     ctx.core.invalidateThread("chapter.md", THREAD_ID);
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
@@ -284,7 +284,7 @@ describe("write tool dispatch", () => {
 
   it("appends unanchored inserts and handles explicit start and end anchors", async () => {
     const noAnchorCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
-    await noAnchorCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await noAnchorCtx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const noAnchor = await noAnchorCtx.core.write(
       { command: "insert", file: "chapter.md", content: "Four\n\nFive" },
@@ -296,12 +296,12 @@ describe("write tool dispatch", () => {
     expect(blockTexts(noAnchorCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
       renderedBlockBodies(
-        await noAnchorCtx.core.write({ command: "view", file: "chapter.md" }, context),
+        await noAnchorCtx.core.write({ command: "read", file: "chapter.md" }, context),
       ),
     ).toEqual(expectedEndOrder);
 
     const beforeFirstCtx = harness({ "chapter.md": "Alpha\n\nBeta" });
-    await beforeFirstCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await beforeFirstCtx.core.write({ command: "read", file: "chapter.md" }, context);
     const firstHash = hashAt(beforeFirstCtx.liveDoc("chapter.md"), 0);
 
     const beforeFirst = await beforeFirstCtx.core.write(
@@ -314,12 +314,12 @@ describe("write tool dispatch", () => {
     expect(blockTexts(beforeFirstCtx.liveDoc("chapter.md"))).toEqual(expectedStartOrder);
     expect(
       renderedBlockBodies(
-        await beforeFirstCtx.core.write({ command: "view", file: "chapter.md" }, context),
+        await beforeFirstCtx.core.write({ command: "read", file: "chapter.md" }, context),
       ),
     ).toEqual(expectedStartOrder);
 
     const afterLastCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
-    await afterLastCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await afterLastCtx.core.write({ command: "read", file: "chapter.md" }, context);
     const lastHash = hashAt(afterLastCtx.liveDoc("chapter.md"), 2);
 
     const afterLast = await afterLastCtx.core.write(
@@ -331,13 +331,13 @@ describe("write tool dispatch", () => {
     expect(blockTexts(afterLastCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
       renderedBlockBodies(
-        await afterLastCtx.core.write({ command: "view", file: "chapter.md" }, context),
+        await afterLastCtx.core.write({ command: "read", file: "chapter.md" }, context),
       ),
     ).toEqual(expectedEndOrder);
 
     const emptyCtx = harness();
     emptyCtx.coordinator.createEmpty("empty.md");
-    await emptyCtx.core.write({ command: "view", file: "empty.md" }, context);
+    await emptyCtx.core.write({ command: "read", file: "empty.md" }, context);
 
     const emptyInsert = await emptyCtx.core.write(
       { command: "insert", file: "empty.md", content: "Only block" },
@@ -348,14 +348,14 @@ describe("write tool dispatch", () => {
     expect(blockTexts(emptyCtx.liveDoc("empty.md"))).toEqual(["Only block"]);
     expect(
       renderedBlockBodies(
-        await emptyCtx.core.write({ command: "view", file: "empty.md" }, context),
+        await emptyCtx.core.write({ command: "read", file: "empty.md" }, context),
       ),
     ).toEqual(["Only block"]);
   });
 
   it("replaces text, formatting, and deletes through replace(content='')", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nDelete me." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const text = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -384,12 +384,12 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
-  it("replaces and inserts with find anchors copied from markdown-form view", async () => {
+  it("replaces and inserts with find anchors copied from markdown-form read", async () => {
     const ctx = harness({
       "chapter.md":
         "Not burning — *thrumming.* Alive.\n\nHe could *feel* the qi in the air now — not as a vague warmth, but as a current.\n\nA **bold** anchor waits.",
     });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const replaced = await ctx.core.write(
       {
@@ -427,7 +427,7 @@ describe("write tool dispatch", () => {
     const ctx = harness({
       "chapter.md": "Before **bold** — after — **tail**.",
     });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const replaced = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: " ", find: "—", all: true },
@@ -444,7 +444,7 @@ describe("write tool dispatch", () => {
 
   it("inserts near markdown delimiters and preserves surrounding marks", async () => {
     const ctx = harness({ "chapter.md": "A **bold** marker and *italic* marker." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const inserted = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "!", find: "**bold**" },
@@ -460,7 +460,7 @@ describe("write tool dispatch", () => {
 
   it("routes single-block find replacements that change block type through structural reconcile", async () => {
     const ctx = harness({ "chapter.md": "Opening line.\n\nTail." });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const replaced = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "# Opening line.", find: "Opening line." },
@@ -469,13 +469,13 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(replaced)).toContain("status: success");
     expect(
-      renderedBlockBodies(await ctx.core.write({ command: "view", file: "chapter.md" }, context)),
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "chapter.md" }, context)),
     ).toEqual(["# Opening line.", "Tail."]);
   });
 
   it("replaces and deletes find matches that span block boundaries", async () => {
     const replaceCtx = harness({ "chapter.md": "Alpha starts\n\nends Omega" });
-    await replaceCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await replaceCtx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const replaced = await replaceCtx.core.write(
       {
@@ -491,7 +491,7 @@ describe("write tool dispatch", () => {
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Alpha middle Omega"]);
 
     const deleteCtx = harness({ "chapter.md": "Before X\n\nMiddle\n\nY After" });
-    await deleteCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await deleteCtx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const deleted = await deleteCtx.core.write(
       {
@@ -507,7 +507,7 @@ describe("write tool dispatch", () => {
     expect(blockTexts(deleteCtx.liveDoc("chapter.md"))).toEqual(["Before  After"]);
 
     const insertCtx = harness({ "chapter.md": "Alpha starts\n\nends Omega" });
-    await insertCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await insertCtx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const inserted = await insertCtx.core.write(
       {
@@ -525,7 +525,7 @@ describe("write tool dispatch", () => {
 
   it("scopes find-based replace and insert to around windows", async () => {
     const replaceCtx = harness({ "chapter.md": aroundNeedleBlocks() });
-    await replaceCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await replaceCtx.core.write({ command: "read", file: "chapter.md" }, context);
     const replaceAround = hashAt(replaceCtx.liveDoc("chapter.md"), 4);
 
     const replaced = await replaceCtx.core.write(
@@ -553,7 +553,7 @@ describe("write tool dispatch", () => {
     ]);
 
     const insertCtx = harness({ "chapter.md": aroundNeedleBlocks() });
-    await insertCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    await insertCtx.core.write({ command: "read", file: "chapter.md" }, context);
     const insertAround = hashAt(insertCtx.liveDoc("chapter.md"), 4);
 
     const inserted = await insertCtx.core.write(
@@ -583,7 +583,7 @@ describe("write tool dispatch", () => {
 
   it("keeps find-based replacement reachable through file fragments", async () => {
     const ctx = harness({ "chapter.md": "# Arena\n\nsword here\n\n# After\n\nsword there" });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const headingHash = hashAt(ctx.liveDoc("chapter.md"), 0);
 
     const result = await ctx.core.write(
@@ -603,7 +603,7 @@ describe("write tool dispatch", () => {
 
   it("returns LLM-readable not_found, ambiguous_match, and invalid_write errors", async () => {
     const ctx = harness({ "chapter.md": "sword one\n\nsword two" });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const missing = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "x", after: "deadbeef" },
@@ -611,7 +611,7 @@ describe("write tool dispatch", () => {
     );
     expect(outcomeText(missing)).toContain("status: not_found");
     expectOutcome(missing, "not_found", true);
-    expect(outcomeText(missing)).toContain('write(command="view", file="chapter.md")');
+    expect(outcomeText(missing)).toContain('write(command="read", file="chapter.md")');
 
     const ambiguous = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -632,7 +632,7 @@ describe("write tool dispatch", () => {
 
   it("returns invalid_write for invalid around scope combinations", async () => {
     const ctx = harness({ "chapter.md": aroundNeedleBlocks() });
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const inHash = hashAt(ctx.liveDoc("chapter.md"), 4);
     const aroundHash = hashAt(ctx.liveDoc("chapter.md"), 5);
 
@@ -665,7 +665,7 @@ describe("write tool dispatch", () => {
   it("maps typed missing documents differently from transient coordinator failures", async () => {
     const missingCtx = harness();
 
-    const missing = await missingCtx.core.write({ command: "view", file: "missing.md" }, context);
+    const missing = await missingCtx.core.write({ command: "read", file: "missing.md" }, context);
 
     expect(outcomeText(missing)).toContain("status: document_not_found");
     expectOutcome(missing, "document_not_found", true);
@@ -673,7 +673,7 @@ describe("write tool dispatch", () => {
     const failingCtx = harness({ "chapter.md": "Alpha." });
     failingCtx.coordinator.failWith(new Error("database unavailable"));
 
-    const transient = await failingCtx.core.write({ command: "view", file: "chapter.md" }, context);
+    const transient = await failingCtx.core.write({ command: "read", file: "chapter.md" }, context);
 
     expect(outcomeText(transient)).toContain("status: internal_error");
     expectOutcome(transient, "internal_error", true);

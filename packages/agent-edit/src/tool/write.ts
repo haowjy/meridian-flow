@@ -29,6 +29,7 @@ import { formatConcurrent, result, status, toOutcome } from "./response-format.j
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
+  ReadCommand,
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
@@ -37,7 +38,6 @@ import type {
   TurnUndoResult,
   UndoCommand,
   UndoResult,
-  ViewCommand,
   WriteCommand,
   WriteContext,
   WriteErrorStatus,
@@ -190,8 +190,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     switch (command.command) {
-      case "view":
-        return view(command, session, context);
+      case "read":
+        return read(command, session, context);
       case "create":
         return create(command, session, context);
       case "insert":
@@ -223,8 +223,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return session;
   }
 
-  async function view(
-    command: ViewCommand,
+  async function read(
+    command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -250,7 +250,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
     markSynced(session, address.documentId, runtime);
 
-    const selection = renderer.selectViewBlocks(toDocHandle(runtime.doc), command, address);
+    const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
     if (command.format === "outline") {
       return success(
@@ -637,10 +637,10 @@ function errorResponse(
   message: string,
   filePath: string,
 ): InternalWriteResult {
-  const needsView = code === "not_found" && !message.includes('write(command="view"');
+  const needsView = code === "not_found" && !message.includes('write(command="read"');
   return status(
     code,
-    needsView ? `${message}. Run write(command="view", file="${filePath}") to re-sync.` : message,
+    needsView ? `${message}. Run write(command="read", file="${filePath}") to re-sync.` : message,
   );
 }
 

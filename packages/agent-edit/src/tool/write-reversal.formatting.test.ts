@@ -78,7 +78,7 @@ const noInternalIdCases: NoInternalIdCase[] = [
 
 describe("write reversal formatting", () => {
   it("returns write ids in immediate results even when the echo is suppressed", async () => {
-    const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." });
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
 
     const write = await scenario.ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -103,7 +103,7 @@ describe("write reversal formatting", () => {
   });
 
   it("returns undo and redo metadata and echo as separate structured content blocks", async () => {
-    const scenario = await ReversalScenario.view({
+    const scenario = await ReversalScenario.read({
       "chapter.md": "Alpha sword.\n\nBeta waits nearby.",
     });
     await scenario.simpleReplace("turn-structured-reversal");
@@ -126,7 +126,7 @@ describe("write reversal formatting", () => {
   });
 
   it("preserves changed block hashes in reversal output without exposing storage ids", async () => {
-    const scenario = await ReversalScenario.view({
+    const scenario = await ReversalScenario.read({
       "chapter.md":
         "Beta waits in the clearing, sword drawn.\n\nThe wind carries the scent of rain.",
     });

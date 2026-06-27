@@ -6,23 +6,23 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../doc-handle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
-import type { ViewCommand } from "./types.js";
+import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
   filePath: string;
   fragment?: string;
 }
 
-export type ViewBlockSelection =
+export type ReadBlockSelection =
   | { ok: true; blocks: Array<BlockRef> }
   | { ok: false; code: "not_found" | "invalid_write"; message: string };
 
 export interface DocumentRenderer {
-  selectViewBlocks(
+  selectReadBlocks(
     doc: DocHandle,
-    command: ViewCommand,
+    command: ReadCommand,
     address: DocumentRenderAddress,
-  ): ViewBlockSelection;
+  ): ReadBlockSelection;
   renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string;
   renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
   renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string;
@@ -40,24 +40,24 @@ export function createDocumentRenderer(deps: {
   const { model, codec } = deps;
 
   return {
-    selectViewBlocks,
+    selectReadBlocks,
     renderBlocks,
     renderBlockLines,
     renderOutline,
     parseForCommand,
   };
 
-  function selectViewBlocks(
+  function selectReadBlocks(
     doc: DocHandle,
-    command: ViewCommand,
+    command: ReadCommand,
     address: DocumentRenderAddress,
-  ): ViewBlockSelection {
+  ): ReadBlockSelection {
     const scopeContext = { doc, model };
     if (address.fragment && (command.in !== undefined || command.around !== undefined)) {
       return {
         ok: false,
         code: "invalid_write",
-        message: "Use either file #fragment, in, or around for view scope, not multiple.",
+        message: "Use either file #fragment, in, or around for read scope, not multiple.",
       };
     }
     if (address.fragment) {
@@ -92,7 +92,7 @@ export function createDocumentRenderer(deps: {
     for (let i = 0; i < headingBlocks.length; i++) {
       const hash = model.getBlockId(headingBlocks[i]);
       lines.push(serialized[i]);
-      lines.push(`write(command="view", file="${filePath}#${hash}")`);
+      lines.push(`write(command="read", file="${filePath}#${hash}")`);
     }
     return lines.join("\n");
   }

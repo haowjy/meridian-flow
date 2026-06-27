@@ -386,7 +386,7 @@ function blockTypeMismatch(
   return {
     ok: false,
     code: "not_found",
-    message: `Block type changed from ${actual} to ${expected}; re-view before writing`,
+    message: `Block type changed from ${actual} to ${expected}; re-read before writing`,
     details: { actual, expected },
   };
 }

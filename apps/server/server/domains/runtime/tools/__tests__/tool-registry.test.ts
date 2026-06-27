@@ -41,7 +41,7 @@ describe("createToolRegistry core tools", () => {
     expect(registry.getRegistration("write")?.definition.inputSchema).toMatchObject({
       required: ["command", "path"],
       properties: {
-        command: { enum: ["create", "view", "insert", "replace", "undo", "redo"] },
+        command: { enum: ["create", "read", "insert", "replace", "undo", "redo"] },
         path: { type: "string" },
         content: { type: "string" },
         find: { type: "string" },

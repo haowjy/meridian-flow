@@ -20,12 +20,12 @@ export class ReversalScenario {
     this.ctx = ctx;
   }
 
-  static async view(
+  static async read(
     initialDocs: Record<string, string> = { "chapter.md": "Base." },
     options?: Parameters<typeof harness>[1],
   ): Promise<ReversalScenario> {
     const ctx = harness(initialDocs, options);
-    await ctx.core.write({ command: "view", file: "chapter.md" }, context);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     return new ReversalScenario(ctx);
   }
 
@@ -90,7 +90,7 @@ export class ReversalScenario {
 }
 
 export async function deletedBlockScenario(turnId: string): Promise<NoInternalIdState> {
-  const scenario = await ReversalScenario.view({
+  const scenario = await ReversalScenario.read({
     "chapter.md": "Beta waits in the clearing, sword drawn.\n\nThe wind carries the scent of rain.",
   });
   const { originalHash } = await scenario.deletedFirstBlock(turnId);
@@ -101,7 +101,7 @@ export async function simpleReplaceScenario(
   turnId: string,
   options?: Parameters<typeof harness>[1],
 ): Promise<NoInternalIdState> {
-  const scenario = await ReversalScenario.view({ "chapter.md": "Alpha sword." }, options);
+  const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." }, options);
   await scenario.simpleReplace(turnId);
   return { ctx: scenario.ctx };
 }
