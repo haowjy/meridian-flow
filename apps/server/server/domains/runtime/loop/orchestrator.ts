@@ -752,11 +752,9 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
-    const undoNotifications = coalesceUndoNotifications(
-      await deps.undoNotifications.consumeForThread(input.threadId),
-    );
-    let pendingUndoNotificationsForFirstCall: readonly PendingUndoNotification[] | undefined =
-      undoNotifications.length > 0 ? undoNotifications : undefined;
+    let pendingUndoNotificationsForFirstCall: readonly PendingUndoNotification[] | undefined;
+    let pendingUndoNotificationIdsForFirstCall: readonly string[] = [];
+    let loadedUndoNotificationsForFirstCall = false;
     const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -803,6 +801,18 @@ async function* generateEvents(
         );
       }
 
+      if (!loadedUndoNotificationsForFirstCall) {
+        const undoNotifications = coalesceUndoNotifications(
+          await deps.undoNotifications.peekForThread(input.threadId),
+        );
+        pendingUndoNotificationsForFirstCall =
+          undoNotifications.length > 0 ? undoNotifications : undefined;
+        pendingUndoNotificationIdsForFirstCall = undoNotifications.map(
+          (notification) => notification.id,
+        );
+        loadedUndoNotificationsForFirstCall = true;
+      }
+
       const built = await buildGenerateRequest({
         deps,
         runInput: input,
@@ -812,7 +822,9 @@ async function* generateEvents(
         gatewaySignal: gatewayAbort.signal,
         undoNotifications: pendingUndoNotificationsForFirstCall,
       });
+      const consumeUndoNotificationIds = pendingUndoNotificationIdsForFirstCall;
       pendingUndoNotificationsForFirstCall = undefined;
+      pendingUndoNotificationIdsForFirstCall = [];
       thread = built.thread;
       const request = built.request;
 
@@ -827,6 +839,10 @@ async function* generateEvents(
           toolRegistry: deps.toolRegistry,
         }),
       );
+
+      if (consumeUndoNotificationIds.length > 0) {
+        await deps.undoNotifications.deleteByIds(consumeUndoNotificationIds);
+      }
 
       // ── Gateway stream consumption ──
       // The gateway yields a self-terminating stream: a sequence of

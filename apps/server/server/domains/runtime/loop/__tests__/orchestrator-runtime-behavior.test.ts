@@ -325,7 +325,7 @@ describe("runtime orchestrator behavior", () => {
       },
       undoNotifications: {
         async record() {},
-        async consumeForThread(threadId) {
+        async peekForThread(threadId) {
           consumeCount += 1;
           return [
             {
@@ -338,6 +338,10 @@ describe("runtime orchestrator behavior", () => {
               createdAt: new Date("2026-06-27T00:00:00.000Z"),
             },
           ];
+        },
+        async deleteByIds() {},
+        async consumeForThread() {
+          return [];
         },
       },
     });
@@ -354,6 +358,72 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(requests[1]?.messages)).not.toContain(
       "The writer reversed the following edits before this message",
     );
+  });
+
+  it("keeps pending undo notifications when the first model call is not issued", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    let peekCount = 0;
+    let deleteCount = 0;
+    const deps = createTestOrchestratorDeps({
+      gateway: textGateway(),
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      checkpointRegistry: createCheckpointRegistry(),
+      undoNotifications: {
+        async record() {},
+        async peekForThread(threadId) {
+          peekCount += 1;
+          return [
+            {
+              id: "notification-1",
+              threadId: threadId as never,
+              writeHandle: "w1",
+              turnId: "00000000-0000-4000-8000-000000000001" as never,
+              uri: "manuscript://chapter-1.md",
+              direction: "undo",
+              createdAt: new Date("2026-06-27T00:00:00.000Z"),
+            },
+          ];
+        },
+        async deleteByIds() {
+          deleteCount += 1;
+        },
+        async consumeForThread() {
+          return [];
+        },
+      },
+      modelRequestDebug: {
+        captureEnabled: true,
+        record() {
+          throw new Error("debug store unavailable before gateway stream");
+        },
+        listByTurn() {
+          return [];
+        },
+        listByThread() {
+          return [];
+        },
+      },
+    });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+
+    expect(peekCount).toBe(1);
+    expect(deleteCount).toBe(0);
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {

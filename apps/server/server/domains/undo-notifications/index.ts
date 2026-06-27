@@ -21,6 +21,8 @@ export interface PendingUndoNotificationRepository {
     uri: string;
     direction: UndoNotificationDirection;
   }): Promise<void>;
+  peekForThread(threadId: string): Promise<PendingUndoNotification[]>;
+  deleteByIds(ids: readonly string[]): Promise<void>;
   consumeForThread(threadId: string): Promise<PendingUndoNotification[]>;
 }
 
