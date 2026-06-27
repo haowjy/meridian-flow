@@ -29,7 +29,7 @@
     "lib0": "^0.2.114",
     "mammoth": "1.12.0",
     "nitro": "catalog:",
-    "openai": "^4.104.0",
+    "openai": "^6.45.0",
     "postgres": "catalog:",
     "prosemirror-model": "^1.25.9",
     "prosemirror-transform": "^1.12.0",
@@ -45,6 +45,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@hocuspocus/provider": "4.2.0",
     "@types/semver": "^7.7.1",
     "@types/tar": "^7.0.87",
     "@types/turndown": "^5.0.6",
@@ -52,7 +53,6 @@
     "tsx": "^4.22.3",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.18.3",
-    "@hocuspocus/provider": "4.2.0"
+    "ws": "^8.18.3"
   }
 }
