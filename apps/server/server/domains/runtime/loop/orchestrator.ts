@@ -85,10 +85,9 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import {
-  coalesceUndoNotifications,
-  type PendingUndoNotification,
-  type PendingUndoNotificationRepository,
+import type {
+  PendingUndoNotification,
+  PendingUndoNotificationRepository,
 } from "../../undo-notifications/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -103,6 +102,7 @@ import {
   type CheckpointRegistry,
   defaultCheckpointAutoResumePolicy,
 } from "./checkpoints.js";
+import { undoNotificationSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -752,9 +752,7 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
-    let pendingUndoNotificationsForFirstCall: readonly PendingUndoNotification[] | undefined;
-    let pendingUndoNotificationIdsForFirstCall: readonly string[] = [];
-    let loadedUndoNotificationsForFirstCall = false;
+    let shouldInjectUndoNotifications = true;
     const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -801,18 +799,6 @@ async function* generateEvents(
         );
       }
 
-      if (!loadedUndoNotificationsForFirstCall) {
-        const undoNotifications = coalesceUndoNotifications(
-          await deps.undoNotifications.peekForThread(input.threadId),
-        );
-        pendingUndoNotificationsForFirstCall =
-          undoNotifications.length > 0 ? undoNotifications : undefined;
-        pendingUndoNotificationIdsForFirstCall = undoNotifications.map(
-          (notification) => notification.id,
-        );
-        loadedUndoNotificationsForFirstCall = true;
-      }
-
       const built = await buildGenerateRequest({
         deps,
         runInput: input,
@@ -820,11 +806,7 @@ async function* generateEvents(
         turns: allTurns,
         blocks: allBlocks,
         gatewaySignal: gatewayAbort.signal,
-        undoNotifications: pendingUndoNotificationsForFirstCall,
       });
-      const consumeUndoNotificationIds = pendingUndoNotificationIdsForFirstCall;
-      pendingUndoNotificationsForFirstCall = undefined;
-      pendingUndoNotificationIdsForFirstCall = [];
       thread = built.thread;
       const request = built.request;
 
@@ -840,8 +822,19 @@ async function* generateEvents(
         }),
       );
 
-      if (consumeUndoNotificationIds.length > 0) {
-        await deps.undoNotifications.deleteByIds(consumeUndoNotificationIds);
+      if (shouldInjectUndoNotifications) {
+        const undoNotifications = await deps.undoNotifications.consumeForThread(input.threadId);
+        shouldInjectUndoNotifications = false;
+        if (undoNotifications.length > 0) {
+          const insertAt = request.messages.findIndex((message) => message.role !== "system");
+          request.messages.splice(
+            insertAt === -1 ? request.messages.length : insertAt,
+            0,
+            undoNotificationSystemMessage(undoNotifications),
+          );
+        }
+        // After this point the consume is durable. If the provider stream throws before
+        // returning a result, the notification is lost, matching the model-call boundary.
       }
 
       // ── Gateway stream consumption ──
