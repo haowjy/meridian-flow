@@ -7,7 +7,7 @@ import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
-import { toDocHandle } from "../model/doc-handle.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";

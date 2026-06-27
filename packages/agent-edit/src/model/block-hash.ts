@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import type { BlockRef } from "../block-ref.js";
+import type { BlockRef } from "../handles.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 
 const DEFAULT_HASH_LENGTH = 4;

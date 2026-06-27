@@ -10,7 +10,7 @@ import {
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import { toDocHandle } from "../model/doc-handle.js";
+import { toDocHandle } from "../handles.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";

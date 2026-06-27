@@ -1,10 +1,9 @@
 // Structural document-model port for the agent editing core.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
-import type { DocHandle } from "../doc-handle.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 
 export interface TextRun {
   start: number;
@@ -13,8 +12,8 @@ export interface TextRun {
 }
 
 export type BlockLookup =
-  | { ok: true; hash: string; block: BlockRef }
-  | { ok: false; reason: "not_found" | "ambiguous"; matches?: BlockRef[] };
+  | { ok: true; block: BlockRef }
+  | { ok: false; reason: "not_found" | "ambiguous" };
 
 export type InlineReplacementResult =
   | { ok: true }

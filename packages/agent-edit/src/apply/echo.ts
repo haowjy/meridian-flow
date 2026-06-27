@@ -2,8 +2,8 @@
 import * as Y from "yjs";
 
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../doc-handle.js";
-import { unwrapDoc } from "../model/doc-handle.js";
+import type { DocHandle } from "../handles.js";
+import { unwrapDoc } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
 

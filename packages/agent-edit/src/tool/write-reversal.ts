@@ -3,7 +3,7 @@ import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import { toDocHandle } from "../model/doc-handle.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type {

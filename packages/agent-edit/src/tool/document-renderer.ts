@@ -1,9 +1,8 @@
 // Turns document blocks into agent-facing text and parses agent input.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../doc-handle.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import type { ReadCommand } from "./types.js";

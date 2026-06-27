@@ -1,6 +1,5 @@
-import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../doc-handle.js";
+import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
