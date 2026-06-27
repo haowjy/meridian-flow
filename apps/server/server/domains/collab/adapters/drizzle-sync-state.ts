@@ -3,7 +3,12 @@ import type { SyncState, SyncStateStore } from "@meridian/agent-edit";
 import type { Database } from "@meridian/database";
 import { agentEditSyncState } from "@meridian/database";
 import { sql } from "drizzle-orm";
-import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent-edit-scope";
+import {
+  LIVE_SCOPE,
+  scopedConflictTarget,
+  scopedValues,
+  scopedWhere,
+} from "./drizzle-agent-edit-scope";
 
 type SyncStateDb = Pick<Database, "select" | "insert" | "delete">;
 
@@ -25,7 +30,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
           committedSnapshot: agentEditSyncState.committedSnapshot,
         })
         .from(agentEditSyncState)
-        .where(scopedWhere(agentEditSyncState, { documentId, threadId }))
+        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }))
         .limit(1);
       if (!row) return null;
       return {
@@ -39,7 +44,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
       await db
         .insert(agentEditSyncState)
         .values({
-          ...scopedValues({ documentId, threadId }),
+          ...scopedValues({ documentId, threadId, scopeId: LIVE_SCOPE }),
           stateVector: toBuffer(state.stateVector),
           syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
@@ -58,7 +63,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
     async delete(documentId, threadId): Promise<void> {
       await db
         .delete(agentEditSyncState)
-        .where(scopedWhere(agentEditSyncState, { documentId, threadId }));
+        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }));
     },
   };
 }
