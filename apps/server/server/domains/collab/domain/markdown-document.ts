@@ -95,11 +95,8 @@ export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
   function serializeDoc(doc: Y.Doc): string {
-    const blocks = deps.model.getBlocks(toDocHandle(doc));
-    if (blocks.length === 0) return "";
-    return deps.codec.serialize(
-      blocks.map((block) => deps.model.toProsemirrorBlock(toDocHandle(doc), block)),
-    );
+    if (deps.model.getBlocks(toDocHandle(doc)).length === 0) return "";
+    return deps.codec.serialize(deps.model.projectBlocks(toDocHandle(doc)));
   }
 
   function parseMarkdown(

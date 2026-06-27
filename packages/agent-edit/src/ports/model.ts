@@ -2,6 +2,7 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef } from "../block-ref.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { DocHandle } from "../doc-handle.js";
 
@@ -14,6 +15,15 @@ export interface TextRun {
 export type BlockLookup =
   | { ok: true; hash: string; block: BlockRef }
   | { ok: false; reason: "not_found" | "ambiguous"; matches?: BlockRef[] };
+
+export type InlineReplacementResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code: "invalid_write" | "not_found";
+      message: string;
+      details?: Record<string, unknown>;
+    };
 
 /**
  * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
@@ -77,12 +87,32 @@ export interface AgentEditModel extends DocumentModel {
   /** Neutral inline mark runs for Tier 1-vs-Tier 2 text edit selection. */
   inlineRuns(block: BlockRef): TextRun[];
 
-  /** Project a live block into the codec's block representation. */
-  toProsemirrorBlock(doc: DocHandle, block: BlockRef): Block;
+  /** True when parsed replacement markup can use the Tier 1 flat-text path. */
+  isPlainTextReplacement(parsed: ParsedContent, source: string): boolean;
 
-  /** Batch version of toProsemirrorBlock — projects the PM tree once for all blocks. */
-  toProsemirrorBlocks(doc: DocHandle): Block[];
+  /** Tier 2 formatted text replacement; adapters own codec projection and tree diffing. */
+  applyInlineReplacement(
+    doc: DocHandle,
+    block: BlockRef,
+    span: Span,
+    replacementMarkup: string,
+    codec: AgentEditCodec,
+  ): InlineReplacementResult;
 
-  /** Replace a live block with an already-planned codec block projection. */
-  applyBlockDiff(doc: DocHandle, block: BlockRef, replacement: Block): void;
+  /** Adapter-owned block projection for codec-bound residual paths. */
+  projectBlocks(doc: DocHandle): Block[];
+
+  /** Hash-prefixed block lines for agent-facing document views and echo. */
+  serializeBlockLines(
+    doc: DocHandle,
+    codec: AgentEditCodec,
+    blocks?: readonly BlockRef[],
+  ): string[];
+
+  /** Hashless block bodies for resolver matching. */
+  serializeBlockBodies(
+    doc: DocHandle,
+    codec: AgentEditCodec,
+    blocks: readonly BlockRef[],
+  ): string[];
 }

@@ -3,8 +3,9 @@ import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { BlockRef } from "../block-ref.js";
-import type { Span } from "../codec-types.js";
-import type { AgentEditModel, TextRun } from "../ports/model.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import type { Block, Span } from "../codec-types.js";
+import type { AgentEditModel, InlineReplacementResult, TextRun } from "../ports/model.js";
 import {
   blockHashesForDoc,
   getBlockHash,
@@ -93,16 +94,31 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyBlockDiff(doc, block, replacement) {
-      applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
+    isPlainTextReplacement(parsed, source) {
+      return isPlainTextReplacement(parsed, source);
     },
 
-    toProsemirrorBlock(doc, block) {
-      return toProsemirrorBlock(unwrapDoc(doc), unwrapBlock(block), schema);
+    applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
+      return applyInlineReplacement(
+        unwrapDoc(doc),
+        unwrapBlock(block),
+        span,
+        replacementMarkup,
+        codec,
+        schema,
+      );
     },
 
-    toProsemirrorBlocks(doc) {
+    projectBlocks(doc) {
       return prosemirrorBlocksForDoc(unwrapDoc(doc), schema);
+    },
+
+    serializeBlockLines(doc, codec, blocks) {
+      return serializeBlockLines(unwrapDoc(doc), codec, schema, blocks);
+    },
+
+    serializeBlockBodies(doc, codec, blocks) {
+      return serializeBlockBodies(unwrapDoc(doc), codec, schema, blocks);
     },
   };
 }
@@ -172,6 +188,207 @@ export function applyBlockDiff(
     throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
   }
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
+}
+
+export function applyInlineReplacement(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  span: Span,
+  replacementMarkup: string,
+  codec: AgentEditCodec,
+  schema: Schema,
+): InlineReplacementResult {
+  const element = unwrapBlock(toRef(block));
+  const current = toProsemirrorBlock(doc, element, schema);
+  const blockType = element.nodeName;
+  if (current.type.name !== blockType) {
+    return blockTypeMismatch(blockType, current.type.name);
+  }
+
+  let parsed: ParsedContent;
+  try {
+    parsed = replacementMarkup.length === 0 ? { blocks: [] } : codec.parse(replacementMarkup);
+  } catch (cause) {
+    return parseFailure(cause);
+  }
+
+  const inline = inlineReplacement(parsed);
+  if (!inline.ok) return inline;
+  if (!canReplaceInline(current)) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Text edits with formatting are not supported for ${current.type.name} blocks`,
+    };
+  }
+  const replacement = replaceFlatText(current, span, inline.nodes);
+  if (replacement.type.name !== blockType) {
+    return blockTypeMismatch(blockType, replacement.type.name);
+  }
+  applyBlockDiff(doc, element, replacement);
+  return { ok: true };
+}
+
+function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
+  if (source.length === 0) return true;
+  if (parsed.blocks.length !== 1) return false;
+  const block = parsed.blocks[0];
+  if (!block?.isTextblock) return false;
+  if (block.textContent !== source) return false;
+  let plain = true;
+  block.descendants((node) => {
+    if (node.isText) {
+      if (node.marks.length > 0) plain = false;
+      return false;
+    }
+    if (node.type.name !== "hard_break") plain = false;
+    return !plain;
+  });
+  return plain;
+}
+
+function inlineReplacement(
+  parsed: ParsedContent,
+): { ok: true; nodes: Block[] } | { ok: false; code: "invalid_write"; message: string } {
+  if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
+  if (parsed.blocks.length !== 1) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: "Text edits cannot introduce multiple blocks; use an insert/delete structural edit",
+    };
+  }
+  const block = parsed.blocks[0];
+  if (!block?.isTextblock) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
+    };
+  }
+  const nodes: Block[] = [];
+  block.forEach((child) => {
+    nodes.push(child);
+  });
+  return { ok: true, nodes };
+}
+
+function canReplaceInline(block: PMNode): boolean {
+  return block.isTextblock && block.type.name !== "code_block";
+}
+
+function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
+  let cursor = 0;
+  let inserted = false;
+  const children: PMNode[] = [];
+
+  const insertReplacement = () => {
+    if (inserted) return;
+    children.push(...replacement);
+    inserted = true;
+  };
+
+  block.forEach((child) => {
+    if (!child.isText) {
+      if (cursor >= span.from && cursor <= span.to) insertReplacement();
+      children.push(child);
+      return;
+    }
+    const text = child.text ?? "";
+    const start = cursor;
+    const end = cursor + text.length;
+    if (end <= span.from || start >= span.to) {
+      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
+      children.push(child);
+      cursor = end;
+      return;
+    }
+
+    const keepLeft = Math.max(0, span.from - start);
+    const keepRight = Math.max(0, end - span.to);
+    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
+    insertReplacement();
+    if (keepRight > 0) {
+      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
+    }
+    cursor = end;
+  });
+  if (!inserted) insertReplacement();
+
+  return block.type.create(block.attrs, children, block.marks);
+}
+
+function serializeBlockLines(
+  doc: Y.Doc,
+  codec: AgentEditCodec,
+  schema: Schema,
+  selectedBlocks?: readonly BlockRef[],
+): string[] {
+  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
+  if (blocks.length === 0) return [];
+  const hashes = blockHashesForDoc(doc);
+  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
+  if (!selectedBlocks) return codec.serializeBlocks(pmBlocks, hashes);
+  const indexByBlock = new Map<BlockRef, number>();
+  blocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selectedPmBlocks: PMNode[] = [];
+  const selectedHashes: string[] = [];
+  for (const block of selectedBlocks) {
+    const index = indexByBlock.get(block);
+    if (index === undefined) continue;
+    selectedPmBlocks.push(pmBlocks[index]);
+    selectedHashes.push(hashes[index]);
+  }
+  return codec.serializeBlocks(selectedPmBlocks, selectedHashes);
+}
+
+function serializeBlockBodies(
+  doc: Y.Doc,
+  codec: AgentEditCodec,
+  schema: Schema,
+  selectedBlocks: readonly BlockRef[],
+): string[] {
+  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
+  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
+  const indexByBlock = new Map<BlockRef, number>();
+  blocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selectedPmBlocks: PMNode[] = [];
+  for (const block of selectedBlocks) {
+    const index = indexByBlock.get(block);
+    if (index !== undefined) selectedPmBlocks.push(pmBlocks[index]);
+  }
+  return codec.serializeBlockBodies(selectedPmBlocks);
+}
+
+function parseFailure(cause: unknown): InlineReplacementResult {
+  const record = cause instanceof Error ? cause : undefined;
+  const details: Record<string, unknown> = {};
+  const line = (cause as { line?: unknown } | null)?.line;
+  const column = (cause as { column?: unknown } | null)?.column;
+  if (typeof line === "number") details.line = line;
+  if (typeof column === "number") details.column = column;
+  return {
+    ok: false,
+    code: "invalid_write",
+    message: record?.message ?? String(cause),
+    ...(Object.keys(details).length > 0 ? { details } : {}),
+  };
+}
+
+function blockTypeMismatch(
+  actual: string,
+  expected: string,
+): { ok: false; code: "not_found"; message: string; details: Record<string, unknown> } {
+  return {
+    ok: false,
+    code: "not_found",
+    message: `Block type changed from ${actual} to ${expected}; re-view before writing`,
+    details: { actual, expected },
+  };
 }
 
 export function insertBlocks(

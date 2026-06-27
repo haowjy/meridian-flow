@@ -1,7 +1,6 @@
 import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../doc-handle.js";
-import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
@@ -75,8 +74,7 @@ export function findTextMatches(
 }
 
 export function serializeBlockBody(ctx: FindContext, block: BlockRef): string {
-  const pmBlock = ctx.model.toProsemirrorBlock(ctx.doc, block);
-  return ctx.codec.serializeBlockBodies([pmBlock])[0] ?? "";
+  return ctx.model.serializeBlockBodies(ctx.doc, ctx.codec, [block])[0] ?? "";
 }
 
 export function serializePmBlockBody(
@@ -87,20 +85,31 @@ export function serializePmBlockBody(
 }
 
 export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
-  const selected = projectDocumentBlocks(ctx.doc, ctx.model).select(scope.blocks);
-  const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.pmBlock));
+  const allBlocks = ctx.model.getBlocks(ctx.doc);
+  const indexByBlock = new Map<BlockRef, number>();
+  allBlocks.forEach((block, index) => {
+    indexByBlock.set(block, index);
+  });
+  const selected = scope.blocks
+    .map((block) => ({ block, index: indexByBlock.get(block) }))
+    .filter((entry): entry is { block: BlockRef; index: number } => entry.index !== undefined);
+  const bodies = ctx.model.serializeBlockBodies(
+    ctx.doc,
+    ctx.codec,
+    selected.map((entry) => entry.block),
+  );
   let cursor = 0;
-  return selected.map((block, index) => {
-    const body = bodies[index] ?? "";
-    const entry = {
-      block: block.block,
-      index: block.index,
+  return selected.map((entry, bodyIndex) => {
+    const body = bodies[bodyIndex] ?? "";
+    const serialized = {
+      block: entry.block,
+      index: entry.index,
       body,
       start: cursor,
       end: cursor + body.length,
     };
-    cursor = entry.end + (index === selected.length - 1 ? 0 : 2);
-    return entry;
+    cursor = serialized.end + (bodyIndex === selected.length - 1 ? 0 : 2);
+    return serialized;
   });
 }
 

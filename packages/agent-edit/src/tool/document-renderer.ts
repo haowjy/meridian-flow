@@ -4,7 +4,6 @@ import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../doc-handle.js";
-import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
 import type { ViewCommand } from "./types.js";
@@ -15,7 +14,7 @@ export interface DocumentRenderAddress {
 }
 
 export type ViewBlockSelection =
-  | { ok: true; blocks: BlockRef[] }
+  | { ok: true; blocks: Array<BlockRef> }
   | { ok: false; code: "not_found" | "invalid_write"; message: string };
 
 export interface DocumentRenderer {
@@ -81,28 +80,19 @@ export function createDocumentRenderer(deps: {
   }
 
   function renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[] {
-    const projection = projectDocumentBlocks(doc, model);
-    if (projection.blocks.length === 0) return [];
-    if (!blocks) return codec.serializeBlocks(projection.pmBlocks, projection.hashes);
-    const selected = projection.select(blocks);
-    const pmBlocks = selected.map((block) => block.pmBlock);
-    const hashes = selected.map((block) => block.hash);
-    return codec.serializeBlocks(pmBlocks, hashes);
+    return model.serializeBlockLines(doc, codec, blocks);
   }
 
   function renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string {
     if (blocks.length === 0) return "";
-    const projection = projectDocumentBlocks(doc, model);
-    const headingBlocks = projection.select(blocks).filter(({ block }) => isHeading(model, block));
+    const headingBlocks = blocks.filter((block) => isHeading(model, block));
     if (headingBlocks.length === 0) return renderBlocks(doc, blocks);
     const lines: string[] = [];
-    const serialized = codec.serializeBlocks(
-      headingBlocks.map((block) => block.pmBlock),
-      headingBlocks.map((block) => block.hash),
-    );
+    const serialized = model.serializeBlockLines(doc, codec, headingBlocks);
     for (let i = 0; i < headingBlocks.length; i++) {
+      const hash = model.getBlockId(headingBlocks[i]);
       lines.push(serialized[i]);
-      lines.push(`write(command="view", file="${filePath}#${headingBlocks[i].hash}")`);
+      lines.push(`write(command="view", file="${filePath}#${hash}")`);
     }
     return lines.join("\n");
   }

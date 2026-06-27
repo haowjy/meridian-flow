@@ -20,6 +20,12 @@ describe("yProsemirrorModel block hashes", () => {
     expect(blockHashes(replayed)).toEqual(blockHashes(first));
   });
 
+  it("guards exact block hash strings for a known document", () => {
+    const doc = createDoc("# One\n\nAlpha\n\nBeta");
+
+    expect(blockHashes(doc)).toEqual(["0f7a", "ef62", "9e93"]);
+  });
+
   it("keeps a block hash stable when that block text changes", () => {
     const doc = createDoc("Alpha sword.\n\nBeta");
     const [first] = model.getBlocks(doc);

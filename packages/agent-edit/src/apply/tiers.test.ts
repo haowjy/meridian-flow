@@ -56,7 +56,7 @@ describe("applyEdits tier routing", () => {
     expectOk(result);
     expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
-    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
     expectNoOrphanedElements(doc);
   });
 
@@ -76,7 +76,7 @@ describe("applyEdits tier routing", () => {
     expectOk(result);
     expect(calls).toEqual([2]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
-    expect(codec.serialize([model.toProsemirrorBlock(doc, block)])).toBe("Alpha **blade**.\n");
+    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
     expectNoOrphanedElements(doc);
   });
 
@@ -432,9 +432,9 @@ function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[
         calls.push(1);
         base.applyTextEdit(doc, block, span, newText);
       },
-      applyBlockDiff(doc, block, replacement) {
+      applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
         calls.push(2);
-        base.applyBlockDiff(doc, block, replacement);
+        return base.applyInlineReplacement(doc, block, span, replacementMarkup, codec);
       },
       insertBlocks(doc, after, parsed) {
         calls.push(3);
@@ -466,13 +466,7 @@ function blockTexts(doc: Y.Doc): string[] {
 }
 
 function documentJson(doc: Y.Doc): unknown {
-  return schema
-    .node(
-      "doc",
-      null,
-      baseModel.getBlocks(doc).map((block) => baseModel.toProsemirrorBlock(doc, block)),
-    )
-    .toJSON();
+  return schema.node("doc", null, baseModel.projectBlocks(doc)).toJSON();
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

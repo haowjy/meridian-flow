@@ -26,7 +26,7 @@ export function projectDocumentBlocks(
 ): DocumentBlockProjection {
   const blocks = model.getBlocks(doc);
   const hashes = blocks.length === 0 ? [] : model.getDocumentBlockIds(doc);
-  const pmBlocks = blocks.length === 0 ? [] : model.toProsemirrorBlocks(doc);
+  const pmBlocks = blocks.length === 0 ? [] : model.projectBlocks(doc);
   const indexByBlock = new Map<BlockRef, number>();
   for (let index = 0; index < blocks.length; index += 1) {
     indexByBlock.set(blocks[index], index);

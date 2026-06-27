@@ -122,11 +122,10 @@ describe("snapshot cost baseline", () => {
       });
     });
 
-    it(`toProsemirrorBlock per-block B=${blockCount}`, () => {
+    it(`projectBlocks B=${blockCount}`, () => {
       const doc = buildLiveDoc(blockCount);
-      const blocks = model.getBlocks(doc);
-      time(`toProsemirrorBlock loop B=${blockCount}`, () => {
-        for (const block of blocks) model.toProsemirrorBlock(doc, block);
+      time(`projectBlocks B=${blockCount}`, () => {
+        model.projectBlocks(doc);
       });
     });
   }

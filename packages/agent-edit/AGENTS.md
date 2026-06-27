@@ -101,20 +101,20 @@ edits a block-structured markdown document represented as y-prosemirror. Making
 the content model swappable so the library can edit non-ProseMirror Yjs documents
 is an **intended future direction, deferred** (GH issue #70, "generic Yjs edit
 core"). The seams for it exist (`AgentEditCodec`, structural
-`AgentEditModel`) but are not yet fully realized — the apply core still calls
-ProseMirror-specific operations, so y-prosemirror is the only working implementation. Do not
+`AgentEditModel`) but are not yet fully realized — the built-in adapter still uses
+ProseMirror-specific operations behind the model seam, so y-prosemirror is the
+only working implementation. Do not
 over-claim it as done; do not delete the seams.
 
 ## Multi-block reads use the batch helpers
 
 `snapshotBlocks`, `renderBlockLines`, `serializeScopeBlocks`, `lookupBlockHash`,
-and the per-staged-write echo all walk the document block list. The per-block
-helpers (`getBlockId`, `toProsemirrorBlock`, `serializeBlock`) each re-scan all
-siblings, rebuild the whole ProseMirror tree, or do per-block serialization
-work, so a per-block loop is O(B²) — on large chapters this is the dominant
-cost. Use the batch path
-(`projectDocumentBlocks`, `serializeBlocks`, `serializeBlockBodies`,
-`blockHashesForDoc`) which does the document-wide projection/stringify work once.
+and the per-staged-write echo all walk the document block list. The per-block helpers (`getBlockId`, single-block projection/serialization) each
+re-scan all siblings, rebuild the whole ProseMirror tree, or do per-block
+serialization work, so a per-block loop is O(B²) — on large chapters this is the
+dominant cost. Use the batch path (`projectDocumentBlocks`, model
+`serializeBlockLines`, model `serializeBlockBodies`, `blockHashesForDoc`) which
+does the document-wide projection/stringify work once.
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) and the [performance
 reference][perf].
 
