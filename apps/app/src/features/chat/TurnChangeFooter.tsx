@@ -77,7 +77,7 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
       });
       setRows((prev) => ({
         ...prev,
-        [doc.uri]: stateFromWriteOutcome(direction, outcome, current),
+        [doc.uri]: stateFromStatus(direction, outcome, current),
       }));
     } catch (error) {
       setRows((prev) => ({
@@ -97,11 +97,11 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
       setRows((prev) => {
         const next = { ...prev };
         for (const result of outcome.documents) {
-          next[result.uri] = stateFromDocumentResult(turnDirection, result, prev[result.uri]);
+          next[result.uri] = stateFromStatus(turnDirection, result, prev[result.uri]);
         }
         if (outcome.documents.length === 0) {
           for (const doc of documents) {
-            next[doc.uri] = stateFromStatus(turnDirection, outcome.status, prev[doc.uri]);
+            next[doc.uri] = stateFromStatus(turnDirection, outcome, prev[doc.uri]);
           }
         }
         return next;
@@ -266,28 +266,12 @@ function displayPath(uri: string, fallback: string): string {
   return match ? `/${match[1].replace(/^\/+/, "")}` : fallback;
 }
 
-function stateFromWriteOutcome(
-  direction: ReversalDirection,
-  outcome: WriteOutcome,
-  previous: RowState,
-): RowState {
-  return stateFromStatus(direction, outcome.status, previous, outcome.text);
-}
-
-function stateFromDocumentResult(
-  direction: ReversalDirection,
-  result: DocumentReversalResult,
-  previous: RowState | undefined,
-): RowState {
-  return stateFromStatus(direction, result.status, previous, result.text);
-}
-
 function stateFromStatus(
   direction: ReversalDirection,
-  status: WriteStatus,
+  result: Pick<WriteOutcome | DocumentReversalResult, "status" | "text">,
   previous: RowState | undefined,
-  text?: string,
 ): RowState {
+  const { status, text } = result;
   const fallback = previous ?? { disposition: direction === "undo" ? "applied" : "reversed" };
   if (status === "reversed" || status === "reconciled") {
     return { disposition: direction === "undo" ? "reversed" : "applied" };
