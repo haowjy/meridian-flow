@@ -71,6 +71,13 @@
       "when": 1782592386338,
       "tag": "0009_eager_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782603350678,
+      "tag": "0010_cooing_daimon_hellstrom",
+      "breakpoints": true
     }
   ]
 }

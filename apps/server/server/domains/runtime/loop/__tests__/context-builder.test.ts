@@ -132,7 +132,7 @@ describe("buildContext", () => {
       blocks: [],
       undoNotifications: [
         {
-          id: "notification-1",
+          id: 1,
           threadId: "thread-1" as never,
           writeHandle: "w1",
           turnId: "turn-1" as never,
