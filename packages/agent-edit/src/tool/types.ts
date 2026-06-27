@@ -1,13 +1,14 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
+import type { WriteStatus } from "@meridian/contracts/protocol";
+import type { z } from "zod";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { WriteCommandSchema } from "./command-schema.js";
 import type { WriteResultBlock } from "./internal-result.js";
 
+export type { UndoRedoOutcome, WriteErrorStatus, WriteStatus } from "@meridian/contracts/protocol";
 export type { WriteResultBlock };
-
-import type { z } from "zod";
-import type { WriteCommandSchema } from "./command-schema.js";
 
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;
 export type WriteCommandName = WriteCommand["command"];
@@ -21,25 +22,6 @@ export type ReadFormat = ReadCommand["format"];
 export type QueryWriteCommand = ReadCommand;
 export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
 export type HistoryWriteCommand = UndoCommand | RedoCommand;
-
-export type WriteErrorStatus =
-  | "not_found"
-  | "ambiguous_match"
-  | "invalid_write"
-  | "document_not_found"
-  | "partial_failure"
-  | "cant_undo_dependent"
-  | "internal_error";
-
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
-
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export interface WriteOutcome {

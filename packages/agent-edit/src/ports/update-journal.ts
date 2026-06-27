@@ -66,6 +66,8 @@ export interface ReversalStore {
   reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
   /** Reversal reconstruction must see retained update rows instead of checkpoint-hidden live-load rows. */
   readForReconstruction(docId: string): Promise<JournalSnapshot>;
+  /** Distinct documents touched by a thread turn. */
+  documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
   /** Latest active write for this document/thread, if one exists. */
   latestActiveWrite(documentId: string, threadId: string): Promise<ActiveWriteSummary | undefined>;
   /** Active writes in durable write order. */

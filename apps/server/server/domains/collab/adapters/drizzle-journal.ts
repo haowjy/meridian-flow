@@ -29,7 +29,10 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 
-type JournalDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
+type JournalDb = Pick<
+  Database,
+  "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction"
+>;
 
 type OriginType = "agent" | "human" | "system";
 type UpdateMetaMode = "journal" | "latest";
@@ -491,6 +494,20 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async reserveWriteOrdinal(documentId, threadId) {
       return reserveWriteOrdinal(db, { documentId, threadId });
+    },
+
+    async documentsForTurn(threadId, turnId) {
+      const rows = await db
+        .selectDistinct({ documentId: agentEditMutations.documentId })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+          ),
+        )
+        .orderBy(asc(agentEditMutations.documentId));
+      return rows.map((row) => row.documentId);
     },
 
     async latestActiveWrite(documentId, threadId) {

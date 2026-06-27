@@ -43,6 +43,13 @@
       "when": 1782395030547,
       "tag": "0005_agent_edit_sync_state",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782580000000,
+      "tag": "0006_agent_edit_thread_turn_index",
+      "breakpoints": true
     }
   ]
 }
