@@ -1,5 +1,5 @@
 // Host reverse() API coverage for user-facing write, turn, and thread reversal scopes.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { blockTexts, expectOutcome } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
@@ -365,5 +365,50 @@ describe("write host reverse", () => {
       { direction: "undo", writeHandles: ["w1"] },
       { direction: "redo", writeHandles: ["w1"] },
     ]);
+  });
+
+  it("keeps a persisted user reversal successful when notification recording fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record() {
+            throw new Error("notification insert failed");
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-notification-failure" },
+    );
+
+    try {
+      const undo = await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor,
+      });
+
+      expectOutcome(undo, "reversed");
+      expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+      expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "reversed" }]);
+      expect(consoleError).toHaveBeenCalledWith(
+        "agent-edit undo notification recording failed",
+        expect.objectContaining({
+          threadId: THREAD_ID,
+          docId: "chapter.md",
+          turnId: "turn-notification-failure",
+          direction: "undo",
+          writeHandleCount: 1,
+          cause: "notification insert failed",
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
