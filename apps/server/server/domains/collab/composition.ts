@@ -6,7 +6,6 @@ import {
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
-  isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
   type ReversalStore,
   type SyncStateStore,
@@ -21,13 +20,8 @@ import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
-  isReservedClientId,
-  RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import { Err, Ok } from "../../shared/result.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
-import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -37,19 +31,15 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
-import type {
-  CheckpointInfo,
-  CollabDomain,
-  CollabPersistenceMetrics,
-  DocumentWriteHook,
-  UpdateOrigin,
-} from "./index.js";
+import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
@@ -89,14 +79,6 @@ export type CollabFacadeDeps = {
   documentWriteHook?: DocumentWriteHook;
   syncStateStore?: SyncStateStore;
 };
-
-type PendingAppend = {
-  documentId: string;
-  startedAt: number;
-  promise: Promise<void>;
-};
-
-const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
@@ -164,11 +146,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     syncStateStore: deps.syncStateStore,
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
-  const pendingAppends = new Map<number, PendingAppend>();
-  const droppedByDocument = new Map<string, number>();
-  const unsafeCheckpointDocuments = new Map<string, number>();
-  let nextPendingId = 1;
-
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -253,63 +230,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
   }
 
-  async function drainPending(documentId?: string): Promise<void> {
-    while (true) {
-      const pending = [...pendingAppends.values()].filter(
-        (entry) => !documentId || entry.documentId === documentId,
-      );
-      if (pending.length === 0) return;
-      await Promise.allSettled(pending.map((entry) => entry.promise));
-    }
-  }
-
-  function trackAppend(documentId: string, promise: Promise<number>): void {
-    const id = nextPendingId++;
-    const tracked = promise
-      .then(() => undefined)
-      .catch((cause) => {
-        recordDroppedConnectionUpdate(documentId);
-        emitPersistenceAppendFailure(documentId, cause);
-      })
-      .finally(() => {
-        pendingAppends.delete(id);
-      });
-    pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
-  }
-
-  function rejectReservedClientIdUpdate(input: {
-    documentId: DocumentId;
-    origin: UpdateOrigin;
-    reservedClientId: number;
-  }): void {
-    unsafeCheckpointDocuments.set(input.documentId, input.reservedClientId);
-    recordDroppedConnectionUpdate(input.documentId);
-    emitAgentEditInvariantViolation({
-      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${input.reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
-      documentId: input.documentId,
-      originType: input.origin.type,
-      reservedClientId: input.reservedClientId,
-      reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-    });
-  }
-
-  function recordDroppedConnectionUpdate(documentId: string): void {
-    droppedByDocument.set(documentId, (droppedByDocument.get(documentId) ?? 0) + 1);
-  }
-
-  function emitPersistenceAppendFailure(documentId: string, cause: unknown): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "error",
-      source: "collab.hocuspocus",
-      name: "persistence_append.failed",
-      payload: {
-        documentId,
-        error: cause instanceof Error ? cause.message : String(cause),
-      },
-    });
-  }
-
   function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
@@ -320,38 +240,20 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  function latestMetrics(): CollabPersistenceMetrics {
-    const byDocument = new Map<
-      string,
-      { depth: number; oldestStartedAt: number; dropped: number }
-    >();
-    for (const entry of pendingAppends.values()) {
-      const current = byDocument.get(entry.documentId) ?? {
-        depth: 0,
-        oldestStartedAt: entry.startedAt,
-        dropped: droppedByDocument.get(entry.documentId) ?? 0,
-      };
-      current.depth += 1;
-      current.oldestStartedAt = Math.min(current.oldestStartedAt, entry.startedAt);
-      byDocument.set(entry.documentId, current);
-    }
-    for (const [documentId, dropped] of droppedByDocument) {
-      if (!byDocument.has(documentId) && dropped > 0) {
-        byDocument.set(documentId, { depth: 0, oldestStartedAt: Date.now(), dropped });
-      }
-    }
-    const hocuspocus = deps.hocuspocus();
-    return {
-      queues: [...byDocument.entries()].map(([documentId, queue]) => ({
-        documentId,
-        depth: queue.depth,
-        oldestAgeMs: queue.depth === 0 ? 0 : Date.now() - queue.oldestStartedAt,
-        dropped: queue.dropped,
-      })),
-      liveDocumentCount: hocuspocus?.getDocumentsCount() ?? hocuspocus?.documents.size ?? 0,
-      openConnectionCount: hocuspocus?.getConnectionsCount() ?? 0,
-    };
-  }
+  const checkpoints = createCheckpointService({
+    coordinator: deps.coordinator,
+    store: deps.store,
+    latestUpdateSeq,
+    markdownDocuments,
+  });
+  const hocuspocusPersistence = createHocuspocusPersistenceService({
+    journal: deps.journal,
+    hocuspocus: deps.hocuspocus,
+    eventSink: deps.eventSink,
+    metaForOrigin,
+    latestUpdateSeq,
+    emitAgentEditInvariantViolation,
+  });
 
   return {
     agentEdit() {
@@ -374,57 +276,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
     },
 
-    async checkpoint(documentId, reason) {
-      try {
-        const { state, upToSeq } = await deps.coordinator.withDocument(documentId, async (doc) => {
-          const upToSeq = await latestUpdateSeq(documentId);
-          // upToSeq must be ≤ the updates reflected in state; any later
-          // update is replayed after the checkpoint, which is safe in Yjs.
-          return { state: Y.encodeStateAsUpdate(doc), upToSeq };
-        });
-        return Ok(await deps.store.createCheckpoint(documentId, state, reason, upToSeq));
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-        throw cause;
-      }
-    },
+    checkpoint: checkpoints.checkpoint,
 
-    async restore(documentId, checkpointId) {
-      const checkpoint = await deps.store.getCheckpoint(checkpointId);
-      if (!checkpoint || checkpoint.documentId !== documentId) {
-        return Err({ code: "checkpoint_not_found", checkpointId });
-      }
-      try {
-        const restored = createCollabYDoc({ gc: false });
-        Y.applyUpdate(restored, checkpoint.state);
-        const result = await markdownDocuments.setMarkdown({
-          documentId: documentId as DocumentId,
-          markdown: markdownDocuments.serializeDoc(restored),
-          origin: SYSTEM_ORIGIN,
-        });
-        if (!result.ok) return result;
-        return Ok(undefined);
-      } catch (cause) {
-        return Err({
-          code: "corrupt_state",
-          documentId,
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      }
-    },
+    restore: checkpoints.restore,
 
-    async listCheckpoints(documentId) {
-      const checkpoints = await deps.store.listCheckpoints(documentId);
-      return Ok(
-        checkpoints.map(
-          (checkpoint): CheckpointInfo => ({
-            id: checkpoint.id,
-            reason: checkpoint.reason,
-            createdAt: checkpoint.createdAt,
-          }),
-        ),
-      );
-    },
+    listCheckpoints: checkpoints.listCheckpoints,
 
     async writeDocument(input) {
       return markdownDocuments.writeDocument(input);
@@ -446,48 +302,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       deps.bindHocuspocus(instance);
     },
 
-    async loadHocuspocusDocument(documentId) {
-      unsafeCheckpointDocuments.delete(documentId);
-      return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
-    },
+    loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
 
-    persistConnectionUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
-      if (reservedClientId !== null) {
-        rejectReservedClientIdUpdate({ ...input, reservedClientId });
-        return;
-      }
-      trackAppend(
-        input.documentId,
-        deps.journal.append(input.documentId, input.update, metaForOrigin(input.origin)),
-      );
-    },
+    persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
-    async storeHocuspocusDocument(documentId, document) {
-      await drainPending(documentId);
-      const reservedClientId = unsafeCheckpointDocuments.get(documentId);
-      if (reservedClientId !== undefined) {
-        emitAgentEditInvariantViolation({
-          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update with reserved Yjs clientID ${reservedClientId} may still be present in the live Y.Doc. The reserved band is [0, ${RESERVED_CLIENT_ID_MAX}].`,
-          documentId,
-          reservedClientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-        });
-        return;
-      }
-      const upToSeq = await latestUpdateSeq(documentId);
-      // upToSeq must be ≤ the updates reflected in state; appends after this
-      // point are intentionally replayed when the document reloads.
-      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
-    },
+    storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 
-    drainHocuspocusPersistence() {
-      return drainPending();
-    },
+    drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
 
-    getPersistenceQueueMetrics() {
-      return latestMetrics();
-    },
+    getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
 }
 
@@ -551,13 +374,6 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
-}
-
-function reservedClientIdInUpdate(update: Uint8Array): number | null {
-  return (
-    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
-      .client ?? null
-  );
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {
