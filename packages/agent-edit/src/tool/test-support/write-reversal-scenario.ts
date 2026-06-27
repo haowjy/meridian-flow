@@ -116,6 +116,7 @@ export function journalWithMissingMutationTarget(
     append: journal.append.bind(journal),
     reserveWriteOrdinal: journal.reserveWriteOrdinal.bind(journal),
     appendBatch: journal.appendBatch.bind(journal),
+    documentsForTurn: journal.documentsForTurn.bind(journal),
     latestActiveWrite: journal.latestActiveWrite.bind(journal),
     activeWriteSummary: journal.activeWriteSummary.bind(journal),
     writeMinCreatedSeq: journal.writeMinCreatedSeq.bind(journal),

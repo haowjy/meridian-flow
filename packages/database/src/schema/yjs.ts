@@ -155,6 +155,7 @@ export const agentEditMutations = pgTable(
     ),
     index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
     index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
+    index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
     check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
 );
