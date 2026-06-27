@@ -95,6 +95,7 @@ function fakeStore(input: { documents: string[] }): ReversalStore {
     documentsForTurn: async () => input.documents,
     activeWriteSummary: async () => [],
     readReversals: async () => [],
+    reversalOpSeqsForHandles: async () => new Set<number>(),
     reserveWriteOrdinal: async () => 1,
     readForReconstruction: async () => ({ checkpoint: null, updates: [] }),
     latestActiveWrite: async () => undefined,

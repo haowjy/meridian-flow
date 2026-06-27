@@ -47,6 +47,14 @@ export interface StoredReversal {
   createdAt: Date;
 }
 
+export interface StoredReversalOp {
+  documentId: string;
+  threadId: string;
+  updateSeq: number;
+  handle: string;
+  direction: "undo" | "redo";
+}
+
 export interface StoredCheckpoint {
   state: Uint8Array;
   upToSeq: number;
@@ -59,6 +67,7 @@ export interface JournalEntry {
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
   reversals: Map<string, StoredReversal>;
+  reversalOps: StoredReversalOp[];
   mutations: StoredAgentEditMutation[];
 }
 
@@ -148,6 +157,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       entry.updates = entry.updates.filter(
         (update) => !(update.seq <= compactedThroughSeq && update.storedAt < before),
       );
+      entry.reversalOps = entry.reversalOps.filter((op) => op.updateSeq > compactedThroughSeq);
     }
 
     let reversalsExpired = 0;
@@ -186,6 +196,13 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
             redoUpdateSeq: undefined,
           }),
           createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
+        });
+        entry.reversalOps.push({
+          documentId: docId,
+          threadId: record.threadId,
+          updateSeq: seq,
+          handle: writeId,
+          direction: "undo",
         });
         this.reverseMutations(
           docId,
@@ -230,6 +247,13 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         record: { ...stored.record, status: "redone", redoUpdateSeq: seq },
       });
       for (const writeId of stored.record.writeIds) {
+        entry.reversalOps.push({
+          documentId: docId,
+          threadId: ref.threadId,
+          updateSeq: seq,
+          handle: writeId,
+          direction: "redo",
+        });
         this.reactivateMutations(docId, ref.threadId, writeId, ref.undoUpdateSeq);
       }
     }
@@ -250,6 +274,19 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       )
       .sort(compareReversalRecords)
       .map(copyReversalRecord);
+  }
+
+  async reversalOpSeqsForHandles(
+    docId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Set<number>> {
+    const handleSet = new Set(handles);
+    return new Set(
+      this.entry(docId)
+        .reversalOps.filter((op) => op.threadId === threadId && handleSet.has(op.handle))
+        .map((op) => op.updateSeq),
+    );
   }
 
   async documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
@@ -411,6 +448,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
             { record: copyReversalRecord(stored.record), createdAt: copyDate(stored.createdAt) },
           ]),
         ),
+        reversalOps: entry.reversalOps.map((op) => ({ ...op })),
         mutations: entry.mutations.map(copyMutationRecord),
       });
     }
@@ -509,6 +547,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         nextWIdByThread: new Map(),
         updates: [],
         reversals: new Map(),
+        reversalOps: [],
         mutations: [],
       };
       this.data.set(docId, entry);

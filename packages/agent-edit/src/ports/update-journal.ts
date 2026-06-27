@@ -106,6 +106,12 @@ export interface ReversalStore {
     docId: string,
     opts?: { threadId?: string; status?: ReversalRecord["status"][] },
   ): Promise<ReversalRecord[]>;
+  /** Every undo/redo system update seq ever written for these handles and still retained. */
+  reversalOpSeqsForHandles(
+    docId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Set<number>>;
 }
 
 export function writeHandle(wId: number): string {

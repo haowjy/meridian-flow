@@ -111,6 +111,7 @@ export function evaluateLineageDependencies(input: {
   snapshot: JournalSnapshot;
   closure: ActiveClosure;
   seqToHandle?: ReadonlyMap<number, string>;
+  reversalOpSeqs?: ReadonlySet<number>;
 }): DependencyVerdict {
   const selectedInsertedIds = insertedIdRanges(
     input.snapshot.updates.filter(
@@ -126,7 +127,8 @@ export function evaluateLineageDependencies(input: {
 
   for (const update of input.snapshot.updates) {
     if (update.seq <= input.closure.earliestForwardSeq) continue;
-    if (input.closure.lineageSeqs.has(update.seq) || update.meta.origin === "system") continue;
+    if (input.closure.lineageSeqs.has(update.seq) || input.reversalOpSeqs?.has(update.seq))
+      continue;
     if (!deleteSetIntersects(update, selectedInsertedIds)) continue;
     const handle = input.seqToHandle?.get(update.seq);
     if (handle && !selectedHandles.has(handle)) blockingWriteIds.add(handle);
