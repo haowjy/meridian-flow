@@ -40,7 +40,7 @@ function LoginPage() {
       <LoginHero />
       <section className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm rounded-lg border border-border bg-card p-9 shadow-card">
-          <h1 className="mb-2 font-heading text-4xl font-semibold text-foreground">Welcome back</h1>
+          <h1 className="mb-2 text-4xl font-semibold text-foreground">Welcome back</h1>
           {target.mode === "dev" ? (
             <>
               <p className="mb-7 text-sm text-muted-foreground">
@@ -99,10 +99,8 @@ function LoginHero() {
 
       <div className="relative z-10">
         <MeridianMark className="login-needle-glow mb-7 size-24" />
-        <h2 className="mb-4 font-heading text-6xl font-semibold tracking-tight text-cream">
-          Meridian
-        </h2>
-        <p className="max-w-[32ch] font-heading text-2xl font-medium italic leading-relaxed text-cream-muted">
+        <h2 className="mb-4 text-6xl font-semibold tracking-tight text-cream">Meridian</h2>
+        <p className="max-w-[32ch] text-2xl font-medium italic leading-relaxed text-cream-muted">
           Get the story out of your head and onto the page.
         </p>
       </div>
@@ -123,12 +121,7 @@ function LoginHero() {
           className="fill-cinnabar/15 stroke-cinnabar"
           strokeWidth="2"
         />
-        <text
-          x="26"
-          y="34"
-          textAnchor="middle"
-          className="fill-cinnabar font-heading text-[22px] font-semibold"
-        >
+        <text x="26" y="34" textAnchor="middle" className="fill-cinnabar text-[22px] font-semibold">
           流
         </text>
       </svg>

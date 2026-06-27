@@ -54,11 +54,9 @@
   button, a, [role="button"] {
     touch-action: manipulation;
   }
-  /* Generic headings inherit their context's body font (Inter in app chrome,
-     Noto Serif in prose surfaces) and are distinguished by size + weight only —
-     matching stock ProseMirror/TipTap, which ship no heading font. The display
-     face (--font-heading) is opt-in via the `font-heading` utility on branding
-     surfaces (login hero, logo), not the default for content headings. */
+  /* Headings inherit the single app font (Inter, set on `body`) and are
+     distinguished by size + weight only — matching stock ProseMirror/TipTap,
+     which ship no heading font. */
 }
 
 /* Paper grain — a very subtle fixed fractal-noise overlay that gives the rice-
@@ -201,13 +199,11 @@
 }
 
 @utility user-message-bubble {
-  font-family: var(--font-prose);
   @apply overflow-hidden rounded-[14px_4px_14px_14px] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
 }
 
 @utility answer-body {
   max-width: var(--answer-max-width);
-  font-family: var(--font-prose);
   @apply text-answer text-answer-foreground whitespace-pre-wrap;
 }
 
@@ -218,11 +214,10 @@
    streaming caret variant. */
 @utility prose-tokens {
   max-width: var(--answer-max-width);
-  font-family: var(--font-prose);
   @apply min-w-0 w-full text-answer text-answer-foreground break-words;
 
-  /* Headings inherit the prose body face (--font-prose) — same model as the
-     editor so rendered markdown and the editing surface stay in sync. */
+  /* Headings inherit the body font (Inter) — same model as the editor so
+     rendered markdown and the editing surface stay in sync. */
   & h1 {
     @apply mt-6 mb-3 text-[1.5rem] leading-[1.18] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
