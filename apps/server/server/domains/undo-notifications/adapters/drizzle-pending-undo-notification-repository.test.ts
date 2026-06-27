@@ -10,7 +10,8 @@ const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000303";
 const THREAD_ID = "00000000-0000-4000-8000-000000000304";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000305";
 const TURN_ID = "00000000-0000-4000-8000-000000000306";
-const OTHER_TURN_ID = "00000000-0000-4000-8000-000000000307";
+const SECOND_TURN_ID = "00000000-0000-4000-8000-000000000307";
+const OTHER_TURN_ID = "00000000-0000-4000-8000-000000000308";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle pending undo notification repository (postgres)", () => {
@@ -18,6 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle pending undo notification repository (postgres)", async () => {
+    const { eq } = await import("drizzle-orm");
     const { createDb } = await import("@meridian/database");
     const dbSchema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
@@ -79,6 +81,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       await db.insert(turns).values([
         { id: TURN_ID, threadId: THREAD_ID, role: "assistant", status: "complete" },
+        {
+          id: SECOND_TURN_ID,
+          threadId: THREAD_ID,
+          parentTurnId: TURN_ID,
+          role: "assistant",
+          status: "complete",
+        },
         { id: OTHER_TURN_ID, threadId: OTHER_THREAD_ID, role: "assistant", status: "complete" },
       ]);
     }
@@ -109,7 +118,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         writeHandles: ["w3"],
         writeHandleTurns: [{ writeHandle: "w3", turnId: OTHER_TURN_ID }],
         uri: "manuscript://chapter-2.md",
-        direction: "redo",
+        direction: "undo",
       });
 
       const consumed = await repo.consumeForThread(THREAD_ID);
@@ -122,6 +131,62 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await repo.consumeForThread(THREAD_ID)).toEqual([]);
       expect((await repo.consumeForThread(OTHER_THREAD_ID)).map((row) => row.writeHandle)).toEqual([
         "w3",
+      ]);
+    });
+
+    it("coalesces same-millisecond rows by insertion order so the latest record wins", async () => {
+      const repo = createDrizzlePendingUndoNotificationRepository(db);
+      const uri = "manuscript://chapter-1.md";
+
+      await repo.record({
+        threadId: THREAD_ID,
+        writeHandles: ["redone", "undone", "first-only"],
+        writeHandleTurns: [
+          { writeHandle: "redone", turnId: TURN_ID },
+          { writeHandle: "undone", turnId: TURN_ID },
+          { writeHandle: "first-only", turnId: TURN_ID },
+        ],
+        uri,
+        direction: "undo",
+      });
+      await repo.record({
+        threadId: THREAD_ID,
+        writeHandles: ["redone", "undone"],
+        writeHandleTurns: [
+          { writeHandle: "redone", turnId: SECOND_TURN_ID },
+          { writeHandle: "undone", turnId: SECOND_TURN_ID },
+        ],
+        uri,
+        direction: "redo",
+      });
+      await repo.record({
+        threadId: THREAD_ID,
+        writeHandles: ["undone", "second-only"],
+        writeHandleTurns: [
+          { writeHandle: "undone", turnId: SECOND_TURN_ID },
+          { writeHandle: "second-only", turnId: SECOND_TURN_ID },
+        ],
+        uri,
+        direction: "undo",
+      });
+
+      const sameMillisecond = new Date("2026-06-27T00:00:00.000Z");
+      await db
+        .update(pendingUndoNotifications)
+        .set({ createdAt: sameMillisecond })
+        .where(eq(pendingUndoNotifications.threadId, THREAD_ID));
+
+      const consumed = await repo.consumeForThread(THREAD_ID);
+      expect(
+        consumed.map((row) => ({
+          writeHandle: row.writeHandle,
+          turnId: row.turnId,
+          direction: row.direction,
+        })),
+      ).toEqual([
+        { writeHandle: "undone", turnId: SECOND_TURN_ID, direction: "undo" },
+        { writeHandle: "first-only", turnId: TURN_ID, direction: "undo" },
+        { writeHandle: "second-only", turnId: SECOND_TURN_ID, direction: "undo" },
       ]);
     });
   });

@@ -4,7 +4,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 export type UndoNotificationDirection = "undo" | "redo";
 
 export interface PendingUndoNotification {
-  id: string;
+  id: number;
   threadId: ThreadId;
   writeHandle: string;
   turnId: TurnId;

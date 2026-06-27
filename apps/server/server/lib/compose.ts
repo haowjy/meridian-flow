@@ -829,6 +829,7 @@ export function createInMemoryAppServices(): AppServices {
 
 function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificationRepository {
   const rows: Awaited<ReturnType<PendingUndoNotificationRepository["consumeForThread"]>> = [];
+  let nextId = 1;
   return {
     async record(input) {
       const turnByHandle = new Map(
@@ -836,7 +837,7 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
       );
       rows.push(
         ...input.writeHandles.map((writeHandle) => ({
-          id: crypto.randomUUID(),
+          id: nextId++,
           threadId: input.threadId as never,
           writeHandle,
           turnId: requireUndoNotificationTurnId(writeHandle, turnByHandle) as never,
@@ -854,7 +855,7 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
       consumed.sort((left, right) => {
         const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
         if (createdAt !== 0) return createdAt;
-        return left.id.localeCompare(right.id);
+        return left.id - right.id;
       });
       return coalescePendingUndoNotifications(consumed);
     },

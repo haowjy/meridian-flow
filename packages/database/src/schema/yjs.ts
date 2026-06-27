@@ -196,7 +196,7 @@ export const agentEditMutations = pgTable(
 export const pendingUndoNotifications = pgTable(
   "pending_undo_notifications",
   {
-    id: idColumn(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
