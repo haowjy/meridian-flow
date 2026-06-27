@@ -134,6 +134,37 @@ describe("TurnChangeFooter", () => {
     expect(container.textContent).toContain("(all undone)");
   });
 
+  it("offers Redo all when the only actionable rows are reversed", async () => {
+    turnMutateAsync.mockResolvedValue({
+      status: "partial",
+      documents: [
+        { uri: "manuscript://expired.mdx", status: "expired" },
+        { uri: "manuscript://chapter-1.mdx", status: "reversed" },
+      ],
+    });
+    renderFooter(turnWithPaths(["/expired.mdx", "/chapter-1.mdx"]));
+    expandFooter();
+
+    await click(button("Undo all"));
+
+    expect(button("Redo all").disabled).toBe(false);
+    expect(container.textContent).toContain("Can no longer be undone");
+    expect(container.textContent).toContain("(all undone)");
+  });
+
+  it("disables the turn action when no actionable rows remain", async () => {
+    turnMutateAsync.mockResolvedValue({
+      status: "expired",
+      documents: [{ uri: "manuscript://expired.mdx", status: "expired" }],
+    });
+    renderFooter(turnWithPaths(["/expired.mdx"]));
+    expandFooter();
+
+    await click(button("Undo all"));
+
+    expect(button("Undo all").disabled).toBe(true);
+  });
+
   it("passes canonical document URIs to the optional chat context navigation callback", async () => {
     const opened: string[] = [];
     renderFooter(turnWithPaths(["work://work-1/notes/beat.md"]), (uri) => opened.push(uri));
