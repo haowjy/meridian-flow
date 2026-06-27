@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+- `apps/app`: one font everywhere — **Inter** is now the single typeface across UI
+  chrome, the editor, rendered markdown, conversation turns, and headings.
+  Headings/emphasis differ by size + weight only. Dropped the Noto Serif prose
+  face and the Cormorant Garamond display face (and their font downloads); the
+  `--font-heading`/`--font-prose` tokens are gone. (`apps/www` keeps a Fraunces
+  landing hero as an isolated marketing exception.)
+
+- `apps/app`: toolbar list buttons work again — bullet/ordered list commands now
+  target the renamed `list_item` node instead of throwing "no node type named
+  'listItem'". Guarded by an editor command test.
+
+- `apps/app`: pasting a GFM markdown table now inserts a real table instead of
+  plain-text paragraphs. Plain prose paste is untouched (conservative
+  header+delimiter detection only).
+
+- `apps/app`: fenced code blocks now render on a distinct warm code surface with
+  syntax highlighting, replacing the near-white unstyled box. Syntax colors are
+  design tokens (no vendor highlight.js theme).
+
+- `apps/app`: TipTap document schema now includes GFM table nodes, `strike`, and
+  task-list `list_item.checked` state, with schema-parity coverage for table roles.
+
+- `packages/markup`: markdown codecs now recognize the v3 `strike` mark and
+  mdast GFM table/task-list shapes as codec inputs.
+
+- `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
+  `strike` mark, and task-list state on `list_item` for markdown/Yjs
+  round-tripping.
+
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no

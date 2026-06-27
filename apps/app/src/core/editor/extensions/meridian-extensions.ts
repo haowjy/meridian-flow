@@ -18,6 +18,10 @@ import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
+import { Table } from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
@@ -43,6 +47,16 @@ function parsePropsAttr(value: string | null): JsonRecord {
 
 function renderPropsAttr(value: unknown): string {
   return JSON.stringify(isJsonRecord(value) ? value : {});
+}
+
+function tableCellAttributes(parentAttrs: (() => Record<string, unknown>) | undefined) {
+  const attrs: Record<string, unknown> = { ...(parentAttrs?.() ?? {}) };
+  delete attrs.align;
+
+  return {
+    alignment: { default: null },
+    ...attrs,
+  };
 }
 
 // ─── Name-parity renames ────────────────────────────────────────────
@@ -72,10 +86,52 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
 
 export const MeridianListItem = ListItem.extend({
   name: "list_item",
+
+  addAttributes() {
+    return {
+      checked: {
+        default: null,
+        parseHTML: (element) => {
+          const checkbox = element.querySelector('input[type="checkbox"]');
+          return checkbox ? (checkbox as HTMLInputElement).checked : null;
+        },
+        renderHTML: (attrs) =>
+          attrs.checked === null ? {} : { "data-checked": attrs.checked ? "true" : "false" },
+      },
+    };
+  },
 });
 
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
+});
+
+export const MeridianTable = Table.extend({
+  name: "table",
+  content: "table_row+",
+});
+
+export const MeridianTableRow = TableRow.extend({
+  name: "table_row",
+  content: "(table_header | table_cell)+",
+});
+
+export const MeridianTableHeader = TableHeader.extend({
+  name: "table_header",
+  content: "paragraph",
+
+  addAttributes() {
+    return tableCellAttributes(this.parent);
+  },
+});
+
+export const MeridianTableCell = TableCell.extend({
+  name: "table_cell",
+  content: "paragraph",
+
+  addAttributes() {
+    return tableCellAttributes(this.parent);
+  },
 });
 
 // ─── Customized extensions ──────────────────────────────────────────
@@ -92,6 +148,10 @@ export const MeridianLink = Link.extend({
   },
 });
 
+// We renamed list_item from TipTap's default `listItem`, so the list commands
+// (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
+// via `itemTypeName` — otherwise they resolve "listItem", which isn't in the
+// schema, and throw.
 export const MeridianBulletList = BulletList.extend({
   name: "bullet_list",
   content: "list_item+",
@@ -102,7 +162,7 @@ export const MeridianBulletList = BulletList.extend({
       tight: { default: false },
     };
   },
-});
+}).configure({ itemTypeName: "list_item" });
 
 export const MeridianOrderedList = OrderedList.extend({
   name: "ordered_list",
@@ -115,7 +175,7 @@ export const MeridianOrderedList = OrderedList.extend({
       tight: { default: false },
     };
   },
-});
+}).configure({ itemTypeName: "list_item" });
 
 export const MeridianImage = Image.extend({
   marks: "",
