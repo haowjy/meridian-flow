@@ -16,12 +16,23 @@ Below is what remains deferred.
 
 ## Deferred — reopen when earned
 
-- **Full ProseMirror-out-of-kernel.** The CRDT (Yjs) axis is neutral, but
-  ProseMirror is still the codec's content currency: `codec-types.ts` aliases
-  `Block = PMNode`, `ParsedContent` transits the kernel as opaque codec output, and
-  `model/block-projection.ts` projects PM. Fully removing PM from `resolver/*` means
-  reshaping the `@meridian/markup` codec/content boundary — a separate effort, not
-  the CRDT-neutrality this refactor targeted.
+- **Full ProseMirror-out-of-kernel.** (Issue #70.) The CRDT (Yjs) axis is
+  neutral; the content-representation axis is not — and the remaining coupling is
+  now *asymmetric*:
+  - *Live-doc side — already neutral.* `resolver/*` inspects live blocks only
+    through the `AgentEditModel` seam (`isHeading` / `headingLevel` /
+    `getBlockType`, all on `BlockRef`).
+  - *Codec-parsed side — still raw ProseMirror.* `codec-types.ts` aliases
+    `Block = PMNode` (from `@meridian/markup`), and `resolver/resolve.ts` inspects
+    `codec.parse()` output via PM API at 5 sites: `newBlock.type.name` (×2),
+    `newBlock.attrs.level` (×2), `block.isTextblock`.
+
+  Done = reshape the `@meridian/markup` `ParsedContent` boundary so parsed blocks
+  expose type / heading-level / textblock-ness through a neutral descriptor (or a
+  codec method), letting the resolver query parsed blocks the way it already
+  queries live ones; then `Block` stops aliasing `PMNode`. Deferred: no non-PM
+  content target exists, so the abstraction would be cosmetic over one impl. The
+  `Codec` / `DocumentModel<Block>` seams are preserved.
 
 - **Public `DocumentPort`/`HistoryPort` as frozen contracts.** The seam is
   internal, deliberately unfrozen until a second implementation reveals its shape.
