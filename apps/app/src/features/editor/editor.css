@@ -45,6 +45,29 @@
   font-size: 1.5rem;
 }
 
+/* Self-contained long-form heading ladder. The editor element also carries the
+   `prose-tokens` class (tuned for COMPACT chat answers, where h4 is 0.95rem —
+   smaller than this editor's 1.0625rem body), so without explicit sizes here
+   h3-h6 would inherit that compact scale and render smaller than body text.
+   Every step stays >= body size. */
+.meridian-editor .ProseMirror h3 {
+  font-size: 1.25rem;
+}
+
+.meridian-editor .ProseMirror h4 {
+  font-size: 1.125rem;
+}
+
+.meridian-editor .ProseMirror h5 {
+  font-size: 1.0625rem;
+}
+
+.meridian-editor .ProseMirror h6 {
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  color: var(--color-ink-muted);
+}
+
 .meridian-editor .ProseMirror p,
 .meridian-editor .ProseMirror li,
 .meridian-editor .ProseMirror blockquote,
