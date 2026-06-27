@@ -8,7 +8,7 @@ desktop, MCP, and future products.
 ## What it is
 
 - **AgentEditCodec** — thin adapter over `@meridian/markup` that adds
-  hash-prefixed block serialization for echo/view. Pure markdown/MDX parsing and
+  hash-prefixed block serialization for echo/read. Pure markdown/MDX parsing and
   serialization live in `@meridian/markup`.
 - **Resolver** — block-hash → Y.XmlElement, `find` with exact-match + NFC,
   scope lowering (block range, section, around).
@@ -58,16 +58,16 @@ word truncation (about eight words), and blocks outside the window are omitted.
 Writes and undo/redo return the same two structured result blocks: metadata
 (status, write id / reversal count, concurrent edits) and echo lines.
 
-**`view` is a self-healing reconstruction — it never trusts local state.** Where
+**`read` is a self-healing reconstruction — it never trusts local state.** Where
 the commit re-sync above is a *delta merge into* the runtime (it needs per-op
-origins to attribute human-vs-agent), `view` instead **rebuilds** the runtime
+origins to attribute human-vs-agent), `read` instead **rebuilds** the runtime
 from canonical (live) and replays the response's pending staged edits:
-`runtime = canonical ⊕ replay(pending)`. So a `view` is a read that can never
+`runtime = canonical ⊕ replay(pending)`. So a `read` is a read that can never
 carry runtime drift forward or corrupt the doc; at turn start (nothing pending)
-it is exactly canonical. `view` and `find` therefore read the same doc — the
+it is exactly canonical. `read` and `find` therefore read the same doc — the
 model always sees concurrent human edits *and* its own in-flight edits, and can
 re-ground on live truth on demand. (The reversal path still uses the delta merge
-`syncLocalFromLive`; `view` does not.)
+`syncLocalFromLive`; `read` does not.)
 
 **Sequential tool dispatch is part of the contract.** The host runs the model's
 tool calls one at a time, so writes apply to the runtime sequentially and two

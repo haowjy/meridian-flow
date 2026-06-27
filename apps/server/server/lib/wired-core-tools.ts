@@ -85,7 +85,7 @@ export interface AgentEditResponseWriteLifecycle {
   rollbackResponse(responseId: string): Promise<void>;
 }
 
-const MUTATING_WRITE_COMMANDS = new Set<WriteCommand["command"]>([
+const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
   "insert",
   "replace",
@@ -426,7 +426,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         (parsed.command === "create" ||
           parsed.command === "insert" ||
           parsed.command === "replace");
-      if (MUTATING_WRITE_COMMANDS.has(parsed.command) && !stagedWrite) {
+      if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
         await refreshProjectionAfterCommittedWrite(deps, address.documentId, ctx);
       }
       return {
