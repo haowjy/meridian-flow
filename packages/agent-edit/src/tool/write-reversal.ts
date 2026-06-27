@@ -254,15 +254,26 @@ export function createWriteReversal(deps: {
     }
 
     const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
+    const updateSeqHandles = await writeHandlesByUpdateSeq(reversalStore, {
+      docId: input.docId,
+      threadId,
+      writeIds: plan.writeIds,
+      snapshot: plan.snapshot,
+    });
+    const reconstructionTargetSeqs = targetSeqsIncludingOwnReapply(
+      plan.targetSeqs,
+      plan.writeIds,
+      updateSeqHandles,
+      input.direction === "redo" ? plan.redoGroup?.undoUpdateSeq : undefined,
+    );
     const guard =
       input.direction === "undo"
         ? await guardDependentUndo({
             snapshot: plan.snapshot,
-            reversalStore,
             docId: input.docId,
-            threadId,
             writeIds: plan.writeIds,
             targetSeqs: plan.targetSeqs,
+            seqToHandle: updateSeqHandles?.seqToHandle,
           })
         : undefined;
     if (guard && !guard.ok) {
@@ -281,7 +292,7 @@ export function createWriteReversal(deps: {
         const cold = reconstructUndoUpdateFromSnapshot(plan.snapshot, {
           docId: input.docId,
           targetId: formatWriteSelection(plan.writeIds),
-          targetSeqs: plan.targetSeqs,
+          targetSeqs: reconstructionTargetSeqs,
           undoClientId,
         });
         reconstructed = { ok: true, update: cold.undoUpdate };
@@ -292,7 +303,7 @@ export function createWriteReversal(deps: {
           docId: input.docId,
           targetId: formatWriteSelection(plan.writeIds),
           undoUpdateSeq,
-          targetSeqs: plan.targetSeqs,
+          targetSeqs: reconstructionTargetSeqs,
           undoClientId,
         });
         reconstructed = cold.ok ? { ok: true, update: cold.redoUpdate } : { ok: false };
@@ -454,11 +465,10 @@ interface DecodedUpdateLike {
 
 async function guardDependentUndo(input: {
   snapshot: JournalSnapshot;
-  reversalStore: ReversalStore;
   docId: string;
-  threadId: string;
   writeIds: readonly string[];
   targetSeqs: ReadonlySet<number>;
+  seqToHandle?: ReadonlyMap<number, string>;
 }): Promise<DependentUndoGuardResult> {
   const snapshot = input.snapshot;
   const selectedInsertedIds = insertedIdRanges(
@@ -468,7 +478,7 @@ async function guardDependentUndo(input: {
 
   const selectedSeqs = input.targetSeqs;
   const lastSelectedSeq = Math.max(...selectedSeqs);
-  const seqToHandle = await writeHandlesByUpdateSeq(input.reversalStore, input);
+  const seqToHandle = input.seqToHandle ?? new Map<number, string>();
   const blockingWriteIds = new Set<string>();
   let hasUnknownBlocker = false;
 
@@ -524,17 +534,28 @@ function rangesIntersect(leftClock: number, leftLen: number, rightClock: number,
   return leftClock < rightClock + rightLen && rightClock < leftClock + leftLen;
 }
 
+interface UpdateSeqHandles {
+  seqToHandle: Map<number, string>;
+  reapplySeqToHandle: Map<number, string>;
+}
+
 async function writeHandlesByUpdateSeq(
   reversalStore: ReversalStore,
-  input: { docId: string; threadId: string; writeIds: readonly string[] },
-): Promise<Map<number, string>> {
+  input: {
+    docId: string;
+    threadId: string;
+    writeIds: readonly string[];
+    snapshot: JournalSnapshot;
+  },
+): Promise<UpdateSeqHandles> {
   const handles = new Set(input.writeIds);
+  const reversals = await reversalStore.readReversals(input.docId, {
+    threadId: input.threadId,
+  });
   for (const summary of await reversalStore.activeWriteSummary(input.docId, input.threadId)) {
     handles.add(summary.handle);
   }
-  for (const reversal of await reversalStore.readReversals(input.docId, {
-    threadId: input.threadId,
-  })) {
+  for (const reversal of reversals) {
     for (const writeId of reversal.writeIds) handles.add(writeId);
   }
 
@@ -548,13 +569,54 @@ async function writeHandlesByUpdateSeq(
   for (const handle of handleList) {
     for (const row of rowsByHandle.get(handle) ?? []) seqToHandle.set(row.createdSeq, row.handle);
   }
-  for (const reversal of await reversalStore.readReversals(input.docId, {
-    threadId: input.threadId,
-  })) {
+  for (const reversal of reversals) {
     const handle = reversal.writeIds[0];
     if (handle) seqToHandle.set(reversal.undoUpdateSeq, handle);
   }
-  return seqToHandle;
+  const reapplySeqToHandle = mapRedoReapplyUpdates(input.snapshot, rowsByHandle, seqToHandle);
+  return { seqToHandle, reapplySeqToHandle };
+}
+
+function mapRedoReapplyUpdates(
+  snapshot: JournalSnapshot,
+  rowsByHandle: ReadonlyMap<string, readonly { createdSeq: number; handle: string }[]>,
+  seqToHandle: Map<number, string>,
+): Map<number, string> {
+  const insertedRangesByHandle = new Map<string, IdRange[]>();
+  for (const [handle, rows] of rowsByHandle) {
+    const createdSeqs = new Set(rows.map((row) => row.createdSeq));
+    const ranges = insertedIdRanges(
+      snapshot.updates.filter((update) => createdSeqs.has(update.seq)),
+    );
+    if (ranges.length > 0) insertedRangesByHandle.set(handle, ranges);
+  }
+
+  const reapplySeqToHandle = new Map<number, string>();
+  for (const update of snapshot.updates) {
+    if (seqToHandle.has(update.seq) || update.meta.origin !== "system") continue;
+    for (const [handle, insertedRanges] of insertedRangesByHandle) {
+      if (!deleteSetIntersects(update, insertedRanges)) continue;
+      seqToHandle.set(update.seq, handle);
+      reapplySeqToHandle.set(update.seq, handle);
+      break;
+    }
+  }
+  return reapplySeqToHandle;
+}
+
+function targetSeqsIncludingOwnReapply(
+  targetSeqs: ReadonlySet<number>,
+  writeIds: readonly string[],
+  updateSeqHandles: UpdateSeqHandles,
+  maxSeqExclusive?: number,
+): ReadonlySet<number> {
+  const selectedHandles = new Set(writeIds);
+  const next = new Set(targetSeqs);
+  for (const [seq, handle] of updateSeqHandles.reapplySeqToHandle) {
+    if (maxSeqExclusive !== undefined && seq >= maxSeqExclusive) continue;
+    if (selectedHandles.has(handle)) next.add(seq);
+  }
+  return next;
 }
 
 function formatDependentUndoRefusal(
