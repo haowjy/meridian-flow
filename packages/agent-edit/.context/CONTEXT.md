@@ -84,7 +84,7 @@ Every batched write touches all of these (snapshot, render, find). **Use the bat
 | `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getDocumentBlockIds` + index maps in residual codec-bound paths | aligned full-document block/hash/codec projection |
 | `getDocumentBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
 | `model.projectBlocks(doc)` | single-block codec projection loops | project the codec block tree once |
-| `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed view/echo lines |
+| `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed read/echo lines |
 | `model.serializeBlockBodies(doc, codec, blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
 | `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
 | `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
@@ -200,18 +200,18 @@ going blind to a concurrent human edit.
   per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
 - **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
-  runtime has seen") is set by `markSynced` on view / create / write / commit. A
+  runtime has seen") is set by `markSynced` on read / create / write / commit. A
   mutating write requires a prior sync (`requireSynced`) or returns
-  `document_not_synced` ("run view").
-- **`view` is a self-healing reconstruction, not a merge.** Every `view` discards
+  `document_not_synced` ("run read").
+- **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays the response's pending
   staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
-  accumulated local state, so a `view` is a read that can never carry runtime drift
+  accumulated local state, so a `read` is a read that can never carry runtime drift
   forward or corrupt the doc. At turn start (no pending) it is exactly canonical.
-  The reversal path still uses the delta merge `syncLocalFromLive`; `view` does not.
-- **`view` and `find` read the same doc.** Both resolve against the runtime, so the
-  model can always `find` what `view` showed it. This is *why* `view` replays
-  pending: otherwise a write after a mid-response `view` could re-match
+  The reversal path still uses the delta merge `syncLocalFromLive`; `read` does not.
+- **`read` and `find` read the same doc.** Both resolve against the runtime, so the
+  model can always `find` what `read` showed it. This is *why* `read` replays
+  pending: otherwise a write after a mid-response `read` could re-match
   already-edited text and self-mangle at commit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
   advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
@@ -232,7 +232,7 @@ going blind to a concurrent human edit.
   → garbled but never lost. The model is **told** via the echo, never prevented.
 - **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
   updates one at a time, attributing each touched block to human vs agent by
-  persisted origin (the update bytes don't carry it). `view`'s rebuild can't
+  persisted origin (the update bytes don't carry it). `read`'s rebuild can't
   attribute, so it is not used for the commit re-sync.
 - **Sequential tool dispatch is load-bearing.** The host dispatches tool calls one
   at a time; writes apply to the runtime sequentially, so overlapping *self*-writes
@@ -241,7 +241,7 @@ going blind to a concurrent human edit.
   self-mangle at commit.
 - **The staging buffer is the durable commit source, not the runtime doc.** The
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
-  to live exactly once; `view`'s replay touches only the runtime and never
+  to live exactly once; `read`'s replay touches only the runtime and never
   double-commits.
 - **`find` reconciliation happens in serialized markdown space.** Matches resolve to
   serialized block ranges. The resolver splices the requested replacement into the
@@ -265,7 +265,7 @@ staged state. Journal append, live-doc sync, concurrent-edit merge, and
 projection refresh are deferred to `commitResponse(responseId)`, which appends
 the buffered updates in one journal batch and then applies one aggregate Yjs
 update per document. Journal batch failure leaves the buffer retryable and
-invalidates staged runtimes so ordinary later views do not see phantom edits. If
+invalidates staged runtimes so ordinary later reads do not see phantom edits. If
 the journal batch lands, the whole response is durable and remains the latest
 undoable turn even when the post-commit live projection fails. In that case
 `commitResponse(responseId)` recovers live docs from the journal, rebuilds and
@@ -286,7 +286,7 @@ garbled character-level merge of two edits to the same text is accepted
 ("mangled-but-intact") — the model is told through the write echo and concurrent
 summary, not prevented. Mid-response, per-write echoes reflect the local runtime
 (there is no per-write re-sync to live) — the accepted cost of the optimization,
-not a defect. An explicit `view` still reconstructs from canonical (see the
+not a defect. An explicit `read` still reconstructs from canonical (see the
 sync-engine invariants), so the model can re-ground on live truth on demand.
 
 Without `responseId`, writes keep the immediate append + live sync behavior.
@@ -302,7 +302,7 @@ the response buffer so a later empty commit still carries the cleanup signal.
 human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
 The host resolves that path to an internal `documentId` and passes both into the
 package. `documentId` is only storage/journal/runtime/coordinator identity;
-model-facing text must render the display `file` / `filePath`, including view
+model-facing text must render the display `file` / `filePath`, including read
 commands, creation guidance, not-found messages, and re-sync hints. The package
 stays host-agnostic: it does not invent display paths, it only echoes the path
 the host supplied. Tests should prefer UUID-like document ids plus friendly
@@ -313,7 +313,7 @@ paths so accidental UUID interpolation fails loudly.
 - **Tool versioning** deferred (GH issue #68). Seam kept clean — pure
   resolvers, stable `ResolvedEdit`, version-agnostic apply layer. No version
   pinning until a v2 exists.
-- **View auto-budget/truncation** deferred. Current `view` returns full
+- **Read auto-budget/truncation** deferred. Current `read` returns full
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
