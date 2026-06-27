@@ -14,6 +14,8 @@ export const tableCodec: BlockCodec<MdastTable> = {
   name: "table",
 
   serialize(node, ctx) {
+    // GFM alignment is per-column (from the header row), and table cells are
+    // single-line inline content; hard breaks inside cells are not representable.
     const align = alignmentFromFirstRow(node);
     const table: MdastTable = { type: "table", align, children: [] };
 

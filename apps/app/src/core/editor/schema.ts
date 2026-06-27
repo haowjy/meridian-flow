@@ -1,40 +1,7 @@
 /**
- * editor schema — the canonical ProseMirror document schema for the editor.
+ * editor schema — shared Yjs fragment name for the ProseMirror document.
  *
- * Re-exports the shared `@meridian/prosemirror-schema` builder and declares the
- * authoritative node/mark name lists plus the Yjs fragment name. Single source
- * of the document shape shared by the editor and collaboration layers.
+ * The document schema itself lives in `@meridian/prosemirror-schema`; this file
+ * only names the fragment used by collaboration wiring.
  */
-import { buildDocumentSchema, documentMarks, documentNodes } from "@meridian/prosemirror-schema";
-
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
-
-export const DOCUMENT_NODE_NAMES = [
-  "doc",
-  "paragraph",
-  "heading",
-  "code_block",
-  "blockquote",
-  "bullet_list",
-  "ordered_list",
-  "list_item",
-  "table",
-  "table_row",
-  "table_header",
-  "table_cell",
-  "jsx_leaf",
-  "jsx_container",
-  "image",
-  "figure",
-  "hard_break",
-  "horizontal_rule",
-  "text",
-] as const;
-
-export const DOCUMENT_MARK_NAMES = ["strong", "em", "code", "link", "strike"] as const;
-
-export type DocumentNodeName = (typeof DOCUMENT_NODE_NAMES)[number];
-export type DocumentMarkName = (typeof DOCUMENT_MARK_NAMES)[number];
-export type DocumentSchemaType = "document";
-
-export { buildDocumentSchema, documentMarks, documentNodes };

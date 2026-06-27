@@ -49,6 +49,16 @@ function renderPropsAttr(value: unknown): string {
   return JSON.stringify(isJsonRecord(value) ? value : {});
 }
 
+function tableCellAttributes(parentAttrs: (() => Record<string, unknown>) | undefined) {
+  const attrs: Record<string, unknown> = { ...(parentAttrs?.() ?? {}) };
+  delete attrs.align;
+
+  return {
+    alignment: { default: null },
+    ...attrs,
+  };
+}
+
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
 // These renames are required for Yjs CRDT compatibility — node type names
@@ -111,13 +121,7 @@ export const MeridianTableHeader = TableHeader.extend({
   content: "paragraph",
 
   addAttributes() {
-    const attrs: Record<string, unknown> = { ...(this.parent?.() ?? {}) };
-    delete attrs.align;
-
-    return {
-      alignment: { default: null },
-      ...attrs,
-    };
+    return tableCellAttributes(this.parent);
   },
 });
 
@@ -126,13 +130,7 @@ export const MeridianTableCell = TableCell.extend({
   content: "paragraph",
 
   addAttributes() {
-    const attrs: Record<string, unknown> = { ...(this.parent?.() ?? {}) };
-    delete attrs.align;
-
-    return {
-      alignment: { default: null },
-      ...attrs,
-    };
+    return tableCellAttributes(this.parent);
   },
 });
 
