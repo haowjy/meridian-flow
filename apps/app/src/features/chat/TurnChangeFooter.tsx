@@ -54,9 +54,15 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
   if (documents.length === 0) return null;
 
   const rowState = (uri: string): RowState => rows[uri] ?? { disposition: "applied" };
-  const allReversed = documents.every((doc) => rowState(doc.uri).disposition === "reversed");
-  const summary = `${documentIcon} ${fileCountLabel(documents.length)}${allReversed ? ` ${t`(all undone)`}` : ""}`;
-  const turnDirection: ReversalDirection = allReversed ? "redo" : "undo";
+  const actionableDocuments = documents.filter(
+    (doc) => rowState(doc.uri).disposition !== "disabled",
+  );
+  const allActionableReversed =
+    actionableDocuments.length > 0 &&
+    actionableDocuments.every((doc) => rowState(doc.uri).disposition === "reversed");
+  const summary = `${documentIcon} ${fileCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
+  const turnDirection: ReversalDirection = allActionableReversed ? "redo" : "undo";
+  const turnActionDisabled = turnPending || Boolean(pendingUri) || actionableDocuments.length === 0;
 
   async function reverseOne(doc: WrittenDocument) {
     const current = rowState(doc.uri);
@@ -84,7 +90,7 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
   }
 
   async function reverseAll() {
-    if (turnPending || pendingUri) return;
+    if (turnActionDisabled) return;
     setTurnPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction: turnDirection });
@@ -173,7 +179,7 @@ export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
           <div className="flex justify-end pt-1">
             <button
               type="button"
-              disabled={turnPending || Boolean(pendingUri)}
+              disabled={turnActionDisabled}
               onClick={() => void reverseAll()}
               className="focus-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
             >
