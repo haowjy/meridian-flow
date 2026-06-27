@@ -81,7 +81,47 @@ describe("createEditorConfig", () => {
 
     expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["heading"]);
   });
+
+  // Guards the list_item rename: TipTap's list commands default to itemTypeName
+  // "listItem", but our schema renames it to "list_item". Without the configured
+  // itemTypeName, toggleBulletList/toggleOrderedList throw "no node type named
+  // 'listItem'" and the toolbar list buttons silently fail.
+  it("toggles bullet and ordered lists with the renamed list_item type", () => {
+    document.body.innerHTML = '<div id="editor"></div>';
+
+    const ydoc = new Y.Doc();
+    const awareness = new Awareness(ydoc);
+    cleanup.push(() => {
+      awareness.destroy();
+      ydoc.destroy();
+    });
+
+    const editor = mountEditor("editor", ydoc, awareness);
+    cleanup.push(() => editor.destroy());
+
+    editor.commands.setContent(
+      { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "item" }] }] },
+      { emitUpdate: true },
+    );
+
+    editor.commands.selectAll();
+    expect(() => editor.commands.toggleBulletList()).not.toThrow();
+    expect(nodeTypes(editor)).toContain("bullet_list");
+    expect(nodeTypes(editor)).toContain("list_item");
+
+    editor.commands.selectAll();
+    expect(() => editor.commands.toggleOrderedList()).not.toThrow();
+    expect(nodeTypes(editor)).toContain("ordered_list");
+  });
 });
+
+function nodeTypes(editor: Editor): string[] {
+  const types: string[] = [];
+  editor.state.doc.descendants((node) => {
+    types.push(node.type.name);
+  });
+  return types;
+}
 
 function mountEditor(id: string, document: Y.Doc, awareness: Awareness): Editor {
   const element = window.document.getElementById(id);

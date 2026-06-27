@@ -148,6 +148,10 @@ export const MeridianLink = Link.extend({
   },
 });
 
+// We renamed list_item from TipTap's default `listItem`, so the list commands
+// (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
+// via `itemTypeName` — otherwise they resolve "listItem", which isn't in the
+// schema, and throw.
 export const MeridianBulletList = BulletList.extend({
   name: "bullet_list",
   content: "list_item+",
@@ -158,7 +162,7 @@ export const MeridianBulletList = BulletList.extend({
       tight: { default: false },
     };
   },
-});
+}).configure({ itemTypeName: "list_item" });
 
 export const MeridianOrderedList = OrderedList.extend({
   name: "ordered_list",
@@ -171,7 +175,7 @@ export const MeridianOrderedList = OrderedList.extend({
       tight: { default: false },
     };
   },
-});
+}).configure({ itemTypeName: "list_item" });
 
 export const MeridianImage = Image.extend({
   marks: "",
