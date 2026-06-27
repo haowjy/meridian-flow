@@ -104,6 +104,33 @@
   --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
 
+  /* Code surface — fenced code blocks sit on the warm canvas as a recessed
+     "tablet": a notch DEEPER than surface-warm (the canvas reads as raised
+     paper above it) and a touch warmer in hue (~85, aged tape) so the block
+     is clearly distinct without going harsh-grey. The border is a half-step
+     firmer than border-subtle to bracket the well. Foreground sits a step
+     deeper than answer-foreground so the monospaced glyphs land at full ink
+     weight on this surface (>=8:1 on --color-code-surface). */
+  --color-code-surface: oklch(0.945 0.012 85);
+  --color-code-foreground: oklch(0.28 0.008 95);
+  --color-code-border: oklch(0.875 0.012 85);
+
+  /* Syntax palette — a low-chroma rephrasing of the Ink & Jade identity
+     (jade / cinnabar / gold) so highlighted code reads as part of the warm
+     page, never an imported VS Code panel. All tones at L<=0.50 and c<=0.13
+     to clear ~4.5:1 on --color-code-surface; comment is intentionally the
+     softest (~3.7:1) — comments are an aside, not the reader's focus. The
+     `.hljs-*` rules in apps/app/src/features/editor/editor.css map highlight.js
+     token classes onto these tokens. */
+  --color-syntax-keyword: oklch(0.42 0.1 175); /* jade-deep — control flow, types */
+  --color-syntax-string: oklch(0.46 0.11 55); /* warm amber — strings, literals */
+  --color-syntax-comment: oklch(0.55 0.012 100); /* muted ink — code asides */
+  --color-syntax-number: oklch(0.5 0.13 32); /* terracotta — numerics, regex */
+  --color-syntax-function: oklch(0.48 0.1 80); /* gold-deep — function / title */
+  --color-syntax-attr: oklch(0.44 0.075 155); /* jade-soft — attrs, properties */
+  --color-syntax-builtin: oklch(0.46 0.09 195); /* cool jade — built-ins, types */
+  --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
+
   --color-status-streaming: oklch(0.536 0.082 175);
   --color-status-streaming-ring: oklch(0.536 0.082 175 / 0.14);
   --color-status-streaming-ring-strong: oklch(0.536 0.082 175 / 0.16);
