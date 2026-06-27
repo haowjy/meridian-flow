@@ -70,3 +70,38 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm db:apply-functions
       - run: pnpm exec vitest run -c vitest.db.config.mts
+
+  migration-checks:
+    name: migration-checks
+    # Skip draft PRs; pushes and workflow_call always run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so --changed can diff against the PR base branch.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meridian/database exec drizzle-kit check
+      # PRs: lint only migrations this branch introduces. Warnings block merges
+      # to main/staging (production-bound); feature-branch PRs block errors only.
+      - name: Migration lint (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE"
+          STRICT_FLAG=""
+          if [ "$BASE" = "main" ] || [ "$BASE" = "staging" ]; then
+            STRICT_FLAG="--strict"
+          fi
+          pnpm exec tsx tools/dev/migration-lint.ts --changed "origin/$BASE" $STRICT_FLAG
+      # Post-merge push: informational lint of all migrations (errors only).
+      - name: Migration lint (push)
+        if: github.event_name == 'push'
+        run: pnpm exec tsx tools/dev/migration-lint.ts --all

@@ -4,6 +4,9 @@
 
 - Dev tooling: `migration-lint` gains `--strict` (warnings fail) and `--changed
   <ref>` (lint only migrations added or modified since a git ref).
+- CI: `migration-checks` job runs `drizzle-kit check` (always blocking) and
+  scoped migration-lint on PRs (`--strict` only when merging to `main` or
+  `staging`); pre-commit runs migration-lint on staged migration SQL.
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no
   longer hard-codes the Yjs document model. No change to how edits, undo/redo, or
