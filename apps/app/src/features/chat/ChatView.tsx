@@ -7,12 +7,7 @@
  * and renders `ChatSurface` + `TurnList` + `Composer`.
  */
 import { t } from "@lingui/core/macro";
-import type {
-  ProjectContextTreeScheme,
-  Thread,
-  ThreadLiveState,
-  Turn,
-} from "@meridian/contracts/protocol";
+import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -41,7 +36,6 @@ export type ChatViewProps = {
   snapshotNextSeq?: string | null;
   /** Center vs dock — dock uses the compact agent chip in the composer footer. */
   placement?: ChatPlacement;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 export function ChatView({
@@ -51,7 +45,6 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   placement = "center",
-  onOpenContextPath,
 }: ChatViewProps) {
   const actions = useThreadActions();
   const queryClient = useQueryClient();
@@ -154,7 +147,6 @@ export function ChatView({
         scrollParent={scrollParent}
         tailFollowRevision={tailFollowRevision}
         onRespondToCheckpoint={handleRespondToCheckpoint}
-        onOpenContextPath={onOpenContextPath}
       />
     </ChatSurface>
   );

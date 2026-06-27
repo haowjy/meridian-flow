@@ -4,7 +4,6 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
@@ -30,7 +29,6 @@ export type ChatScreenProps = {
    */
   writeThreadToRoute?: boolean;
   placement?: ChatPlacement;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 /**
@@ -48,7 +46,6 @@ export function ChatScreen({
   onSelectThread,
   writeThreadToRoute = true,
   placement = "center",
-  onOpenContextPath,
 }: ChatScreenProps) {
   const pendingThreadId = useThreadStore((state) => {
     for (const [tid, ps] of Object.entries(state.pendingStreamByThreadId)) {
@@ -94,7 +91,6 @@ export function ChatScreen({
       threadId={resolvedThreadId}
       onSelectThread={onSelectThread}
       placement={placement}
-      onOpenContextPath={onOpenContextPath}
     />
   );
 }
@@ -104,13 +100,11 @@ function ChatScreenLoaded({
   threadId,
   onSelectThread,
   placement,
-  onOpenContextPath,
 }: {
   projectId: string;
   threadId: string;
   onSelectThread: (threadId: string) => void;
   placement: ChatPlacement;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 }) {
   const {
     thread: snapshotThread,
@@ -153,7 +147,6 @@ function ChatScreenLoaded({
           snapshotLiveState={snapshotLiveState}
           snapshotNextSeq={snapshotNextSeq}
           placement={placement}
-          onOpenContextPath={onOpenContextPath}
           key={`${projectId}:${threadId}`}
         />
       </div>

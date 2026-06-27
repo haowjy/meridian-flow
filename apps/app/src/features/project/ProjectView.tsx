@@ -20,6 +20,7 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
+import { ProjectChatContextNavigationProvider } from "./chat/ProjectChatContextNavigationProvider";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -195,23 +196,28 @@ function DesktopProject(props: ProjectViewProps) {
               onSelectThread={props.onSelectThread}
             />
           ) : null}
-          <ChatSurface
-            key="chat-surface"
+          <ProjectChatContextNavigationProvider
             projectId={props.projectId}
             activeThreadId={props.activeThreadId}
-            // Centered chat owns the route (`?screen` follows it); the dock must
-            // only change which conversation it shows, never the screen — so it
-            // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
-            onSelectThread={
-              chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
-            }
-            placement={chatPlacement}
-            // Mounted-but-hidden when the dock is collapsed, so the live
-            // conversation survives a close/reopen.
-            visible={chatPlacement === "center" || isOpen("chat")}
-            onCloseDock={close("chat")}
-            onOpenContextPath={props.onSelectContextPath}
-          />
+            onSelectContextPath={props.onSelectContextPath}
+          >
+            <ChatSurface
+              key="chat-surface"
+              projectId={props.projectId}
+              activeThreadId={props.activeThreadId}
+              // Centered chat owns the route (`?screen` follows it); the dock must
+              // only change which conversation it shows, never the screen — so it
+              // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
+              onSelectThread={
+                chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
+              }
+              placement={chatPlacement}
+              // Mounted-but-hidden when the dock is collapsed, so the live
+              // conversation survives a close/reopen.
+              visible={chatPlacement === "center" || isOpen("chat")}
+              onCloseDock={close("chat")}
+            />
+          </ProjectChatContextNavigationProvider>
         </div>
       ),
     },

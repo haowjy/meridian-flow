@@ -11,7 +11,6 @@ import type {
   Block,
   DocumentReversalResult,
   JsonValue,
-  ProjectContextTreeScheme,
   Turn,
   WriteStatus,
 } from "@meridian/contracts/protocol";
@@ -25,22 +24,16 @@ import {
   useReverseTurnMutation,
 } from "@/client/query/useReverseMutation";
 import { cn } from "@/lib/utils";
+import { useChatContextNavigation } from "./ChatContextNavigation";
 
-export type WrittenDocument = {
+type WrittenDocument = {
   path: string;
   uri: string;
-  nav: ContextNavigationTarget | null;
-};
-
-export type ContextNavigationTarget = {
-  scheme: ProjectContextTreeScheme;
-  path: string;
 };
 
 export type TurnChangeFooterProps = {
   threadId: string;
   turn: Turn;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 type RowState = {
@@ -48,16 +41,9 @@ type RowState = {
   statusText?: string;
 };
 
-const CONTEXT_SCHEMES = new Set<ProjectContextTreeScheme>([
-  "manuscript",
-  "kb",
-  "work",
-  "uploads",
-  "user",
-]);
-
-export function TurnChangeFooter({ threadId, turn, onOpenContextPath }: TurnChangeFooterProps) {
+export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
   const panelId = useId();
+  const openContextUri = useChatContextNavigation();
   const documents = useMemo(() => turnWrittenDocuments(turn), [turn]);
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<Record<string, RowState>>({});
@@ -157,7 +143,7 @@ export function TurnChangeFooter({ threadId, turn, onOpenContextPath }: TurnChan
               const pending = pendingUri === doc.uri;
               return (
                 <li key={doc.uri} className="flex min-w-0 items-center gap-2">
-                  <DocumentName document={doc} onOpenContextPath={onOpenContextPath} />
+                  <DocumentName document={doc} onOpenContextUri={openContextUri} />
                   {state.statusText ? (
                     <span className="min-w-0 flex-1 truncate text-ink-subtle">
                       {state.statusText}
@@ -210,20 +196,19 @@ export function TurnChangeFooter({ threadId, turn, onOpenContextPath }: TurnChan
 
 function DocumentName({
   document,
-  onOpenContextPath,
+  onOpenContextUri,
 }: {
   document: WrittenDocument;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
+  onOpenContextUri: ((uri: string) => void) | null;
 }) {
-  const nav = document.nav;
-  const label = basename(nav?.path ?? document.path);
-  if (!nav || !onOpenContextPath) {
+  const label = basename(displayPath(document.uri, document.path));
+  if (!onOpenContextUri) {
     return <span className="min-w-0 flex-1 truncate font-mono text-ink-strong">{label}</span>;
   }
   return (
     <button
       type="button"
-      onClick={() => onOpenContextPath(nav.path, nav.scheme)}
+      onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring min-w-0 flex-1 truncate rounded-sm text-left font-mono text-ink-strong underline-offset-2 hover:underline"
     >
       {label}
@@ -231,20 +216,20 @@ function DocumentName({
   );
 }
 
-export function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
+function turnWrittenDocuments(turn: Turn): WrittenDocument[] {
   const documents = new Map<string, WrittenDocument>();
   for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
     const path = writePathFromBlock(block);
     if (!path) continue;
     const uri = resolveWriteUri(path);
     if (!documents.has(uri)) {
-      documents.set(uri, { path, uri, nav: contextNavigationTarget(uri) });
+      documents.set(uri, { path, uri });
     }
   }
   return [...documents.values()];
 }
 
-export function resolveWriteUri(path: string): string {
+function resolveWriteUri(path: string): string {
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)) return path;
   return `manuscript://${path.replace(/^\/+/, "")}`;
 }
@@ -259,13 +244,9 @@ function writePathFromBlock(block: Block): string | null {
   return typeof path === "string" && path.length > 0 ? path : null;
 }
 
-function contextNavigationTarget(uri: string): ContextNavigationTarget | null {
-  const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(.*)$/.exec(uri);
-  if (!match) return null;
-  const scheme = match[1] as ProjectContextTreeScheme;
-  if (!CONTEXT_SCHEMES.has(scheme)) return null;
-  const path = `/${match[2].replace(/^\/+/, "")}`;
-  return { scheme, path };
+function displayPath(uri: string, fallback: string): string {
+  const match = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(.*)$/.exec(uri);
+  return match ? `/${match[1].replace(/^\/+/, "")}` : fallback;
 }
 
 function stateFromWriteOutcome(

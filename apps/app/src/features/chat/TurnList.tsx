@@ -7,7 +7,7 @@
  * the same `turn.id` row stays mounted and only its `Turn` data changes — no
  * remount, no flicker, expand/collapse and scroll position survive.
  */
-import type { ProjectContextTreeScheme, Turn } from "@meridian/contracts/protocol";
+import type { Turn } from "@meridian/contracts/protocol";
 import {
   type ComponentPropsWithoutRef,
   type CSSProperties,
@@ -33,7 +33,6 @@ export type TurnListProps = {
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
-  onOpenContextPath?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 /**
@@ -46,7 +45,6 @@ export function TurnList({
   scrollParent,
   tailFollowRevision,
   onRespondToCheckpoint,
-  onOpenContextPath,
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -78,10 +76,9 @@ export function TurnList({
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToCheckpoint={onRespondToCheckpoint}
-          onOpenContextPath={onOpenContextPath}
         />
       ),
-    [lastAssistantIdx, onOpenContextPath, onRespondToCheckpoint, threadId],
+    [lastAssistantIdx, onRespondToCheckpoint, threadId],
   );
 
   const components = useMemo<Components<Turn>>(
