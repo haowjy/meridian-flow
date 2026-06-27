@@ -80,13 +80,19 @@ function listItemsToMdast(node: PMNode, ctx: SerializeContext): MdastListItem[] 
 }
 
 function listItemToMdast(node: PMNode, ctx: SerializeContext): MdastListItem {
-  return { type: "listItem", spread: false, children: pmBlockChildrenToMdast(node, ctx) };
+  return {
+    type: "listItem",
+    spread: false,
+    checked: node.attrs.checked === null ? undefined : node.attrs.checked,
+    children: pmBlockChildrenToMdast(node, ctx),
+  };
 }
 
 function listItemToPm(node: MdastListItem, ctx: ParseContext): PMNode {
+  const checked = node.checked ?? null;
   const children = parseBlockChildren(node.children, ctx);
   if (children[0]?.type.name !== "paragraph") {
-    return ctx.schema.node("list_item", null, [ctx.schema.node("paragraph"), ...children]);
+    return ctx.schema.node("list_item", { checked }, [ctx.schema.node("paragraph"), ...children]);
   }
-  return ctx.schema.node("list_item", null, children);
+  return ctx.schema.node("list_item", { checked }, children);
 }

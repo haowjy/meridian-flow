@@ -20,7 +20,14 @@ import type {
   SerializeContext,
 } from "./types.js";
 
-const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "hard_break"]);
+const NON_CODEC_SCHEMA_NODES = new Set([
+  "doc",
+  "text",
+  "hard_break",
+  "table_row",
+  "table_header",
+  "table_cell",
+]);
 
 export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
@@ -122,7 +129,9 @@ function buildMarkupCodec(
     serialize(blockList: PMNode[]): string {
       const runtime = makeRuntime("");
       const ctx = withRuntime<SerializeContext>({ schema }, runtime);
-      return blockList.map((block) => serializeOne(block, ctx)).join("\n");
+      const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
+      if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
+      return result;
     },
 
     parse(content: string) {

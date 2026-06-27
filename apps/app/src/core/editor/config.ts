@@ -30,7 +30,12 @@ import {
   MeridianListItem,
   MeridianOrderedList,
   MeridianStrong,
+  MeridianTable,
+  MeridianTableCell,
+  MeridianTableHeader,
+  MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { markdownTableClipboardParser } from "./markdown-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {
@@ -117,7 +122,6 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   italic: false,
   listItem: false,
   orderedList: false,
-  strike: false,
 } as const;
 
 const CODE_STARTER_KIT_OPTIONS = {
@@ -225,6 +229,10 @@ export function createEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianHorizontalRule,
+    MeridianTable,
+    MeridianTableRow,
+    MeridianTableHeader,
+    MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
     MeridianImage,
     MeridianJsxLeaf,
@@ -249,11 +257,17 @@ export function createEditorConfig({
   autofocus = false,
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
+  const resolvedSchemaType = schemaType ?? "document";
+  const resolvedEditorProps =
+    resolvedSchemaType === "document"
+      ? { clipboardTextParser: markdownTableClipboardParser(), ...editorProps }
+      : editorProps;
+
   return {
     extensions: createEditorExtensions({
       document,
       awareness,
-      schemaType,
+      schemaType: resolvedSchemaType,
       cursorProvider,
       user,
       figureRenderContext,
@@ -261,6 +275,6 @@ export function createEditorConfig({
     }),
     editable,
     autofocus,
-    ...(editorProps ? { editorProps } : {}),
+    ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),
   };
 }

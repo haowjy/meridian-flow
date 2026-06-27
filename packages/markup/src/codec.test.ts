@@ -49,7 +49,7 @@ const components = {
 
 const t = (text: string, marks?: readonly ReturnType<typeof schema.marks.strong.create>[]) =>
   schema.text(text, marks);
-const m = (name: "strong" | "em" | "code" | "link", attrs?: Record<string, unknown>) =>
+const m = (name: "strong" | "em" | "code" | "link" | "strike", attrs?: Record<string, unknown>) =>
   schema.marks[name].create(attrs);
 const paragraph = (...children: PMNode[]) => schema.node("paragraph", null, children);
 const emptyParagraph = () => schema.node("paragraph");
@@ -87,6 +87,7 @@ describe("codec presets", () => {
       "code",
       "em",
       "link",
+      "strike",
       "strong",
     ]);
   });
@@ -102,6 +103,7 @@ describe("codec presets", () => {
       "code",
       "em",
       "link",
+      "strike",
       "strong",
     ]);
   });
@@ -178,6 +180,61 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, "[a\\]b](https://x.test)");
   });
 
+  it("parses mixed task list item checked attrs", () => {
+    const doc = parsedDoc(codec, "- [x] a\n- plain\n- [ ] b\n");
+    const list = doc.firstChild;
+    expect(list?.type.name).toBe("bullet_list");
+    expect(
+      [...Array(list?.childCount ?? 0)].map((_, index) => list?.child(index).attrs.checked),
+    ).toEqual([true, null, false]);
+  });
+
+  it("parses GFM table headers, body cells, and per-column alignment", () => {
+    const doc = parsedDoc(
+      codec,
+      "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a | b | c |\n",
+    );
+    const table = doc.firstChild;
+    expect(table?.type.name).toBe("table");
+
+    const headerRow = table?.child(0);
+    const bodyRow = table?.child(1);
+    expect(
+      [...Array(headerRow?.childCount ?? 0)].map((_, index) => headerRow?.child(index).type.name),
+    ).toEqual(["table_header", "table_header", "table_header"]);
+    expect(
+      [...Array(bodyRow?.childCount ?? 0)].map((_, index) => bodyRow?.child(index).type.name),
+    ).toEqual(["table_cell", "table_cell", "table_cell"]);
+    expect(
+      [...Array(headerRow?.childCount ?? 0)].map(
+        (_, index) => headerRow?.child(index).attrs.alignment,
+      ),
+    ).toEqual(["left", null, "right"]);
+    expect(
+      [...Array(bodyRow?.childCount ?? 0)].map((_, index) => bodyRow?.child(index).attrs.alignment),
+    ).toEqual(["left", null, "right"]);
+  });
+
+  it("parses strikethrough as strike marks", () => {
+    const doc = parsedDoc(codec, "~~gone~~");
+    const text = doc.firstChild?.firstChild;
+    expect(text?.type.name).toBe("text");
+    expect(text?.text).toBe("gone");
+    expect(text?.marks.map((mark) => mark.type.name)).toEqual(["strike"]);
+  });
+
+  it("stabilizes GFM tables with alignment, empty cells, escaped pipes, and strike", () => {
+    expectStable(
+      codec,
+      [
+        "| Left | Center | Right |",
+        "| :--- | :----: | ----: |",
+        "| a |  | c |",
+        "| has \\| pipe | ~~gone~~ | **bold** |",
+      ].join("\n"),
+    );
+  });
+
   it("stabilizes lists, blockquotes, thematic breaks, and ordered-list starts", () => {
     expectStable(
       codec,
@@ -229,6 +286,12 @@ describe("markdown codec round-trip corpus", () => {
     expect(codec.parse(" \n\t").blocks).toHaveLength(1);
     expect(codec.parse(" \n\t").blocks[0]?.type.name).toBe("paragraph");
     expect(codec.parse(" \n\t").blocks[0]?.childCount).toBe(0);
+  });
+
+  it("serializes all-empty documents to an empty string", () => {
+    expect(codec.serialize([emptyParagraph()])).toBe("");
+    expect(codec.serialize([emptyParagraph(), emptyParagraph()])).toBe("");
+    expect(codec.serializeBlocks([emptyParagraph()])).toEqual([""]);
   });
 });
 

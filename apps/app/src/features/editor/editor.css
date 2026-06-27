@@ -3,9 +3,9 @@
  * documents. Geometry and color are expressed through Ink & Jade variables so
  * the editor follows the app theme without embedding component logic.
  *
- * Long-form manuscript reading: Noto Serif prose, a calm ~68ch measure, and
- * generous leading. The prose stays undecorated — the cinnabar signature lives
- * only in chrome, never in the manuscript itself.
+ * Long-form manuscript reading: the single app font (Inter), a calm ~68ch
+ * measure, and generous leading. The prose stays undecorated — the cinnabar
+ * signature lives only in chrome, never in the manuscript itself.
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
@@ -18,7 +18,7 @@
   min-height: 100%;
   outline: none;
   max-width: 68ch;
-  font-family: var(--font-prose);
+  /* Font family inherits the single app default (Inter) from `body`. */
 }
 
 .meridian-editor .ProseMirror > * + * {
@@ -32,7 +32,9 @@
 .meridian-editor .ProseMirror h5,
 .meridian-editor .ProseMirror h6 {
   color: var(--color-foreground);
-  font-family: var(--font-heading);
+  /* Headings inherit the single app font (Inter) and are distinguished by size +
+     weight only — matching stock ProseMirror/TipTap, which ship no heading font
+     and let headings inherit body type. */
   font-weight: 600;
   line-height: 1.15;
 }
@@ -43,6 +45,29 @@
 
 .meridian-editor .ProseMirror h2 {
   font-size: 1.5rem;
+}
+
+/* Self-contained long-form heading ladder. The editor element also carries the
+   `prose-tokens` class (tuned for COMPACT chat answers, where h4 is 0.95rem —
+   smaller than this editor's 1.0625rem body), so without explicit sizes here
+   h3-h6 would inherit that compact scale and render smaller than body text.
+   Every step stays >= body size. */
+.meridian-editor .ProseMirror h3 {
+  font-size: 1.25rem;
+}
+
+.meridian-editor .ProseMirror h4 {
+  font-size: 1.125rem;
+}
+
+.meridian-editor .ProseMirror h5 {
+  font-size: 1.0625rem;
+}
+
+.meridian-editor .ProseMirror h6 {
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  color: var(--color-ink-muted);
 }
 
 .meridian-editor .ProseMirror p,
@@ -62,24 +87,120 @@
 
 .meridian-editor .ProseMirror pre {
   overflow-x: auto;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-code-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface-warm);
+  background: var(--color-code-surface);
+  color: var(--color-code-foreground);
   padding: 0.875rem 1rem;
   font-size: 0.8125rem;
   line-height: 1.6;
 }
 
+/* Inline code shares the code-surface ladder so a `name` in prose reads as a
+   code chip — the canvas/card surface (used previously) made inline code
+   visually disappear inside cards. The hairline border keeps it identifiable
+   without leaning on a fill heavy enough to interrupt reading rhythm. */
 .meridian-editor .ProseMirror code {
+  border: 1px solid var(--color-code-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-warm);
-  padding: 0.1rem 0.25rem;
+  background: var(--color-code-surface);
+  color: var(--color-code-foreground);
+  padding: 0.05rem 0.3rem;
   font-size: 0.875em;
 }
 
 .meridian-editor .ProseMirror pre code {
+  border: 0;
   background: transparent;
   padding: 0;
+  color: inherit;
+  /* Reset the inline-code 0.875em scale; block code uses the pre font-size. */
+  font-size: inherit;
+}
+
+/* highlight.js token colors — CodeBlockLowlight tags each token with a
+   `.hljs-<kind>` span on the inner <code>. We map those classes onto the
+   syntax tokens declared in design-tokens/ink-jade.css rather than importing
+   a vendor hljs theme (vendor themes ship raw hex and would break the no-raw-
+   color rule). Grouping by visual role keeps the rule count small: each
+   semantic family points at one token so the palette is easy to retune.
+   Selectors stay scoped to the editor so the same DOM in an unrelated surface
+   (rendered markdown, chat) doesn't inherit unintentionally. */
+.meridian-editor .ProseMirror pre code .hljs-keyword,
+.meridian-editor .ProseMirror pre code .hljs-selector-tag,
+.meridian-editor .ProseMirror pre code .hljs-literal,
+.meridian-editor .ProseMirror pre code .hljs-section,
+.meridian-editor .ProseMirror pre code .hljs-tag {
+  color: var(--color-syntax-keyword);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-string,
+.meridian-editor .ProseMirror pre code .hljs-doctag,
+.meridian-editor .ProseMirror pre code .hljs-template-tag,
+.meridian-editor .ProseMirror pre code .hljs-template-variable,
+.meridian-editor .ProseMirror pre code .hljs-quote {
+  color: var(--color-syntax-string);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-comment,
+.meridian-editor .ProseMirror pre code .hljs-meta,
+.meridian-editor .ProseMirror pre code .hljs-meta .hljs-keyword {
+  color: var(--color-syntax-comment);
+  font-style: italic;
+}
+
+.meridian-editor .ProseMirror pre code .hljs-number,
+.meridian-editor .ProseMirror pre code .hljs-regexp,
+.meridian-editor .ProseMirror pre code .hljs-symbol,
+.meridian-editor .ProseMirror pre code .hljs-bullet,
+.meridian-editor .ProseMirror pre code .hljs-link {
+  color: var(--color-syntax-number);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-title,
+.meridian-editor .ProseMirror pre code .hljs-title.function_,
+.meridian-editor .ProseMirror pre code .hljs-function .hljs-title,
+.meridian-editor .ProseMirror pre code .hljs-selector-id,
+.meridian-editor .ProseMirror pre code .hljs-selector-class {
+  color: var(--color-syntax-function);
+  font-weight: 600;
+}
+
+.meridian-editor .ProseMirror pre code .hljs-attr,
+.meridian-editor .ProseMirror pre code .hljs-attribute,
+.meridian-editor .ProseMirror pre code .hljs-name,
+.meridian-editor .ProseMirror pre code .hljs-property,
+.meridian-editor .ProseMirror pre code .hljs-variable {
+  color: var(--color-syntax-attr);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-built_in,
+.meridian-editor .ProseMirror pre code .hljs-type,
+.meridian-editor .ProseMirror pre code .hljs-class .hljs-title,
+.meridian-editor .ProseMirror pre code .hljs-params {
+  color: var(--color-syntax-builtin);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-punctuation,
+.meridian-editor .ProseMirror pre code .hljs-operator,
+.meridian-editor .ProseMirror pre code .hljs-subst {
+  color: var(--color-syntax-punctuation);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-emphasis {
+  font-style: italic;
+}
+
+.meridian-editor .ProseMirror pre code .hljs-strong {
+  font-weight: 700;
+}
+
+.meridian-editor .ProseMirror pre code .hljs-deletion {
+  color: var(--color-destructive);
+}
+
+.meridian-editor .ProseMirror pre code .hljs-addition {
+  color: var(--color-jade-text);
 }
 
 .meridian-editor .ProseMirror table {
