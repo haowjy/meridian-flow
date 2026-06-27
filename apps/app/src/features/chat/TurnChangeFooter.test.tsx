@@ -25,10 +25,15 @@ vi.mock("@lingui/core/macro", () => ({
     ),
 }));
 
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+}));
+
 // React 19 requires this flag when using react-dom/test-utils-style act() directly.
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
+import { AssistantTurn } from "./AssistantTurn";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { TurnChangeFooter } from "./TurnChangeFooter";
 
@@ -139,11 +144,41 @@ describe("TurnChangeFooter", () => {
     expect(opened).toEqual(["work://work-1/notes/beat.md"]);
   });
 
+  it("mounts through AssistantTurn for settled error and cancelled turns with successful writes", () => {
+    renderAssistantTurn({ ...turnWithPaths(["/chapter-1.mdx"]), status: "error" });
+    expect(container.textContent).toContain("1 file changed");
+
+    act(() => {
+      root.render(
+        <ChatContextNavigationProvider onOpenContextUri={null}>
+          <AssistantTurn turn={{ ...turnWithPaths(["/chapter-2.mdx"]), status: "cancelled" }} />
+        </ChatContextNavigationProvider>,
+      );
+    });
+    expect(container.textContent).toContain("1 file changed");
+  });
+
+  it("keeps the footer hidden while AssistantTurn is live", () => {
+    renderAssistantTurn({ ...turnWithPaths(["/chapter-1.mdx"]), status: "streaming" });
+
+    expect(container.textContent).not.toContain("1 file changed");
+  });
+
   function renderFooter(turn: Turn, onOpenContextUri?: (uri: string) => void) {
     act(() => {
       root.render(
         <ChatContextNavigationProvider onOpenContextUri={onOpenContextUri ?? null}>
           <TurnChangeFooter threadId="thread-1" turn={turn} />
+        </ChatContextNavigationProvider>,
+      );
+    });
+  }
+
+  function renderAssistantTurn(turn: Turn) {
+    act(() => {
+      root.render(
+        <ChatContextNavigationProvider onOpenContextUri={null}>
+          <AssistantTurn turn={turn} />
         </ChatContextNavigationProvider>,
       );
     });

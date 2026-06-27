@@ -24,7 +24,7 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnChangeFooter } from "./TurnChangeFooter";
+import { TurnChangeFooter, turnWrittenDocuments } from "./TurnChangeFooter";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -46,6 +46,7 @@ function AssistantTurnComponent({
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
+  const hasReversibleWrites = !isLive && turnWrittenDocuments(turn).length > 0;
 
   return (
     <div
@@ -65,7 +66,7 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {turn.status === "complete" ? (
+      {hasReversibleWrites ? (
         <TurnChangeFooter threadId={threadId ?? turn.threadId} turn={turn} />
       ) : null}
 
