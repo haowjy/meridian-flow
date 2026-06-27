@@ -2,11 +2,7 @@
 
 ## [Unreleased]
 
-- Dev tooling: `migration-lint` gains `--strict` (warnings fail) and `--changed
-  <ref>` (lint only migrations added or modified since a git ref).
-- CI: `migration-checks` job runs `drizzle-kit check` (always blocking) and
-  scoped migration-lint on PRs (`--strict` only when merging to `main` or
-  `staging`); pre-commit runs migration-lint on staged migration SQL.
+- `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no
   longer hard-codes the Yjs document model. No change to how edits, undo/redo, or
@@ -52,7 +48,13 @@
     `db:generate` are clean).
   - Dev tooling: `migration-lint` now exempts the real `0000_` baseline (not
     `0001_`), cutting baseline noise from 125 warnings to 12 real follow-up
-    warnings.
+    warnings. It also gains `--strict` (warnings fail) and `--changed <ref>`
+    (lint only migrations changed since a ref); a CI `migration-checks` job runs
+    `drizzle-kit check` (always blocking) and scoped migration-lint on PRs
+    (`--strict` only when merging to `main`/`staging`), and pre-commit lints
+    staged migration SQL.
+  - `apps/server` collab: head `schema_version` advances monotonically on upsert,
+    so a downgraded server cannot stamp it backward and erase the stale-schema fence.
 - Dev tooling: repo-pinned pnpm moves to 10.34.3 so Corepack pnpm
   commands no longer emit Node DEP0169 from pnpm's bundled package-arg
   resolver.
