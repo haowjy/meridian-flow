@@ -48,16 +48,35 @@ reasoning/cache token counts, and block provider metadata. These columns are
 maintained by TypeScript repositories and the read-model projector; do not add
 database triggers/functions for these rollups.
 
+### Yjs document heads and checkpoints
+
+`document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an
+FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Checkpoints are
+append-only in the production lifecycle: compaction deletes retained
+`document_yjs_updates` rows, not checkpoint rows, and checkpoints are removed by
+the `documents` cascade. Do not document this relationship as custom SQL or as an
+absent FK.
+
 ## Migration workflow
 
 Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 
 1. `pnpm db:generate` — drizzle-kit appends the next migration to
-   [`../src/migrations/`](../src/migrations).
-2. **Review** the generated SQL before applying.
-3. `pnpm db:migration-lint` — runs `tools/dev/migration-lint.ts --all`.
-4. `pnpm db:migrate` — apply pending migrations.
-5. If PL/pgSQL functions/triggers changed: update
+   [`../src/migrations/`](../src/migrations) and updates
+   [`../src/migrations/meta/`](../src/migrations/meta).
+2. **Review** the generated SQL and `meta/_journal.json`. Commit the new `.sql`,
+   `_journal.json`, and `meta/*_snapshot.json`. Snapshot JSON is generated and
+   diff-collapsed by `.gitattributes`, but it is required input to the next
+   `db:generate`; deleting one can silently make drizzle-kit re-emit old tables.
+3. `pnpm --filter @meridian/database exec drizzle-kit check` — verifies the
+   journal/snapshot chain. CI always runs this as a blocking migration check.
+4. `pnpm db:migration-lint` — runs `tools/dev/migration-lint.ts --all`.
+   Errors always block. Warnings block only under `--strict`, which CI uses for
+   PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
+   since the base ref. The squashed `0000_` baseline is exempt from warning rules
+   except `DELETE_WITHOUT_WHERE`.
+5. `pnpm db:migrate` — apply pending migrations.
+6. If PL/pgSQL functions/triggers changed: update
    [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
    (functions are applied separately, after migrate).
 
