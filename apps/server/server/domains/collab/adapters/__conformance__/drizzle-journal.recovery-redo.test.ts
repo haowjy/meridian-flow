@@ -196,6 +196,73 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
+    it("reconstructs undo from a compacted checkpoint plus retained updates", async () => {
+      const journal = createDrizzleJournal(db);
+      const liveDoc = createDoc("Alpha sword.\n\nBeta shield.", LIVE_CLIENT_ID);
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(liveDoc), 0);
+
+      const coordinator = new MemoryCoordinator([[DOC_ID, liveDoc]], journal);
+      const core = createAgentEditCore({
+        journal,
+        coordinator,
+        codec,
+        model,
+        undoClientId: REVERSAL_CLIENT_ID,
+      });
+      const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
+
+      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
+        "Alpha sword.",
+      );
+      expect(
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "sword", content: "blade" },
+            { ...context, turnId: TURN_A },
+          ),
+        ),
+      ).toContain("status: success");
+      expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta shield."]);
+
+      await journal.compact(DOC_ID, new Date("2100-01-01T00:00:00.000Z"));
+      expect(
+        outcomeText(
+          await core.write(
+            { command: "replace", file: DOC_ID, find: "shield", content: "ward" },
+            { ...context, turnId: TURN_B },
+          ),
+        ),
+      ).toContain("status: success");
+      expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta ward."]);
+
+      const reconstruction = await journal.readForReconstruction(DOC_ID);
+      expect(reconstruction.updates).toHaveLength(1);
+      expect(blockTexts(docFromSnapshot(reconstruction.checkpoint, []))).toEqual([
+        "Alpha blade.",
+        "Beta shield.",
+      ]);
+      expect(
+        blockTexts(docFromSnapshot(reconstruction.checkpoint, reconstruction.updates)),
+      ).toEqual(["Alpha blade.", "Beta ward."]);
+
+      const undoLater = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
+      expect(undoLater).toContain("status: reconciled");
+      expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta shield."]);
+      expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
+        { wId: 1, status: "active" },
+      ]);
+      expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w2")).toMatchObject([
+        { wId: 2, status: "reversed" },
+      ]);
+
+      expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
+        "status: nothing_to_undo",
+      );
+      const redoLater = outcomeText(await core.write({ command: "redo", file: DOC_ID }, context));
+      expect(redoLater).toContain("status: reconciled");
+      expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta ward."]);
+    });
+
     it("cold redo targets the latest reversed same-turn subset through Drizzle", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.", LIVE_CLIENT_ID);
@@ -401,4 +468,14 @@ function createDoc(markdown: string, clientID: number): Y.Doc {
 
 function blockTexts(doc: Y.Doc): string[] {
   return model.getBlocks(doc).map((block) => model.getText(block));
+}
+
+function docFromSnapshot(
+  checkpoint: Uint8Array | null,
+  updates: readonly { update: Uint8Array }[],
+): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  if (checkpoint) Y.applyUpdate(doc, checkpoint);
+  for (const update of updates) Y.applyUpdate(doc, update.update);
+  return doc;
 }

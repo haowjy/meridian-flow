@@ -64,7 +64,12 @@ export interface UpdateJournal {
 export interface ReversalStore {
   /** Reserve the next durable per-(document, thread) write ordinal. */
   reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
-  /** Reversal reconstruction must see retained update rows instead of checkpoint-hidden live-load rows. */
+  /**
+   * Earliest reconstructable base: the newest checkpoint strictly below the
+   * earliest retained update row, plus the retained updates after it.
+   * Reconstruction replays only update rows that still exist; a compacted prefix
+   * is read from the compacted checkpoint, not the original baseline.
+   */
   readForReconstruction(docId: string): Promise<JournalSnapshot>;
   /** Distinct documents touched by a thread turn. */
   documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
