@@ -60,13 +60,15 @@ the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.
 
 ### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
-Structural model port for what "block" means in Yjs. Carries the 3-tier apply
-implementation: `getBlocks`, `getBlockId` (hash from CRDT item ID), `getText`,
-`applyTextEdit` (Tier 1/2), `insertBlocks` (Tier 3), `deleteBlock` (Tier 3), plus
-the current ProseMirror projection hooks `toProsemirrorBlock` and `applyBlockDiff`.
-v1 is y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
-composition root supplies Meridian's fiction schema. Hosts depend on the
-structural `AgentEditModel` port, not the concrete y-prosemirror model type.
+Structural model port for what "block" means to the editing core. The kernel
+sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
+objects. The seam carries block lookup/identity, text inspection, Tier 1/3
+mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement`, and
+batch projection/serialization (`projectBlocks`, `serializeBlockLines`,
+`serializeBlockBodies`). v1 is y-prosemirror only. `yProsemirrorModel(schema)` is
+explicit; the server composition root supplies Meridian's fiction schema. Hosts
+depend on the structural `AgentEditModel` port, not the concrete
+y-prosemirror model type.
 
 ### Batch paths — preferred for multi-block operations
 
@@ -81,7 +83,6 @@ Every batched write touches all of these (snapshot, render, find). **Use the bat
 
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
-| `projectDocumentBlocks(doc, model)` | ad hoc `getBlocks` + `getDocumentBlockIds` + index maps in residual codec-bound paths | aligned full-document block/hash/codec projection |
 | `getDocumentBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
 | `model.projectBlocks(doc)` | single-block codec projection loops | project the codec block tree once |
 | `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed read/echo lines |
@@ -130,7 +131,9 @@ from the live document and journal.
 @meridian/markup: PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
 ```
 Block hash prefix added by `AgentEditCodec.serializeBlock()` at render time (not stored as
-attribute). Hash derived from Y.XmlElement CRDT item ID (`clientID + clock`).
+attribute). In the built-in adapter the hash is derived from the adapter-internal
+Y.XmlElement CRDT item ID (`clientID + clock`); kernel callers see only the
+neutral `BlockRef`.
 
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
@@ -143,10 +146,11 @@ replacement is delegated to the adapter-owned `applyInlineReplacement` verb.
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
 | 2 | `text` crosses mark boundary or formatting change | Adapter-owned inline replacement + per-block updateYFragment |
-| 3 | `insert` / `delete` | Fragment-level Y.XmlElement insert/delete |
+| 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
-structurally deleting (preserves ProseMirror `doc(block+)` invariant).
+structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
+internally).
 
 ### Undo/redo (`src/undo/`)
 
@@ -173,6 +177,18 @@ transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged.
+
+
+### CRDT-neutral seam, ProseMirror content currency
+
+The resolver→apply kernel is neutral across the CRDT axis: Yjs documents and
+blocks are carried as opaque `DocHandle`/`BlockRef` handles, and resolver/apply
+code asks `AgentEditModel` for identity, lookup, mutation, projection, and
+serialization. That does **not** mean the package is ProseMirror-neutral.
+`codec-types.ts` still aliases `Block = PMNode`, `ParsedContent` still transits
+the kernel, and resolver code still inspects PM block shape (`type.name`,
+`isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
+deferred in [TODO.md](TODO.md).
 
 ## Key invariants
 
