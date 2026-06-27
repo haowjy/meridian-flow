@@ -25,9 +25,10 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 
 type JournalDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
@@ -184,6 +185,21 @@ async function latestBaselineCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
+async function readHeadSchemaVersion(db: JournalDb, documentId: string): Promise<number | null> {
+  const [row] = await db
+    .select({ schemaVersion: documentYjsHeads.schemaVersion })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, asDocumentId(documentId)))
+    .limit(1);
+  return row?.schemaVersion ?? null;
+}
+
+function assertHeadSchemaCurrent(docId: string, storedVersion: number | null): void {
+  if (storedVersion !== null && isStaleSchema(storedVersion, COLLAB_SCHEMA_VERSION)) {
+    throw new StaleDocumentSchemaError(docId, storedVersion, COLLAB_SCHEMA_VERSION);
+  }
+}
+
 async function upsertHead(
   db: JournalDb,
   documentId: string,
@@ -197,6 +213,7 @@ async function upsertHead(
     .insert(documentYjsHeads)
     .values({
       documentId: asDocumentId(documentId),
+      schemaVersion: COLLAB_SCHEMA_VERSION,
       latestUpdateSeq: input.latestUpdateSeq ?? 0,
       latestStateVector: input.latestStateVector ? toBuffer(input.latestStateVector) : null,
       latestCheckpointId: input.latestCheckpointId ?? null,
@@ -204,6 +221,7 @@ async function upsertHead(
     .onConflictDoUpdate({
       target: documentYjsHeads.documentId,
       set: {
+        schemaVersion: COLLAB_SCHEMA_VERSION,
         ...(input.latestUpdateSeq !== undefined ? { latestUpdateSeq: input.latestUpdateSeq } : {}),
         ...(input.latestStateVector !== undefined
           ? {
@@ -618,6 +636,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       docId,
       opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
     ): Promise<JournalSnapshot> {
+      assertHeadSchemaCurrent(docId, await readHeadSchemaVersion(db, docId));
+
       const latest = await latestCheckpoint(db, docId);
       const fromCheckpoint = opts.fromCheckpoint ?? true;
       const conditions = [eq(documentYjsUpdates.documentId, asDocumentId(docId))];
@@ -838,9 +858,10 @@ export function createServerDocumentLifecycle(
 ): DocumentLifecycle {
   return {
     async ensureDocument(docId) {
-      await upsertHead(db, docId);
       const snapshot = await journal.read(docId);
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
+
+      await upsertHead(db, docId);
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
       const emptyDoc = createCollabYDoc({ gc: false });
