@@ -8,7 +8,7 @@ import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import { unwrapBlock } from "../model/block-ref.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, TextRun } from "../ports/model.js";
 import { isLiveXmlElement } from "../resolver/block-hash.js";
 import {
   applyConcurrentUpdates,
@@ -26,12 +26,6 @@ import type {
   ApplyTransactionOrigin,
   ResolvedEdit,
 } from "./types.js";
-
-interface TextRun {
-  start: number;
-  length: number;
-  attrsKey: string;
-}
 
 type PlannedEdit =
   | {
@@ -213,7 +207,7 @@ function preflightTextEdit(
     return blockTypeMismatch(block.nodeName, pmBlock.type.name);
   }
 
-  const sameMarkContext = spanWithinSingleMarkContext(collectTextRuns(block), span);
+  const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
   if (sameMarkContext && isPlainTextReplacement(parsed.parsed, edit.newText)) {
     return {
       ok: true,
@@ -531,36 +525,6 @@ function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode
   return block.type.create(block.attrs, Fragment.from(children), block.marks);
 }
 
-function collectTextRuns(block: Y.XmlElement): TextRun[] {
-  const runs: TextRun[] = [];
-  let flatOffset = 0;
-  const visit = (type: Y.XmlElement | Y.XmlText) => {
-    if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>) {
-        const text = typeof delta.insert === "string" ? delta.insert : "";
-        const length = text.length;
-        if (length > 0) {
-          runs.push({
-            start: flatOffset,
-            length,
-            attrsKey: stableAttrsKey(delta.attributes),
-          });
-          flatOffset += length;
-        }
-      }
-      return;
-    }
-    for (const child of type.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(block);
-  return runs;
-}
-
 function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): boolean {
   if (span.from === span.to) return insertionPointHasContext(runs, span.from);
   const covered = runs.filter((run) => span.from < run.start + run.length && span.to > run.start);
@@ -572,21 +536,6 @@ function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): bool
 function insertionPointHasContext(runs: readonly TextRun[], offset: number): boolean {
   if (runs.length === 0) return offset === 0;
   return runs.some((run) => offset >= run.start && offset <= run.start + run.length);
-}
-
-function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
-  if (!attrs) return "";
-  return JSON.stringify(sortRecord(attrs));
-}
-
-function sortRecord(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortRecord);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, sortRecord(nested)]),
-  );
 }
 
 function blockTypeMismatch(

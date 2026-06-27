@@ -2,7 +2,14 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import type { Block, Span } from "../codec-types.js";
+
+export interface TextRun {
+  start: number;
+  length: number;
+  attrsKey: string;
+}
 
 /**
  * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
@@ -50,6 +57,9 @@ export interface DocumentModel<BlockNode> {
  * y-prosemirror adapter is only one implementation.
  */
 export interface AgentEditModel extends DocumentModel<Y.XmlElement> {
+  /** Neutral inline mark runs for Tier 1-vs-Tier 2 text edit selection. */
+  inlineRuns(block: BlockRef): TextRun[];
+
   /** Project a live Yjs block into the codec's block representation. */
   toProsemirrorBlock(doc: Y.Doc, block: Y.XmlElement): Block;
 
