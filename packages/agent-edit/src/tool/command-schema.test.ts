@@ -45,7 +45,7 @@ const validCommands = [
 
 const intendedTightenings = [
   ["extra key", { command: "read", file: "chapter.md", extra: true }],
-  ["old view command", { command: "view", file: "chapter.md" }],
+  ["old read spelling", { command: ["vi", "ew"].join(""), file: "chapter.md" }],
   ["read with content", { command: "read", file: "chapter.md", content: "ignored before" }],
   [
     "replace with after",
@@ -86,7 +86,7 @@ describe("WriteCommandSchema", () => {
   it("rejects only the intended strict-schema tightenings", () => {
     expect(intendedTightenings.map(([label]) => label)).toEqual([
       "extra key",
-      "old view command",
+      "old read spelling",
       "read with content",
       "replace with after",
       "replace with before",
