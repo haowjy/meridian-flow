@@ -12,6 +12,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
+import type { BlockRef } from "../block-ref.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import { toRef } from "../model/block-ref.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -259,7 +260,7 @@ function humanDeleteBlock(ctx: ScenarioContext, blockIndex: number): void {
 }
 
 function textEdit(
-  element: Y.XmlElement,
+  element: BlockRef,
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {

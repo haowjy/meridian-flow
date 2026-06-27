@@ -1,5 +1,5 @@
-import type * as Y from "yjs";
-
+import type { BlockRef } from "../block-ref.js";
+import type { DocHandle } from "../doc-handle.js";
 import type { DocumentModel } from "../ports/model.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
@@ -7,16 +7,16 @@ export const AROUND_BLOCK_RADIUS = 3;
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
 export interface ScopeContext {
-  doc: Y.Doc;
-  model: DocumentModel<Y.XmlElement>;
+  doc: DocHandle;
+  model: DocumentModel;
 }
 
 export interface BlockScope {
   kind: "document" | "block" | "range" | "section" | "around";
-  blocks: Y.XmlElement[];
+  blocks: BlockRef[];
   startIndex: number;
   endIndex: number;
-  heading?: Y.XmlElement;
+  heading?: BlockRef;
   headingLevel?: number;
 }
 
@@ -72,12 +72,12 @@ export function resolveFragment(ctx: ScopeContext, fragment: string): ScopeResul
   return resolveHashAsBlockOrSection(ctx, fragment);
 }
 
-export function isHeading(block: Y.XmlElement): boolean {
-  return block.nodeName === "heading";
+export function isHeading(model: DocumentModel, block: BlockRef): boolean {
+  return model.getHeadingLevel(block) !== undefined;
 }
 
-export function headingLevel(block: Y.XmlElement): number {
-  return Number(block.getAttribute("level") ?? 1);
+export function headingLevel(model: DocumentModel, block: BlockRef): number {
+  return model.getHeadingLevel(block) ?? 1;
 }
 
 export function slugForHeadingText(text: string): string {
@@ -124,7 +124,7 @@ function resolveHashAsBlockOrSection(ctx: ScopeContext, hash: string): ScopeResu
   const blocks = ctx.model.getBlocks(ctx.doc);
   const index = blocks.indexOf(lookup.block);
   if (index < 0) return notFound(`Block hash "${hash}" was not found`);
-  if (!isHeading(lookup.block)) {
+  if (!isHeading(ctx.model, lookup.block)) {
     return { ok: true, scope: scopeFromIndexes("block", blocks, index, index) };
   }
   return sectionFromHeading(ctx, index);
@@ -185,7 +185,7 @@ function headingSlugEntries(ctx: ScopeContext): Array<{ slug: string; index: num
   const counts = new Map<string, number>();
   const out: Array<{ slug: string; index: number }> = [];
   ctx.model.getBlocks(ctx.doc).forEach((block, index) => {
-    if (!isHeading(block)) return;
+    if (!isHeading(ctx.model, block)) return;
     const base = slugForHeadingText(ctx.model.getText(block));
     const seen = counts.get(base) ?? 0;
     counts.set(base, seen + 1);
@@ -197,10 +197,10 @@ function headingSlugEntries(ctx: ScopeContext): Array<{ slug: string; index: num
 function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResult {
   const blocks = ctx.model.getBlocks(ctx.doc);
   const heading = blocks[headingIndex];
-  const level = headingLevel(heading);
+  const level = headingLevel(ctx.model, heading);
   let endIndex = blocks.length - 1;
   for (let index = headingIndex + 1; index < blocks.length; index += 1) {
-    if (isHeading(blocks[index]) && headingLevel(blocks[index]) <= level) {
+    if (isHeading(ctx.model, blocks[index]) && headingLevel(ctx.model, blocks[index]) <= level) {
       endIndex = index - 1;
       break;
     }
@@ -217,7 +217,7 @@ function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResul
 
 function scopeFromIndexes(
   kind: BlockScope["kind"],
-  allBlocks: readonly Y.XmlElement[],
+  allBlocks: readonly BlockRef[],
   startIndex: number,
   endIndex: number,
 ): BlockScope {

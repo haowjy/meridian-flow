@@ -2,7 +2,9 @@
 import * as Y from "yjs";
 
 import type { AgentEditCodec } from "../codec-adapter.js";
+import type { DocHandle } from "../doc-handle.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
+import { unwrapDoc } from "../model/doc-handle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "./types.js";
 
@@ -38,7 +40,7 @@ const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
 ): BlockSnapshot[] {
@@ -82,12 +84,12 @@ export function diffSnapshots(
  * origin, so callers pass the journal/live-sync origin beside each update.
  */
 export function applyConcurrentUpdates(
-  doc: Y.Doc,
+  doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
-  syncStateVector: Uint8Array = Y.encodeStateVector(doc),
+  syncStateVector: Uint8Array = Y.encodeStateVector(unwrapDoc(doc)),
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
@@ -95,8 +97,8 @@ export function applyConcurrentUpdates(
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
-    Y.applyUpdate(doc, item.update, item.origin);
-    if (!stateVectorAdvanced(syncStateVector, Y.encodeStateVector(doc))) continue;
+    Y.applyUpdate(unwrapDoc(doc), item.update, item.origin);
+    if (!stateVectorAdvanced(syncStateVector, Y.encodeStateVector(unwrapDoc(doc)))) continue;
     const after = snapshotBlocks(doc, model, codec);
     const diff = diffSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
@@ -255,7 +257,11 @@ function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array):
   return false;
 }
 
-function orderedHashes(model: AgentEditModel, doc: Y.Doc, hashes: ReadonlySet<string>): string[] {
+function orderedHashes(
+  model: AgentEditModel,
+  doc: DocHandle,
+  hashes: ReadonlySet<string>,
+): string[] {
   const liveOrder = model.getDocumentBlockIds(doc);
   const live = liveOrder.filter((hash) => hashes.has(hash));
   const deleted = [...hashes].filter((hash) => !liveOrder.includes(hash)).sort();

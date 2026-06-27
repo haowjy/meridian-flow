@@ -1,8 +1,11 @@
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import * as Y from "yjs";
 import type { ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -139,8 +142,8 @@ describe("resolveWrite", () => {
   });
 });
 
-function createDoc(markdown: string): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
+function createDoc(markdown: string) {
+  const doc = createCollabYDoc({ gc: false });
   doc.clientID = 1;
   const parsed = codec.parse(markdown);
   const root = schema.node("doc", null, parsed.blocks);
@@ -172,7 +175,7 @@ function aroundNeedleDoc(): string {
 }
 
 function resolve(
-  doc: Y.Doc,
+  doc: ReturnType<typeof createDoc>,
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(

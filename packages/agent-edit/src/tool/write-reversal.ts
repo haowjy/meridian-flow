@@ -3,6 +3,7 @@ import * as Y from "yjs";
 
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
+import { toDocHandle } from "../model/doc-handle.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type {
@@ -241,7 +242,7 @@ export function createWriteReversal(deps: {
       return { ok: true, status: plan.status };
     }
 
-    const before = snapshotBlocks(input.runtime.doc, model, codec);
+    const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
     const guard =
       input.direction === "undo"
         ? await guardDependentUndo({
@@ -320,7 +321,10 @@ export function createWriteReversal(deps: {
 
     Y.applyUpdate(input.runtime.doc, reconstructed.update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(input.runtime.doc);
-    const ownDiff = diffSnapshots(before, snapshotBlocks(input.runtime.doc, model, codec));
+    const ownDiff = diffSnapshots(
+      before,
+      snapshotBlocks(toDocHandle(input.runtime.doc), model, codec),
+    );
 
     const sync = await mutationCommit.syncAfterLocalMutation({
       docId: input.docId,

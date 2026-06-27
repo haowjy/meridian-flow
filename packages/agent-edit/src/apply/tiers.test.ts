@@ -5,6 +5,7 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import { toRef } from "../model/block-ref.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -406,7 +407,7 @@ function cloneDoc(source: Y.Doc, clientID: number): Y.Doc {
 }
 
 function textEdit(
-  element: Y.XmlElement,
+  element: BlockRef,
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {

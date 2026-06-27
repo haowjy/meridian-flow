@@ -1,18 +1,18 @@
-import type * as Y from "yjs";
-
+import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
+import type { DocHandle } from "../doc-handle.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
 export interface FindContext {
-  doc: Y.Doc;
+  doc: DocHandle;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }
 
 export interface FindMatch {
-  elements: Y.XmlElement[];
+  elements: BlockRef[];
   startIndex: number;
   endIndex: number;
   rangeSource: string;
@@ -33,7 +33,7 @@ export type FindResult =
     };
 
 interface SerializedBlockEntry {
-  block: Y.XmlElement;
+  block: BlockRef;
   index: number;
   body: string;
   start: number;
@@ -74,7 +74,7 @@ export function findTextMatches(
   };
 }
 
-export function serializeBlockBody(ctx: FindContext, block: Y.XmlElement): string {
+export function serializeBlockBody(ctx: FindContext, block: BlockRef): string {
   const pmBlock = ctx.model.toProsemirrorBlock(ctx.doc, block);
   return ctx.codec.serializeBlockBodies([pmBlock])[0] ?? "";
 }

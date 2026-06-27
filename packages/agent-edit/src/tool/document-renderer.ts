@@ -1,8 +1,9 @@
-// Turns Y.Doc blocks into agent-facing text and parses agent input.
+// Turns document blocks into agent-facing text and parses agent input.
 
 import type { ParsedContent } from "@meridian/markup";
-import type * as Y from "yjs";
+import type { BlockRef } from "../block-ref.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
+import type { DocHandle } from "../doc-handle.js";
 import { projectDocumentBlocks } from "../model/block-projection.js";
 import type { AgentEditModel } from "../ports/model.js";
 import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
@@ -14,18 +15,18 @@ export interface DocumentRenderAddress {
 }
 
 export type ViewBlockSelection =
-  | { ok: true; blocks: Y.XmlElement[] }
+  | { ok: true; blocks: BlockRef[] }
   | { ok: false; code: "not_found" | "invalid_write"; message: string };
 
 export interface DocumentRenderer {
   selectViewBlocks(
-    doc: Y.Doc,
+    doc: DocHandle,
     command: ViewCommand,
     address: DocumentRenderAddress,
   ): ViewBlockSelection;
-  renderBlocks(doc: Y.Doc, blocks: readonly Y.XmlElement[]): string;
-  renderBlockLines(doc: Y.Doc, blocks?: readonly Y.XmlElement[]): string[];
-  renderOutline(doc: Y.Doc, blocks: readonly Y.XmlElement[], filePath: string): string;
+  renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string;
+  renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
+  renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string;
   parseForCommand(content: string): ParseForCommandResult;
 }
 
@@ -48,7 +49,7 @@ export function createDocumentRenderer(deps: {
   };
 
   function selectViewBlocks(
-    doc: Y.Doc,
+    doc: DocHandle,
     command: ViewCommand,
     address: DocumentRenderAddress,
   ): ViewBlockSelection {
@@ -75,11 +76,11 @@ export function createDocumentRenderer(deps: {
     return { ok: true, blocks: model.getBlocks(doc) };
   }
 
-  function renderBlocks(doc: Y.Doc, blocks: readonly Y.XmlElement[]): string {
+  function renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string {
     return renderBlockLines(doc, blocks).join("\n");
   }
 
-  function renderBlockLines(doc: Y.Doc, blocks?: readonly Y.XmlElement[]): string[] {
+  function renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[] {
     const projection = projectDocumentBlocks(doc, model);
     if (projection.blocks.length === 0) return [];
     if (!blocks) return codec.serializeBlocks(projection.pmBlocks, projection.hashes);
@@ -89,10 +90,10 @@ export function createDocumentRenderer(deps: {
     return codec.serializeBlocks(pmBlocks, hashes);
   }
 
-  function renderOutline(doc: Y.Doc, blocks: readonly Y.XmlElement[], filePath: string): string {
+  function renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string {
     if (blocks.length === 0) return "";
     const projection = projectDocumentBlocks(doc, model);
-    const headingBlocks = projection.select(blocks).filter(({ block }) => isHeading(block));
+    const headingBlocks = projection.select(blocks).filter(({ block }) => isHeading(model, block));
     if (headingBlocks.length === 0) return renderBlocks(doc, blocks);
     const lines: string[] = [];
     const serialized = codec.serializeBlocks(

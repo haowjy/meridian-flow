@@ -10,6 +10,7 @@ import {
 } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
+import { toDocHandle } from "../model/doc-handle.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -167,7 +168,8 @@ export function createMutationCommit(deps: {
     input: MutationEchoInput,
     concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
   ): SyncedMutationSummary {
-    const after = input.afterSnapshot ?? snapshotBlocks(input.runtime.doc, model, codec);
+    const after =
+      input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
     const echo = computeEcho({
       before: input.before,
       after,
@@ -282,7 +284,7 @@ export function createMutationCommit(deps: {
   ): ConcurrentDetectionResult {
     if (!update || !hasYjsUpdate(update)) return { touchedHashes: new Set() };
     const result = applyConcurrentUpdates(
-      detectionDoc,
+      toDocHandle(detectionDoc),
       model,
       codec,
       [{ update, origin: { type: "human" } }],
