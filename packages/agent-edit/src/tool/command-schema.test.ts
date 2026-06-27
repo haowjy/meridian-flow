@@ -17,6 +17,7 @@ const validCommands = [
   { command: "read", file: "chapter.md", in: 2 },
   { command: "read", file: "chapter.md", in: [1, "c3d4"] },
   { command: "insert", file: "chapter.md", content: "New paragraph.", after: "a1b2" },
+  { command: "insert", file: "chapter.md", content: "New paragraph.", before: "c3d4" },
   {
     command: "insert",
     file: "chapter.md",
@@ -39,12 +40,15 @@ const validCommands = [
   { command: "undo", file: "chapter.md" },
   { command: "undo", file: "chapter.md", to: "w3", from: "w1", last: 2, all: true },
   { command: "redo", file: "chapter.md", to: "w3" },
+  { command: "redo", file: "chapter.md", from: "w1" },
   { command: "redo", file: "chapter.md", last: 1 },
+  { command: "redo", file: "chapter.md", all: true },
   { command: "read", file: "chapter.md", documentId: "doc-1", tool_use_id: "call-1" },
 ] satisfies unknown[];
 
 const intendedTightenings = [
   ["extra key", { command: "read", file: "chapter.md", extra: true }],
+  ["insert extra key", { command: "insert", file: "chapter.md", content: "Beta", extra: true }],
   ["old read spelling", { command: ["vi", "ew"].join(""), file: "chapter.md" }],
   ["read with content", { command: "read", file: "chapter.md", content: "ignored before" }],
   [
@@ -86,6 +90,7 @@ describe("WriteCommandSchema", () => {
   it("rejects only the intended strict-schema tightenings", () => {
     expect(intendedTightenings.map(([label]) => label)).toEqual([
       "extra key",
+      "insert extra key",
       "old read spelling",
       "read with content",
       "replace with after",

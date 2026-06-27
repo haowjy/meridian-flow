@@ -34,8 +34,12 @@ function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {
   const transformed = renameSchemaProperty(schema, "file", "path") as Record<string, unknown>;
   stripSchemaProperty(transformed, "documentId");
   stripSchemaProperty(transformed, "tool_use_id");
+  // All gateway adapters forward this object as the provider JSON Schema:
+  // OpenAI Responses and OpenAI-compatible chat accept arbitrary schema records,
+  // while Anthropic's SDK type requires an object root and allows composition
+  // keywords. Keep the discriminated oneOf branches strict; do not seal the
+  // union wrapper itself, because that makes every branch unsatisfiable.
   transformed.type = "object";
-  transformed.additionalProperties = false;
   return transformed;
 }
 

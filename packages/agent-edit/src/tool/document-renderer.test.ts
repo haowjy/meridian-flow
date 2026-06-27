@@ -39,10 +39,10 @@ describe("document renderer", () => {
     const nearStartHash = hashAt(doc, 1);
     const nearEndHash = hashAt(doc, 7);
 
-    const middle = selectedViewText(renderer, doc, middleHash);
-    const middleWithHashPrefix = selectedViewText(renderer, doc, `#${middleHash}`);
-    const nearStart = selectedViewText(renderer, doc, nearStartHash);
-    const nearEnd = selectedViewText(renderer, doc, nearEndHash);
+    const middle = selectedReadText(renderer, doc, middleHash);
+    const middleWithHashPrefix = selectedReadText(renderer, doc, `#${middleHash}`);
+    const nearStart = selectedReadText(renderer, doc, nearStartHash);
+    const nearEnd = selectedReadText(renderer, doc, nearEndHash);
 
     expect(renderedBlockBodies(middle)).toEqual([
       "Block 2",
@@ -71,7 +71,7 @@ describe("document renderer", () => {
   });
 });
 
-function selectedViewText(
+function selectedReadText(
   renderer: ReturnType<typeof createDocumentRenderer>,
   doc: ReturnType<typeof createDoc>,
   around: string,
