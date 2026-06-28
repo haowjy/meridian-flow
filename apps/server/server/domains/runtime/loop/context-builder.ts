@@ -245,10 +245,21 @@ export function undoNotificationSystemMessage(
 export function formatUndoNotificationMessage(
   notifications: readonly PendingUndoNotification[],
 ): string {
-  const lines = notifications.map((notification) => {
-    const filename = filenameFromUri(notification.uri);
-    return `- ${filename} (${notification.uri || notification.writeHandle})`;
-  });
+  // Group by uri (the document identity), not filename — distinct docs can share
+  // a basename, and merging their handles would mislabel which file changed.
+  const grouped = new Map<string, { label: string; handles: string[] }>();
+  for (const notification of notifications) {
+    const key = notification.uri || notification.writeHandle;
+    const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
+    const entry = grouped.get(key) ?? { label, handles: [] };
+    entry.handles.push(notification.writeHandle);
+    grouped.set(key, entry);
+  }
+
+  const lines = Array.from(
+    grouped.values(),
+    ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
+  );
   return [
     "The writer reversed the following edits before this message:",
     ...lines,
