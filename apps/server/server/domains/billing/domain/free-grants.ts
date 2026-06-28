@@ -45,7 +45,7 @@ export async function ensureFreeTier(
     metadata: {
       grantKind: "free-tier",
       periodStart: start.toISOString(),
-      reason: "Free monthly usage",
+      reason: "Monthly usage",
     },
   });
 }
