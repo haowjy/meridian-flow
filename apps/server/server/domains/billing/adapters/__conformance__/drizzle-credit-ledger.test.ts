@@ -163,7 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(lots).toEqual([{ sourceType: "purchase" }]);
       expect(await ledger.getBalance({ userId })).toBe("500");
       await expect(ledger.listTransactions({ userId })).resolves.toEqual([
-        expect.objectContaining({ reason: "Extra usage" }),
+        expect.objectContaining({ displayReason: "Extra usage" }),
       ]);
     });
 
@@ -193,7 +193,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       await expect(ledger.listTransactions({ userId })).resolves.toEqual([
-        expect.objectContaining({ reason: "Monthly usage" }),
+        expect.objectContaining({ displayReason: "Monthly usage" }),
       ]);
 
       await expect(
@@ -240,7 +240,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(sql`${creditTransactions.transactionType} = 'grant'`);
       expect(transactions).toEqual([{ id: expect.any(String), amount: 200000 }]);
       await expect(ledger.listTransactions({ userId })).resolves.toEqual([
-        expect.objectContaining({ reason: "Monthly usage" }),
+        expect.objectContaining({ displayReason: "Monthly usage" }),
       ]);
     });
   });
