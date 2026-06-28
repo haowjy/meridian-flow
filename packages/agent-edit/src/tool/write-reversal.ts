@@ -448,7 +448,7 @@ export function createWriteReversal(deps: {
   }
 
   function invalidateRuntimeThread(docId: string, threadId: string): void {
-    runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
+    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
   }
 }
 
