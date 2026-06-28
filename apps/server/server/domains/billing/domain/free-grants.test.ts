@@ -17,7 +17,7 @@ describe("ensureFreeTier", () => {
     expect(transactions).toHaveLength(1);
     expect(transactions[0]).toMatchObject({
       sourceType: "grant",
-      reason: `free_tier_${userId}_2026-06-01`,
+      reason: "Free monthly usage",
       amountMillicredits: FREE_TIER.grantMillicredits,
     });
   });

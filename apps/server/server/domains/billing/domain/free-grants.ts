@@ -29,19 +29,11 @@ export async function ensureFreeTier(
 ): Promise<void> {
   if (await ledger.hasUnexpiredLot({ userId, source: "subscription" })) return;
 
+  if (await ledger.hasUnexpiredLot({ userId, source: "free" })) return;
+
   const now = config.clock?.now() ?? new Date();
   const start = periodStart(now);
   const idempotencyKey = `free_tier_${userId}_${periodKey(start)}`;
-  const transactions = await ledger.listTransactions({ userId, limit: 100 });
-  if (
-    transactions.some(
-      (transaction) =>
-        transaction.reason === idempotencyKey ||
-        transaction.metadata.stripeIdempotencyId === idempotencyKey,
-    )
-  ) {
-    return;
-  }
 
   await ledger.grant({
     userId,
@@ -50,6 +42,10 @@ export async function ensureFreeTier(
     reason: idempotencyKey,
     expiresAt: periodEnd(now),
     stripeIdempotencyId: idempotencyKey,
-    metadata: { grantKind: "free-tier", periodStart: start.toISOString() },
+    metadata: {
+      grantKind: "free-tier",
+      periodStart: start.toISOString(),
+      reason: "Free monthly usage",
+    },
   });
 }

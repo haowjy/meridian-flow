@@ -162,8 +162,8 @@ export function apiBillingTransactionsPath(): string {
   return `${API_BILLING_PATH}/transactions`;
 }
 
-export function apiBillingPacksPath(): string {
-  return `${API_BILLING_PATH}/packs`;
+export function apiBillingProductsPath(): string {
+  return `${API_BILLING_PATH}/products`;
 }
 
 export function apiBillingCheckoutSessionsPath(): string {

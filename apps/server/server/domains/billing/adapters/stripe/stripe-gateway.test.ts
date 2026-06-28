@@ -224,4 +224,43 @@ describe("StripeBillingGateway", () => {
       }),
     );
   });
+  it("creates extra-usage checkout as one-time payment without subscription data", async () => {
+    stripeMock.checkoutSessionsCreate.mockResolvedValue({
+      id: "cs_extra",
+      url: "https://stripe.test/extra",
+    });
+    const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
+
+    await expect(
+      gateway.createCheckoutSession({
+        customerId: "cus_123",
+        userId: "user_1",
+        entry: {
+          kind: "extra-usage",
+          grantMillicredits: "1000000",
+          catalogId: "extra_usage",
+        },
+        stripePriceId: null,
+        successUrl: "https://app.test/success",
+        cancelUrl: "https://app.test/cancel",
+      }),
+    ).resolves.toEqual({ id: "cs_extra", url: "https://stripe.test/extra" });
+
+    expect(stripeMock.checkoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: { name: "Extra usage" },
+              unit_amount: 1000,
+            },
+            quantity: 1,
+          },
+        ],
+        subscription_data: undefined,
+      }),
+    );
+  });
 });

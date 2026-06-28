@@ -89,22 +89,28 @@ describe("billing-route", () => {
     });
   });
 
-  it("uses free grants as included usage when no subscription exists and can exceed 100%", async () => {
-    const ledger = {
-      ...createInMemoryCreditLedger(),
-      async getBalanceBreakdown() {
-        return {
-          lots: [
-            {
-              source: "grant" as const,
-              balanceMillicredits: "-50000",
-              originalMillicredits: "200000",
-              expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-            },
-          ],
-        };
-      },
-    };
+  it("returns no included usage for purchased-only balance", async () => {
+    const ledger = createInMemoryCreditLedger();
+    await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
+
+    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
+      purchasedBalanceUsd: "5",
+      includedUsagePercent: null,
+      usageMode: "none",
+      canStartTurn: true,
+    });
+  });
+
+  it("uses only free-tier grants as free included usage and can exceed 100% with debt", async () => {
+    const ledger = createInMemoryCreditLedger();
+    await ledger.grant({
+      userId: "user-1",
+      source: "free",
+      amountMillicredits: "200000",
+      reason: "free_tier_user-1_2026-06-01",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    await debit(ledger, "250000");
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
       includedUsagePercent: 125,
@@ -113,20 +119,48 @@ describe("billing-route", () => {
     });
   });
 
+  it("does not classify manual grants as free usage", async () => {
+    const ledger = createInMemoryCreditLedger();
+    await ledger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "200000",
+      reason: "support_adjustment",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+
+    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+      includedUsagePercent: null,
+      usageMode: "none",
+      canStartTurn: true,
+    });
+  });
+
   it("ensures free tier on balance and transaction reads and maps transactions to USD", async () => {
     const ledger = createInMemoryCreditLedger();
-    const ensure = vi.fn(async () => {});
+    const ensure = vi.fn(async (userId: string) => {
+      await ledger.grant({
+        userId,
+        source: "free",
+        amountMillicredits: "200000",
+        reason: "free_tier_user-1_2026-06-01",
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        metadata: { reason: "Free monthly usage" },
+      });
+    });
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
     await debit(ledger, "12345");
 
     const routeDeps = deps({ ledger, freeTier: { ensure } });
     const txs = await billingTransactions(routeDeps, { userId: "user-1" });
 
-    expect(ensure).toHaveBeenCalledWith("user-1");
-    expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 2 });
+    expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 3 });
     expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
-    await billingBalance(routeDeps, { userId: "user-1" });
-    expect(ensure).toHaveBeenCalledTimes(2);
+    expect(txs.transactions.map((tx) => tx.reason)).toContain("Free monthly usage");
+    await expect(billingBalance(routeDeps, { userId: "user-1" })).resolves.toMatchObject({
+      usageMode: "free",
+      includedUsagePercent: 0,
+    });
   });
 
   it("returns paid products only and reports Stripe configuration", () => {
@@ -194,7 +228,7 @@ describe("billing-route", () => {
     );
   });
 
-  it("rejects checkout without Stripe and for the free tier", async () => {
+  it("rejects checkout without Stripe and unknown entries", async () => {
     await expect(
       createBillingCheckoutSession(deps({ stripeGateway: null }), {
         userId: "user-1",
@@ -206,7 +240,27 @@ describe("billing-route", () => {
         userId: "user-1",
         body: { entryId: "plan_free", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
-    ).rejects.toThrow("Free tier");
+    ).rejects.toThrow("Unknown billing entry");
+  });
+
+  it("rejects invalid extra-usage amountUsd at the route core", async () => {
+    await expect(
+      createBillingCheckoutSession(deps(), {
+        userId: "user-1",
+        body: { entryId: "extra_usage", successUrl: "https://ok", cancelUrl: "https://ok" },
+      }),
+    ).rejects.toThrow("amountUsd is required");
+    await expect(
+      createBillingCheckoutSession(deps(), {
+        userId: "user-1",
+        body: {
+          entryId: "extra_usage",
+          amountUsd: "7.00",
+          successUrl: "https://ok",
+          cancelUrl: "https://ok",
+        },
+      }),
+    ).rejects.toThrow("amountUsd must be in 5.00 increments");
   });
 
   it("handles webhook grants idempotently through the ledger", async () => {

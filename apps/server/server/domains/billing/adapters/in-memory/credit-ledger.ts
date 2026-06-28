@@ -47,13 +47,22 @@ function unexpired(lot: Lot, now = new Date()): boolean {
   return lot.expiresAt === null || lot.expiresAt > now || lot.source === "debt";
 }
 
+function displayTransactionReason(tx: Tx): string | null {
+  const metadataReason = tx.metadata.reason;
+  if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
+  if (tx.sourceType === "grant" && tx.reason?.startsWith("free_tier_")) {
+    return "Free monthly usage";
+  }
+  return tx.reason;
+}
+
 function row(tx: Tx): CreditTransactionRow {
   return {
     id: tx.id,
     transactionType: tx.transactionType,
     amountMillicredits: tx.amountMillicredits.toString(),
     sourceType: tx.sourceType,
-    reason: tx.reason,
+    reason: displayTransactionReason(tx),
     usageEventId: tx.usageEventId,
     createdAt: tx.createdAt.toISOString(),
     metadata: tx.metadata,
@@ -207,6 +216,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
             balanceMillicredits: lot.balanceMillicredits.toString(),
             originalMillicredits: lot.originalMillicredits.toString(),
             expiresAt: lot.expiresAt?.toISOString() ?? null,
+            grantReason: lot.reason,
           })),
       };
     },
@@ -236,6 +246,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
       const now = new Date();
       return lots.some((lot) => {
         if (lot.userId !== input.userId || lot.source !== source) return false;
+        if (input.source === "free" && !lot.reason?.startsWith("free_tier_")) return false;
         if (source === "subscription") return lot.expiresAt !== null && lot.expiresAt > now;
         return lot.expiresAt === null || lot.expiresAt > now;
       });

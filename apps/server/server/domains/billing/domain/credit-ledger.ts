@@ -35,6 +35,7 @@ export interface CreditLotView {
   balanceMillicredits: string;
   originalMillicredits: string;
   expiresAt: string | null;
+  grantReason: string | null;
 }
 
 export interface CreditTransactionRow {

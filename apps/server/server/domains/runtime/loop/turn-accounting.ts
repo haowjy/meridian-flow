@@ -59,11 +59,13 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
           userId: thread.userId,
         }),
       );
+      // Mid-stream calls keep go-negative grace: a turn that spent its last
+      // positive balance may finish, but further model calls stop once debt exists.
       // DEFERRED(atomic-reserve): pre-call check suffices under serial spawns (design §7.2); reservation/hold semantics land with parallel spawns.
       if (balance < 0n) {
         return meridianErrorFromSystem(
           "credits_exhausted",
-          "Project credits are exhausted; add credits before starting another model call",
+          "Your usage balance is exhausted; add balance before starting another model call",
         );
       }
 
