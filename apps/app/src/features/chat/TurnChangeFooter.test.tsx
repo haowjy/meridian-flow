@@ -68,6 +68,34 @@ describe("TurnChangeFooter", () => {
     expect(container.textContent).not.toContain("missing.mdx");
   });
 
+  it("ignores non-mutating write commands (read, undo, redo) but counts mutations", () => {
+    renderFooter(
+      turnWithBlocks([
+        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
+        toolResultBlock(2, "call-1"),
+        toolUseBlock(3, "write", "/chapter-2.mdx", "call-2", "undo"),
+        toolResultBlock(4, "call-2"),
+        toolUseBlock(5, "write", "/chapter-3.mdx", "call-3", "replace"),
+        toolResultBlock(6, "call-3"),
+      ]),
+    );
+
+    // Only the `replace` is an edit; the `read` and `undo` must not be counted
+    // (otherwise the summary would read "3 files changed").
+    expect(button("📝 1 file changed")).toBeDefined();
+  });
+
+  it("renders no footer for a turn that only read documents", () => {
+    renderFooter(
+      turnWithBlocks([
+        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
+        toolResultBlock(2, "call-1"),
+      ]),
+    );
+
+    expect(container.textContent).toBe("");
+  });
+
   it("does not render when every write/edit tool result failed", () => {
     renderFooter(
       turnWithBlocks([
@@ -338,6 +366,7 @@ function toolUseBlock(
   toolName: string,
   path: string,
   toolCallId = `call-${sequence}`,
+  command?: string,
 ): Block {
   return {
     id: `block-${sequence}`,
@@ -345,7 +374,11 @@ function toolUseBlock(
     responseId: null,
     blockType: "tool_use",
     sequence,
-    content: { toolCallId, toolName, input: { path } },
+    content: {
+      toolCallId,
+      toolName,
+      input: command === undefined ? { path } : { path, command },
+    },
     status: "complete",
     createdAt: "2026-01-01T00:00:00.000Z",
   };
