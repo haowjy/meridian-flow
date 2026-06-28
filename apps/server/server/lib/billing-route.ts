@@ -21,13 +21,10 @@ import type {
   CreditLotView,
   CreditTransactionRow,
 } from "../domains/billing/domain/credit-ledger.js";
+import { BillingRequestError } from "../domains/billing/domain/errors.js";
+import { millicreditsToUsd, usdToMillicredits } from "../domains/billing/domain/money.js";
 
-export class BillingRequestError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BillingRequestError";
-  }
-}
+export { BillingRequestError } from "../domains/billing/domain/errors.js";
 
 export interface BillingRouteDeps {
   ledger: CreditLedger;
@@ -57,28 +54,6 @@ export function createBillingRouteDeps(
 
 function isUnexpired(lot: CreditLotView, now = new Date()): boolean {
   return lot.expiresAt === null || new Date(lot.expiresAt).getTime() > now.getTime();
-}
-
-function millicreditsToUsd(value: string | bigint): string {
-  const raw = typeof value === "bigint" ? value : BigInt(value);
-  const sign = raw < 0n ? "-" : "";
-  const absolute = raw < 0n ? -raw : raw;
-  const whole = absolute / 100_000n;
-  const fraction = absolute % 100_000n;
-  if (fraction === 0n) return `${sign}${whole}`;
-  return `${sign}${whole}.${fraction.toString().padStart(5, "0").replace(/0+$/, "")}`;
-}
-
-function parseUsdToCents(value: string): bigint {
-  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) {
-    throw new BillingRequestError(
-      "amountUsd must be a positive USD decimal with at most 2 decimal places",
-    );
-  }
-  const [whole, fraction = ""] = value.split(".");
-  const amount = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
-  if (amount <= 0n) throw new BillingRequestError("amountUsd must be positive");
-  return amount;
 }
 
 function isFreeTierLot(lot: CreditLotView): boolean {
@@ -184,14 +159,14 @@ function stripePriceId(env: NodeJS.ProcessEnv, entry: BillingPlanCatalogEntry): 
 function extraUsageGrantMillicredits(body: CreateCheckoutSessionRequest): string {
   if (!body.amountUsd)
     throw new BillingRequestError("amountUsd is required for extra usage checkout");
-  const amountCents = parseUsdToCents(body.amountUsd);
-  const minCents = parseUsdToCents(EXTRA_USAGE.minUsd);
-  const maxCents = parseUsdToCents(EXTRA_USAGE.maxUsd);
-  if (amountCents < minCents)
+  const amountMillicredits = usdToMillicredits(body.amountUsd);
+  const minMillicredits = usdToMillicredits(EXTRA_USAGE.minUsd);
+  const maxMillicredits = usdToMillicredits(EXTRA_USAGE.maxUsd);
+  if (amountMillicredits < minMillicredits)
     throw new BillingRequestError(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
-  if (amountCents > maxCents)
+  if (amountMillicredits > maxMillicredits)
     throw new BillingRequestError(`amountUsd must be at most ${EXTRA_USAGE.maxUsd}`);
-  return ((amountCents * BigInt(EXTRA_USAGE.millicreditsPerUsd)) / 100n).toString();
+  return amountMillicredits.toString();
 }
 
 function checkoutEntry(entry: BillingCatalogServerEntry, body: CreateCheckoutSessionRequest) {
