@@ -233,7 +233,7 @@ deferred in [TODO.md](TODO.md).
   reposition blocks; that reintroduces the in-place rebind.
   - `MeridianFigure`'s `draggable` was removed (here + `packages/prosemirror-schema`)
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
-    to be built as delete+insert — see `apps/app/src/core/editor/.context/TODO.md`.
+    to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
 ### Destructive scoped replace/delete wrong-target residual
 

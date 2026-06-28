@@ -1,6 +1,8 @@
 # Editor — TODO
 
-## Figure drag-to-place (reimplement as delete + insert)
+## Figure drag-to-place (reimplement as delete + insert) — [#111]
+
+[#111]: https://github.com/haowjy/meridian-flow/issues/111
 
 **Want:** let writers drag a figure/image to reposition it (real need — placing
 images where they belong in the prose).
