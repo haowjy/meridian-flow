@@ -171,6 +171,22 @@ describe("billing-route", () => {
       "plan_premium",
       "extra_usage",
     ]);
+    expect(configured.entries.find((entry) => entry.id === "plan_standard")).toMatchObject({
+      priceUsd: "10.00",
+      interval: "month",
+    });
+    expect(configured.entries.find((entry) => entry.id === "extra_usage")).toEqual({
+      id: "extra_usage",
+      kind: "extra-usage",
+      name: "Extra usage",
+      description: "Add standalone pay-as-you-go balance.",
+      amountOptions: {
+        minUsd: "5.00",
+        maxUsd: "500.00",
+        defaultUsd: "10.00",
+        presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
+      },
+    });
     expect(billingProducts(deps({ stripeGateway: null })).stripeConfigured).toBe(false);
   });
 
@@ -209,20 +225,38 @@ describe("billing-route", () => {
     ).resolves.toEqual({ kind: "portal", url: "https://stripe.test/portal" });
   });
 
-  it("creates extra-usage checkout from amountUsd increments", async () => {
+  it("creates extra-usage checkout from arbitrary in-range amountUsd", async () => {
     const gateway = createMockStripeBillingGateway();
-    await createBillingCheckoutSession(deps({ stripeGateway: gateway }), {
+    const routeDeps = deps({ stripeGateway: gateway });
+
+    await createBillingCheckoutSession(routeDeps, {
       userId: "user-1",
       body: {
         entryId: "extra_usage",
-        amountUsd: "10.00",
+        amountUsd: "23.00",
         successUrl: "https://app.test/success",
         cancelUrl: "https://app.test/billing",
       },
     });
-    expect(gateway.createCheckoutSession).toHaveBeenCalledWith(
+    expect(gateway.createCheckoutSession).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        entry: expect.objectContaining({ kind: "extra-usage", grantMillicredits: "1000000" }),
+        entry: expect.objectContaining({ kind: "extra-usage", grantMillicredits: "2300000" }),
+        stripePriceId: null,
+      }),
+    );
+
+    await createBillingCheckoutSession(routeDeps, {
+      userId: "user-1",
+      body: {
+        entryId: "extra_usage",
+        amountUsd: "7.50",
+        successUrl: "https://app.test/success",
+        cancelUrl: "https://app.test/billing",
+      },
+    });
+    expect(gateway.createCheckoutSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({ kind: "extra-usage", grantMillicredits: "750000" }),
         stripePriceId: null,
       }),
     );
@@ -250,17 +284,27 @@ describe("billing-route", () => {
         body: { entryId: "extra_usage", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
     ).rejects.toThrow("amountUsd is required");
-    await expect(
-      createBillingCheckoutSession(deps(), {
-        userId: "user-1",
-        body: {
-          entryId: "extra_usage",
-          amountUsd: "7.00",
-          successUrl: "https://ok",
-          cancelUrl: "https://ok",
-        },
-      }),
-    ).rejects.toThrow("amountUsd must be in 5.00 increments");
+
+    const invalidAmounts = [
+      ["4.99", "amountUsd must be at least 5.00"],
+      ["0", "amountUsd must be positive"],
+      ["abc", "amountUsd must be a positive USD decimal with at most 2 decimal places"],
+      ["600.00", "amountUsd must be at most 500.00"],
+    ] as const;
+
+    for (const [amountUsd, message] of invalidAmounts) {
+      await expect(
+        createBillingCheckoutSession(deps(), {
+          userId: "user-1",
+          body: {
+            entryId: "extra_usage",
+            amountUsd,
+            successUrl: "https://ok",
+            cancelUrl: "https://ok",
+          },
+        }),
+      ).rejects.toThrow(message);
+    }
   });
 
   it("handles webhook grants idempotently through the ledger", async () => {

@@ -131,7 +131,9 @@
   custom payment-provider/subscription machinery and the `user_subscriptions`
   table; added `users.stripe_customer_id`. Model calls now meter at provider cost
   ×1.15. Checkout is unavailable in dev until Stripe test keys are set; free tier
-  and consumption work regardless.
+  and consumption work regardless. Extra usage is a free-form top-up — pick any
+  amount from $5 to $500 (quick-pick chips + custom input, default $10), not fixed
+  $5 increments.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2

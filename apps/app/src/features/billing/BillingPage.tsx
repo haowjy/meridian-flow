@@ -7,6 +7,10 @@
  * mutation returns a discriminated `{ kind: "checkout" | "portal", url }` and
  * the hook redirects. When `stripeConfigured` is false the action surface
  * shows a quiet "checkout unavailable" note instead of dead buttons.
+ *
+ * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
+ * usage has `amountOptions` instead — the user picks an amount via
+ * `ExtraUsagePicker` and that value becomes `amountUsd` in the request.
  */
 import { Trans } from "@lingui/react/macro";
 import type {
@@ -22,6 +26,7 @@ import {
   useCreateCheckoutSession,
 } from "@/client/query/useBilling";
 import { Button } from "@/components/ui/button";
+import { ExtraUsagePicker } from "./ExtraUsagePicker";
 import { formatUsd } from "./format";
 import { UsageCard } from "./UsageCard";
 
@@ -30,18 +35,12 @@ function returnUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
 }
 
-function checkoutSessionRequest(entry: BillingCatalogEntry): CreateCheckoutSessionRequest {
-  const request: CreateCheckoutSessionRequest = {
+function baseCheckoutRequest(entry: BillingCatalogEntry): CreateCheckoutSessionRequest {
+  return {
     entryId: entry.id,
     successUrl: returnUrl("/billing?checkout=success"),
     cancelUrl: returnUrl("/billing?checkout=cancelled"),
   };
-
-  if (entry.kind === "extra-usage") {
-    return { ...request, amountUsd: entry.priceUsd };
-  }
-
-  return request;
 }
 
 export function BillingPage() {
@@ -50,6 +49,7 @@ export function BillingPage() {
   const checkout = useCreateCheckoutSession();
   const stripeConfigured = products.data?.stripeConfigured ?? false;
   const entries = products.data?.entries ?? [];
+  const actionsDisabled = !stripeConfigured || checkout.isPending;
 
   return (
     <main className="app-scroll bg-background text-foreground">
@@ -95,8 +95,8 @@ export function BillingPage() {
               <CatalogCard
                 key={entry.id}
                 entry={entry}
-                disabled={!stripeConfigured || checkout.isPending}
-                onPurchase={() => checkout.mutate(checkoutSessionRequest(entry))}
+                disabled={actionsDisabled}
+                onCheckout={(request) => checkout.mutate(request)}
               />
             ))}
             {products.data && entries.length === 0 ? (
@@ -135,16 +135,12 @@ export function BillingPage() {
 function CatalogCard({
   entry,
   disabled,
-  onPurchase,
+  onCheckout,
 }: {
   entry: BillingCatalogEntry;
   disabled: boolean;
-  onPurchase: () => void;
+  onCheckout: (request: CreateCheckoutSessionRequest) => void;
 }) {
-  const priceLine = entry.interval
-    ? `${formatUsd(entry.priceUsd)} / ${entry.interval}`
-    : formatUsd(entry.priceUsd);
-
   return (
     <article className="surface-card flex flex-col gap-4 p-4">
       <div>
@@ -152,11 +148,48 @@ function CatalogCard({
         <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
       </div>
       <div className="mt-auto">
-        <p className="text-2xl font-semibold tracking-tight">{priceLine}</p>
-        <Button type="button" className="mt-3 w-full" disabled={disabled} onClick={onPurchase}>
-          {entry.kind === "plan" ? <Trans>Subscribe</Trans> : <Trans>Buy extra usage</Trans>}
-        </Button>
+        {entry.kind === "plan" ? (
+          <PlanAction entry={entry} disabled={disabled} onCheckout={onCheckout} />
+        ) : entry.amountOptions ? (
+          <ExtraUsagePicker
+            amountOptions={entry.amountOptions}
+            disabled={disabled}
+            onPurchase={(amountUsd) => onCheckout({ ...baseCheckoutRequest(entry), amountUsd })}
+          />
+        ) : null}
       </div>
     </article>
+  );
+}
+
+function PlanAction({
+  entry,
+  disabled,
+  onCheckout,
+}: {
+  entry: BillingCatalogEntry;
+  disabled: boolean;
+  onCheckout: (request: CreateCheckoutSessionRequest) => void;
+}) {
+  // Plans always carry `priceUsd` in the products contract; the optional
+  // field exists so extra-usage can omit it. Render nothing if the server
+  // ever drops it rather than printing "$NaN".
+  if (!entry.priceUsd) return null;
+  const priceLine = entry.interval
+    ? `${formatUsd(entry.priceUsd)} / ${entry.interval}`
+    : formatUsd(entry.priceUsd);
+
+  return (
+    <>
+      <p className="text-2xl font-semibold tracking-tight">{priceLine}</p>
+      <Button
+        type="button"
+        className="mt-3 w-full"
+        disabled={disabled}
+        onClick={() => onCheckout(baseCheckoutRequest(entry))}
+      >
+        <Trans>Subscribe</Trans>
+      </Button>
+    </>
   );
 }

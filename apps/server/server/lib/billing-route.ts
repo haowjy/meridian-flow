@@ -69,14 +69,14 @@ function millicreditsToUsd(value: string | bigint): string {
   return `${sign}${whole}.${fraction.toString().padStart(5, "0").replace(/0+$/, "")}`;
 }
 
-function parseUsdToMillicredits(value: string): bigint {
-  if (!/^\d+(?:\.\d{1,5})?$/.test(value)) {
+function parseUsdToCents(value: string): bigint {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) {
     throw new BillingRequestError(
-      "amountUsd must be a positive USD decimal with at most 5 decimal places",
+      "amountUsd must be a positive USD decimal with at most 2 decimal places",
     );
   }
   const [whole, fraction = ""] = value.split(".");
-  const amount = BigInt(whole) * 100_000n + BigInt(fraction.padEnd(5, "0"));
+  const amount = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
   if (amount <= 0n) throw new BillingRequestError("amountUsd must be positive");
   return amount;
 }
@@ -184,15 +184,14 @@ function stripePriceId(env: NodeJS.ProcessEnv, entry: BillingPlanCatalogEntry): 
 function extraUsageGrantMillicredits(body: CreateCheckoutSessionRequest): string {
   if (!body.amountUsd)
     throw new BillingRequestError("amountUsd is required for extra usage checkout");
-  const amount = parseUsdToMillicredits(body.amountUsd);
-  const min = parseUsdToMillicredits(EXTRA_USAGE.minUsd);
-  const increment = parseUsdToMillicredits(EXTRA_USAGE.incrementUsd);
-  if (amount < min)
+  const amountCents = parseUsdToCents(body.amountUsd);
+  const minCents = parseUsdToCents(EXTRA_USAGE.minUsd);
+  const maxCents = parseUsdToCents(EXTRA_USAGE.maxUsd);
+  if (amountCents < minCents)
     throw new BillingRequestError(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
-  if (amount % increment !== 0n) {
-    throw new BillingRequestError(`amountUsd must be in ${EXTRA_USAGE.incrementUsd} increments`);
-  }
-  return ((amount * BigInt(EXTRA_USAGE.millicreditsPerUsd)) / 100_000n).toString();
+  if (amountCents > maxCents)
+    throw new BillingRequestError(`amountUsd must be at most ${EXTRA_USAGE.maxUsd}`);
+  return ((amountCents * BigInt(EXTRA_USAGE.millicreditsPerUsd)) / 100n).toString();
 }
 
 function checkoutEntry(entry: BillingCatalogServerEntry, body: CreateCheckoutSessionRequest) {

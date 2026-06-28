@@ -11,7 +11,9 @@ export interface BillingPlanCatalogEntry extends BillingCatalogEntry {
 export interface ExtraUsageConfig extends BillingCatalogEntry {
   kind: "extra-usage";
   minUsd: string;
-  incrementUsd: string;
+  maxUsd: string;
+  defaultUsd: string;
+  presetsUsd: string[];
   /** Extra usage is 1:1: $1 paid grants 100,000 millicredits. */
   millicreditsPerUsd: string;
 }
@@ -56,10 +58,11 @@ export const EXTRA_USAGE = {
   id: "extra_usage",
   kind: "extra-usage" as const,
   name: "Extra usage",
-  description: "Add standalone pay-as-you-go balance in $5 increments.",
-  priceUsd: "5.00",
+  description: "Add standalone pay-as-you-go balance.",
   minUsd: "5.00",
-  incrementUsd: "5.00",
+  maxUsd: "500.00",
+  defaultUsd: "10.00",
+  presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
   millicreditsPerUsd: "100000",
 } satisfies ExtraUsageConfig;
 
@@ -72,12 +75,22 @@ export function catalogEntry(id: string): BillingCatalogServerEntry | null {
 }
 
 export function publicCatalogEntry(entry: BillingCatalogServerEntry): BillingCatalogEntry {
-  return {
+  const base = {
     id: entry.id,
     kind: entry.kind,
     name: entry.name,
     description: entry.description,
-    priceUsd: entry.priceUsd,
-    ...(entry.kind === "plan" ? { interval: entry.interval } : {}),
+  };
+  if (entry.kind === "plan") {
+    return { ...base, priceUsd: entry.priceUsd, interval: entry.interval };
+  }
+  return {
+    ...base,
+    amountOptions: {
+      minUsd: entry.minUsd,
+      maxUsd: entry.maxUsd,
+      defaultUsd: entry.defaultUsd,
+      presetsUsd: [...entry.presetsUsd],
+    },
   };
 }
