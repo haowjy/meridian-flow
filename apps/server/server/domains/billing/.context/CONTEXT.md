@@ -1,70 +1,78 @@
-# domains/billing — credit ledger & pricing (registry-sourced)
+# domains/billing — Stripe gateway + FIFO credit ledger
 
-Owns the credit lot model (canonical balance truth), the `CreditLedger` port,
-and model-call pricing conversions. Rates are single-sourced from the gateway's
-`MODEL_REGISTRY` — the flat `MODEL_TOKEN_RATES` table is **deleted**.
+Billing owns the payment/usage seam for model calls. Stripe collects money and
+emits payment events; the local ledger turns approved grants into expiring FIFO
+lots and consumes those lots during runtime turns.
 
 ## What it owns
 
-- **Credit ledger port** — `grant`, `debit` (FIFO lot consumption with
-  usage-event idempotency), `getBalance`, and per-run/per-agent/per-thread
-  debit total queries.
-- **Pricing** — `PinnedModelRate` (gateway-local type, imported from gateway's
-  `registry.ts`), `createLayeredTokenRateSource` (pinned + fallback layers),
-  `computeModelCost` for converting token usage to USD and millicredits.
-- **Domain types** — `CreditGrantInput`, `CreditDebitInput`, `CreditLedger`
-  interface.
-- **Provider-reported cost (OpenRouter)** — passed through as
-  `priceSource: "provider"` with `pricingSnapshot` on `model_responses`.
-  `model_responses` now persists `provider_request_id`, `price_source`, and
-  `pricing_snapshot` for billing audit.
+- **Stripe gateway** — a thin SDK wrapper for customer creation, checkout,
+  customer portal sessions, live-subscription lookup, webhook construction, and
+  webhook-to-grant resolution.
+- **Credit ledger port** — the user-scoped FIFO balance contract used by billing
+  routes, webhooks, free-tier provisioning, runtime turn gating, and runtime
+  debits.
+- **Billing catalog** — server-owned plan and extra-usage definitions, including
+  Stripe price env names and internal grant amounts. Public catalog responses
+  omit grant amounts.
+- **Free tier provisioning** — `ensureFreeTier()` grants a monthly $0 lot only
+  when the user has no unexpired subscription lot.
+
+Model token pricing does **not** live here. Runtime owns pricing and the fixed
+1.15 multiplier in [`../../runtime/costing/`](../../runtime/costing/); billing receives
+metered millicredits from runtime.
+
+## Unit boundary
+
+Millicredits are the internal accounting unit for ledger storage, pricing output,
+thread budget math, and transaction rows. Routes are the boundary that translate
+millicredits into USD display strings and included-usage percentages. Grant dollar
+amounts are a server-side tuning lever and must not cross the API/UI boundary.
 
 ## Ports
 
-| Port | Surface |
-|---|---|
-| `CreditLedger` | `grant` / `debit` / `getBalance` / `getRunDebitTotal` / `getAgentDebitTotals` / `getThreadDebitTotal` |
+| Port | Surface | Contract |
+|---|---|---|
+| `CreditLedger` | `grant`, `debit`, `getBalance`, `getBalanceBreakdown`, `listTransactions`, `getThreadDebitTotal`, `hasUnexpiredLot` | User-scoped ledger. No `projectId`; name stays `CreditLedger` because the internal unit deliberately stays millicredits. |
+
+`CreditLedger` exposes internal rows and lot views; HTTP contracts map those to
+USD/percentage shapes before returning them to the client.
 
 ## Adapters
 
-- **Drizzle** — production adapter using `credit_lots` and `credit_transactions`
-  tables plus the `consume_credit_lots_fifo` PL/pgSQL function.
-- **In-memory** — test/dev adapter.
-
-## Schema adaptation (Upstream → Meridian Flow)
-
-The copied upstream credit ledger domain port still carries `projectId` in its
-input types (`CreditGrantInput`, `CreditDebitInput`, balance queries). The
-Meridian Flow Drizzle adapter ignores `projectId` because:
-
-- `credit_lots` and `credit_transactions` have no `projectId` column in the
-  Meridian Flow schema.
-- `consume_credit_lots_fifo(userId, amount, consumptionGroupId, usageEventId, metadata)`
-  takes `userId` as the first parameter (no `projectId`).
-- All balance/debit-total queries filter by `userId` only.
-
-The port-level `projectId` fields remain in the contract types as passive
-parity reference; they are not consumed by the Drizzle adapter.
+- **Drizzle credit ledger** — production adapter over `credit_lots`,
+  `credit_transactions`, and `consume_credit_lots_fifo`.
+- **In-memory credit ledger** — test/runtime adapter with the same port shape.
+- **Stripe billing gateway** — Stripe SDK wrapper. It is intentionally not hidden
+  behind a generic payment-provider port because Stripe is the subscription and
+  payment state authority.
 
 ## Invariants
 
-- **Credit lots are canonical balance truth.** `getBalance()` sums
-  `remaining_millicredits` from non-expired, non-debt lots (debt lots are
-  always included regardless of expiry).
-- **Usage-event idempotency.** `consume_credit_lots_fifo` is idempotent on
-  `usage_event_id`: replayed model-response persistence does not double-charge.
-- **FIFO consumption** with debt-lot overspend support.
-- **`transactionId` for debits** is the `consumptionGroupId` (a
-  `crypto.randomUUID()`), not a row ID from the DB.
-- **Pricing source priority:** provider-reported cost (OpenRouter) → pinned
-  rates (direct providers). The gateway-local `PinnedModelRate` type breaks the
-  dependency cycle (gateway does not import billing types).
+- **FIFO lot consumption.** Debits consume unexpired positive lots in expiry/FIFO
+  order and create/extend debt when usage goes negative.
+- **Usage-event idempotency.** Replaying the same `usageEventId` must not
+  double-charge a model response.
+- **Free-tier idempotency.** Free lots use deterministic keys
+  `free_tier_{userId}_{periodStart}` and the DB partial unique index
+  `credit_lots_free_tier_grant` fences concurrent grants.
+- **Payment-status gating.** Extra-usage checkout grants only resolve when Stripe
+  says the payment session is paid.
+- **Subscription grants come from `invoice.paid`.** Subscription checkout only
+  creates the subscription; the grant is based on the paid invoice line period so
+  expiry follows Stripe's immutable billing period.
+- **Entitlement comes from lots.** Subscription mode is an unexpired
+  `subscription` lot; free mode is an unexpired `grant` lot when no subscription
+  lot exists. `hasUnexpiredLot()` checks expiry, not remaining balance.
+- **USD conversion happens at the route.** Ledger and runtime code keep
+  millicredits; billing routes compute purchased USD balance, transaction USD,
+  included-usage percent, and `canStartTurn`.
 
 ## Cross-domain dependencies
 
 - **Consumed by `domains/runtime`** — `turn-accounting.ts` and
-  `ChildRunCoordinator` check/consume credits. `cancel-settlement.ts` handles
-  soft-cancel/drain billing.
-- **Depends on `@meridian/database/schema`** — `creditLots`, `creditTransactions`,
-  `modelResponses` (for pricing audit columns).
-- **Depends on `apps/server/server/shared/drizzle-transaction.ts`** — `currentDrizzleDb` / `runInDrizzleTransaction` ambient transaction context.
+  `ChildRunCoordinator` check/debit usage through `CreditLedger`.
+- **Depends on `@meridian/database/schema`** — `users.stripe_customer_id`,
+  `credit_lots`, `credit_transactions`, and the FIFO debit function.
+- **Depends on `apps/server/server/shared/drizzle-transaction.ts`** —
+  `currentDrizzleDb` / `runInDrizzleTransaction` ambient transaction context.
