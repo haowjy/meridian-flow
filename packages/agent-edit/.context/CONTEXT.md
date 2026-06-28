@@ -231,10 +231,9 @@ deferred in [TODO.md](TODO.md).
   moved block gets a fresh identity, and the hash model stays "item id = stable block
   identity" for every supported edit. Do not wire a node's `draggable`/default DnD to
   reposition blocks; that reintroduces the in-place rebind.
-  - **Known exception to audit:** `MeridianFigure` (apps/app) is `draggable: true`
-    and uses ProseMirror's default DnD, so figure drags currently *do* reorder
-    in-place. Either remove `draggable` or reimplement the figure move as
-    delete+insert.
+  - `MeridianFigure`'s `draggable` was removed (here + `packages/prosemirror-schema`)
+    for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
+    to be built as delete+insert — see `apps/app/src/core/editor/.context/TODO.md`.
 
 ### Destructive scoped replace/delete wrong-target residual
 
