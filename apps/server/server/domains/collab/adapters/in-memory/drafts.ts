@@ -1,6 +1,12 @@
 /** In-memory collab draft store for tests and local composition. */
 import { randomUUID } from "node:crypto";
-import type { Draft, DraftAcceptJournal, DraftStore, DraftUpdate } from "../../domain/drafts.js";
+import type {
+  ActiveDraft,
+  Draft,
+  DraftAcceptJournal,
+  DraftStore,
+  DraftUpdate,
+} from "../../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
 
@@ -16,6 +22,16 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async getActiveDraft(input) {
       return copyDraft(findDraft({ ...input, status: "active" })) ?? null;
+    },
+
+    async listActiveDrafts(input) {
+      return [...drafts.values()]
+        .filter((draft) => draft.threadId === input.threadId && draft.status === "active")
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
+        )
+        .map((draft) => copyActiveDraft(draft));
     },
 
     async getLastAppliedDraft(input) {
@@ -150,6 +166,10 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
     claimedAt: copyDate(draft.claimedAt),
     updatedAt: copyDate(draft.updatedAt),
   };
+}
+
+function copyActiveDraft(draft: Draft): ActiveDraft {
+  return { ...(copyDraft(draft) ?? draft), status: "active" };
 }
 
 function copyUpdate(update: DraftUpdate): DraftUpdate {

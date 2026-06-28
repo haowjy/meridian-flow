@@ -12,7 +12,13 @@ import {
   documentYjsReversals,
 } from "@meridian/database";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
-import type { Draft, DraftAcceptJournal, DraftStore, DraftUpdate } from "../domain/drafts.js";
+import type {
+  ActiveDraft,
+  Draft,
+  DraftAcceptJournal,
+  DraftStore,
+  DraftUpdate,
+} from "../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
 import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
@@ -45,6 +51,20 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
         )
         .limit(1);
       return row ? mapDraft(row) : null;
+    },
+
+    async listActiveDrafts(input) {
+      const rows = await db
+        .select()
+        .from(documentYjsDrafts)
+        .where(
+          and(
+            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.status, "active"),
+          ),
+        )
+        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
+      return rows.map(mapActiveDraft);
     },
 
     async getLastAppliedDraft(input) {
@@ -225,6 +245,10 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function mapActiveDraft(row: typeof documentYjsDrafts.$inferSelect): ActiveDraft {
+  return { ...mapDraft(row), status: "active" };
 }
 
 function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): DraftUpdate {

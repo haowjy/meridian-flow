@@ -11,6 +11,7 @@ const USER_ID = "00000000-0000-4000-8000-000000000401";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000402";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000403";
 const DOC_ID = "00000000-0000-4000-8000-000000000404";
+const DOC_B_ID = "00000000-0000-4000-8000-000000000408";
 const THREAD_ID = "00000000-0000-4000-8000-000000000405";
 const TURN_A = "00000000-0000-4000-8000-000000000406";
 const TURN_B = "00000000-0000-4000-8000-000000000407";
@@ -77,13 +78,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "draft-source",
         scope: "project",
       });
-      await db.insert(documents).values({
-        id: DOC_ID,
-        contextSourceId: CONTEXT_SOURCE_ID,
-        name: "chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
+      await db.insert(documents).values([
+        {
+          id: DOC_ID,
+          contextSourceId: CONTEXT_SOURCE_ID,
+          name: "chapter",
+          extension: "md",
+          fileType: "markdown",
+        },
+        {
+          id: DOC_B_ID,
+          contextSourceId: CONTEXT_SOURCE_ID,
+          name: "chapter-b",
+          extension: "md",
+          fileType: "markdown",
+        },
+      ]);
       await db.insert(threads).values({
         id: THREAD_ID,
         projectId: PROJECT_ID,
@@ -135,6 +145,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await store.listUpdates(draft.id)).toMatchObject([
         { draftId: draft.id, actorTurnId: TURN_B },
       ]);
+    });
+
+    it("lists only active drafts for a thread", async () => {
+      const first = await store.createActiveDraft({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_A as never,
+      });
+      const second = await store.createActiveDraft({
+        documentId: DOC_B_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_B as never,
+      });
+      const claimed = await store.claimActive({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      if (!claimed?.claimToken) throw new Error("expected claim token");
+      await store.markDiscarded(first.id, { claimToken: claimed.claimToken });
+
+      await expect(store.listActiveDrafts({ threadId: THREAD_ID as never })).resolves.toMatchObject(
+        [
+          {
+            id: second.id,
+            documentId: DOC_B_ID,
+            threadId: THREAD_ID,
+            status: "active",
+            lastActorTurnId: TURN_B,
+          },
+        ],
+      );
     });
 
     it("issues a fresh fencing token on claim reclaim and fences stale terminal writes", async () => {

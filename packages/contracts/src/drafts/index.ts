@@ -9,6 +9,18 @@ export interface DraftReviewSummary {
   updatedAt: string;
 }
 
+export interface ThreadDraftListItem {
+  draftId: string;
+  documentId: string;
+  status: "active";
+  lastActorTurnId: string | null;
+  updatedAt: string;
+}
+
+export interface ThreadDraftListResponse {
+  drafts: ThreadDraftListItem[];
+}
+
 export interface DraftPreviewResponse {
   draft: DraftReviewSummary | null;
   live: string;

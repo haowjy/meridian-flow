@@ -24,6 +24,8 @@ export type Draft = {
   updatedAt: Date;
 };
 
+export type ActiveDraft = Draft & { status: "active" };
+
 export type DraftUpdate = {
   id: number;
   draftId: string;
@@ -53,6 +55,7 @@ export class ActiveDraftConflictError extends Error {
 export type DraftStore = {
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   getLastAppliedDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   createActiveDraft(input: {
     documentId: DocumentId;
@@ -109,6 +112,7 @@ export type DraftProjectionCoordinator = {
 
 export type DraftService = DraftProjectionCoordinator & {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -153,6 +157,7 @@ export function createDraftService(deps: {
 
   return {
     getActiveDraft: deps.draftStore.getActiveDraft,
+    listActiveDrafts: deps.draftStore.listActiveDrafts,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,

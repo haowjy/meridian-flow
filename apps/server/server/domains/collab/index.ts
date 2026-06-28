@@ -5,7 +5,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
+import type { ActiveDraft, Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -161,6 +161,7 @@ export type DocumentCheckpoints = {
 export type CollabDrafts = {
   drafts: {
     getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+    listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
     previewMarkdown(input: { documentId: DocumentId; draftId: string }): Promise<string>;
     acceptDraft(input: {

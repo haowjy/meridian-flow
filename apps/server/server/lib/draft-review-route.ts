@@ -4,6 +4,8 @@ import type {
   DraftPreviewResponse,
   DraftRejectResponse,
   DraftReviewSummary,
+  ThreadDraftListItem,
+  ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -68,6 +70,19 @@ export async function handleDraftPreviewRequest(
   };
 }
 
+export async function handleThreadDraftListRequest(
+  deps: DraftRouteServices,
+  input: { threadId: ThreadId; userId: UserId },
+): Promise<ThreadDraftListResponse> {
+  await requireThreadOwner(
+    { threads: deps.threads, projects: deps.projects },
+    input.threadId,
+    input.userId,
+  );
+  const drafts = await deps.documentSync.drafts.listActiveDrafts({ threadId: input.threadId });
+  return { drafts: drafts.map(serializeThreadDraft) };
+}
+
 export async function handleDraftAcceptRequest(
   deps: DraftRouteServices,
   input: { threadId: ThreadId; documentId: DocumentId; userId: UserId },
@@ -96,6 +111,22 @@ function serializeDraft(draft: {
 }): DraftReviewSummary {
   return {
     id: draft.id,
+    status: draft.status,
+    lastActorTurnId: draft.lastActorTurnId,
+    updatedAt: draft.updatedAt.toISOString(),
+  };
+}
+
+function serializeThreadDraft(draft: {
+  id: string;
+  documentId: string;
+  status: "active";
+  lastActorTurnId: string | null;
+  updatedAt: Date;
+}): ThreadDraftListItem {
+  return {
+    draftId: draft.id,
+    documentId: draft.documentId,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
