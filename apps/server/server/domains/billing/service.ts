@@ -152,19 +152,23 @@ async function billingTransactions(
 
 function billingProducts(deps: BillingServiceDeps): BillingProductsResponse {
   const stripeConfigured = deps.stripeGateway !== null;
-  const configuredPlanEntryIds = new Set(
-    billingPlanPriceBindings(deps.env).map((binding) => binding.entryId),
-  );
   return {
     entries: [...BILLING_PLANS, EXTRA_USAGE].map((entry) =>
       publicCatalogEntry(entry, {
-        checkoutAvailable:
-          stripeConfigured &&
-          (entry.kind === "extra-usage" || configuredPlanEntryIds.has(entry.id)),
+        checkoutAvailable: entryCheckoutAvailable(deps, entry),
       }),
     ),
     stripeConfigured,
   };
+}
+
+function entryCheckoutAvailable(
+  deps: BillingServiceDeps,
+  entry: BillingCatalogServerEntry,
+): boolean {
+  if (!deps.stripeGateway) return false;
+  if (entry.kind === "extra-usage") return true;
+  return Boolean(deps.env[entry.stripePriceEnv]);
 }
 
 function stripePriceId(env: NodeJS.ProcessEnv, entry: BillingPlanCatalogEntry): string {
@@ -209,6 +213,9 @@ async function createBillingCheckoutSession(
   if (!deps.stripeGateway) throw new Error("Stripe checkout is not configured");
   const entry = catalogEntry(input.body.entryId);
   if (!entry) throw new BillingRequestError("Unknown billing entry");
+  if (!entryCheckoutAvailable(deps, entry)) {
+    throw new BillingRequestError("Billing entry is not available for checkout");
+  }
 
   const customerId = await deps.getOrCreateStripeCustomer(input.userId);
   if (entry.kind === "plan") {
