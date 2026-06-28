@@ -5,8 +5,14 @@ export interface BillingCatalogEntry {
   kind: BillingCatalogEntryKind;
   name: string;
   description: string;
-  priceUsd: string;
+  priceUsd?: string;
   interval?: "month" | "year";
+  amountOptions?: {
+    minUsd: string;
+    maxUsd: string;
+    defaultUsd: string;
+    presetsUsd: string[];
+  };
 }
 
 export interface BillingProductsResponse {
