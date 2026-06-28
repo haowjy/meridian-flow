@@ -175,6 +175,9 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
 }
 
 async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
+  // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+  // above the latest compacted checkpoint; reconstruction can safely use the newest
+  // checkpoint below the earliest retained update.
   const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
     .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
     .from(documentYjsUpdates)
@@ -687,17 +690,22 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         const txDb = tx as JournalDb;
         const checkpoint = await latestCheckpoint(txDb, docId);
         const checkpointSeq = checkpoint?.upToSeq ?? 0;
-        const foldRows = await txDb
+        // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+        // above the latest compacted checkpoint; reconstruction can safely start from the
+        // newest checkpoint below the earliest retained update.
+        const candidateRows = await txDb
           .select()
           .from(documentYjsUpdates)
           .where(
             and(
               eq(documentYjsUpdates.documentId, asDocumentId(docId)),
               gt(documentYjsUpdates.id, checkpointSeq),
-              lt(documentYjsUpdates.createdAt, before),
             ),
           )
           .orderBy(asc(documentYjsUpdates.id));
+        const firstRetainedIndex = candidateRows.findIndex((row) => row.createdAt >= before);
+        const foldRows =
+          firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
 
         let compactedThroughSeq = checkpointSeq;
         if (foldRows.length > 0) {
@@ -721,7 +729,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               and(
                 eq(documentYjsUpdates.documentId, asDocumentId(docId)),
                 lte(documentYjsUpdates.id, compactedThroughSeq),
-                lt(documentYjsUpdates.createdAt, before),
               ),
             );
           await txDb
