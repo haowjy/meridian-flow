@@ -383,6 +383,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await updateIds()).toEqual(idsAfterRedo);
     });
 
+    it("compacts only the contiguous old seq prefix when update timestamps are skewed", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), 0);
+
+      const seqA = await journal.append(DOC_ID, appendText(doc, "Alpha"), {
+        origin: `agent:${TURN_A}`,
+        actorTurnId: TURN_A,
+        seq: 0,
+      });
+      const seqB = await journal.append(DOC_ID, appendText(doc, " Beta"), {
+        origin: `agent:${TURN_B}`,
+        actorTurnId: TURN_B,
+        seq: 0,
+      });
+      const seqC = await journal.append(DOC_ID, appendText(doc, " Gamma"), {
+        origin: `agent:${TURN_C}`,
+        actorTurnId: TURN_C,
+        seq: 0,
+      });
+
+      const oldEnough = new Date("2026-01-01T00:00:00.000Z");
+      const tooNew = new Date("2026-01-03T00:00:00.000Z");
+      const before = new Date("2026-01-02T00:00:00.000Z");
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: oldEnough })
+        .where(eq(documentYjsUpdates.id, seqA));
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: tooNew })
+        .where(eq(documentYjsUpdates.id, seqB));
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: oldEnough })
+        .where(eq(documentYjsUpdates.id, seqC));
+
+      const compacted = await journal.compact(DOC_ID, before);
+
+      expect(compacted).toEqual({ updatesFolded: 1, reversalsExpired: 0 });
+      expect(await updateIds()).toEqual([seqB, seqC]);
+      const snapshot = await journal.read(DOC_ID);
+      expect(snapshot.updates.map((update) => update.seq)).toEqual([seqB, seqC]);
+      expect(textFromSnapshot(snapshot.checkpoint, snapshot.updates)).toBe("Alpha Beta Gamma");
+    });
+
     it("appends journal batches in one transaction", async () => {
       const journal = createDrizzleJournal(db);
       const doc = new Y.Doc({ gc: false });
