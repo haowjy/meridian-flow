@@ -218,6 +218,17 @@ deferred in [TODO.md](TODO.md).
 - **Block hash stable under edits.** Derived from CRDT item ID (assigned at
   element creation). Survives content edits, position shifts, reordering.
   Lost on type change or deletion (new element → new ID).
+
+### Block-hash wrong-target residual
+
+Block hashes are view-scoped addresses; durable identity is the full CRDT item
+hash and its content. Prefix lookup is still vulnerable after deletion: a stale
+held prefix can become the valid current prefix for a different block, and the
+hash layer cannot tell. Mitigations are layered: `find`-based replace is
+content-backstopped; destructive pure-hash replace/delete is staleness-gated and
+asks for a re-read when the doc changed since the last read; any remaining
+wrong-target is visible in the op echo and recoverable through undo lineage.
+
 - **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
 - **Public mutations stay at turn/tool seams.** Low-level mutators

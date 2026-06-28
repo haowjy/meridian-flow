@@ -288,7 +288,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    let existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
     if (existingBlocks.length > 0 && !overwriting) {
       return status(
         "invalid_write",
@@ -318,6 +318,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // Response-staged creates may intentionally defer live document creation
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
+    if (!stagedCreate) {
+      const restored = await runtimeStore.restoreRuntimeFromLive(
+        session,
+        address.documentId,
+        runtime,
+        command.command,
+        { filePath: address.filePath },
+      );
+      if (isInternalWriteResult(restored)) return restored;
+      existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    }
 
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
@@ -399,6 +410,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       address.filePath,
       runtime,
+      { rejectOnStale: isDestructivePureHashReplace(command, address) },
     );
     if (!synced.ok) return synced.response;
 
@@ -740,4 +752,17 @@ function writeSchemaError(error: {
       return `${path}${issue.message}`;
     })
     .join("; ");
+}
+
+function isDestructivePureHashReplace(
+  command: Extract<WriteCommand, { command: "insert" | "replace" }>,
+  address: DocumentAddress,
+): boolean {
+  // A stale held hash can become the current valid prefix for a different block
+  // after deletion/reclaim, so the hash layer cannot distinguish the wrong target.
+  return (
+    command.command === "replace" &&
+    command.find === undefined &&
+    (command.in !== undefined || address.fragment !== undefined)
+  );
 }
