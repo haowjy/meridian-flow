@@ -382,6 +382,25 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
   });
 
+  it("replaces with a find needle copied from hash-prefixed read output", async () => {
+    const ctx = harness({ "chapter.md": "The heavens rumbled...\n\nTail." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+    const replaced = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "The sky split.",
+        find: `${firstHash}|The heavens rumbled...`,
+      },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["The sky split.", "Tail."]);
+  });
+
   it("replaces and inserts with find anchors copied from markdown-form read", async () => {
     const ctx = harness({
       "chapter.md":

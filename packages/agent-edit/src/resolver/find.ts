@@ -47,6 +47,40 @@ export function findTextMatches(
   if (find.length === 0) return invalid("`find` must not be empty");
   const entries = serializeScopeBlocks(ctx, scope);
   const haystack = entries.map((entry) => entry.body).join("\n\n");
+  const literal = matchSerializedText(entries, haystack, find, all);
+  if (literal.ok || literal.code !== "not_found") return literal;
+
+  // Models often paste read() output back into find; read prefixes bodies with
+  // `hash|`. Keep the haystack literal, and only retry with a stripped needle.
+  const strippedFind = stripReadHashPrefixes(find);
+  if (strippedFind === null) return literal;
+  const stripped = matchSerializedText(entries, haystack, strippedFind, all);
+  return stripped.ok || stripped.code !== "not_found" ? stripped : literal;
+}
+
+export function stripReadHashPrefixes(needle: string): string | null {
+  let strippedAny = false;
+  const stripped = needle
+    .split("\n")
+    .flatMap((line) => {
+      if (/^[0-9a-f]{4,}\|$/.test(line)) {
+        strippedAny = true;
+        return [];
+      }
+      const next = line.replace(/^[0-9a-f]{4,}\|/, "");
+      if (next !== line) strippedAny = true;
+      return [next];
+    })
+    .join("\n");
+  return strippedAny && stripped.length > 0 ? stripped : null;
+}
+
+function matchSerializedText(
+  entries: SerializedBlockEntry[],
+  haystack: string,
+  find: string,
+  all: boolean,
+): FindResult {
   const normalized = normalizeWithOffsetMap(haystack);
   const matches = nonOverlappingMatches(normalized.text, find.normalize("NFC")).map((match) => ({
     start: normalized.originalStart[match.start],
