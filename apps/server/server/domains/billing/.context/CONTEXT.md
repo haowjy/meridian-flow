@@ -76,8 +76,10 @@ USD/percentage shapes before returning them to the client.
   lot exists. `hasUnexpiredLot()` checks expiry, not remaining balance.
 - **USD conversion is centralized.** Ledger and runtime code keep millicredits;
   `domain/money.ts` owns USD and Stripe-cent conversion; billing routes compute
-  purchased USD balance, transaction USD, included-usage percent, and
-  `canStartTurn`.
+  the boundary contract: purchased USD balance, transaction USD, and the
+  discriminated `includedUsage` (`{none}` | `{subscription|free, remainingPercent,
+  overBudget}`) plus `canStartTurn`. The server emits "remaining" (not consumed)
+  so the client renders directly without re-deriving.
 
 ## Cross-domain dependencies
 
