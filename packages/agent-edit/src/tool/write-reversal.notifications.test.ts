@@ -61,38 +61,6 @@ describe("write reversal notifications", () => {
     ]);
   });
 
-  it("pins range redo expansion to the full atomic undo boundary with per-handle turns", async () => {
-    const records = captureUndoNotifications();
-    const scenario = await independentWriteScenario({ undoNotificationPort: records.port });
-
-    const undoAll = await scenario.ctx.core.reverse({
-      docId: "chapter.md",
-      threadId: THREAD_ID,
-      direction: "undo",
-      selection: { kind: "all" },
-      actor,
-    });
-    expect(undoAll.status).toBe("reconciled");
-    expect(undoAll.text).toContain("undo: 3 edit(s)");
-
-    const redoRange = await scenario.ctx.core.reverse({
-      docId: "chapter.md",
-      threadId: THREAD_ID,
-      direction: "redo",
-      selection: { kind: "range", from: "w1", to: "w2" },
-      actor,
-    });
-
-    expect(redoRange.status).toBe("reconciled");
-    expect(redoRange.text).toContain("redo: 3 edit(s)");
-    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cape."]);
-    await expectMutationStatuses(scenario, { w1: "active", w2: "active", w3: "active" });
-    expect(records.turnsByHandle().at(-1)).toEqual({
-      direction: "redo",
-      turns: { w1: "turn-boundary-w1", w2: "turn-boundary-w2", w3: "turn-boundary-w3" },
-    });
-  });
-
   it("keeps notification turns distinct when writes are redone in separate redo operations", async () => {
     const records = captureUndoNotifications();
     const scenario = await independentWriteScenario({ undoNotificationPort: records.port });

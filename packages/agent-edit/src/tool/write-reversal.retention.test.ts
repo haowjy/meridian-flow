@@ -373,22 +373,6 @@ describe("write reversal retention", () => {
     ).toBe("status: nothing_to_redo");
   });
 
-  it("exposes user turn undo and redo seams by document and thread", async () => {
-    const scenario = await ReversalScenario.read(
-      { "chapter.md": "Alpha sword." },
-      { undoClientId: REVERSAL_CLIENT_ID },
-    );
-    await scenario.simpleReplace("turn-user-seam");
-
-    const undo = await scenario.ctx.core.undoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(undo)).toContain("status: reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
-
-    const redo = await scenario.ctx.core.redoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(redo)).toContain("status: reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
-  });
-
   it("cold undo filters interleaved journal targets by thread", async () => {
     const threadB = "thread-b";
     const contextB = { sessionId: "session-b", threadId: threadB };

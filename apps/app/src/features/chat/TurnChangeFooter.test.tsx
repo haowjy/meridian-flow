@@ -68,32 +68,35 @@ describe("TurnChangeFooter", () => {
     expect(container.textContent).not.toContain("missing.mdx");
   });
 
-  it("ignores non-mutating write commands (read, undo, redo) but counts mutations", () => {
-    renderFooter(
-      turnWithBlocks([
+  it.each([
+    {
+      label: "ignores read/undo but counts mutations",
+      blocks: [
         toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
         toolResultBlock(2, "call-1"),
         toolUseBlock(3, "write", "/chapter-2.mdx", "call-2", "undo"),
         toolResultBlock(4, "call-2"),
         toolUseBlock(5, "write", "/chapter-3.mdx", "call-3", "replace"),
         toolResultBlock(6, "call-3"),
-      ]),
-    );
-
-    // Only the `replace` is an edit; the `read` and `undo` must not be counted
-    // (otherwise the summary would read "3 files changed").
-    expect(button("📝 1 file changed")).toBeDefined();
-  });
-
-  it("renders no footer for a turn that only read documents", () => {
-    renderFooter(
-      turnWithBlocks([
+      ],
+      expectedSummary: "📝 1 file changed",
+    },
+    {
+      label: "hides footer for read-only turns",
+      blocks: [
         toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
         toolResultBlock(2, "call-1"),
-      ]),
-    );
+      ],
+      expectedSummary: null,
+    },
+  ])("$label", ({ blocks, expectedSummary }) => {
+    renderFooter(turnWithBlocks(blocks));
 
-    expect(container.textContent).toBe("");
+    if (expectedSummary) {
+      expect(button(expectedSummary)).toBeDefined();
+    } else {
+      expect(container.textContent).toBe("");
+    }
   });
 
   it("does not render when every write/edit tool result failed", () => {
