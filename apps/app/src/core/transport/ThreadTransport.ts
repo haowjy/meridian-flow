@@ -86,7 +86,7 @@ export interface ThreadTransport {
 
   /**
    * Token from the latest server `connected` frame on this transport's socket.
-   * Sent with message POSTs so disconnect-cancel only affects the owning peer.
+   * Sent with message POSTs so the server rejects starts from a stale socket.
    */
   getConnectionToken(): string | undefined;
 
