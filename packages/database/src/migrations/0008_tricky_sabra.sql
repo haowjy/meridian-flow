@@ -1,1 +1,0 @@
-ALTER TABLE "document_yjs_reversals" ADD COLUMN "redo_update_seq" bigint;
