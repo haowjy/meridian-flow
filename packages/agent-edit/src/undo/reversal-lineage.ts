@@ -94,6 +94,7 @@ export function selectUndoClosure(input: {
     snapshot: input.snapshot,
     closure,
     reversalOpSeqs: input.reversalOpSeqs,
+    reversedForwardSeqs: reversedForwardSeqsFromMutations(input.rowsByHandle),
     seqToHandle: seqToHandleFromMutations(input.rowsByHandle, input.reversals),
   });
   if (!dependency.ok) {
@@ -215,6 +216,7 @@ function evaluateLineageDependencies(input: {
   closure: ActiveClosure;
   seqToHandle?: ReadonlyMap<number, string>;
   reversalOpSeqs?: ReadonlySet<number>;
+  reversedForwardSeqs?: ReadonlySet<number>;
 }): DependencyVerdict {
   const selectedInsertedIds = insertedIdRanges(
     input.snapshot.updates.filter(
@@ -230,7 +232,11 @@ function evaluateLineageDependencies(input: {
 
   for (const update of input.snapshot.updates) {
     if (update.seq <= input.closure.earliestForwardSeq) continue;
-    if (input.closure.lineageSeqs.has(update.seq) || input.reversalOpSeqs?.has(update.seq))
+    if (
+      input.closure.lineageSeqs.has(update.seq) ||
+      input.reversalOpSeqs?.has(update.seq) ||
+      input.reversedForwardSeqs?.has(update.seq)
+    )
       continue;
     if (!deleteSetIntersects(update, selectedInsertedIds)) continue;
     const handle = input.seqToHandle?.get(update.seq);
@@ -246,6 +252,18 @@ function evaluateLineageDependencies(input: {
       ...(hasUnknownBlocker ? ["a later edit"] : []),
     ]),
   };
+}
+
+function reversedForwardSeqsFromMutations(
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>,
+): Set<number> {
+  const seqs = new Set<number>();
+  for (const rows of rowsByHandle.values()) {
+    for (const row of rows) {
+      if (row.status === "reversed") seqs.add(row.createdSeq);
+    }
+  }
+  return seqs;
 }
 
 function seqToHandleFromMutations(

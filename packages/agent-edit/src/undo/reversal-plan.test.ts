@@ -153,14 +153,14 @@ describe("reversal planner", () => {
     });
   });
 
-  it("omitted turn redo targets the latest reversed turn", async () => {
+  it("omitted turn redo targets the most recently undone turn, not the latest original write", async () => {
     const store = fakeReversalStore({
       snapshot: snapshotWithSeqs([1, 2, 3, 4]),
       mutations: new Map([
-        ["w1", [mutation("w1", 1, "reversed", "turn-earlier", 3)]],
-        ["w2", [mutation("w2", 2, "reversed", "turn-latest", 4)]],
+        ["w1", [mutation("w1", 1, "reversed", "turn-a", 4)]],
+        ["w2", [mutation("w2", 2, "reversed", "turn-b", 3)]],
       ]),
-      reversals: [reversal(["w1"], "turn-earlier", 3), reversal(["w2"], "turn-latest", 4)],
+      reversals: [reversal(["w2"], "turn-b", 3), reversal(["w1"], "turn-a", 4)],
     });
 
     const plan = await planRedo({
@@ -170,7 +170,7 @@ describe("reversal planner", () => {
       selection: { kind: "turn" },
     });
 
-    expect(plan).toMatchObject({ ok: true, writeIds: ["w2"], turnId: "turn-latest" });
+    expect(plan).toMatchObject({ ok: true, writeIds: ["w1"], turnId: "turn-a" });
   });
 
   it.each([
