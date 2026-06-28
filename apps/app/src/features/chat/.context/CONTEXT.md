@@ -214,6 +214,32 @@ reasoning rows and folded activity runs.
 
 Migration is tracked in `work/activity-thinking-model`.
 
+## Turn change footer (`TurnChangeFooter.tsx`)
+
+A per-turn summary bar below each settled assistant turn that shows which documents
+were touched by write/edit tool calls and surfaces per-document and whole-turn
+undo/redo controls. Key behavior:
+
+- **Document extraction** — `turnWrittenDocuments(turn)` scans the turn's `Block[]`
+  for write/edit tool calls and gathers the unique set of `{ uri, path }` documents.
+- **Per-document undo/redo** — each document row shows Undo (or Redo if already
+  reversed). Calls the `POST /api/threads/:threadId/context/reverse` endpoint with
+  `{ uri, direction, scope: "write" }`.
+- **Whole-turn undo/redo all** — the "Undo all" / "Redo all" button calls the same
+  endpoint with `{ direction, scope: "turn", target: turnId }`, which runs
+  `reverseTurn` across every document the turn touched.
+- **Local state** — the footer tracks per-document affordance state locally
+  (`applied` | `reversed` | `disabled`). Document content refresh after reversal is
+  handled by Yjs sync; the footer doesn't manage editor state.
+- **Aggregate status** — when all actionable documents are reversed, the summary
+  shows "(all undone)" and the bulk button flips to Redo.
+
+State transitions from server results map `reversed`/`reconciled` → `reversed`
+(after undo) or `applied` (after redo), `nothing_to_undo`/`nothing_to_redo` →
+pass-through, `expired` → `disabled` with "Can no longer be undone" text,
+`cant_undo_dependent` → keeps current disposition with "A later edit depends on
+this" message.
+
 ## Related (separate but adjacent)
 
 - **Default-tool renderer + arg streaming** — DONE. `groupDeliverySegments` normalizes

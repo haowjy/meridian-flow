@@ -7,14 +7,14 @@ The persistence seam is split by concern:
 
 - `UpdateJournal` is the ordered Yjs update log: append, `appendBatch`, live-load
   `read`, checkpoint, and compact.
-- `ReversalStore` owns write-level reversal state: write ordinal reservation,
+- `ReversalStore` owns reversal state: write ordinal reservation,
   active/reversed write metadata queries, `readForReconstruction(docId)`,
   per-handle `mutationsForWrite` and the batch `mutationsForWrites` (one query for
   multiple handles), `persistUndo`, `persistRedo`, and `readReversals`.
 
-`readForReconstruction` is the domain-level retained-log read used by cold
-undo/redo so checkpoint mechanics stay adapter-local; reversal code no longer
-passes `read(..., { fromCheckpoint: false })` through the generic log port.
+`readForReconstruction` is the retained-log read used by cold undo/redo;
+checkpoint mechanics stay adapter-local. Reversal code no longer passes
+`read(..., { fromCheckpoint: false })` through the generic update-log port.
 Adapters may implement both interfaces in one class when the update log,
 mutation rows, and reversal rows are co-sourced (Drizzle and the in-memory test
 journal do).
@@ -291,11 +291,11 @@ going blind to a concurrent human edit.
   Tests for this must assert the durable `SyncStateStore` row, not in-memory
   `session.documents` — the in-memory copy can look right while the durable one is wrong.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
-  the runtime, rebuilds from canonical (live), and replays the response's pending
-  staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
-  accumulated local state, so a `read` is a read that can never carry runtime drift
-  forward or corrupt the doc. At turn start (no pending) it is exactly canonical.
-  The reversal path still uses the delta merge `syncLocalFromLive`; `read` does not.
+  the runtime, rebuilds from canonical (live), and replays pending staged updates:
+  `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
+  so `read` can never carry runtime drift forward or corrupt the doc. At turn start
+  (no pending) it is exactly canonical. The reversal path uses the delta merge
+  `syncLocalFromLive`; `read` does not.
 - **`read` and `find` read the same doc.** Both resolve against the runtime, so the
   model can always `find` what `read` showed it. This is *why* `read` replays
   pending: otherwise a write after a mid-response `read` could re-match
@@ -404,8 +404,7 @@ paths so accidental UUID interpolation fails loudly.
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
-- **Multi-document turn reversal** not yet implemented. Each document's
-  undo runs independently; no turn-level coordination across documents.
+
 - **Cross-block `find`** (find string containing `\n\n`) supported via
   structural lowering in the resolver. Routes to Tier 2+3.
 

@@ -14,31 +14,29 @@ Tier 2 construction is behind an adapter verb, and the write-command schema is o
 Zod source (`tool/command-schema.ts`; `view`→`read`; query/write/history split).
 Below is what remains deferred.
 
-## High-priority bug — reversal chain freezes on concurrent edit
+## High-priority bug — reversal chain freezes on concurrent edit (#114)
 
-(Issue [#114], `priority:high`; related to the #112 concurrency redesign but a
-standalone fix.) A grouped/redo reversal chain goes **fully dead** the moment a
-human makes a concurrent edit that merely *overlaps a touched block* (not the
-changed range): `evaluateRedoEligibility()`/`planRedo()` returns `nothing_to_redo`
-for any later forward update, and `reversal-lineage.ts` hard-fails the whole closure
-as `cant_undo_dependent`. The user sees undo/redo silently stop working entirely,
-with no warning.
+A grouped/redo reversal chain goes fully dead when a human makes a concurrent
+edit that *overlaps a touched block* (not the changed range):
+`evaluateRedoEligibility()`/`planRedo()` returns `nothing_to_redo` for any later
+forward update, and `reversal-lineage.ts` hard-fails the whole closure as
+`cant_undo_dependent`. Undo/redo silently stops working, with no warning.
 
-Intended behavior: **best-effort reverse + warning, not a dead chain**
-("mangled-but-intact > silent blocking" — the documented offline-peer philosophy).
+Intended: **best-effort reverse + warning, not a dead chain**
+("mangled-but-intact > silent blocking" — the offline-peer philosophy).
 Done =
-- relax redo gating so a later forward update degrades to best-effort redo + warning,
-  not `nothing_to_redo`;
-- relax undo dependency blocking so a same-block/adjacent concurrent edit yields a
-  warning/mangle-risk result, not `cant_undo_dependent`, and reversal still proceeds;
-- keep closure integrity (shared redo boundary) but never freeze the whole boundary
-  on one concurrent edit;
-- add regressions: grouped-redo → same-block different-range human edit → chain stays
-  reversible; undo succeeds with a later human edit → redo still attempts best-effort.
+- relax redo gating so a later forward update degrades to best-effort redo +
+  warning, not `nothing_to_redo`;
+- relax undo dependency blocking so a same-block/adjacent concurrent edit yields
+  a warning/mangle-risk result, not `cant_undo_dependent`, and reversal proceeds;
+- keep closure integrity (shared redo boundary) but never freeze the boundary on
+  one concurrent edit;
+- regression: grouped-redo → same-block different-range human edit → chain stays
+  reversible; undo succeeds with later human edit → redo still attempts best-effort.
 
-Structural note: the "should reversal proceed under concurrency?" policy is split
-across `reversal-plan.ts`, `reconstruction.ts`, and `write-reversal.ts`; consider a
-single reversal-conflict-policy module so product intent lives in one place.
+Note: the "should reversal proceed under concurrency?" policy is split across
+`reversal-plan.ts`, `reconstruction.ts`, and `write-reversal.ts`; consider a
+single reversal-conflict-policy module.
 
 [#114]: https://github.com/haowjy/meridian-flow/issues/114
 
