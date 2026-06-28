@@ -15,6 +15,12 @@ export interface ExtraUsageConfig extends BillingExtraUsageEntry {}
 
 export type BillingCatalogServerEntry = BillingPlanCatalogEntry | ExtraUsageConfig;
 
+export interface BillingPlanPriceBinding {
+  entryId: string;
+  stripePriceId: string;
+  grantMillicredits: string;
+}
+
 export const FREE_TIER = {
   id: "plan_free",
   kind: "plan" as const,
@@ -68,6 +74,15 @@ export const BILLING_CATALOG = {
 
 export function catalogEntry(id: string): BillingCatalogServerEntry | null {
   return BILLING_CATALOG.entries.find((entry) => entry.id === id) ?? null;
+}
+
+export function billingPlanPriceBindings(env: NodeJS.ProcessEnv): BillingPlanPriceBinding[] {
+  return BILLING_PLANS.flatMap((entry) => {
+    const stripePriceId = env[entry.stripePriceEnv];
+    return stripePriceId
+      ? [{ entryId: entry.id, stripePriceId, grantMillicredits: entry.grantMillicredits }]
+      : [];
+  });
 }
 
 export function publicCatalogEntry(entry: BillingCatalogServerEntry): BillingCatalogEntry {

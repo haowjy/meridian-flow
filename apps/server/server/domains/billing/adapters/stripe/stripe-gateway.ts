@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import type { BillingPlanPriceBinding } from "../../domain/catalog.js";
 import { millicreditsToStripeCents } from "../../domain/money.js";
 
 export type StripeWebhookEvent = Stripe.Event;
@@ -36,7 +37,11 @@ export interface CheckoutGrantResolution {
   metadata?: Record<string, unknown>;
 }
 
-type StripeGatewayConfig = { secretKey: string; webhookSecret: string };
+type StripeGatewayConfig = {
+  secretKey: string;
+  webhookSecret: string;
+  planPrices?: readonly BillingPlanPriceBinding[];
+};
 
 type MetadataLike = Record<string, string> | Stripe.Metadata | null | undefined;
 
@@ -63,6 +68,16 @@ type InvoiceWithSubscriptionMetadata = Stripe.Invoice & {
   } | null;
 };
 
+type InvoiceLineWithPrice = Stripe.InvoiceLineItem & {
+  price?: { id?: string } | null;
+  plan?: { id?: string } | null;
+  pricing?: {
+    price_details?: {
+      price?: string | null;
+    } | null;
+  } | null;
+};
+
 const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "past_due", "trialing"]);
 
 function metadataString(metadata: MetadataLike, key: string): string | null {
@@ -76,6 +91,10 @@ function grantMetadata(
   const userId = metadataString(metadata, "userId");
   const grantMillicredits = metadataString(metadata, "grantMillicredits");
   return userId && grantMillicredits ? { userId, grantMillicredits } : null;
+}
+
+function userIdMetadata(metadata: MetadataLike): string | null {
+  return metadataString(metadata, "userId");
 }
 
 function entryId(input: StripeCheckoutInput): string {
@@ -134,6 +153,13 @@ function subscriptionGrantLine(invoice: Stripe.Invoice): Stripe.InvoiceLineItem 
   return candidates.find((line) => !isProrationLine(line)) ?? null;
 }
 
+function priceIdFromLine(line: Stripe.InvoiceLineItem): string | null {
+  const candidate = line as InvoiceLineWithPrice;
+  return (
+    candidate.pricing?.price_details?.price ?? candidate.price?.id ?? candidate.plan?.id ?? null
+  );
+}
+
 function isoFromStripeSeconds(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
 }
@@ -154,20 +180,31 @@ function resolvePaidCheckoutSession(
   };
 }
 
-function resolvePaidInvoice(invoice: Stripe.Invoice): CheckoutGrantResolution | null {
+function resolvePaidInvoice(
+  invoice: Stripe.Invoice,
+  plansByPriceId: ReadonlyMap<string, BillingPlanPriceBinding>,
+): CheckoutGrantResolution | null {
   const metadataSource =
     (invoice as InvoiceWithSubscriptionMetadata).parent?.subscription_details?.metadata ??
     invoice.metadata;
-  const metadata = grantMetadata(metadataSource);
-  if (!metadata) return null;
+  const userId = userIdMetadata(metadataSource);
+  if (!userId) return null;
 
   const line = subscriptionGrantLine(invoice);
   if (!line?.id || !line.period?.end) return null;
 
-  const catalogEntryId = metadataString(metadataSource, "entryId");
+  const linePriceId = priceIdFromLine(line);
+  const catalogPlan = linePriceId ? plansByPriceId.get(linePriceId) : null;
+  if (linePriceId && !catalogPlan) return null;
+
+  const fallbackGrant = metadataString(metadataSource, "grantMillicredits");
+  const amountMillicredits = catalogPlan?.grantMillicredits ?? fallbackGrant;
+  if (!amountMillicredits) return null;
+
+  const catalogEntryId = catalogPlan?.entryId ?? metadataString(metadataSource, "entryId");
   return {
-    userId: metadata.userId,
-    amountMillicredits: metadata.grantMillicredits,
+    userId,
+    amountMillicredits,
     source: "subscription",
     stripeIdempotencyId: line.id,
     displayReason: "Monthly usage",
@@ -178,6 +215,9 @@ function resolvePaidInvoice(invoice: Stripe.Invoice): CheckoutGrantResolution | 
 
 export function createStripeBillingGateway(config: StripeGatewayConfig): StripeBillingGateway {
   const stripe = new Stripe(config.secretKey);
+  const plansByPriceId = new Map(
+    (config.planPrices ?? []).map((plan) => [plan.stripePriceId, plan] as const),
+  );
 
   return {
     async createCustomer(input) {
@@ -247,7 +287,7 @@ export function createStripeBillingGateway(config: StripeGatewayConfig): StripeB
         return resolvePaidCheckoutSession(event.data.object as Stripe.Checkout.Session);
       }
       if (event.type === "invoice.paid") {
-        return resolvePaidInvoice(event.data.object as Stripe.Invoice);
+        return resolvePaidInvoice(event.data.object as Stripe.Invoice, plansByPriceId);
       }
       return null;
     },

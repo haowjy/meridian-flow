@@ -99,6 +99,16 @@ describe("billing-route", () => {
     });
   });
 
+  it("allows starting the grace turn at exactly zero balance", async () => {
+    const ledger = createInMemoryCreditLedger();
+    await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
+    await debit(ledger, "500000");
+
+    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+      canStartTurn: true,
+    });
+  });
+
   it("uses only free-tier grants as free included usage and can exceed 100% with debt", async () => {
     const ledger = createInMemoryCreditLedger();
     await ledger.grant({
