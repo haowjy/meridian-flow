@@ -5,6 +5,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -140,6 +141,19 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+export type CollabDrafts = {
+  drafts: {
+    getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+    buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
+    acceptDraft(input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      userId: UserId;
+    }): Promise<DraftAcceptResult>;
+    rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
+  };
+};
+
 export type DocumentAttribution = {
   getLastUpdateAttribution(documentId: DocumentId): Promise<{
     originType: string | null;
@@ -155,6 +169,7 @@ export type CollabDomain = CollabTransport &
   DocumentProjectionRefresher &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
-  DocumentAttribution;
+  DocumentAttribution &
+  CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";

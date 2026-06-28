@@ -1,0 +1,147 @@
+/** Adapter-contract tests for the Drizzle DraftStore against local Postgres. */
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { ActiveDraftConflictError } from "../../domain/drafts.js";
+
+const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+const DATABASE_URL = process.env.DATABASE_URL;
+
+const USER_ID = "00000000-0000-4000-8000-000000000401";
+const PROJECT_ID = "00000000-0000-4000-8000-000000000402";
+const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000403";
+const DOC_ID = "00000000-0000-4000-8000-000000000404";
+const THREAD_ID = "00000000-0000-4000-8000-000000000405";
+const TURN_A = "00000000-0000-4000-8000-000000000406";
+const TURN_B = "00000000-0000-4000-8000-000000000407";
+
+if (!RUN_DB_TESTS || !DATABASE_URL) {
+  describe.skip("drizzle draft store (postgres)", () => {
+    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
+  });
+} else {
+  describe("drizzle draft store adapter contract (postgres)", async () => {
+    const { createDb } = await import("@meridian/database");
+    const dbSchema = await import("@meridian/database/schema");
+    const {
+      agentEditMutations,
+      agentEditSyncState,
+      agentEditWidCounters,
+      contextSources,
+      documentYjsDrafts,
+      documentYjsDraftUpdates,
+      documentYjsReversals,
+      documents,
+      folders,
+      projects,
+      threads,
+      turns,
+      users,
+    } = dbSchema;
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
+
+    const db = createDb(DATABASE_URL, { max: 4 });
+    const store = createDrizzleDraftStore(db);
+
+    beforeEach(async () => {
+      await truncateDrizzleTables(db, [
+        documentYjsDraftUpdates,
+        documentYjsDrafts,
+        agentEditSyncState,
+        agentEditMutations,
+        agentEditWidCounters,
+        documentYjsReversals,
+        turns,
+        threads,
+        documents,
+        folders,
+        contextSources,
+        projects,
+        users,
+      ]);
+      await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-drafts"));
+      await db.insert(projects).values({
+        id: PROJECT_ID,
+        userId: USER_ID,
+        name: "Draft Project",
+        slug: "draft-project",
+      });
+      await db.insert(contextSources).values({
+        id: CONTEXT_SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Draft Source",
+        slug: "draft-source",
+        scope: "project",
+      });
+      await db.insert(documents).values({
+        id: DOC_ID,
+        contextSourceId: CONTEXT_SOURCE_ID,
+        name: "chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db.insert(threads).values({
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Draft Thread",
+        kind: "primary",
+        status: "active",
+      });
+      await db.insert(turns).values([
+        { id: TURN_A, threadId: THREAD_ID, role: "assistant", status: "complete" },
+        {
+          id: TURN_B,
+          threadId: THREAD_ID,
+          parentTurnId: TURN_A,
+          role: "assistant",
+          status: "complete",
+        },
+      ]);
+    });
+
+    afterAll(async () => {
+      await db.$client.end();
+    });
+
+    it("persists draft updates and maps partial-unique active conflicts", async () => {
+      const draft = await store.createActiveDraft({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_A as never,
+      });
+
+      await expect(
+        store.createActiveDraft({ documentId: DOC_ID as never, threadId: THREAD_ID as never }),
+      ).rejects.toBeInstanceOf(ActiveDraftConflictError);
+
+      await store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendText("Alpha"),
+        actorTurnId: TURN_B as never,
+      });
+
+      expect(
+        await store.getActiveDraft({ documentId: DOC_ID as never, threadId: THREAD_ID as never }),
+      ).toMatchObject({
+        id: draft.id,
+        status: "active",
+        lastActorTurnId: TURN_B,
+      });
+      expect(await store.listUpdates(draft.id)).toMatchObject([
+        { draftId: draft.id, actorTurnId: TURN_B },
+      ]);
+    });
+  });
+}
+
+function appendText(value: string): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  const text = doc.getText("body");
+  const before = Y.encodeStateVector(doc);
+  text.insert(0, value);
+  return Y.encodeStateAsUpdate(doc, before);
+}

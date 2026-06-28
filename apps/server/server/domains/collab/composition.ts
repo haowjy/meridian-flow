@@ -22,6 +22,10 @@ import {
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import {
+  createDrizzleDraftAcceptJournal,
+  createDrizzleDraftStore,
+} from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -31,8 +35,13 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import {
+  createInMemoryDraftAcceptJournal,
+  createInMemoryDraftStore,
+} from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { createDraftService, type DraftAcceptJournal, type DraftStore } from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
@@ -83,11 +92,14 @@ export type CollabFacadeDeps = {
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   syncStateStore?: SyncStateStore;
+  draftStore: DraftStore;
+  draftAcceptJournal: DraftAcceptJournal;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const syncStateStore = createDrizzleSyncStateStore(deps.db);
+  const draftStore = createDrizzleDraftStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -106,6 +118,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     eventSink: deps.eventSink,
     syncStateStore,
+    draftStore,
+    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db, journal),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -121,6 +135,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+  const draftStore = createInMemoryDraftStore();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -128,6 +143,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
+    draftStore,
+    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
@@ -150,6 +167,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
     syncStateStore: deps.syncStateStore,
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+  });
+  const draftService = createDraftService({
+    draftStore: deps.draftStore,
+    liveJournal: deps.draftAcceptJournal,
+    liveCoordinator: deps.coordinator,
   });
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
@@ -308,6 +330,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     agentEdit() {
       return agentEditCore;
     },
+
+    drafts: draftService,
 
     ensureDocument(documentId) {
       return deps.lifecycle.ensureDocument(documentId);

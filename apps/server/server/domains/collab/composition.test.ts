@@ -10,6 +10,10 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import {
+  createInMemoryDraftAcceptJournal,
+  createInMemoryDraftStore,
+} from "./adapters/in-memory/drafts.js";
 import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
@@ -337,6 +341,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
 } {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
+  const draftStore = createInMemoryDraftStore();
   return {
     domain: createFacade({
       journal,
@@ -347,6 +352,8 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       bindHocuspocus: (_instance: Hocuspocus) => {},
       eventSink: options.eventSink,
       documentWriteHook: options.hook,
+      draftStore,
+      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
     }),
     journal,
   };
