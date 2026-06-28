@@ -22,6 +22,13 @@
   instead of just a list of changed hashes — so it can keep editing against
   current content without a full re-read. Concurrent deletions are now surfaced too.
 
+- Chat editing: a destructive whole-scope `replace`/delete addressed only by a
+  scope (hash, index, range, or section) with no `find` is now refused with a
+  "re-read and retry" prompt when the document changed since the agent's last
+  read — so a stale address can't silently destroy a moved/reclaimed target.
+  Content-confirmed (`find`-based) edits and all non-destructive ops still
+  auto-resync silently.
+
 - Chat: assistant turns with many edits no longer stall the UI. An unstable
   checkpoint callback was defeating memoization and causing a render storm.
 
