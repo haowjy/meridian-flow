@@ -31,9 +31,8 @@ Drizzle comparators** or an **explicit `::timestamptz` cast** on a string param 
 never a bare `Date` in a template. Canonical patterns:
 
 - **Typed comparators** — `lt`/`eq`/`gt` encode the `Date` through the column
-  type so postgres-js receives an ISO string:
-  [`subscription-store.ts`](../../../apps/server/server/domains/billing/adapters/drizzle/subscription-store.ts)
-  (`monotonicUpdateWhere`).
+  type so postgres-js receives an ISO string. Use this for timestamp comparisons
+  instead of embedding raw `Date` values in `sql` fragments.
 - **`::timestamptz` round-trip** — CAS revision tokens are read as `::text` and
   compared with `${revision}::timestamptz`, keeping microsecond precision:
   [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
@@ -59,12 +58,13 @@ absent FK.
 
 ### Billing storage
 
-Billing no longer has a `user_subscriptions` table. Stripe customer identity is
-stored as nullable `users.stripe_customer_id`; subscription/free/extra-usage
-entitlements are represented by `credit_lots` rows. Extra-usage purchase lots do
-not require an active subscription. Free-tier grants are fenced by the partial
-unique index `credit_lots_free_tier_grant` on `(user_id, grant_reason)` for
-`source_type = 'grant'` and `grant_reason LIKE 'free_tier_%'`.
+Billing has no `user_subscriptions` table in the current schema. Stripe customer
+identity lives on nullable `users.stripe_customer_id`; subscription, free-tier,
+and extra-usage entitlements are represented by `credit_lots` rows. Extra-usage
+purchase lots do not require an active subscription. Free-tier grants are fenced
+by the partial unique index `credit_lots_free_tier_grant` on `(user_id,
+grant_reason)` for `source_type = 'grant'` and `grant_reason LIKE
+'free_tier_%'`.
 
 ## Migration workflow
 
