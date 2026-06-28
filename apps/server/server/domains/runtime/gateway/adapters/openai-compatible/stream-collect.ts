@@ -38,6 +38,7 @@ import type {
   StreamEvent,
   ToolCall,
 } from "../../domain/index.js";
+import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 
 interface StreamAccumulator {
   // Final content in the order this Chat Completions adapter can reconstruct.
@@ -103,14 +104,7 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
     // fallback is deterministic within the response so the canonical contract
     // still has an ID for tool_result references.
     const id = entry.id ?? `call_${index}`;
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = entry.arguments ? (JSON.parse(entry.arguments) as Record<string, unknown>) : {};
-    } catch {
-      // Preserve malformed provider JSON as an explicit raw payload. That keeps
-      // the tool_use visible to the orchestrator instead of losing the call.
-      parsed = { raw: entry.arguments };
-    }
+    const parsed = parseToolCallArguments(entry.arguments);
     acc.contentParts.push({
       type: "tool_use",
       toolCallId: id,

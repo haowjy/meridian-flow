@@ -53,6 +53,10 @@ import {
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
+import {
+  isToolArgsParseError,
+  TOOL_ARGS_PARSE_ERROR,
+} from "../gateway/helpers/parse-tool-arguments.js";
 import type {
   CheckpointToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -315,6 +319,20 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         // "tool.client_waiting" event and suspend until the client responds
         // through the thread event hub. For now, client tools are unreachable.
         return errorResult(call.id, meridianErrorFromTool("Client tool dispatch not implemented"));
+      }
+
+      if (isToolArgsParseError(call.arguments)) {
+        const { raw, message } = call.arguments[TOOL_ARGS_PARSE_ERROR];
+        // Echo the offending fragment (truncated) so the model can see what it
+        // emitted and self-correct — a clear JSON-parse error, never a misleading
+        // downstream schema error like "path is required".
+        const fragment = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+        return errorResult(
+          call.id,
+          meridianErrorFromTool(
+            `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).`,
+          ),
+        );
       }
 
       if (ctx.signal?.aborted) {

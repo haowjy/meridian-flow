@@ -34,6 +34,7 @@ import type {
   StreamEvent,
   ToolCall,
 } from "../../domain/index.js";
+import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 
 // ── Accumulator ───────────────────────────────────────────────────
 
@@ -566,14 +567,7 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
     // Only entries with the provider call_id can participate in the canonical
     // tool-call contract; tool_result messages must reference this exact ID.
     if (!entry.callId) continue;
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = entry.arguments ? (JSON.parse(entry.arguments) as Record<string, unknown>) : {};
-    } catch {
-      // Preserve malformed provider JSON instead of dropping the call. The tool
-      // executor receives a structured object with the raw argument text.
-      parsed = { raw: entry.arguments };
-    }
+    const parsed = parseToolCallArguments(entry.arguments);
     indexedParts.push({
       index: entry.outputIndex,
       part: {
