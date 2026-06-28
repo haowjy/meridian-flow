@@ -10,7 +10,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
@@ -40,14 +40,21 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToCheckpoint,
 }: AssistantTurnProps) {
-  const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
-  const segments = partitionTurnSegments(sortedBlocks);
+  const sortedBlocks = useMemo(
+    () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
+    [turn.blocks],
+  );
+  const segments = useMemo(() => partitionTurnSegments(sortedBlocks), [sortedBlocks]);
   const isErrored = turn.status === "error";
   const isCancelled = turn.status === "cancelled";
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
-  const hasReversibleWrites = !isLive && turnWrittenDocuments(turn).length > 0;
+  const writtenDocuments = useMemo(
+    () => (isLive ? [] : turnWrittenDocuments(turn)),
+    [isLive, turn],
+  );
+  const hasReversibleWrites = writtenDocuments.length > 0;
 
   return (
     <div
@@ -68,7 +75,11 @@ function AssistantTurnComponent({
       ))}
 
       {hasReversibleWrites ? (
-        <TurnChangeFooter threadId={threadId ?? turn.threadId} turn={turn} />
+        <TurnChangeFooter
+          threadId={threadId ?? turn.threadId}
+          turn={turn}
+          writtenDocuments={writtenDocuments}
+        />
       ) : null}
 
       {isLive ? <LiveTurnStatusBar /> : null}
@@ -224,7 +235,7 @@ function DeliverySegments({
   mode: DeliveryMode;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
 }) {
-  const segments = groupDeliverySegments(blocks);
+  const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
     <>
       {segments.flatMap((segment) => {

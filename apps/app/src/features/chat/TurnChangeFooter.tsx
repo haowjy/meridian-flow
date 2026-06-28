@@ -29,6 +29,7 @@ import { turnWrittenDocuments, type WrittenDocument } from "./turn-written-docum
 export type TurnChangeFooterProps = {
   threadId: string;
   turn: Turn;
+  writtenDocuments?: WrittenDocument[];
 };
 
 type RowState = {
@@ -36,10 +37,13 @@ type RowState = {
   statusText?: string;
 };
 
-export function TurnChangeFooter({ threadId, turn }: TurnChangeFooterProps) {
+export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChangeFooterProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
-  const documents = useMemo(() => turnWrittenDocuments(turn), [turn]);
+  const documents = useMemo(
+    () => writtenDocuments ?? turnWrittenDocuments(turn),
+    [turn, writtenDocuments],
+  );
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [pendingUri, setPendingUri] = useState<string | null>(null);
