@@ -99,13 +99,13 @@ describe("billing-route", () => {
     });
   });
 
-  it("allows starting the grace turn at exactly zero balance", async () => {
+  it("blocks new turns at exactly zero balance", async () => {
     const ledger = createInMemoryCreditLedger();
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
     await debit(ledger, "500000");
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
-      canStartTurn: true,
+      canStartTurn: false,
     });
   });
 
