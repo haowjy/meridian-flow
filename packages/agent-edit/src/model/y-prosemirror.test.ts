@@ -3,6 +3,13 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import {
+  blockHashesForDoc,
+  fullHashForItemId,
+  getBlockItemId,
+  getTopLevelXmlBlocks,
+  lookupBlockHash,
+} from "./block-hash.js";
 import { yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
@@ -60,6 +67,80 @@ describe("yProsemirrorModel block hashes", () => {
   });
 });
 
+describe("lookupBlockHash", () => {
+  it("resolves an exact displayed hash", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const blocks = getTopLevelXmlBlocks(doc);
+    const displayedHash = blockHashesForDoc(doc)[1];
+
+    const lookup = lookupBlockHash(doc, displayedHash);
+
+    expect(lookup).toMatchObject({ ok: true, hash: displayedHash });
+    expect(lookup.ok && lookup.block).toBe(blocks[1]);
+  });
+
+  it("resolves a longer-than-current-display prefix", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const blocks = getTopLevelXmlBlocks(doc);
+    const displayedHash = blockHashesForDoc(doc)[1];
+    const longerPrefix = fullHash(blocks[1]).slice(0, displayedHash.length + 3);
+
+    const lookup = lookupBlockHash(doc, longerPrefix);
+
+    expect(lookup).toMatchObject({ ok: true, hash: longerPrefix });
+    expect(lookup.ok && lookup.block).toBe(blocks[1]);
+  });
+
+  it("resolves a full hash", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const blocks = getTopLevelXmlBlocks(doc);
+    const full = fullHash(blocks[2]);
+
+    const lookup = lookupBlockHash(doc, full);
+
+    expect(lookup).toMatchObject({ ok: true, hash: full });
+    expect(lookup.ok && lookup.block).toBe(blocks[2]);
+  });
+
+  it("reports ambiguous for a shared full-hash prefix", () => {
+    const doc = createDoc(numberedBlocks(32));
+    const blocks = getTopLevelXmlBlocks(doc);
+    const [prefix, first, second] = sharedFullHashPrefix(blocks);
+
+    const lookup = lookupBlockHash(doc, prefix);
+
+    expect(lookup.ok).toBe(false);
+    expect(!lookup.ok && lookup.reason).toBe("ambiguous");
+    expect(!lookup.ok && lookup.matches).toEqual(expect.arrayContaining([first, second]));
+  });
+
+  it("reports not_found for a prefix matching no full hash", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const missingPrefix = absentPrefix(getTopLevelXmlBlocks(doc));
+
+    expect(lookupBlockHash(doc, missingPrefix)).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  it("resolves case-insensitively", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+    const blocks = getTopLevelXmlBlocks(doc);
+    const full = fullHash(blocks[0]);
+    const prefix = full.slice(0, 8).toUpperCase();
+
+    const lookup = lookupBlockHash(doc, prefix);
+
+    expect(lookup).toMatchObject({ ok: true, hash: prefix.toLowerCase() });
+    expect(lookup.ok && lookup.block).toBe(blocks[0]);
+  });
+
+  it("guards empty input", () => {
+    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
+
+    expect(lookupBlockHash(doc, "")).toEqual({ ok: false, reason: "not_found" });
+    expect(lookupBlockHash(doc, "   ")).toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
 function createDoc(markdown: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   doc.clientID = 1;
@@ -71,4 +152,39 @@ function createDoc(markdown: string): Y.Doc {
 
 function blockHashes(doc: Y.Doc): string[] {
   return model.getDocumentBlockIds(doc);
+}
+
+function fullHash(block: Y.XmlElement): string {
+  return fullHashForItemId(getBlockItemId(block));
+}
+
+function numberedBlocks(count: number): string {
+  return Array.from({ length: count }, (_, i) => `Block ${i}`).join("\n\n");
+}
+
+function sharedFullHashPrefix(
+  blocks: Y.XmlElement[],
+): [prefix: string, first: Y.XmlElement, second: Y.XmlElement] {
+  const byFirstNibble = new Map<string, Y.XmlElement>();
+  for (const block of blocks) {
+    const nibble = fullHash(block)[0];
+    const first = byFirstNibble.get(nibble);
+    if (first) return [commonPrefix(fullHash(first), fullHash(block)), first, block];
+    byFirstNibble.set(nibble, block);
+  }
+  throw new Error("Expected at least two blocks to share a full-hash prefix");
+}
+
+function commonPrefix(first: string, second: string): string {
+  let length = 0;
+  while (length < first.length && first[length] === second[length]) length += 1;
+  return first.slice(0, length);
+}
+
+function absentPrefix(blocks: Y.XmlElement[]): string {
+  const firstNibbles = new Set(blocks.map((block) => fullHash(block)[0]));
+  for (const prefix of "0123456789abcdef") {
+    if (!firstNibbles.has(prefix)) return prefix;
+  }
+  throw new Error("Expected a missing one-character prefix");
 }
