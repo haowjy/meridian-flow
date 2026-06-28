@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
+import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
@@ -133,6 +134,102 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("status: success");
     expectOutcome(result, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh", "New content."]);
+  });
+
+  it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha canonical." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement only.",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
+  });
+
+  it("fully replaces canonical blocks on staged stale-replica create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha canonical." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-overwrite-stale",
+      responseId: "response-staged-overwrite-stale",
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement only.",
+        overwrite: true,
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha canonical.", "Beta canonical."]);
+
+    await ctx.core.commitResponse("response-staged-overwrite-stale");
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
+  });
+
+  it("rejects non-overwrite create against canonical content even when the replica is empty", async () => {
+    const ctx = harness({ "chapter.md": "Canonical content." });
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Replacement." },
+      context,
+    );
+
+    expectOutcome(result, "invalid_write", true);
+    expect(outcomeText(result)).toContain("File already exists: chapter.md");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Canonical content."]);
+  });
+
+  it("allows non-overwrite create when canonical is empty despite phantom replica blocks", async () => {
+    const ctx = harness({ "chapter.md": "Phantom replica content." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    clearLiveBlocks(ctx.liveDoc("chapter.md"));
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Fresh canonical content." },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh canonical content."]);
+  });
+
+  it("creates a fresh staged overwrite for a brand-new document", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-overwrite-new",
+      responseId: "response-staged-overwrite-new",
+    };
+
+    const result = await ctx.core.write(
+      { command: "create", file: "new.md", content: "Fresh content.", overwrite: true },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+
+    const commit = await ctx.core.commitResponse("response-staged-overwrite-new");
+
+    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);
   });
 
   it("keeps internal document ids out of model-facing write text", async () => {
@@ -736,4 +833,24 @@ function aroundNeedleBlocks(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
+}
+
+function appendLiveBlock(doc: Y.Doc, markdown: string): void {
+  doc.transact(
+    () => {
+      const blocks = model.getBlocks(doc);
+      model.insertBlocks(doc, blocks.at(-1) ?? null, codec.parse(markdown));
+    },
+    { type: "human" },
+  );
+}
+
+function clearLiveBlocks(doc: Y.Doc): void {
+  doc.transact(
+    () => {
+      const fragment = fragmentOf(doc);
+      fragment.delete(0, fragment.length);
+    },
+    { type: "human" },
+  );
 }
