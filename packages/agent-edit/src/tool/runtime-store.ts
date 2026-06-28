@@ -57,6 +57,7 @@ export interface RuntimeStore {
     commandName: WriteCommand["command"],
     filePath?: string,
     runtime?: RuntimeDocumentState,
+    options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
@@ -68,6 +69,10 @@ export interface RuntimeEvictOptions {
 
 export interface RuntimeRestoreOptions {
   filePath?: string;
+}
+
+export interface RuntimeSyncOptions {
+  rejectOnStale?: boolean;
 }
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -293,8 +298,18 @@ export function createRuntimeStore(deps: {
     commandName: WriteCommand["command"],
     filePath = docId,
     runtime?: RuntimeDocumentState,
+    options: RuntimeSyncOptions = {},
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId) && runtime) {
+      if (options.rejectOnStale) {
+        return {
+          ok: false,
+          response: {
+            status: "not_found",
+            text: `status: not_found\n\nDocument changed since your last read; a whole-block replace/delete by hash is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry with current hashes.`,
+          },
+        };
+      }
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
         filePath,
       });
