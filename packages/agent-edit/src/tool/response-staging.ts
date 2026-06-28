@@ -158,7 +158,7 @@ export function createResponseStaging(deps: {
         return responseCommitResult(responseId, buffer, docBuffers, documents);
       }
 
-      runtimeStore.evictResponseRuntimes(docBuffers, { needsRecovery: true });
+      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
       throw responseCommitError(responseId, true, cause, recoveryFailure);
     }
   }
@@ -189,7 +189,6 @@ export function createResponseStaging(deps: {
           docBuffer.docId,
           docBuffer.runtime,
           docBuffer.commandName,
-          { recoverFromJournal: buffer.journalCommitted },
         );
         if (isInternalWriteResult(restored)) throw new Error(restored.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -202,7 +201,7 @@ export function createResponseStaging(deps: {
         }),
       };
     } catch (cause) {
-      runtimeStore.evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
+      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: buffer.journalCommitted });
       responseBuffers.delete(responseId);
       throw cause;
     }

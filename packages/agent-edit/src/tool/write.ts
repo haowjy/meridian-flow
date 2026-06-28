@@ -576,7 +576,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   function invalidateThread(docId: string, threadId: string): void {
     responseStaging.dropForThread(docId, threadId);
-    runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
+    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     threadOrigins.evictThread(docId, threadId);
   }
 
