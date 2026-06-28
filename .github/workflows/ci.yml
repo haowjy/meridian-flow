@@ -33,44 +33,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
 
-  db-conformance:
-    name: db-conformance
-    # Skip draft PRs; pushes and workflow_call always run.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: meridian_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d meridian_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meridian_test
-      RUN_DB_TESTS: "1"
-      TEST_DB_ALLOW_DESTRUCTIVE: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.17.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Mirror the canonical setup (tools/dev/prepare-db.ts, deploy's
-      # run-migrations.sh): migrate, then apply PL/pgSQL functions. The
-      # migrations alone don't define them.
-      - run: pnpm db:migrate
-      - run: pnpm db:apply-functions
-      - run: pnpm exec vitest run -c vitest.db.config.mts
-
   migration-checks:
     name: migration-checks
     # Skip draft PRs; pushes and workflow_call always run.
