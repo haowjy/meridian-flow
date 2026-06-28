@@ -47,7 +47,7 @@ function row(tx: Tx): CreditTransactionRow {
     transactionType: tx.transactionType,
     amountMillicredits: tx.amountMillicredits.toString(),
     sourceType: tx.sourceType,
-    reason: displayReasonFor({
+    displayReason: displayReasonFor({
       displayReason: typeof tx.metadata.reason === "string" ? tx.metadata.reason : null,
       sourceType: tx.sourceType,
       grantReason: tx.reason,

@@ -17,7 +17,7 @@ describe("ensureFreeTier", () => {
     expect(transactions).toHaveLength(1);
     expect(transactions[0]).toMatchObject({
       sourceType: "grant",
-      reason: "Monthly usage",
+      displayReason: "Monthly usage",
       amountMillicredits: FREE_TIER.grantMillicredits,
     });
   });
@@ -56,7 +56,7 @@ describe("ensureFreeTier", () => {
     await ensureFreeTier(ledger, userId, { clock });
 
     const [transaction] = await ledger.listTransactions({ userId });
-    expect(transaction?.reason).toBe("Monthly usage");
-    expect(transaction?.reason).not.toBe(`free_tier_${userId}_2026-06-01`);
+    expect(transaction?.displayReason).toBe("Monthly usage");
+    expect(transaction?.displayReason).not.toBe(`free_tier_${userId}_2026-06-01`);
   });
 });

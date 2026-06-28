@@ -118,7 +118,7 @@ async function createAppServices(): Promise<AppServices> {
 | `content.ts` | `projects`, `works`, `context_sources`, `folders`, `documents` |
 | `agent-threads.ts` | `threads`, `thread_works`, `turns`, `model_responses`, `turn_blocks`, `event_journal`, `thread_user_state`, `thread_documents` |
 | `agent-packages.ts` | `agent_definitions`, `skills`, `user_installed_skills`, `agent_skills`, `agent_subagents` |
-| `billing.ts` | `credit_lots`, `credit_transactions`, **`credit_balances` view** |
+| `billing.ts` | `credit_lots`, `credit_transactions` |
 | `user.ts` | `user_preferences`, `user_project_favorites` |
 | `preferences.ts` | `project_user_preferences` |
 | `provenance.ts` | `turn_document_touches` |
@@ -411,6 +411,7 @@ export default defineConfig({
 | `0006_faithful_thunderbolt_ross.sql` | `document_yjs_heads.latest_checkpoint_id` FK |
 | `0007_reversal_lineage_and_undo_notifications.sql` | Reversal-op lineage (`document_yjs_reversal_ops`), `pending_undo_notifications`, `document_yjs_reversals.redo_update_seq`, `agent_edit_mutations.thread_turn` index |
 | `0008_lyrical_cassandra_nova.sql` | Billing simplification: drops `user_subscriptions`, adds `users.stripe_customer_id`, adds `credit_lots_free_tier_grant` |
+| `0009_bouncy_ghost_rider.sql` | Deletes obsolete signup/monthly grant indexes and stale `credit_balances` view |
 | `meta/_journal.json` | Ordered migration journal; review with every generated migration |
 | `meta/*_snapshot.json` | Required generated Drizzle snapshots; never delete |
 

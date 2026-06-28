@@ -64,6 +64,13 @@
       "when": 1782664285068,
       "tag": "0008_lyrical_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782667522416,
+      "tag": "0009_bouncy_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

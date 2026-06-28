@@ -63,18 +63,6 @@ function resolveLotConflictGuard(identity: GrantIdentity): LotConflictGuard | nu
       where: sql`${creditLots.sourceType} = 'subscription' AND ${creditLots.grantReason} IS NOT NULL`,
     };
   }
-  if (identity.sourceType === "grant" && identity.grantReason === "signup") {
-    return {
-      target: [creditLots.userId, creditLots.grantReason],
-      where: sql`${creditLots.grantReason} = 'signup'`,
-    };
-  }
-  if (identity.sourceType === "grant" && identity.grantReason?.startsWith("monthly_")) {
-    return {
-      target: [creditLots.userId, creditLots.grantReason],
-      where: sql`${creditLots.grantReason} LIKE 'monthly_%'`,
-    };
-  }
   if (identity.sourceType === "grant" && isFreeTierGrantReason(identity.grantReason)) {
     return {
       target: [creditLots.userId, creditLots.grantReason],
@@ -305,7 +293,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         transactionType: row.transactionType,
         amountMillicredits: toBigInt(row.amountMillicredits).toString(),
         sourceType: row.sourceType ?? null,
-        reason: displayReasonFor({
+        displayReason: displayReasonFor({
           displayReason:
             row.metadata &&
             typeof row.metadata === "object" &&

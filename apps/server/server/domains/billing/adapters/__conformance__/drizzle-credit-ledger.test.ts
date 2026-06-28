@@ -243,35 +243,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({ reason: "Monthly usage" }),
       ]);
     });
-
-    it("creates signup and monthly manual grants once under concurrent grant calls", async () => {
-      const signupInput = {
-        userId,
-        source: "manual" as const,
-        amountMillicredits: "200000",
-        reason: "signup",
-      };
-      const signupResults = await Promise.all(
-        Array.from({ length: 8 }, () => ledger.grant(signupInput)),
-      );
-      const createdSignup = signupResults.filter((result) => result.created);
-      expect(createdSignup).toHaveLength(1);
-      expect(new Set(signupResults.map((result) => result.transactionId)).size).toBe(1);
-      expect(await ledger.getBalance({ userId })).toBe("200000");
-
-      const monthlyInput = {
-        userId,
-        source: "manual" as const,
-        amountMillicredits: "200000",
-        reason: "monthly_2026_07",
-      };
-      const monthlyResults = await Promise.all(
-        Array.from({ length: 8 }, () => ledger.grant(monthlyInput)),
-      );
-      const createdMonthly = monthlyResults.filter((result) => result.created);
-      expect(createdMonthly).toHaveLength(1);
-      expect(new Set(monthlyResults.map((result) => result.transactionId)).size).toBe(1);
-      expect(await ledger.getBalance({ userId })).toBe("400000");
-    });
   });
 }

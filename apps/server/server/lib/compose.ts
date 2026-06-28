@@ -5,16 +5,13 @@
  */
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
+import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
-  createStripeBillingGateway,
-  type StripeBillingGateway,
-} from "../domains/billing/adapters/stripe/stripe-gateway.js";
-import { billingPlanPriceBindings } from "../domains/billing/domain/catalog.js";
-import {
+  type BillingService,
   type CreditLedger,
+  createBillingService,
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
-  ensureFreeTier,
 } from "../domains/billing/index.js";
 import {
   type CollabDomain,
@@ -144,9 +141,7 @@ export type AppServices = {
   users: UserRepository;
   workRepo: ProjectWorkRepository;
   creditLedger: CreditLedger;
-  stripeGateway: StripeBillingGateway | null;
-  freeTier: { ensure(userId: string): Promise<void> };
-  getOrCreateStripeCustomer(userId: string): Promise<string>;
+  billing: BillingService;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
@@ -190,9 +185,7 @@ export type ProductionAppPorts = {
   users: UserRepository;
   workRepo: ProjectWorkRepository;
   creditLedger: CreditLedger;
-  stripeGateway: StripeBillingGateway | null;
-  freeTier: { ensure(userId: string): Promise<void> };
-  getOrCreateStripeCustomer(userId: string): Promise<string>;
+  billing: BillingService;
   agents: AgentPackageStore;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
@@ -293,11 +286,15 @@ export async function createProductionAppPorts(input: {
     ? createStripeBillingGateway({
         secretKey: environment.STRIPE_SECRET_KEY as string,
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
-        planPrices: billingPlanPriceBindings(environment),
       })
     : null;
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
-  const freeTier = { ensure: (userId: string) => ensureFreeTier(creditLedger, userId) };
+  const billing = createBillingService({
+    ledger: creditLedger,
+    stripeGateway,
+    getOrCreateStripeCustomer,
+    env: environment,
+  });
 
   return {
     db,
@@ -315,9 +312,7 @@ export async function createProductionAppPorts(input: {
     users,
     workRepo,
     creditLedger,
-    stripeGateway,
-    freeTier,
-    getOrCreateStripeCustomer,
+    billing,
     agents: { phase: "skeleton" },
     packageRepository,
     marsPackageFetcher,
@@ -438,6 +433,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     helperResultDelivery,
     checkpointRegistry,
     creditLedger: ports.creditLedger,
+    billingUsage: ports.billing.usage,
     checkpointArtifacts: createCheckpointArtifactFlush({
       promotion: ports.promotionService,
       objectStore: ports.objectStore,
@@ -471,9 +467,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     users: ports.users,
     workRepo: ports.workRepo,
     creditLedger: ports.creditLedger,
-    stripeGateway: ports.stripeGateway,
-    freeTier: ports.freeTier,
-    getOrCreateStripeCustomer: ports.getOrCreateStripeCustomer,
+    billing: ports.billing,
     agents: ports.agents,
     checkpointRegistry,
     eventSink: ports.eventSink,
@@ -507,6 +501,14 @@ export function createInMemoryAppServices(): AppServices {
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const undoNotifications = createInMemoryPendingUndoNotificationRepository();
   const creditLedger = createInMemoryCreditLedger();
+  const billing = createBillingService({
+    ledger: creditLedger,
+    stripeGateway: null,
+    getOrCreateStripeCustomer: async () => {
+      throw new Error("Stripe checkout is not configured");
+    },
+    env: {},
+  });
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
 
@@ -679,11 +681,7 @@ export function createInMemoryAppServices(): AppServices {
       async touch() {},
     },
     creditLedger,
-    stripeGateway: null,
-    freeTier: { ensure: (userId: string) => ensureFreeTier(creditLedger, userId) },
-    async getOrCreateStripeCustomer() {
-      throw new Error("Stripe checkout is not configured");
-    },
+    billing,
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),

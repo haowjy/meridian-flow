@@ -74,7 +74,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import { type CreditLedger, ensureFreeTier } from "../../billing/index.js";
+import type { BillingUsagePolicy, CreditLedger } from "../../billing/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -146,8 +146,9 @@ export interface OrchestratorDeps {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
   };
   permissionGate: PermissionGate;
-  /** Project-scoped ledger for model-call credit balance checks, debits, and spawn rollups. */
+  /** Ledger is used directly only for spawn rollups; turn gating/debits go through billingUsage. */
   creditLedger: CreditLedger;
+  billingUsage: BillingUsagePolicy;
   /** Checkpoint-boundary artifact flush; explicit noop adapter means disabled. */
   checkpointArtifacts: CheckpointArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
@@ -367,15 +368,9 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
-  await ensureFreeTier(deps.creditLedger, thread.userId);
-  const balance = BigInt(
-    await deps.creditLedger.getBalance({
-      userId: thread.userId,
-    }),
-  );
   // New turns require positive balance; the mid-stream gate in turn-accounting
-  // allows zero/negative grace only after an already-started turn is in flight.
-  if (balance <= 0n) {
+  // allows zero grace only after an already-started turn is in flight.
+  if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
     throw meridianErrorFromSystem(
       "credits_exhausted",
       "Your usage balance is exhausted; add balance before starting a new turn",
@@ -742,7 +737,7 @@ async function* generateEvents(
 ): AsyncGenerator<OrchestratorEvent> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
-  const turnAccounting = createTurnAccounting({ creditLedger: deps.creditLedger });
+  const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
 
   yield* initialEvents;
 

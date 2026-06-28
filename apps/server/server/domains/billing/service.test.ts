@@ -1,17 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  StripeBillingGateway,
-  StripeWebhookEvent,
-} from "../domains/billing/adapters/stripe/stripe-gateway.js";
-import { createInMemoryCreditLedger } from "../domains/billing/index.js";
-import {
-  type BillingRouteDeps,
-  billingBalance,
-  billingProducts,
-  billingTransactions,
-  createBillingCheckoutSession,
-  handleBillingWebhook,
-} from "./billing-route.js";
+import type { StripeBillingGateway, StripeWebhookEvent } from "./adapters/stripe/stripe-gateway.js";
+import { createInMemoryCreditLedger } from "./index.js";
+import { type BillingServiceDeps, createBillingService } from "./service.js";
 
 function createMockStripeBillingGateway(): StripeBillingGateway {
   return {
@@ -23,33 +13,18 @@ function createMockStripeBillingGateway(): StripeBillingGateway {
     createPortalSession: vi.fn(async () => ({ url: "https://stripe.test/portal" })),
     getLiveSubscription: vi.fn(async () => null),
     constructWebhookEvent: vi.fn((input) => JSON.parse(input.rawBody) as StripeWebhookEvent),
-    resolveCheckoutGrant: vi.fn(async (event: StripeWebhookEvent) => {
-      const object = event.data.object as {
-        userId?: string;
-        amountMillicredits?: string;
-        id?: string;
-      };
-      if (!object.userId || !object.amountMillicredits) return null;
-      return {
-        userId: object.userId,
-        amountMillicredits: object.amountMillicredits,
-        source: "stripe" as const,
-        stripeIdempotencyId: object.id ?? "evt_1",
-      };
-    }),
   };
 }
 
-function deps(input: Partial<BillingRouteDeps> = {}): BillingRouteDeps {
+function deps(input: Partial<BillingServiceDeps> = {}): BillingServiceDeps {
   const ledger = input.ledger ?? createInMemoryCreditLedger();
   return {
     ledger,
     stripeGateway: Object.hasOwn(input, "stripeGateway")
       ? (input.stripeGateway ?? null)
       : createMockStripeBillingGateway(),
-    freeTier: input.freeTier ?? { ensure: vi.fn(async () => {}) },
     getOrCreateStripeCustomer: input.getOrCreateStripeCustomer ?? vi.fn(async () => "cus_123"),
-    env: {
+    env: input.env ?? {
       STRIPE_PRICE_PLAN_STANDARD: "price_standard",
       STRIPE_PRICE_PLAN_PREMIUM: "price_premium",
     },
@@ -68,7 +43,7 @@ async function debit(ledger: ReturnType<typeof createInMemoryCreditLedger>, amou
   });
 }
 
-describe("billing-route", () => {
+describe("billing service", () => {
   it("computes included usage percentage, usage mode, purchased USD, and canStartTurn", async () => {
     const ledger = createInMemoryCreditLedger();
     await ledger.grant({
@@ -81,30 +56,42 @@ describe("billing-route", () => {
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "735000" });
     await debit(ledger, "250000");
 
-    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
+    await expect(
+      createBillingService(deps({ ledger })).balance({ userId: "user-1" }),
+    ).resolves.toEqual({
       purchasedBalanceUsd: "7.35",
       canStartTurn: true,
       includedUsage: { mode: "subscription", remainingPercent: 75, overBudget: false },
     });
   });
 
-  it("returns no included usage for purchased-only balance", async () => {
+  it("adds free included usage alongside purchased-only balance", async () => {
     const ledger = createInMemoryCreditLedger();
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
 
-    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
+    await expect(
+      createBillingService(deps({ ledger })).balance({ userId: "user-1" }),
+    ).resolves.toEqual({
       purchasedBalanceUsd: "5",
       canStartTurn: true,
-      includedUsage: { mode: "none" },
+      includedUsage: { mode: "free", remainingPercent: 100, overBudget: false },
     });
   });
 
   it("blocks new turns at exactly zero balance", async () => {
     const ledger = createInMemoryCreditLedger();
-    await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
+    await ledger.grant({
+      userId: "user-1",
+      source: "subscription",
+      amountMillicredits: "500000",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      reason: "plan_standard",
+    });
     await debit(ledger, "500000");
 
-    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+    await expect(
+      createBillingService(deps({ ledger })).balance({ userId: "user-1" }),
+    ).resolves.toMatchObject({
       canStartTurn: false,
     });
   });
@@ -120,13 +107,15 @@ describe("billing-route", () => {
     });
     await debit(ledger, "250000");
 
-    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+    await expect(
+      createBillingService(deps({ ledger })).balance({ userId: "user-1" }),
+    ).resolves.toMatchObject({
       canStartTurn: false,
       includedUsage: { mode: "free", remainingPercent: 0, overBudget: true },
     });
   });
 
-  it("does not classify manual grants as free usage", async () => {
+  it("does not let manual grants displace free included usage", async () => {
     const ledger = createInMemoryCreditLedger();
     await ledger.grant({
       userId: "user-1",
@@ -136,40 +125,34 @@ describe("billing-route", () => {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     });
 
-    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+    await expect(
+      createBillingService(deps({ ledger })).balance({ userId: "user-1" }),
+    ).resolves.toMatchObject({
       canStartTurn: true,
-      includedUsage: { mode: "none" },
+      includedUsage: { mode: "free", remainingPercent: 100, overBudget: false },
     });
   });
 
   it("ensures free tier on balance and transaction reads and maps transactions to USD", async () => {
     const ledger = createInMemoryCreditLedger();
-    const ensure = vi.fn(async (userId: string) => {
-      await ledger.grant({
-        userId,
-        source: "free",
-        amountMillicredits: "200000",
-        reason: "free_tier_user-1_2026-06-01",
-        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-        metadata: { reason: "Monthly usage" },
-      });
-    });
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
     await debit(ledger, "12345");
 
-    const routeDeps = deps({ ledger, freeTier: { ensure } });
-    const txs = await billingTransactions(routeDeps, { userId: "user-1" });
+    const billingDeps = deps({ ledger });
+    const txs = await createBillingService(billingDeps).transactions({ userId: "user-1" });
 
     expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 3 });
     expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
-    expect(txs.transactions.map((tx) => tx.reason)).toContain("Monthly usage");
-    await expect(billingBalance(routeDeps, { userId: "user-1" })).resolves.toMatchObject({
+    expect(txs.transactions.map((tx) => tx.label)).toContain("Monthly usage");
+    await expect(
+      createBillingService(billingDeps).balance({ userId: "user-1" }),
+    ).resolves.toMatchObject({
       includedUsage: { mode: "free", remainingPercent: 100, overBudget: false },
     });
   });
 
   it("returns paid products only and reports Stripe configuration", () => {
-    const configured = billingProducts(deps());
+    const configured = createBillingService(deps()).products();
     expect(configured.stripeConfigured).toBe(true);
     expect(configured.entries.map((entry) => entry.id)).toEqual([
       "plan_standard",
@@ -196,15 +179,25 @@ describe("billing-route", () => {
         presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
       },
     });
-    expect(billingProducts(deps({ stripeGateway: null })).stripeConfigured).toBe(false);
+    expect(createBillingService(deps({ stripeGateway: null })).products().stripeConfigured).toBe(
+      false,
+    );
+
+    expect(
+      createBillingService(
+        deps({
+          env: { STRIPE_PRICE_PLAN_STANDARD: "price_standard" },
+        }),
+      ).products().stripeConfigured,
+    ).toBe(false);
   });
 
   it("creates checkout sessions and sends active subscribers to the portal", async () => {
     const gateway = createMockStripeBillingGateway();
-    const routeDeps = deps({ stripeGateway: gateway });
+    const billingDeps = deps({ stripeGateway: gateway });
 
     await expect(
-      createBillingCheckoutSession(routeDeps, {
+      createBillingService(billingDeps).createCheckoutSession({
         userId: "user-1",
         body: {
           entryId: "plan_standard",
@@ -223,7 +216,7 @@ describe("billing-route", () => {
 
     vi.mocked(gateway.getLiveSubscription).mockResolvedValueOnce({ id: "sub_1", status: "active" });
     await expect(
-      createBillingCheckoutSession(routeDeps, {
+      createBillingService(billingDeps).createCheckoutSession({
         userId: "user-1",
         body: {
           entryId: "plan_standard",
@@ -236,9 +229,9 @@ describe("billing-route", () => {
 
   it("creates extra-usage checkout from arbitrary in-range amountUsd", async () => {
     const gateway = createMockStripeBillingGateway();
-    const routeDeps = deps({ stripeGateway: gateway });
+    const billingDeps = deps({ stripeGateway: gateway });
 
-    await createBillingCheckoutSession(routeDeps, {
+    await createBillingService(billingDeps).createCheckoutSession({
       userId: "user-1",
       body: {
         entryId: "extra_usage",
@@ -254,7 +247,7 @@ describe("billing-route", () => {
       }),
     );
 
-    await createBillingCheckoutSession(routeDeps, {
+    await createBillingService(billingDeps).createCheckoutSession({
       userId: "user-1",
       body: {
         entryId: "extra_usage",
@@ -273,13 +266,13 @@ describe("billing-route", () => {
 
   it("rejects checkout without Stripe and unknown entries", async () => {
     await expect(
-      createBillingCheckoutSession(deps({ stripeGateway: null }), {
+      createBillingService(deps({ stripeGateway: null })).createCheckoutSession({
         userId: "user-1",
         body: { entryId: "plan_standard", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
     ).rejects.toThrow("Stripe checkout is not configured");
     await expect(
-      createBillingCheckoutSession(deps(), {
+      createBillingService(deps()).createCheckoutSession({
         userId: "user-1",
         body: { entryId: "plan_free", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
@@ -288,7 +281,7 @@ describe("billing-route", () => {
 
   it("rejects invalid extra-usage amountUsd at the route core", async () => {
     await expect(
-      createBillingCheckoutSession(deps(), {
+      createBillingService(deps()).createCheckoutSession({
         userId: "user-1",
         body: { entryId: "extra_usage", successUrl: "https://ok", cancelUrl: "https://ok" },
       }),
@@ -303,7 +296,7 @@ describe("billing-route", () => {
 
     for (const [amountUsd, message] of invalidAmounts) {
       await expect(
-        createBillingCheckoutSession(deps(), {
+        createBillingService(deps()).createCheckoutSession({
           userId: "user-1",
           body: {
             entryId: "extra_usage",
@@ -318,16 +311,25 @@ describe("billing-route", () => {
 
   it("handles webhook grants idempotently through the ledger", async () => {
     const ledger = createInMemoryCreditLedger();
-    const routeDeps = deps({ ledger });
+    const billingDeps = deps({ ledger });
     const payload = JSON.stringify({
       type: "checkout.session.completed",
-      data: { object: { id: "cs_1", userId: "user-1", amountMillicredits: "500000" } },
+      data: {
+        object: {
+          id: "cs_1",
+          mode: "payment",
+          payment_status: "paid",
+          metadata: { userId: "user-1", grantMillicredits: "500000" },
+        },
+      },
     });
 
-    await expect(handleBillingWebhook(routeDeps, { payload, signature: "sig" })).resolves.toEqual({
+    await expect(
+      createBillingService(billingDeps).handleWebhook({ payload, signature: "sig" }),
+    ).resolves.toEqual({
       received: true,
     });
-    await handleBillingWebhook(routeDeps, { payload, signature: "sig" });
+    await createBillingService(billingDeps).handleWebhook({ payload, signature: "sig" });
     expect(await ledger.getBalance({ userId: "user-1" })).toBe("500000");
   });
 });

@@ -1,15 +1,6 @@
 import type { CreditLotId, CreditTransactionId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  pgTable,
-  pgView,
-  text,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, millicredits } from "./_shared";
 import { users } from "./users";
 
@@ -35,12 +26,6 @@ export const creditLots = pgTable(
     uniqueIndex("credit_lots_stripe_session")
       .on(table.stripeSessionId)
       .where(sql`${table.stripeSessionId} IS NOT NULL`),
-    uniqueIndex("credit_lots_signup_grant")
-      .on(table.userId, table.grantReason)
-      .where(sql`${table.grantReason} = 'signup'`),
-    uniqueIndex("credit_lots_monthly_grant")
-      .on(table.userId, table.grantReason)
-      .where(sql`${table.grantReason} LIKE 'monthly_%'`),
     uniqueIndex("credit_lots_free_tier_grant")
       .on(table.userId, table.grantReason)
       .where(sql`${table.sourceType} = 'grant' AND ${table.grantReason} LIKE 'free_tier_%'`),
@@ -106,31 +91,3 @@ export const creditTransactions = pgTable(
       .where(sql`${table.consumptionGroupId} IS NOT NULL`),
   ],
 );
-
-export const creditBalances = pgView("credit_balances").as((qb) => {
-  const lots = creditLots;
-  return qb
-    .select({
-      userId: lots.userId,
-      totalBalanceMillicredits: sql<number>`COALESCE(SUM(${lots.remainingMillicredits}), 0)`.as(
-        "total_balance_millicredits",
-      ),
-      grantBalanceMillicredits:
-        sql<number>`COALESCE(SUM(${lots.remainingMillicredits}) FILTER (WHERE ${lots.sourceType} = 'grant'), 0)`.as(
-          "grant_balance_millicredits",
-        ),
-      purchasedBalanceMillicredits:
-        sql<number>`COALESCE(SUM(${lots.remainingMillicredits}) FILTER (WHERE ${lots.sourceType} = 'purchase'), 0)`.as(
-          "purchased_balance_millicredits",
-        ),
-      debtBalanceMillicredits:
-        sql<number>`COALESCE(SUM(${lots.remainingMillicredits}) FILTER (WHERE ${lots.sourceType} = 'debt'), 0)`.as(
-          "debt_balance_millicredits",
-        ),
-    })
-    .from(lots)
-    .where(
-      sql`${lots.expiresAt} IS NULL OR ${lots.expiresAt} > NOW() OR ${lots.sourceType} = 'debt'`,
-    )
-    .groupBy(lots.userId);
-});

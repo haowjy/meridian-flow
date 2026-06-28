@@ -6,9 +6,9 @@ lots and consumes those lots during runtime turns.
 
 ## What it owns
 
+- **Billing service** — route-facing balance/products/activity/checkout/webhook behavior and runtime usage policy.
 - **Stripe gateway** — a thin SDK wrapper for customer creation, checkout,
-  customer portal sessions, live-subscription lookup, webhook construction, and
-  webhook-to-grant resolution.
+  customer portal sessions, live-subscription lookup, and webhook construction. Webhook-to-grant policy lives in `domain/stripe-webhook-grants.ts`.
 - **Credit ledger port** — the user-scoped FIFO balance contract used by billing
   routes, webhooks, free-tier provisioning, runtime turn gating, and runtime
   debits.
@@ -46,7 +46,7 @@ USD/percentage shapes before returning them to the client.
 - **In-memory credit ledger** — test/runtime adapter with the same port shape.
 - **Stripe billing gateway** — Stripe SDK wrapper. It is intentionally not hidden
   behind a generic payment-provider port because Stripe is the subscription and
-  payment state authority.
+  payment state authority; Meridian webhook policy stays in `domain/stripe-webhook-grants.ts`.
 
 ## Invariants
 
@@ -58,11 +58,8 @@ USD/percentage shapes before returning them to the client.
   Drizzle adapter returns that, never a locally-generated id, so a concurrent
   replay can't surface a transaction id that was never written.
 - **Machine identity vs display reason.** A grant's `reason` is a machine
-  idempotency/grouping key only (`free_tier_*`, `signup`, `monthly_*`, Stripe
-  ids) and must never reach users; the human activity-feed label travels in the
-  separate `displayReason` field. `domain/grant-identity.ts` owns lot-source,
-  idempotency identity, free-tier detection, and display-label resolution, and is
-  shared by both ledger adapters so in-memory and Postgres agree on dedup.
+  idempotency/grouping key only (`free_tier_*`, Stripe ids) and must never reach users; the human activity-feed label travels in the
+  separate `displayReason` field. `domain/grant-identity.ts` owns lot-source, idempotency identity, free-tier detection, and display-label resolution, and is shared by both ledger adapters so in-memory and Postgres agree on dedup.
 - **Free-tier idempotency.** Free lots use deterministic keys
   `free_tier_{userId}_{periodStart}` and the DB partial unique index
   `credit_lots_free_tier_grant` fences concurrent grants.

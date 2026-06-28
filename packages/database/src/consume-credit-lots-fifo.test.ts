@@ -34,8 +34,8 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, grant_reason, expires_at)
         VALUES
-          (${grantA}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'signup', ${soon}),
-          (${grantB}::uuid, ${userId}::uuid, 'grant', 3000, 3000, 'monthly_2026_05', ${later})
+          (${grantA}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'free_tier_user_2026_05', ${soon}),
+          (${grantB}::uuid, ${userId}::uuid, 'grant', 3000, 3000, 'free_tier_user_2026_06', ${later})
       `;
 
       const first = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
@@ -72,10 +72,10 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
         ORDER BY grant_reason NULLS LAST
       `;
 
-      const signupLot = lotsAfter.find((l) => l.grant_reason === "signup");
-      const monthlyLot = lotsAfter.find((l) => l.grant_reason === "monthly_2026_05");
-      expect(Number(signupLot?.remaining_millicredits)).toBe(0);
-      expect(Number(monthlyLot?.remaining_millicredits)).toBe(2000);
+      const firstGrantLot = lotsAfter.find((l) => l.grant_reason === "free_tier_user_2026_05");
+      const secondGrantLot = lotsAfter.find((l) => l.grant_reason === "free_tier_user_2026_06");
+      expect(Number(firstGrantLot?.remaining_millicredits)).toBe(0);
+      expect(Number(secondGrantLot?.remaining_millicredits)).toBe(2000);
 
       const second = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
         SELECT * FROM consume_credit_lots_fifo(
@@ -161,7 +161,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
       const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, grant_reason, expires_at)
-        VALUES (${grantId}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'signup', ${soon})
+        VALUES (${grantId}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'free_tier_user_2026_05', ${soon})
       `;
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits)

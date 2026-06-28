@@ -6,7 +6,7 @@ export interface CreditGrantInput {
   userId: string;
   source: CreditGrantSource;
   amountMillicredits: string;
-  /** Machine idempotency/grouping key for non-Stripe grants (signup, monthly_*, free_tier_*). Never display to users. */
+  /** Machine idempotency/grouping key for non-Stripe grants (free_tier_*). Never display to users. */
   reason?: string | null;
   /** Human-facing activity-feed label. This is the only grant reason text safe to display. */
   displayReason?: string | null;
@@ -46,7 +46,7 @@ export interface CreditTransactionRow {
   transactionType: string;
   amountMillicredits: string;
   sourceType: string | null;
-  reason: string | null;
+  displayReason: string | null;
   usageEventId: string | null;
   createdAt: string;
   metadata: Record<string, unknown>;
