@@ -5,7 +5,11 @@
  * whole DI graph in every fixture.
  */
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import { createBillingUsagePolicy, createInMemoryCreditLedger } from "../../../billing/index.js";
+import {
+  type CreditLedger,
+  createBillingUsagePolicy,
+  createInMemoryCreditLedger,
+} from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryPackageStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
@@ -53,8 +57,8 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 }
 
 export function createTestOrchestratorDeps(
-  overrides: Partial<OrchestratorDeps> = {},
-): OrchestratorDeps {
+  overrides: Partial<OrchestratorDeps> & { creditLedger?: CreditLedger } = {},
+): OrchestratorDeps & { creditLedger: CreditLedger } {
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
   const preferences = createInMemoryProjectPreferencesRepository();
@@ -75,7 +79,6 @@ export function createTestOrchestratorDeps(
     toolRegistry: createToolRegistry(),
     projectPreferences,
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
-    creditLedger,
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     checkpointArtifacts: createNoopCheckpointArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
@@ -95,5 +98,6 @@ export function createTestOrchestratorDeps(
       async rollbackResponse() {},
     },
     ...overrides,
+    creditLedger,
   };
 }

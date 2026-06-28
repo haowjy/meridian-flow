@@ -28,9 +28,16 @@ export { BillingRequestError } from "./domain/errors.js";
 
 export interface BillingServiceDeps {
   ledger: CreditLedger;
+  usagePolicy: BillingUsagePolicy;
   stripeGateway: StripeBillingGateway | null;
   getOrCreateStripeCustomer: (userId: string) => Promise<string>;
   env: NodeJS.ProcessEnv;
+}
+
+export type BillingDomainDeps = Omit<BillingServiceDeps, "usagePolicy">;
+
+export interface BillingSpendReader {
+  getThreadDebitTotal(input: { userId: string; threadId: string }): Promise<string>;
 }
 
 function isUnexpired(lot: CreditLotView, now = new Date()): boolean {
@@ -88,20 +95,16 @@ async function billingBalance(
   deps: BillingServiceDeps,
   input: { userId: string },
 ): Promise<BillingBalanceResponse> {
-  await ensureFreeTier(deps.ledger, input.userId);
+  const canStartTurn = await deps.usagePolicy.canStartTurn(input.userId);
   const breakdown = await deps.ledger.getBalanceBreakdown({ userId: input.userId });
   const displayLot = includedLot(breakdown.lots);
   const purchasedBalance = breakdown.lots.reduce((sum, lot) => {
     return lot.source === "purchase" ? sum + BigInt(lot.balanceMillicredits) : sum;
   }, 0n);
-  const totalBalance = breakdown.lots.reduce(
-    (sum, lot) => sum + BigInt(lot.balanceMillicredits),
-    0n,
-  );
 
   return {
     purchasedBalanceUsd: millicreditsToUsd(purchasedBalance),
-    canStartTurn: totalBalance > 0n,
+    canStartTurn,
     includedUsage: includedUsage(displayLot, breakdown.lots),
   };
 }
@@ -116,14 +119,11 @@ function transactionKind(row: CreditTransactionRow): BillingTransaction["kind"] 
 function transactionLabel(row: CreditTransactionRow): string {
   if (row.displayReason) return row.displayReason;
   if (row.transactionType === "consumption") return "Model usage";
-  if (row.transactionType === "purchase") return "Extra usage";
-  if (row.transactionType === "grant") return "Monthly usage";
   return "Billing adjustment";
 }
 
 function billingTransaction(row: CreditTransactionRow): BillingTransaction {
   return {
-    id: row.id,
     kind: transactionKind(row),
     label: transactionLabel(row),
     amountUsd: millicreditsToUsd(row.amountMillicredits),
@@ -151,10 +151,19 @@ async function billingTransactions(
 }
 
 function billingProducts(deps: BillingServiceDeps): BillingProductsResponse {
-  const configuredPlanCount = billingPlanPriceBindings(deps.env).length;
+  const stripeConfigured = deps.stripeGateway !== null;
+  const configuredPlanEntryIds = new Set(
+    billingPlanPriceBindings(deps.env).map((binding) => binding.entryId),
+  );
   return {
-    entries: [...BILLING_PLANS, EXTRA_USAGE].map(publicCatalogEntry),
-    stripeConfigured: deps.stripeGateway !== null && configuredPlanCount === BILLING_PLANS.length,
+    entries: [...BILLING_PLANS, EXTRA_USAGE].map((entry) =>
+      publicCatalogEntry(entry, {
+        checkoutAvailable:
+          stripeConfigured &&
+          (entry.kind === "extra-usage" || configuredPlanEntryIds.has(entry.id)),
+      }),
+    ),
+    stripeConfigured,
   };
 }
 
@@ -242,7 +251,6 @@ async function handleBillingWebhook(
 }
 
 export interface BillingService {
-  readonly usage: BillingUsagePolicy;
   balance(input: { userId: string }): Promise<BillingBalanceResponse>;
   transactions(input: { userId: string; limit?: number }): Promise<BillingTransactionsResponse>;
   products(): BillingProductsResponse;
@@ -256,13 +264,29 @@ export interface BillingService {
   }): Promise<BillingWebhookResponse>;
 }
 
-export function createBillingService(deps: BillingServiceDeps): BillingService {
+function createBillingService(deps: BillingServiceDeps): BillingService {
   return {
-    usage: createBillingUsagePolicy(deps.ledger),
     balance: (input) => billingBalance(deps, input),
     transactions: (input) => billingTransactions(deps, input),
     products: () => billingProducts(deps),
     createCheckoutSession: (input) => createBillingCheckoutSession(deps, input),
     handleWebhook: (input) => handleBillingWebhook(deps, input),
+  };
+}
+
+export interface BillingDomain {
+  service: BillingService;
+  usagePolicy: BillingUsagePolicy;
+  spendReader: BillingSpendReader;
+}
+
+export function createBillingDomain(deps: BillingDomainDeps): BillingDomain {
+  const usagePolicy = createBillingUsagePolicy(deps.ledger);
+  return {
+    service: createBillingService({ ...deps, usagePolicy }),
+    usagePolicy,
+    spendReader: {
+      getThreadDebitTotal: (input) => deps.ledger.getThreadDebitTotal(input),
+    },
   };
 }

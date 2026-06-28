@@ -5,12 +5,14 @@ export interface BillingPlanEntry {
   description: string;
   priceUsd: string;
   interval: "month" | "year";
+  checkoutAvailable: boolean;
 }
 
 export interface BillingExtraUsageEntry {
   id: string;
   kind: "extra-usage";
   name: string;
+  checkoutAvailable: boolean;
   description: string;
   amountOptions: {
     minUsd: string;
@@ -50,7 +52,6 @@ export interface BillingBalanceResponse {
 }
 
 export interface BillingTransaction {
-  id: string;
   kind: "purchase" | "grant" | "consumption" | "adjustment";
   label: string;
   amountUsd: string;

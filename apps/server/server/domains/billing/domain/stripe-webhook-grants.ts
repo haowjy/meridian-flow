@@ -150,24 +150,22 @@ function resolvePaidInvoice(
   if (!line?.id || !line.period?.end) return null;
 
   const linePriceId = priceIdFromLine(line);
-  const catalogPlan = linePriceId ? plansByPriceId.get(linePriceId) : null;
-  if (linePriceId && !catalogPlan) {
+  if (!linePriceId) {
+    throw new Error("Stripe subscription invoice line is missing a price ID");
+  }
+  const catalogPlan = plansByPriceId.get(linePriceId);
+  if (!catalogPlan) {
     throw new Error(`Unknown Stripe subscription price ID: ${linePriceId}`);
   }
 
-  const fallbackGrant = metadataString(metadataSource, "grantMillicredits");
-  const amountMillicredits = catalogPlan?.grantMillicredits ?? fallbackGrant;
-  if (!amountMillicredits) return null;
-
-  const catalogEntryId = catalogPlan?.entryId ?? metadataString(metadataSource, "entryId");
   return {
     userId,
-    amountMillicredits,
+    amountMillicredits: catalogPlan.grantMillicredits,
     source: "subscription",
     stripeIdempotencyId: line.id,
     displayReason: "Monthly usage",
     expiresAt: isoFromStripeSeconds(line.period.end),
-    ...(catalogEntryId ? { metadata: { entryId: catalogEntryId } } : {}),
+    metadata: { entryId: catalogPlan.entryId },
   };
 }
 

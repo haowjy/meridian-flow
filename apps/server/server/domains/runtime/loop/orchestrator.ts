@@ -74,7 +74,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import type { BillingUsagePolicy, CreditLedger } from "../../billing/index.js";
+import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -146,8 +146,6 @@ export interface OrchestratorDeps {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
   };
   permissionGate: PermissionGate;
-  /** Ledger is used directly only for spawn rollups; turn gating/debits go through billingUsage. */
-  creditLedger: CreditLedger;
   billingUsage: BillingUsagePolicy;
   /** Checkpoint-boundary artifact flush; explicit noop adapter means disabled. */
   checkpointArtifacts: CheckpointArtifactFlushPort;
