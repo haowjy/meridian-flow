@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import type { ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
+import { fullHashForItemId, getBlockItemId } from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 
@@ -132,6 +133,10 @@ describe("resolveWrite", () => {
       ok: false,
       error: { code: "not_found" },
     });
+    expect(resolve(doc, { command: "replace", content: "x", in: "deadbeef" })).toMatchObject({
+      ok: false,
+      error: { code: "not_found", message: 'Block hash "deadbeef" was not found' },
+    });
     expect(
       resolve(doc, {
         command: "replace",
@@ -139,6 +144,40 @@ describe("resolveWrite", () => {
         in: `${model.getBlockId(second)}..${model.getBlockId(first)}`,
       }),
     ).toMatchObject({ ok: false, error: { code: "invalid_write" } });
+  });
+
+  it("returns an actionable ambiguous error for insert block anchors", () => {
+    const doc = createDoc(numberedBlocks(32));
+    const candidates = ambiguousPrefixCandidates(doc);
+
+    const result = resolve(doc, {
+      command: "insert",
+      content: "Inserted",
+      after: candidates.prefix,
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    if (result.ok) throw new Error("expected ambiguous insert failure");
+    expect(result.error.message).toContain("ambiguous");
+    expect(result.error.message).not.toContain("not found");
+    for (const hash of candidates.hashes) expect(result.error.message).toContain(hash);
+  });
+
+  it("returns an actionable ambiguous error for replace scopes", () => {
+    const doc = createDoc(numberedBlocks(32));
+    const candidates = ambiguousPrefixCandidates(doc);
+
+    const result = resolve(doc, {
+      command: "replace",
+      content: "Replacement",
+      in: candidates.prefix,
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    if (result.ok) throw new Error("expected ambiguous replace failure");
+    expect(result.error.message).toContain("ambiguous");
+    expect(result.error.message).not.toContain("not found");
+    for (const hash of candidates.hashes) expect(result.error.message).toContain(hash);
   });
 });
 
@@ -172,6 +211,34 @@ function aroundNeedleDoc(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
+}
+
+function numberedBlocks(count: number): string {
+  return Array.from({ length: count }, (_, i) => `Block ${i + 1}`).join("\n\n");
+}
+
+function ambiguousPrefixCandidates(doc: ReturnType<typeof createDoc>): {
+  prefix: string;
+  hashes: string[];
+} {
+  const blocks = model.getBlocks(doc);
+  const fullHashes = blocks.map(fullHash);
+  for (let length = fullHashes[0].length - 1; length > 0; length -= 1) {
+    const groups = new Map<string, typeof blocks>();
+    for (let index = 0; index < blocks.length; index += 1) {
+      const prefix = fullHashes[index].slice(0, length);
+      groups.set(prefix, [...(groups.get(prefix) ?? []), blocks[index]]);
+    }
+    for (const [prefix, matches] of groups) {
+      if (matches.length > 1)
+        return { prefix, hashes: matches.map((block) => model.getBlockId(block)) };
+    }
+  }
+  throw new Error("Expected an ambiguous full-hash prefix");
+}
+
+function fullHash(block: ReturnType<typeof model.getBlocks>[number]): string {
+  return fullHashForItemId(getBlockItemId(block));
 }
 
 function resolve(
