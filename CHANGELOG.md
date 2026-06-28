@@ -132,7 +132,9 @@
   custom payment-provider/subscription machinery and the `user_subscriptions`
   table; added `users.stripe_customer_id`. Model calls now meter at provider cost
   ×1.15. Checkout is unavailable in dev until Stripe test keys are set; free tier
-  and consumption work regardless.
+  and consumption work regardless. The recent-activity feed shows friendly labels
+  ("Monthly usage", "Extra usage") instead of leaking raw Stripe ids, and the
+  usage meter reads as a remaining-percentage gauge.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2

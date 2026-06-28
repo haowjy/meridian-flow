@@ -53,7 +53,16 @@ USD/percentage shapes before returning them to the client.
 - **FIFO lot consumption.** Debits consume unexpired positive lots in expiry/FIFO
   order and create/extend debt when usage goes negative.
 - **Usage-event idempotency.** Replaying the same `usageEventId` must not
-  double-charge a model response.
+  double-charge a model response. The SQL function `consume_credit_lots_fifo` is
+  the idempotency authority and returns the persisted `consumption_group_id`; the
+  Drizzle adapter returns that, never a locally-generated id, so a concurrent
+  replay can't surface a transaction id that was never written.
+- **Machine identity vs display reason.** A grant's `reason` is a machine
+  idempotency/grouping key only (`free_tier_*`, `signup`, `monthly_*`, Stripe
+  ids) and must never reach users; the human activity-feed label travels in the
+  separate `displayReason` field. `domain/grant-identity.ts` owns lot-source,
+  idempotency identity, free-tier detection, and display-label resolution, and is
+  shared by both ledger adapters so in-memory and Postgres agree on dedup.
 - **Free-tier idempotency.** Free lots use deterministic keys
   `free_tier_{userId}_{periodStart}` and the DB partial unique index
   `credit_lots_free_tier_grant` fences concurrent grants.
