@@ -1,0 +1,2 @@
+ALTER TABLE "project_user_preferences" ADD COLUMN "ai_write_mode" text DEFAULT 'direct' NOT NULL;--> statement-breakpoint
+ALTER TABLE "project_user_preferences" ADD CONSTRAINT "project_user_preferences_ai_write_mode_check" CHECK ("project_user_preferences"."ai_write_mode" IN ('direct', 'draft'));
