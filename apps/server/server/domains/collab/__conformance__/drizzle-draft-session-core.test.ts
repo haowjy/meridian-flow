@@ -2,7 +2,7 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
@@ -115,7 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("commits response writes into draft updates and applies them only after accept", async () => {
-      const { domain, liveCoordinator, liveJournal } = createLiveHarness(draftStore);
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -178,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("accepts a draft on top of live edits made after the draft commit", async () => {
-      const { domain, liveCoordinator } = createLiveHarness(draftStore);
+      const { domain, liveCoordinator } = createLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -217,11 +217,130 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(afterAccept).toContain("Live Gamma.");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
     });
+
+    it("routes facade response writes to draft mode, skips live projection refresh, then accepts", async () => {
+      const hook = vi.fn(async () => undefined);
+      const { domain } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        documentWriteHook: hook,
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      hook.mockClear();
+      const before = await readMarkdown(domain, DOC_ID);
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-facade-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-facade-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+
+      await expect(
+        domain.finalizeResponseCommit("response-facade-draft", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toEqual({
+        status: "committed",
+        documents: [{ documentId: DOC_ID, updateCount: 1 }],
+        stagedCreates: { committed: [], discarded: [] },
+      });
+      expect(await readMarkdown(domain, DOC_ID)).toBe(before);
+      expect(hook).not.toHaveBeenCalled();
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      expect(draft).toMatchObject({ status: "active", lastActorTurnId: TURN_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
+    });
+
+    it("invalidates active draft response sessions before they can commit", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+
+      await domain
+        .agentEdit()
+        .write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-first-draft" },
+        );
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-first-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await domain.finalizeResponseCommit("response-first-draft", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      expect(await draftStore.listUpdates(draft.id)).toHaveLength(1);
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Stale draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-stale-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+
+      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      await expect(
+        domain.finalizeResponseCommit("response-stale-draft", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toEqual({
+        status: "draft_closed",
+        responseId: "response-stale-draft",
+        mode: "draft",
+        documents: [],
+        stagedCreates: { committed: [], discarded: [] },
+      });
+      expect(await readMarkdown(domain, DOC_ID)).toContain("First draft.");
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Stale draft.");
+    });
   });
 }
 
+type LiveHarnessOptions = {
+  aiWriteMode?: "direct" | "draft";
+  documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
+};
+
 function createLiveHarness(
+  db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
   draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  options: LiveHarnessOptions = {},
 ): {
   domain: ReturnType<typeof createFacade>;
   liveCoordinator: ReturnType<typeof createInMemoryCoordinator>;
@@ -239,6 +358,24 @@ function createLiveHarness(
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
+      threads: {
+        async findById(id) {
+          return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
+        },
+      },
+      projectPreferences: {
+        async read() {
+          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+        },
+      },
+      createDraftSessionCore: ({ threadId }) =>
+        createDrizzleDraftSessionCore({
+          db,
+          threadId,
+          liveCoordinator,
+          draftStore,
+        }),
+      documentWriteHook: options.documentWriteHook,
     }),
     liveCoordinator,
     liveJournal,

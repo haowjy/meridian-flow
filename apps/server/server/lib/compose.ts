@@ -232,7 +232,13 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const documentSync = createCollabDomain({ db, eventSink });
+  const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const documentSync = createCollabDomain({
+    db,
+    eventSink,
+    threads: threadRepos.threads,
+    projectPreferences: preferences,
+  });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
     repos: threadRepos,
@@ -265,7 +271,6 @@ export async function createProductionAppPorts(input: {
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
-  const preferences = createDrizzleProjectPreferencesRepository({ db });
   const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository(db);

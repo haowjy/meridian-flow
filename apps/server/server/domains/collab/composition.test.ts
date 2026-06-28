@@ -25,6 +25,7 @@ const TURN_ID = "00000000-0000-4000-8000-000000000304" as TurnId;
 type TestFacadeOptions = {
   hook?: DocumentWriteHook;
   eventSink?: EventSink;
+  aiWriteMode?: "direct" | "draft";
 };
 
 describe("createFacade document write hook", () => {
@@ -354,6 +355,16 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       documentWriteHook: options.hook,
       draftStore,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+      threads: {
+        async findById(id) {
+          return id === THREAD_ID ? { userId: USER_ID, projectId: "project-1" } : null;
+        },
+      },
+      projectPreferences: {
+        async read() {
+          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+        },
+      },
     }),
     journal,
   };

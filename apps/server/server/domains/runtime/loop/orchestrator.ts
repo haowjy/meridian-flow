@@ -154,7 +154,11 @@ export interface OrchestratorDeps {
     commitResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
+    ): Promise<
+      { documentId: string; concurrentEdits: ConcurrentEditInfo }[] & {
+        draftClosed?: { status: "draft_closed"; responseId: string; mode: "draft" };
+      }
+    >;
     rollbackResponse(responseId: string): Promise<void>;
   };
 }

@@ -85,7 +85,11 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
+  ): Promise<
+    { documentId: string; concurrentEdits: ConcurrentEditInfo }[] & {
+      draftClosed?: { status: "draft_closed"; responseId: string; mode: "draft" };
+    }
+  >;
   rollbackResponse(responseId: string): Promise<void>;
 }
 
@@ -306,7 +310,7 @@ export function createAgentEditResponseWriteLifecycle(
       const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
-      return result.documents.flatMap((document) =>
+      const concurrentEdits = result.documents.flatMap((document) =>
         document.concurrentEdits
           ? [
               {
@@ -315,7 +319,17 @@ export function createAgentEditResponseWriteLifecycle(
               },
             ]
           : [],
-      );
+      ) as { documentId: string; concurrentEdits: ConcurrentEditInfo }[] & {
+        draftClosed?: { status: "draft_closed"; responseId: string; mode: "draft" };
+      };
+      if (result.status === "draft_closed") {
+        concurrentEdits.draftClosed = {
+          status: "draft_closed",
+          responseId: result.responseId,
+          mode: result.mode,
+        };
+      }
+      return concurrentEdits;
     },
 
     async rollbackResponse(responseId: string): Promise<void> {

@@ -77,6 +77,8 @@ export type CollabTransport = {
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
+export type WriteMode = "direct" | "draft";
+
 export type AgentEditAccess = {
   agentEdit(): AgentEditCore;
 };
@@ -118,10 +120,21 @@ export type ResponseWriteCommitDocument = {
   concurrentEdits?: ConcurrentEditInfo;
 };
 
-export type ResponseWriteCommitFinalizeResult = {
-  documents: ResponseWriteCommitDocument[];
+export type DraftClosedFinalizeResult = {
+  status: "draft_closed";
+  responseId: string;
+  mode: "draft";
+  documents: [];
   stagedCreates: ResponseWriteStagedCreates;
 };
+
+export type ResponseWriteCommitFinalizeResult =
+  | {
+      status?: "committed";
+      documents: ResponseWriteCommitDocument[];
+      stagedCreates: ResponseWriteStagedCreates;
+    }
+  | DraftClosedFinalizeResult;
 
 export type ResponseWriteRollbackFinalizeResult = {
   stagedCreates: ResponseWriteStagedCreates;
