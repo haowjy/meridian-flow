@@ -24,7 +24,7 @@
  *   (deadline.ts) that combines the parent signal with a per-attempt timeout.
  * - nextStreamEvent() races the iterator against the attempt signal for
  *   deadline timeouts and pre-output parent aborts.
- * - After partial output, user/disconnect cancel drains the adapter to a
+ * - After partial output, user cancel or provider abort drains the adapter to a
  *   terminal partial `end` instead of synthesizing an immediate error.
  * - The finally block calls iterator.return() to release provider stream
  *   resources, then cleanup() to clear the timeout timer.

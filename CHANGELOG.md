@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
+  in-flight agent turn. The run finishes server-side and a reconnecting client
+  reattaches via the existing snapshot/resume path — long turns survive accidental
+  reloads and flaky connections instead of losing the work and spent credits. Only
+  an explicit Cancel (or a real provider error) stops a turn now. Removed the dead
+  connection-token run-ownership seam left over from the old disconnect-cancel. (#104)
+
 - `apps/app`: one font everywhere — **Inter** is now the single typeface across UI
   chrome, the editor, rendered markdown, conversation turns, and headings.
   Headings/emphasis differ by size + weight only. Dropped the Noto Serif prose

@@ -86,13 +86,14 @@ export interface ThreadTransport {
 
   /**
    * Token from the latest server `connected` frame on this transport's socket.
-   * Sent with message POSTs so disconnect-cancel only affects the owning peer.
+   * Sent with message POSTs so the server rejects starts from a stale socket.
    */
   getConnectionToken(): string | undefined;
 
   /**
    * Resolves once the transport has a connection token from the server
-   * `connected` frame. Submit paths await this so runs are always owned.
+   * `connected` frame. Submit paths await this so turn starts are authorized
+   * against the live socket and stale-socket starts are rejected.
    */
   awaitConnectionToken(): Promise<string>;
 }
