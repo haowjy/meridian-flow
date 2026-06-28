@@ -3,6 +3,7 @@
  * Key decision: the conflict update only sets fields present in the partial request, so concurrent independent group/pin writes do not need a read-modify-write round trip.
  */
 import type {
+  AiWriteMode,
   ProjectPreferences,
   ThreadGroupBy,
   UpdateProjectPreferencesRequest,
@@ -25,6 +26,7 @@ function mapPreferences(row: ProjectPreferencesRow): ProjectPreferences {
       enabled: row.autoResumeEnabled,
       timeoutMs: row.autoResumeTimeoutMs,
     },
+    aiWriteMode: row.aiWriteMode as AiWriteMode,
   };
 }
 
@@ -68,6 +70,7 @@ export function createDrizzleProjectPreferencesRepository(
         set.autoResumeEnabled = input.autoResume.enabled;
         set.autoResumeTimeoutMs = input.autoResume.timeoutMs;
       }
+      if (input.aiWriteMode !== undefined) set.aiWriteMode = input.aiWriteMode;
 
       const [row] = await db
         .insert(projectUserPreferences)
@@ -79,6 +82,7 @@ export function createDrizzleProjectPreferencesRepository(
           defaultAgentSlug: defaultsForInsert.defaultAgentSlug,
           autoResumeEnabled: defaultsForInsert.autoResume?.enabled,
           autoResumeTimeoutMs: defaultsForInsert.autoResume?.timeoutMs,
+          aiWriteMode: defaultsForInsert.aiWriteMode,
         })
         .onConflictDoUpdate({
           target: [projectUserPreferences.userId, projectUserPreferences.projectId],

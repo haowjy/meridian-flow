@@ -29,6 +29,7 @@ export const projectUserPreferences = pgTable(
     defaultAgentSlug: text("default_agent_slug"),
     autoResumeEnabled: boolean("auto_resume_enabled").notNull().default(true),
     autoResumeTimeoutMs: integer("auto_resume_timeout_ms").notNull().default(270_000),
+    aiWriteMode: text("ai_write_mode").notNull().default("direct"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -43,6 +44,10 @@ export const projectUserPreferences = pgTable(
     check(
       "project_user_preferences_auto_resume_timeout_check",
       sql`${table.autoResumeTimeoutMs} > 0`,
+    ),
+    check(
+      "project_user_preferences_ai_write_mode_check",
+      sql`${table.aiWriteMode} IN ('direct', 'draft')`,
     ),
   ],
 );
