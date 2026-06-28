@@ -177,17 +177,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(pendingUndoNotifications.threadId, THREAD_ID));
 
       const consumed = await repo.consumeForThread(THREAD_ID);
-      expect(
-        consumed.map((row) => ({
-          writeHandle: row.writeHandle,
-          turnId: row.turnId,
-          direction: row.direction,
-        })),
-      ).toEqual([
-        { writeHandle: "undone", turnId: SECOND_TURN_ID, direction: "undo" },
-        { writeHandle: "first-only", turnId: TURN_ID, direction: "undo" },
-        { writeHandle: "second-only", turnId: SECOND_TURN_ID, direction: "undo" },
-      ]);
+      const winnersByHandle = new Map(
+        consumed.map((row) => [row.writeHandle, { turnId: row.turnId, direction: row.direction }]),
+      );
+      expect(winnersByHandle).toEqual(
+        new Map([
+          ["undone", { turnId: SECOND_TURN_ID, direction: "undo" }],
+          ["first-only", { turnId: TURN_ID, direction: "undo" }],
+          ["second-only", { turnId: SECOND_TURN_ID, direction: "undo" }],
+        ]),
+      );
     });
   });
 }

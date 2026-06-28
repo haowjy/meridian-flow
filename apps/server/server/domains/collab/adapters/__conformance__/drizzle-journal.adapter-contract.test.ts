@@ -62,6 +62,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
     const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
+    const { expectReversalCompactionContract } = await import(
+      "./journal-reversal-compaction-contract.js"
+    );
     const { expectReversalMutationStatusContract } = await import(
       "./journal-reversal-mutation-status-contract.js"
     );
@@ -193,6 +196,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("matches reversal mutation status transitions", async () => {
       await expectReversalMutationStatusContract({
+        journal: createDrizzleJournal(db),
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        turnIds: [TURN_A, TURN_B],
+        userId: USER_ID,
+      });
+    });
+
+    it("matches reversal compaction history semantics", async () => {
+      await expectReversalCompactionContract({
         journal: createDrizzleJournal(db),
         docId: DOC_ID,
         threadId: THREAD_ID,
