@@ -120,7 +120,7 @@ export async function billingBalance(
 
   return {
     purchasedBalanceUsd: millicreditsToUsd(purchasedBalance),
-    canStartTurn: totalBalance >= 0n,
+    canStartTurn: totalBalance > 0n,
     includedUsage: includedUsage(displayLot, breakdown.lots),
   };
 }
