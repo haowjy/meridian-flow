@@ -47,5 +47,16 @@ describe("ensureFreeTier", () => {
     const transactions = await ledger.listTransactions({ userId });
     expect(transactions).toHaveLength(1);
     expect(transactions[0]?.metadata.stripeIdempotencyId).toBe(`free_tier_${userId}_2026-06-01`);
+    expect(transactions[0]?.metadata.reason).toBe("Monthly usage");
+  });
+
+  it("does not expose the free-tier machine key as the transaction reason", async () => {
+    const ledger = createInMemoryCreditLedger();
+
+    await ensureFreeTier(ledger, userId, { clock });
+
+    const [transaction] = await ledger.listTransactions({ userId });
+    expect(transaction?.reason).toBe("Monthly usage");
+    expect(transaction?.reason).not.toBe(`free_tier_${userId}_2026-06-01`);
   });
 });

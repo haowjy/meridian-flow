@@ -111,17 +111,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(consumptionRows).toHaveLength(1);
     });
 
-    it("maps Stripe grants to purchase source_type accepted by the DB constraint", async () => {
+    it("maps Stripe grants to purchase source_type and friendly display text", async () => {
       await ledger.grant({
         userId,
         source: "stripe",
         amountMillicredits: "500",
-        reason: null,
+        stripeIdempotencyId: "cs_machine_123",
+        displayReason: "Extra usage",
       });
 
       const lots = await db.select({ sourceType: creditLots.sourceType }).from(creditLots);
       expect(lots).toEqual([{ sourceType: "purchase" }]);
       expect(await ledger.getBalance({ userId })).toBe("500");
+      await expect(ledger.listTransactions({ userId })).resolves.toEqual([
+        expect.objectContaining({ reason: "Extra usage" }),
+      ]);
     });
 
     it("uses subscription grant_reason as the DB-enforced idempotency key", async () => {
@@ -147,6 +151,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sourceType: "subscription",
           reason: "subscription:sub_123:2026-06-01T00:00:00.000Z",
         },
+      ]);
+
+      await expect(ledger.listTransactions({ userId })).resolves.toEqual([
+        expect.objectContaining({ reason: "Monthly usage" }),
       ]);
 
       await expect(
@@ -192,6 +200,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(creditTransactions)
         .where(sql`${creditTransactions.transactionType} = 'grant'`);
       expect(transactions).toEqual([{ id: expect.any(String), amount: 200000 }]);
+      await expect(ledger.listTransactions({ userId })).resolves.toEqual([
+        expect.objectContaining({ reason: "Monthly usage" }),
+      ]);
     });
 
     it("creates signup and monthly manual grants once under concurrent grant calls", async () => {

@@ -31,8 +31,9 @@ export interface CheckoutGrantResolution {
   amountMillicredits: string;
   source: "stripe" | "subscription";
   stripeIdempotencyId: string;
-  reason?: string;
+  displayReason?: string;
   expiresAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 type StripeGatewayConfig = { secretKey: string; webhookSecret: string };
@@ -146,6 +147,7 @@ function resolvePaidCheckoutSession(
     amountMillicredits: metadata.grantMillicredits,
     source: "stripe",
     stripeIdempotencyId: session.id,
+    displayReason: "Extra usage",
   };
 }
 
@@ -159,14 +161,15 @@ function resolvePaidInvoice(invoice: Stripe.Invoice): CheckoutGrantResolution | 
   const line = subscriptionGrantLine(invoice);
   if (!line?.id || !line.period?.end) return null;
 
-  const entryId = metadataString(metadataSource, "entryId");
+  const catalogEntryId = metadataString(metadataSource, "entryId");
   return {
     userId: metadata.userId,
     amountMillicredits: metadata.grantMillicredits,
     source: "subscription",
     stripeIdempotencyId: line.id,
-    ...(entryId ? { reason: entryId } : {}),
+    displayReason: "Monthly usage",
     expiresAt: isoFromStripeSeconds(line.period.end),
+    ...(catalogEntryId ? { metadata: { entryId: catalogEntryId } } : {}),
   };
 }
 

@@ -40,12 +40,12 @@ export async function ensureFreeTier(
     source: "free",
     amountMillicredits: FREE_TIER.grantMillicredits,
     reason: idempotencyKey,
+    displayReason: "Monthly usage",
     expiresAt: periodEnd(now),
     stripeIdempotencyId: idempotencyKey,
     metadata: {
       grantKind: "free-tier",
       periodStart: start.toISOString(),
-      reason: "Monthly usage",
     },
   });
 }

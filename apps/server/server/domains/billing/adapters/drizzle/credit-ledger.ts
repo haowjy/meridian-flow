@@ -11,26 +11,22 @@ import {
   assertPositiveMillicredits,
   type CreditDebitInput,
   type CreditGrantInput,
-  type CreditGrantSource,
   type CreditLedger,
   type CreditLotView,
 } from "../../domain/credit-ledger.js";
+import {
+  displayReasonFor,
+  type GrantIdentity,
+  grantIdentity,
+  isFreeTierGrantReason,
+  lotSourceForGrant,
+} from "../../domain/grant-identity.js";
 
 type ActiveDb = ReturnType<typeof currentDrizzleDb>;
 type LotSource = CreditLotView["source"];
 
 function activeDb(db: Database): ActiveDb {
   return currentDrizzleDb(db as never);
-}
-
-function sourceTypeForGrant(source: CreditGrantSource): "grant" | "purchase" | "subscription" {
-  if (source === "stripe") return "purchase";
-  if (source === "subscription") return "subscription";
-  return "grant";
-}
-
-function sourceTypeForLookup(source: CreditGrantSource): "grant" | "purchase" | "subscription" {
-  return sourceTypeForGrant(source);
 }
 
 function toBigInt(value: unknown): bigint {
@@ -47,42 +43,6 @@ function iso(value: unknown): string {
 function nullableIso(value: unknown): string | null {
   if (value == null) return null;
   return iso(value);
-}
-
-function displayTransactionReason(input: {
-  metadata: unknown;
-  lotReason: string | null;
-  sourceType: string | null;
-}): string | null {
-  const metadata =
-    input.metadata && typeof input.metadata === "object"
-      ? (input.metadata as Record<string, unknown>)
-      : {};
-  const metadataReason = metadata.reason;
-  if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
-  if (input.sourceType === "grant" && input.lotReason?.startsWith("free_tier_")) {
-    return "Monthly usage";
-  }
-  return input.lotReason;
-}
-
-interface GrantIdentity {
-  sourceType: "grant" | "purchase" | "subscription";
-  grantReason: string | null;
-  stripeSessionId: string | null;
-}
-
-function grantIdentity(input: CreditGrantInput): GrantIdentity {
-  const sourceType = sourceTypeForGrant(input.source);
-  return {
-    sourceType,
-    grantReason:
-      sourceType === "purchase" ? null : (input.stripeIdempotencyId ?? input.reason ?? null),
-    stripeSessionId:
-      sourceType === "purchase"
-        ? (input.stripeSessionId ?? input.stripeIdempotencyId ?? null)
-        : (input.stripeSessionId ?? null),
-  };
 }
 
 interface LotConflictGuard {
@@ -115,7 +75,7 @@ function resolveLotConflictGuard(identity: GrantIdentity): LotConflictGuard | nu
       where: sql`${creditLots.grantReason} LIKE 'monthly_%'`,
     };
   }
-  if (identity.sourceType === "grant" && identity.grantReason?.startsWith("free_tier_")) {
+  if (identity.sourceType === "grant" && isFreeTierGrantReason(identity.grantReason)) {
     return {
       target: [creditLots.userId, creditLots.grantReason],
       where:
@@ -197,8 +157,8 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           stripeSessionId: identity.stripeSessionId,
           grantReason: identity.grantReason,
           metadata: {
-            stripeIdempotencyId: input.stripeIdempotencyId ?? null,
             ...(input.metadata ?? {}),
+            stripeIdempotencyId: input.stripeIdempotencyId ?? null,
           },
         };
         const guard = resolveLotConflictGuard(identity);
@@ -239,12 +199,12 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
             amountMillicredits: Number(amount),
             lotId,
             metadata: {
+              ...(input.metadata ?? {}),
               source: input.source,
               sourceType: identity.sourceType,
-              reason: input.reason ?? null,
+              reason: input.displayReason ?? null,
               stripeSessionId: input.stripeSessionId ?? null,
               stripeIdempotencyId: input.stripeIdempotencyId ?? null,
-              ...(input.metadata ?? {}),
             },
           })
           .returning({ id: creditTransactions.id });
@@ -345,10 +305,15 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         transactionType: row.transactionType,
         amountMillicredits: toBigInt(row.amountMillicredits).toString(),
         sourceType: row.sourceType ?? null,
-        reason: displayTransactionReason({
-          metadata: row.metadata,
-          lotReason: row.lotReason ?? null,
+        reason: displayReasonFor({
+          displayReason:
+            row.metadata &&
+            typeof row.metadata === "object" &&
+            typeof (row.metadata as Record<string, unknown>).reason === "string"
+              ? ((row.metadata as Record<string, unknown>).reason as string)
+              : null,
           sourceType: row.sourceType ?? null,
+          grantReason: row.lotReason ?? null,
         }),
         usageEventId: row.usageEventId ?? null,
         createdAt: iso(row.createdAt),
@@ -374,7 +339,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
     },
 
     async hasUnexpiredLot(input) {
-      const sourceType = sourceTypeForLookup(input.source);
+      const sourceType = lotSourceForGrant(input.source);
       const expiryPredicate =
         sourceType === "subscription"
           ? sql`${creditLots.expiresAt} > NOW()`
