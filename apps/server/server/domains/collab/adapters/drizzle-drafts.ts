@@ -1,5 +1,6 @@
 /** Drizzle adapter for persisted collab draft review state. */
 
+import { randomUUID } from "node:crypto";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -113,7 +114,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
     async claimActive(input) {
       const [row] = await db
         .update(documentYjsDrafts)
-        .set({ claimedAt: sql`now()`, updatedAt: sql`now()` })
+        .set({ claimedAt: sql`now()`, claimToken: randomUUID(), updatedAt: sql`now()` })
         .where(
           and(
             eq(documentYjsDrafts.documentId, input.documentId),
@@ -130,7 +131,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
     },
 
     async markApplied(draftId, input) {
-      await db
+      const row = await db
         .update(documentYjsDrafts)
         .set({
           status: "applied",
@@ -138,21 +139,39 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
           appliedByUserId: input.appliedByUserId,
           appliedUpdateSeq: input.appliedUpdateSeq,
           claimedAt: null,
+          claimToken: null,
           updatedAt: sql`now()`,
         })
-        .where(eq(documentYjsDrafts.id, draftId));
+        .where(
+          and(
+            eq(documentYjsDrafts.id, draftId),
+            eq(documentYjsDrafts.status, "active"),
+            eq(documentYjsDrafts.claimToken, input.claimToken),
+          ),
+        )
+        .returning({ id: documentYjsDrafts.id });
+      return row.length > 0;
     },
 
-    async markDiscarded(draftId) {
-      await db
+    async markDiscarded(draftId, input) {
+      const row = await db
         .update(documentYjsDrafts)
         .set({
           status: "discarded",
           discardedAt: sql`now()`,
           claimedAt: null,
+          claimToken: null,
           updatedAt: sql`now()`,
         })
-        .where(eq(documentYjsDrafts.id, draftId));
+        .where(
+          and(
+            eq(documentYjsDrafts.id, draftId),
+            eq(documentYjsDrafts.status, "active"),
+            eq(documentYjsDrafts.claimToken, input.claimToken),
+          ),
+        )
+        .returning({ id: documentYjsDrafts.id });
+      return row.length > 0;
     },
 
     async deleteScopedState(input) {
@@ -202,6 +221,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     appliedUpdateSeq: row.appliedUpdateSeq === null ? null : Number(row.appliedUpdateSeq),
     discardedAt: row.discardedAt,
     claimedAt: row.claimedAt,
+    claimToken: row.claimToken,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

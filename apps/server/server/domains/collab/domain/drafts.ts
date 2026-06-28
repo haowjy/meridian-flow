@@ -19,6 +19,7 @@ export type Draft = {
   appliedUpdateSeq: number | null;
   discardedAt: Date | null;
   claimedAt: Date | null;
+  claimToken: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -67,9 +68,9 @@ export type DraftStore = {
   claimActive(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   markApplied(
     draftId: string,
-    input: { appliedByUserId: UserId; appliedUpdateSeq: number },
-  ): Promise<void>;
-  markDiscarded(draftId: string): Promise<void>;
+    input: { claimToken: string; appliedByUserId: UserId; appliedUpdateSeq: number },
+  ): Promise<boolean>;
+  markDiscarded(draftId: string, input: { claimToken: string }): Promise<boolean>;
   deleteScopedState(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -184,7 +185,11 @@ export function createDraftService(deps: {
 
     const updates = await deps.draftStore.listUpdates(draft.id);
     if (updates.length === 0) {
-      await deps.draftStore.markDiscarded(draft.id);
+      if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+      const discarded = await deps.draftStore.markDiscarded(draft.id, {
+        claimToken: draft.claimToken,
+      });
+      if (!discarded) return { status: "not_found" };
       await deps.draftStore.deleteScopedState({
         documentId: input.documentId,
         threadId: input.threadId,
@@ -236,6 +241,14 @@ export function createDraftService(deps: {
       }
     }
 
+    if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+    const applied = await deps.draftStore.markApplied(draft.id, {
+      claimToken: draft.claimToken,
+      appliedByUserId: input.userId,
+      appliedUpdateSeq,
+    });
+    if (!applied) return { status: "not_found" };
+
     await deps.liveCoordinator.withDocument(input.documentId, async (doc) => {
       Y.applyUpdate(doc, mergedUpdate, { type: "system" });
     });
@@ -243,11 +256,6 @@ export function createDraftService(deps: {
     await deps.refreshAcceptedProjection?.({
       documentId: input.documentId,
       threadId: input.threadId,
-    });
-
-    await deps.draftStore.markApplied(draft.id, {
-      appliedByUserId: input.userId,
-      appliedUpdateSeq,
     });
     await deps.draftStore.deleteScopedState({
       documentId: input.documentId,
@@ -266,7 +274,11 @@ export function createDraftService(deps: {
     if (!draft) return { status: "not_found" };
 
     await invalidateInFlight(input);
-    await deps.draftStore.markDiscarded(draft.id);
+    if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+    const discarded = await deps.draftStore.markDiscarded(draft.id, {
+      claimToken: draft.claimToken,
+    });
+    if (!discarded) return { status: "not_found" };
     await deps.draftStore.deleteScopedState({
       documentId: input.documentId,
       threadId: input.threadId,

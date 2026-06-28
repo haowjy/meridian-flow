@@ -1,0 +1,1 @@
+ALTER TABLE "document_yjs_drafts" ADD COLUMN "claim_token" uuid;

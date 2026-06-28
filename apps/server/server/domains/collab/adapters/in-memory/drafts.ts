@@ -1,4 +1,5 @@
 /** In-memory collab draft store for tests and local composition. */
+import { randomUUID } from "node:crypto";
 import type { Draft, DraftAcceptJournal, DraftStore, DraftUpdate } from "../../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
@@ -45,6 +46,7 @@ export function createInMemoryDraftStore(): DraftStore {
         appliedUpdateSeq: null,
         discardedAt: null,
         claimedAt: null,
+        claimToken: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -78,28 +80,33 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft = findDraft({ ...input, status: "active" });
       if (!draft || draft.claimedAt) return null;
       draft.claimedAt = new Date();
+      draft.claimToken = randomUUID();
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
 
     async markApplied(draftId, input) {
       const draft = drafts.get(draftId);
-      if (!draft) return;
+      if (draft?.status !== "active" || draft.claimToken !== input.claimToken) return false;
       draft.status = "applied";
       draft.appliedAt = new Date();
       draft.appliedByUserId = input.appliedByUserId;
       draft.appliedUpdateSeq = input.appliedUpdateSeq;
       draft.claimedAt = null;
+      draft.claimToken = null;
       draft.updatedAt = new Date();
+      return true;
     },
 
-    async markDiscarded(draftId) {
+    async markDiscarded(draftId, input) {
       const draft = drafts.get(draftId);
-      if (!draft) return;
+      if (draft?.status !== "active" || draft.claimToken !== input.claimToken) return false;
       draft.status = "discarded";
       draft.discardedAt = new Date();
       draft.claimedAt = null;
+      draft.claimToken = null;
       draft.updatedAt = new Date();
+      return true;
     },
 
     async deleteScopedState(_input) {},
@@ -140,6 +147,7 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
     appliedAt: copyDate(draft.appliedAt),
     discardedAt: copyDate(draft.discardedAt),
     createdAt: copyDate(draft.createdAt),
+    claimedAt: copyDate(draft.claimedAt),
     updatedAt: copyDate(draft.updatedAt),
   };
 }

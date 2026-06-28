@@ -1,8 +1,9 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
@@ -328,6 +329,73 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("fences a stale accept after reject reclaims an expired claim", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "reclaim-reject");
+
+      const staleClaim = await draftStore.claimActive({ documentId: DOC_ID, threadId: THREAD_ID });
+      expect(staleClaim).toMatchObject({ id: draft.id, status: "active" });
+      if (!staleClaim?.claimToken) throw new Error("expected stale claim token");
+      await expireClaim(db, documentYjsDrafts, draft.id);
+
+      await expect(
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      ).resolves.toEqual({
+        status: "discarded",
+        draftId: draft.id,
+      });
+
+      const staleApplied = await staleAcceptResume({
+        draft: staleClaim,
+        draftStore,
+        liveJournal,
+        liveCoordinator,
+      });
+
+      expect(staleApplied).toBe(false);
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft reclaim-reject.");
+    });
+
+    it("fences a stale double-accept after another accept reclaims an expired claim", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "reclaim-accept");
+
+      const staleClaim = await draftStore.claimActive({ documentId: DOC_ID, threadId: THREAD_ID });
+      expect(staleClaim).toMatchObject({ id: draft.id, status: "active" });
+      if (!staleClaim?.claimToken) throw new Error("expected stale claim token");
+      await expireClaim(db, documentYjsDrafts, draft.id);
+
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      const staleApplied = await staleAcceptResume({
+        draft: staleClaim,
+        draftStore,
+        liveJournal,
+        liveCoordinator,
+      });
+
+      expect(staleApplied).toBe(false);
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
+      const after = await readMarkdown(domain, DOC_ID);
+      expect(after).toContain("Draft reclaim-accept.");
+      expect(after.match(/Draft reclaim-accept\./g)).toHaveLength(1);
+    });
+
     it("does not let a pending draft response recreate a draft after invalidation", async () => {
       let releasePreferences!: () => void;
       const preferencesReady = new Promise<void>((resolve) => {
@@ -553,6 +621,94 @@ function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFaca
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
   };
+}
+
+async function createCommittedDraft(
+  db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>,
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  label: string,
+) {
+  const draftCore = createDrizzleDraftSessionCore({
+    db,
+    threadId: THREAD_ID,
+    liveCoordinator,
+    draftStore,
+  });
+  await draftCore.write(
+    { command: "read", file: "chapter.md", documentId: DOC_ID },
+    { threadId: THREAD_ID, turnId: TURN_ID },
+  );
+  await draftCore.write(
+    {
+      command: "insert",
+      file: "chapter.md",
+      documentId: DOC_ID,
+      content: `Draft ${label}.`,
+    },
+    { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-${label}` },
+  );
+  await draftCore.commitResponse(`response-${label}`);
+  const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+  if (!draft) throw new Error("expected active draft");
+  return draft;
+}
+
+async function expireClaim(
+  db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
+  documentYjsDrafts: typeof import("@meridian/database/schema").documentYjsDrafts,
+  draftId: string,
+) {
+  await db
+    .update(documentYjsDrafts)
+    .set({ claimedAt: sql`now() - interval '11 minutes'` })
+    .where(eq(documentYjsDrafts.id, draftId));
+}
+
+async function staleAcceptResume(input: {
+  draft: NonNullable<
+    Awaited<
+      ReturnType<Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"]["claimActive"]>
+    >
+  >;
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"];
+  liveJournal: ReturnType<typeof createInMemoryJournal>;
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>;
+}) {
+  const updates = await input.draftStore.listUpdates(input.draft.id);
+  if (!input.draft.claimToken) throw new Error("expected claim token");
+  if (!input.draft.lastActorTurnId) throw new Error("expected last actor turn");
+  const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
+  const acceptJournal = createInMemoryDraftAcceptJournal(input.liveJournal);
+  const writeId = `draft-accept:${input.draft.id}`;
+  let appliedUpdateSeq = await acceptJournal.findUpdateSeqByWriteId({
+    documentId: DOC_ID,
+    threadId: THREAD_ID,
+    writeId,
+  });
+  if (appliedUpdateSeq === null) {
+    const [result] = await acceptJournal.appendBatch([
+      {
+        docId: DOC_ID,
+        update: mergedUpdate,
+        meta: { origin: "system", actorTurnId: input.draft.lastActorTurnId, seq: 0 },
+        mutation: { threadId: THREAD_ID, turnId: input.draft.lastActorTurnId, writeId },
+      },
+    ]);
+    if (!result) throw new Error("expected accepted draft journal append");
+    appliedUpdateSeq = result.seq;
+  }
+  const applied = await input.draftStore.markApplied(input.draft.id, {
+    claimToken: input.draft.claimToken,
+    appliedByUserId: USER_ID,
+    appliedUpdateSeq,
+  });
+  if (applied) {
+    await input.liveCoordinator.withDocument(DOC_ID, async (doc) => {
+      Y.applyUpdate(doc, mergedUpdate, { type: "system" });
+    });
+  }
+  return applied;
 }
 
 async function readMarkdown(domain: ReturnType<typeof createFacade>, documentId: DocumentId) {

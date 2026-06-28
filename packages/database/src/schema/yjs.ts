@@ -90,6 +90,7 @@ export const documentYjsDrafts = pgTable(
     appliedUpdateSeq: bigint("applied_update_seq", { mode: "number" }),
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimToken: uuid("claim_token"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

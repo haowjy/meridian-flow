@@ -71,6 +71,13 @@
       "when": 1782609219578,
       "tag": "0009_draft_claim_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782610517090,
+      "tag": "0010_draft_claim_token",
+      "breakpoints": true
     }
   ]
 }

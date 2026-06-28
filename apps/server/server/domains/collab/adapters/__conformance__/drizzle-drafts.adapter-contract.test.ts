@@ -1,4 +1,5 @@
 /** Adapter-contract tests for the Drizzle DraftStore against local Postgres. */
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { ActiveDraftConflictError } from "../../domain/drafts.js";
@@ -134,6 +135,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await store.listUpdates(draft.id)).toMatchObject([
         { draftId: draft.id, actorTurnId: TURN_B },
       ]);
+    });
+
+    it("issues a fresh fencing token on claim reclaim and fences stale terminal writes", async () => {
+      const draft = await store.createActiveDraft({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_A as never,
+      });
+
+      const firstClaim = await store.claimActive({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      expect(firstClaim).toMatchObject({ id: draft.id, status: "active" });
+      if (!firstClaim?.claimToken) throw new Error("expected first claim token");
+      await db
+        .update(documentYjsDrafts)
+        .set({ claimedAt: sql`now() - interval '11 minutes'` })
+        .where(eq(documentYjsDrafts.id, draft.id));
+
+      const secondClaim = await store.claimActive({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      expect(secondClaim).toMatchObject({ id: draft.id, status: "active" });
+      if (!secondClaim?.claimToken) throw new Error("expected second claim token");
+      expect(secondClaim.claimToken).not.toBe(firstClaim.claimToken);
+
+      await expect(
+        store.markDiscarded(draft.id, { claimToken: firstClaim.claimToken }),
+      ).resolves.toBe(false);
+      await expect(
+        store.markDiscarded(draft.id, { claimToken: secondClaim.claimToken }),
+      ).resolves.toBe(true);
+      await expect(store.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
     });
   });
 }

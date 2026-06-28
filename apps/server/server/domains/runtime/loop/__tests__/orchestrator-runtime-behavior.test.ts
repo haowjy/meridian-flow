@@ -406,6 +406,69 @@ describe("runtime orchestrator behavior", () => {
     expect(events.some((event) => event.type === "tool.result")).toBe(false);
   });
 
+  it("ends the turn cleanly when response commit reports a closed draft", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} }],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const committed: string[] = [];
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      toolExecutor: {
+        executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
+      },
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      responseWrites: {
+        async commitResponse(responseId) {
+          committed.push(responseId);
+          return { status: "draft_closed", responseId, mode: "draft" };
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    const events = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(committed).toHaveLength(1);
+    expect(events.some((event) => event.type === "tool.result")).toBe(true);
+    expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
+    await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({ status: "idle" });
+  });
+
   it("rolls back the active response when tool dispatch throws", async () => {
     const gateway = gatewayFromResults([
       {
