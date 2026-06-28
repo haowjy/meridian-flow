@@ -184,18 +184,25 @@ async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
     .from(documentYjsUpdates)
     .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
 
-  const checkpointConditions = [eq(documentYjsCheckpoints.documentId, asDocumentId(documentId))];
-  if (minRetainedSeq !== null) {
-    checkpointConditions.push(lt(documentYjsCheckpoints.upToSeq, minRetainedSeq));
-  }
+  // No retained updates: the document is fully checkpointed, so the latest checkpoint IS
+  // the state.
+  if (minRetainedSeq === null) return await latestCheckpoint(db, documentId);
 
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
-    .where(and(...checkpointConditions))
+    .where(
+      and(
+        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+        lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
+      ),
+    )
     .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
-  return row ?? (await latestCheckpoint(db, documentId));
+  // null when no checkpoint precedes the earliest retained update (e.g. the server
+  // checkpoints at the head with no upToSeq-0 baseline): reconstruct from an empty base
+  // plus every retained update row — never a checkpoint that hides the rows undo needs.
+  return row ?? null;
 }
 
 async function readHeadSchemaVersion(db: JournalDb, documentId: string): Promise<number | null> {

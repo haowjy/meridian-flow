@@ -475,16 +475,23 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   }
 
   private selectReconstructionCheckpoint(entry: JournalEntry): StoredCheckpoint | null {
-    // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-    // above the latest compacted checkpoint; reconstruction can safely use the newest
-    // checkpoint below the earliest retained update.
+    // Reconstruction must start from the newest checkpoint strictly BELOW the earliest
+    // retained update, then replay the retained updates — never a checkpoint at/above
+    // them, which would hide the very rows undo needs (the live server checkpoints at the
+    // head and may have no upToSeq-0 baseline; returning that head yields zero updates and
+    // a false "nothing to undo").
+    // With no retained updates the document is fully checkpointed, so the latest checkpoint
+    // IS the state.
+    if (entry.updates.length === 0) return entry.checkpoint;
     const minRetainedSeq = Math.min(...entry.updates.map((update) => update.seq));
     let selected: StoredCheckpoint | null = null;
     for (const checkpoint of entry.checkpoints) {
       if (checkpoint.upToSeq >= minRetainedSeq) continue;
       if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
     }
-    return selected ?? entry.checkpoint;
+    // null when no checkpoint precedes the earliest retained update: reconstruct from an
+    // empty base plus every retained update row.
+    return selected;
   }
 
   private appendMutationSync(
