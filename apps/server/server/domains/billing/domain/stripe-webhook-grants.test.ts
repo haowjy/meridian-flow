@@ -76,20 +76,15 @@ describe("resolveStripeWebhookGrant", () => {
     ).toBeNull();
   });
 
-  it("grants subscription credits from invoice.paid line period and subscription metadata", () => {
+  it("grants subscription credits from invoice.paid line period and mapped price", () => {
     expect(
       resolveStripeWebhookGrant(
         event("invoice.paid", {
           id: "in_123",
-          metadata: { userId: "ignored", grantMillicredits: "1", entryId: "invoice_fallback" },
           parent: {
             subscription_details: {
               subscription: "sub_123",
-              metadata: {
-                userId: "user_sub",
-                grantMillicredits: "1000000",
-                entryId: "plan_standard",
-              },
+              metadata: { userId: "user_sub" },
             },
           },
           lines: {
@@ -102,11 +97,21 @@ describe("resolveStripeWebhookGrant", () => {
               {
                 id: "il_period",
                 period: { start: 1_782_864_000, end: 1_785_542_400 },
+                pricing: { price_details: { price: "price_standard" } },
                 parent: { subscription_item_details: { subscription: "sub_123" } },
               },
             ],
           },
         }),
+        {
+          planPrices: [
+            {
+              entryId: "plan_standard",
+              stripePriceId: "price_standard",
+              grantMillicredits: "1000000",
+            },
+          ],
+        },
       ),
     ).toEqual({
       userId: "user_sub",
@@ -196,6 +201,37 @@ describe("resolveStripeWebhookGrant", () => {
         },
       ),
     ).toThrow("Unknown Stripe subscription price ID: price_rotated");
+  });
+
+  it("rejects subscription invoices without a line price ID so Stripe retries", () => {
+    expect(() =>
+      resolveStripeWebhookGrant(
+        event("invoice.paid", {
+          id: "in_123",
+          parent: {
+            subscription_details: { subscription: "sub_123", metadata: { userId: "user_sub" } },
+          },
+          lines: {
+            data: [
+              {
+                id: "il_period",
+                period: { start: 1_782_864_000, end: 1_785_542_400 },
+                parent: { subscription_item_details: { subscription: "sub_123" } },
+              },
+            ],
+          },
+        }),
+        {
+          planPrices: [
+            {
+              entryId: "plan_standard",
+              stripePriceId: "price_standard",
+              grantMillicredits: "1000000",
+            },
+          ],
+        },
+      ),
+    ).toThrow("Stripe subscription invoice line is missing a price ID");
   });
 
   it("does not grant from a proration-only invoice.paid", () => {

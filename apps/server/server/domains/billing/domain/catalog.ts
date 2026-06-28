@@ -5,13 +5,13 @@ import type {
   BillingPlanEntry,
 } from "@meridian/contracts/protocol";
 
-export interface BillingPlanCatalogEntry extends BillingPlanEntry {
+export interface BillingPlanCatalogEntry extends Omit<BillingPlanEntry, "checkoutAvailable"> {
   grantMillicredits: string;
   interval: "month" | "year";
   stripePriceEnv: string;
 }
 
-export interface ExtraUsageConfig extends BillingExtraUsageEntry {}
+export interface ExtraUsageConfig extends Omit<BillingExtraUsageEntry, "checkoutAvailable"> {}
 
 export type BillingCatalogServerEntry = BillingPlanCatalogEntry | ExtraUsageConfig;
 
@@ -85,12 +85,16 @@ export function billingPlanPriceBindings(env: NodeJS.ProcessEnv): BillingPlanPri
   });
 }
 
-export function publicCatalogEntry(entry: BillingCatalogServerEntry): BillingCatalogEntry {
+export function publicCatalogEntry(
+  entry: BillingCatalogServerEntry,
+  input: { checkoutAvailable: boolean },
+): BillingCatalogEntry {
   if (entry.kind === "plan") {
     return {
       id: entry.id,
       kind: "plan",
       name: entry.name,
+      checkoutAvailable: input.checkoutAvailable,
       description: entry.description,
       priceUsd: entry.priceUsd,
       interval: entry.interval,
@@ -100,6 +104,7 @@ export function publicCatalogEntry(entry: BillingCatalogServerEntry): BillingCat
     id: entry.id,
     kind: "extra-usage",
     name: entry.name,
+    checkoutAvailable: input.checkoutAvailable,
     description: entry.description,
     amountOptions: {
       minUsd: entry.amountOptions.minUsd,

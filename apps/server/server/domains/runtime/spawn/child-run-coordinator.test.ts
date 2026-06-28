@@ -132,7 +132,7 @@ describe("ChildRunCoordinator background spawn", () => {
       packageRepository,
       childRunRegistry,
       helperResultDelivery,
-      creditLedger,
+      billingSpendReader: creditLedger,
     });
 
     const result = await coordinator.spawnChildBackground({
@@ -265,7 +265,7 @@ describe("ChildRunCoordinator background spawn", () => {
       packageRepository,
       childRunRegistry,
       helperResultDelivery,
-      creditLedger: createInMemoryCreditLedger(),
+      billingSpendReader: createInMemoryCreditLedger(),
     });
 
     await coordinator.spawnChildBackground({

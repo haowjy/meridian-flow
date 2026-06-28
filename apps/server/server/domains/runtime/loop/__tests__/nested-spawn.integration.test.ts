@@ -179,7 +179,7 @@ describe("nested spawn runtime (P2b gate)", () => {
         eventWriter,
         getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
       }),
-      creditLedger,
+      billingSpendReader: creditLedger,
     });
 
     for (const registration of createSpawnToolRegistrations()) {

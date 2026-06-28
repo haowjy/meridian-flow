@@ -36,5 +36,10 @@ export {
 } from "./domain/money.js";
 export type { BillingUsagePolicy } from "./domain/usage-policy.js";
 export { createBillingUsagePolicy } from "./domain/usage-policy.js";
-export type { BillingService, BillingServiceDeps } from "./service.js";
-export { createBillingService } from "./service.js";
+export type {
+  BillingDomain,
+  BillingDomainDeps,
+  BillingService,
+  BillingSpendReader,
+} from "./service.js";
+export { createBillingDomain } from "./service.js";

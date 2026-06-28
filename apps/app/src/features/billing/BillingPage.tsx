@@ -5,8 +5,8 @@
  *
  * Purchase actions go through Stripe Checkout / Customer Portal — the create
  * mutation returns a discriminated `{ kind: "checkout" | "portal", url }` and
- * the hook redirects. When `stripeConfigured` is false the action surface
- * shows a quiet "checkout unavailable" note instead of dead buttons.
+ * the hook redirects. The server marks checkout availability per catalog entry
+ * so one missing Stripe price does not disable unrelated purchases.
  *
  * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
  * usage has `amountOptions` instead — the user picks an amount via
@@ -59,7 +59,6 @@ export function BillingPage() {
   const checkout = useCreateCheckoutSession();
   const stripeConfigured = products.data?.stripeConfigured ?? false;
   const entries = products.data?.entries ?? [];
-  const actionsDisabled = !stripeConfigured || checkout.isPending;
 
   const planEntries = entries.filter((entry) => entry.kind === "plan");
   const extraEntry = entries.find((entry) => entry.kind === "extra-usage");
@@ -108,7 +107,7 @@ export function BillingPage() {
               <PlanCard
                 key={entry.id}
                 entry={entry}
-                disabled={actionsDisabled}
+                disabled={!entry.checkoutAvailable || checkout.isPending}
                 onCheckout={(request) => checkout.mutate(request)}
               />
             ))}
@@ -133,7 +132,7 @@ export function BillingPage() {
             <article className="surface-card p-5">
               <ExtraUsagePicker
                 amountOptions={extraEntry.amountOptions}
-                disabled={actionsDisabled}
+                disabled={!extraEntry.checkoutAvailable || checkout.isPending}
                 onPurchase={(amountUsd) =>
                   checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
                 }
@@ -147,14 +146,20 @@ export function BillingPage() {
             <Trans>Recent activity</Trans>
           </h2>
           <div className="mt-3 divide-y divide-border-subtle">
-            {(transactions.data?.transactions ?? []).slice(0, 8).map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                <span className="text-muted-foreground">{tx.label}</span>
-                <span className="font-medium tabular-nums text-foreground">
-                  {formatUsd(tx.amountUsd)}
-                </span>
-              </div>
-            ))}
+            {(transactions.data?.transactions ?? []).slice(0, 8).map((tx, index) => {
+              const activityKey = `${tx.createdAt}:${tx.kind}:${tx.amountUsd}:${index}`;
+              return (
+                <div
+                  key={activityKey}
+                  className="flex items-center justify-between gap-4 py-2 text-sm"
+                >
+                  <span className="text-muted-foreground">{tx.label}</span>
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatUsd(tx.amountUsd)}
+                  </span>
+                </div>
+              );
+            })}
             {transactions.data && transactions.data.transactions.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
                 <Trans>No billing activity yet.</Trans>

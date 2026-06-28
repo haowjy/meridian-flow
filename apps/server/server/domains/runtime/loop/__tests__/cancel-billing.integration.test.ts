@@ -167,7 +167,6 @@ describe("cancel billing", () => {
     app.threadEventHub = hub;
     app.hub = hub;
     app.runner = runner;
-    app.creditLedger = creditLedger;
     app.threadRuntime = {
       async requireOwnedThread(threadId, userId) {
         if (threadId !== thread.id || userId !== "user-1") throw new Error("not found");

@@ -8,8 +8,9 @@ import { createStripeCustomerProvisioner } from "../domains/billing/adapters/dri
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
   type BillingService,
-  type CreditLedger,
-  createBillingService,
+  type BillingSpendReader,
+  type BillingUsagePolicy,
+  createBillingDomain,
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
@@ -140,7 +141,6 @@ export type AppServices = {
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
-  creditLedger: CreditLedger;
   billing: BillingService;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
@@ -184,8 +184,9 @@ export type ProductionAppPorts = {
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
-  creditLedger: CreditLedger;
   billing: BillingService;
+  billingUsage: BillingUsagePolicy;
+  billingSpendReader: BillingSpendReader;
   agents: AgentPackageStore;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
@@ -289,7 +290,7 @@ export async function createProductionAppPorts(input: {
       })
     : null;
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
-  const billing = createBillingService({
+  const billingDomain = createBillingDomain({
     ledger: creditLedger,
     stripeGateway,
     getOrCreateStripeCustomer,
@@ -311,8 +312,9 @@ export async function createProductionAppPorts(input: {
     projectRepo,
     users,
     workRepo,
-    creditLedger,
-    billing,
+    billing: billingDomain.service,
+    billingUsage: billingDomain.usagePolicy,
+    billingSpendReader: billingDomain.spendReader,
     agents: { phase: "skeleton" },
     packageRepository,
     marsPackageFetcher,
@@ -418,7 +420,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     packageRepository: ports.packageRepository,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
-    creditLedger: ports.creditLedger,
+    billingSpendReader: ports.billingSpendReader,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
@@ -432,8 +434,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     childRunCoordinator,
     helperResultDelivery,
     checkpointRegistry,
-    creditLedger: ports.creditLedger,
-    billingUsage: ports.billing.usage,
+    billingUsage: ports.billingUsage,
     checkpointArtifacts: createCheckpointArtifactFlush({
       promotion: ports.promotionService,
       objectStore: ports.objectStore,
@@ -466,7 +467,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
-    creditLedger: ports.creditLedger,
     billing: ports.billing,
     agents: ports.agents,
     checkpointRegistry,
@@ -501,7 +501,7 @@ export function createInMemoryAppServices(): AppServices {
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const undoNotifications = createInMemoryPendingUndoNotificationRepository();
   const creditLedger = createInMemoryCreditLedger();
-  const billing = createBillingService({
+  const billingDomain = createBillingDomain({
     ledger: creditLedger,
     stripeGateway: null,
     getOrCreateStripeCustomer: async () => {
@@ -680,8 +680,7 @@ export function createInMemoryAppServices(): AppServices {
       },
       async touch() {},
     },
-    creditLedger,
-    billing,
+    billing: billingDomain.service,
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),
