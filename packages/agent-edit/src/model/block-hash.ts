@@ -64,12 +64,14 @@ export function fullHashForItemId(id: BlockItemId): string {
 
 /** Reverse lookup from an agent-visible hash to a live block in this local Y.Doc. */
 export function lookupBlockHash(doc: Y.Doc, hash: string): BlockHashLookup {
-  const normalized = hash.toLowerCase();
-  const hashes = blockHashesForDoc(doc);
-  const blocks = getTopLevelXmlBlocks(doc);
+  const normalized = hash.trim().toLowerCase();
+  if (normalized.length === 0) return { ok: false, reason: "not_found" };
+
   const matches: Y.XmlElement[] = [];
-  for (let i = 0; i < blocks.length; i++) {
-    if (hashes[i] === normalized) matches.push(blocks[i]);
+  for (const block of getTopLevelXmlBlocks(doc)) {
+    const fullHash = fullHashForItemId(getBlockItemId(block));
+    // Display hashes are flexible prefixes; resolve held old widths against immutable full hashes.
+    if (fullHash.startsWith(normalized)) matches.push(block);
   }
   if (matches.length === 1) return { ok: true, hash: normalized, block: matches[0] };
   if (matches.length > 1) return { ok: false, reason: "ambiguous", matches };
