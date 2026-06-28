@@ -36,7 +36,10 @@ describe("applyEdits tier routing", () => {
     expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
     expect(model.getText(block)).toBe("Alpha blade.");
-    expect(result.ok && result.echo).toEqual([{ mode: "full", blocks: ["0f7a|Alpha blade."] }]);
+    const blockHash = model.getBlockId(block);
+    expect(result.ok && result.echo).toEqual([
+      { mode: "full", blocks: [`${blockHash}|Alpha blade.`] },
+    ]);
     expectNoOrphanedElements(doc);
   });
 
@@ -257,7 +260,10 @@ describe("applyEdits echo and concurrent edits", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
     const local = cloneDoc(live, 2);
     const syncStateVector = Y.encodeStateVector(local);
-    const remoteHash = baseModel.getBlockId(baseModel.getBlocks(local)[3]);
+    const localBlocks = baseModel.getBlocks(local);
+    const alphaHash = baseModel.getBlockId(localBlocks[0]);
+    const betaHash = baseModel.getBlockId(localBlocks[1]);
+    const remoteHash = baseModel.getBlockId(localBlocks[3]);
     const remoteUpdate = remoteTextUpdate(live, 3, { from: 0, to: 5 }, "Omega", {
       type: "human",
       userId: "user-1",
@@ -279,8 +285,8 @@ describe("applyEdits echo and concurrent edits", () => {
     expectOk(result);
     expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
     expect(result.ok && result.echo).toEqual([
-      { mode: "full", blocks: ["0f7a|Alpha blade."] },
-      { mode: "truncated", blocks: ["d2a1|Beta waits."] },
+      { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
+      { mode: "truncated", blocks: [`${betaHash}|Beta waits.`] },
     ]);
     expect(blockTexts(local)).toEqual([
       "Alpha blade.",
