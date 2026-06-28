@@ -1,6 +1,6 @@
 {
-  "id": "30509226-700c-4fe0-aa20-5eab80a10b9a",
-  "prevId": "2ce2f5d0-0eab-4e57-8fc2-2621b6f226f1",
+  "id": "68d58913-3175-4f52-bf18-97e100c8e578",
+  "prevId": "08339ba2-afab-4813-9c67-d808cbd2aa50",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4776,12 +4776,121 @@
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk": {
+          "name": "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk",
+          "tableFrom": "document_yjs_heads",
+          "tableTo": "document_yjs_checkpoints",
+          "columnsFrom": ["latest_checkpoint_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.document_yjs_reversal_ops": {
+      "name": "document_yjs_reversal_ops",
+      "schema": "",
+      "columns": {
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "update_seq": {
+          "name": "update_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "handle": {
+          "name": "handle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "document_yjs_reversal_ops_document_thread_handle": {
+          "name": "document_yjs_reversal_ops_document_thread_handle",
+          "columns": [
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "handle",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "document_yjs_reversal_ops_document_id_documents_id_fk": {
+          "name": "document_yjs_reversal_ops_document_id_documents_id_fk",
+          "tableFrom": "document_yjs_reversal_ops",
+          "tableTo": "documents",
+          "columnsFrom": ["document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "document_yjs_reversal_ops_thread_id_threads_id_fk": {
+          "name": "document_yjs_reversal_ops_thread_id_threads_id_fk",
+          "tableFrom": "document_yjs_reversal_ops",
+          "tableTo": "threads",
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk": {
+          "name": "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk",
+          "columns": ["document_id", "thread_id", "update_seq", "handle"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "document_yjs_reversal_ops_direction_valid": {
+          "name": "document_yjs_reversal_ops_direction_valid",
+          "value": "\"document_yjs_reversal_ops\".\"direction\" IN ('undo', 'redo')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.document_yjs_reversals": {
@@ -4829,6 +4938,12 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
+        },
+        "redo_update_seq": {
+          "name": "redo_update_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "expires_at": {
           "name": "expires_at",
@@ -5073,10 +5188,9 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "uuid",
+          "type": "bigserial",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "thread_id": {
           "name": "thread_id",
