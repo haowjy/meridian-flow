@@ -54,49 +54,33 @@ describe("write reversal dependencies", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha saber."]);
   });
 
-  it("allows a range that contains the dependent write cluster", async () => {
+  it.each([
+    {
+      label: "range contains the dependent write cluster",
+      command: { command: "undo", file: "chapter.md", from: "w1", to: "w2" } as const,
+      blocks: ["Alpha sword."],
+    },
+    {
+      label: "all contains the dependent write cluster",
+      command: { command: "undo", file: "chapter.md", all: true } as const,
+      blocks: ["Alpha sword."],
+    },
+    {
+      label: "default newest single undo in a dependent cluster",
+      command: { command: "undo", file: "chapter.md" } as const,
+      blocks: ["Alpha blade."],
+    },
+  ])("allows $label", async ({ command, blocks }) => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
     );
     await scenario.writeDependentSwordSaber();
 
-    const undo = await scenario.ctx.core.write(
-      { command: "undo", file: "chapter.md", from: "w1", to: "w2" },
-      context,
-    );
+    const undo = await scenario.ctx.core.write(command, context);
 
     expectOutcome(undo, "reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
-  });
-
-  it("allows all when it contains the dependent write cluster", async () => {
-    const scenario = await ReversalScenario.read(
-      { "chapter.md": "Alpha sword." },
-      { undoClientId: REVERSAL_CLIENT_ID },
-    );
-    await scenario.writeDependentSwordSaber();
-
-    const undo = await scenario.ctx.core.write(
-      { command: "undo", file: "chapter.md", all: true },
-      context,
-    );
-
-    expectOutcome(undo, "reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
-  });
-
-  it("allows the default newest single undo in a dependent cluster", async () => {
-    const scenario = await ReversalScenario.read(
-      { "chapter.md": "Alpha sword." },
-      { undoClientId: REVERSAL_CLIENT_ID },
-    );
-    await scenario.writeDependentSwordSaber();
-
-    const undo = await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-
-    expectOutcome(undo, "reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
+    expect(scenario.blockTexts()).toEqual(blocks);
   });
 
   it("does not refuse a non-overlapping earlier write", async () => {

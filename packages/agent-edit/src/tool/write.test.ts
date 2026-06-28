@@ -19,22 +19,18 @@ import { createWriteTool } from "./write.js";
 const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
 const MODEL_PATH = "work://chapter-2.md";
 
-describe("write tool dispatch", () => {
-  it("requires reversal store capabilities at construction time", () => {
-    if (Date.now() < 0) {
-      const oldJournalOnly = {} as UpdateJournal;
-      createWriteTool({
-        // @ts-expect-error write-level mutations require ReversalStore capabilities.
-        journal: oldJournalOnly,
-        coordinator: undefined as never,
-        codec: undefined as never,
-        model: undefined as never,
-      });
-    }
-
-    expect(true).toBe(true);
+if (Date.now() < 0) {
+  const oldJournalOnly = {} as UpdateJournal;
+  createWriteTool({
+    // @ts-expect-error write-level mutations require ReversalStore capabilities.
+    journal: oldJournalOnly,
+    coordinator: undefined as never,
+    codec: undefined as never,
+    model: undefined as never,
   });
+}
 
+describe("write tool dispatch", () => {
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const oldJournalOnly = {
@@ -226,39 +222,63 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh canonical content."]);
   });
 
-  it("rejects a duplicate staged create for the same new document in one response", async () => {
+  it.each([
+    { label: "non-overwrite", overwrite: false },
+    { label: "overwrite", overwrite: true },
+  ])("creates a fresh staged $label document without live document creation", async ({
+    overwrite,
+  }) => {
     const ctx = harness();
+    const responseId = `response-staged-create-new-${overwrite ? "overwrite" : "default"}`;
     const responseContext = {
       ...context,
-      turnId: "turn-staged-duplicate-create",
-      responseId: "response-staged-duplicate-create",
+      turnId: `turn-staged-create-new-${overwrite ? "overwrite" : "default"}`,
+      responseId,
     };
 
-    const first = await ctx.core.write(
-      { command: "create", file: "new.md", content: "First staged content." },
-      responseContext,
-    );
-    const second = await ctx.core.write(
-      { command: "create", file: "new.md", content: "Second staged content." },
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "new.md",
+        content: "Fresh content.",
+        ...(overwrite ? { overwrite: true } : {}),
+      },
       responseContext,
     );
 
-    expectOutcome(first, "success");
-    expectOutcome(second, "invalid_write", true);
-    expect(outcomeText(second)).toContain("File already exists: new.md");
+    expectOutcome(result, "success");
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
-    await ctx.core.commitResponse("response-staged-duplicate-create");
+    const commit = await ctx.core.commitResponse(responseId);
 
-    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["First staged content."]);
+    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);
   });
 
-  it("allows a duplicate staged create with overwrite to replace the prior staged content", async () => {
+  it.each([
+    {
+      label: "rejects",
+      overwrite: false,
+      expectedOutcome: "invalid_write" as const,
+      expectedContent: "First staged content.",
+    },
+    {
+      label: "overwrites",
+      overwrite: true,
+      expectedOutcome: "success" as const,
+      expectedContent: "Replacement staged content.",
+    },
+  ])("$label a duplicate staged create for the same new document in one response", async ({
+    overwrite,
+    expectedOutcome,
+    expectedContent,
+  }) => {
     const ctx = harness();
+    const responseId = `response-staged-duplicate-${overwrite ? "overwrite" : "create"}`;
     const responseContext = {
       ...context,
-      turnId: "turn-staged-duplicate-overwrite",
-      responseId: "response-staged-duplicate-overwrite",
+      turnId: `turn-staged-duplicate-${overwrite ? "overwrite" : "create"}`,
+      responseId,
     };
 
     const first = await ctx.core.write(
@@ -270,62 +290,21 @@ describe("write tool dispatch", () => {
         command: "create",
         file: "new.md",
         content: "Replacement staged content.",
-        overwrite: true,
+        ...(overwrite ? { overwrite: true } : {}),
       },
       responseContext,
     );
 
     expectOutcome(first, "success");
-    expectOutcome(second, "success");
+    expectOutcome(second, expectedOutcome, expectedOutcome === "invalid_write");
+    if (expectedOutcome === "invalid_write") {
+      expect(outcomeText(second)).toContain("File already exists: new.md");
+    }
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
-    await ctx.core.commitResponse("response-staged-duplicate-overwrite");
+    await ctx.core.commitResponse(responseId);
 
-    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Replacement staged content."]);
-  });
-
-  it("creates a fresh staged non-overwrite document without live document creation", async () => {
-    const ctx = harness();
-    const responseContext = {
-      ...context,
-      turnId: "turn-staged-create-new",
-      responseId: "response-staged-create-new",
-    };
-
-    const result = await ctx.core.write(
-      { command: "create", file: "new.md", content: "Fresh content." },
-      responseContext,
-    );
-
-    expectOutcome(result, "success");
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-
-    const commit = await ctx.core.commitResponse("response-staged-create-new");
-
-    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
-    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);
-  });
-
-  it("creates a fresh staged overwrite for a brand-new document", async () => {
-    const ctx = harness();
-    const responseContext = {
-      ...context,
-      turnId: "turn-staged-overwrite-new",
-      responseId: "response-staged-overwrite-new",
-    };
-
-    const result = await ctx.core.write(
-      { command: "create", file: "new.md", content: "Fresh content.", overwrite: true },
-      responseContext,
-    );
-
-    expectOutcome(result, "success");
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-
-    const commit = await ctx.core.commitResponse("response-staged-overwrite-new");
-
-    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
-    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([expectedContent]);
   });
 
   it("keeps internal document ids out of model-facing write text", async () => {

@@ -57,49 +57,60 @@ describe("document renderer", () => {
     expect(rendered).not.toContain("not found");
   });
 
-  it("renders exactly one block for a unique file hash prefix", () => {
-    const doc = createDoc(numberedBlocks(32), 100);
+  it.each([
+    {
+      label: "unique file hash prefix",
+      setup: () => {
+        const doc = createDoc(numberedBlocks(32), 100);
+        const target = model.getBlocks(doc)[10];
+        return {
+          doc,
+          fragment: uniquePrefixFor(doc, target),
+          blocks: [target],
+          bodies: ["Block 11"],
+        };
+      },
+    },
+    {
+      label: "displayed collision hash",
+      setup: () => {
+        const doc = createDoc(collisionMarkdown(), 100);
+        const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+        return {
+          doc,
+          fragment: fixture.target.displayHash,
+          blocks: [fixture.target.block],
+          bodies: [model.getText(fixture.target.block)],
+        };
+      },
+    },
+    {
+      label: "shorter shared collision prefix",
+      setup: () => {
+        const doc = createDoc(collisionMarkdown(), 100);
+        const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+        return {
+          doc,
+          fragment: fixture.sharedPrefix,
+          blocks: fixture.candidates.map((candidate) => candidate.block),
+          bodies: fixture.candidates.map((candidate) => model.getText(candidate.block)),
+        };
+      },
+    },
+  ])("selects hash fragment: $label", ({ setup }) => {
     const renderer = createDocumentRenderer({ model, codec });
-    const target = model.getBlocks(doc)[10];
-    const prefix = uniquePrefixFor(doc, target);
+    const { doc, fragment, blocks, bodies } = setup();
 
     const selection = renderer.selectReadBlocks(
       doc,
-      { command: "read", file: `chapter.md#${prefix}` },
-      { filePath: "chapter.md", fragment: prefix },
+      { command: "read", file: `chapter.md#${fragment}` },
+      { filePath: "chapter.md", fragment },
     );
 
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
-    expect(selection.blocks).toEqual([target]);
-    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual(["Block 11"]);
-  });
-
-  it("renders the displayed collision hash uniquely and the shorter shared prefix as candidates", () => {
-    const doc = createDoc(collisionMarkdown(), 100);
-    const renderer = createDocumentRenderer({ model, codec });
-    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
-
-    const displayed = renderer.selectReadBlocks(
-      doc,
-      { command: "read", file: `chapter.md#${fixture.target.displayHash}` },
-      { filePath: "chapter.md", fragment: fixture.target.displayHash },
-    );
-    expect(displayed).toMatchObject({ ok: true });
-    if (!displayed.ok) throw new Error(displayed.message);
-    expect(displayed.blocks).toEqual([fixture.target.block]);
-    expect(renderedBlockBodies(renderer.renderBlocks(doc, displayed.blocks))).toEqual([
-      model.getText(fixture.target.block),
-    ]);
-
-    const shared = renderer.selectReadBlocks(
-      doc,
-      { command: "read", file: `chapter.md#${fixture.sharedPrefix}` },
-      { filePath: "chapter.md", fragment: fixture.sharedPrefix },
-    );
-    expect(shared).toMatchObject({ ok: true });
-    if (!shared.ok) throw new Error(shared.message);
-    expect(shared.blocks).toEqual(fixture.candidates.map((candidate) => candidate.block));
+    expect(selection.blocks).toEqual(blocks);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual(bodies);
   });
 
   it("keeps heading-hash file fragments section scoped", () => {

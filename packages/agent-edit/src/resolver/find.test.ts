@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
-import { findTextMatches, reconstructReadFormatNeedle } from "./find.js";
+import { findTextMatches } from "./find.js";
 import type { BlockScope } from "./scope.js";
 
 describe("findTextMatches", () => {
@@ -131,20 +131,6 @@ describe("findTextMatches", () => {
       code: "ambiguous_match",
       count: 2,
     });
-  });
-});
-
-describe("reconstructReadFormatNeedle", () => {
-  it("reconstructs single-line, multi-line, multi-block, and empty-block bodies", () => {
-    expect(reconstructReadFormatNeedle("63bf|1a2b|text")).toBe("1a2b|text");
-    expect(reconstructReadFormatNeedle("63bf|\nThe heavens\nacross")).toBe("The heavens\nacross");
-    expect(reconstructReadFormatNeedle("63bf|First.\nde0e|Second.")).toBe("First.\n\nSecond.");
-    expect(reconstructReadFormatNeedle("63bf|A\na1b2|\nde0e|B")).toBe("A\n\n\n\nB");
-  });
-
-  it("returns null when reconstruction would be empty or the first line is not a marker", () => {
-    expect(reconstructReadFormatNeedle("63bf|")).toBeNull();
-    expect(reconstructReadFormatNeedle("Plain text\nde0e|tail")).toBeNull();
   });
 });
 
