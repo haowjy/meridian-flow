@@ -7,6 +7,7 @@ import {
   agentEditMutations,
   agentEditSyncState,
   agentEditWidCounters,
+  documents,
   documentYjsDrafts,
   documentYjsDraftUpdates,
   documentYjsReversals,
@@ -55,8 +56,9 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
 
     async listActiveDrafts(input) {
       const rows = await db
-        .select()
+        .select({ draft: documentYjsDrafts, documentName: documents.name })
         .from(documentYjsDrafts)
+        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
         .where(
           and(
             eq(documentYjsDrafts.threadId, input.threadId),
@@ -64,7 +66,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
           ),
         )
         .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
-      return rows.map(mapActiveDraft);
+      return rows.map((row) => mapActiveDraft(row.draft, row.documentName));
     },
 
     async getLastAppliedDraft(input) {
@@ -247,8 +249,11 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
   };
 }
 
-function mapActiveDraft(row: typeof documentYjsDrafts.$inferSelect): ActiveDraft {
-  return { ...mapDraft(row), status: "active" };
+function mapActiveDraft(
+  row: typeof documentYjsDrafts.$inferSelect,
+  documentName: string | null,
+): ActiveDraft {
+  return { ...mapDraft(row), status: "active", documentName };
 }
 
 function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): DraftUpdate {

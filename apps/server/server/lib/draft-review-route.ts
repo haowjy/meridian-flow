@@ -7,7 +7,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
-import type { DocumentId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
@@ -74,13 +74,19 @@ export async function handleThreadDraftListRequest(
   deps: DraftRouteServices,
   input: { threadId: ThreadId; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: deps.threads, projects: deps.projects },
     input.threadId,
     input.userId,
   );
   const drafts = await deps.documentSync.drafts.listActiveDrafts({ threadId: input.threadId });
-  return { drafts: drafts.map(serializeThreadDraft) };
+  const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
+    drafts,
+    projectId: thread.projectId,
+    threadId: input.threadId,
+    userId: input.userId,
+  });
+  return { drafts: visibleDrafts.map(serializeThreadDraft) };
 }
 
 export async function handleDraftAcceptRequest(
@@ -103,6 +109,32 @@ export async function handleDraftRejectRequest(
   return result.status === "discarded" ? result : { status: "not_found", draftId: null };
 }
 
+async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }>(
+  deps: DraftRouteServices,
+  input: {
+    drafts: T[];
+    projectId: ProjectId;
+    threadId: ThreadId;
+    userId: UserId;
+  },
+): Promise<T[]> {
+  const checks: Array<T | null> = await Promise.all(
+    input.drafts.map(async (draft): Promise<T | null> => {
+      const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
+        deps.documentAccess.canAccessDocument(input.userId, draft.documentId),
+        deps.documentAccess.canAccessProjectDocument(
+          input.userId,
+          draft.documentId,
+          input.projectId,
+        ),
+        deps.uploadDocuments.getUpload(input.threadId, draft.documentId),
+      ]);
+      return hasDocumentAccess && isProjectDocument && threadDocument ? draft : null;
+    }),
+  );
+  return checks.filter((draft): draft is T => draft !== null);
+}
+
 function serializeDraft(draft: {
   id: string;
   status: DraftReviewSummary["status"];
@@ -120,6 +152,7 @@ function serializeDraft(draft: {
 function serializeThreadDraft(draft: {
   id: string;
   documentId: string;
+  documentName: string | null;
   status: "active";
   lastActorTurnId: string | null;
   updatedAt: Date;
@@ -127,6 +160,7 @@ function serializeThreadDraft(draft: {
   return {
     draftId: draft.id,
     documentId: draft.documentId,
+    documentName: draft.documentName,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),

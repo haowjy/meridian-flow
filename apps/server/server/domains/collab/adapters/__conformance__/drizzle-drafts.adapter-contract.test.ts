@@ -170,6 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             id: second.id,
             documentId: DOC_B_ID,
+            documentName: "chapter-b",
             threadId: THREAD_ID,
             status: "active",
             lastActorTurnId: TURN_B,

@@ -12,6 +12,7 @@ export interface DraftReviewSummary {
 export interface ThreadDraftListItem {
   draftId: string;
   documentId: string;
+  documentName: string | null;
   status: "active";
   lastActorTurnId: string | null;
   updatedAt: string;

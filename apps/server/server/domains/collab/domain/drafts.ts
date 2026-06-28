@@ -24,7 +24,7 @@ export type Draft = {
   updatedAt: Date;
 };
 
-export type ActiveDraft = Draft & { status: "active" };
+export type ActiveDraft = Draft & { status: "active"; documentName: string | null };
 
 export type DraftUpdate = {
   id: number;

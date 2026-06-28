@@ -169,7 +169,7 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
 }
 
 function copyActiveDraft(draft: Draft): ActiveDraft {
-  return { ...(copyDraft(draft) ?? draft), status: "active" };
+  return { ...(copyDraft(draft) ?? draft), status: "active", documentName: null };
 }
 
 function copyUpdate(update: DraftUpdate): DraftUpdate {

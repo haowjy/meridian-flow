@@ -20,7 +20,6 @@ import { FileText, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
-import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { Button } from "@/components/ui/button";
 
 import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
@@ -37,12 +36,7 @@ export function DraftReviewCard({ threadId, group, variant = "inline" }: DraftRe
   const accept = useAcceptDraft();
   const reject = useRejectDraft();
 
-  // Cheap label resolve: this query is already used by the project shell's
-  // context sidebar, so it's usually warm in cache by the time a draft card
-  // appears. If it isn't, we render the fallback label rather than blocking
-  // on the request.
-  const recent = useThreadRecentDocuments(threadId);
-  const documentName = recent.documents?.find((doc) => doc.documentId === group.documentId)?.name;
+  const documentName = group.documentName;
 
   const isPending = accept.isPending || reject.isPending;
   // STACK SEAM: today every group has length 1; tomorrow a multi-alternative

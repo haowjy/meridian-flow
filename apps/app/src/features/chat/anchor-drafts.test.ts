@@ -12,10 +12,12 @@ function group(
 ): ThreadDraftGroup {
   return {
     documentId,
+    documentName: null,
     drafts: [
       {
         draftId,
         documentId,
+        documentName: null,
         status: "active",
         lastActorTurnId,
         updatedAt: "2026-06-27T12:00:00.000Z",

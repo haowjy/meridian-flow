@@ -15,6 +15,7 @@ import { threadQueryKeys } from "./thread-query-keys";
 
 export type ThreadDraftGroup = {
   documentId: string;
+  documentName: string | null;
   drafts: ThreadDraftListItem[];
 };
 
@@ -31,6 +32,7 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
 
   return Array.from(groups, ([documentId, groupDrafts]) => ({
     documentId,
+    documentName: groupDrafts[0]?.documentName ?? null,
     drafts: groupDrafts,
   }));
 }
