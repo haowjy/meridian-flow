@@ -111,6 +111,45 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(consumptionRows).toHaveLength(1);
     });
 
+    it("scopes replay idempotency per user (same usageEventId debits each user)", async () => {
+      const otherUserId = "00000000-0000-4000-8000-000000000102";
+      await db.insert(users).values(conformanceUserValues(otherUserId, "credit-ledger-2"));
+      for (const id of [userId, otherUserId]) {
+        await ledger.grant({
+          userId: id,
+          source: "manual",
+          amountMillicredits: "1000",
+          reason: "seed",
+        });
+      }
+
+      const sharedEvent = "model-response-shared";
+      const debitFor = (id: string) =>
+        ledger.debit({
+          userId: id,
+          rootThreadId: "root-thread",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          agentSlug: "agent",
+          millicredits: "125",
+          usageEventId: sharedEvent,
+        });
+
+      const first = await debitFor(userId);
+      const other = await debitFor(otherUserId);
+
+      // Different users sharing a usageEventId must both be charged, with distinct
+      // consumption groups — idempotency is (user_id, usage_event_id), not global.
+      expect(other.transactionId).not.toBe(first.transactionId);
+      expect(await ledger.getBalance({ userId })).toBe("875");
+      expect(await ledger.getBalance({ userId: otherUserId })).toBe("875");
+
+      // ...and replay within a single user is still short-circuited.
+      const replay = await debitFor(userId);
+      expect(replay.transactionId).toBe(first.transactionId);
+      expect(await ledger.getBalance({ userId })).toBe("875");
+    });
+
     it("maps Stripe grants to purchase source_type and friendly display text", async () => {
       await ledger.grant({
         userId,
