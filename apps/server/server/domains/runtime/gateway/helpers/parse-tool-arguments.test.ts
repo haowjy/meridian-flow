@@ -1,0 +1,50 @@
+import { describe, expect, it } from "vitest";
+
+import { isToolArgsParseError, parseToolCallArguments } from "./parse-tool-arguments.js";
+
+describe("parseToolCallArguments", () => {
+  it("returns a valid JSON object unchanged", () => {
+    expect(parseToolCallArguments('{"path":"manuscript://chapter-1.md","command":"read"}')).toEqual(
+      {
+        path: "manuscript://chapter-1.md",
+        command: "read",
+      },
+    );
+  });
+
+  it("repairs the bare unquoted hash emitted as a tool argument", () => {
+    const parsed = parseToolCallArguments(
+      '{"path":"manuscript://chapter-1.md","in": 6c4a,"command":"read"}',
+    );
+
+    expect(parsed).toEqual({
+      path: "manuscript://chapter-1.md",
+      in: "6c4a",
+      command: "read",
+    });
+    expect(parsed.in).toBe("6c4a");
+  });
+
+  it("repairs trailing commas and single-quoted object strings", () => {
+    expect(
+      parseToolCallArguments("{'path':'manuscript://chapter-1.md','command':'read',}"),
+    ).toEqual({
+      path: "manuscript://chapter-1.md",
+      command: "read",
+    });
+  });
+
+  it("returns a parse-error sentinel for genuinely unparseable garbage", () => {
+    const parsed = parseToolCallArguments('{"a": function(){}}');
+
+    expect(isToolArgsParseError(parsed)).toBe(true);
+    if (isToolArgsParseError(parsed)) {
+      expect(parsed.__meridianToolArgsParseError.raw).toBe('{"a": function(){}}');
+      expect(parsed.__meridianToolArgsParseError.message).toBeTruthy();
+    }
+  });
+
+  it.each([undefined, ""])("returns an empty object for empty input %s", (raw) => {
+    expect(parseToolCallArguments(raw)).toEqual({});
+  });
+});
