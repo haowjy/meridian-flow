@@ -26,15 +26,16 @@ import type { FunctionTool } from "../gateway/index.js";
  * provider). It is guaranteed unique within the turn and is used to match
  * results back to calls in journal events and UI projections.
  *
- * `arguments` is the parsed JSON object the model emitted for this call.
- * It is `Record<string, unknown>` rather than `JsonValue` because the
- * orchestration layer parses the model's JSON string before passing it here;
- * the executor never receives raw string arguments.
+ * `arguments` is the parsed JSON object for this call. When
+ * `argumentsParseError` is present, `arguments` is `{}` because the model's
+ * emitted JSON could not be parsed/repaired; the executor must surface a
+ * model-facing parse error instead of dispatching the handler.
  */
 export interface ToolCallInput {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  argumentsParseError?: { raw: string; message: string };
 }
 
 /**

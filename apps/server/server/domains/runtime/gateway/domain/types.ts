@@ -101,7 +101,14 @@ export interface ToolUsePart {
   type: "tool_use";
   toolCallId: string;
   toolName: string;
+  /**
+   * Parsed tool-call input. When `inputParseError` is present, this is `{}`
+   * because the provider emitted tool-call JSON that could not be parsed or
+   * repaired; downstream must surface a model-facing parse error rather than
+   * dispatching the tool.
+   */
   input: Record<string, unknown>;
+  inputParseError?: { raw: string; message: string };
 }
 
 export interface ToolResultPart {
@@ -270,7 +277,13 @@ export type StreamEvent =
 export interface ToolCall {
   id: string;
   name: string;
+  /**
+   * Parsed tool-call arguments. When `argumentsParseError` is present, this is
+   * `{}` because the provider emitted tool-call JSON that could not be parsed
+   * or repaired.
+   */
   arguments: Record<string, unknown>;
+  argumentsParseError?: { raw: string; message: string };
 }
 
 /**

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { TOOL_ARGS_PARSE_ERROR } from "../../gateway/helpers/parse-tool-arguments.js";
 import { createToolExecutor } from "../tool-executor.js";
 import { createToolRegistry } from "../tool-registry.js";
 import type {
@@ -78,7 +77,7 @@ describe("createToolExecutor", () => {
     });
   });
 
-  it("returns a clear parse error for malformed tool argument sentinels", async () => {
+  it("returns a clear parse error for malformed tool arguments", async () => {
     const registry = createToolRegistry();
     let handlerCalled = false;
     registry.register(
@@ -93,11 +92,10 @@ describe("createToolExecutor", () => {
       {
         id: "call-parse-error",
         name: "read_file",
-        arguments: {
-          [TOOL_ARGS_PARSE_ERROR]: {
-            raw: '{"path":"manuscript://chapter-1.md","in": 6c4a,"command":"read"}',
-            message: "Unexpected character",
-          },
+        arguments: {},
+        argumentsParseError: {
+          raw: '{"path":"manuscript://chapter-1.md","in": 6c4a,"command":"read"}',
+          message: "Unexpected character",
         },
       },
       ctx,

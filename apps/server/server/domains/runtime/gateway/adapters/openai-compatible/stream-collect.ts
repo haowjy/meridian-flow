@@ -105,13 +105,21 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
     // still has an ID for tool_result references.
     const id = entry.id ?? `call_${index}`;
     const parsed = parseToolCallArguments(entry.arguments);
+    const input = parsed.ok ? parsed.arguments : {};
+    const parseError = parsed.ok ? undefined : { raw: parsed.raw, message: parsed.message };
     acc.contentParts.push({
       type: "tool_use",
       toolCallId: id,
       toolName: entry.name,
-      input: parsed,
+      input,
+      ...(parseError ? { inputParseError: parseError } : {}),
     });
-    toolCalls.push({ id, name: entry.name, arguments: parsed });
+    toolCalls.push({
+      id,
+      name: entry.name,
+      arguments: input,
+      ...(parseError ? { argumentsParseError: parseError } : {}),
+    });
   }
 
   return {

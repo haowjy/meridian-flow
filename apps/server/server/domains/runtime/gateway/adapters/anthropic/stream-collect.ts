@@ -388,16 +388,24 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   const toolCalls: ToolCall[] = [];
   for (const [index, entry] of acc.toolCalls.entries()) {
     const parsed = parseToolCallArguments(entry.arguments);
+    const input = parsed.ok ? parsed.arguments : {};
+    const parseError = parsed.ok ? undefined : { raw: parsed.raw, message: parsed.message };
     indexedParts.push({
       index,
       part: {
         type: "tool_use",
         toolCallId: entry.id,
         toolName: entry.name,
-        input: parsed,
+        input,
+        ...(parseError ? { inputParseError: parseError } : {}),
       },
     });
-    toolCalls.push({ id: entry.id, name: entry.name, arguments: parsed });
+    toolCalls.push({
+      id: entry.id,
+      name: entry.name,
+      arguments: input,
+      ...(parseError ? { argumentsParseError: parseError } : {}),
+    });
   }
 
   const content = indexedParts
