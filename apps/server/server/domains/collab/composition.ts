@@ -246,12 +246,28 @@ type ResponseSession = {
   core: AgentEditCore;
   threadId: ThreadId;
   documentIds: Set<DocumentId>;
+  capturedEpochs: Map<DocumentId, number>;
   stale?: boolean;
 };
 
-type DraftClosedCommitResult = Awaited<ReturnType<AgentEditCore["commitResponse"]>> & {
+type PendingResponseSession = {
+  threadId: ThreadId;
+  documentIds: Set<DocumentId>;
+  capturedEpochs: Map<DocumentId, number>;
+  promise: Promise<ResponseSession>;
+  stale?: boolean;
+};
+
+type ResponseSessionEntry = ResponseSession | PendingResponseSession;
+
+type DraftClosedCommitResult = {
+  responseId: string;
   status: "draft_closed";
   mode: "draft";
+  documentCount: 0;
+  updateCount: 0;
+  documents: [];
+  stagedCreates: { committed: []; discarded: [] };
 };
 
 function createResponseSessionRegistry(deps: {
@@ -261,39 +277,92 @@ function createResponseSessionRegistry(deps: {
 }): {
   sessionMode(responseId: string): WriteMode | undefined;
   coreFor(responseId: string, threadId: ThreadId): Promise<ResponseSession>;
+  trackDocument(responseId: string, threadId: ThreadId, documentId: DocumentId): void;
+  isDraftClosed(responseId: string): boolean;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
   rollbackResponse(
     responseId: string,
   ): Promise<Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>>;
   invalidateDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 } {
-  const sessions = new Map<string, ResponseSession>();
+  const sessions = new Map<string, ResponseSessionEntry>();
+  const invalidationEpochs = new Map<string, number>();
 
   return {
     sessionMode(responseId) {
-      return sessions.get(responseId)?.mode;
+      const session = sessions.get(responseId);
+      return session && "mode" in session ? session.mode : undefined;
     },
 
     async coreFor(responseId, threadId) {
       const existing = sessions.get(responseId);
-      if (existing) return existing;
+      if (existing) return "promise" in existing ? existing.promise : existing;
 
-      const mode = await deps.resolveMode(threadId);
-      const session: ResponseSession = {
-        mode,
-        core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
+      const pending: PendingResponseSession = {
         threadId,
         documentIds: new Set(),
+        capturedEpochs: new Map(),
+        promise: Promise.resolve().then(async () => {
+          const mode = await deps.resolveMode(threadId);
+          const resolved: ResponseSession = {
+            mode,
+            core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
+            threadId,
+            documentIds: pending.documentIds,
+            capturedEpochs: pending.capturedEpochs,
+            stale: pending.stale,
+          };
+          sessions.set(responseId, resolved);
+          return resolved;
+        }),
       };
-      sessions.set(responseId, session);
-      return session;
+      sessions.set(responseId, pending);
+      return pending.promise;
+    },
+
+    trackDocument(responseId, threadId, documentId) {
+      const existing = sessions.get(responseId);
+      const entry: ResponseSessionEntry =
+        existing ??
+        ({
+          threadId,
+          documentIds: new Set(),
+          capturedEpochs: new Map(),
+          promise: Promise.resolve().then(async () => {
+            const mode = await deps.resolveMode(threadId);
+            const current = sessions.get(responseId);
+            const base = current && "promise" in current ? current : entry;
+            const resolved: ResponseSession = {
+              mode,
+              core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
+              threadId,
+              documentIds: base.documentIds,
+              capturedEpochs: base.capturedEpochs,
+              stale: base.stale,
+            };
+            sessions.set(responseId, resolved);
+            return resolved;
+          }),
+        } satisfies PendingResponseSession);
+      entry.documentIds.add(documentId);
+      if (!entry.capturedEpochs.has(documentId)) {
+        entry.capturedEpochs.set(documentId, currentEpoch(threadId, documentId));
+      }
+      if (!existing) sessions.set(responseId, entry);
+    },
+
+    isDraftClosed(responseId) {
+      const entry = sessions.get(responseId);
+      if (!entry || !("mode" in entry) || entry.mode !== "draft") return false;
+      return shouldCloseDraftSession(entry);
     },
 
     async commitResponse(responseId) {
-      const session = sessions.get(responseId);
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
       if (!session) return deps.createLiveCore().commitResponse(responseId);
       try {
-        if (session.stale && session.mode === "draft") {
+        if (shouldCloseDraftSession(session)) {
           await session.core.rollbackResponse(responseId);
           return {
             responseId,
@@ -312,7 +381,8 @@ function createResponseSessionRegistry(deps: {
     },
 
     async rollbackResponse(responseId) {
-      const session = sessions.get(responseId);
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
       try {
         return await (session?.core ?? deps.createLiveCore()).rollbackResponse(responseId);
       } finally {
@@ -321,13 +391,39 @@ function createResponseSessionRegistry(deps: {
     },
 
     async invalidateDraft({ documentId, threadId }) {
+      invalidationEpochs.set(
+        epochKey(threadId, documentId),
+        currentEpoch(threadId, documentId) + 1,
+      );
       for (const session of sessions.values()) {
-        if (session.mode !== "draft") continue;
         if (session.threadId !== threadId) continue;
         if (session.documentIds.has(documentId)) session.stale = true;
       }
     },
   };
+
+  function shouldCloseDraftSession(session: ResponseSession): boolean {
+    return session.mode === "draft" && (session.stale === true || hasAdvancedEpoch(session));
+  }
+
+  function hasAdvancedEpoch(session: ResponseSession): boolean {
+    for (const documentId of session.documentIds) {
+      if (
+        currentEpoch(session.threadId, documentId) > (session.capturedEpochs.get(documentId) ?? 0)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function currentEpoch(threadId: ThreadId, documentId: DocumentId): number {
+    return invalidationEpochs.get(epochKey(threadId, documentId)) ?? 0;
+  }
+
+  function epochKey(threadId: ThreadId, documentId: DocumentId): string {
+    return `${threadId}:${documentId}`;
+  }
 }
 
 function createAgentEditProxy(deps: {
@@ -340,9 +436,18 @@ function createAgentEditProxy(deps: {
       if (!responseId) return deps.liveUtilityCore.write(command, context);
       const threadId = context.threadId as ThreadId | undefined;
       if (!threadId) return deps.liveUtilityCore.write(command, context);
-      const session = await deps.registry.coreFor(responseId, threadId);
       if ("documentId" in command && command.documentId) {
-        session.documentIds.add(command.documentId as DocumentId);
+        deps.registry.trackDocument(responseId, threadId, command.documentId as DocumentId);
+      }
+      const session = await deps.registry.coreFor(responseId, threadId);
+      if (deps.registry.isDraftClosed(responseId)) {
+        await session.core.rollbackResponse(responseId);
+        return {
+          command: command.command,
+          status: "internal_error",
+          isError: true,
+          text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
+        } as Awaited<ReturnType<AgentEditCore["write"]>>;
       }
       return session.core.write(command, context);
     },
@@ -405,6 +510,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     liveJournal: deps.draftAcceptJournal,
     liveCoordinator: deps.coordinator,
     invalidateInFlight: responseRegistry.invalidateDraft,
+    refreshAcceptedProjection: ({ documentId, threadId }) =>
+      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
   });
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
@@ -599,6 +706,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     refreshDocumentProjection(input) {
       return refreshDocumentProjection(input.documentId, input.threadId);
+    },
+
+    resolveThreadWriteMode(threadId) {
+      return resolveThreadWriteMode(deps, threadId);
     },
 
     finalizeResponseCommit,

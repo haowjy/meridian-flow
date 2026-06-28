@@ -44,6 +44,7 @@ export function createInMemoryDraftStore(): DraftStore {
         appliedByUserId: null,
         appliedUpdateSeq: null,
         discardedAt: null,
+        claimedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -75,7 +76,8 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async claimActive(input) {
       const draft = findDraft({ ...input, status: "active" });
-      if (!draft) return null;
+      if (!draft || draft.claimedAt) return null;
+      draft.claimedAt = new Date();
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
@@ -87,6 +89,7 @@ export function createInMemoryDraftStore(): DraftStore {
       draft.appliedAt = new Date();
       draft.appliedByUserId = input.appliedByUserId;
       draft.appliedUpdateSeq = input.appliedUpdateSeq;
+      draft.claimedAt = null;
       draft.updatedAt = new Date();
     },
 
@@ -95,6 +98,7 @@ export function createInMemoryDraftStore(): DraftStore {
       if (!draft) return;
       draft.status = "discarded";
       draft.discardedAt = new Date();
+      draft.claimedAt = null;
       draft.updatedAt = new Date();
     },
 

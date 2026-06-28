@@ -10,7 +10,7 @@ import {
   documentYjsDraftUpdates,
   documentYjsReversals,
 } from "@meridian/database";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import type { Draft, DraftAcceptJournal, DraftStore, DraftUpdate } from "../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
 import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
@@ -113,12 +113,16 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
     async claimActive(input) {
       const [row] = await db
         .update(documentYjsDrafts)
-        .set({ updatedAt: sql`now()` })
+        .set({ claimedAt: sql`now()`, updatedAt: sql`now()` })
         .where(
           and(
             eq(documentYjsDrafts.documentId, input.documentId),
             eq(documentYjsDrafts.threadId, input.threadId),
             eq(documentYjsDrafts.status, "active"),
+            or(
+              isNull(documentYjsDrafts.claimedAt),
+              sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+            ),
           ),
         )
         .returning();
@@ -133,6 +137,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
           appliedAt: sql`now()`,
           appliedByUserId: input.appliedByUserId,
           appliedUpdateSeq: input.appliedUpdateSeq,
+          claimedAt: null,
           updatedAt: sql`now()`,
         })
         .where(eq(documentYjsDrafts.id, draftId));
@@ -141,7 +146,12 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
     async markDiscarded(draftId) {
       await db
         .update(documentYjsDrafts)
-        .set({ status: "discarded", discardedAt: sql`now()`, updatedAt: sql`now()` })
+        .set({
+          status: "discarded",
+          discardedAt: sql`now()`,
+          claimedAt: null,
+          updatedAt: sql`now()`,
+        })
         .where(eq(documentYjsDrafts.id, draftId));
     },
 
@@ -191,6 +201,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     appliedByUserId: (row.appliedByUserId as UserId | null) ?? null,
     appliedUpdateSeq: row.appliedUpdateSeq === null ? null : Number(row.appliedUpdateSeq),
     discardedAt: row.discardedAt,
+    claimedAt: row.claimedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

@@ -14,6 +14,7 @@ import {
   createDrizzleDraftSessionCore,
   createFacade,
 } from "../composition.js";
+import { updateMarkdownProjection } from "../domain/document-activity.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -219,7 +220,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("routes facade response writes to draft mode, skips live projection refresh, then accepts", async () => {
-      const hook = vi.fn(async () => undefined);
+      const hook = vi.fn(async (event) => {
+        await updateMarkdownProjection(db, event.documentId, event.markdown, event.at);
+      });
       const { domain } = createLiveHarness(db, draftStore, {
         aiWriteMode: "draft",
         documentWriteHook: hook,
@@ -271,6 +274,164 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
+      expect(hook).toHaveBeenCalledTimes(1);
+      const [projection] = await db
+        .select({ markdownProjection: documents.markdownProjection })
+        .from(documents)
+        .where(eq(documents.id, DOC_ID))
+        .limit(1);
+      expect(projection?.markdownProjection).toContain("Draft Beta.");
+    });
+
+    it("lets only one concurrent draft finalizer mutate live state", async () => {
+      const { domain, liveCoordinator } = createLiveHarness(db, draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        draftStore,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await draftCore.write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-concurrent" },
+      );
+      await draftCore.commitResponse("response-concurrent");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      const [accept, reject] = await Promise.all([
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      ]);
+
+      const final = await draftStore.getDraft(draft.id);
+      const statuses = [accept.status, reject.status].sort();
+      expect([["applied", "not_found"].sort(), ["discarded", "not_found"].sort()]).toContainEqual(
+        statuses,
+      );
+      if (accept.status === "applied") {
+        expect(final?.status).toBe("applied");
+        expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
+      } else {
+        expect(final?.status).toBe("discarded");
+        expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft Beta.");
+      }
+    });
+
+    it("does not let a pending draft response recreate a draft after invalidation", async () => {
+      let releasePreferences!: () => void;
+      const preferencesReady = new Promise<void>((resolve) => {
+        releasePreferences = resolve;
+      });
+      let delayPreferences = false;
+      const { domain } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        beforePreferenceRead: () => (delayPreferences ? preferencesReady : Promise.resolve()),
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await domain
+        .agentEdit()
+        .write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-before-close" },
+        );
+      await domain
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-before-close" },
+        );
+      await domain.finalizeResponseCommit("response-before-close", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      delayPreferences = true;
+      const pendingWrite = domain
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Stale draft." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-pending-close" },
+        );
+      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      releasePreferences();
+
+      await expect(pendingWrite).resolves.toMatchObject({
+        isError: true,
+        status: "internal_error",
+      });
+      await expect(
+        domain.finalizeResponseCommit("response-pending-close", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "draft_closed" });
+      expect(
+        await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      ).toBeNull();
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Stale draft.");
+    });
+
+    it("retries draft scoped cleanup after an applied retry", async () => {
+      let cleanupCalls = 0;
+      const flakyDraftStore = {
+        ...draftStore,
+        async deleteScopedState(input: Parameters<typeof draftStore.deleteScopedState>[0]) {
+          cleanupCalls += 1;
+          if (cleanupCalls === 1) throw new Error("cleanup failed once");
+          await draftStore.deleteScopedState(input);
+        },
+      };
+      const { domain, liveCoordinator } = createLiveHarness(db, flakyDraftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        draftStore,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await draftCore.write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-cleanup-retry" },
+      );
+      await draftCore.commitResponse("response-cleanup-retry");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).rejects.toThrow("cleanup failed once");
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      expect(cleanupCalls).toBe(2);
     });
 
     it("invalidates active draft response sessions before they can commit", async () => {
@@ -335,6 +496,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 type LiveHarnessOptions = {
   aiWriteMode?: "direct" | "draft";
   documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
+  beforePreferenceRead?: () => Promise<void>;
 };
 
 function createLiveHarness(
@@ -365,6 +527,7 @@ function createLiveHarness(
       },
       projectPreferences: {
         async read() {
+          await options.beforePreferenceRead?.();
           return { aiWriteMode: options.aiWriteMode ?? "direct" };
         },
       },

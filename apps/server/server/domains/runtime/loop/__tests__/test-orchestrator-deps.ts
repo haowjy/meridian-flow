@@ -81,7 +81,7 @@ export function createTestOrchestratorDeps(
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     responseWrites: {
       async commitResponse() {
-        return [];
+        return { status: "committed", concurrentEdits: [] };
       },
       async rollbackResponse() {},
     },

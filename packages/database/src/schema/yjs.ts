@@ -89,6 +89,7 @@ export const documentYjsDrafts = pgTable(
       .references(() => users.id, { onDelete: "set null" }),
     appliedUpdateSeq: bigint("applied_update_seq", { mode: "number" }),
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

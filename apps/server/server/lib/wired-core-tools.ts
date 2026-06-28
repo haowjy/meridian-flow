@@ -27,6 +27,7 @@ import type {
   AgentEditAccess,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
+  ThreadWriteModeResolver,
 } from "../domains/collab/index.js";
 import {
   contextPortForThread,
@@ -57,7 +58,10 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
+  documentSync: AgentEditAccess &
+    DocumentProjectionRefresher &
+    ResponseWriteFinalizer &
+    ThreadWriteModeResolver;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
@@ -85,13 +89,16 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<
-    { documentId: string; concurrentEdits: ConcurrentEditInfo }[] & {
-      draftClosed?: { status: "draft_closed"; responseId: string; mode: "draft" };
-    }
-  >;
+  ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(responseId: string): Promise<void>;
 }
+
+export type ResponseWriteLifecycleCommitResult =
+  | {
+      status: "committed";
+      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+    }
+  | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
@@ -306,10 +313,17 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]> {
+    ): Promise<ResponseWriteLifecycleCommitResult> {
       const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
+      if (result.status === "draft_closed") {
+        return {
+          status: "draft_closed",
+          responseId: result.responseId,
+          mode: result.mode,
+        };
+      }
       const concurrentEdits = result.documents.flatMap((document) =>
         document.concurrentEdits
           ? [
@@ -319,17 +333,8 @@ export function createAgentEditResponseWriteLifecycle(
               },
             ]
           : [],
-      ) as { documentId: string; concurrentEdits: ConcurrentEditInfo }[] & {
-        draftClosed?: { status: "draft_closed"; responseId: string; mode: "draft" };
-      };
-      if (result.status === "draft_closed") {
-        concurrentEdits.draftClosed = {
-          status: "draft_closed",
-          responseId: result.responseId,
-          mode: result.mode,
-        };
-      }
-      return concurrentEdits;
+      );
+      return { status: "committed", concurrentEdits };
     },
 
     async rollbackResponse(responseId: string): Promise<void> {
@@ -365,6 +370,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
+
+      if (
+        parsed.command === "create" &&
+        ctx.responseId !== undefined &&
+        (await deps.documentSync.resolveThreadWriteMode(ctx.threadId)) === "draft"
+      ) {
+        return toolError({ message: "Creating new documents in draft mode isn't supported yet" });
+      }
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,

@@ -18,6 +18,7 @@ export type Draft = {
   appliedByUserId: UserId | null;
   appliedUpdateSeq: number | null;
   discardedAt: Date | null;
+  claimedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -89,6 +90,11 @@ export type InvalidateInFlightDrafts = (input: {
   threadId: ThreadId;
 }) => Promise<void>;
 
+export type RefreshAcceptedDraftProjection = (input: {
+  documentId: DocumentId;
+  threadId: ThreadId;
+}) => Promise<void>;
+
 export type DraftAcceptResult =
   | { status: "not_found" }
   | { status: "discarded"; draftId: string }
@@ -136,6 +142,7 @@ export function createDraftService(deps: {
   liveJournal: DraftAcceptJournal;
   liveCoordinator: DocumentCoordinator;
   invalidateInFlight?: InvalidateInFlightDrafts;
+  refreshAcceptedProjection?: RefreshAcceptedDraftProjection;
 }): DraftService {
   const invalidateInFlight = deps.invalidateInFlight ?? (async () => {});
   const projection = createDraftProjectionCoordinator({
@@ -159,6 +166,11 @@ export function createDraftService(deps: {
     if (!draft) {
       const applied = await deps.draftStore.getLastAppliedDraft(input);
       if (applied && applied.appliedUpdateSeq !== null) {
+        await deps.draftStore.deleteScopedState({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          scopeId: applied.id,
+        });
         return {
           status: "applied",
           draftId: applied.id,
@@ -226,6 +238,11 @@ export function createDraftService(deps: {
 
     await deps.liveCoordinator.withDocument(input.documentId, async (doc) => {
       Y.applyUpdate(doc, mergedUpdate, { type: "system" });
+    });
+
+    await deps.refreshAcceptedProjection?.({
+      documentId: input.documentId,
+      threadId: input.threadId,
     });
 
     await deps.draftStore.markApplied(draft.id, {
