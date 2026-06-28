@@ -7,13 +7,13 @@ import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
-} from "./adapters/in-memory/agent-edit.js";
-import { createInMemoryDraftAcceptJournal } from "./adapters/in-memory/drafts.js";
+} from "../adapters/in-memory/agent-edit.js";
+import { createInMemoryDraftAcceptJournal } from "../adapters/in-memory/drafts.js";
 import {
   type CollabFacadeStore,
   createDrizzleDraftSessionCore,
   createFacade,
-} from "./composition.js";
+} from "../composition.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -51,8 +51,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleDraftStore } = await import("./adapters/drizzle-drafts.js");
+    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { createDrizzleDraftStore } = await import("../adapters/drizzle-drafts.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const draftStore = createDrizzleDraftStore(db);

@@ -15,6 +15,8 @@ import type { Draft, DraftAcceptJournal, DraftStore, DraftUpdate } from "../doma
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
 import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
+const ACTIVE_DRAFT_UNIQUE_CONSTRAINT = "document_yjs_drafts_active_document_thread";
+
 // Drizzle's transaction subtype is structurally compatible with the table methods we use.
 type DraftDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
@@ -75,7 +77,9 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
         if (!row) throw new Error("Failed to create draft");
         return mapDraft(row);
       } catch (cause) {
-        if (isUniqueConstraintViolation(cause)) throw new ActiveDraftConflictError(input);
+        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) {
+          throw new ActiveDraftConflictError(input);
+        }
         throw cause;
       }
     },
@@ -202,6 +206,24 @@ function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): Draft
   };
 }
 
-function isUniqueConstraintViolation(cause: unknown): boolean {
-  return typeof cause === "object" && cause !== null && "code" in cause && cause.code === "23505";
+function isUniqueViolation(error: unknown, constraintName?: string): boolean {
+  for (const cause of errorCauseChain(error)) {
+    if (!isErrorRecord(cause) || cause.code !== "23505") continue;
+    if (!constraintName || cause.constraint_name === constraintName) return true;
+  }
+  return false;
+}
+
+function* errorCauseChain(error: unknown): Generator<unknown> {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    yield current;
+    current = isErrorRecord(current) ? current.cause : undefined;
+  }
+}
+
+function isErrorRecord(error: unknown): error is Record<string, unknown> {
+  return typeof error === "object" && error !== null;
 }
