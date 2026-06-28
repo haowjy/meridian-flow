@@ -30,10 +30,16 @@ const DEFAULT_MAX_CELLS = 1_000_000;
  * Units are markdown lines (split on `\n`, blank lines preserved). Line-level
  * is the right grain for prose review: paragraph rewrites read as
  * one-removed-many-added blocks rather than character noise.
+ *
+ * Tokenization: an empty document tokenizes to `[]`, not `[""]` — otherwise
+ * `diffLines("", "foo")` would report a phantom blank-line edit before the
+ * real change. A single trailing newline is treated as a document terminator,
+ * so `"foo"` and `"foo\n"` diff as identical (the writer doesn't see the
+ * markdown terminator and shouldn't see a synthetic blank-line op for it).
  */
 export function diffLines(a: string, b: string, options?: DiffOptions): DiffOp[] | null {
-  const aLines = a.split("\n");
-  const bLines = b.split("\n");
+  const aLines = tokenizeLines(a);
+  const bLines = tokenizeLines(b);
   const m = aLines.length;
   const n = bLines.length;
   const maxCells = options?.maxCells ?? DEFAULT_MAX_CELLS;
@@ -72,6 +78,18 @@ export function diffLines(a: string, b: string, options?: DiffOptions): DiffOp[]
   while (j < n) ops.push({ kind: "added", text: bLines[j++] });
 
   return ops;
+}
+
+/**
+ * Split a document into diff tokens. Empty input is an empty token list (so
+ * an empty-doc draft doesn't produce a phantom blank-line edit), and a single
+ * terminal newline is stripped so the diff doesn't synthesize trailing
+ * blank-line ops for whitespace the writer never sees.
+ */
+function tokenizeLines(s: string): string[] {
+  if (s.length === 0) return [];
+  const body = s.endsWith("\n") ? s.slice(0, -1) : s;
+  return body.split("\n");
 }
 
 /**

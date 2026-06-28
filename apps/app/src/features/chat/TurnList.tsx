@@ -11,6 +11,10 @@
  * `useThreadDrafts`) hands per-turn `ThreadDraftGroup[]` arrays to assistant
  * turns so the DraftReviewCard renders inside the producing turn's row.
  * Keeping the lookup in the parent keeps Virtuoso item identity stable.
+ *
+ * Cards inside a virtualized row CANNOT own a fixed-position modal — when
+ * Virtuoso recycles the row the modal vanishes with it. The card calls
+ * `onReviewDraft`; the overlay lives at the (non-virtualized) ChatView root.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import {
@@ -43,6 +47,8 @@ export type TurnListProps = {
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
+  /** Open the ChatView-owned preview overlay for a draft's document. */
+  onReviewDraft?: (documentId: string) => void;
 };
 
 /**
@@ -56,6 +62,7 @@ export function TurnList({
   tailFollowRevision,
   onRespondToCheckpoint,
   draftsByTurnId,
+  onReviewDraft,
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -92,10 +99,11 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToCheckpoint={onRespondToCheckpoint}
           draftGroups={draftGroups}
+          onReviewDraft={onReviewDraft}
         />
       );
     },
-    [draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, threadId],
+    [draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, onReviewDraft, threadId],
   );
 
   const components = useMemo<Components<Turn>>(

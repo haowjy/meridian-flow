@@ -28,6 +28,41 @@ describe("diffLines", () => {
     // Force tiny budget so the helper degrades cleanly.
     expect(diffLines(a, b, { maxCells: 10 })).toBeNull();
   });
+
+  // Edge cases: tokenization must not invent phantom blank-line ops for the
+  // empty document or for a single trailing newline. These cases bit the
+  // first cut where `"".split("\n")` produced `[""]`.
+  it("tokenizes the empty document as no lines (insert against empty)", () => {
+    const ops = diffLines("", "foo");
+    expect(ops).toEqual([{ kind: "added", text: "foo" }]);
+  });
+
+  it("tokenizes the empty document as no lines (full-delete draft)", () => {
+    const ops = diffLines("foo", "");
+    expect(ops).toEqual([{ kind: "removed", text: "foo" }]);
+  });
+
+  it("returns an empty diff when both sides are empty", () => {
+    const ops = diffLines("", "");
+    expect(ops).toEqual([]);
+  });
+
+  it("treats a sole trailing newline as a document terminator, not a blank line", () => {
+    // "a" and "a\n" must be equivalent so the writer doesn't see a phantom
+    // added/removed empty paragraph for a terminator they never see.
+    expect(diffLines("a", "a\n")).toEqual([{ kind: "equal", text: "a" }]);
+    expect(diffLines("a\n", "a")).toEqual([{ kind: "equal", text: "a" }]);
+  });
+
+  it("preserves explicit blank lines between paragraphs", () => {
+    // Two trailing newlines is one terminator + one real blank line — still
+    // a real edit when the other side has none.
+    const ops = diffLines("a", "a\n\n");
+    expect(ops).toEqual([
+      { kind: "equal", text: "a" },
+      { kind: "added", text: "" },
+    ]);
+  });
 });
 
 describe("collapseDiffBlocks", () => {

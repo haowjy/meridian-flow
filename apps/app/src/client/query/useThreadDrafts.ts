@@ -6,6 +6,7 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { listThreadDrafts } from "@/client/api/drafts-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -61,6 +62,16 @@ export function useThreadDrafts(
     }),
   );
 
+  // Memoize on the query data identity so downstream consumers (chat
+  // anchoring, memoized turn rows) only see a new groups array when the
+  // underlying drafts list actually changes — otherwise the grouping would
+  // allocate a fresh array on every render and bust memoization for every
+  // streaming tick.
+  const groups = useMemo(
+    () => (result.data ? groupDraftsByDocument(result.data) : null),
+    [result.data],
+  );
+
   if (!enabled) {
     return {
       ...result,
@@ -74,6 +85,6 @@ export function useThreadDrafts(
   return {
     ...result,
     drafts: result.data,
-    groups: result.data ? groupDraftsByDocument(result.data) : null,
+    groups,
   };
 }

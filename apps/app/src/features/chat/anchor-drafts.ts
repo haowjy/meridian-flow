@@ -5,10 +5,12 @@
  * producing assistant turn and the latter in a single compact fallback strip
  * above the Composer.
  *
+ * Takes a stable set of in-transcript turn ids rather than the live `Turn[]`
+ * so that unrelated streaming/block churn doesn't bust the memoized split —
+ * the set identity is what matters for anchoring, not the full turn objects.
+ *
  * Stays a tiny pure helper so the rendering layer can stay dumb about lookup.
  */
-
-import type { Turn } from "@meridian/contracts/protocol";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 
@@ -21,14 +23,11 @@ export type AnchoredDraftSplit = {
 
 export function splitDraftGroupsByTurn(
   groups: ThreadDraftGroup[] | null | undefined,
-  turns: Turn[],
+  turnIds: ReadonlySet<string>,
 ): AnchoredDraftSplit {
   if (!groups || groups.length === 0) {
     return { byTurnId: new Map(), unanchored: [] };
   }
-
-  const turnIds = new Set<string>();
-  for (const turn of turns) turnIds.add(turn.id);
 
   const byTurnId = new Map<string, ThreadDraftGroup[]>();
   const unanchored: ThreadDraftGroup[] = [];

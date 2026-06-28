@@ -10,10 +10,10 @@
  *
  * DraftReviewCard anchoring: when the writer has at least one active AI draft
  * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
- * the draft-review card(s) directly beneath its segments. The card is the
- * chat-first review surface; it opens the prose preview overlay and owns
- * accept/discard mutations. Groups that don't anchor are surfaced by ChatView
- * in the unanchored fallback strip above the Composer.
+ * the draft-review card(s) directly beneath its segments. The card opens the
+ * (ChatView-owned) preview overlay via `onReviewDraft` and owns the
+ * accept/discard mutations directly. Groups that don't anchor are surfaced
+ * by ChatView in the unanchored fallback strip above the Composer.
  */
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
@@ -40,8 +40,10 @@ export type AssistantTurnProps = {
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
-  /** Draft groups anchored to this turn (length 0 today when none). */
+  /** Draft groups anchored to this turn (undefined when none — most rows). */
   draftGroups?: ThreadDraftGroup[];
+  /** Open the ChatView-owned preview overlay for one of this turn's drafts. */
+  onReviewDraft?: (documentId: string) => void;
 };
 
 function AssistantTurnComponent({
@@ -50,6 +52,7 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToCheckpoint,
   draftGroups,
+  onReviewDraft,
 }: AssistantTurnProps) {
   const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
   const segments = partitionTurnSegments(sortedBlocks);
@@ -86,10 +89,15 @@ function AssistantTurnComponent({
         </p>
       ) : null}
 
-      {draftGroups && draftGroups.length > 0 ? (
+      {draftGroups && draftGroups.length > 0 && onReviewDraft ? (
         <div data-draft-anchor>
           {draftGroups.map((group) => (
-            <DraftReviewCard key={group.documentId} threadId={resolvedThreadId} group={group} />
+            <DraftReviewCard
+              key={group.documentId}
+              threadId={resolvedThreadId}
+              group={group}
+              onReview={onReviewDraft}
+            />
           ))}
         </div>
       ) : null}
@@ -209,7 +217,8 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
     prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
-    prev.draftGroups === next.draftGroups
+    prev.draftGroups === next.draftGroups &&
+    prev.onReviewDraft === next.onReviewDraft
   );
 }
 

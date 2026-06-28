@@ -1,6 +1,9 @@
 /**
  * DraftPreviewOverlay — modal review surface for one document's active AI
- * draft. Opened from `DraftReviewCard` (and the unanchored fallback strip).
+ * draft. Owned and rendered by `ChatView` (not by `DraftReviewCard`): cards
+ * inside an anchored assistant turn live in a react-virtuoso row that may
+ * recycle/unmount as the writer scrolls, and a fixed-position modal mounted
+ * under that row vanishes with it.
  *
  * Reuses the dialog/dock chrome pattern from `ResultViewerOverlay`: fixed
  * backdrop, dismissable via Escape or backdrop click, single panel frame.
@@ -200,11 +203,11 @@ function PreviewBody({
       </StatusRow>
     );
   }
-  // `previewMarkdown` is omitted when there is no active draft — usually
-  // because the writer just accepted or discarded it. Render a soft empty
-  // state instead of nothing; the overlay closes automatically on a
-  // successful mutation.
-  if (!previewMarkdown && !live && isFetching) {
+  // `previewMarkdown == null` is "no active draft" (usually because the writer
+  // just accepted/discarded it). The empty string is a VALID draft that
+  // clears the document — it must flow through to the diff/clean-preview
+  // path so the writer can review the full-delete.
+  if (previewMarkdown == null && live == null && isFetching) {
     return (
       <StatusRow tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -212,7 +215,7 @@ function PreviewBody({
       </StatusRow>
     );
   }
-  if (!previewMarkdown) {
+  if (previewMarkdown == null) {
     return (
       <StatusRow tone="muted">
         <Trans>This draft is no longer active.</Trans>
@@ -273,7 +276,7 @@ function DiffBlockView({ block }: { block: DiffBlock }) {
   // prose reads naturally; line breaks within a block become real breaks.
   const text = block.lines.join("\n");
   if (block.kind === "equal") {
-    return <p className="whitespace-pre-wrap text-foreground/85">{text || " "}</p>;
+    return <p className="whitespace-pre-wrap text-foreground/85">{text || " "}</p>;
   }
   if (block.kind === "added") {
     return (
@@ -281,7 +284,7 @@ function DiffBlockView({ block }: { block: DiffBlock }) {
         <span className="sr-only">
           <Trans>Added:</Trans>{" "}
         </span>
-        {text || " "}
+        {text || " "}
       </p>
     );
   }
@@ -290,7 +293,7 @@ function DiffBlockView({ block }: { block: DiffBlock }) {
       <span className="sr-only">
         <Trans>Removed:</Trans>{" "}
       </span>
-      {text || " "}
+      {text || " "}
     </p>
   );
 }
