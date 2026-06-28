@@ -393,7 +393,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(session, address.documentId, address.filePath, runtime);
+    const synced = await requireSynced(
+      session,
+      address.documentId,
+      command.command,
+      address.filePath,
+      runtime,
+    );
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(

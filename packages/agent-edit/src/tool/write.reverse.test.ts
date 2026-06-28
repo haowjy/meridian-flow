@@ -34,6 +34,32 @@ describe("write host reverse", () => {
     ]);
   });
 
+  it("allows an agent edit immediately after a user-actor hosted undo", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Undone." },
+      { ...context, turnId: "turn-undone" },
+    );
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Undone."]);
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+    expectOutcome(undo, "reversed");
+
+    const edit = await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "After undo." },
+      { ...context, turnId: "turn-after-user-undo" },
+    );
+
+    expectOutcome(edit, "success");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "After undo."]);
+  });
+
   it("undoes a targeted write by id", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(

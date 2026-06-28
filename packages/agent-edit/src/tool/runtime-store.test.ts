@@ -182,7 +182,7 @@ describe("runtime store", () => {
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha dagger waits."]);
   });
 
-  it("invalidates a thread runtime and rebuilds the next read from recovered live state", async () => {
+  it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -200,8 +200,13 @@ describe("runtime store", () => {
 
     ctx.core.invalidateThread("chapter.md", THREAD_ID);
 
-    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    expect(outcomeText(read)).toContain("|Human Alpha blade.");
+    const edit = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
+      context,
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
   it("rehydrates durable redo after restart and marks it redone", async () => {
