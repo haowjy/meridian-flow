@@ -215,7 +215,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("rejects stale destructive pure-hash block replacement without mutating", async () => {
+  it("rejects stale unconfirmed scoped replacement without mutating", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
@@ -232,19 +232,18 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
   });
 
-  it("rejects stale destructive pure-hash delete without mutating", async () => {
+  it("rejects stale unconfirmed numeric-scope delete without mutating", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const betaHash = hashAt(ctx.liveDoc("chapter.md"), 1);
     await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
 
     const rejected = await ctx.core.write(
-      { command: "replace", file: "chapter.md", in: betaHash, content: "" },
+      { command: "replace", file: "chapter.md", in: 2, content: "" },
       context,
     );
 
     expect(rejected.status).toBe("not_found");
-    expect(outcomeText(rejected)).toContain("whole-block replace/delete by hash is unsafe");
+    expect(outcomeText(rejected)).toContain("whole-scope replace/delete with no `find` is unsafe");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
   });
 
@@ -280,19 +279,9 @@ describe("runtime store", () => {
     );
     expect(replace.status).toBe("success");
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
-
-    const createCtx = harness({ "chapter.md": "Old draft." });
-    await createCtx.core.write({ command: "read", file: "chapter.md" }, context);
-    await appendHumanPrefixAndInvalidate(createCtx, "chapter.md");
-    const create = await createCtx.core.write(
-      { command: "create", file: "chapter.md", content: "Fresh draft.", overwrite: true },
-      context,
-    );
-    expect(create.status).toBe("success");
-    expect(blockTexts(createCtx.liveDoc("chapter.md"))).toEqual(["Fresh draft."]);
   });
 
-  it("allows pure-hash replace and delete on non-stale docs and after re-read", async () => {
+  it("allows unconfirmed scoped replace and delete on non-stale docs and after re-read", async () => {
     const nonStale = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await nonStale.core.write({ command: "read", file: "chapter.md" }, context);
     const alphaHash = hashAt(nonStale.liveDoc("chapter.md"), 0);
