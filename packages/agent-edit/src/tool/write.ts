@@ -7,7 +7,7 @@ import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
-import { type BlockRef, toDocHandle } from "../handles.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
@@ -312,10 +312,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
 
-    let existingBlocks: BlockRef[] = [];
-    if (overwriting && !missingLiveForStagedCreate) {
-      // Overwrite must delete the canonical block set, not the stale replica's —
-      // otherwise canonical blocks the replica did not know survive the overwrite.
+    // Reconstruct the authoritative current view so existence and the overwrite
+    // delete-set come from canonical plus staged updates, never a stale replica.
+    if (!missingLiveForStagedCreate) {
       const restored = await runtimeStore.restoreRuntimeFromLive(
         session,
         address.documentId,
@@ -324,15 +323,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         { filePath: address.filePath },
       );
       if (isInternalWriteResult(restored)) return restored;
-      if (context.responseId) {
-        for (const update of responseStaging.bufferedUpdatesForDoc(
-          context.responseId,
-          address.documentId,
-        )) {
-          Y.applyUpdate(runtime.doc, update, { type: "system" });
-        }
+    }
+    if (context.responseId) {
+      for (const update of responseStaging.bufferedUpdatesForDoc(
+        context.responseId,
+        address.documentId,
+      )) {
+        Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
-      existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    }
+    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    if (existingBlocks.length > 0 && !overwriting) {
+      return status(
+        "invalid_write",
+        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+      );
     }
 
     const turnId = nextTurnId(session, address.documentId, context);
