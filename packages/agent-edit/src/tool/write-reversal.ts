@@ -67,6 +67,7 @@ type ReversalResult =
       sync?: SyncedMutationSummary;
       targetCount?: number;
       turnId?: string;
+      scopeTurnId?: string;
     }
   | { ok: false; response: InternalWriteResult };
 
@@ -213,10 +214,14 @@ export function createWriteReversal(deps: {
     selection: ReversalSelection,
     first: Extract<ReversalResult, { ok: true }>,
   ): ReversalSelection {
-    if (selection.kind !== "turn" || selection.turnId !== undefined || first.turnId === undefined) {
+    if (
+      selection.kind !== "turn" ||
+      selection.turnId !== undefined ||
+      first.scopeTurnId === undefined
+    ) {
       return selection;
     }
-    return { kind: "turn", turnId: first.turnId };
+    return { kind: "turn", turnId: first.scopeTurnId };
   }
 
   function isScopeSelection(selection: ReversalSelection): boolean {
@@ -344,6 +349,7 @@ export function createWriteReversal(deps: {
       sync: sync.summary,
       targetCount: plan.writeIds.length,
       turnId: plan.turnId,
+      scopeTurnId: plan.scopeTurnId,
     };
   }
 
