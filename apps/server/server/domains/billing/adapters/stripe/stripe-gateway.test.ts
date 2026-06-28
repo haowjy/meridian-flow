@@ -93,6 +93,7 @@ describe("StripeBillingGateway", () => {
       amountMillicredits: "750000",
       source: "stripe",
       stripeIdempotencyId: "cs_async",
+      displayReason: "Extra usage",
     });
   });
 
@@ -114,6 +115,7 @@ describe("StripeBillingGateway", () => {
       amountMillicredits: "500000",
       source: "stripe",
       stripeIdempotencyId: "cs_paid",
+      displayReason: "Extra usage",
     });
   });
 
@@ -168,8 +170,9 @@ describe("StripeBillingGateway", () => {
       amountMillicredits: "1000000",
       source: "subscription",
       stripeIdempotencyId: "il_period",
-      reason: "plan_standard",
+      displayReason: "Monthly usage",
       expiresAt: "2026-08-01T00:00:00.000Z",
+      metadata: { entryId: "plan_standard" },
     });
   });
 

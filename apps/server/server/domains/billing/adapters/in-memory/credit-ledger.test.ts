@@ -106,8 +106,9 @@ describe("in-memory credit ledger", () => {
       userId: "user-1",
       source: "subscription" as const,
       amountMillicredits: "5000",
-      reason: "invoice paid",
+      reason: "plan_standard",
       stripeIdempotencyId: "invoice_in_123_line_1",
+      displayReason: "Monthly usage",
       expiresAt: "2099-07-01T00:00:00.000Z",
     };
 
@@ -116,10 +117,57 @@ describe("in-memory credit ledger", () => {
 
     expect(replay).toEqual({ transactionId: first.transactionId, created: false });
     expect(await ledger.getBalance({ userId: "user-1" })).toBe("5000");
-    await expect(ledger.listTransactions({ userId: "user-1" })).resolves.toHaveLength(1);
+    await expect(ledger.listTransactions({ userId: "user-1" })).resolves.toEqual([
+      expect.objectContaining({ reason: "Monthly usage" }),
+    ]);
     await expect(
       ledger.hasUnexpiredLot({ userId: "user-1", source: "subscription" }),
     ).resolves.toBe(true);
+  });
+
+  it("uses display reasons without treating them as grant idempotency", async () => {
+    const ledger = createInMemoryCreditLedger();
+
+    await ledger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "100",
+      displayReason: "Adjustment",
+    });
+    await ledger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "200",
+      displayReason: "Adjustment",
+    });
+
+    expect(await ledger.getBalance({ userId: "user-1" })).toBe("300");
+    await expect(ledger.listTransactions({ userId: "user-1" })).resolves.toHaveLength(2);
+  });
+
+  it("shows friendly labels for purchase and subscription grants instead of machine ids", async () => {
+    const ledger = createInMemoryCreditLedger();
+
+    await ledger.grant({
+      userId: "user-1",
+      source: "stripe",
+      amountMillicredits: "100",
+      stripeIdempotencyId: "cs_machine_123",
+      displayReason: "Extra usage",
+    });
+    await ledger.grant({
+      userId: "user-1",
+      source: "subscription",
+      amountMillicredits: "200",
+      stripeIdempotencyId: "il_machine_123",
+      displayReason: "Monthly usage",
+      expiresAt: "2099-07-01T00:00:00.000Z",
+    });
+
+    const transactions = await ledger.listTransactions({ userId: "user-1" });
+    expect(transactions.map((tx) => tx.reason).sort()).toEqual(["Extra usage", "Monthly usage"]);
+    expect(transactions.map((tx) => tx.reason)).not.toContain("cs_machine_123");
+    expect(transactions.map((tx) => tx.reason)).not.toContain("il_machine_123");
   });
 
   it("creates debt lots when a debit goes negative", async () => {

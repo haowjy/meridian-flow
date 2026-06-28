@@ -6,10 +6,13 @@ export interface CreditGrantInput {
   userId: string;
   source: CreditGrantSource;
   amountMillicredits: string;
+  /** Machine idempotency/grouping key for non-Stripe grants (signup, monthly_*, free_tier_*). Never display to users. */
   reason?: string | null;
+  /** Human-facing activity-feed label. This is the only grant reason text safe to display. */
+  displayReason?: string | null;
   expiresAt?: string | Date | null;
   stripeSessionId?: string | null;
-  /** Deterministic idempotency key for grants (Stripe session/invoice or free_tier_{userId}_{periodStart}). */
+  /** Machine idempotency key for Stripe grants and deterministic free-tier grants. Never display to users. */
   stripeIdempotencyId?: string | null;
   metadata?: Record<string, unknown>;
 }

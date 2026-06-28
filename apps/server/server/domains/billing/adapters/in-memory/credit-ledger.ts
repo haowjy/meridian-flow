@@ -3,11 +3,11 @@ import {
   assertPositiveMillicredits,
   type CreditDebitInput,
   type CreditGrantInput,
-  type CreditGrantSource,
   type CreditLedger,
   type CreditLotView,
   type CreditTransactionRow,
 } from "../../domain/credit-ledger.js";
+import { displayReasonFor, grantIdentity, lotSourceForGrant } from "../../domain/grant-identity.js";
 
 type LotSource = CreditLotView["source"];
 
@@ -37,23 +37,8 @@ type Tx = {
   metadata: Record<string, unknown>;
 };
 
-function sourceType(input: CreditGrantSource): LotSource {
-  if (input === "stripe") return "purchase";
-  if (input === "subscription") return "subscription";
-  return "grant";
-}
-
 function unexpired(lot: Lot, now = new Date()): boolean {
   return lot.expiresAt === null || lot.expiresAt > now || lot.source === "debt";
-}
-
-function displayTransactionReason(tx: Tx): string | null {
-  const metadataReason = tx.metadata.reason;
-  if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
-  if (tx.sourceType === "grant" && tx.reason?.startsWith("free_tier_")) {
-    return "Monthly usage";
-  }
-  return tx.reason;
 }
 
 function row(tx: Tx): CreditTransactionRow {
@@ -62,7 +47,11 @@ function row(tx: Tx): CreditTransactionRow {
     transactionType: tx.transactionType,
     amountMillicredits: tx.amountMillicredits.toString(),
     sourceType: tx.sourceType,
-    reason: displayTransactionReason(tx),
+    reason: displayReasonFor({
+      displayReason: typeof tx.metadata.reason === "string" ? tx.metadata.reason : null,
+      sourceType: tx.sourceType,
+      grantReason: tx.reason,
+    }),
     usageEventId: tx.usageEventId,
     createdAt: tx.createdAt.toISOString(),
     metadata: tx.metadata,
@@ -77,16 +66,15 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
   return {
     async grant(input: CreditGrantInput) {
       const amount = assertPositiveMillicredits(input.amountMillicredits);
-      const source = sourceType(input.source);
-      const idempotencyKey = input.stripeIdempotencyId ?? null;
-      const existing = lots.find(
-        (lot) =>
-          lot.userId === input.userId &&
-          lot.source === source &&
-          ((idempotencyKey !== null && lot.idempotencyKey === idempotencyKey) ||
-            (input.stripeSessionId != null && lot.stripeSessionId === input.stripeSessionId) ||
-            (input.reason != null && lot.reason === input.reason)),
-      );
+      const identity = grantIdentity(input);
+      const source = identity.sourceType;
+      const existing = lots.find((lot) => {
+        if (lot.userId !== input.userId || lot.source !== source) return false;
+        if (source === "purchase" && identity.stripeSessionId !== null) {
+          return lot.stripeSessionId === identity.stripeSessionId;
+        }
+        return identity.grantReason !== null && lot.reason === identity.grantReason;
+      });
       if (existing) {
         const existingTx = transactions.find(
           (tx) => tx.userId === input.userId && tx.metadata.lotId === existing.id,
@@ -104,10 +92,13 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
         originalMillicredits: amount,
         balanceMillicredits: amount,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-        stripeSessionId: input.stripeSessionId ?? null,
-        idempotencyKey,
-        reason: input.reason ?? idempotencyKey,
-        metadata: input.metadata ?? {},
+        stripeSessionId: identity.stripeSessionId,
+        idempotencyKey: input.stripeIdempotencyId ?? null,
+        reason: identity.grantReason,
+        metadata: {
+          ...(input.metadata ?? {}),
+          stripeIdempotencyId: input.stripeIdempotencyId ?? null,
+        },
         createdAt,
       });
       transactions.push({
@@ -116,17 +107,17 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
         transactionType: source === "purchase" ? "purchase" : "grant",
         amountMillicredits: amount,
         sourceType: source,
-        reason: input.reason ?? idempotencyKey,
+        reason: identity.grantReason,
         usageEventId: null,
         createdAt,
         metadata: {
+          ...(input.metadata ?? {}),
           lotId,
           source: input.source,
           sourceType: source,
-          reason: input.reason ?? null,
+          reason: input.displayReason ?? null,
           stripeSessionId: input.stripeSessionId ?? null,
-          stripeIdempotencyId: idempotencyKey,
-          ...(input.metadata ?? {}),
+          stripeIdempotencyId: input.stripeIdempotencyId ?? null,
         },
       });
       return { transactionId, created: true };
@@ -242,7 +233,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
     },
 
     async hasUnexpiredLot(input) {
-      const source = sourceType(input.source);
+      const source = lotSourceForGrant(input.source);
       const now = new Date();
       return lots.some((lot) => {
         if (lot.userId !== input.userId || lot.source !== source) return false;
