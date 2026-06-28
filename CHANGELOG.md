@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
   in-flight agent turn. The run finishes server-side and a reconnecting client
   reattaches via the existing snapshot/resume path — long turns survive accidental
@@ -121,6 +122,16 @@
   The reverse API accepts `scope: "turn"` without `uri`, resolves affected
   documents from the agent-edit journal, and returns a shared per-document
   `TurnReversalOutcome` contract.
+
+- Billing: stripped to a thin Stripe gateway + FIFO usage ledger. No "credits"
+  anywhere — users see dollars (extra-usage balance, per-message cost) and a
+  monthly-usage percentage; grant amounts stay server-side. Free tier is a $0/mo
+  plan granting $2/mo of usage; paid plans are Standard $10 and Premium $25;
+  extra usage is standalone $5 increments (no subscription required). Deleted the
+  custom payment-provider/subscription machinery and the `user_subscriptions`
+  table; added `users.stripe_customer_id`. Model calls now meter at provider cost
+  ×1.15. Checkout is unavailable in dev until Stripe test keys are set; free tier
+  and consumption work regardless.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
