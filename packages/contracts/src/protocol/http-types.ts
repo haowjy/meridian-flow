@@ -216,7 +216,7 @@ export type UpdateThreadAgentResponse = Thread;
 
 export type SendMessageRequest = {
   text: string;
-  /** Client connection token from the WebSocket `connected` frame; ties turn ownership to a peer. */
+  /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
   connectionToken?: string;
 };
 

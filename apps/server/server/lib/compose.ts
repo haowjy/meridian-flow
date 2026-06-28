@@ -715,9 +715,6 @@ export function createInMemoryAppServices(): AppServices {
       getRunningTurnId() {
         return null;
       },
-      getRunningConnectionToken() {
-        return undefined;
-      },
       registerLiveConnectionToken() {},
       unregisterLiveConnectionToken() {},
       async startTurn() {

@@ -58,7 +58,6 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
-  connectionToken?: string;
 };
 
 type ChildRun = {
@@ -83,7 +82,7 @@ export function createTurnRunner(deps: {
 }) {
   const eventSink = deps.eventSink;
   const running = new Map<ThreadId, RunningTurn>();
-  /** WS peers currently connected; a token not in this set cannot own a new turn. */
+  /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
   const liveConnectionTokens = new Set<string>();
   const childRuns = new Map<ThreadId, ChildRun>();
 
@@ -133,10 +132,6 @@ export function createTurnRunner(deps: {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
 
-    getRunningConnectionToken(threadId: ThreadId): string | undefined {
-      return running.get(threadId)?.connectionToken;
-    },
-
     async startTurn(input: {
       threadId: ThreadId;
       userText: string;
@@ -151,7 +146,6 @@ export function createTurnRunner(deps: {
       const controller = new AbortController();
       running.set(input.threadId, {
         controller,
-        connectionToken: input.connectionToken,
       });
       try {
         assertConnectionTokenLive(input.connectionToken);
@@ -167,7 +161,6 @@ export function createTurnRunner(deps: {
         running.set(input.threadId, {
           controller,
           assistantTurnId: handle.assistantTurnId,
-          connectionToken: input.connectionToken,
         });
 
         void (async () => {
