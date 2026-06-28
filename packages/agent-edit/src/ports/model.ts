@@ -13,7 +13,8 @@ export interface TextRun {
 
 export type BlockLookup =
   | { ok: true; block: BlockRef }
-  | { ok: false; reason: "not_found" | "ambiguous" };
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "ambiguous"; matches: BlockRef[] };
 
 export type InlineReplacementResult =
   | { ok: true }

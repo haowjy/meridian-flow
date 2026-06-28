@@ -27,7 +27,8 @@ export interface BlockItemId {
 
 export type BlockHashLookup =
   | { ok: true; hash: string; block: Y.XmlElement }
-  | { ok: false; reason: "not_found" | "ambiguous"; matches?: Y.XmlElement[] };
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "ambiguous"; matches: Y.XmlElement[] };
 
 /** Top-level y-prosemirror blocks from the shared ProseMirror XmlFragment. */
 export function getTopLevelXmlBlocks(doc: Y.Doc): Y.XmlElement[] {

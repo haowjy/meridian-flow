@@ -60,6 +60,10 @@ export function createDocumentRenderer(deps: {
       };
     }
     if (address.fragment) {
+      const lookup = model.lookupBlock(doc, address.fragment);
+      if (!lookup.ok && lookup.reason === "ambiguous") {
+        return { ok: true, blocks: lookup.matches };
+      }
       const result = resolveScope(scopeContext, `#${address.fragment}`);
       return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
     }
