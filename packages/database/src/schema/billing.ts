@@ -1,12 +1,6 @@
-import type {
-  CreditLotId,
-  CreditTransactionId,
-  UserId,
-  UserSubscriptionId,
-} from "@meridian/contracts";
+import type { CreditLotId, CreditTransactionId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   check,
   index,
   pgTable,
@@ -16,44 +10,8 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAt, idColumn, jsonbDefault, millicredits, updatedAt } from "./_shared";
+import { createdAt, idColumn, jsonbDefault, millicredits } from "./_shared";
 import { users } from "./users";
-
-export const userSubscriptions = pgTable(
-  "user_subscriptions",
-  {
-    id: idColumn<UserSubscriptionId>(),
-    userId: uuid("user_id")
-      .$type<UserId>()
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
-    stripeCustomerId: text("stripe_customer_id").notNull(),
-    plan: text("plan").notNull().default("pro"),
-    status: text("status").notNull(),
-    creditsPerPeriod: millicredits("credits_per_period").notNull(),
-    currentPeriodStart: timestamp("current_period_start", {
-      withTimezone: true,
-    }).notNull(),
-    currentPeriodEnd: timestamp("current_period_end", {
-      withTimezone: true,
-    }).notNull(),
-    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    uniqueIndex("user_subscriptions_active_user")
-      .on(table.userId)
-      .where(sql`${table.status} IN ('active', 'past_due', 'trialing')`),
-    index("user_subscriptions_stripe_customer").on(table.stripeCustomerId),
-    check("user_subscriptions_plan_valid", sql`${table.plan} IN ('pro')`),
-    check(
-      "user_subscriptions_status_valid",
-      sql`${table.status} IN ('active', 'past_due', 'cancelled', 'trialing')`,
-    ),
-  ],
-);
 
 export const creditLots = pgTable(
   "credit_lots",
@@ -83,6 +41,9 @@ export const creditLots = pgTable(
     uniqueIndex("credit_lots_monthly_grant")
       .on(table.userId, table.grantReason)
       .where(sql`${table.grantReason} LIKE 'monthly_%'`),
+    uniqueIndex("credit_lots_free_tier_grant")
+      .on(table.userId, table.grantReason)
+      .where(sql`${table.sourceType} = 'grant' AND ${table.grantReason} LIKE 'free_tier_%'`),
     uniqueIndex("credit_lots_subscription_reason")
       .on(table.userId, table.grantReason)
       .where(sql`${table.sourceType} = 'subscription' AND ${table.grantReason} IS NOT NULL`),

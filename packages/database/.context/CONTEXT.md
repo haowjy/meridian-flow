@@ -57,6 +57,15 @@ append-only in the production lifecycle: compaction deletes retained
 the `documents` cascade. Do not document this relationship as custom SQL or as an
 absent FK.
 
+### Billing storage
+
+Billing no longer has a `user_subscriptions` table. Stripe customer identity is
+stored as nullable `users.stripe_customer_id`; subscription/free/extra-usage
+entitlements are represented by `credit_lots` rows. Extra-usage purchase lots do
+not require an active subscription. Free-tier grants are fenced by the partial
+unique index `credit_lots_free_tier_grant` on `(user_id, grant_reason)` for
+`source_type = 'grant'` and `grant_reason LIKE 'free_tier_%'`.
+
 ## Migration workflow
 
 Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
