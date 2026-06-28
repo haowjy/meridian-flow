@@ -37,6 +37,29 @@
 - `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
   `strike` mark, and task-list state on `list_item` for markdown/Yjs
   round-tripping.
+- Chat editing: find/replace now tolerates the `hash|` block prefixes that `read`
+  emits. The model can paste `read` output straight into a `find` without it
+  failing and triggering a "run read to re-sync" loop. The raw document is still
+  matched literally, so genuine `|` content (tables, etc.) is unaffected.
+
+- Chat editing: a block hash shown by `read` is now always resolvable. Displayed
+  hashes extend just enough to stay a unique prefix of their block, so referencing
+  a hash the model saw no longer silently fails when another block shares a short
+  prefix. Lookups also accept any unique-length prefix, so a hash stays usable
+  even as sibling blocks come and go.
+
+- Chat editing: referencing an ambiguous block hash now reports it as ambiguous
+  (not a misleading "not found"), and a `read` on an ambiguous hash shows every
+  matching block with its full disambiguating hash so the model can re-target.
+
+- Chat editing: when a concurrent edit lands mid-turn, the agent is now re-shown
+  the changed block bodies with their current hashes after its write commits,
+  instead of just a list of changed hashes — so it can keep editing against
+  current content without a full re-read. Concurrent deletions are now surfaced too.
+
+- Chat: assistant turns with many edits no longer stall the UI. An unstable
+  checkpoint callback was defeating memoization and causing a render storm.
+
 - Collab: undo/redo after retention compaction no longer corrupts the document.
   Reconstruction now reads from the compacted checkpoint instead of the original
   baseline, so undoing a still-retained write stops resurrecting edits that
