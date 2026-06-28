@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Collab: undo/redo after retention compaction no longer corrupts the document.
+  Reconstruction now reads from the compacted checkpoint instead of the original
+  baseline, so undoing a still-retained write stops resurrecting edits that
+  compaction folded away. Compaction now folds only a contiguous update prefix.
+
+- Collab: pending undo/redo notifications coalesce deterministically (latest wins)
+  even when several land in the same millisecond.
+
 - Collab: grouped undo/redo notifications now carry each write handle's original turn id
   instead of collapsing mixed-turn groups onto the seed turn.
 
