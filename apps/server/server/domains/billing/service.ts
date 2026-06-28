@@ -7,49 +7,30 @@ import type {
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
 } from "@meridian/contracts/protocol";
-import type { StripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
+import type { StripeBillingGateway } from "./adapters/stripe/stripe-gateway.js";
 import {
   BILLING_PLANS,
   type BillingCatalogServerEntry,
   type BillingPlanCatalogEntry,
+  billingPlanPriceBindings,
   catalogEntry,
   EXTRA_USAGE,
   publicCatalogEntry,
-} from "../domains/billing/domain/catalog.js";
-import type {
-  CreditLedger,
-  CreditLotView,
-  CreditTransactionRow,
-} from "../domains/billing/domain/credit-ledger.js";
-import { BillingRequestError } from "../domains/billing/domain/errors.js";
-import { millicreditsToUsd, usdToMillicredits } from "../domains/billing/domain/money.js";
+} from "./domain/catalog.js";
+import type { CreditLedger, CreditLotView, CreditTransactionRow } from "./domain/credit-ledger.js";
+import { BillingRequestError } from "./domain/errors.js";
+import { ensureFreeTier } from "./domain/free-grants.js";
+import { millicreditsToUsd, usdToMillicredits } from "./domain/money.js";
+import { resolveStripeWebhookGrant } from "./domain/stripe-webhook-grants.js";
+import { type BillingUsagePolicy, createBillingUsagePolicy } from "./domain/usage-policy.js";
 
-export { BillingRequestError } from "../domains/billing/domain/errors.js";
+export { BillingRequestError } from "./domain/errors.js";
 
-export interface BillingRouteDeps {
+export interface BillingServiceDeps {
   ledger: CreditLedger;
   stripeGateway: StripeBillingGateway | null;
-  freeTier: { ensure: (userId: string) => Promise<void> };
   getOrCreateStripeCustomer: (userId: string) => Promise<string>;
   env: NodeJS.ProcessEnv;
-}
-
-export function createBillingRouteDeps(
-  app: {
-    creditLedger: CreditLedger;
-    stripeGateway: StripeBillingGateway | null;
-    freeTier: { ensure: (userId: string) => Promise<void> };
-    getOrCreateStripeCustomer: (userId: string) => Promise<string>;
-  },
-  env: NodeJS.ProcessEnv,
-): BillingRouteDeps {
-  return {
-    ledger: app.creditLedger,
-    stripeGateway: app.stripeGateway,
-    freeTier: app.freeTier,
-    getOrCreateStripeCustomer: app.getOrCreateStripeCustomer,
-    env,
-  };
 }
 
 function isUnexpired(lot: CreditLotView, now = new Date()): boolean {
@@ -103,11 +84,11 @@ function includedUsage(
   };
 }
 
-export async function billingBalance(
-  deps: BillingRouteDeps,
+async function billingBalance(
+  deps: BillingServiceDeps,
   input: { userId: string },
 ): Promise<BillingBalanceResponse> {
-  await deps.freeTier.ensure(input.userId);
+  await ensureFreeTier(deps.ledger, input.userId);
   const breakdown = await deps.ledger.getBalanceBreakdown({ userId: input.userId });
   const displayLot = includedLot(breakdown.lots);
   const purchasedBalance = breakdown.lots.reduce((sum, lot) => {
@@ -125,24 +106,36 @@ export async function billingBalance(
   };
 }
 
+function transactionKind(row: CreditTransactionRow): BillingTransaction["kind"] {
+  if (row.transactionType === "purchase") return "purchase";
+  if (row.transactionType === "grant") return "grant";
+  if (row.transactionType === "consumption") return "consumption";
+  return "adjustment";
+}
+
+function transactionLabel(row: CreditTransactionRow): string {
+  if (row.displayReason) return row.displayReason;
+  if (row.transactionType === "consumption") return "Model usage";
+  if (row.transactionType === "purchase") return "Extra usage";
+  if (row.transactionType === "grant") return "Monthly usage";
+  return "Billing adjustment";
+}
+
 function billingTransaction(row: CreditTransactionRow): BillingTransaction {
   return {
     id: row.id,
-    transactionType: row.transactionType,
+    kind: transactionKind(row),
+    label: transactionLabel(row),
     amountUsd: millicreditsToUsd(row.amountMillicredits),
-    sourceType: row.sourceType,
-    reason: row.reason,
-    usageEventId: row.usageEventId,
     createdAt: row.createdAt,
-    metadata: row.metadata,
   };
 }
 
-export async function billingTransactions(
-  deps: BillingRouteDeps,
+async function billingTransactions(
+  deps: BillingServiceDeps,
   input: { userId: string; limit?: number },
 ): Promise<BillingTransactionsResponse> {
-  await deps.freeTier.ensure(input.userId);
+  await ensureFreeTier(deps.ledger, input.userId);
   const transactions = await deps.ledger.listTransactions(input);
   const totalConsumed = transactions.reduce((sum, tx) => {
     const amount = BigInt(tx.amountMillicredits);
@@ -157,10 +150,11 @@ export async function billingTransactions(
   };
 }
 
-export function billingProducts(deps: BillingRouteDeps): BillingProductsResponse {
+function billingProducts(deps: BillingServiceDeps): BillingProductsResponse {
+  const configuredPlanCount = billingPlanPriceBindings(deps.env).length;
   return {
     entries: [...BILLING_PLANS, EXTRA_USAGE].map(publicCatalogEntry),
-    stripeConfigured: deps.stripeGateway !== null,
+    stripeConfigured: deps.stripeGateway !== null && configuredPlanCount === BILLING_PLANS.length,
   };
 }
 
@@ -199,8 +193,8 @@ function checkoutEntry(entry: BillingCatalogServerEntry, body: CreateCheckoutSes
   };
 }
 
-export async function createBillingCheckoutSession(
-  deps: BillingRouteDeps,
+async function createBillingCheckoutSession(
+  deps: BillingServiceDeps,
   input: { userId: string; body: CreateCheckoutSessionRequest },
 ): Promise<CreateCheckoutSessionResponse> {
   if (!deps.stripeGateway) throw new Error("Stripe checkout is not configured");
@@ -230,8 +224,8 @@ export async function createBillingCheckoutSession(
   return { kind: "checkout", sessionId: session.id, url: session.url };
 }
 
-export async function handleBillingWebhook(
-  deps: BillingRouteDeps,
+async function handleBillingWebhook(
+  deps: BillingServiceDeps,
   input: { payload: string; signature: string | null },
 ): Promise<BillingWebhookResponse> {
   if (!deps.stripeGateway) throw new Error("Stripe webhook is not configured");
@@ -240,7 +234,35 @@ export async function handleBillingWebhook(
     rawBody: input.payload,
     signature: input.signature,
   });
-  const grant = await deps.stripeGateway.resolveCheckoutGrant(event);
+  const grant = resolveStripeWebhookGrant(event, {
+    planPrices: billingPlanPriceBindings(deps.env),
+  });
   if (grant) await deps.ledger.grant(grant);
   return { received: true };
+}
+
+export interface BillingService {
+  readonly usage: BillingUsagePolicy;
+  balance(input: { userId: string }): Promise<BillingBalanceResponse>;
+  transactions(input: { userId: string; limit?: number }): Promise<BillingTransactionsResponse>;
+  products(): BillingProductsResponse;
+  createCheckoutSession(input: {
+    userId: string;
+    body: CreateCheckoutSessionRequest;
+  }): Promise<CreateCheckoutSessionResponse>;
+  handleWebhook(input: {
+    payload: string;
+    signature: string | null;
+  }): Promise<BillingWebhookResponse>;
+}
+
+export function createBillingService(deps: BillingServiceDeps): BillingService {
+  return {
+    usage: createBillingUsagePolicy(deps.ledger),
+    balance: (input) => billingBalance(deps, input),
+    transactions: (input) => billingTransactions(deps, input),
+    products: () => billingProducts(deps),
+    createCheckoutSession: (input) => createBillingCheckoutSession(deps, input),
+    handleWebhook: (input) => handleBillingWebhook(deps, input),
+  };
 }

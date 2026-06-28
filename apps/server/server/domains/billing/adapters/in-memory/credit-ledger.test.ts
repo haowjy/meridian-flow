@@ -118,7 +118,7 @@ describe("in-memory credit ledger", () => {
     expect(replay).toEqual({ transactionId: first.transactionId, created: false });
     expect(await ledger.getBalance({ userId: "user-1" })).toBe("5000");
     await expect(ledger.listTransactions({ userId: "user-1" })).resolves.toEqual([
-      expect.objectContaining({ reason: "Monthly usage" }),
+      expect.objectContaining({ displayReason: "Monthly usage" }),
     ]);
     await expect(
       ledger.hasUnexpiredLot({ userId: "user-1", source: "subscription" }),
@@ -165,9 +165,12 @@ describe("in-memory credit ledger", () => {
     });
 
     const transactions = await ledger.listTransactions({ userId: "user-1" });
-    expect(transactions.map((tx) => tx.reason).sort()).toEqual(["Extra usage", "Monthly usage"]);
-    expect(transactions.map((tx) => tx.reason)).not.toContain("cs_machine_123");
-    expect(transactions.map((tx) => tx.reason)).not.toContain("il_machine_123");
+    expect(transactions.map((tx) => tx.displayReason).sort()).toEqual([
+      "Extra usage",
+      "Monthly usage",
+    ]);
+    expect(transactions.map((tx) => tx.displayReason)).not.toContain("cs_machine_123");
+    expect(transactions.map((tx) => tx.displayReason)).not.toContain("il_machine_123");
   });
 
   it("creates debt lots when a debit goes negative", async () => {

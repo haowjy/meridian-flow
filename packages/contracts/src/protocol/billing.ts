@@ -51,13 +51,10 @@ export interface BillingBalanceResponse {
 
 export interface BillingTransaction {
   id: string;
-  transactionType: string;
+  kind: "purchase" | "grant" | "consumption" | "adjustment";
+  label: string;
   amountUsd: string;
-  sourceType: string | null;
-  reason: string | null;
-  usageEventId: string | null;
   createdAt: string;
-  metadata: Record<string, unknown>;
 }
 
 export interface BillingTransactionsResponse {

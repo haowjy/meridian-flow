@@ -149,7 +149,7 @@ export function BillingPage() {
           <div className="mt-3 divide-y divide-border-subtle">
             {(transactions.data?.transactions ?? []).slice(0, 8).map((tx) => (
               <div key={tx.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                <span className="text-muted-foreground">{tx.reason ?? tx.transactionType}</span>
+                <span className="text-muted-foreground">{tx.label}</span>
                 <span className="font-medium tabular-nums text-foreground">
                   {formatUsd(tx.amountUsd)}
                 </span>

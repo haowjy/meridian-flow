@@ -5,7 +5,7 @@
  * whole DI graph in every fixture.
  */
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import { createInMemoryCreditLedger } from "../../../billing/index.js";
+import { createBillingUsagePolicy, createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryPackageStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
@@ -64,6 +64,8 @@ export function createTestOrchestratorDeps(
     },
   };
 
+  const creditLedger = overrides.creditLedger ?? createInMemoryCreditLedger();
+
   return {
     gateway: inertGateway(),
     toolExecutor: inertToolExecutor(),
@@ -73,7 +75,8 @@ export function createTestOrchestratorDeps(
     toolRegistry: createToolRegistry(),
     projectPreferences,
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
-    creditLedger: createInMemoryCreditLedger(),
+    creditLedger,
+    billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     checkpointArtifacts: createNoopCheckpointArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
     checkpointRegistry: createCheckpointRegistry(),

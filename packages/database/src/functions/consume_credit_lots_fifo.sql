@@ -55,10 +55,11 @@ BEGIN
       AND ct.transaction_type = 'consumption'
     LIMIT 1;
 
-    SELECT COALESCE(cb.total_balance_millicredits, 0)
+    SELECT COALESCE(SUM(remaining_millicredits), 0)
     INTO v_balance
-    FROM credit_balances cb
-    WHERE cb.user_id = p_user_id;
+    FROM credit_lots
+    WHERE user_id = p_user_id
+      AND (expires_at IS NULL OR expires_at > NOW() OR source_type = 'debt');
 
     RETURN QUERY SELECT
       COALESCE(v_balance, 0),
@@ -158,10 +159,11 @@ BEGIN
     );
   END IF;
 
-  SELECT COALESCE(cb.total_balance_millicredits, 0)
+  SELECT COALESCE(SUM(remaining_millicredits), 0)
   INTO v_balance
-  FROM credit_balances cb
-  WHERE cb.user_id = p_user_id;
+  FROM credit_lots
+  WHERE user_id = p_user_id
+    AND (expires_at IS NULL OR expires_at > NOW() OR source_type = 'debt');
 
   RETURN QUERY SELECT
     COALESCE(v_balance, 0),
