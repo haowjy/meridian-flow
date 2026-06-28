@@ -92,6 +92,9 @@ describe("write reversal retention", () => {
     expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
       2, 3,
     ]);
+    const reconstruction = await ctx.journal.readForReconstruction("chapter.md");
+    expect(reconstruction.checkpoint).toBeInstanceOf(Uint8Array);
+    expect(reconstruction.updates.map((update) => update.seq)).toEqual([2, 3]);
 
     const undoLaterOldWrite = await ctx.core.write(
       { command: "undo", file: "chapter.md" },
@@ -125,6 +128,36 @@ describe("write reversal retention", () => {
 
     expectOutcome(undoLater, "reversed");
     expect(scenario.blockTexts()).toEqual(["Alpha.", "Beta."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("reconstructs from retained rows when only a head checkpoint exists", async () => {
+    const scenario = ReversalScenario.raw({}, { undoClientId: REVERSAL_CLIENT_ID });
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Alpha." },
+      { ...context, turnId: "turn-head-checkpoint-create" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, turnId: "turn-head-checkpoint-insert" },
+    );
+    await scenario.checkpointLiveDoc(2);
+
+    const entry = ctx.journal.debugEntry("chapter.md");
+    if (!entry?.checkpoint) throw new Error("expected head checkpoint");
+    entry.checkpoints = [entry.checkpoint];
+
+    const reconstruction = await ctx.journal.readForReconstruction("chapter.md");
+    expect(reconstruction.checkpoint).toBeNull();
+    expect(reconstruction.updates.map((update) => update.seq)).toEqual([1, 2]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Alpha."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
   });
