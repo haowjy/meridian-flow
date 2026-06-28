@@ -54,6 +54,7 @@ export interface RuntimeStore {
   requireSynced(
     session: ActorSession,
     docId: string,
+    commandName: WriteCommand["command"],
     filePath?: string,
     runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
@@ -242,19 +243,16 @@ export function createRuntimeStore(deps: {
   async function requireSynced(
     session: ActorSession,
     docId: string,
+    commandName: WriteCommand["command"],
     filePath = docId,
     runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    // If the doc needs recovery (invalidated/evicted), don't use stale state
-    // — force a read to rebuild from live/journal.
-    if (docsNeedingRecovery.has(docId)) {
-      return {
-        ok: false,
-        response: {
-          status: "not_found",
-          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
-        },
-      };
+    if (docsNeedingRecovery.has(docId) && runtime) {
+      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+        filePath,
+      });
+      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
     const state = session.documents.get(docId);
@@ -275,6 +273,14 @@ export function createRuntimeStore(deps: {
         runtimeDocs.set(runtimeKey(session, docId), runtime);
       }
       return { ok: true, stateVector: persisted.stateVector };
+    }
+
+    if (runtime) {
+      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+        filePath,
+      });
+      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
     return {

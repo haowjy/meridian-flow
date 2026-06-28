@@ -153,7 +153,7 @@ export function createWriteReversal(deps: {
           actor: input.actor ?? { type: "agent" },
         });
     if (result.status !== "document_not_found") {
-      invalidateRuntimeThread(input.docId, input.session.threadId);
+      runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
     }
     return toOutcome(input.direction, result) as WriteUndoResult | WriteRedoResult;
   }
