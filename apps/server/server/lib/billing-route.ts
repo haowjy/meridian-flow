@@ -75,12 +75,32 @@ function debtMagnitude(lots: CreditLotView[]): bigint {
   }, 0n);
 }
 
-function includedUsagePercent(lot: CreditLotView | null, lots: CreditLotView[]): number | null {
-  if (!lot) return null;
+function includedUsagePercent(lot: CreditLotView, lots: CreditLotView[]): number {
   const original = BigInt(lot.originalMillicredits);
-  if (original <= 0n) return null;
+  if (original <= 0n) return 0;
   const used = original - BigInt(lot.balanceMillicredits) + debtMagnitude(lots);
   return Number((used * 10_000n) / original) / 100;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function includedUsage(
+  lot: CreditLotView | null,
+  lots: CreditLotView[],
+): BillingBalanceResponse["includedUsage"] {
+  if (!lot) return { mode: "none" };
+  const consumedPercent = includedUsagePercent(lot, lots);
+  return {
+    mode: lot.source === "subscription" ? "subscription" : "free",
+    remainingPercent: clamp(round2(100 - consumedPercent), 0, 100),
+    overBudget: consumedPercent > 100,
+  };
 }
 
 export async function billingBalance(
@@ -100,14 +120,8 @@ export async function billingBalance(
 
   return {
     purchasedBalanceUsd: millicreditsToUsd(purchasedBalance),
-    includedUsagePercent: includedUsagePercent(displayLot, breakdown.lots),
-    usageMode:
-      displayLot?.source === "subscription"
-        ? "subscription"
-        : displayLot && isFreeTierLot(displayLot)
-          ? "free"
-          : "none",
     canStartTurn: totalBalance > 0n,
+    includedUsage: includedUsage(displayLot, breakdown.lots),
   };
 }
 
@@ -160,12 +174,12 @@ function extraUsageGrantMillicredits(body: CreateCheckoutSessionRequest): string
   if (!body.amountUsd)
     throw new BillingRequestError("amountUsd is required for extra usage checkout");
   const amountMillicredits = usdToMillicredits(body.amountUsd);
-  const minMillicredits = usdToMillicredits(EXTRA_USAGE.minUsd);
-  const maxMillicredits = usdToMillicredits(EXTRA_USAGE.maxUsd);
+  const minMillicredits = usdToMillicredits(EXTRA_USAGE.amountOptions.minUsd);
+  const maxMillicredits = usdToMillicredits(EXTRA_USAGE.amountOptions.maxUsd);
   if (amountMillicredits < minMillicredits)
-    throw new BillingRequestError(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
+    throw new BillingRequestError(`amountUsd must be at least ${EXTRA_USAGE.amountOptions.minUsd}`);
   if (amountMillicredits > maxMillicredits)
-    throw new BillingRequestError(`amountUsd must be at most ${EXTRA_USAGE.maxUsd}`);
+    throw new BillingRequestError(`amountUsd must be at most ${EXTRA_USAGE.amountOptions.maxUsd}`);
   return amountMillicredits.toString();
 }
 

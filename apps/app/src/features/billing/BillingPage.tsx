@@ -24,6 +24,7 @@
 import { Trans } from "@lingui/react/macro";
 import type {
   BillingCatalogEntry,
+  BillingPlanEntry,
   CreateCheckoutSessionRequest,
 } from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
@@ -61,7 +62,7 @@ export function BillingPage() {
   const actionsDisabled = !stripeConfigured || checkout.isPending;
 
   const planEntries = entries.filter((entry) => entry.kind === "plan");
-  const extraEntry = entries.find((entry) => entry.kind !== "plan" && entry.amountOptions);
+  const extraEntry = entries.find((entry) => entry.kind === "extra-usage");
 
   return (
     <main className="h-full overflow-y-auto bg-background text-foreground">
@@ -130,15 +131,13 @@ export function BillingPage() {
               </p>
             </div>
             <article className="surface-card p-5">
-              {extraEntry.amountOptions ? (
-                <ExtraUsagePicker
-                  amountOptions={extraEntry.amountOptions}
-                  disabled={actionsDisabled}
-                  onPurchase={(amountUsd) =>
-                    checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
-                  }
-                />
-              ) : null}
+              <ExtraUsagePicker
+                amountOptions={extraEntry.amountOptions}
+                disabled={actionsDisabled}
+                onPurchase={(amountUsd) =>
+                  checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
+                }
+              />
             </article>
           </section>
         ) : null}
@@ -173,17 +172,11 @@ function PlanCard({
   disabled,
   onCheckout,
 }: {
-  entry: BillingCatalogEntry;
+  entry: BillingPlanEntry;
   disabled: boolean;
   onCheckout: (request: CreateCheckoutSessionRequest) => void;
 }) {
-  // Plans always carry `priceUsd` in the products contract; the optional
-  // field exists so extra-usage can omit it. Render nothing if the server
-  // ever drops it rather than printing "$NaN".
-  if (!entry.priceUsd) return null;
-  const priceLine = entry.interval
-    ? `${formatUsd(entry.priceUsd)} / ${entry.interval}`
-    : formatUsd(entry.priceUsd);
+  const priceLine = `${formatUsd(entry.priceUsd)} / ${entry.interval}`;
 
   return (
     <article className="surface-card flex flex-col gap-4 p-4">

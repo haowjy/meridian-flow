@@ -2,17 +2,12 @@
  * UsageCard — single source for the user's usage + balance presentation,
  * shared by the settings Usage section and the standalone /billing page.
  *
- * Three states driven by `usageMode` from the balance endpoint:
- *   - "subscription" / "free": fuel-gauge of monthly usage remaining. The
- *     server still emits `includedUsagePercent` as the consumed value (0..100+);
- *     the client derives `remaining = clamp(100 - consumed, 0, 100)` so a
- *     fresh user reads as "100% remaining" with a full bar that drains as
- *     usage accrues. Over-budget (consumed > 100) clamps to "0% remaining"
- *     with a muted "over your monthly usage" hint. Wording is neutral —
- *     "free" vs "subscription" is hidden because grant size is hidden too.
- *     If extra-usage balance is positive, it shows beneath the bar.
+ * The balance endpoint sends display-ready included usage:
+ *   - "subscription" / "free": monthly usage remaining plus an over-budget
+ *     flag. Wording is neutral — "free" vs "subscription" is hidden because
+ *     grant size is hidden too. If extra-usage balance is positive, it shows
+ *     beneath the bar.
  *   - "none": no bar; only `purchasedBalanceUsd` as "$X.XX remaining".
- *     `includedUsagePercent` is null here — never coerce to 0.
  *
  * Variants:
  *   - `compact`: bordered summary used in the settings overlay.
@@ -57,7 +52,7 @@ export function UsageCard({ variant }: { variant: UsageCardVariant }) {
 }
 
 function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: UsageCardVariant }) {
-  if (data.usageMode === "none") {
+  if (data.includedUsage.mode === "none") {
     return (
       <div className={variant === "full" ? "mt-2" : "mt-1"}>
         <span
@@ -82,14 +77,8 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
     );
   }
 
-  // `usageMode` is "subscription" or "free": fuel-gauge of remaining usage.
-  // Server emits `includedUsagePercent` as the CONSUMED value (0..100+); we
-  // derive `remaining` here and present that. The `?? 0` is a defensive
-  // fallback — the contract says non-null in these modes.
-  const consumed = data.includedUsagePercent ?? 0;
-  const remaining = Math.min(Math.max(100 - consumed, 0), 100);
-  const barWidth = `${remaining}%`;
-  const overBudget = consumed > 100;
+  const { remainingPercent, overBudget } = data.includedUsage;
+  const barWidth = `${remainingPercent}%`;
   const hasExtra = isPositiveUsd(data.purchasedBalanceUsd);
 
   return (
@@ -102,7 +91,7 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
               : "text-lg font-semibold text-foreground"
           }
         >
-          <Trans>{remaining}% remaining</Trans>
+          <Trans>{remainingPercent}% remaining</Trans>
         </span>
       </div>
       <div
@@ -114,7 +103,7 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={remaining}
+        aria-valuenow={remainingPercent}
       >
         <div
           className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
