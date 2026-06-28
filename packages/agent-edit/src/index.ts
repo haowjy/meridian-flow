@@ -78,7 +78,11 @@ export type {
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
 export type { WriteCommandCategory } from "./tool/command-schema.js";
-export { WriteCommandSchema, writeCommandCategory } from "./tool/command-schema.js";
+export {
+  MUTATING_WRITE_COMMANDS,
+  WriteCommandSchema,
+  writeCommandCategory,
+} from "./tool/command-schema.js";
 export type {
   RedoResult,
   ResponseCommitDocumentResult,

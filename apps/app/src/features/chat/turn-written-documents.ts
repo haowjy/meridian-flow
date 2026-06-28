@@ -1,6 +1,7 @@
 /**
  * turn-written-documents — derives successful write/edit document touches from assistant turns.
  */
+import { MUTATING_WRITE_COMMANDS } from "@meridian/agent-edit";
 import type { JsonValue, Turn } from "@meridian/contracts/protocol";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
@@ -34,6 +35,17 @@ function successfulWritePath(tool: ToolView): string | null {
   if (!writeResultSucceeded(tool)) return null;
   const input = tool.input;
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  // Only commands that actually modify the document count as a written file. A
+  // `write(command="read")` is a query and `undo`/`redo` are reversals — none of
+  // them are agent edits the footer should offer to undo. The `edit` tool carries
+  // no command discriminator and is always a mutation, so a missing command counts.
+  const command = (input as Record<string, JsonValue>).command;
+  if (
+    typeof command === "string" &&
+    !(MUTATING_WRITE_COMMANDS as readonly string[]).includes(command)
+  ) {
+    return null;
+  }
   const path = (input as Record<string, JsonValue>).path;
   return typeof path === "string" && path.length > 0 ? path : null;
 }
