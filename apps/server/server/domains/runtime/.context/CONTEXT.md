@@ -95,8 +95,10 @@ facet.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
+- `costing/` owns model token-rate resolution and raw provider USD-micro cost →
+  metered millicredits conversion before ledger debits.
 - `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`; billing
-  owns price conversion and ledger behavior in `domains/billing`.
+  owns ledger behavior in `domains/billing`.
 
 ## Invariants
 

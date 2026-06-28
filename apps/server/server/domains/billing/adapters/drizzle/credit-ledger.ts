@@ -1,14 +1,7 @@
-/**
- * Purpose: Drizzle/Postgres implementation of the project credit ledger.
- * Key decisions: the lot model is the single money truth. Grants create credit
- * lots; model-call debits consume those lots FIFO, decrement
- * remaining_millicredits, and write lot-linked transaction rows. A separate
- * usage-event fence gives idempotency without preventing one debit from
- * touching multiple lots.
- */
+/** Drizzle/Postgres CreditLedger adapter over credit_lots and credit_transactions. */
 import type { Database } from "@meridian/database";
 import { creditLots, creditTransactions } from "@meridian/database/schema";
-import { and, eq, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, type SQL, sql } from "drizzle-orm";
 import type { IndexColumn } from "drizzle-orm/pg-core";
 import {
   currentDrizzleDb,
@@ -20,31 +13,59 @@ import {
   type CreditGrantInput,
   type CreditGrantSource,
   type CreditLedger,
-  usagePercent,
+  type CreditLotView,
 } from "../../domain/credit-ledger.js";
 
 type ActiveDb = ReturnType<typeof currentDrizzleDb>;
+type LotSource = CreditLotView["source"];
+
 function activeDb(db: Database): ActiveDb {
   return currentDrizzleDb(db as never);
 }
 
-function jsonText(path: string) {
-  return sql<string>`${creditTransactions.metadata}->>${path}`;
+function sourceTypeForGrant(source: CreditGrantSource): "grant" | "purchase" | "subscription" {
+  if (source === "stripe") return "purchase";
+  if (source === "subscription") return "subscription";
+  return "grant";
 }
 
-function sourceTypeForGrant(source: CreditGrantSource): "grant" | "purchase" | "subscription" {
-  if (source === "manual") return "grant";
-  if (source === "stripe") return "purchase";
-  return source;
+function sourceTypeForLookup(source: CreditGrantSource): "grant" | "purchase" | "subscription" {
+  return sourceTypeForGrant(source);
 }
+
 function toBigInt(value: unknown): bigint {
   if (typeof value === "bigint") return value;
   if (typeof value === "number") return BigInt(value);
   if (typeof value === "string") return BigInt(value);
   return 0n;
 }
+
 function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
+}
+
+function nullableIso(value: unknown): string | null {
+  if (value == null) return null;
+  return iso(value);
+}
+
+interface GrantIdentity {
+  sourceType: "grant" | "purchase" | "subscription";
+  grantReason: string | null;
+  stripeSessionId: string | null;
+}
+
+function grantIdentity(input: CreditGrantInput): GrantIdentity {
+  const sourceType = sourceTypeForGrant(input.source);
+  return {
+    sourceType,
+    grantReason:
+      sourceType === "purchase" ? null : (input.stripeIdempotencyId ?? input.reason ?? null),
+    stripeSessionId:
+      sourceType === "purchase"
+        ? (input.stripeSessionId ?? input.stripeIdempotencyId ?? null)
+        : (input.stripeSessionId ?? null),
+  };
 }
 
 interface LotConflictGuard {
@@ -52,40 +73,35 @@ interface LotConflictGuard {
   where: SQL;
 }
 
-/**
- * The idempotency guard a credit-lot insert rides on `onConflictDoNothing`:
- * which unique index plus the partial-index predicate it must match. One guard
- * per grant family (subscription period, Stripe purchase session, signup grant,
- * monthly grant). Manual / ad-hoc grants have no idempotency key → `null` (plain
- * insert). Keeping the dispatch here collapses what was a 5-arm nested ternary
- * around the insert into one decision + one insert site.
- */
-function resolveLotConflictGuard(
-  src: "grant" | "purchase" | "subscription",
-  input: Pick<CreditGrantInput, "reason" | "stripeSessionId">,
-): LotConflictGuard | null {
-  if (src === "subscription" && input.reason) {
-    return {
-      target: [creditLots.userId, creditLots.grantReason],
-      where: sql`${creditLots.sourceType} = 'subscription' AND ${creditLots.grantReason} IS NOT NULL`,
-    };
-  }
-  if (src === "purchase" && input.stripeSessionId) {
+function resolveLotConflictGuard(identity: GrantIdentity): LotConflictGuard | null {
+  if (identity.sourceType === "purchase" && identity.stripeSessionId) {
     return {
       target: creditLots.stripeSessionId,
       where: sql`${creditLots.stripeSessionId} IS NOT NULL`,
     };
   }
-  if (src === "grant" && input.reason === "signup") {
+  if (identity.sourceType === "subscription" && identity.grantReason) {
+    return {
+      target: [creditLots.userId, creditLots.grantReason],
+      where: sql`${creditLots.sourceType} = 'subscription' AND ${creditLots.grantReason} IS NOT NULL`,
+    };
+  }
+  if (identity.sourceType === "grant" && identity.grantReason === "signup") {
     return {
       target: [creditLots.userId, creditLots.grantReason],
       where: sql`${creditLots.grantReason} = 'signup'`,
     };
   }
-  if (src === "grant" && input.reason?.startsWith("monthly_")) {
+  if (identity.sourceType === "grant" && identity.grantReason?.startsWith("monthly_")) {
     return {
       target: [creditLots.userId, creditLots.grantReason],
       where: sql`${creditLots.grantReason} LIKE 'monthly_%'`,
+    };
+  }
+  if (identity.sourceType === "grant" && identity.grantReason?.startsWith("free_tier_")) {
+    return {
+      target: [creditLots.userId, creditLots.grantReason],
+      where: sql`${creditLots.grantReason} LIKE 'free_tier_%'`,
     };
   }
   return null;
@@ -93,119 +109,51 @@ function resolveLotConflictGuard(
 
 async function findExistingGrantTransaction(
   tx: ActiveDb,
-  input: {
-    userId: string;
-    sourceType: "grant" | "purchase" | "subscription";
-    reason: string | null;
-    stripeSessionId: string | null;
-  },
+  input: { userId: string } & GrantIdentity,
 ): Promise<string | null> {
-  if (input.sourceType === "subscription" && input.reason) {
-    const [existing] = await tx
-      .select({ id: creditTransactions.id })
-      .from(creditTransactions)
-      .leftJoin(creditLots, eq(creditTransactions.lotId, creditLots.id))
-      .where(
-        and(
-          eq(creditTransactions.userId, input.userId),
-          eq(creditLots.sourceType, input.sourceType),
-          eq(creditLots.grantReason, input.reason),
-        ),
-      )
-      .limit(1);
-    return existing?.id ?? null;
-  }
-
+  const predicates = [
+    eq(creditTransactions.userId, input.userId),
+    eq(creditLots.sourceType, input.sourceType),
+  ];
   if (input.sourceType === "purchase" && input.stripeSessionId) {
-    const [existing] = await tx
-      .select({ id: creditTransactions.id })
-      .from(creditTransactions)
-      .leftJoin(creditLots, eq(creditTransactions.lotId, creditLots.id))
-      .where(
-        and(
-          eq(creditTransactions.userId, input.userId),
-          eq(creditLots.sourceType, input.sourceType),
-          eq(creditLots.stripeSessionId, input.stripeSessionId),
-        ),
-      )
-      .limit(1);
-    return existing?.id ?? null;
+    predicates.push(eq(creditLots.stripeSessionId, input.stripeSessionId));
+  } else if (input.grantReason) {
+    predicates.push(eq(creditLots.grantReason, input.grantReason));
+  } else {
+    return null;
   }
 
-  if (input.sourceType === "grant" && input.reason) {
-    const [existing] = await tx
-      .select({ id: creditTransactions.id })
-      .from(creditTransactions)
-      .leftJoin(creditLots, eq(creditTransactions.lotId, creditLots.id))
-      .where(
-        and(
-          eq(creditTransactions.userId, input.userId),
-          eq(creditLots.sourceType, "grant"),
-          eq(creditLots.grantReason, input.reason),
-        ),
-      )
-      .limit(1);
-    return existing?.id ?? null;
-  }
-
-  return null;
+  const [existing] = await tx
+    .select({ id: creditTransactions.id })
+    .from(creditTransactions)
+    .leftJoin(creditLots, eq(creditTransactions.lotId, creditLots.id))
+    .where(and(...predicates))
+    .limit(1);
+  return existing?.id ?? null;
 }
 
 async function findIdempotentLot(
   tx: ActiveDb,
-  input: {
-    userId: string;
-    sourceType: "grant" | "purchase" | "subscription";
-    reason: string | null;
-    stripeSessionId: string | null;
-  },
+  input: { userId: string } & GrantIdentity,
 ): Promise<{ id: string } | null> {
-  if (input.sourceType === "subscription" && input.reason) {
-    const [existing] = await tx
-      .select({ id: creditLots.id })
-      .from(creditLots)
-      .where(
-        and(
-          eq(creditLots.userId, input.userId),
-          eq(creditLots.sourceType, "subscription"),
-          eq(creditLots.grantReason, input.reason),
-        ),
-      )
-      .limit(1);
-    return existing ?? null;
-  }
-
+  const predicates = [
+    eq(creditLots.userId, input.userId),
+    eq(creditLots.sourceType, input.sourceType),
+  ];
   if (input.sourceType === "purchase" && input.stripeSessionId) {
-    const [existing] = await tx
-      .select({ id: creditLots.id })
-      .from(creditLots)
-      .where(
-        and(
-          eq(creditLots.userId, input.userId),
-          eq(creditLots.sourceType, "purchase"),
-          eq(creditLots.stripeSessionId, input.stripeSessionId),
-        ),
-      )
-      .limit(1);
-    return existing ?? null;
+    predicates.push(eq(creditLots.stripeSessionId, input.stripeSessionId));
+  } else if (input.grantReason) {
+    predicates.push(eq(creditLots.grantReason, input.grantReason));
+  } else {
+    return null;
   }
 
-  if (input.sourceType === "grant" && input.reason) {
-    const [existing] = await tx
-      .select({ id: creditLots.id })
-      .from(creditLots)
-      .where(
-        and(
-          eq(creditLots.userId, input.userId),
-          eq(creditLots.sourceType, "grant"),
-          eq(creditLots.grantReason, input.reason),
-        ),
-      )
-      .limit(1);
-    return existing ?? null;
-  }
-
-  return null;
+  const [existing] = await tx
+    .select({ id: creditLots.id })
+    .from(creditLots)
+    .where(and(...predicates))
+    .limit(1);
+  return existing ?? null;
 }
 
 export function createDrizzleCreditLedger(db: Database): CreditLedger {
@@ -214,26 +162,27 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
       return runInDrizzleTransaction(db as never, async () => {
         const amount = assertPositiveMillicredits(input.amountMillicredits);
         const tx = activeDb(db);
-        const src = sourceTypeForGrant(input.source);
+        const identity = grantIdentity(input);
         const existingTransactionId = await findExistingGrantTransaction(tx, {
           userId: input.userId,
-          sourceType: src,
-          reason: input.reason ?? null,
-          stripeSessionId: input.stripeSessionId ?? null,
+          ...identity,
         });
         if (existingTransactionId) return { transactionId: existingTransactionId, created: false };
 
         const values = {
           userId: input.userId,
-          sourceType: src,
+          sourceType: identity.sourceType,
           originalAmountMillicredits: Number(amount),
           remainingMillicredits: Number(amount),
           expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-          stripeSessionId: input.stripeSessionId ?? null,
-          grantReason: input.reason ?? null,
-          metadata: input.metadata ?? {},
+          stripeSessionId: identity.stripeSessionId,
+          grantReason: identity.grantReason,
+          metadata: {
+            stripeIdempotencyId: input.stripeIdempotencyId ?? null,
+            ...(input.metadata ?? {}),
+          },
         };
-        const guard = resolveLotConflictGuard(src, input);
+        const guard = resolveLotConflictGuard(identity);
         const builder = tx.insert(creditLots).values(values);
         const [lot] = await (guard ? builder.onConflictDoNothing(guard) : builder).returning({
           id: creditLots.id,
@@ -242,17 +191,10 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         if (!lotId) {
           const racedTransactionId = await findExistingGrantTransaction(tx, {
             userId: input.userId,
-            sourceType: src,
-            reason: input.reason ?? null,
-            stripeSessionId: input.stripeSessionId ?? null,
+            ...identity,
           });
           if (racedTransactionId) return { transactionId: racedTransactionId, created: false };
-          const existingLot = await findIdempotentLot(tx, {
-            userId: input.userId,
-            sourceType: src,
-            reason: input.reason ?? null,
-            stripeSessionId: input.stripeSessionId ?? null,
-          });
+          const existingLot = await findIdempotentLot(tx, { userId: input.userId, ...identity });
           if (existingLot) {
             const [existingTransaction] = await tx
               .select({ id: creditTransactions.id })
@@ -274,13 +216,15 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           .insert(creditTransactions)
           .values({
             userId: input.userId,
-            transactionType: src === "purchase" ? "purchase" : "grant",
+            transactionType: identity.sourceType === "purchase" ? "purchase" : "grant",
             amountMillicredits: Number(amount),
             lotId,
             metadata: {
               source: input.source,
-              sourceType: sourceTypeForGrant(input.source),
+              sourceType: identity.sourceType,
               reason: input.reason ?? null,
+              stripeSessionId: input.stripeSessionId ?? null,
+              stripeIdempotencyId: input.stripeIdempotencyId ?? null,
               ...(input.metadata ?? {}),
             },
           })
@@ -304,9 +248,8 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           ),
         )
         .limit(1);
-      if (existing?.consumptionGroupId) {
-        return { transactionId: existing.consumptionGroupId };
-      }
+      if (existing?.consumptionGroupId) return { transactionId: existing.consumptionGroupId };
+
       const consumptionGroupId = crypto.randomUUID();
       const metadata = JSON.stringify({
         rootThreadId: input.rootThreadId,
@@ -314,10 +257,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         turnId: input.turnId,
         agentSlug: input.agentSlug,
       });
-      const rows = await tx.execute<{
-        remaining_balance: bigint;
-        went_negative: boolean;
-      }>(sql`
+      const rows = await tx.execute<{ remaining_balance: bigint; went_negative: boolean }>(sql`
         SELECT *
         FROM consume_credit_lots_fifo(
           ${input.userId}::uuid,
@@ -327,10 +267,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           ${metadata}::jsonb
         )
       `);
-      const row = rows[0];
-      if (!row) {
-        throw new Error("Failed to create or find credit debit transaction");
-      }
+      if (!rows[0]) throw new Error("Failed to create or find credit debit transaction");
       return { transactionId: consumptionGroupId };
     },
 
@@ -348,15 +285,12 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
     },
 
     async getBalanceBreakdown(input) {
-      const [row] = await activeDb(db)
+      const rows = await activeDb(db)
         .select({
-          total: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}), 0)`,
-          grant: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}) FILTER (WHERE ${creditLots.sourceType} = 'grant'), 0)`,
-          subscription: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}) FILTER (WHERE ${creditLots.sourceType} = 'subscription'), 0)`,
-          purchase: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}) FILTER (WHERE ${creditLots.sourceType} = 'purchase'), 0)`,
-          debt: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}) FILTER (WHERE ${creditLots.sourceType} = 'debt'), 0)`,
-          includedBudget: sql<bigint>`COALESCE(SUM(${creditLots.originalAmountMillicredits}) FILTER (WHERE ${creditLots.sourceType} IN ('grant', 'subscription')), 0)`,
-          includedRemaining: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}) FILTER (WHERE ${creditLots.sourceType} IN ('grant', 'subscription')), 0)`,
+          source: creditLots.sourceType,
+          balanceMillicredits: creditLots.remainingMillicredits,
+          originalMillicredits: creditLots.originalAmountMillicredits,
+          expiresAt: creditLots.expiresAt,
         })
         .from(creditLots)
         .where(
@@ -364,21 +298,15 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
             eq(creditLots.userId, input.userId),
             sql`(${creditLots.expiresAt} IS NULL OR ${creditLots.expiresAt} > NOW() OR ${creditLots.sourceType} = 'debt')`,
           ),
-        );
-      const total = toBigInt(row?.total);
-      const budget = toBigInt(row?.includedBudget);
-      const remaining = toBigInt(row?.includedRemaining);
-      const used = budget - remaining + (total < 0n ? -total : 0n);
+        )
+        .orderBy(creditLots.expiresAt, creditLots.createdAt);
       return {
-        totalBalanceMillicredits: total.toString(),
-        grantBalanceMillicredits: toBigInt(row?.grant).toString(),
-        subscriptionBalanceMillicredits: toBigInt(row?.subscription).toString(),
-        purchasedBalanceMillicredits: toBigInt(row?.purchase).toString(),
-        debtBalanceMillicredits: toBigInt(row?.debt).toString(),
-        includedBudgetMillicredits: budget.toString(),
-        includedUsedMillicredits: used.toString(),
-        includedUsagePercent: usagePercent(used, budget),
-        canStartTurn: total >= 0n,
+        lots: rows.map((row) => ({
+          source: row.source as LotSource,
+          balanceMillicredits: toBigInt(row.balanceMillicredits).toString(),
+          originalMillicredits: toBigInt(row.originalMillicredits).toString(),
+          expiresAt: nullableIso(row.expiresAt),
+        })),
       };
     },
 
@@ -397,7 +325,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         .from(creditTransactions)
         .leftJoin(creditLots, eq(creditTransactions.lotId, creditLots.id))
         .where(eq(creditTransactions.userId, input.userId))
-        .orderBy(creditTransactions.createdAt)
+        .orderBy(desc(creditTransactions.createdAt))
         .limit(input.limit ?? 50);
       return rows.map((row) => ({
         id: row.id,
@@ -414,53 +342,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
       }));
     },
 
-    async getFreeGrantStatus(input) {
-      const rows = await activeDb(db)
-        .select({ reason: creditLots.grantReason, createdAt: creditLots.createdAt })
-        .from(creditLots)
-        .where(and(eq(creditLots.userId, input.userId), eq(creditLots.sourceType, "grant")));
-      const signup = rows.find((row) => row.reason === "signup");
-      return {
-        signupGrantedAt: signup ? iso(signup.createdAt) : null,
-        monthlyGranted: rows.some((row) => row.reason === input.monthlyReason),
-      };
-    },
-
-    async getRunDebitTotal(input) {
-      const [row] = await activeDb(db)
-        .select({ total: sql<bigint>`COALESCE(SUM(-${creditTransactions.amountMillicredits}), 0)` })
-        .from(creditTransactions)
-        .where(
-          and(
-            eq(creditTransactions.userId, input.userId),
-            sql`${creditTransactions.amountMillicredits} < 0`,
-            sql`${creditTransactions.metadata}->>'rootThreadId' = ${input.rootThreadId}`,
-          ),
-        );
-      return toBigInt(row?.total).toString();
-    },
-
-    async getAgentDebitTotals(input) {
-      const rows = await activeDb(db)
-        .select({
-          agentSlug: jsonText("agentSlug"),
-          total: sql<bigint>`COALESCE(SUM(-${creditTransactions.amountMillicredits}), 0)`,
-        })
-        .from(creditTransactions)
-        .where(
-          and(
-            eq(creditTransactions.userId, input.userId),
-            sql`${creditTransactions.amountMillicredits} < 0`,
-            sql`${creditTransactions.metadata}->>'rootThreadId' = ${input.rootThreadId}`,
-          ),
-        )
-        .groupBy(sql`${creditTransactions.metadata}->>'agentSlug'`);
-      return rows.map((row) => ({
-        agentSlug: row.agentSlug ?? "unknown",
-        millicredits: toBigInt(row.total).toString(),
-      }));
-    },
-
     async getThreadDebitTotal(input) {
       const [row] = await activeDb(db)
         .select({ total: sql<bigint>`COALESCE(SUM(-${creditTransactions.amountMillicredits}), 0)` })
@@ -473,6 +354,26 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           ),
         );
       return toBigInt(row?.total).toString();
+    },
+
+    async hasUnexpiredLot(input) {
+      const sourceType = sourceTypeForLookup(input.source);
+      const expiryPredicate =
+        sourceType === "subscription"
+          ? sql`${creditLots.expiresAt} > NOW()`
+          : sql`(${creditLots.expiresAt} IS NULL OR ${creditLots.expiresAt} > NOW())`;
+      const [row] = await activeDb(db)
+        .select({ id: creditLots.id })
+        .from(creditLots)
+        .where(
+          and(
+            eq(creditLots.userId, input.userId),
+            eq(creditLots.sourceType, sourceType),
+            expiryPredicate,
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
     },
   };
 }

@@ -90,7 +90,6 @@ async function setup(gateway: Gateway) {
   const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
   await creditLedger.grant({
     userId: "user-1",
-    projectId: project.id,
     source: "manual",
     amountMillicredits: "1000000",
     reason: "cancel tests",
@@ -130,10 +129,9 @@ describe("cancel billing", () => {
     expect(events.at(-1)?.type).toBe("turn.cancelled");
     const balance = await creditLedger.getBalance({
       userId: "user-1",
-      projectId: thread.projectId,
     });
-    expect(BigInt(balance)).toBeLessThan(1_000_000n);
-    expect(balance).not.toBe("0");
+    expect(BigInt(balance)).toBeLessThan(1_200_000n);
+    expect(balance).not.toBe("1200000");
   });
 
   it("does not double-debit when cancel settlement replays the same usage event", async () => {
@@ -150,13 +148,11 @@ describe("cancel billing", () => {
     await eventsPromise;
     const balanceAfterCancel = await creditLedger.getBalance({
       userId: "user-1",
-      projectId: thread.projectId,
     });
 
     controller.abort();
     const balanceAfterSecondAbort = await creditLedger.getBalance({
       userId: "user-1",
-      projectId: thread.projectId,
     });
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
@@ -239,9 +235,8 @@ describe("cancel billing", () => {
 
     const balance = await creditLedger.getBalance({
       userId: "user-1",
-      projectId: thread.projectId,
     });
-    expect(BigInt(balance)).toBeLessThan(1_000_000n);
+    expect(BigInt(balance)).toBeLessThan(1_200_000n);
     const assistantTurn = turnId ? await app.repos.turns.findById(turnId) : null;
     expect(assistantTurn?.status).toBe("cancelled");
   });

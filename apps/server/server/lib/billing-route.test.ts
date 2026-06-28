@@ -1,289 +1,226 @@
-import { describe, expect, it } from "vitest";
-import { createFakePaymentProvider } from "../domains/billing/adapters/fake/payment-provider.js";
-import { createInMemoryCreditLedger } from "../domains/billing/adapters/in-memory/credit-ledger.js";
-import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
+import { describe, expect, it, vi } from "vitest";
+import type {
+  StripeBillingGateway,
+  StripeWebhookEvent,
+} from "../domains/billing/adapters/stripe/stripe-gateway.js";
+import { createInMemoryCreditLedger } from "../domains/billing/index.js";
 import {
+  type BillingRouteDeps,
   billingBalance,
-  billingPacksPlans,
+  billingProducts,
+  billingTransactions,
   createBillingCheckoutSession,
   handleBillingWebhook,
 } from "./billing-route.js";
 
-const userId = "user-1";
-const projectId = "project-1";
-
-function deps(env: NodeJS.ProcessEnv = {}) {
+function createMockStripeBillingGateway(): StripeBillingGateway {
   return {
-    ledger: createInMemoryCreditLedger(),
-    subscriptionStore: createInMemorySubscriptionStore(),
-    paymentProvider: createFakePaymentProvider(),
-    env,
+    createCustomer: vi.fn(async () => ({ id: "cus_123" })),
+    createCheckoutSession: vi.fn(async () => ({
+      id: "cs_123",
+      url: "https://stripe.test/checkout",
+    })),
+    createPortalSession: vi.fn(async () => ({ url: "https://stripe.test/portal" })),
+    getLiveSubscription: vi.fn(async () => null),
+    constructWebhookEvent: vi.fn((input) => JSON.parse(input.rawBody) as StripeWebhookEvent),
+    resolveCheckoutGrant: vi.fn(async (event: StripeWebhookEvent) => {
+      const object = event.data.object as {
+        userId?: string;
+        amountMillicredits?: string;
+        id?: string;
+      };
+      if (!object.userId || !object.amountMillicredits) return null;
+      return {
+        userId: object.userId,
+        amountMillicredits: object.amountMillicredits,
+        source: "stripe" as const,
+        stripeIdempotencyId: object.id ?? "evt_1",
+      };
+    }),
   };
 }
 
-function stripeEnv(): NodeJS.ProcessEnv {
+function deps(input: Partial<BillingRouteDeps> = {}): BillingRouteDeps {
+  const ledger = input.ledger ?? createInMemoryCreditLedger();
   return {
-    STRIPE_SECRET_KEY: "sk_test_fake",
-    STRIPE_WEBHOOK_SECRET: "whsec_fake",
+    ledger,
+    stripeGateway: Object.hasOwn(input, "stripeGateway")
+      ? (input.stripeGateway ?? null)
+      : createMockStripeBillingGateway(),
+    freeTier: input.freeTier ?? { ensure: vi.fn(async () => {}) },
+    getOrCreateStripeCustomer: input.getOrCreateStripeCustomer ?? vi.fn(async () => "cus_123"),
+    env: {
+      STRIPE_PRICE_PLAN_STANDARD: "price_standard",
+      STRIPE_PRICE_PLAN_PREMIUM: "price_premium",
+    },
   };
 }
 
-describe("billing route core", () => {
-  it("returns fake provider status and needs-credentials catalog entry", () => {
-    const response = billingPacksPlans(deps());
-    expect(response.provider).toMatchObject({ mode: "fake", needsCredentials: true });
-    expect(response.entries[0]?.id).toBe("needs_stripe_credentials");
+async function debit(ledger: ReturnType<typeof createInMemoryCreditLedger>, amount: string) {
+  await ledger.debit({
+    userId: "user-1",
+    rootThreadId: "thread-1",
+    threadId: "thread-1",
+    turnId: "turn-1",
+    agentSlug: "writer",
+    millicredits: amount,
+    usageEventId: `usage-${amount}-${crypto.randomUUID()}`,
+  });
+}
+
+describe("billing-route", () => {
+  it("computes included usage percentage, usage mode, purchased USD, and canStartTurn", async () => {
+    const ledger = createInMemoryCreditLedger();
+    await ledger.grant({
+      userId: "user-1",
+      source: "subscription",
+      amountMillicredits: "1000000",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      reason: "plan_standard",
+    });
+    await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "735000" });
+    await debit(ledger, "250000");
+
+    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
+      purchasedBalanceUsd: "7.35",
+      includedUsagePercent: 25,
+      usageMode: "subscription",
+      canStartTurn: true,
+    });
   });
 
-  it("fake checkout grants credits visible to the real project-scoped balance", async () => {
-    const routeDeps = deps();
-    const checkout = await createBillingCheckoutSession(routeDeps, {
-      userId,
-      projectId,
-      body: {
-        entryId: "pack_starter",
-        successUrl: "https://app.localhost/billing",
-        cancelUrl: "https://app.localhost/billing",
+  it("uses free grants as included usage when no subscription exists and can exceed 100%", async () => {
+    const ledger = {
+      ...createInMemoryCreditLedger(),
+      async getBalanceBreakdown() {
+        return {
+          lots: [
+            {
+              source: "grant" as const,
+              balanceMillicredits: "-50000",
+              originalMillicredits: "200000",
+              expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+            },
+          ],
+        };
       },
-    });
+    };
 
-    expect(checkout.mode).toBe("fake");
-    expect(checkout.needsCredentials).toBe(true);
-    expect(checkout.url).toContain("checkout=fake");
-    await expect(billingBalance(routeDeps, { userId, projectId })).resolves.toMatchObject({
-      purchasedBalanceMillicredits: "1000000",
-    });
-    await expect(
-      billingBalance(routeDeps, { userId, projectId: "other-project" }),
-    ).resolves.toMatchObject({
-      purchasedBalanceMillicredits: "0",
+    await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
+      includedUsagePercent: 125,
+      usageMode: "free",
+      canStartTurn: false,
     });
   });
 
-  it("rejects public webhooks when Stripe is not configured", async () => {
-    await expect(
-      handleBillingWebhook(deps(), {
-        payload: JSON.stringify({ userId, entryId: "pack_starter", millicredits: "999999999" }),
-        signature: null,
-      }),
-    ).rejects.toThrow(/Stripe webhook is disabled/);
+  it("ensures free tier on balance and transaction reads and maps transactions to USD", async () => {
+    const ledger = createInMemoryCreditLedger();
+    const ensure = vi.fn(async () => {});
+    await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
+    await debit(ledger, "12345");
+
+    const routeDeps = deps({ ledger, freeTier: { ensure } });
+    const txs = await billingTransactions(routeDeps, { userId: "user-1" });
+
+    expect(ensure).toHaveBeenCalledWith("user-1");
+    expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 2 });
+    expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
+    await billingBalance(routeDeps, { userId: "user-1" });
+    expect(ensure).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores forged millicredits and grants catalog amount for pack webhooks", async () => {
-    const routeDeps = deps(stripeEnv());
-    const payload = JSON.stringify({
-      id: "fake_cs_pack",
-      userId,
-      projectId,
-      entryId: "pack_starter",
-      millicredits: "999999999",
-    });
-
-    await handleBillingWebhook(routeDeps, { payload, signature: null });
-    await expect(billingBalance(routeDeps, { userId, projectId })).resolves.toMatchObject({
-      purchasedBalanceMillicredits: "1000000",
-    });
-  });
-
-  it("plan checkout persists subscription state and grants the first period once", async () => {
-    const routeDeps = deps(stripeEnv());
-    const payload = JSON.stringify({
-      id: "fake_cs_plan",
-      userId,
-      projectId,
-      entryId: "plan_pro",
-      millicredits: "999999999",
-      customerId: "cus_123",
-      subscriptionId: "sub_123",
-      periodStart: "2026-06-01T00:00:00.000Z",
-      periodEnd: "2026-07-01T00:00:00.000Z",
-    });
-
-    const response = await handleBillingWebhook(routeDeps, { payload, signature: null });
-    const replay = await handleBillingWebhook(routeDeps, { payload, signature: null });
-
-    expect(response).toEqual({ received: true, action: "granted" });
-    expect(replay).toEqual({ received: true, action: "granted" });
-    const subscription = await routeDeps.subscriptionStore.getByStripeSubscriptionId("sub_123");
-    expect(subscription).toMatchObject({
-      userId,
-      status: "active",
-      creditsPerPeriod: "5000000",
-    });
-    const transactions = await routeDeps.ledger.listTransactions({ userId, projectId });
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0]).toMatchObject({
-      sourceType: "subscription",
-      reason: "subscription:sub_123:2026-06-01T00:00:00.000Z",
-      amountMillicredits: "5000000",
-    });
-    await expect(billingBalance(routeDeps, { userId, projectId })).resolves.toMatchObject({
-      subscriptionBalanceMillicredits: "5000000",
-    });
-  });
-
-  it("renewal invoice grants each subscription period once", async () => {
-    const routeDeps = deps(stripeEnv());
-    const firstPeriod = JSON.stringify({
-      type: "checkout.session.completed",
-      data: {
-        id: "fake_cs_plan",
-        userId,
-        projectId,
-        entryId: "plan_pro",
-        customerId: "cus_123",
-        subscriptionId: "sub_123",
-        periodStart: "2026-06-01T00:00:00.000Z",
-        periodEnd: "2026-07-01T00:00:00.000Z",
-      },
-    });
-    await handleBillingWebhook(routeDeps, { payload: firstPeriod, signature: null });
-
-    const renewal = JSON.stringify({
-      type: "invoice.paid",
-      data: {
-        id: "in_456",
-        userId,
-        projectId,
-        entryId: "plan_pro",
-        customerId: "cus_123",
-        subscriptionId: "sub_123",
-        periodStart: "2026-07-01T00:00:00.000Z",
-        periodEnd: "2026-08-01T00:00:00.000Z",
-      },
-    });
-    await handleBillingWebhook(routeDeps, { payload: renewal, signature: null });
-    const replay = await handleBillingWebhook(routeDeps, { payload: renewal, signature: null });
-
-    expect(replay).toEqual({ received: true, action: "granted" });
-    const transactions = await routeDeps.ledger.listTransactions({ userId, projectId });
-    expect(transactions).toHaveLength(2);
-    expect(transactions.map((tx) => tx.reason).sort()).toEqual([
-      "subscription:sub_123:2026-06-01T00:00:00.000Z",
-      "subscription:sub_123:2026-07-01T00:00:00.000Z",
+  it("returns paid products only and reports Stripe configuration", () => {
+    const configured = billingProducts(deps());
+    expect(configured.stripeConfigured).toBe(true);
+    expect(configured.entries.map((entry) => entry.id)).toEqual([
+      "plan_standard",
+      "plan_premium",
+      "extra_usage",
     ]);
-    await expect(billingBalance(routeDeps, { userId, projectId })).resolves.toMatchObject({
-      subscriptionBalanceMillicredits: "10000000",
-    });
+    expect(billingProducts(deps({ stripeGateway: null })).stripeConfigured).toBe(false);
   });
 
-  it("does not regress subscription state for stale lifecycle replays", async () => {
-    const routeDeps = deps(stripeEnv());
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "customer.subscription.updated",
-        data: {
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_123",
-          subscriptionId: "sub_123",
-          status: "active",
-          periodStart: "2026-08-01T00:00:00.000Z",
-          periodEnd: "2026-09-01T00:00:00.000Z",
-        },
-      }),
-      signature: null,
-    });
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "customer.subscription.deleted",
-        data: {
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_123",
-          subscriptionId: "sub_123",
-          periodStart: "2026-08-01T00:00:00.000Z",
-          periodEnd: "2026-09-01T00:00:00.000Z",
-        },
-      }),
-      signature: null,
-    });
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "customer.subscription.updated",
-        data: {
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_123",
-          subscriptionId: "sub_123",
-          status: "active",
-          periodStart: "2026-07-01T00:00:00.000Z",
-          periodEnd: "2026-08-01T00:00:00.000Z",
-        },
-      }),
-      signature: null,
-    });
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "checkout.session.completed",
-        data: {
-          id: "late_checkout",
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_123",
-          subscriptionId: "sub_123",
-          periodStart: "2026-08-01T00:00:00.000Z",
-          periodEnd: "2026-09-01T00:00:00.000Z",
-        },
-      }),
-      signature: null,
-    });
+  it("creates checkout sessions and sends active subscribers to the portal", async () => {
+    const gateway = createMockStripeBillingGateway();
+    const routeDeps = deps({ stripeGateway: gateway });
 
     await expect(
-      routeDeps.subscriptionStore.getByStripeSubscriptionId("sub_123"),
-    ).resolves.toMatchObject({
-      status: "cancelled",
-      currentPeriodStart: "2026-08-01T00:00:00.000Z",
+      createBillingCheckoutSession(routeDeps, {
+        userId: "user-1",
+        body: {
+          entryId: "plan_standard",
+          successUrl: "https://app.test/success",
+          cancelUrl: "https://app.test/billing",
+        },
+      }),
+    ).resolves.toEqual({
+      kind: "checkout",
+      sessionId: "cs_123",
+      url: "https://stripe.test/checkout",
     });
+    expect(gateway.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({ stripePriceId: "price_standard" }),
+    );
+
+    vi.mocked(gateway.getLiveSubscription).mockResolvedValueOnce({ id: "sub_1", status: "active" });
+    await expect(
+      createBillingCheckoutSession(routeDeps, {
+        userId: "user-1",
+        body: {
+          entryId: "plan_standard",
+          successUrl: "https://app.test/success",
+          cancelUrl: "https://app.test/billing",
+        },
+      }),
+    ).resolves.toEqual({ kind: "portal", url: "https://stripe.test/portal" });
   });
 
-  it("does not let a stale older subscription replace a newer active subscription", async () => {
-    const routeDeps = deps(stripeEnv());
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "customer.subscription.updated",
-        data: {
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_new",
-          subscriptionId: "sub_new",
-          status: "active",
-          periodStart: "2026-08-01T00:00:00.000Z",
-          periodEnd: "2026-09-01T00:00:00.000Z",
-        },
-      }),
-      signature: null,
+  it("creates extra-usage checkout from amountUsd increments", async () => {
+    const gateway = createMockStripeBillingGateway();
+    await createBillingCheckoutSession(deps({ stripeGateway: gateway }), {
+      userId: "user-1",
+      body: {
+        entryId: "extra_usage",
+        amountUsd: "10.00",
+        successUrl: "https://app.test/success",
+        cancelUrl: "https://app.test/billing",
+      },
     });
-    await handleBillingWebhook(routeDeps, {
-      payload: JSON.stringify({
-        type: "customer.subscription.updated",
-        data: {
-          userId,
-          projectId,
-          entryId: "plan_pro",
-          customerId: "cus_old",
-          subscriptionId: "sub_old",
-          status: "active",
-          periodStart: "2026-07-01T00:00:00.000Z",
-          periodEnd: "2026-08-01T00:00:00.000Z",
-        },
+    expect(gateway.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({ kind: "extra-usage", grantMillicredits: "1000000" }),
+        stripePriceId: null,
       }),
-      signature: null,
+    );
+  });
+
+  it("rejects checkout without Stripe and for the free tier", async () => {
+    await expect(
+      createBillingCheckoutSession(deps({ stripeGateway: null }), {
+        userId: "user-1",
+        body: { entryId: "plan_standard", successUrl: "https://ok", cancelUrl: "https://ok" },
+      }),
+    ).rejects.toThrow("Stripe checkout is not configured");
+    await expect(
+      createBillingCheckoutSession(deps(), {
+        userId: "user-1",
+        body: { entryId: "plan_free", successUrl: "https://ok", cancelUrl: "https://ok" },
+      }),
+    ).rejects.toThrow("Free tier");
+  });
+
+  it("handles webhook grants idempotently through the ledger", async () => {
+    const ledger = createInMemoryCreditLedger();
+    const routeDeps = deps({ ledger });
+    const payload = JSON.stringify({
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_1", userId: "user-1", amountMillicredits: "500000" } },
     });
 
-    await expect(
-      routeDeps.subscriptionStore.getByStripeSubscriptionId("sub_new"),
-    ).resolves.toMatchObject({
-      status: "active",
-      currentPeriodStart: "2026-08-01T00:00:00.000Z",
+    await expect(handleBillingWebhook(routeDeps, { payload, signature: "sig" })).resolves.toEqual({
+      received: true,
     });
-    await expect(
-      routeDeps.subscriptionStore.getByStripeSubscriptionId("sub_old"),
-    ).resolves.toBeNull();
+    await handleBillingWebhook(routeDeps, { payload, signature: "sig" });
+    expect(await ledger.getBalance({ userId: "user-1" })).toBe("500000");
   });
 });

@@ -74,7 +74,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import type { CreditLedger } from "../../billing/index.js";
+import { type CreditLedger, ensureFreeTier } from "../../billing/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -367,10 +367,10 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
+  await ensureFreeTier(deps.creditLedger, thread.userId);
   const balance = BigInt(
     await deps.creditLedger.getBalance({
       userId: thread.userId,
-      projectId: thread.projectId,
     }),
   );
   if (balance < 0n) {

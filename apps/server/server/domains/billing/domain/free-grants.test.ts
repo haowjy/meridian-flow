@@ -1,43 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../adapters/in-memory/credit-ledger.js";
-import { createFreeGrantPipeline, FREE_MONTHLY_MILLICREDITS } from "./free-grants.js";
+import { FREE_TIER } from "./catalog.js";
+import { ensureFreeTier } from "./free-grants.js";
 
 const userId = "user-1";
-const projectId = "billing";
+const clock = { now: () => new Date("2026-06-12T00:00:00.000Z") };
 
-describe("free grant pipeline", () => {
-  it("grants signup credits once for a new user", async () => {
+describe("ensureFreeTier", () => {
+  it("grants the monthly free tier when no subscription or free lot exists", async () => {
     const ledger = createInMemoryCreditLedger();
-    const grants = createFreeGrantPipeline({
-      ledger,
-      clock: { now: () => new Date("2026-06-12T00:00:00.000Z") },
-    });
 
-    await grants.ensureFreeCredits({ userId, projectId });
-    await grants.ensureFreeCredits({ userId, projectId });
+    await ensureFreeTier(ledger, userId, { clock });
 
-    expect(await ledger.getBalance({ userId, projectId })).toBe(FREE_MONTHLY_MILLICREDITS);
-    const transactions = await ledger.listTransactions({ userId, projectId });
+    expect(await ledger.getBalance({ userId })).toBe(FREE_TIER.grantMillicredits);
+    const transactions = await ledger.listTransactions({ userId });
     expect(transactions).toHaveLength(1);
-    expect(transactions[0]?.reason).toBe("signup");
+    expect(transactions[0]).toMatchObject({
+      sourceType: "grant",
+      reason: `free_tier_${userId}_2026-06-01`,
+      amountMillicredits: FREE_TIER.grantMillicredits,
+    });
   });
 
-  it("adds the next monthly grant idempotently after the signup month", async () => {
+  it("skips when an unexpired subscription lot exists", async () => {
     const ledger = createInMemoryCreditLedger();
-    await createFreeGrantPipeline({
-      ledger,
-      clock: { now: () => new Date("2026-06-12T00:00:00.000Z") },
-    }).ensureFreeCredits({ userId, projectId });
-
-    const july = createFreeGrantPipeline({
-      ledger,
-      clock: { now: () => new Date("2026-07-01T00:00:00.000Z") },
+    await ledger.grant({
+      userId,
+      source: "subscription",
+      amountMillicredits: "1000000",
+      stripeIdempotencyId: "invoice_1",
+      expiresAt: "2099-07-01T00:00:00.000Z",
     });
-    await july.ensureFreeCredits({ userId, projectId });
-    await july.ensureFreeCredits({ userId, projectId });
 
-    expect(await ledger.getBalance({ userId, projectId })).toBe("400000");
-    const reasons = (await ledger.listTransactions({ userId, projectId })).map((tx) => tx.reason);
-    expect(reasons.sort()).toEqual(["monthly_2026_07", "signup"]);
+    await ensureFreeTier(ledger, userId, { clock });
+
+    expect(await ledger.getBalance({ userId })).toBe("1000000");
+    await expect(ledger.listTransactions({ userId })).resolves.toHaveLength(1);
+  });
+
+  it("is idempotent under concurrent calls with the same deterministic key", async () => {
+    const ledger = createInMemoryCreditLedger();
+
+    await Promise.all(Array.from({ length: 8 }, () => ensureFreeTier(ledger, userId, { clock })));
+
+    expect(await ledger.getBalance({ userId })).toBe(FREE_TIER.grantMillicredits);
+    const transactions = await ledger.listTransactions({ userId });
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.metadata.stripeIdempotencyId).toBe(`free_tier_${userId}_2026-06-01`);
   });
 });

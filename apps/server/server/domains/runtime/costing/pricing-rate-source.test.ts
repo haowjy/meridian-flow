@@ -69,6 +69,7 @@ describe("createLayeredTokenRateSource", () => {
 
     expect(cost).toMatchObject({
       costUsd: "3.000000",
+      millicredits: "345000",
       pricingSnapshot: { sourceLayer: "pinned" },
     });
   });

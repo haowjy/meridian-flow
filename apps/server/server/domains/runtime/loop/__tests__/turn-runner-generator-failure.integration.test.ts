@@ -54,7 +54,6 @@ describe("turn-runner generator failure", () => {
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000",
       reason: "generator failure test",

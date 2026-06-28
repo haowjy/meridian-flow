@@ -269,7 +269,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const childCostMillicredits = Number(
         await deps.creditLedger.getThreadDebitTotal({
           userId: input.parentThread.userId,
-          projectId: input.parentThread.projectId,
           threadId: prepared.child.id,
         }),
       );

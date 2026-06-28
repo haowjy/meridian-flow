@@ -4,9 +4,7 @@ import { billingBalance, createBillingRouteDeps } from "../../../lib/billing-rou
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectId } = await app.projects.ensureDefaultBootstrap(user.userId);
   return billingBalance(createBillingRouteDeps(app, process.env), {
     userId: user.userId,
-    projectId,
   });
 });

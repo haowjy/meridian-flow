@@ -2,13 +2,14 @@
  * Purpose: Tests deterministic pricing conversion and registry-sourced pinned rates.
  */
 import { describe, expect, it } from "vitest";
-import { extractPinnedRates, MODEL_REGISTRY } from "../../runtime/gateway/config/registry.js";
+import { extractPinnedRates, MODEL_REGISTRY } from "../gateway/config/registry.js";
 import {
   computeModelCost,
   createDefaultModelTokenRateSource,
   createLayeredTokenRateSource,
   findModelTokenRate,
   MOCK_FIXTURE_TOKEN_RATES,
+  meteredMillicreditsFromRaw,
 } from "./pricing.js";
 
 const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
@@ -81,6 +82,13 @@ const PRODUCTION_RATE_PARITY = {
 describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
 
+  it("applies the fixed cost multiplier when converting raw USD micros to metered millicredits", () => {
+    // $0.10 raw = 100,000 USD micros. ceil(100,000 * 115 / 1000) = 11,500 millicredits ($0.115).
+    expect(meteredMillicreditsFromRaw(100_000n)).toBe(11_500n);
+    expect(meteredMillicreditsFromRaw(1n)).toBe(1n);
+    expect(meteredMillicreditsFromRaw(0n)).toBe(0n);
+  });
+
   it("computes millicredits deterministically from registry-pinned token rates", () => {
     const cost = computeModelCost({
       provider: "deepseek",
@@ -90,7 +98,7 @@ describe("model pricing", () => {
     });
 
     expect(cost.costUsd).toBe("0.420000");
-    expect(cost.millicredits).toBe("42000");
+    expect(cost.millicredits).toBe("48300");
     expect(cost.pricingSnapshot.source).toContain("pinned:");
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
@@ -105,7 +113,7 @@ describe("model pricing", () => {
     });
 
     expect(cost.costUsd).toBe("0.004200");
-    expect(cost.millicredits).toBe("420");
+    expect(cost.millicredits).toBe("483");
     expect(cost.priceSource).toBe("provider_reported");
     expect(cost.pricingSnapshot.sourceLayer).toBe("provider_reported");
     expect(cost.pricingSnapshot.source).toBe("provider_reported");

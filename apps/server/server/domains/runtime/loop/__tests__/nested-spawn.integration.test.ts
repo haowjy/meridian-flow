@@ -138,7 +138,6 @@ describe("nested spawn runtime (P2b gate)", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",
@@ -404,28 +403,24 @@ describe("nested spawn runtime (P2b gate)", () => {
     );
     await collectEvents(await orchestrator.runTurn({ threadId: thread.id, userText: "run" }));
 
-    expect(
-      await creditLedger.getRunDebitTotal({
-        userId: "user-1",
-        projectId: thread.projectId,
-        rootThreadId: thread.id,
-      }),
-    ).toBe("600000");
-    expect(
-      await creditLedger.getAgentDebitTotals({
-        userId: "user-1",
-        projectId: thread.projectId,
-        rootThreadId: thread.id,
-      }),
-    ).toEqual([
-      { agentSlug: "orchestrator", millicredits: "400000" },
-      { agentSlug: "worker", millicredits: "200000" },
-    ]);
-
     const child = (await repos.threads.listByUser("user-1")).find((row) => row.kind === "subagent");
+    expect(child).toBeDefined();
+    expect(
+      await creditLedger.getThreadDebitTotal({
+        userId: "user-1",
+        threadId: thread.id,
+      }),
+    ).toBe("460000");
+    expect(
+      await creditLedger.getThreadDebitTotal({
+        userId: "user-1",
+        threadId: child?.id ?? "missing",
+      }),
+    ).toBe("230000");
+
     expect(child?.spawnResult).toMatchObject({
       status: "completed",
-      report: expect.objectContaining({ costMillicredits: 200000 }),
+      report: expect.objectContaining({ costMillicredits: 230000 }),
     });
   });
 

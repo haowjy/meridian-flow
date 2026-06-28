@@ -7,17 +7,10 @@ export default defineEventHandler(async (event) => {
   const payload = await readRawBody(event, "utf8");
   if (!payload) throw createError({ statusCode: 400, message: "Webhook payload is required" });
   try {
-    return await handleBillingWebhook(
-      createBillingRouteDeps(
-        app,
-        process.env,
-        async (userId) => (await app.projects.ensureDefaultBootstrap(userId)).projectId,
-      ),
-      {
-        payload,
-        signature: getRequestHeader(event, "stripe-signature") ?? null,
-      },
-    );
+    return await handleBillingWebhook(createBillingRouteDeps(app, process.env), {
+      payload,
+      signature: getRequestHeader(event, "stripe-signature") ?? null,
+    });
   } catch (error) {
     throw createError({
       statusCode: 400,
