@@ -156,7 +156,6 @@ function disposeSubscriptions(peer: WsPeer): void {
   const state = getPeerState(peer);
   state.closed = true;
   unregisterPeerConnectionToken(peer);
-  cancelRunningTurnsForPeer(peer);
   for (const unsubscribe of state.subscriptions.values()) unsubscribe();
   state.subscriptions.clear();
   state.liveWatermark.clear();
@@ -166,13 +165,6 @@ function unregisterPeerConnectionToken(peer: WsPeer): void {
   const auth = peer.context;
   if (!auth) return;
   auth.app.runner.unregisterLiveConnectionToken?.(getPeerState(peer).connectionToken);
-}
-
-function cancelRunningTurnsForPeer(peer: WsPeer): void {
-  const auth = peer.context;
-  if (!auth) return;
-  const peerToken = getPeerState(peer).connectionToken;
-  auth.app.runner.cancelTurnsOwnedByConnectionToken?.(peerToken);
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {

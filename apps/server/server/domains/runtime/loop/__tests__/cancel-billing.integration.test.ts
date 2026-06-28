@@ -1,7 +1,7 @@
 /**
  * Cancel billing integration tests: soft-cancel drain debits consumed usage through
- * the real createGateway path, WS disconnect cancels only peer-owned turns, and
- * replayed settlement stays idempotent.
+ * the real createGateway path, explicit cancel remains idempotent, and WS
+ * disconnects do not cancel in-flight turns.
  */
 
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -161,7 +161,7 @@ describe("cancel billing", () => {
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
-  it("cancels the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
+  it("does not cancel the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
     const gateway = createMockGateway(mock);
     const { thread, creditLedger, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
@@ -228,6 +228,9 @@ describe("cancel billing", () => {
     expect(turnId).not.toBeNull();
 
     ownerSession.onClose();
+    expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
+
+    await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
     await startPromise;
     const deadline = Date.now() + 5_000;
     while (runner.getRunningTurnId(thread.id) && Date.now() < deadline) {
@@ -243,7 +246,7 @@ describe("cancel billing", () => {
     expect(assistantTurn?.status).toBe("cancelled");
   });
 
-  it("does not disconnect-cancel turns started by another connection", async () => {
+  it("does not cancel turns when another subscribed WebSocket disconnects", async () => {
     const gateway = createMockGateway(mock);
     const { thread, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
@@ -325,7 +328,7 @@ describe("cancel billing", () => {
     await startPromise;
   });
 
-  it("does not disconnect-cancel tokenless runs from a subscribed peer", async () => {
+  it("does not cancel tokenless runs when a subscribed WebSocket disconnects", async () => {
     const gateway = createMockGateway(mock);
     const { thread, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
