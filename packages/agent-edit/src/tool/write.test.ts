@@ -150,7 +150,7 @@ describe("write tool dispatch", () => {
     expect(outcomeText(createExisting)).toContain(`File already exists: ${MODEL_PATH}`);
     expect(outcomeText(createExisting)).not.toContain(INTERNAL_DOCUMENT_ID);
 
-    const unsynced = await ctx.core.write(
+    const autoSynced = await ctx.core.write(
       {
         command: "replace",
         documentId: INTERNAL_DOCUMENT_ID,
@@ -160,10 +160,8 @@ describe("write tool dispatch", () => {
       },
       context,
     );
-    expect(outcomeText(unsynced)).toContain(
-      `Run write(command="read", file="${MODEL_PATH}") to re-sync.`,
-    );
-    expect(outcomeText(unsynced)).not.toContain(INTERNAL_DOCUMENT_ID);
+    expect(outcomeText(autoSynced)).toContain("status: success");
+    expect(outcomeText(autoSynced)).not.toContain(INTERNAL_DOCUMENT_ID);
 
     const read = await ctx.core.write(
       { command: "read", documentId: INTERNAL_DOCUMENT_ID, file: MODEL_PATH, format: "outline" },
@@ -178,7 +176,7 @@ describe("write tool dispatch", () => {
         documentId: INTERNAL_DOCUMENT_ID,
         file: MODEL_PATH,
         content: "Still",
-        find: "Already",
+        find: "New",
       },
       context,
     );
@@ -666,9 +664,15 @@ describe("write tool dispatch", () => {
     const missingCtx = harness();
 
     const missing = await missingCtx.core.write({ command: "read", file: "missing.md" }, context);
+    const missingEdit = await missingCtx.core.write(
+      { command: "replace", file: "missing.md", find: "x", content: "y" },
+      context,
+    );
 
     expect(outcomeText(missing)).toContain("status: document_not_found");
     expectOutcome(missing, "document_not_found", true);
+    expect(outcomeText(missingEdit)).toContain("status: document_not_found");
+    expectOutcome(missingEdit, "document_not_found", true);
 
     const failingCtx = harness({ "chapter.md": "Alpha." });
     failingCtx.coordinator.failWith(new Error("database unavailable"));
