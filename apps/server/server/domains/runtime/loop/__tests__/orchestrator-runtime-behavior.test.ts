@@ -2,9 +2,22 @@
  * Runtime orchestrator behavior tests: verify turn setup, gateway handoff,
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
+import {
+  createWriteToolHarness,
+  hashAt,
+  humanDeleteBlock,
+  humanText,
+} from "@meridian/agent-edit/test-support";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import type * as Y from "yjs";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "../../../../lib/wired-core-tools.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
+import type { ContextPort } from "../../../context/index.js";
+import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
   createInMemoryEventJournalWriter,
@@ -100,6 +113,156 @@ async function collectEvents(
     events.push(event);
   }
   return events;
+}
+
+function concurrentBackfillGateway(
+  requests: GenerateRequest[],
+  finalText = "saw concurrent edits",
+): Gateway {
+  return {
+    ...gatewayStubDefaults,
+    async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+      requests.push(request);
+      if (requests.length === 1) {
+        yield {
+          type: "end",
+          result: {
+            content: [
+              {
+                type: "tool_use",
+                toolCallId: "call-write",
+                toolName: "write",
+                input: { command: "replace", path: "chapter.md", find: "Alpha", content: "Agent" },
+              },
+            ],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+        return;
+      }
+      yield {
+        type: "end",
+        result: {
+          content: [{ type: "text", text: finalText }],
+          toolCalls: [],
+          finishReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: "stub-model",
+          provider: "stub",
+        },
+      };
+    },
+    async generate(_request: GenerateRequest) {
+      throw new Error("not used in this test");
+    },
+  };
+}
+
+async function runRealStagedCommitBackfill(input: {
+  initialMarkdown: string;
+  afterStagedWrite: (liveDoc: Y.Doc) => void;
+}) {
+  const documentId = "doc-chapter";
+  const filePath = "chapter.md";
+  const requests: GenerateRequest[] = [];
+  const projectRepo = createInMemoryProjectRepository();
+  const repos = createInMemoryRepositories({ projects: projectRepo });
+  const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+  const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+  const agentEdit = createWriteToolHarness({ [documentId]: input.initialMarkdown });
+  await agentEdit.core.write(
+    { command: "read", file: documentId },
+    { sessionId: thread.id, threadId: thread.id },
+  );
+
+  const responseLifecycle = createAgentEditResponseWriteLifecycle({
+    documentSync: {
+      agentEdit: () => agentEdit.core,
+      refreshDocumentProjection: async () => {},
+    },
+    eventSink: createInMemoryEventSink(),
+  });
+  const registrations = createWiredCoreToolRegistrations({
+    threads: { findById: async () => thread } as never,
+    threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
+    contextPorts: {
+      forProject: () => contextPortFor(documentId, filePath),
+      forWork: () => contextPortFor(documentId, filePath),
+    },
+    documentSync: {
+      agentEdit: () => agentEdit.core,
+      refreshDocumentProjection: async () => {},
+    },
+    responseWrites: responseLifecycle,
+    eventSink: createInMemoryEventSink(),
+  });
+  const executor = createToolExecutor(createToolRegistry({ registrations }));
+  const toolExecutor: ToolExecutor = {
+    getDefinitions: () => executor.getDefinitions?.() ?? [],
+    async executeTool(call, ctx) {
+      const result = await executor.executeTool(call, ctx);
+      input.afterStagedWrite(agentEdit.liveDoc(documentId));
+      return result;
+    },
+  };
+
+  const deps = createTestOrchestratorDeps({
+    gateway: concurrentBackfillGateway(requests),
+    repos,
+    eventWriter: createInMemoryEventJournalWriter(),
+    creditLedger: createInMemoryCreditLedger(),
+    checkpointRegistry: createCheckpointRegistry(),
+    toolExecutor,
+    responseWrites: responseLifecycle,
+  });
+  await deps.creditLedger.grant({
+    userId: "user-1",
+    projectId: project.id,
+    source: "manual",
+    amountMillicredits: "1000000000",
+    reason: "test",
+  });
+
+  await collectEvents(
+    await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+  );
+
+  return { requests };
+}
+
+function contextPortFor(documentId: string, filePath: string): ContextPort {
+  return {
+    stat: async (uri) =>
+      uri === filePath
+        ? {
+            ok: true,
+            value: {
+              kind: "tracked",
+              uri,
+              documentId,
+              filetype: "markdown",
+              schemaType: "document",
+            },
+          }
+        : { ok: false, error: { code: "not_found", uri } },
+    ensureTrackedDocument: async (uri) => ({
+      ok: true,
+      value: { documentId, created: uri === filePath },
+    }),
+    delete: async () => ({ ok: true, value: undefined }),
+    list: async () => ({ ok: true, value: [] }),
+    search: async () => ({ ok: true, value: [] }),
+    read: async () => ({ ok: false, error: { code: "not_found", uri: filePath } }),
+    write: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
+    edit: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
+    writeBinary: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
+    move: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
+    mkdir: async () => ({ ok: true, value: undefined }),
+  };
 }
 
 describe("runtime orchestrator behavior", () => {
@@ -440,6 +603,54 @@ describe("runtime orchestrator behavior", () => {
     expect(secondRequest).toContain("concurrent edits:\\n  human: *");
     expect(secondRequest).toContain('write(command=\\"read\\", file=\\"<current>\\")');
     expect(secondRequest).not.toContain("current blocks:");
+  });
+
+  it("backfills real staged-commit concurrent edits and collapses large re-show payloads", async () => {
+    let changedHash = "";
+    let deletedHash = "";
+
+    const rendered = await runRealStagedCommitBackfill({
+      initialMarkdown: "Alpha sword.\n\nBeta remains.\n\nGamma vanishes.",
+      afterStagedWrite: (liveDoc) => {
+        changedHash = hashAt(liveDoc, 1);
+        deletedHash = hashAt(liveDoc, 2);
+        humanText(liveDoc, 1, { from: 5, to: 12 }, "changed");
+        humanDeleteBlock(liveDoc, 2);
+      },
+    });
+
+    const renderedSecondRequest = JSON.stringify(rendered.requests[1]?.messages);
+    expect(renderedSecondRequest).toContain(
+      `concurrent edits:\\n  human: ${changedHash}, ${deletedHash}`,
+    );
+    expect(renderedSecondRequest).toContain("current blocks:");
+    expect(renderedSecondRequest).toContain(`${changedHash}|Beta changed.`);
+    expect(renderedSecondRequest).toContain(`${deletedHash}| (deleted)`);
+
+    const bodyLines = [
+      "Alpha seed.",
+      "Block one.",
+      "Block two.",
+      "Block three.",
+      "Block four.",
+      "Block five.",
+      "Block six.",
+    ];
+
+    const collapsed = await runRealStagedCommitBackfill({
+      initialMarkdown: bodyLines.join("\n\n"),
+      afterStagedWrite: (liveDoc) => {
+        for (let index = 1; index <= 6; index += 1) {
+          humanText(liveDoc, index, { from: 0, to: 5 }, "Human");
+        }
+      },
+    });
+
+    const collapsedSecondRequest = JSON.stringify(collapsed.requests[1]?.messages);
+    expect(collapsedSecondRequest).toContain("concurrent edits:\\n  human: *");
+    expect(collapsedSecondRequest).toContain('write(command=\\"read\\", file=\\"<current>\\")');
+    expect(collapsedSecondRequest).not.toContain("current blocks:");
+    expect(collapsedSecondRequest).not.toContain("Human one.");
   });
 
   it("injects consumed undo notifications only on the first model call", async () => {
