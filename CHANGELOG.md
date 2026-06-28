@@ -2,7 +2,6 @@
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
   in-flight agent turn. The run finishes server-side and a reconnecting client
   reattaches via the existing snapshot/resume path — long turns survive accidental
