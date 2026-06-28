@@ -401,6 +401,26 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["The sky split.", "Tail."]);
   });
 
+  it("replaces a multi-block range with a find needle copied from hash-prefixed read output", async () => {
+    const ctx = harness({ "chapter.md": "First.\n\nSecond.\n\nTail." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const secondHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+
+    const replaced = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Merged.",
+        find: `${firstHash}|First.\n${secondHash}|Second.`,
+      },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Merged.", "Tail."]);
+  });
+
   it("replaces and inserts with find anchors copied from markdown-form read", async () => {
     const ctx = harness({
       "chapter.md":
