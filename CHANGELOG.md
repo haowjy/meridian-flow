@@ -55,6 +55,15 @@
   loop pins to the selected turn instead of the representative reported turn, so
   it no longer stops early and leaves part of the turn reversed.
 
+- Chat editing: after a writer undoes the agent's edits, the agent's next edit
+  no longer fails with "run read to re-sync." The agent's document replica
+  re-syncs automatically from canonical, so the model never spends a tool call
+  re-reading just to keep editing.
+
+- Chat editing: the message telling the model which edits a writer reversed now
+  lists the specific reversed write ids per file, so the model can tell exactly
+  what changed without re-reading.
+
 - Collab: undo/redo now uses persisted reversal lineage instead of delete-set ownership guessing, so concurrent edits in other blocks or non-overlapping ranges survive repeated undo/redo cycles without corruption.
 
 - Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.
