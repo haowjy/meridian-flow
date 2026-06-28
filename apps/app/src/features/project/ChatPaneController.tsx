@@ -8,6 +8,7 @@
 import { Trans } from "@lingui/react/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadInfoSheet } from "@/features/chat/ThreadInfoSheet";
 
 import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -45,6 +46,7 @@ export function ChatPaneController({
         }
         left={sidebarToggle}
         right={contextToggle}
+        actions={<ThreadInfoSheet threadId={activeThreadId} />}
       />
     </main>
   );

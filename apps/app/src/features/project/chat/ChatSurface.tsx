@@ -12,6 +12,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadInfoSheet } from "@/features/chat/ThreadInfoSheet";
 import { cn } from "@/lib/utils";
 
 import { PaneTitle } from "../PaneTitle";
@@ -65,7 +66,12 @@ export function ChatSurface({
         // The dock carries its own chrome via the shared RailHeader: thread
         // switcher on the left, collapse control on the right — identical to the
         // Context rail. The centered chat instead uses the Chat-dest PaneHeader.
-        <RailHeader onClose={onCloseDock} closeLabel={t`Collapse chat  ]`} side="right">
+        <RailHeader
+          onClose={onCloseDock}
+          closeLabel={t`Collapse chat  ]`}
+          side="right"
+          actions={<ThreadInfoSheet threadId={activeThreadId} />}
+        >
           {activeThreadId ? (
             <ChatThreadTitle
               projectId={projectId}

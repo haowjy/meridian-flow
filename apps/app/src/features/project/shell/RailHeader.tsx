@@ -24,6 +24,8 @@ import { PanelToggleButton } from "./PanelToggleButton";
 export type RailHeaderProps = {
   /** Leading content — a section label, a thread switcher, etc. */
   children: ReactNode;
+  /** Trailing actions, rendered before the collapse control (mirrors PaneHeader). */
+  actions?: ReactNode;
   /** Collapse the rail. */
   onClose: () => void;
   /** Accessible name + native title for the collapse control (i18n-ready). */
@@ -32,15 +34,24 @@ export type RailHeaderProps = {
   side?: "left" | "right";
 };
 
-export function RailHeader({ children, onClose, closeLabel, side = "right" }: RailHeaderProps) {
+export function RailHeader({
+  children,
+  actions,
+  onClose,
+  closeLabel,
+  side = "right",
+}: RailHeaderProps) {
   return (
-    <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
+    <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border-subtle px-2">
       <div className="flex min-w-0 flex-1 items-center">{children}</div>
-      <PanelToggleButton
-        icon={side === "left" ? PanelLeftClose : PanelRightClose}
-        label={closeLabel}
-        onClick={onClose}
-      />
+      <div className="flex shrink-0 items-center gap-1">
+        {actions}
+        <PanelToggleButton
+          icon={side === "left" ? PanelLeftClose : PanelRightClose}
+          label={closeLabel}
+          onClick={onClose}
+        />
+      </div>
     </header>
   );
 }
