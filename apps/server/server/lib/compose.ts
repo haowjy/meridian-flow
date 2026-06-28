@@ -812,6 +812,9 @@ export function createInMemoryAppServices(): AppServices {
       async canAccessDocument() {
         return true;
       },
+      async canAccessProjectDocument() {
+        return true;
+      },
       async requireOwnedDocument() {},
     },
     modelRequestDebug,

@@ -162,6 +162,7 @@ export type CollabDrafts = {
   drafts: {
     getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
+    previewMarkdown(input: { documentId: DocumentId; draftId: string }): Promise<string>;
     acceptDraft(input: {
       documentId: DocumentId;
       threadId: ThreadId;

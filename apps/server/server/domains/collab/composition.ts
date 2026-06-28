@@ -505,14 +505,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     liveUtilityCore,
     registry: responseRegistry,
   });
-  const draftService = createDraftService({
-    draftStore: deps.draftStore,
-    liveJournal: deps.draftAcceptJournal,
-    liveCoordinator: deps.coordinator,
-    invalidateInFlight: responseRegistry.invalidateDraft,
-    refreshAcceptedProjection: ({ documentId, threadId }) =>
-      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
-  });
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -522,6 +514,25 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
+  const draftLifecycle = createDraftService({
+    draftStore: deps.draftStore,
+    liveJournal: deps.draftAcceptJournal,
+    liveCoordinator: deps.coordinator,
+    invalidateInFlight: responseRegistry.invalidateDraft,
+    refreshAcceptedProjection: ({ documentId, threadId }) =>
+      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
+  });
+  const draftService = {
+    ...draftLifecycle,
+    async previewMarkdown(input: { documentId: DocumentId; draftId: string }) {
+      const doc = await draftLifecycle.buildDraftDoc(input);
+      try {
+        return markdownDocuments.serializeDoc(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
+  };
 
   async function refreshDocumentProjection(
     documentId: DocumentId,
