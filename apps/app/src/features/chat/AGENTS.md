@@ -73,6 +73,10 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
+| `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; delegates preview to `onReview` |
+| `DraftPreviewOverlay.tsx` | Modal prose-diff/clean-preview surface; **owned by `ChatView`, not by the card** |
+| `diff-lines.ts` | LCS line-level diff for the preview overlay (prose, not code) |
+| `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
 
 ## Block type reference
 
@@ -82,3 +86,6 @@ From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
 - **reasoning run** = `reasoning` | `thinking` (rendered in `TurnBlockStep`, italic prose)
 - **activity run** = everything else (text/image/custom rendered directly; tool_use/tool_result
   normalized into ToolViews and rendered as `ToolCard` or `ToolRunBlock`)
+
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md)
+→ [Design: AI drafts & review](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md)

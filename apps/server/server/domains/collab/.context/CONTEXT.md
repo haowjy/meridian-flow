@@ -111,6 +111,79 @@ window.
 wires them through the facade document-write hook; the in-memory collab domain
 passes no hook.
 
+## Draft review subsystem
+
+When a project's `aiWriteMode` is `"draft"` (default `"direct"`), AI agent
+edits are routed to a per-thread **draft** instead of the live document. The
+live doc is untouched until the writer accepts. Accept merges draft Yjs deltas
+into one journal entry (`writeId=draft-accept:<id>`, origin `system`); reject
+discards.
+
+→ Full architecture and deferred scope in the
+[design doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md).
+
+### Response session registry
+
+Keyed by `responseId`. On first write, resolves the thread's effective
+`WriteMode` (`direct` | `draft`), creates the appropriate `AgentEditCore`
+(live or draft-scoped), memoizes it. `commitResponse` / `rollbackResponse`
+route to the same core.
+
+- **Live session core** = standard `AgentEditCore` over the live journal +
+  coordinator.
+- **Draft session core** = draft-scoped `AgentEditCore` (`drizzle-draft-agent-edit.ts`)
+  that seeds from live + existing draft deltas, persists writes under
+  `scope_id = draft ULID`.
+
+Draft finalization (accept or reject) **invalidates in-flight responses** —
+the registry marks any active core for the finalized `(documentId, threadId)`
+as stale. `commitResponse` returns `DraftClosedFinalizeResult`
+(`status: "draft_closed"`) instead of flushing writes.
+
+### State isolation via `scope_id`
+
+Agent-edit state tables (`agent_edit_mutations`, `agent_edit_wid_counters`,
+`agent_edit_sync_state`, `document_yjs_reversals`) carry a non-null `scope_id`
+column. Direct mode uses the sentinel `"live"`; draft mode uses the draft ULID.
+`drizzle-agent-edit-scope.ts` exports `scopedWhere` / `scopedValues` helpers
+so adapters compose the partition without code duplication.
+
+### Draft persistence tables
+
+- **`document_yjs_drafts`** — one row per draft; `UNIQUE(documentId, threadId)`
+  partial index on `status = 'active'` enforces one active draft per
+  (document, thread).
+- **`document_yjs_draft_updates`** — append-only agent deltas per draft
+  (no seed, no live updates in the log).
+
+### Accept lifecycle (journal-first, idempotent)
+
+1. **CAS claim** — `claimActive` sets `claimedAt` + `claimToken`, returns draft.
+2. **Invalidate** in-flight responses for this `(documentId, threadId)`.
+3. **Merge** all draft deltas via `Y.mergeUpdates`.
+4. **Journal-first** persistence: `appendBatch` with `writeId = draft-accept:<id>`;
+   unique constraint prevents double-apply on retry.
+5. **Side effects** (recoverable): apply update to live coordinator, mark draft
+   applied, delete draft-scoped agent-edit state.
+
+Empty drafts (zero updates) auto-discard on accept. The `lastActorTurnId`
+anchors the accept mutation's `turnId` — no hidden system turns.
+
+### Reject lifecycle
+
+CAS claim, invalidate in-flight responses, mark discarded, delete draft-scoped
+state. Updates never touch live.
+
+### Invariants
+
+- **Live is always canonical.** A draft is proposed changes, not a document.
+- **Draft updates are agent-only.** No seed, no live updates in the draft log.
+- **Accept is journal-first.** Journal is authoritative; live projection and
+  status update are recoverable side effects.
+- **Draft finalization invalidates in-flight responses.** Accept or reject
+  broadcasts to the response registry.
+- **One active draft per (document, thread).** Partial unique index.
+
 ## Deferred cutover work
 
 - Keep schema-parity and TipTap extension work in the package cutover plan.

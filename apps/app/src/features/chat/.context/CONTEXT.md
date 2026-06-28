@@ -221,6 +221,10 @@ Migration is tracked in `work/activity-thinking-model`.
   rendering. The three-tier tool model (default → registered → generative) remains broader scope.
 - **catchup-fidelity** — DONE. Guarantees settled turns reconstruct the same `Block[]`
   from the durable snapshot. This model relies on that guarantee.
+- **AI draft review UX** — DONE. Draft review is chat-first: `DraftReviewCard` anchors
+  to the producing assistant turn via `lastActorTurnId`; `DraftPreviewOverlay` (owned
+  by `ChatView`, not by the card row) shows a line-level prose diff. Stack-ready
+  grouping by `documentId`. See [design doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md).
 
 ## Don't
 
