@@ -4,7 +4,12 @@ import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
-import { isHeading, resolveScope, resolveSearchScope } from "../resolver/scope.js";
+import {
+  isHeading,
+  resolveScope,
+  resolveSearchScope,
+  type ScopeResult,
+} from "../resolver/scope.js";
 import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
@@ -60,22 +65,24 @@ export function createDocumentRenderer(deps: {
       };
     }
     if (address.fragment) {
-      const lookup = model.lookupBlock(doc, address.fragment);
-      if (!lookup.ok && lookup.reason === "ambiguous") {
-        return { ok: true, blocks: lookup.matches };
-      }
       const result = resolveScope(scopeContext, `#${address.fragment}`);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
+      return scopeSelection(result);
     }
     if (command.around !== undefined) {
       const result = resolveSearchScope(scopeContext, undefined, command.around);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
+      return scopeSelection(result);
     }
     if (command.in !== undefined) {
       const result = resolveScope(scopeContext, command.in);
-      return result.ok ? { ok: true, blocks: result.scope.blocks } : result;
+      return scopeSelection(result);
     }
     return { ok: true, blocks: model.getBlocks(doc) };
+  }
+
+  function scopeSelection(result: ScopeResult): ReadBlockSelection {
+    if (result.ok) return { ok: true, blocks: result.scope.blocks };
+    if (result.code === "ambiguous") return { ok: true, blocks: result.matches };
+    return result;
   }
 
   function renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string {

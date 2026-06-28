@@ -1,7 +1,10 @@
 // Document-renderer block selection and agent-facing text rendering contracts.
 import { describe, expect, it } from "vitest";
 
-import { fullHashForItemId, getBlockItemId } from "../model/block-hash.js";
+import {
+  collisionMarkdown,
+  prefixCollisionFixture,
+} from "../resolver/test-support/hash-collision.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { hashAt, renderedBlockBodies } from "./test-support/assertions.js";
 import { codec, createDoc, model } from "./test-support/write-tool-harness.js";
@@ -34,22 +37,22 @@ describe("document renderer", () => {
   });
 
   it("renders every candidate for an ambiguous file hash fragment", () => {
-    const doc = createDoc(numberedBlocks(32), 100);
+    const doc = createDoc(collisionMarkdown(), 100);
     const renderer = createDocumentRenderer({ model, codec });
-    const candidates = ambiguousPrefixCandidates(doc);
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
     const selection = renderer.selectReadBlocks(
       doc,
-      { command: "read", file: `chapter.md#${candidates.prefix}` },
-      { filePath: "chapter.md", fragment: candidates.prefix },
+      { command: "read", file: `chapter.md#${fixture.sharedPrefix}` },
+      { filePath: "chapter.md", fragment: fixture.sharedPrefix },
     );
 
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
-    expect(selection.blocks).toEqual(candidates.blocks);
+    expect(selection.blocks).toEqual(fixture.candidates.map((candidate) => candidate.block));
     const rendered = renderer.renderBlocks(doc, selection.blocks);
-    for (const block of candidates.blocks) {
-      expect(rendered).toContain(`${model.getBlockId(block)}|${model.getText(block)}`);
+    for (const candidate of fixture.candidates) {
+      expect(rendered).toContain(`${candidate.displayHash}|${model.getText(candidate.block)}`);
     }
     expect(rendered).not.toContain("not found");
   });
@@ -70,6 +73,33 @@ describe("document renderer", () => {
     if (!selection.ok) throw new Error(selection.message);
     expect(selection.blocks).toEqual([target]);
     expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual(["Block 11"]);
+  });
+
+  it("renders the displayed collision hash uniquely and the shorter shared prefix as candidates", () => {
+    const doc = createDoc(collisionMarkdown(), 100);
+    const renderer = createDocumentRenderer({ model, codec });
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+
+    const displayed = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: `chapter.md#${fixture.target.displayHash}` },
+      { filePath: "chapter.md", fragment: fixture.target.displayHash },
+    );
+    expect(displayed).toMatchObject({ ok: true });
+    if (!displayed.ok) throw new Error(displayed.message);
+    expect(displayed.blocks).toEqual([fixture.target.block]);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, displayed.blocks))).toEqual([
+      model.getText(fixture.target.block),
+    ]);
+
+    const shared = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: `chapter.md#${fixture.sharedPrefix}` },
+      { filePath: "chapter.md", fragment: fixture.sharedPrefix },
+    );
+    expect(shared).toMatchObject({ ok: true });
+    if (!shared.ok) throw new Error(shared.message);
+    expect(shared.blocks).toEqual(fixture.candidates.map((candidate) => candidate.block));
   });
 
   it("keeps heading-hash file fragments section scoped", () => {
@@ -165,39 +195,15 @@ function numberedBlocks(count: number): string {
   return Array.from({ length: count }, (_, index) => `Block ${index + 1}`).join("\n\n");
 }
 
-function ambiguousPrefixCandidates(doc: ReturnType<typeof createDoc>): {
-  prefix: string;
-  blocks: ReturnType<typeof model.getBlocks>;
-} {
-  const blocks = model.getBlocks(doc);
-  const fullHashes = blocks.map(fullHash);
-  for (let length = fullHashes[0].length - 1; length > 0; length -= 1) {
-    const groups = new Map<string, typeof blocks>();
-    for (let index = 0; index < blocks.length; index += 1) {
-      const prefix = fullHashes[index].slice(0, length);
-      groups.set(prefix, [...(groups.get(prefix) ?? []), blocks[index]]);
-    }
-    for (const [prefix, matches] of groups) {
-      if (matches.length > 1) return { prefix, blocks: matches };
-    }
-  }
-  throw new Error("Expected an ambiguous full-hash prefix");
-}
-
 function uniquePrefixFor(
   doc: ReturnType<typeof createDoc>,
   target: ReturnType<typeof model.getBlocks>[number],
 ): string {
-  const blocks = model.getBlocks(doc);
-  const targetFullHash = fullHash(target);
-  const fullHashes = blocks.map(fullHash);
+  const targetFullHash = model.getBlockId(target);
+  const displayHashes = model.getBlocks(doc).map((block) => model.getBlockId(block));
   for (let length = 1; length <= targetFullHash.length; length += 1) {
     const prefix = targetFullHash.slice(0, length);
-    if (fullHashes.filter((hash) => hash.startsWith(prefix)).length === 1) return prefix;
+    if (displayHashes.filter((hash) => hash.startsWith(prefix)).length === 1) return prefix;
   }
   throw new Error("Expected a unique full-hash prefix");
-}
-
-function fullHash(block: ReturnType<typeof model.getBlocks>[number]): string {
-  return fullHashForItemId(getBlockItemId(block));
 }
