@@ -5,21 +5,29 @@
  * Composition root for the chat feature: reads canonical turns directly from
  * ThreadStore, wires snapshot sync, handoff, announcements, autoscroll hooks,
  * and renders `ChatSurface` + `TurnList` + `Composer`.
+ *
+ * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
+ * per-turn map to `TurnList` for inline cards under the producing turn, and
+ * renders the unanchored-drafts fallback strip directly above the Composer.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useThreadDrafts } from "@/client/query/useThreadDrafts";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import type { ChatPlacement } from "@/features/project/chat/ChatSurface";
 import { displayThreadTitle } from "@/lib/thread-title";
+
+import { splitDraftGroupsByTurn } from "./anchor-drafts";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import { DraftReviewCard } from "./DraftReviewCard";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -86,6 +94,12 @@ export function ChatView({
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
+  const drafts = useThreadDrafts(threadId);
+  const { byTurnId: draftsByTurnId, unanchored: unanchoredDrafts } = useMemo(
+    () => splitDraftGroupsByTurn(drafts.groups, turns),
+    [drafts.groups, turns],
+  );
+
   async function handleSubmit(text: string) {
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
@@ -122,7 +136,19 @@ export function ChatView({
       scrollClassName="pt-6 pb-36"
       scrollFadeBottom
       footer={
-        <div data-debug-composer={threadId}>
+        <div data-debug-composer={threadId} className="flex flex-col gap-2">
+          {unanchoredDrafts.length > 0 ? (
+            <div data-unanchored-drafts className="flex flex-col gap-2">
+              {unanchoredDrafts.map((group) => (
+                <DraftReviewCard
+                  key={group.documentId}
+                  threadId={threadId}
+                  group={group}
+                  variant="compact"
+                />
+              ))}
+            </div>
+          ) : null}
           <Composer
             ref={composerRef}
             variant="pinned"
@@ -147,6 +173,7 @@ export function ChatView({
         scrollParent={scrollParent}
         tailFollowRevision={tailFollowRevision}
         onRespondToCheckpoint={handleRespondToCheckpoint}
+        draftsByTurnId={draftsByTurnId}
       />
     </ChatSurface>
   );

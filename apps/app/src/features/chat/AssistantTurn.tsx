@@ -7,15 +7,25 @@
  * frontiers are partial blocks in the same array. Block render keys derive
  * from `(turnId, sequence)`, so the live→settled swap is an in-place
  * block-content replace, not a remount.
+ *
+ * DraftReviewCard anchoring: when the writer has at least one active AI draft
+ * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
+ * the draft-review card(s) directly beneath its segments. The card is the
+ * chat-first review surface; it opens the prose preview overlay and owns
+ * accept/discard mutations. Groups that don't anchor are surfaced by ChatView
+ * in the unanchored fallback strip above the Composer.
  */
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo } from "react";
+
+import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { type CheckpointRespondRequest, CustomBlockRenderer } from "./CustomBlockRenderer";
+import { DraftReviewCard } from "./DraftReviewCard";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { LiveTurnStatusBar } from "./LiveTurnStatusBar";
@@ -30,6 +40,8 @@ export type AssistantTurnProps = {
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  /** Draft groups anchored to this turn (length 0 today when none). */
+  draftGroups?: ThreadDraftGroup[];
 };
 
 function AssistantTurnComponent({
@@ -37,6 +49,7 @@ function AssistantTurnComponent({
   turn,
   isLatestAssistant = false,
   onRespondToCheckpoint,
+  draftGroups,
 }: AssistantTurnProps) {
   const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
   const segments = partitionTurnSegments(sortedBlocks);
@@ -45,6 +58,7 @@ function AssistantTurnComponent({
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
+  const resolvedThreadId = threadId ?? turn.threadId;
 
   return (
     <div
@@ -58,7 +72,7 @@ function AssistantTurnComponent({
           key={segmentRenderKey(segment)}
           segment={segment}
           segmentIndex={index}
-          threadId={threadId ?? turn.threadId}
+          threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToCheckpoint={onRespondToCheckpoint}
         />
@@ -70,6 +84,14 @@ function AssistantTurnComponent({
         <p className="mt-2 text-[12.5px] text-muted-foreground italic">
           <Trans>Turn cancelled.</Trans>
         </p>
+      ) : null}
+
+      {draftGroups && draftGroups.length > 0 ? (
+        <div data-draft-anchor>
+          {draftGroups.map((group) => (
+            <DraftReviewCard key={group.documentId} threadId={resolvedThreadId} group={group} />
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -186,7 +208,8 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.threadId === next.threadId &&
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToCheckpoint === next.onRespondToCheckpoint
+    prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
+    prev.draftGroups === next.draftGroups
   );
 }
 
