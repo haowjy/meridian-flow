@@ -11,11 +11,8 @@ import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
-import {
-  type ComputedModelCost,
-  type CreditLedger,
-  computeModelCost,
-} from "../../billing/index.js";
+import type { BillingUsagePolicy } from "../../billing/index.js";
+import { type ComputedModelCost, computeModelCost } from "../costing/pricing.js";
 import type { GenerateResult } from "../gateway/index.js";
 import {
   assertCostBudget,
@@ -25,7 +22,7 @@ import {
 } from "../spawn/tree-budget.js";
 
 export interface TurnAccountingDeps {
-  creditLedger: CreditLedger;
+  billingUsage: BillingUsagePolicy;
 }
 
 export interface TurnAccounting {
@@ -56,17 +53,13 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       const costBudgetError = assertCostBudget(treeBudget, 0);
       if (costBudgetError) return costBudgetError;
 
-      const balance = BigInt(
-        await deps.creditLedger.getBalance({
-          userId: thread.userId,
-          projectId: thread.projectId,
-        }),
-      );
+      // Mid-stream calls keep go-negative grace: a turn that spent its last
+      // positive balance may finish, but further model calls stop once debt exists.
       // DEFERRED(atomic-reserve): pre-call check suffices under serial spawns (design §7.2); reservation/hold semantics land with parallel spawns.
-      if (balance < 0n) {
+      if (!(await deps.billingUsage.canContinueModelCall(thread.userId))) {
         return meridianErrorFromSystem(
           "credits_exhausted",
-          "Project credits are exhausted; add credits before starting another model call",
+          "Your usage balance is exhausted; add balance before starting another model call",
         );
       }
 
@@ -95,9 +88,8 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       if (BigInt(computedCost.millicredits) > 0n) {
         // Meter-pause while parked holds by construction: only model responses
         // debit credits, and no model calls run while a turn is waiting_checkpoint.
-        await deps.creditLedger.debit({
+        await deps.billingUsage.debit({
           userId: thread.userId,
-          projectId: thread.projectId,
           rootThreadId: thread.rootThreadId,
           threadId: threadId as string,
           turnId: turnId as string,

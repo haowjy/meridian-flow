@@ -1,14 +1,10 @@
 import type { CreateCheckoutSessionRequest } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { BillingRequestError } from "../../../../domains/billing/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
-import {
-  createBillingCheckoutSession,
-  createBillingRouteDeps,
-} from "../../../../lib/billing-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectId } = await app.projects.ensureDefaultBootstrap(user.userId);
   const body = await readBody<CreateCheckoutSessionRequest>(event);
   if (!body?.entryId || !body.successUrl || !body.cancelUrl) {
     throw createError({
@@ -16,9 +12,12 @@ export default defineEventHandler(async (event) => {
       message: "entryId, successUrl, and cancelUrl are required",
     });
   }
-  return createBillingCheckoutSession(createBillingRouteDeps(app, process.env), {
-    userId: user.userId,
-    projectId,
-    body,
-  });
+  try {
+    return await app.billing.createCheckoutSession({ userId: user.userId, body });
+  } catch (error) {
+    if (error instanceof BillingRequestError) {
+      throw createError({ statusCode: 400, message: error.message });
+    }
+    throw error;
+  }
 });

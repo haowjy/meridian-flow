@@ -12,7 +12,7 @@ import type {
   TreeBudget,
 } from "@meridian/contracts/spawn";
 import { blockPlainText, type Thread } from "@meridian/contracts/threads";
-import type { CreditLedger } from "../../billing/index.js";
+import type { BillingSpendReader } from "../../billing/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import type {
   BlockRepository,
@@ -58,7 +58,7 @@ export interface ChildRunCoordinatorDeps {
   packageRepository: PackageRepository;
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
-  creditLedger: CreditLedger;
+  billingSpendReader: BillingSpendReader;
 }
 
 export interface ChildRunCoordinator {
@@ -267,9 +267,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       }
 
       const childCostMillicredits = Number(
-        await deps.creditLedger.getThreadDebitTotal({
+        await deps.billingSpendReader.getThreadDebitTotal({
           userId: input.parentThread.userId,
-          projectId: input.parentThread.projectId,
           threadId: prepared.child.id,
         }),
       );

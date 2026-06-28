@@ -4,18 +4,16 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 import type { Database } from "@meridian/database";
-import { createDrizzleSubscriptionStore } from "../domains/billing/adapters/drizzle/subscription-store.js";
-import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
+import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
+import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
-  type CreditLedger,
+  type BillingService,
+  type BillingSpendReader,
+  type BillingUsagePolicy,
+  createBillingDomain,
   createDrizzleCreditLedger,
-  createFreeGrantPipeline,
-  createGrantingCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createPaymentProviderFromEnv } from "../domains/billing/payment-provider-factory.js";
-import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
-import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import {
   type CollabDomain,
   createCollabDomain,
@@ -143,9 +141,7 @@ export type AppServices = {
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
-  creditLedger: CreditLedger;
-  paymentProvider: PaymentProvider;
-  subscriptionStore: SubscriptionStore;
+  billing: BillingService;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
@@ -169,6 +165,10 @@ export type AppServices = {
   undoNotifications: PendingUndoNotificationRepository;
 };
 
+function stripeReady(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
+}
+
 export type ProductionAppPorts = {
   db: Database;
   gateway: Gateway;
@@ -184,9 +184,9 @@ export type ProductionAppPorts = {
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
-  creditLedger: CreditLedger;
-  paymentProvider: PaymentProvider;
-  subscriptionStore: SubscriptionStore;
+  billing: BillingService;
+  billingUsage: BillingUsagePolicy;
+  billingSpendReader: BillingSpendReader;
   agents: AgentPackageStore;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
@@ -282,10 +282,19 @@ export async function createProductionAppPorts(input: {
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository(db);
   const workRepo = createDrizzleProjectWorkRepository({ db });
-  const baseCreditLedger = createDrizzleCreditLedger(db);
-  const creditLedger = createGrantingCreditLedger({
-    ledger: baseCreditLedger,
-    grants: createFreeGrantPipeline({ ledger: baseCreditLedger }),
+  const creditLedger = createDrizzleCreditLedger(db);
+  const stripeGateway = stripeReady(environment)
+    ? createStripeBillingGateway({
+        secretKey: environment.STRIPE_SECRET_KEY as string,
+        webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
+      })
+    : null;
+  const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
+  const billingDomain = createBillingDomain({
+    ledger: creditLedger,
+    stripeGateway,
+    getOrCreateStripeCustomer,
+    env: environment,
   });
 
   return {
@@ -303,9 +312,9 @@ export async function createProductionAppPorts(input: {
     projectRepo,
     users,
     workRepo,
-    creditLedger,
-    paymentProvider: createPaymentProviderFromEnv(environment),
-    subscriptionStore: createDrizzleSubscriptionStore(db),
+    billing: billingDomain.service,
+    billingUsage: billingDomain.usagePolicy,
+    billingSpendReader: billingDomain.spendReader,
     agents: { phase: "skeleton" },
     packageRepository,
     marsPackageFetcher,
@@ -411,7 +420,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     packageRepository: ports.packageRepository,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
-    creditLedger: ports.creditLedger,
+    billingSpendReader: ports.billingSpendReader,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
@@ -425,7 +434,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     childRunCoordinator,
     helperResultDelivery,
     checkpointRegistry,
-    creditLedger: ports.creditLedger,
+    billingUsage: ports.billingUsage,
     checkpointArtifacts: createCheckpointArtifactFlush({
       promotion: ports.promotionService,
       objectStore: ports.objectStore,
@@ -458,9 +467,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
-    creditLedger: ports.creditLedger,
-    paymentProvider: ports.paymentProvider,
-    subscriptionStore: ports.subscriptionStore,
+    billing: ports.billing,
     agents: ports.agents,
     checkpointRegistry,
     eventSink: ports.eventSink,
@@ -493,6 +500,15 @@ export function createInMemoryAppServices(): AppServices {
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const undoNotifications = createInMemoryPendingUndoNotificationRepository();
+  const creditLedger = createInMemoryCreditLedger();
+  const billingDomain = createBillingDomain({
+    ledger: creditLedger,
+    stripeGateway: null,
+    getOrCreateStripeCustomer: async () => {
+      throw new Error("Stripe checkout is not configured");
+    },
+    env: {},
+  });
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
 
@@ -664,40 +680,7 @@ export function createInMemoryAppServices(): AppServices {
       },
       async touch() {},
     },
-    creditLedger: createInMemoryCreditLedger(),
-    subscriptionStore: createInMemorySubscriptionStore(),
-    paymentProvider: {
-      status() {
-        return {
-          mode: "fake" as const,
-          needsCredentials: true,
-          message: "Stripe credentials are not configured; fake checkout is active for dev/test.",
-        };
-      },
-      async createCheckoutSession(input) {
-        const id = `fake_cs_${crypto.randomUUID()}`;
-        return {
-          id,
-          url: `${input.successUrl}?checkout=fake&session_id=${id}`,
-          mode: "fake" as const,
-          needsCredentials: true,
-        };
-      },
-      async verifyWebhook(input) {
-        const body = JSON.parse(input.payload || "{}");
-        return {
-          kind: "checkout.completed" as const,
-          sessionId: String(body.sessionId ?? body.id ?? `fake_cs_${crypto.randomUUID()}`),
-          userId: String(body.userId),
-          projectId: typeof body.projectId === "string" ? body.projectId : null,
-          entryId: String(body.entryId),
-          customerId: null,
-          subscriptionId: null,
-          periodStart: null,
-          periodEnd: null,
-        };
-      },
-    },
+    billing: billingDomain.service,
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createNoopEventSink(),

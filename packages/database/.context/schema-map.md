@@ -8,7 +8,9 @@
 > layer **source**, not these `.context/` docs — we want the last meaningful
 > schema change, not the doc move).
 >
-> **Regenerated on demand, not auto-maintained.** If "database layer last
+> **Regenerated on demand, not auto-maintained.** Billing entries were manually
+> reconciled on 2026-06-27 for the billing simplification; regenerate the full
+> map before relying on line-number snippets or the interactive view. If "database layer last
 > changed" is newer than "map last regenerated", treat this map as **stale** and
 > regenerate. To regenerate: re-derive this orientation text and the interactive
 > view ([`schema-map/index.html`](schema-map/index.html)) from the current
@@ -116,7 +118,7 @@ async function createAppServices(): Promise<AppServices> {
 | `content.ts` | `projects`, `works`, `context_sources`, `folders`, `documents` |
 | `agent-threads.ts` | `threads`, `thread_works`, `turns`, `model_responses`, `turn_blocks`, `event_journal`, `thread_user_state`, `thread_documents` |
 | `agent-packages.ts` | `agent_definitions`, `skills`, `user_installed_skills`, `agent_skills`, `agent_subagents` |
-| `billing.ts` | `user_subscriptions`, `credit_lots`, `credit_transactions`, **`credit_balances` view** |
+| `billing.ts` | `credit_lots`, `credit_transactions` |
 | `user.ts` | `user_preferences`, `user_project_favorites` |
 | `preferences.ts` | `project_user_preferences` |
 | `provenance.ts` | `turn_document_touches` |
@@ -154,7 +156,7 @@ users
  │    │    ├── folders (parent_id self-FK in migration SQL)
  │    │    └── documents (folder_id nullable = root)
  │    └── agent_definitions / skills
- ├── credit_lots / credit_transactions / user_subscriptions
+ ├── credit_lots / credit_transactions
  └── thread_user_state (per user per thread)
 
 threads ←M:N→ works  via thread_works (composite PK, one primary per thread)
@@ -177,6 +179,15 @@ documents → agent_edit_wid_counters
 ### Enums
 
 No PostgreSQL `ENUM` types. Constraints are **`text` columns + `CHECK (... IN (...))`** throughout (e.g. `threads.status`, `credit_lots.source_type`, `documents.file_type`, `document_yjs_reversals.status`, `document_yjs_reversal_ops.direction`, `pending_undo_notifications.direction`).
+
+### Billing storage
+
+Billing state is ledger-shaped, not subscription-table-shaped. The current schema
+has no `user_subscriptions` table. Stripe customer identity is nullable
+`users.stripe_customer_id`; entitlement and balance are `credit_lots` rows plus
+`credit_transactions` history. The free-tier idempotency fence is the partial
+unique index `credit_lots_free_tier_grant` on `(user_id, grant_reason)` for
+free-tier grant rows.
 
 ### Timestamp columns & Drizzle `mode`
 
@@ -210,8 +221,6 @@ export const softDeleteAt = () => timestamp("deleted_at", { withTimezone: true }
 | **context_sources** | `created_at`, `updated_at`, `deleted_at` | Date | Via `_shared` |
 | **folders** | `created_at`, `updated_at`, `deleted_at` | Date | Via `_shared` |
 | **documents** | `created_at`, `updated_at`, `deleted_at` | Date | Via `_shared`; CAS revisions use `::text` round-trip in adapter |
-| **user_subscriptions** | `current_period_start`, `current_period_end` | Date | Inline |
-| **user_subscriptions** | `created_at`, `updated_at` | Date | Via `_shared` |
 | **credit_lots** | `expires_at` | Date | Nullable |
 | **credit_lots** | `created_at` | Date | Via `_shared` |
 | **credit_transactions** | `created_at` | Date | Via `_shared` |
@@ -243,20 +252,9 @@ export const softDeleteAt = () => timestamp("deleted_at", { withTimezone: true }
 #### Implications (Date ↔ postgres-js binding bug)
 
 - **postgres-js rejects raw `Date` objects** embedded in `sql\`...\`` fragments (`ERR_INVALID_ARG_TYPE`).
-- **Safe — typed comparators:** Drizzle encodes `Date` through the column type:
-
-```45:56:../../../apps/server/server/domains/billing/adapters/drizzle/subscription-store.ts
-function monotonicUpdateWhere(input: SubscriptionUpsertInput) {
-  // Typed comparators (lt/eq) encode the Date through the timestamp column so
-  // postgres-js receives an ISO string; a raw `sql` fragment would bind the
-  // Date object directly and throw ERR_INVALID_ARG_TYPE.
-  const inputStart = new Date(input.currentPeriodStart);
-  return or(
-    lt(userSubscriptions.currentPeriodStart, inputStart),
-    and(
-      eq(userSubscriptions.currentPeriodStart, inputStart),
-      ...
-```
+- **Safe — typed comparators:** `eq`, `lt`, `gt`, and `lte` encode `Date` values
+  through the column type so postgres-js receives an ISO string. Use them for
+  timestamp comparisons rather than embedding a raw `Date` in a `sql` fragment.
 
 - **Safe — explicit cast for string tokens:** ContextFS CAS compares string revisions:
 
@@ -276,7 +274,7 @@ function documentRevisionWhere(revision: string) {
       })
 ```
 
-- **Safe — `.values()` / `.set()`** with `new Date(...)` on Date-mode columns (e.g. credit lot `expiresAt`, subscription upsert).
+- **Safe — `.values()` / `.set()`** with `new Date(...)` on Date-mode columns (e.g. credit lot `expiresAt`).
 - **Inconsistent string mode** on `users` and `thread_works` only — most of the schema uses Date mode.
 
 ---
@@ -364,21 +362,21 @@ apps/server/server/domains/<domain>/
 |------|-----------------|
 | Thread repos | `createDrizzleRepositories(db)` |
 | Event journal | `createDrizzleEventJournalReader/Writer(db)` |
-| Credit ledger | `createDrizzleCreditLedger(db)` → wrapped by `createGrantingCreditLedger` |
-| Subscriptions | `createDrizzleSubscriptionStore(db)` |
+| Credit ledger | `createDrizzleCreditLedger(db)` plus `ensureFreeTier()` at billing/runtime entry points |
+| Stripe billing gateway | `createStripeBillingGateway()` when Stripe env is complete; otherwise `null` so checkout/webhooks are unavailable |
 | Projects/users/works | `createDrizzleProjectRepository`, `createDrizzleUserRepository`, etc. |
 | Context FS | `createProductionUnifiedContextPortFactory({ db, documentSync })` → `DrizzleContextTreeMutationStore` |
 | Collab | `createDocumentSyncService({ db })` |
 | Preferences | `createDrizzleProjectPreferencesRepository({ db })` |
 | Packages | `createDrizzlePackageStore({ db })` — **currently delegates to in-memory stub** |
 
-In-memory swap for tests/smoke: `createInMemoryAppServices()` in `compose.ts:455+` replaces thread repos, credit ledger, subscription store, context ports, etc.
+In-memory swap for tests/smoke: `createInMemoryAppServices()` replaces thread repos, credit ledger, context ports, etc.; Stripe is `null` there.
 
-Config-driven boundaries: payment provider (`createPaymentProviderFromEnv`), object store (`createObjectStoreFromEnv`), gateway (`createGatewayFromEnv`), model-request debug store — env-selected, not DB-selected.
+Config-driven boundaries: Stripe gateway, object store (`createObjectStoreFromEnv`), gateway (`createGatewayFromEnv`), model-request debug store — env-selected, not DB-selected.
 
 ### Example port → adapter mapping
 
-**CreditLedger** (`billing/ports` implicit via domain interface) → `billing/adapters/drizzle/credit-ledger.ts` using `credit_lots`, `credit_transactions`, raw SQL call to `consume_credit_lots_fifo`.
+**CreditLedger** (`billing/domain/credit-ledger.ts`) → `billing/adapters/drizzle/credit-ledger.ts` using `credit_lots`, `credit_transactions`, raw SQL call to `consume_credit_lots_fifo`.
 
 **ContextTreeMutationStore** → `context/adapters/context-fs/drizzle-store.ts` on `folders` + `documents` tables.
 
@@ -412,6 +410,8 @@ export default defineConfig({
 | `0005_agent_edit_sync_state.sql` | Persisted agent-edit restart sync state |
 | `0006_faithful_thunderbolt_ross.sql` | `document_yjs_heads.latest_checkpoint_id` FK |
 | `0007_reversal_lineage_and_undo_notifications.sql` | Reversal-op lineage (`document_yjs_reversal_ops`), `pending_undo_notifications`, `document_yjs_reversals.redo_update_seq`, `agent_edit_mutations.thread_turn` index |
+| `0008_lyrical_cassandra_nova.sql` | Billing simplification: drops `user_subscriptions`, adds `users.stripe_customer_id`, adds `credit_lots_free_tier_grant` |
+| `0009_bouncy_ghost_rider.sql` | Deletes obsolete signup/monthly grant indexes and stale `credit_balances` view |
 | `meta/_journal.json` | Ordered migration journal; review with every generated migration |
 | `meta/*_snapshot.json` | Required generated Drizzle snapshots; never delete |
 
@@ -465,7 +465,7 @@ Also referenced in `packages/database/src/schema/sql/` for view/trigger SQL embe
 
 | Pattern | Where | Why safe |
 |---------|-------|----------|
-| **`eq`/`lt`/`gt`/`lte` on timestamp columns** | `subscription-store.ts:45–56, 80, 96` | Drizzle binds ISO string through column encoder |
+| **`eq`/`lt`/`gt`/`lte` on timestamp columns** | Timestamp comparisons in adapters | Drizzle binds ISO string through column encoder |
 | **`${revision}::timestamptz` in `sql` fragment** | `context-fs/drizzle-store.ts:323, 327` | String param cast in SQL, not raw Date |
 | **`${column}::text` in SELECT** | `drizzle-store.ts:448, 474` | Stable CAS token string |
 | **`.values({ expiresAt: new Date(...) })`** | `credit-ledger.ts:186` | Typed insert binding |
@@ -531,7 +531,6 @@ apps/www   ──(WEB_DATABASE_URL)──►  same or separate DB; only waitlist
 
 | Item | Notes |
 |------|-------|
-| **`billing/.context/CONTEXT.md` references `lib/` shared** | Actual path is `apps/server/server/shared/drizzle-transaction.ts` |
 | **`users` + `thread_works` use `mode:"string"`** | Rest of schema uses Date mode — intentional or legacy? Inconsistent for mappers |
 | **`createDrizzlePackageStore` is a stub** | Returns in-memory store despite production wiring (`drizzle-package-store.ts:3–5`) |
 | **Dual transaction systems** | ALS (`runInDrizzleTransaction`) vs direct `db.transaction()` coexist; no single documented rule for when to use which |

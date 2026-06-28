@@ -1,75 +1,68 @@
-export type BillingCatalogEntryKind = "pack" | "plan" | "payg" | "needs-credentials";
-
-export interface BillingCatalogEntry {
+export interface BillingPlanEntry {
   id: string;
-  kind: BillingCatalogEntryKind;
+  kind: "plan";
   name: string;
   description: string;
-  credits: number;
-  millicredits: string;
   priceUsd: string;
-  interval?: "month" | "year";
-  stripePriceEnv?: string;
-  needsCredentials?: boolean;
+  interval: "month" | "year";
+  checkoutAvailable: boolean;
 }
 
-export interface BillingCatalog {
-  entries: BillingCatalogEntry[];
-}
-
-export interface BillingBalanceResponse {
-  totalBalanceMillicredits: string;
-  grantBalanceMillicredits: string;
-  subscriptionBalanceMillicredits: string;
-  purchasedBalanceMillicredits: string;
-  debtBalanceMillicredits: string;
-  includedBudgetMillicredits: string;
-  includedUsedMillicredits: string;
-  includedUsagePercent: number | null;
-  canStartTurn: boolean;
-}
-
-export interface BillingTransaction {
+export interface BillingExtraUsageEntry {
   id: string;
-  transactionType: string;
-  amountMillicredits: string;
-  sourceType: string | null;
-  reason: string | null;
-  usageEventId: string | null;
-  createdAt: string;
-  metadata: Record<string, unknown>;
-}
-
-export interface BillingTransactionsResponse {
-  transactions: BillingTransaction[];
-  usage: {
-    totalConsumedMillicredits: string;
-    transactionCount: number;
+  kind: "extra-usage";
+  name: string;
+  checkoutAvailable: boolean;
+  description: string;
+  amountOptions: {
+    minUsd: string;
+    maxUsd: string;
+    defaultUsd: string;
+    presetsUsd: string[];
   };
 }
 
-export interface BillingPacksPlansResponse extends BillingCatalog {
-  provider: {
-    mode: "stripe" | "fake";
-    needsCredentials: boolean;
-    message: string | null;
-  };
+export type BillingCatalogEntry = BillingPlanEntry | BillingExtraUsageEntry;
+
+export interface BillingProductsResponse {
+  entries: BillingCatalogEntry[];
+  stripeConfigured: boolean;
 }
 
 export interface CreateCheckoutSessionRequest {
   entryId: string;
+  amountUsd?: string;
   successUrl: string;
   cancelUrl: string;
 }
 
-export interface CreateCheckoutSessionResponse {
-  sessionId: string;
-  url: string;
-  mode: "stripe" | "fake";
-  needsCredentials: boolean;
+export type CreateCheckoutSessionResponse =
+  | { kind: "checkout"; sessionId: string; url: string }
+  | { kind: "portal"; url: string };
+
+export type BillingIncludedUsage =
+  | { mode: "none" }
+  | { mode: "subscription" | "free"; remainingPercent: number; overBudget: boolean };
+
+export interface BillingBalanceResponse {
+  /** Extra-usage balance in USD; user paid real dollars. e.g. "7.35" */
+  purchasedBalanceUsd: string;
+  canStartTurn: boolean;
+  includedUsage: BillingIncludedUsage;
+}
+
+export interface BillingTransaction {
+  kind: "purchase" | "grant" | "consumption" | "adjustment";
+  label: string;
+  amountUsd: string;
+  createdAt: string;
+}
+
+export interface BillingTransactionsResponse {
+  transactions: BillingTransaction[];
+  usage: { totalConsumedUsd: string; transactionCount: number };
 }
 
 export interface BillingWebhookResponse {
   received: true;
-  action: "granted" | "ignored" | "subscription_updated";
 }

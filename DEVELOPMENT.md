@@ -12,6 +12,18 @@ Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv all
 
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 
+### Stripe test-mode workflow
+
+Local dev can run with no Stripe keys. In that mode the billing gateway is
+`null`: checkout, portal, and Stripe webhooks are unavailable, but the free tier
+and model-call consumption still work against the local credit ledger.
+
+To exercise checkout or webhooks, set Stripe test-mode values in the main
+checkout's `.env`: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the
+`STRIPE_PRICE_PLAN_*` entries used by the billing catalog. Run the Stripe CLI to
+forward test webhooks to the local portless server route, then use Stripe test
+cards / test subscriptions.
+
 ## First-time setup (main checkout)
 
 ```bash

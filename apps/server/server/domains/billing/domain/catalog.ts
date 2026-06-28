@@ -1,58 +1,116 @@
-import type { BillingCatalog, BillingCatalogEntry } from "@meridian/contracts/protocol";
+/** Server-owned billing catalog: Stripe price bindings plus internal grant amounts. */
+import type {
+  BillingCatalogEntry,
+  BillingExtraUsageEntry,
+  BillingPlanEntry,
+} from "@meridian/contracts/protocol";
 
-export const BILLING_CATALOG: BillingCatalog = {
-  entries: [
-    {
-      id: "pack_starter",
-      kind: "pack",
-      name: "Starter bundle",
-      description: "1,000 credits for focused drafting sessions.",
-      credits: 1000,
-      millicredits: "1000000",
-      priceUsd: "10.00",
-      stripePriceEnv: "STRIPE_PRICE_PACK_STARTER",
-    },
-    {
-      id: "pack_marathon",
-      kind: "pack",
-      name: "Marathon bundle",
-      description: "5,500 credits for long drafting days.",
-      credits: 5500,
-      millicredits: "5500000",
-      priceUsd: "50.00",
-      stripePriceEnv: "STRIPE_PRICE_PACK_MARATHON",
-    },
-    {
-      id: "plan_pro",
-      kind: "plan",
-      name: "Pro monthly",
-      description: "Monthly subscription credits plus higher Muse fan-out limits.",
-      credits: 5000,
-      millicredits: "5000000",
-      priceUsd: "49.00",
-      interval: "month",
-      stripePriceEnv: "STRIPE_PRICE_PLAN_PRO",
-    },
-    {
-      id: "payg",
-      kind: "payg",
-      name: "Pay as you go",
-      description: "Credits-only billing: buy bundles whenever the balance runs low.",
-      credits: 0,
-      millicredits: "0",
-      priceUsd: "0.00",
-    },
-  ],
+export interface BillingPlanCatalogEntry extends Omit<BillingPlanEntry, "checkoutAvailable"> {
+  grantMillicredits: string;
+  interval: "month" | "year";
+  stripePriceEnv: string;
+}
+
+export interface ExtraUsageConfig extends Omit<BillingExtraUsageEntry, "checkoutAvailable"> {}
+
+export type BillingCatalogServerEntry = BillingPlanCatalogEntry | ExtraUsageConfig;
+
+export interface BillingPlanPriceBinding {
+  entryId: string;
+  stripePriceId: string;
+  grantMillicredits: string;
+}
+
+export const FREE_TIER = {
+  id: "plan_free",
+  kind: "plan" as const,
+  name: "Free",
+  description: "Monthly starter usage for trying Meridian Flow.",
+  priceUsd: "0.00",
+  grantMillicredits: "200000",
+  interval: "month" as const,
+  stripePriceEnv: "STRIPE_PRICE_PLAN_FREE",
 };
 
-export function catalogEntry(id: string): BillingCatalogEntry | null {
+export const BILLING_PLANS = [
+  {
+    id: "plan_standard",
+    kind: "plan" as const,
+    name: "Standard",
+    description: "Monthly usage for steady serial drafting.",
+    priceUsd: "10.00",
+    grantMillicredits: "1000000",
+    interval: "month" as const,
+    stripePriceEnv: "STRIPE_PRICE_PLAN_STANDARD",
+  },
+  {
+    id: "plan_premium",
+    kind: "plan" as const,
+    name: "Premium",
+    description: "Higher monthly usage for long drafting days.",
+    priceUsd: "25.00",
+    grantMillicredits: "2800000",
+    interval: "month" as const,
+    stripePriceEnv: "STRIPE_PRICE_PLAN_PREMIUM",
+  },
+] satisfies BillingPlanCatalogEntry[];
+
+export const EXTRA_USAGE = {
+  id: "extra_usage",
+  kind: "extra-usage" as const,
+  name: "Extra usage",
+  description: "Add standalone pay-as-you-go balance.",
+  amountOptions: {
+    minUsd: "5.00",
+    maxUsd: "500.00",
+    defaultUsd: "10.00",
+    presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
+  },
+} satisfies ExtraUsageConfig;
+
+export const BILLING_CATALOG = {
+  entries: [...BILLING_PLANS, EXTRA_USAGE],
+};
+
+export function catalogEntry(id: string): BillingCatalogServerEntry | null {
   return BILLING_CATALOG.entries.find((entry) => entry.id === id) ?? null;
 }
 
-export function stripePriceIdFor(
-  entry: BillingCatalogEntry,
-  env: NodeJS.ProcessEnv,
-): string | null {
-  if (!entry.stripePriceEnv) return null;
-  return env[entry.stripePriceEnv] || null;
+export function billingPlanPriceBindings(env: NodeJS.ProcessEnv): BillingPlanPriceBinding[] {
+  return BILLING_PLANS.flatMap((entry) => {
+    const stripePriceId = env[entry.stripePriceEnv];
+    return stripePriceId
+      ? [{ entryId: entry.id, stripePriceId, grantMillicredits: entry.grantMillicredits }]
+      : [];
+  });
+}
+
+export function publicCatalogEntry(
+  entry: BillingCatalogServerEntry,
+  input: { checkoutAvailable: boolean },
+): BillingCatalogEntry {
+  if (entry.kind === "plan") {
+    return {
+      id: entry.id,
+      kind: "plan",
+      name: entry.name,
+      checkoutAvailable: input.checkoutAvailable,
+      description: entry.description,
+      priceUsd: entry.priceUsd,
+      interval: entry.interval,
+    };
+  }
+  return {
+    id: entry.id,
+    kind: "extra-usage",
+    name: entry.name,
+    checkoutAvailable: input.checkoutAvailable,
+    description: entry.description,
+    amountOptions: {
+      minUsd: entry.amountOptions.minUsd,
+      maxUsd: entry.amountOptions.maxUsd,
+      defaultUsd: entry.amountOptions.defaultUsd,
+      presetsUsd: [...entry.amountOptions.presetsUsd],
+    },
+  };
 }

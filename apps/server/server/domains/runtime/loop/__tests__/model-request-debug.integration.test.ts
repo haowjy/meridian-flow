@@ -36,8 +36,8 @@ describe("orchestrator model-request debug capture", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
     const thread = await repos.threads.create({
-      id: "thread-1",
       projectId: project.id,
+      id: "thread-1",
       userId: "user-1",
       title: null,
       systemPrompt: "You are a helpful assistant.",
@@ -46,7 +46,6 @@ describe("orchestrator model-request debug capture", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",

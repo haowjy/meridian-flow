@@ -45,7 +45,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 
 ## Billing
 
-- **Engine:** `credit_lots` (grant, subscription, purchase, debt), FIFO via `consume_credit_lots_fifo`, balances in `credit_balances` view.
+- **Engine:** `credit_lots` (grant, subscription, purchase, debt), FIFO via `consume_credit_lots_fifo`, balances computed directly from `credit_lots`.
 - **Pricing source:** Rates are single-sourced from the gateway's `MODEL_REGISTRY` (see `apps/server/server/domains/runtime/gateway/config/registry.ts`). The flat `MODEL_TOKEN_RATES` table is **deleted**. Direct providers use pinned rates; OpenRouter uses provider-reported cost.
 - **Idempotency:** `usage_event_id` is **required** (non-empty); enforced in SQL under advisory lock (no unique index — multi-lot debits per turn).
 - **Overspend:** remainder goes to a single `source_type = 'debt'` lot per user (never `grant` + `overspend_debt`).
