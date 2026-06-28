@@ -240,8 +240,13 @@ going blind to a concurrent human edit.
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
 - **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
   runtime has seen") is set by `markSynced` on read / create / write / commit. A
-  mutating write requires a prior sync (`requireSynced`) or returns
-  `document_not_synced` ("run read").
+  mutating write requires a prior sync (`requireSynced`); when the runtime replica
+  is missing or the live doc is stale, `requireSynced` transparently cold-rebuilds
+  from canonical rather than forcing the model to `read` — a read is never
+  *required* to edit. Only a genuinely missing document errors. Staleness of the
+  shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
+  in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
+  cache.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays the response's pending
   staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
