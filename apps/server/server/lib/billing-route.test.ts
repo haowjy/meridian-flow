@@ -145,7 +145,7 @@ describe("billing-route", () => {
         amountMillicredits: "200000",
         reason: "free_tier_user-1_2026-06-01",
         expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-        metadata: { reason: "Free monthly usage" },
+        metadata: { reason: "Monthly usage" },
       });
     });
     await ledger.grant({ userId: "user-1", source: "stripe", amountMillicredits: "500000" });
@@ -156,7 +156,7 @@ describe("billing-route", () => {
 
     expect(txs.usage).toEqual({ totalConsumedUsd: "0.12345", transactionCount: 3 });
     expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
-    expect(txs.transactions.map((tx) => tx.reason)).toContain("Free monthly usage");
+    expect(txs.transactions.map((tx) => tx.reason)).toContain("Monthly usage");
     await expect(billingBalance(routeDeps, { userId: "user-1" })).resolves.toMatchObject({
       usageMode: "free",
       includedUsagePercent: 0,

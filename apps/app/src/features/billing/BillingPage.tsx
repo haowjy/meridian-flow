@@ -11,6 +11,15 @@
  * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
  * usage has `amountOptions` instead — the user picks an amount via
  * `ExtraUsagePicker` and that value becomes `amountUsd` in the request.
+ *
+ * Layout: single calm centered column (max-w-2xl) — Usage hero → Plans
+ * section → Extra usage section → Recent activity. Plans and extra-usage
+ * sit in their own labeled sections (not crammed into one mixed grid).
+ *
+ * Scroll: the route mounts inside a bounded, non-flex, overflow-hidden
+ * wrapper in `_authenticated.tsx`, so this page owns its own scroll with
+ * `h-full overflow-y-auto`. Using `app-scroll` (which assumes a flex parent)
+ * here would clip content with no scrollbar.
  */
 import { Trans } from "@lingui/react/macro";
 import type {
@@ -51,9 +60,12 @@ export function BillingPage() {
   const entries = products.data?.entries ?? [];
   const actionsDisabled = !stripeConfigured || checkout.isPending;
 
+  const planEntries = entries.filter((entry) => entry.kind === "plan");
+  const extraEntry = entries.find((entry) => entry.kind !== "plan" && entry.amountOptions);
+
   return (
-    <main className="app-scroll bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-6 py-8">
         <Link
           to="/"
           className="focus-ring inline-flex w-fit items-center gap-2 rounded-md text-sm text-muted-foreground hover:text-foreground"
@@ -69,10 +81,10 @@ export function BillingPage() {
           <h1 className="text-headline-section">
             <Trans>Billing</Trans>
           </h1>
-          <p className="max-w-2xl text-muted-foreground">
+          <p className="text-muted-foreground">
             <Trans>
-              Your monthly plan covers included usage. Buy extra usage to keep going past your plan
-              in any month, at any time.
+              Your monthly plan covers included usage. Top up extra usage any time to keep going
+              past your plan.
             </Trans>
           </p>
         </header>
@@ -82,7 +94,7 @@ export function BillingPage() {
         <section className="space-y-3">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-lg font-semibold">
-              <Trans>Plans and extra usage</Trans>
+              <Trans>Plans</Trans>
             </h2>
             {products.data && !stripeConfigured ? (
               <p className="text-sm text-muted-foreground">
@@ -91,21 +103,45 @@ export function BillingPage() {
             ) : null}
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            {entries.map((entry) => (
-              <CatalogCard
+            {planEntries.map((entry) => (
+              <PlanCard
                 key={entry.id}
                 entry={entry}
                 disabled={actionsDisabled}
                 onCheckout={(request) => checkout.mutate(request)}
               />
             ))}
-            {products.data && entries.length === 0 ? (
+            {products.data && planEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                <Trans>No products available.</Trans>
+                <Trans>No plans available.</Trans>
               </p>
             ) : null}
           </div>
         </section>
+
+        {extraEntry ? (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">
+                <Trans>Extra usage</Trans>
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                <Trans>Top up any time. Extra usage carries over month to month.</Trans>
+              </p>
+            </div>
+            <article className="surface-card p-5">
+              {extraEntry.amountOptions ? (
+                <ExtraUsagePicker
+                  amountOptions={extraEntry.amountOptions}
+                  disabled={actionsDisabled}
+                  onPurchase={(amountUsd) =>
+                    checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
+                  }
+                />
+              ) : null}
+            </article>
+          </section>
+        ) : null}
 
         <section className="surface-card p-5">
           <h2 className="text-lg font-semibold">
@@ -132,37 +168,7 @@ export function BillingPage() {
   );
 }
 
-function CatalogCard({
-  entry,
-  disabled,
-  onCheckout,
-}: {
-  entry: BillingCatalogEntry;
-  disabled: boolean;
-  onCheckout: (request: CreateCheckoutSessionRequest) => void;
-}) {
-  return (
-    <article className="surface-card flex flex-col gap-4 p-4">
-      <div>
-        <p className="font-medium">{entry.name}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
-      </div>
-      <div className="mt-auto">
-        {entry.kind === "plan" ? (
-          <PlanAction entry={entry} disabled={disabled} onCheckout={onCheckout} />
-        ) : entry.amountOptions ? (
-          <ExtraUsagePicker
-            amountOptions={entry.amountOptions}
-            disabled={disabled}
-            onPurchase={(amountUsd) => onCheckout({ ...baseCheckoutRequest(entry), amountUsd })}
-          />
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
-function PlanAction({
+function PlanCard({
   entry,
   disabled,
   onCheckout,
@@ -180,16 +186,22 @@ function PlanAction({
     : formatUsd(entry.priceUsd);
 
   return (
-    <>
-      <p className="text-2xl font-semibold tracking-tight">{priceLine}</p>
-      <Button
-        type="button"
-        className="mt-3 w-full"
-        disabled={disabled}
-        onClick={() => onCheckout(baseCheckoutRequest(entry))}
-      >
-        <Trans>Subscribe</Trans>
-      </Button>
-    </>
+    <article className="surface-card flex flex-col gap-4 p-4">
+      <div>
+        <p className="font-medium">{entry.name}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
+      </div>
+      <div className="mt-auto">
+        <p className="text-2xl font-semibold tracking-tight">{priceLine}</p>
+        <Button
+          type="button"
+          className="mt-3 w-full"
+          disabled={disabled}
+          onClick={() => onCheckout(baseCheckoutRequest(entry))}
+        >
+          <Trans>Subscribe</Trans>
+        </Button>
+      </div>
+    </article>
   );
 }

@@ -3,9 +3,13 @@
  * shared by the settings Usage section and the standalone /billing page.
  *
  * Three states driven by `usageMode` from the balance endpoint:
- *   - "subscription" / "free": progress bar of `includedUsagePercent`
- *     (bar width capped at 100%; the textual percent shows the real value so
- *     a go-negative grant reads as "105% of monthly usage consumed").
+ *   - "subscription" / "free": fuel-gauge of monthly usage remaining. The
+ *     server still emits `includedUsagePercent` as the consumed value (0..100+);
+ *     the client derives `remaining = clamp(100 - consumed, 0, 100)` so a
+ *     fresh user reads as "100% remaining" with a full bar that drains as
+ *     usage accrues. Over-budget (consumed > 100) clamps to "0% remaining"
+ *     with a muted "over your monthly usage" hint. Wording is neutral —
+ *     "free" vs "subscription" is hidden because grant size is hidden too.
  *     If extra-usage balance is positive, it shows beneath the bar.
  *   - "none": no bar; only `purchasedBalanceUsd` as "$X.XX remaining".
  *     `includedUsagePercent` is null here — never coerce to 0.
@@ -33,7 +37,7 @@ export function UsageCard({ variant }: { variant: UsageCardVariant }) {
   return (
     <div className={shell}>
       <p className="text-sm text-muted-foreground">
-        <Trans>Usage</Trans>
+        {variant === "full" ? <Trans>Monthly usage</Trans> : <Trans>Usage</Trans>}
       </p>
       {balance.data ? (
         <UsageBody data={balance.data} variant={variant} />
@@ -78,11 +82,14 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
     );
   }
 
-  // `usageMode` is "subscription" or "free": progress bar + textual percent.
-  // `includedUsagePercent` is non-null in these modes per the contract; the
-  // `?? 0` is a defensive fallback that should not be reached.
-  const percent = data.includedUsagePercent ?? 0;
-  const barWidth = `${Math.min(Math.max(percent, 0), 100)}%`;
+  // `usageMode` is "subscription" or "free": fuel-gauge of remaining usage.
+  // Server emits `includedUsagePercent` as the CONSUMED value (0..100+); we
+  // derive `remaining` here and present that. The `?? 0` is a defensive
+  // fallback — the contract says non-null in these modes.
+  const consumed = data.includedUsagePercent ?? 0;
+  const remaining = Math.min(Math.max(100 - consumed, 0), 100);
+  const barWidth = `${remaining}%`;
+  const overBudget = consumed > 100;
   const hasExtra = isPositiveUsd(data.purchasedBalanceUsd);
 
   return (
@@ -95,14 +102,7 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
               : "text-lg font-semibold text-foreground"
           }
         >
-          {percent}%
-        </span>
-        <span className="text-sm text-muted-foreground">
-          {data.usageMode === "subscription" ? (
-            <Trans>of monthly usage consumed</Trans>
-          ) : (
-            <Trans>of free usage consumed</Trans>
-          )}
+          <Trans>{remaining}% remaining</Trans>
         </span>
       </div>
       <div
@@ -114,13 +114,18 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.min(Math.max(percent, 0), 100)}
+        aria-valuenow={remaining}
       >
         <div
           className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
           style={{ width: barWidth }}
         />
       </div>
+      {overBudget ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          <Trans>Over your monthly usage</Trans>
+        </p>
+      ) : null}
       {hasExtra ? (
         <p className="mt-2 text-sm text-muted-foreground">
           <Trans>{formatUsd(data.purchasedBalanceUsd)} additional balance</Trans>

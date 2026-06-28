@@ -51,7 +51,7 @@ function displayTransactionReason(tx: Tx): string | null {
   const metadataReason = tx.metadata.reason;
   if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
   if (tx.sourceType === "grant" && tx.reason?.startsWith("free_tier_")) {
-    return "Free monthly usage";
+    return "Monthly usage";
   }
   return tx.reason;
 }

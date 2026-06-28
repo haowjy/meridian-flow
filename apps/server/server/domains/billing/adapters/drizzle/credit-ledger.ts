@@ -61,7 +61,7 @@ function displayTransactionReason(input: {
   const metadataReason = metadata.reason;
   if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
   if (input.sourceType === "grant" && input.lotReason?.startsWith("free_tier_")) {
-    return "Free monthly usage";
+    return "Monthly usage";
   }
   return input.lotReason;
 }

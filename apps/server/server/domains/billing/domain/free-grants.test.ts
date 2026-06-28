@@ -17,7 +17,7 @@ describe("ensureFreeTier", () => {
     expect(transactions).toHaveLength(1);
     expect(transactions[0]).toMatchObject({
       sourceType: "grant",
-      reason: "Free monthly usage",
+      reason: "Monthly usage",
       amountMillicredits: FREE_TIER.grantMillicredits,
     });
   });
