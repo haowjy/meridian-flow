@@ -140,9 +140,15 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   async compact(docId: string, before: Date): Promise<CompactionResult> {
     const entry = this.entry(docId);
     const checkpointSeq = entry.checkpoint?.upToSeq ?? 0;
-    const foldRows = entry.updates
-      .filter((update) => update.seq > checkpointSeq && update.storedAt < before)
+    // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+    // above the latest compacted checkpoint; reconstruction can safely start from the
+    // newest checkpoint below the earliest retained update.
+    const candidateRows = entry.updates
+      .filter((update) => update.seq > checkpointSeq)
       .sort((left, right) => left.seq - right.seq);
+    const firstRetainedIndex = candidateRows.findIndex((update) => update.storedAt >= before);
+    const foldRows =
+      firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
 
     let compactedThroughSeq = checkpointSeq;
     if (foldRows.length > 0) {
@@ -154,9 +160,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     }
 
     if (compactedThroughSeq > 0) {
-      entry.updates = entry.updates.filter(
-        (update) => !(update.seq <= compactedThroughSeq && update.storedAt < before),
-      );
+      entry.updates = entry.updates.filter((update) => update.seq > compactedThroughSeq);
       entry.reversalOps = entry.reversalOps.filter((op) => op.updateSeq > compactedThroughSeq);
     }
 
@@ -471,6 +475,9 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   }
 
   private selectReconstructionCheckpoint(entry: JournalEntry): StoredCheckpoint | null {
+    // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+    // above the latest compacted checkpoint; reconstruction can safely use the newest
+    // checkpoint below the earliest retained update.
     const minRetainedSeq = Math.min(...entry.updates.map((update) => update.seq));
     let selected: StoredCheckpoint | null = null;
     for (const checkpoint of entry.checkpoints) {

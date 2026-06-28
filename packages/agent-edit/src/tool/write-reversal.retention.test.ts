@@ -8,6 +8,7 @@ import {
   journalWithMissingMutationTarget,
   markStoredReversalStatus,
   ReversalScenario,
+  setStoredUpdateTime,
 } from "./test-support/write-reversal-scenario.js";
 import {
   codec,
@@ -58,6 +59,49 @@ describe("write reversal retention", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("compacts only the contiguous old seq prefix when update timestamps are skewed", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "First old write." },
+      { ...context, turnId: "turn-old-prefix" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Middle new write." },
+      { ...context, turnId: "turn-new-gap" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Later old write." },
+      { ...context, turnId: "turn-old-after-gap" },
+    );
+
+    const oldEnough = new Date("2026-01-01T00:00:00.000Z");
+    const tooNew = new Date("2026-01-03T00:00:00.000Z");
+    const before = new Date("2026-01-02T00:00:00.000Z");
+    setStoredUpdateTime(ctx.journal, "chapter.md", 1, oldEnough);
+    setStoredUpdateTime(ctx.journal, "chapter.md", 2, tooNew);
+    setStoredUpdateTime(ctx.journal, "chapter.md", 3, oldEnough);
+
+    const compacted = await ctx.journal.compact("chapter.md", before);
+
+    expect(compacted).toEqual({ updatesFolded: 1, reversalsExpired: 0 });
+    expect(ctx.journal.updateRecords("chapter.md").map((update) => update.seq)).toEqual([2, 3]);
+    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
+      2, 3,
+    ]);
+
+    const undoLaterOldWrite = await ctx.core.write(
+      { command: "undo", file: "chapter.md" },
+      context,
+    );
+
+    expectOutcome(undoLaterOldWrite, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Base.", "First old write.", "Middle new write."]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w3")).toMatchObject([{ status: "reversed" }]);
   });
 
   it("undoes a retained later insert after compaction folded an earlier insert", async () => {
