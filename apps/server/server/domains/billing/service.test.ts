@@ -285,6 +285,26 @@ describe("billing service", () => {
     ).rejects.toThrow("Unknown billing entry");
   });
 
+  it("rejects checkout for unavailable catalog entries before Stripe customer provisioning", async () => {
+    const getOrCreateStripeCustomer = vi.fn(async () => "cus_123");
+    await expect(
+      createBillingDomain(
+        deps({
+          env: { STRIPE_PRICE_PLAN_STANDARD: "price_standard" },
+          getOrCreateStripeCustomer,
+        }),
+      ).service.createCheckoutSession({
+        userId: "user-1",
+        body: {
+          entryId: "plan_premium",
+          successUrl: "https://ok",
+          cancelUrl: "https://ok",
+        },
+      }),
+    ).rejects.toThrow("Billing entry is not available for checkout");
+    expect(getOrCreateStripeCustomer).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid extra-usage amountUsd at the route core", async () => {
     await expect(
       createBillingDomain(deps()).service.createCheckoutSession({
