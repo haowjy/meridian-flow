@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { isToolArgsParseError, parseToolCallArguments } from "./parse-tool-arguments.js";
+import { parseToolCallArguments } from "./parse-tool-arguments.js";
 
 describe("parseToolCallArguments", () => {
   it("returns a valid JSON object unchanged", () => {
     expect(parseToolCallArguments('{"path":"manuscript://chapter-1.md","command":"read"}')).toEqual(
       {
-        path: "manuscript://chapter-1.md",
-        command: "read",
+        ok: true,
+        arguments: {
+          path: "manuscript://chapter-1.md",
+          command: "read",
+        },
       },
     );
   });
@@ -18,33 +21,39 @@ describe("parseToolCallArguments", () => {
     );
 
     expect(parsed).toEqual({
-      path: "manuscript://chapter-1.md",
-      in: "6c4a",
-      command: "read",
+      ok: true,
+      arguments: {
+        path: "manuscript://chapter-1.md",
+        in: "6c4a",
+        command: "read",
+      },
     });
-    expect(parsed.in).toBe("6c4a");
+    expect(parsed.ok && parsed.arguments.in).toBe("6c4a");
   });
 
   it("repairs trailing commas and single-quoted object strings", () => {
     expect(
       parseToolCallArguments("{'path':'manuscript://chapter-1.md','command':'read',}"),
     ).toEqual({
-      path: "manuscript://chapter-1.md",
-      command: "read",
+      ok: true,
+      arguments: {
+        path: "manuscript://chapter-1.md",
+        command: "read",
+      },
     });
   });
 
-  it("returns a parse-error sentinel for genuinely unparseable garbage", () => {
+  it("returns a typed parse error for genuinely unparseable garbage", () => {
     const parsed = parseToolCallArguments('{"a": function(){}}');
 
-    expect(isToolArgsParseError(parsed)).toBe(true);
-    if (isToolArgsParseError(parsed)) {
-      expect(parsed.__meridianToolArgsParseError.raw).toBe('{"a": function(){}}');
-      expect(parsed.__meridianToolArgsParseError.message).toBeTruthy();
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.raw).toBe('{"a": function(){}}');
+      expect(parsed.message).toBeTruthy();
     }
   });
 
   it.each([undefined, ""])("returns an empty object for empty input %s", (raw) => {
-    expect(parseToolCallArguments(raw)).toEqual({});
+    expect(parseToolCallArguments(raw)).toEqual({ ok: true, arguments: {} });
   });
 });

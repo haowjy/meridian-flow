@@ -81,6 +81,7 @@ export function collectToolCalls(result: GenerateResult): ToolCall[] {
       id: p.toolCallId,
       name: p.toolName,
       arguments: p.input,
+      ...(p.inputParseError ? { argumentsParseError: p.inputParseError } : {}),
     }));
   const seen = new Set(fromContent.map((c) => c.id));
   for (const call of result.toolCalls) {

@@ -53,10 +53,6 @@ import {
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import {
-  isToolArgsParseError,
-  TOOL_ARGS_PARSE_ERROR,
-} from "../gateway/helpers/parse-tool-arguments.js";
 import type {
   CheckpointToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -321,8 +317,8 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         return errorResult(call.id, meridianErrorFromTool("Client tool dispatch not implemented"));
       }
 
-      if (isToolArgsParseError(call.arguments)) {
-        const { raw, message } = call.arguments[TOOL_ARGS_PARSE_ERROR];
+      if (call.argumentsParseError) {
+        const { raw, message } = call.argumentsParseError;
         // Echo the offending fragment (truncated) so the model can see what it
         // emitted and self-correct — a clear JSON-parse error, never a misleading
         // downstream schema error like "path is required".
