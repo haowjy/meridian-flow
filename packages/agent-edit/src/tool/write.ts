@@ -7,7 +7,7 @@ import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
-import { toDocHandle } from "../handles.js";
+import { type BlockRef, toDocHandle } from "../handles.js";
 import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
@@ -288,13 +288,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
-    if (existingBlocks.length > 0 && !overwriting) {
-      return status(
-        "invalid_write",
-        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
-      );
-    }
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -318,6 +311,29 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // Response-staged creates may intentionally defer live document creation
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
+
+    let existingBlocks: BlockRef[] = [];
+    if (overwriting && !missingLiveForStagedCreate) {
+      // Overwrite must delete the canonical block set, not the stale replica's —
+      // otherwise canonical blocks the replica did not know survive the overwrite.
+      const restored = await runtimeStore.restoreRuntimeFromLive(
+        session,
+        address.documentId,
+        runtime,
+        command.command,
+        { filePath: address.filePath },
+      );
+      if (isInternalWriteResult(restored)) return restored;
+      if (context.responseId) {
+        for (const update of responseStaging.bufferedUpdatesForDoc(
+          context.responseId,
+          address.documentId,
+        )) {
+          Y.applyUpdate(runtime.doc, update, { type: "system" });
+        }
+      }
+      existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    }
 
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
