@@ -1,19 +1,26 @@
-export type BillingCatalogEntryKind = "plan" | "extra-usage";
-
-export interface BillingCatalogEntry {
+export interface BillingPlanEntry {
   id: string;
-  kind: BillingCatalogEntryKind;
+  kind: "plan";
   name: string;
   description: string;
-  priceUsd?: string;
-  interval?: "month" | "year";
-  amountOptions?: {
+  priceUsd: string;
+  interval: "month" | "year";
+}
+
+export interface BillingExtraUsageEntry {
+  id: string;
+  kind: "extra-usage";
+  name: string;
+  description: string;
+  amountOptions: {
     minUsd: string;
     maxUsd: string;
     defaultUsd: string;
     presetsUsd: string[];
   };
 }
+
+export type BillingCatalogEntry = BillingPlanEntry | BillingExtraUsageEntry;
 
 export interface BillingProductsResponse {
   entries: BillingCatalogEntry[];
@@ -31,13 +38,15 @@ export type CreateCheckoutSessionResponse =
   | { kind: "checkout"; sessionId: string; url: string }
   | { kind: "portal"; url: string };
 
+export type BillingIncludedUsage =
+  | { mode: "none" }
+  | { mode: "subscription" | "free"; remainingPercent: number; overBudget: boolean };
+
 export interface BillingBalanceResponse {
   /** Extra-usage balance in USD; user paid real dollars. e.g. "7.35" */
   purchasedBalanceUsd: string;
-  /** Subscription/free usage as percent (0..100+). Null when usageMode==="none". */
-  includedUsagePercent: number | null;
-  usageMode: "subscription" | "free" | "none";
   canStartTurn: boolean;
+  includedUsage: BillingIncludedUsage;
 }
 
 export interface BillingTransaction {

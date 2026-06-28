@@ -1,20 +1,17 @@
 /** Server-owned billing catalog: Stripe price bindings plus internal grant amounts. */
-import type { BillingCatalogEntry } from "@meridian/contracts/protocol";
+import type {
+  BillingCatalogEntry,
+  BillingExtraUsageEntry,
+  BillingPlanEntry,
+} from "@meridian/contracts/protocol";
 
-export interface BillingPlanCatalogEntry extends BillingCatalogEntry {
-  kind: "plan";
+export interface BillingPlanCatalogEntry extends BillingPlanEntry {
   grantMillicredits: string;
   interval: "month" | "year";
   stripePriceEnv: string;
 }
 
-export interface ExtraUsageConfig extends BillingCatalogEntry {
-  kind: "extra-usage";
-  minUsd: string;
-  maxUsd: string;
-  defaultUsd: string;
-  presetsUsd: string[];
-}
+export interface ExtraUsageConfig extends BillingExtraUsageEntry {}
 
 export type BillingCatalogServerEntry = BillingPlanCatalogEntry | ExtraUsageConfig;
 
@@ -57,10 +54,12 @@ export const EXTRA_USAGE = {
   kind: "extra-usage" as const,
   name: "Extra usage",
   description: "Add standalone pay-as-you-go balance.",
-  minUsd: "5.00",
-  maxUsd: "500.00",
-  defaultUsd: "10.00",
-  presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
+  amountOptions: {
+    minUsd: "5.00",
+    maxUsd: "500.00",
+    defaultUsd: "10.00",
+    presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
+  },
 } satisfies ExtraUsageConfig;
 
 export const BILLING_CATALOG = {
@@ -72,22 +71,26 @@ export function catalogEntry(id: string): BillingCatalogServerEntry | null {
 }
 
 export function publicCatalogEntry(entry: BillingCatalogServerEntry): BillingCatalogEntry {
-  const base = {
-    id: entry.id,
-    kind: entry.kind,
-    name: entry.name,
-    description: entry.description,
-  };
   if (entry.kind === "plan") {
-    return { ...base, priceUsd: entry.priceUsd, interval: entry.interval };
+    return {
+      id: entry.id,
+      kind: "plan",
+      name: entry.name,
+      description: entry.description,
+      priceUsd: entry.priceUsd,
+      interval: entry.interval,
+    };
   }
   return {
-    ...base,
+    id: entry.id,
+    kind: "extra-usage",
+    name: entry.name,
+    description: entry.description,
     amountOptions: {
-      minUsd: entry.minUsd,
-      maxUsd: entry.maxUsd,
-      defaultUsd: entry.defaultUsd,
-      presetsUsd: [...entry.presetsUsd],
+      minUsd: entry.amountOptions.minUsd,
+      maxUsd: entry.amountOptions.maxUsd,
+      defaultUsd: entry.amountOptions.defaultUsd,
+      presetsUsd: [...entry.amountOptions.presetsUsd],
     },
   };
 }

@@ -2,10 +2,10 @@
  * @vitest-environment jsdom
  *
  * Behavioural tests for UsageCard — verifies the fuel-gauge presentation:
- *  - server emits `includedUsagePercent` (consumed); the card displays
+ *  - server emits `includedUsage.remainingPercent`; the card displays
  *    "{remaining}% remaining" with bar width = remaining.
- *  - fresh user (consumed 0) reads "100% remaining" with a full bar.
- *  - over-budget clamps to "0% remaining" + a muted hint.
+ *  - fresh user reads "100% remaining" with a full bar.
+ *  - over-budget shows "0% remaining" + a muted hint.
  *  - "free" wording is removed everywhere.
  */
 import { act } from "react";
@@ -62,9 +62,8 @@ describe("UsageCard", () => {
   it("fresh subscription user reads 100% remaining with a full bar", () => {
     setBalance({
       purchasedBalanceUsd: "0.00",
-      includedUsagePercent: 0,
-      usageMode: "subscription",
       canStartTurn: true,
+      includedUsage: { mode: "subscription", remainingPercent: 100, overBudget: false },
     });
 
     act(() => {
@@ -79,9 +78,8 @@ describe("UsageCard", () => {
   it("partially-used subscription drains the bar to the remaining percent", () => {
     setBalance({
       purchasedBalanceUsd: "0.00",
-      includedUsagePercent: 35,
-      usageMode: "subscription",
       canStartTurn: true,
+      includedUsage: { mode: "subscription", remainingPercent: 65, overBudget: false },
     });
 
     act(() => {
@@ -96,9 +94,8 @@ describe("UsageCard", () => {
   it("over-budget clamps to 0% remaining with an empty bar and a hint", () => {
     setBalance({
       purchasedBalanceUsd: "0.00",
-      includedUsagePercent: 120,
-      usageMode: "subscription",
       canStartTurn: false,
+      includedUsage: { mode: "subscription", remainingPercent: 0, overBudget: true },
     });
 
     act(() => {
@@ -115,9 +112,8 @@ describe("UsageCard", () => {
     for (const mode of ["subscription", "free"] as const) {
       setBalance({
         purchasedBalanceUsd: "0.00",
-        includedUsagePercent: 50,
-        usageMode: mode,
         canStartTurn: true,
+        includedUsage: { mode, remainingPercent: 50, overBudget: false },
       });
 
       const c = document.createElement("div");
@@ -138,12 +134,11 @@ describe("UsageCard", () => {
     }
   });
 
-  it("usageMode 'none' shows the balance as remaining and no progressbar", () => {
+  it("includedUsage mode 'none' shows the balance as remaining and no progressbar", () => {
     setBalance({
       purchasedBalanceUsd: "12.34",
-      includedUsagePercent: null,
-      usageMode: "none",
       canStartTurn: true,
+      includedUsage: { mode: "none" },
     });
 
     act(() => {
@@ -158,9 +153,8 @@ describe("UsageCard", () => {
   it("shows additional balance line when extra balance is positive", () => {
     setBalance({
       purchasedBalanceUsd: "7.35",
-      includedUsagePercent: 40,
-      usageMode: "subscription",
       canStartTurn: true,
+      includedUsage: { mode: "subscription", remainingPercent: 60, overBudget: false },
     });
 
     act(() => {
@@ -185,9 +179,8 @@ describe("UsageCard", () => {
   it("compact variant also uses 'remaining' wording, no 'free'", () => {
     setBalance({
       purchasedBalanceUsd: "0.00",
-      includedUsagePercent: 25,
-      usageMode: "free",
       canStartTurn: true,
+      includedUsage: { mode: "free", remainingPercent: 75, overBudget: false },
     });
 
     act(() => {

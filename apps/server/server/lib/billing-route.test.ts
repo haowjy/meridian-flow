@@ -83,9 +83,8 @@ describe("billing-route", () => {
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
       purchasedBalanceUsd: "7.35",
-      includedUsagePercent: 25,
-      usageMode: "subscription",
       canStartTurn: true,
+      includedUsage: { mode: "subscription", remainingPercent: 75, overBudget: false },
     });
   });
 
@@ -95,9 +94,8 @@ describe("billing-route", () => {
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toEqual({
       purchasedBalanceUsd: "5",
-      includedUsagePercent: null,
-      usageMode: "none",
       canStartTurn: true,
+      includedUsage: { mode: "none" },
     });
   });
 
@@ -113,9 +111,8 @@ describe("billing-route", () => {
     await debit(ledger, "250000");
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
-      includedUsagePercent: 125,
-      usageMode: "free",
       canStartTurn: false,
+      includedUsage: { mode: "free", remainingPercent: 0, overBudget: true },
     });
   });
 
@@ -130,9 +127,8 @@ describe("billing-route", () => {
     });
 
     await expect(billingBalance(deps({ ledger }), { userId: "user-1" })).resolves.toMatchObject({
-      includedUsagePercent: null,
-      usageMode: "none",
       canStartTurn: true,
+      includedUsage: { mode: "none" },
     });
   });
 
@@ -158,8 +154,7 @@ describe("billing-route", () => {
     expect(txs.transactions.map((tx) => tx.amountUsd)).toContain("-0.12345");
     expect(txs.transactions.map((tx) => tx.reason)).toContain("Monthly usage");
     await expect(billingBalance(routeDeps, { userId: "user-1" })).resolves.toMatchObject({
-      usageMode: "free",
-      includedUsagePercent: 0,
+      includedUsage: { mode: "free", remainingPercent: 100, overBudget: false },
     });
   });
 
@@ -171,7 +166,11 @@ describe("billing-route", () => {
       "plan_premium",
       "extra_usage",
     ]);
-    expect(configured.entries.find((entry) => entry.id === "plan_standard")).toMatchObject({
+    expect(configured.entries.find((entry) => entry.id === "plan_standard")).toEqual({
+      id: "plan_standard",
+      kind: "plan",
+      name: "Standard",
+      description: "Monthly usage for steady serial drafting.",
       priceUsd: "10.00",
       interval: "month",
     });
