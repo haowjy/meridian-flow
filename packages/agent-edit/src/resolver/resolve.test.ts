@@ -8,9 +8,10 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import type { ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
-import { fullHashForItemId, getBlockItemId } from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
+import { resolveScope } from "./scope.js";
+import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodec(mdxCodec({ schema }));
@@ -147,37 +148,86 @@ describe("resolveWrite", () => {
   });
 
   it("returns an actionable ambiguous error for insert block anchors", () => {
-    const doc = createDoc(numberedBlocks(32));
-    const candidates = ambiguousPrefixCandidates(doc);
+    const doc = createDoc(collisionMarkdown());
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
     const result = resolve(doc, {
       command: "insert",
       content: "Inserted",
-      after: candidates.prefix,
+      after: fixture.sharedPrefix,
     });
 
-    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(result).toMatchObject({ ok: false, error: { code: "ambiguous_match" } });
     if (result.ok) throw new Error("expected ambiguous insert failure");
     expect(result.error.message).toContain("ambiguous");
     expect(result.error.message).not.toContain("not found");
-    for (const hash of candidates.hashes) expect(result.error.message).toContain(hash);
+    for (const candidate of fixture.candidates) {
+      expect(result.error.message).toContain(candidate.displayHash);
+    }
   });
 
   it("returns an actionable ambiguous error for replace scopes", () => {
-    const doc = createDoc(numberedBlocks(32));
-    const candidates = ambiguousPrefixCandidates(doc);
+    const doc = createDoc(collisionMarkdown());
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
     const result = resolve(doc, {
       command: "replace",
       content: "Replacement",
-      in: candidates.prefix,
+      in: fixture.sharedPrefix,
     });
 
-    expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(result).toMatchObject({ ok: false, error: { code: "ambiguous_match" } });
     if (result.ok) throw new Error("expected ambiguous replace failure");
     expect(result.error.message).toContain("ambiguous");
     expect(result.error.message).not.toContain("not found");
-    for (const hash of candidates.hashes) expect(result.error.message).toContain(hash);
+    for (const candidate of fixture.candidates) {
+      expect(result.error.message).toContain(candidate.displayHash);
+    }
+  });
+
+  it("keeps displayed collision hashes unique while shorter prefixes stay ambiguous", () => {
+    const doc = createDoc(collisionMarkdown());
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+
+    const scope = resolveScope({ doc, model }, fixture.sharedPrefix);
+    expect(scope).toMatchObject({ ok: false, code: "ambiguous" });
+    if (scope.ok) throw new Error("expected ambiguous scope");
+    if (scope.code !== "ambiguous") throw new Error(`expected ambiguous scope, got ${scope.code}`);
+    expect(scope.matches).toEqual(fixture.candidates.map((candidate) => candidate.block));
+
+    const displayedInsert = expectOk(
+      resolve(doc, {
+        command: "insert",
+        content: "Inserted after target",
+        after: fixture.target.displayHash,
+      }),
+    )[0];
+    expect(displayedInsert.kind === "insert" ? displayedInsert.after : null).toBe(
+      fixture.target.block,
+    );
+
+    const displayedReplace = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "Replacement",
+        in: fixture.target.displayHash,
+      }),
+    )[0];
+    expect(displayedReplace.kind === "text" ? displayedReplace.block : null).toBe(
+      fixture.target.block,
+    );
+
+    for (const params of [
+      { command: "insert" as const, content: "Nope", after: fixture.sharedPrefix },
+      { command: "replace" as const, content: "Nope", in: fixture.sharedPrefix },
+    ]) {
+      const result = resolve(doc, params);
+      expect(result).toMatchObject({ ok: false, error: { code: "ambiguous_match" } });
+      if (result.ok) throw new Error("expected ambiguous write failure");
+      for (const candidate of fixture.candidates) {
+        expect(result.error.message).toContain(candidate.displayHash);
+      }
+    }
   });
 });
 
@@ -211,34 +261,6 @@ function aroundNeedleDoc(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
-}
-
-function numberedBlocks(count: number): string {
-  return Array.from({ length: count }, (_, i) => `Block ${i + 1}`).join("\n\n");
-}
-
-function ambiguousPrefixCandidates(doc: ReturnType<typeof createDoc>): {
-  prefix: string;
-  hashes: string[];
-} {
-  const blocks = model.getBlocks(doc);
-  const fullHashes = blocks.map(fullHash);
-  for (let length = fullHashes[0].length - 1; length > 0; length -= 1) {
-    const groups = new Map<string, typeof blocks>();
-    for (let index = 0; index < blocks.length; index += 1) {
-      const prefix = fullHashes[index].slice(0, length);
-      groups.set(prefix, [...(groups.get(prefix) ?? []), blocks[index]]);
-    }
-    for (const [prefix, matches] of groups) {
-      if (matches.length > 1)
-        return { prefix, hashes: matches.map((block) => model.getBlockId(block)) };
-    }
-  }
-  throw new Error("Expected an ambiguous full-hash prefix");
-}
-
-function fullHash(block: ReturnType<typeof model.getBlocks>[number]): string {
-  return fullHashForItemId(getBlockItemId(block));
 }
 
 function resolve(
