@@ -195,7 +195,9 @@ function resolvePaidInvoice(
 
   const linePriceId = priceIdFromLine(line);
   const catalogPlan = linePriceId ? plansByPriceId.get(linePriceId) : null;
-  if (linePriceId && !catalogPlan) return null;
+  if (linePriceId && !catalogPlan) {
+    throw new Error(`Unknown Stripe subscription price ID: ${linePriceId}`);
+  }
 
   const fallbackGrant = metadataString(metadataSource, "grantMillicredits");
   const amountMillicredits = catalogPlan?.grantMillicredits ?? fallbackGrant;
