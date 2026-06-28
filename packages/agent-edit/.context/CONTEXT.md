@@ -215,9 +215,18 @@ deferred in [TODO.md](TODO.md).
 
 ## Key invariants
 
-- **Block hash stable under edits.** Derived from CRDT item ID (assigned at
-  element creation). Survives content edits, position shifts, reordering.
-  Lost on type change or deletion (new element → new ID).
+- **Block hash tracks a live `Y.XmlElement`, not a logical block.** Derived from
+  the CRDT item ID (assigned at element creation). Stable across content edits of
+  that element, and across **neighbor** insert/delete shifts (the element keeps
+  its slot and id). **Not stable across editor reorders/moves:** y-prosemirror
+  reconciles by *position*, so a same-type reorder keeps each item id pinned to
+  its slot and **rewrites the content in place** — a logically "moved" block lands
+  on a *different* item id, and the hash that addressed it now addresses whatever
+  content moved into that slot. Type-changing reorders delete+insert (new id).
+  Lost on type change or deletion (new element → new ID). Consequence: a hash held
+  across a reorder still resolves but may point at *different content* — the
+  content-`find` backstop catches this for find-based edits; pure-scope destructive
+  ops rely on the staleness gate / commit-time CRDT merge.
 
 ### Destructive scoped replace/delete wrong-target residual
 
