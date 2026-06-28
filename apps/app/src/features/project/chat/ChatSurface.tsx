@@ -12,7 +12,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
-import { ThreadInfoSheet } from "@/features/chat/ThreadInfoSheet";
+import { ThreadContentsPopover } from "@/features/chat/ThreadContentsPopover";
 import { cn } from "@/lib/utils";
 
 import { PaneTitle } from "../PaneTitle";
@@ -70,7 +70,7 @@ export function ChatSurface({
           onClose={onCloseDock}
           closeLabel={t`Collapse chat  ]`}
           side="right"
-          actions={<ThreadInfoSheet threadId={activeThreadId} />}
+          actions={<ThreadContentsPopover threadId={activeThreadId} />}
         >
           {activeThreadId ? (
             <ChatThreadTitle

@@ -6,7 +6,7 @@
  *
  * These are the *content* of the thread context surface, independent of the
  * *container* that hosts them. Today both the `ContextSidebar` rail and the
- * `ThreadInfoSheet` peek render the same sections — sourcing/timestamp
+ * `ThreadContentsPopover` peek render the same sections — sourcing/timestamp
  * differences live in the data layer, not here. (When the rail is replaced by
  * the context dock, these primitives stay.)
  */
@@ -57,6 +57,8 @@ export function DocumentRailSection({
   status,
   rows,
   messages,
+  activeDocumentId,
+  onSelectDocument,
 }: {
   title: string;
   icon: ReactNode;
@@ -64,6 +66,8 @@ export function DocumentRailSection({
   status: ListQueryStatus<RailDocument>;
   rows: RailDocument[] | null;
   messages: RailMessages;
+  activeDocumentId?: string | null;
+  onSelectDocument?: (documentId: string) => void;
 }) {
   // Count is honest: it only exists in the loaded states. Anything else
   // (disabled, loading, error) hides the count entirely.
@@ -82,7 +86,12 @@ export function DocumentRailSection({
       ) : (
         <ul className="flex flex-col">
           {rows.map((row) => (
-            <DocumentRow key={row.documentId} document={row} />
+            <DocumentRow
+              key={row.documentId}
+              document={row}
+              active={row.documentId === activeDocumentId}
+              onSelect={onSelectDocument ? () => onSelectDocument(row.documentId) : undefined}
+            />
           ))}
         </ul>
       )}
@@ -90,22 +99,47 @@ export function DocumentRailSection({
   );
 }
 
-export function DocumentRow({ document }: { document: RailDocument }) {
+export function DocumentRow({
+  document,
+  active = false,
+  onSelect,
+}: {
+  document: RailDocument;
+  active?: boolean;
+  onSelect?: () => void;
+}) {
+  const className = cn(
+    "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5",
+    onSelect && "focus-ring cursor-pointer text-left transition-colors hover:bg-sidebar-accent",
+    active && "bg-primary/10 font-medium text-foreground",
+  );
+
   return (
     <li>
-      <div
-        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5"
-        title={document.name}
-      >
-        <KindIcon fileType={document.fileType} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm text-foreground">{document.name}</span>
-          <span className="truncate text-meta text-muted-foreground">
-            {formatFileDetail(document.extension, document.sizeBytes)}
-          </span>
-        </span>
-      </div>
+      {onSelect ? (
+        <button type="button" onClick={onSelect} className={className} title={document.name}>
+          <DocumentRowContent document={document} />
+        </button>
+      ) : (
+        <div className={className} title={document.name}>
+          <DocumentRowContent document={document} />
+        </div>
+      )}
     </li>
+  );
+}
+
+function DocumentRowContent({ document }: { document: RailDocument }) {
+  return (
+    <>
+      <KindIcon fileType={document.fileType} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm text-foreground">{document.name}</span>
+        <span className="truncate text-meta text-muted-foreground">
+          {formatFileDetail(document.extension, document.sizeBytes)}
+        </span>
+      </span>
+    </>
   );
 }
 
