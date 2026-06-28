@@ -111,7 +111,9 @@ describe("lookupBlockHash", () => {
 
     expect(lookup.ok).toBe(false);
     expect(!lookup.ok && lookup.reason).toBe("ambiguous");
-    expect(!lookup.ok && lookup.matches).toEqual(expect.arrayContaining([first, second]));
+    expect(!lookup.ok && lookup.reason === "ambiguous" && lookup.matches).toEqual(
+      expect.arrayContaining([first, second]),
+    );
   });
 
   it("reports not_found for a prefix matching no full hash", () => {

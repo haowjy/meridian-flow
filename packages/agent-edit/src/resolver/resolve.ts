@@ -5,6 +5,7 @@ import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
+import { ambiguousHashMessage } from "./ambiguous-hash.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -217,18 +218,28 @@ function lowerInsertPosition(
   const blocks = ctx.model.getBlocks(ctx.doc);
   if (params.after) {
     const lookup = ctx.model.lookupBlock(ctx.doc, params.after);
-    if (!lookup.ok) return error("not_found", `Block hash "${params.after}" was not found`);
+    if (!lookup.ok) return hashLookupError(ctx, params.after, lookup);
     return { ok: true, after: lookup.block };
   }
   if (params.before) {
     const lookup = ctx.model.lookupBlock(ctx.doc, params.before);
-    if (!lookup.ok) return error("not_found", `Block hash "${params.before}" was not found`);
+    if (!lookup.ok) return hashLookupError(ctx, params.before, lookup);
     const index = blocks.indexOf(lookup.block);
     if (index < 0) return error("not_found", `Block hash "${params.before}" was not found`);
     return index === 0 ? { ok: true } : { ok: true, after: blocks[index - 1] };
   }
   const last = blocks.at(-1);
   return last ? { ok: true, after: last } : { ok: true };
+}
+
+function hashLookupError(
+  ctx: ConcreteResolveContext,
+  hash: string,
+  lookup: Exclude<ReturnType<AgentEditModel["lookupBlock"]>, { ok: true }>,
+): ResolveWriteFailure {
+  return lookup.reason === "ambiguous"
+    ? error("not_found", ambiguousHashMessage(ctx.model, hash, lookup.matches))
+    : error("not_found", `Block hash "${hash}" was not found`);
 }
 
 function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteResult {
