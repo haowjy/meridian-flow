@@ -183,6 +183,15 @@ function formatConcurrentEdits(info: ConcurrentEditInfo): string {
   const lines = ["concurrent edits:"];
   if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
   if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
+  if (info.renderedBlocks) {
+    lines.push("current blocks:");
+    if (info.renderedBlocks.human.length > 0) {
+      lines.push("  human:", ...info.renderedBlocks.human.map((line) => `    ${line}`));
+    }
+    if (info.renderedBlocks.agent.length > 0) {
+      lines.push("  agent:", ...info.renderedBlocks.agent.map((line) => `    ${line}`));
+    }
+  }
   if (info.reviewCommand) lines.push(info.reviewCommand);
   return lines.join("\n");
 }
