@@ -1,5 +1,6 @@
 /** Public billing-domain surface for credits ledger, catalog, and free-tier grants. */
 export { createDrizzleCreditLedger } from "./adapters/drizzle/credit-ledger.js";
+export { createStripeCustomerProvisioner } from "./adapters/drizzle/stripe-customer-provisioner.js";
 export { createInMemoryCreditLedger } from "./adapters/in-memory/credit-ledger.js";
 export type {
   BillingCatalogServerEntry,
@@ -24,5 +25,12 @@ export type {
   CreditTransactionRow,
 } from "./domain/credit-ledger.js";
 export { assertPositiveMillicredits } from "./domain/credit-ledger.js";
+export { BillingRequestError } from "./domain/errors.js";
 export type { FreeTierClock, FreeTierConfig } from "./domain/free-grants.js";
 export { ensureFreeTier } from "./domain/free-grants.js";
+export {
+  MILLICREDITS_PER_USD,
+  millicreditsToStripeCents,
+  millicreditsToUsd,
+  usdToMillicredits,
+} from "./domain/money.js";

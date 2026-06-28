@@ -4,8 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 import type { Database } from "@meridian/database";
-import { users } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import {
   createStripeBillingGateway,
   type StripeBillingGateway,
@@ -174,36 +173,6 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
 }
 
-function createStripeCustomerResolver(input: {
-  db: Database;
-  stripeGateway: StripeBillingGateway | null;
-}): (userId: string) => Promise<string> {
-  const { db, stripeGateway } = input;
-  return async (userId: string) => {
-    const [existing] = await db
-      .select({ stripeCustomerId: users.stripeCustomerId })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (existing?.stripeCustomerId) return existing.stripeCustomerId;
-    if (!stripeGateway) throw new Error("Stripe checkout is not configured");
-
-    const customer = await stripeGateway.createCustomer({ userId });
-    await db
-      .update(users)
-      .set({ stripeCustomerId: customer.id, updatedAt: new Date().toISOString() })
-      .where(and(eq(users.id, userId), isNull(users.stripeCustomerId)));
-
-    const [winner] = await db
-      .select({ stripeCustomerId: users.stripeCustomerId })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!winner?.stripeCustomerId) throw new Error("Stripe customer creation did not persist");
-    return winner.stripeCustomerId;
-  };
-}
-
 export type ProductionAppPorts = {
   db: Database;
   gateway: Gateway;
@@ -325,7 +294,7 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const getOrCreateStripeCustomer = createStripeCustomerResolver({ db, stripeGateway });
+  const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
   const freeTier = { ensure: (userId: string) => ensureFreeTier(creditLedger, userId) };
 
   return {
