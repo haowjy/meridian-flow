@@ -14,8 +14,6 @@ export interface ExtraUsageConfig extends BillingCatalogEntry {
   maxUsd: string;
   defaultUsd: string;
   presetsUsd: string[];
-  /** Extra usage is 1:1: $1 paid grants 100,000 millicredits. */
-  millicreditsPerUsd: string;
 }
 
 export type BillingCatalogServerEntry = BillingPlanCatalogEntry | ExtraUsageConfig;
@@ -63,7 +61,6 @@ export const EXTRA_USAGE = {
   maxUsd: "500.00",
   defaultUsd: "10.00",
   presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
-  millicreditsPerUsd: "100000",
 } satisfies ExtraUsageConfig;
 
 export const BILLING_CATALOG = {

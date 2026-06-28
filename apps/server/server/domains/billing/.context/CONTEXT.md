@@ -25,8 +25,9 @@ metered millicredits from runtime.
 ## Unit boundary
 
 Millicredits are the internal accounting unit for ledger storage, pricing output,
-thread budget math, and transaction rows. Routes are the boundary that translate
-millicredits into USD display strings and included-usage percentages. Grant dollar
+thread budget math, and transaction rows. The domain `money.ts` module owns
+USD/Stripe-cent conversion; routes are the boundary that translate millicredits
+into USD display strings and included-usage percentages. Grant dollar
 amounts are a server-side tuning lever and must not cross the API/UI boundary.
 
 ## Ports
@@ -64,9 +65,10 @@ USD/percentage shapes before returning them to the client.
 - **Entitlement comes from lots.** Subscription mode is an unexpired
   `subscription` lot; free mode is an unexpired `grant` lot when no subscription
   lot exists. `hasUnexpiredLot()` checks expiry, not remaining balance.
-- **USD conversion happens at the route.** Ledger and runtime code keep
-  millicredits; billing routes compute purchased USD balance, transaction USD,
-  included-usage percent, and `canStartTurn`.
+- **USD conversion is centralized.** Ledger and runtime code keep millicredits;
+  `domain/money.ts` owns USD and Stripe-cent conversion; billing routes compute
+  purchased USD balance, transaction USD, included-usage percent, and
+  `canStartTurn`.
 
 ## Cross-domain dependencies
 

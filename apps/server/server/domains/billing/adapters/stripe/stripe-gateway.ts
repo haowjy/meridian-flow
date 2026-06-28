@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { millicreditsToStripeCents } from "../../domain/money.js";
 
 export type StripeWebhookEvent = Stripe.Event;
 
@@ -78,16 +79,6 @@ function grantMetadata(
 
 function entryId(input: StripeCheckoutInput): string {
   return input.entry.catalogId ?? input.entry.kind;
-}
-
-function centsFromMillicredits(value: string): number {
-  const millicredits = BigInt(value);
-  if (millicredits <= 0n) throw new Error("grantMillicredits must be positive");
-  const cents = (millicredits + 999n) / 1000n;
-  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error("grantMillicredits is too large for a Stripe unit_amount");
-  }
-  return Number(cents);
 }
 
 function requirePlanPriceId(stripePriceId: string | null): string {
@@ -199,7 +190,7 @@ export function createStripeBillingGateway(config: StripeGatewayConfig): StripeB
               price_data: {
                 currency: "usd",
                 product_data: { name: "Extra usage" },
-                unit_amount: centsFromMillicredits(input.entry.grantMillicredits),
+                unit_amount: millicreditsToStripeCents(input.entry.grantMillicredits),
               },
               quantity: 1,
             };
