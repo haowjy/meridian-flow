@@ -279,7 +279,9 @@ export const MeridianFigure = Node.create<{ projectId?: string; documentId?: str
   group: "block",
   atom: true,
   defining: true,
-  draggable: true,
+  // Not draggable: PM default DnD reorders in place, which re-binds block hashes
+  // (y-prosemirror reconciles by slot). Figure drag-to-place must be reimplemented
+  // as delete+insert — see .context/TODO.md.
 
   addOptions() {
     return {

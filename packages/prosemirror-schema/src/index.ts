@@ -136,7 +136,9 @@ const customNodes = {
     },
     atom: true,
     defining: true,
-    draggable: true,
+    // Not draggable: in-place drag-reorder re-binds block hashes (y-prosemirror
+    // reconciles by slot). Move figures via delete+insert instead — see the
+    // editor .context/TODO.md and agent-edit .context/CONTEXT.md reorder policy.
   },
 } satisfies Record<string, NodeSpec>;
 
