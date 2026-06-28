@@ -80,6 +80,58 @@ describe("write host reverse", () => {
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Later."]);
   });
 
+  it("undoes every latest-turn group even when the first group reports an earlier turn id", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "A." },
+      { ...context, turnId: "turn-a" },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Target one." },
+      { ...context, turnId: "turn-target" },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "B." },
+      { ...context, turnId: "turn-b" },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Target two." },
+      { ...context, turnId: "turn-target" },
+    );
+
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "range", from: "w1", to: "w2" },
+        actor,
+      }),
+      "reversed",
+    );
+    expectOutcome(
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "redo",
+        selection: { kind: "turn", turnId: "turn-target" },
+        actor,
+      }),
+      "reconciled",
+    );
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "turn" },
+      actor,
+    });
+
+    expectOutcome(undo, "reversed");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "B."]);
+  });
+
   it("undoes the whole thread", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(["One.", "Two."], "turn-thread");
