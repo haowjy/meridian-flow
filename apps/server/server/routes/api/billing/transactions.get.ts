@@ -4,12 +4,10 @@ import { billingTransactions, createBillingRouteDeps } from "../../../lib/billin
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectId } = await app.projects.ensureDefaultBootstrap(user.userId);
   const query = getQuery(event);
   const limit = query.limit ? Number(query.limit) : undefined;
   return billingTransactions(createBillingRouteDeps(app, process.env), {
     userId: user.userId,
-    projectId,
     limit,
   });
 });

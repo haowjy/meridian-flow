@@ -1,6 +1,6 @@
 import type {
   BillingBalanceResponse,
-  BillingPacksPlansResponse,
+  BillingProductsResponse,
   BillingTransactionsResponse,
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
@@ -21,7 +21,11 @@ export function getBillingTransactions(): Promise<BillingTransactionsResponse> {
   return getJson(apiBillingTransactionsPath());
 }
 
-export function getBillingPacks(): Promise<BillingPacksPlansResponse> {
+// Route path is still `/api/billing/packs` — only the response shape changed
+// (catalog products + Stripe configuration status). The client-side name is
+// updated to match the new contract; the path helper is renamed alongside the
+// server when both sides land together.
+export function getBillingProducts(): Promise<BillingProductsResponse> {
   return getJson(apiBillingPacksPath());
 }
 

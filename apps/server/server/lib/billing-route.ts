@@ -1,247 +1,239 @@
 import type {
   BillingBalanceResponse,
-  BillingPacksPlansResponse,
+  BillingProductsResponse,
+  BillingTransaction,
   BillingTransactionsResponse,
   BillingWebhookResponse,
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
 } from "@meridian/contracts/protocol";
+import type { StripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
-  missingStripeConfigEntry,
-  stripeReady,
-} from "../domains/billing/adapters/stripe/payment-provider.js";
-import { BILLING_CATALOG, catalogEntry } from "../domains/billing/domain/catalog.js";
-import type { CreditLedger } from "../domains/billing/domain/credit-ledger.js";
+  BILLING_PLANS,
+  type BillingCatalogServerEntry,
+  type BillingPlanCatalogEntry,
+  catalogEntry,
+  EXTRA_USAGE,
+  FREE_TIER,
+  publicCatalogEntry,
+} from "../domains/billing/domain/catalog.js";
 import type {
-  PaymentProvider,
-  PaymentWebhookEvent,
-} from "../domains/billing/ports/payment-provider.js";
-import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
+  CreditLedger,
+  CreditLotView,
+  CreditTransactionRow,
+} from "../domains/billing/domain/credit-ledger.js";
 
 export interface BillingRouteDeps {
   ledger: CreditLedger;
-  paymentProvider: PaymentProvider;
-  subscriptionStore: SubscriptionStore;
+  stripeGateway: StripeBillingGateway | null;
+  freeTier: { ensure: (userId: string) => Promise<void> };
+  getOrCreateStripeCustomer: (userId: string) => Promise<string>;
   env: NodeJS.ProcessEnv;
-  resolveDefaultProjectId?: (userId: string) => Promise<string>;
 }
 
 export function createBillingRouteDeps(
   app: {
     creditLedger: CreditLedger;
-    paymentProvider: PaymentProvider;
-    subscriptionStore: SubscriptionStore;
+    stripeGateway: StripeBillingGateway | null;
+    freeTier: { ensure: (userId: string) => Promise<void> };
+    getOrCreateStripeCustomer: (userId: string) => Promise<string>;
   },
   env: NodeJS.ProcessEnv,
-  resolveDefaultProjectId?: (userId: string) => Promise<string>,
 ): BillingRouteDeps {
   return {
     ledger: app.creditLedger,
-    paymentProvider: app.paymentProvider,
-    subscriptionStore: app.subscriptionStore,
+    stripeGateway: app.stripeGateway,
+    freeTier: app.freeTier,
+    getOrCreateStripeCustomer: app.getOrCreateStripeCustomer,
     env,
-    resolveDefaultProjectId,
   };
+}
+
+function isUnexpired(lot: CreditLotView, now = new Date()): boolean {
+  return lot.expiresAt === null || new Date(lot.expiresAt).getTime() > now.getTime();
+}
+
+function millicreditsToUsd(value: string | bigint): string {
+  const raw = typeof value === "bigint" ? value : BigInt(value);
+  const sign = raw < 0n ? "-" : "";
+  const absolute = raw < 0n ? -raw : raw;
+  const whole = absolute / 100_000n;
+  const fraction = absolute % 100_000n;
+  if (fraction === 0n) return `${sign}${whole}`;
+  return `${sign}${whole}.${fraction.toString().padStart(5, "0").replace(/0+$/, "")}`;
+}
+
+function parseUsdToMillicredits(value: string): bigint {
+  if (!/^\d+(?:\.\d{1,5})?$/.test(value)) {
+    throw new Error("amountUsd must be a positive USD decimal with at most 5 decimal places");
+  }
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(whole) * 100_000n + BigInt(fraction.padEnd(5, "0"));
+}
+
+function includedLot(lots: CreditLotView[]): CreditLotView | null {
+  const unexpired = lots.filter((lot) => isUnexpired(lot));
+  return (
+    unexpired.find((lot) => lot.source === "subscription") ??
+    unexpired.find((lot) => lot.source === "grant") ??
+    null
+  );
+}
+
+function includedUsagePercent(lot: CreditLotView | null): number | null {
+  if (!lot) return null;
+  const original = BigInt(lot.originalMillicredits);
+  if (original <= 0n) return null;
+  const used = original - BigInt(lot.balanceMillicredits);
+  return Number((used * 10_000n) / original) / 100;
 }
 
 export async function billingBalance(
   deps: BillingRouteDeps,
-  input: { userId: string; projectId: string },
+  input: { userId: string },
 ): Promise<BillingBalanceResponse> {
-  return deps.ledger.getBalanceBreakdown(input);
+  await deps.freeTier.ensure(input.userId);
+  const breakdown = await deps.ledger.getBalanceBreakdown({ userId: input.userId });
+  const displayLot = includedLot(breakdown.lots);
+  const purchasedBalance = breakdown.lots.reduce((sum, lot) => {
+    return lot.source === "purchase" ? sum + BigInt(lot.balanceMillicredits) : sum;
+  }, 0n);
+  const totalBalance = breakdown.lots.reduce(
+    (sum, lot) => sum + BigInt(lot.balanceMillicredits),
+    0n,
+  );
+
+  return {
+    purchasedBalanceUsd: millicreditsToUsd(purchasedBalance),
+    includedUsagePercent: includedUsagePercent(displayLot),
+    usageMode:
+      displayLot?.source === "subscription"
+        ? "subscription"
+        : displayLot?.source === "grant"
+          ? "free"
+          : "none",
+    canStartTurn: totalBalance > 0n,
+  };
+}
+
+function billingTransaction(row: CreditTransactionRow): BillingTransaction {
+  return {
+    id: row.id,
+    transactionType: row.transactionType,
+    amountUsd: millicreditsToUsd(row.amountMillicredits),
+    sourceType: row.sourceType,
+    reason: row.reason,
+    usageEventId: row.usageEventId,
+    createdAt: row.createdAt,
+    metadata: row.metadata,
+  };
 }
 
 export async function billingTransactions(
   deps: BillingRouteDeps,
-  input: { userId: string; projectId: string; limit?: number },
+  input: { userId: string; limit?: number },
 ): Promise<BillingTransactionsResponse> {
+  await deps.freeTier.ensure(input.userId);
   const transactions = await deps.ledger.listTransactions(input);
   const totalConsumed = transactions.reduce((sum, tx) => {
     const amount = BigInt(tx.amountMillicredits);
     return amount < 0n ? sum - amount : sum;
   }, 0n);
   return {
-    transactions,
+    transactions: transactions.map(billingTransaction),
     usage: {
-      totalConsumedMillicredits: totalConsumed.toString(),
+      totalConsumedUsd: millicreditsToUsd(totalConsumed),
       transactionCount: transactions.length,
     },
   };
 }
 
-export function billingPacksPlans(deps: BillingRouteDeps): BillingPacksPlansResponse {
-  const needsCredentialsEntry = missingStripeConfigEntry(deps.env);
+export function billingProducts(deps: BillingRouteDeps): BillingProductsResponse {
   return {
-    entries: needsCredentialsEntry
-      ? [needsCredentialsEntry, ...BILLING_CATALOG.entries]
-      : BILLING_CATALOG.entries,
-    provider: deps.paymentProvider.status(),
+    entries: [...BILLING_PLANS.filter((entry) => entry.id !== FREE_TIER.id), EXTRA_USAGE].map(
+      publicCatalogEntry,
+    ),
+    stripeConfigured: deps.stripeGateway !== null,
   };
 }
 
-function checkoutOrigin(url: string): string {
-  const parsed = new URL(url);
-  return parsed.origin;
+function stripePriceId(env: NodeJS.ProcessEnv, entry: BillingPlanCatalogEntry): string {
+  const priceId = env[entry.stripePriceEnv];
+  if (!priceId) throw new Error(`Stripe price env ${entry.stripePriceEnv} is not configured`);
+  return priceId;
 }
 
-function subscriptionGrantReason(event: {
-  subscriptionId: string | null;
-  sessionId: string;
-  periodStart: string | null;
-}): string {
-  return `subscription:${event.subscriptionId ?? event.sessionId}:${event.periodStart ?? "checkout"}`;
-}
-
-async function grantCheckout(
-  ledger: CreditLedger,
-  event: Extract<PaymentWebhookEvent, { kind: "checkout.completed" }>,
-  projectId: string,
-): Promise<void> {
-  const entry = catalogEntry(event.entryId);
-  if (!entry?.kind || entry.kind === "payg" || entry.kind === "needs-credentials") return;
-
-  if (entry.kind === "plan") {
-    const grantReason = subscriptionGrantReason(event);
-    await ledger.grant({
-      userId: event.userId,
-      projectId,
-      source: "subscription",
-      amountMillicredits: entry.millicredits,
-      reason: grantReason,
-      expiresAt: event.periodEnd,
-      metadata: {
-        entryId: event.entryId,
-        stripeSessionId: event.sessionId,
-        stripeCustomerId: event.customerId,
-        stripeSubscriptionId: event.subscriptionId,
-        periodStart: event.periodStart,
-        periodEnd: event.periodEnd,
-      },
-    });
-    return;
+function extraUsageGrantMillicredits(body: CreateCheckoutSessionRequest): string {
+  if (!body.amountUsd) throw new Error("amountUsd is required for extra usage checkout");
+  const amount = parseUsdToMillicredits(body.amountUsd);
+  const min = parseUsdToMillicredits(EXTRA_USAGE.minUsd);
+  const increment = parseUsdToMillicredits(EXTRA_USAGE.incrementUsd);
+  if (amount < min) throw new Error(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
+  if (amount % increment !== 0n) {
+    throw new Error(`amountUsd must be in ${EXTRA_USAGE.incrementUsd} increments`);
   }
-
-  await ledger.grant({
-    userId: event.userId,
-    projectId,
-    source: "stripe",
-    amountMillicredits: entry.millicredits,
-    stripeSessionId: event.sessionId,
-    metadata: { entryId: event.entryId, stripeCustomerId: event.customerId },
-  });
+  return ((amount * BigInt(EXTRA_USAGE.millicreditsPerUsd)) / 100_000n).toString();
 }
 
-async function persistSubscriptionCheckout(
-  store: SubscriptionStore,
-  event: Extract<PaymentWebhookEvent, { kind: "checkout.completed" }>,
-): Promise<void> {
-  const entry = catalogEntry(event.entryId);
-  if (entry?.kind !== "plan" || !event.subscriptionId || !event.customerId) return;
-  if (!event.periodStart || !event.periodEnd) {
-    throw new Error("Subscription checkout missing billing period");
+function checkoutEntry(entry: BillingCatalogServerEntry, body: CreateCheckoutSessionRequest) {
+  if (entry.kind === "extra-usage") {
+    return {
+      kind: "extra-usage" as const,
+      grantMillicredits: extraUsageGrantMillicredits(body),
+      catalogId: entry.id,
+    };
   }
-
-  await store.upsert({
-    userId: event.userId,
-    stripeSubscriptionId: event.subscriptionId,
-    stripeCustomerId: event.customerId,
-    plan: "pro",
-    status: "active",
-    creditsPerPeriod: entry.millicredits,
-    currentPeriodStart: event.periodStart,
-    currentPeriodEnd: event.periodEnd,
-    cancelAtPeriodEnd: false,
-  });
-}
-
-async function persistSubscriptionUpdate(
-  store: SubscriptionStore,
-  event: Extract<PaymentWebhookEvent, { kind: "subscription.updated" }>,
-): Promise<void> {
-  const entry = catalogEntry(event.entryId);
-  if (entry?.kind !== "plan") return;
-
-  await store.upsert({
-    userId: event.userId,
-    stripeSubscriptionId: event.subscriptionId,
-    stripeCustomerId: event.customerId,
-    plan: "pro",
-    status: event.status,
-    creditsPerPeriod: entry.millicredits,
-    currentPeriodStart: event.periodStart,
-    currentPeriodEnd: event.periodEnd,
-    cancelAtPeriodEnd: event.cancelAtPeriodEnd,
-  });
+  return {
+    kind: "plan" as const,
+    grantMillicredits: entry.grantMillicredits,
+    catalogId: entry.id,
+    interval: entry.interval,
+  };
 }
 
 export async function createBillingCheckoutSession(
   deps: BillingRouteDeps,
-  input: { userId: string; projectId: string; body: CreateCheckoutSessionRequest },
+  input: { userId: string; body: CreateCheckoutSessionRequest },
 ): Promise<CreateCheckoutSessionResponse> {
+  if (!deps.stripeGateway) throw new Error("Stripe checkout is not configured");
   const entry = catalogEntry(input.body.entryId);
-  if (!entry?.kind || entry.kind === "needs-credentials") throw new Error("Unknown billing entry");
-  if (entry.kind === "payg") throw new Error("Pay as you go does not require checkout");
+  if (!entry) throw new Error("Unknown billing entry");
+  if (entry.id === FREE_TIER.id) throw new Error("Free tier is provisioned automatically");
 
-  const session = await deps.paymentProvider.createCheckoutSession({
+  const customerId = await deps.getOrCreateStripeCustomer(input.userId);
+  if (entry.kind === "plan") {
+    const liveSubscription = await deps.stripeGateway.getLiveSubscription(customerId);
+    if (liveSubscription) {
+      const portal = await deps.stripeGateway.createPortalSession({
+        customerId,
+        returnUrl: input.body.cancelUrl,
+      });
+      return { kind: "portal", url: portal.url };
+    }
+  }
+
+  const session = await deps.stripeGateway.createCheckoutSession({
+    customerId,
     userId: input.userId,
-    projectId: input.projectId,
-    entry,
+    entry: checkoutEntry(entry, input.body),
+    stripePriceId: entry.kind === "plan" ? stripePriceId(deps.env, entry) : null,
     successUrl: input.body.successUrl,
     cancelUrl: input.body.cancelUrl,
   });
-
-  if (session.mode === "fake") {
-    const checkoutEvent: Extract<PaymentWebhookEvent, { kind: "checkout.completed" }> = {
-      kind: "checkout.completed",
-      sessionId: session.id,
-      userId: input.userId,
-      projectId: input.projectId,
-      entryId: entry.id,
-      customerId: "fake_customer",
-      subscriptionId: entry.kind === "plan" ? `fake_sub_${input.userId}` : null,
-      periodStart: new Date().toISOString(),
-      periodEnd:
-        entry.kind === "plan"
-          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-          : null,
-    };
-    await persistSubscriptionCheckout(deps.subscriptionStore, checkoutEvent);
-    await grantCheckout(deps.ledger, checkoutEvent, input.projectId);
-  }
-
-  return {
-    sessionId: session.id,
-    url: session.url || `${checkoutOrigin(input.body.successUrl)}/billing`,
-    mode: session.mode,
-    needsCredentials: session.needsCredentials,
-  };
+  return { kind: "checkout", sessionId: session.id, url: session.url };
 }
 
 export async function handleBillingWebhook(
   deps: BillingRouteDeps,
-  input: { payload: string; signature: string | null; defaultProjectId?: string },
+  input: { payload: string; signature: string | null },
 ): Promise<BillingWebhookResponse> {
-  if (!stripeReady(deps.env)) {
-    throw new Error(
-      "Stripe webhook is disabled until STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are configured",
-    );
-  }
-
-  const event = await deps.paymentProvider.verifyWebhook(input);
-  if (event.kind === "ignored") return { received: true, action: "ignored" };
-
-  if (event.kind === "subscription.updated") {
-    await persistSubscriptionUpdate(deps.subscriptionStore, event);
-    return { received: true, action: "subscription_updated" };
-  }
-
-  const projectId =
-    event.projectId ??
-    input.defaultProjectId ??
-    (await deps.resolveDefaultProjectId?.(event.userId));
-  if (!projectId) throw new Error("Billing webhook did not resolve a project");
-
-  await persistSubscriptionCheckout(deps.subscriptionStore, event);
-  await grantCheckout(deps.ledger, event, projectId);
-  return { received: true, action: "granted" };
+  if (!deps.stripeGateway) throw new Error("Stripe webhook is not configured");
+  if (!input.signature) throw new Error("Stripe signature is required");
+  const event = deps.stripeGateway.constructWebhookEvent({
+    rawBody: input.payload,
+    signature: input.signature,
+  });
+  const grant = await deps.stripeGateway.resolveCheckoutGrant(event);
+  if (grant) await deps.ledger.grant(grant);
+  return { received: true };
 }

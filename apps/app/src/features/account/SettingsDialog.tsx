@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreditBalanceCard } from "@/features/billing/CreditBalanceCard";
+import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -329,24 +329,24 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
 }
 
 /**
- * UsageSection — read-only credit balance summary with a link to the standalone
- * /billing purchase page. Intentionally minimal: the purchase flow lives on its
- * own page, not inside the settings overlay.
+ * UsageSection — read-only usage + balance summary with a link to the
+ * standalone /billing page. Intentionally minimal: subscription and extra-usage
+ * purchase flows live on their own page, not inside the settings overlay.
  */
 function UsageSection() {
   return (
     <div>
       <SectionHeading
         title={<Trans>Usage</Trans>}
-        description={<Trans>Your current credit balance.</Trans>}
+        description={<Trans>How much of your plan you have used this month.</Trans>}
       />
 
       <div className="space-y-5">
-        <CreditBalanceCard variant="compact" />
+        <UsageCard variant="compact" />
 
         <Link to="/billing" className="inline-block">
           <Button type="button" variant="outline">
-            <Trans>Add credits</Trans>
+            <Trans>Manage billing</Trans>
           </Button>
         </Link>
       </div>

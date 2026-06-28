@@ -1,15 +1,33 @@
+/** In-memory CreditLedger adapter for fast tests and local composition. */
 import {
   assertPositiveMillicredits,
   type CreditDebitInput,
   type CreditGrantInput,
+  type CreditGrantSource,
   type CreditLedger,
-  usagePercent,
+  type CreditLotView,
+  type CreditTransactionRow,
 } from "../../domain/credit-ledger.js";
+
+type LotSource = CreditLotView["source"];
+
+type Lot = {
+  id: string;
+  userId: string;
+  source: LotSource;
+  originalMillicredits: bigint;
+  balanceMillicredits: bigint;
+  expiresAt: Date | null;
+  stripeSessionId: string | null;
+  idempotencyKey: string | null;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+};
 
 type Tx = {
   id: string;
   userId: string;
-  projectId: string;
   transactionType: string;
   amountMillicredits: bigint;
   sourceType: string | null;
@@ -18,17 +36,18 @@ type Tx = {
   createdAt: Date;
   metadata: Record<string, unknown>;
 };
-function matches(tx: Tx, input: { userId: string; projectId: string }) {
-  return tx.userId === input.userId && tx.projectId === input.projectId;
+
+function sourceType(input: CreditGrantSource): LotSource {
+  if (input === "stripe") return "purchase";
+  if (input === "subscription") return "subscription";
+  return "grant";
 }
-function sourceType(input: CreditGrantInput) {
-  return input.source === "manual"
-    ? "grant"
-    : input.source === "stripe"
-      ? "purchase"
-      : "subscription";
+
+function unexpired(lot: Lot, now = new Date()): boolean {
+  return lot.expiresAt === null || lot.expiresAt > now || lot.source === "debt";
 }
-function summary(tx: Tx) {
+
+function row(tx: Tx): CreditTransactionRow {
   return {
     id: tx.id,
     transactionType: tx.transactionType,
@@ -40,55 +59,120 @@ function summary(tx: Tx) {
     metadata: tx.metadata,
   };
 }
+
 export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): CreditLedger {
+  const lots: Lot[] = [];
   const transactions = [...initialTransactions];
   const debitIds = new Map<string, string>();
+
   return {
     async grant(input: CreditGrantInput) {
       const amount = assertPositiveMillicredits(input.amountMillicredits);
-      const src = sourceType(input);
-      const idempotencyKey =
-        typeof input.metadata?.idempotencyKey === "string" ? input.metadata.idempotencyKey : null;
-      const existing = transactions.find(
-        (tx) =>
-          tx.userId === input.userId &&
-          tx.sourceType === src &&
-          ((idempotencyKey && tx.metadata.idempotencyKey === idempotencyKey) ||
-            (input.stripeSessionId && tx.metadata.stripeSessionId === input.stripeSessionId) ||
-            (!!input.reason && tx.reason === input.reason)),
+      const source = sourceType(input.source);
+      const idempotencyKey = input.stripeIdempotencyId ?? null;
+      const existing = lots.find(
+        (lot) =>
+          lot.userId === input.userId &&
+          lot.source === source &&
+          ((idempotencyKey !== null && lot.idempotencyKey === idempotencyKey) ||
+            (input.stripeSessionId != null && lot.stripeSessionId === input.stripeSessionId) ||
+            (input.reason != null && lot.reason === input.reason)),
       );
-      if (existing) return { transactionId: existing.id, created: false };
-      const id = crypto.randomUUID();
-      transactions.push({
-        id,
+      if (existing) {
+        const existingTx = transactions.find(
+          (tx) => tx.userId === input.userId && tx.metadata.lotId === existing.id,
+        );
+        return { transactionId: existingTx?.id ?? existing.id, created: false };
+      }
+
+      const lotId = crypto.randomUUID();
+      const transactionId = crypto.randomUUID();
+      const createdAt = new Date();
+      lots.push({
+        id: lotId,
         userId: input.userId,
-        projectId: input.projectId,
-        transactionType: src === "purchase" ? "purchase" : "grant",
+        source,
+        originalMillicredits: amount,
+        balanceMillicredits: amount,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+        stripeSessionId: input.stripeSessionId ?? null,
+        idempotencyKey,
+        reason: input.reason ?? idempotencyKey,
+        metadata: input.metadata ?? {},
+        createdAt,
+      });
+      transactions.push({
+        id: transactionId,
+        userId: input.userId,
+        transactionType: source === "purchase" ? "purchase" : "grant",
         amountMillicredits: amount,
-        sourceType: src,
-        reason: input.reason ?? null,
+        sourceType: source,
+        reason: input.reason ?? idempotencyKey,
         usageEventId: null,
-        createdAt: new Date(),
+        createdAt,
         metadata: {
+          lotId,
           source: input.source,
-          sourceType: src,
+          sourceType: source,
           reason: input.reason ?? null,
           stripeSessionId: input.stripeSessionId ?? null,
+          stripeIdempotencyId: idempotencyKey,
           ...(input.metadata ?? {}),
         },
       });
-      return { transactionId: id, created: true };
+      return { transactionId, created: true };
     },
+
     async debit(input: CreditDebitInput) {
       const amount = assertPositiveMillicredits(input.millicredits);
-      const key = `${input.projectId}:${input.usageEventId}`;
+      const key = `${input.userId}:${input.usageEventId}`;
       const existing = debitIds.get(key);
       if (existing) return { transactionId: existing };
-      const id = crypto.randomUUID();
+
+      const consumptionGroupId = crypto.randomUUID();
+      let remaining = amount;
+      const spendable = lots
+        .filter(
+          (lot) => lot.userId === input.userId && unexpired(lot) && lot.balanceMillicredits > 0n,
+        )
+        .sort((a, b) => {
+          const aExpiry = a.expiresAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          const bExpiry = b.expiresAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          return aExpiry - bExpiry || a.createdAt.getTime() - b.createdAt.getTime();
+        });
+
+      for (const lot of spendable) {
+        if (remaining === 0n) break;
+        const consumed = lot.balanceMillicredits < remaining ? lot.balanceMillicredits : remaining;
+        lot.balanceMillicredits -= consumed;
+        remaining -= consumed;
+      }
+
+      if (remaining > 0n) {
+        let debt = lots.find((lot) => lot.userId === input.userId && lot.source === "debt");
+        if (!debt) {
+          debt = {
+            id: crypto.randomUUID(),
+            userId: input.userId,
+            source: "debt",
+            originalMillicredits: remaining,
+            balanceMillicredits: 0n,
+            expiresAt: null,
+            stripeSessionId: null,
+            idempotencyKey: null,
+            reason: null,
+            metadata: {},
+            createdAt: new Date(),
+          };
+          lots.push(debt);
+        }
+        debt.originalMillicredits += remaining;
+        debt.balanceMillicredits -= remaining;
+      }
+
       transactions.push({
-        id,
+        id: consumptionGroupId,
         userId: input.userId,
-        projectId: input.projectId,
         transactionType: "consumption",
         amountMillicredits: -amount,
         sourceType: null,
@@ -103,104 +187,58 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
           usageEventId: input.usageEventId,
         },
       });
-      debitIds.set(key, id);
-      return { transactionId: id };
+      debitIds.set(key, consumptionGroupId);
+      return { transactionId: consumptionGroupId };
     },
+
     async getBalance(input) {
-      return transactions
-        .filter((tx) => matches(tx, input))
-        .reduce((sum, tx) => sum + tx.amountMillicredits, 0n)
+      return lots
+        .filter((lot) => lot.userId === input.userId && unexpired(lot))
+        .reduce((sum, lot) => sum + lot.balanceMillicredits, 0n)
         .toString();
     },
+
     async getBalanceBreakdown(input) {
-      const scoped = transactions.filter((tx) => matches(tx, input));
-      const sum = (source: string) =>
-        scoped
-          .filter((tx) => tx.sourceType === source)
-          .reduce((total, tx) => total + tx.amountMillicredits, 0n);
-      const consumed = scoped
-        .filter((tx) => tx.amountMillicredits < 0n)
-        .reduce((total, tx) => total - tx.amountMillicredits, 0n);
-      const grants = sum("grant");
-      const subs = sum("subscription");
-      const purchases = sum("purchase");
-      const total = grants + subs + purchases - consumed;
-      const includedBudget = scoped
-        .filter((tx) => tx.sourceType === "grant" || tx.sourceType === "subscription")
-        .reduce((total, tx) => total + tx.amountMillicredits, 0n);
-      const includedRemaining = grants + subs;
-      const overage = total < 0n ? -total : 0n;
-      const includedUsed = includedBudget - includedRemaining + overage;
       return {
-        totalBalanceMillicredits: total.toString(),
-        grantBalanceMillicredits: grants.toString(),
-        subscriptionBalanceMillicredits: subs.toString(),
-        purchasedBalanceMillicredits: purchases.toString(),
-        debtBalanceMillicredits: (total < 0n ? total : 0n).toString(),
-        includedBudgetMillicredits: includedBudget.toString(),
-        includedUsedMillicredits: includedUsed.toString(),
-        includedUsagePercent: usagePercent(includedUsed, includedBudget),
-        canStartTurn: total >= 0n,
+        lots: lots
+          .filter((lot) => lot.userId === input.userId && unexpired(lot))
+          .map((lot) => ({
+            source: lot.source,
+            balanceMillicredits: lot.balanceMillicredits.toString(),
+            originalMillicredits: lot.originalMillicredits.toString(),
+            expiresAt: lot.expiresAt?.toISOString() ?? null,
+          })),
       };
     },
+
     async listTransactions(input) {
       return transactions
-        .filter((tx) => matches(tx, input))
+        .filter((tx) => tx.userId === input.userId)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
         .slice(0, input.limit ?? 50)
-        .map(summary);
+        .map(row);
     },
-    async getFreeGrantStatus(input) {
-      const signup = transactions.find(
-        (tx) => tx.userId === input.userId && tx.sourceType === "grant" && tx.reason === "signup",
-      );
-      const monthlyGranted = transactions.some(
-        (tx) =>
-          tx.userId === input.userId &&
-          tx.sourceType === "grant" &&
-          tx.reason === input.monthlyReason,
-      );
-      return { signupGrantedAt: signup?.createdAt.toISOString() ?? null, monthlyGranted };
-    },
-    async getRunDebitTotal(input) {
-      return transactions
-        .filter(
-          (tx) =>
-            matches(tx, input) &&
-            tx.metadata.rootThreadId === input.rootThreadId &&
-            tx.amountMillicredits < 0n,
-        )
-        .reduce((sum, tx) => sum - tx.amountMillicredits, 0n)
-        .toString();
-    },
-    async getAgentDebitTotals(input) {
-      const totals = new Map<string, bigint>();
-      for (const tx of transactions) {
-        if (
-          !matches(tx, input) ||
-          tx.metadata.rootThreadId !== input.rootThreadId ||
-          tx.amountMillicredits >= 0n
-        )
-          continue;
-        const agentSlug =
-          typeof tx.metadata.agentSlug === "string" ? tx.metadata.agentSlug : "unknown";
-        totals.set(agentSlug, (totals.get(agentSlug) ?? 0n) - tx.amountMillicredits);
-      }
-      return [...totals.entries()].map(([agentSlug, millicredits]) => ({
-        agentSlug,
-        millicredits: millicredits.toString(),
-      }));
-    },
+
     async getThreadDebitTotal(input) {
       return transactions
         .filter(
           (tx) =>
-            matches(tx, input) &&
+            tx.userId === input.userId &&
             tx.metadata.threadId === input.threadId &&
             tx.amountMillicredits < 0n,
         )
         .reduce((sum, tx) => sum - tx.amountMillicredits, 0n)
         .toString();
+    },
+
+    async hasUnexpiredLot(input) {
+      const source = sourceType(input.source);
+      const now = new Date();
+      return lots.some((lot) => {
+        if (lot.userId !== input.userId || lot.source !== source) return false;
+        if (source === "subscription") return lot.expiresAt !== null && lot.expiresAt > now;
+        return lot.expiresAt === null || lot.expiresAt > now;
+      });
     },
   };
 }

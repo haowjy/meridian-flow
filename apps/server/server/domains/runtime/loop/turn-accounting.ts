@@ -11,11 +11,8 @@ import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
-import {
-  type ComputedModelCost,
-  type CreditLedger,
-  computeModelCost,
-} from "../../billing/index.js";
+import { type CreditLedger, ensureFreeTier } from "../../billing/index.js";
+import { type ComputedModelCost, computeModelCost } from "../costing/pricing.js";
 import type { GenerateResult } from "../gateway/index.js";
 import {
   assertCostBudget,
@@ -56,10 +53,10 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       const costBudgetError = assertCostBudget(treeBudget, 0);
       if (costBudgetError) return costBudgetError;
 
+      await ensureFreeTier(deps.creditLedger, thread.userId);
       const balance = BigInt(
         await deps.creditLedger.getBalance({
           userId: thread.userId,
-          projectId: thread.projectId,
         }),
       );
       // DEFERRED(atomic-reserve): pre-call check suffices under serial spawns (design §7.2); reservation/hold semantics land with parallel spawns.
@@ -93,11 +90,11 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       });
 
       if (BigInt(computedCost.millicredits) > 0n) {
+        await ensureFreeTier(deps.creditLedger, thread.userId);
         // Meter-pause while parked holds by construction: only model responses
         // debit credits, and no model calls run while a turn is waiting_checkpoint.
         await deps.creditLedger.debit({
           userId: thread.userId,
-          projectId: thread.projectId,
           rootThreadId: thread.rootThreadId,
           threadId: threadId as string,
           turnId: turnId as string,

@@ -2,8 +2,8 @@
  * Purpose: Owns deterministic conversion from provider token usage into Meridian
  * millicredits via a layered token-rate source.
  * Key decisions: pinned rates come from the gateway registry (extractPinnedRates);
- * mock/stub fixtures live in an explicit override layer; catalog and
- * provider-reported layers land in B3. 1 credit = 1¢ = 1,000 millicredits.
+ * mock/stub fixtures live in an explicit override layer; provider-reported
+ * OpenRouter costs bypass token-rate lookup. 1 credit = 1¢ = 1,000 millicredits.
  */
 
 import type { Usage } from "@meridian/contracts/runtime";
@@ -12,7 +12,7 @@ import {
   extractPinnedRates,
   MODEL_REGISTRY,
   type PinnedModelRate,
-} from "../../runtime/gateway/config/registry.js";
+} from "../gateway/config/registry.js";
 
 export interface ModelTokenRate {
   provider: string;
@@ -28,7 +28,7 @@ export interface ModelTokenRate {
   source: string;
 }
 
-export type ModelTokenRateLayer = "pinned" | "override" | "models.dev" | "provider_reported";
+export type ModelTokenRateLayer = "pinned" | "override" | "provider_reported";
 
 export interface ResolvedModelTokenRate extends ModelTokenRate {
   /** Layer that supplied the rate; persisted in pricingSnapshot for audits. */
@@ -39,23 +39,11 @@ export interface ModelTokenRateSource {
   findRate(provider: string, model: string): ResolvedModelTokenRate | null;
 }
 
-/** B3 catalog row shape — wired when models.dev fallback lands. */
-export interface ModelCatalogPricingRecord {
-  providerId: string;
-  modelId: string;
-  inputCostUsdPer1m?: string | null;
-  outputCostUsdPer1m?: string | null;
-  cacheReadCostUsdPer1m?: string | null;
-  cacheWriteCostUsdPer1m?: string | null;
-}
-
 export interface LayeredTokenRateSourceDeps {
   /** Registry-extracted pinned rates (base layer). */
   pinnedRates: readonly ModelTokenRate[];
   /** Test/mock zero-rate fixtures excluded from MODEL_REGISTRY. */
   overrideRates?: readonly ModelTokenRate[];
-  /** models.dev rows — catalog fallback layer for B3. */
-  catalogModels?: () => Promise<readonly ModelCatalogPricingRecord[]>;
 }
 
 export interface ComputedModelCost {
@@ -66,6 +54,11 @@ export interface ComputedModelCost {
 }
 
 const ZERO_FIXTURE_SOURCE = "in-process test/mock fixture";
+const COST_MULTIPLIER_NUMERATOR = 115n;
+const COST_MULTIPLIER_DENOMINATOR = 1000n;
+
+/** Margin applied to raw provider cost before metering writer usage. */
+export const COST_MULTIPLIER = 1.15;
 
 /** Mock and stub models intentionally excluded from MODEL_REGISTRY. */
 export const MOCK_FIXTURE_TOKEN_RATES: readonly ModelTokenRate[] = [
@@ -183,15 +176,17 @@ function formatUsdFromMicros(usdMicros: bigint): string {
   return `${whole}.${fraction}`;
 }
 
-function millicreditsFromUsdMicros(usdMicros: bigint): bigint {
-  // $1 = 100 credits = 100,000 millicredits, so 1 USD micro = 0.1 millicredit.
-  // Round up: a positive computed call should not become a free zero debit.
-  return usdMicros === 0n ? 0n : (usdMicros * 100_000n + 999_999n) / 1_000_000n;
+export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
+  // $1 = 100 credits = 100,000 millicredits. Apply the fixed 1.15 margin
+  // while converting raw USD micros to metered millicredits: ceil(raw * 115 / 1000).
+  return rawUsdMicros === 0n
+    ? 0n
+    : (rawUsdMicros * COST_MULTIPLIER_NUMERATOR + COST_MULTIPLIER_DENOMINATOR - 1n) /
+        COST_MULTIPLIER_DENOMINATOR;
 }
 
 function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
   if (rate.sourceLayer === "override") return `override: ${rate.source}`;
-  if (rate.sourceLayer === "models.dev") return "models.dev";
   if (rate.sourceLayer === "provider_reported") return "provider_reported";
   return `pinned: ${rate.source}`;
 }
@@ -212,7 +207,7 @@ function computeFromProviderReportedCost(input: {
   const usdMicros = usdMicrosFromNumber(input.reportedCostUsd);
   return {
     costUsd: formatUsdFromMicros(usdMicros),
-    millicredits: millicreditsFromUsdMicros(usdMicros).toString(),
+    millicredits: meteredMillicreditsFromRaw(usdMicros).toString(),
     priceSource: "provider_reported",
     pricingSnapshot: {
       provider: input.provider,
@@ -354,7 +349,7 @@ export function computeModelCost(input: {
 
   return {
     costUsd: formatUsdFromMicros(usdMicros),
-    millicredits: millicreditsFromUsdMicros(usdMicros).toString(),
+    millicredits: meteredMillicreditsFromRaw(usdMicros).toString(),
     priceSource: "computed",
     pricingSnapshot: {
       provider: rate.provider,

@@ -8,7 +8,6 @@ import {
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectId } = await app.projects.ensureDefaultBootstrap(user.userId);
   const body = await readBody<CreateCheckoutSessionRequest>(event);
   if (!body?.entryId || !body.successUrl || !body.cancelUrl) {
     throw createError({
@@ -18,7 +17,6 @@ export default defineEventHandler(async (event) => {
   }
   return createBillingCheckoutSession(createBillingRouteDeps(app, process.env), {
     userId: user.userId,
-    projectId,
     body,
   });
 });

@@ -1,39 +1,28 @@
-/**
- * Purpose: Public billing-domain surface for runtime credit metering.
- * Key decisions: exposes only the ledger port/adapters and pricing converter;
- * Stripe remains a future adapter behind the grant-source seam.
- */
+/** Public billing-domain surface for credits ledger, catalog, and free-tier grants. */
 export { createDrizzleCreditLedger } from "./adapters/drizzle/credit-ledger.js";
 export { createInMemoryCreditLedger } from "./adapters/in-memory/credit-ledger.js";
 export type {
-  CreditBalanceBreakdown,
+  BillingCatalogServerEntry,
+  BillingPlanCatalogEntry,
+  ExtraUsageConfig,
+} from "./domain/catalog.js";
+export {
+  BILLING_CATALOG,
+  BILLING_PLANS,
+  catalogEntry,
+  EXTRA_USAGE,
+  FREE_TIER,
+  publicCatalogEntry,
+} from "./domain/catalog.js";
+export type {
   CreditDebitInput,
   CreditGrantInput,
+  CreditGrantResult,
   CreditGrantSource,
   CreditLedger,
-  CreditTransactionSummary,
+  CreditLotView,
+  CreditTransactionRow,
 } from "./domain/credit-ledger.js";
-export {
-  createFreeGrantPipeline,
-  createGrantingCreditLedger,
-  FREE_MONTHLY_CREDITS,
-  FREE_MONTHLY_MILLICREDITS,
-  monthlyGrantReason,
-} from "./domain/free-grants.js";
-export type {
-  ComputedModelCost,
-  LayeredTokenRateSourceDeps,
-  ModelCatalogPricingRecord,
-  ModelTokenRate,
-  ModelTokenRateSource,
-  ResolvedModelTokenRate,
-} from "./domain/pricing.js";
-export {
-  computeModelCost,
-  configureModelTokenRateSource,
-  createDefaultModelTokenRateSource,
-  createLayeredTokenRateSource,
-  findModelTokenRate,
-  MOCK_FIXTURE_TOKEN_RATES,
-  modelTokenRateSource,
-} from "./domain/pricing.js";
+export { assertPositiveMillicredits } from "./domain/credit-ledger.js";
+export type { FreeTierClock, FreeTierConfig } from "./domain/free-grants.js";
+export { ensureFreeTier } from "./domain/free-grants.js";

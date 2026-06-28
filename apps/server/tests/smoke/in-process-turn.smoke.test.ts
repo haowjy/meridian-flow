@@ -108,7 +108,6 @@ describe("smoke: in-process turn", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "smoke-user",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "smoke",

@@ -4,18 +4,18 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 import type { Database } from "@meridian/database";
-import { createDrizzleSubscriptionStore } from "../domains/billing/adapters/drizzle/subscription-store.js";
-import { createInMemorySubscriptionStore } from "../domains/billing/adapters/in-memory/subscription-store.js";
+import { users } from "@meridian/database/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  createStripeBillingGateway,
+  type StripeBillingGateway,
+} from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
   type CreditLedger,
   createDrizzleCreditLedger,
-  createFreeGrantPipeline,
-  createGrantingCreditLedger,
   createInMemoryCreditLedger,
+  ensureFreeTier,
 } from "../domains/billing/index.js";
-import { createPaymentProviderFromEnv } from "../domains/billing/payment-provider-factory.js";
-import type { PaymentProvider } from "../domains/billing/ports/payment-provider.js";
-import type { SubscriptionStore } from "../domains/billing/ports/subscription-store.js";
 import {
   type CollabDomain,
   createCollabDomain,
@@ -144,8 +144,9 @@ export type AppServices = {
   users: UserRepository;
   workRepo: ProjectWorkRepository;
   creditLedger: CreditLedger;
-  paymentProvider: PaymentProvider;
-  subscriptionStore: SubscriptionStore;
+  stripeGateway: StripeBillingGateway | null;
+  freeTier: { ensure(userId: string): Promise<void> };
+  getOrCreateStripeCustomer(userId: string): Promise<string>;
   agents: AgentPackageStore;
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
@@ -169,6 +170,40 @@ export type AppServices = {
   undoNotifications: PendingUndoNotificationRepository;
 };
 
+function stripeReady(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
+}
+
+function createStripeCustomerResolver(input: {
+  db: Database;
+  stripeGateway: StripeBillingGateway | null;
+}): (userId: string) => Promise<string> {
+  const { db, stripeGateway } = input;
+  return async (userId: string) => {
+    const [existing] = await db
+      .select({ stripeCustomerId: users.stripeCustomerId })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (existing?.stripeCustomerId) return existing.stripeCustomerId;
+    if (!stripeGateway) throw new Error("Stripe checkout is not configured");
+
+    const customer = await stripeGateway.createCustomer({ userId });
+    await db
+      .update(users)
+      .set({ stripeCustomerId: customer.id, updatedAt: new Date().toISOString() })
+      .where(and(eq(users.id, userId), isNull(users.stripeCustomerId)));
+
+    const [winner] = await db
+      .select({ stripeCustomerId: users.stripeCustomerId })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!winner?.stripeCustomerId) throw new Error("Stripe customer creation did not persist");
+    return winner.stripeCustomerId;
+  };
+}
+
 export type ProductionAppPorts = {
   db: Database;
   gateway: Gateway;
@@ -185,8 +220,9 @@ export type ProductionAppPorts = {
   users: UserRepository;
   workRepo: ProjectWorkRepository;
   creditLedger: CreditLedger;
-  paymentProvider: PaymentProvider;
-  subscriptionStore: SubscriptionStore;
+  stripeGateway: StripeBillingGateway | null;
+  freeTier: { ensure(userId: string): Promise<void> };
+  getOrCreateStripeCustomer(userId: string): Promise<string>;
   agents: AgentPackageStore;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
@@ -282,11 +318,15 @@ export async function createProductionAppPorts(input: {
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository(db);
   const workRepo = createDrizzleProjectWorkRepository({ db });
-  const baseCreditLedger = createDrizzleCreditLedger(db);
-  const creditLedger = createGrantingCreditLedger({
-    ledger: baseCreditLedger,
-    grants: createFreeGrantPipeline({ ledger: baseCreditLedger }),
-  });
+  const creditLedger = createDrizzleCreditLedger(db);
+  const stripeGateway = stripeReady(environment)
+    ? createStripeBillingGateway({
+        secretKey: environment.STRIPE_SECRET_KEY as string,
+        webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
+      })
+    : null;
+  const getOrCreateStripeCustomer = createStripeCustomerResolver({ db, stripeGateway });
+  const freeTier = { ensure: (userId: string) => ensureFreeTier(creditLedger, userId) };
 
   return {
     db,
@@ -304,8 +344,9 @@ export async function createProductionAppPorts(input: {
     users,
     workRepo,
     creditLedger,
-    paymentProvider: createPaymentProviderFromEnv(environment),
-    subscriptionStore: createDrizzleSubscriptionStore(db),
+    stripeGateway,
+    freeTier,
+    getOrCreateStripeCustomer,
     agents: { phase: "skeleton" },
     packageRepository,
     marsPackageFetcher,
@@ -459,8 +500,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     users: ports.users,
     workRepo: ports.workRepo,
     creditLedger: ports.creditLedger,
-    paymentProvider: ports.paymentProvider,
-    subscriptionStore: ports.subscriptionStore,
+    stripeGateway: ports.stripeGateway,
+    freeTier: ports.freeTier,
+    getOrCreateStripeCustomer: ports.getOrCreateStripeCustomer,
     agents: ports.agents,
     checkpointRegistry,
     eventSink: ports.eventSink,
@@ -493,6 +535,7 @@ export function createInMemoryAppServices(): AppServices {
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const undoNotifications = createInMemoryPendingUndoNotificationRepository();
+  const creditLedger = createInMemoryCreditLedger();
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
 
@@ -664,39 +707,11 @@ export function createInMemoryAppServices(): AppServices {
       },
       async touch() {},
     },
-    creditLedger: createInMemoryCreditLedger(),
-    subscriptionStore: createInMemorySubscriptionStore(),
-    paymentProvider: {
-      status() {
-        return {
-          mode: "fake" as const,
-          needsCredentials: true,
-          message: "Stripe credentials are not configured; fake checkout is active for dev/test.",
-        };
-      },
-      async createCheckoutSession(input) {
-        const id = `fake_cs_${crypto.randomUUID()}`;
-        return {
-          id,
-          url: `${input.successUrl}?checkout=fake&session_id=${id}`,
-          mode: "fake" as const,
-          needsCredentials: true,
-        };
-      },
-      async verifyWebhook(input) {
-        const body = JSON.parse(input.payload || "{}");
-        return {
-          kind: "checkout.completed" as const,
-          sessionId: String(body.sessionId ?? body.id ?? `fake_cs_${crypto.randomUUID()}`),
-          userId: String(body.userId),
-          projectId: typeof body.projectId === "string" ? body.projectId : null,
-          entryId: String(body.entryId),
-          customerId: null,
-          subscriptionId: null,
-          periodStart: null,
-          periodEnd: null,
-        };
-      },
+    creditLedger,
+    stripeGateway: null,
+    freeTier: { ensure: (userId: string) => ensureFreeTier(creditLedger, userId) },
+    async getOrCreateStripeCustomer() {
+      throw new Error("Stripe checkout is not configured");
     },
     agents: { phase: "skeleton" },
     checkpointRegistry: createCheckpointRegistry(),

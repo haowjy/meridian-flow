@@ -1,8 +1,8 @@
 /**
- * /billing — standalone credit purchase page. Authenticated users land here
- * from the Usage settings section ("Add credits"), the credit-balance badge, or
- * credits-exhausted recovery flows. Renders inside the shared authenticated
- * provider shell.
+ * /billing — standalone subscription + extra-usage page. Authenticated users
+ * land here from the Usage settings section ("Manage billing"), the usage
+ * meter, or recovery flows when usage is exhausted. Renders inside the shared
+ * authenticated provider shell.
  */
 import { createFileRoute } from "@tanstack/react-router";
 

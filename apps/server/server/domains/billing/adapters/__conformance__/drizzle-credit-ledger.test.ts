@@ -27,8 +27,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ledger = createDrizzleCreditLedger(db);
 
     const userId = "00000000-0000-4000-8000-000000000101";
-    const projectId = "00000000-0000-4000-8000-000000000201";
-
     async function seedUser(): Promise<void> {
       await db.insert(users).values(conformanceUserValues(userId, "credit-ledger"));
     }
@@ -45,14 +43,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("consumes granted lots FIFO and makes remaining lot balance the canonical balance", async () => {
       await ledger.grant({
         userId,
-        projectId,
         source: "manual",
         amountMillicredits: "100",
         reason: "older",
       });
       await ledger.grant({
         userId,
-        projectId,
         source: "manual",
         amountMillicredits: "75",
         reason: "newer",
@@ -60,7 +56,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await ledger.debit({
         userId,
-        projectId,
         rootThreadId: "root-thread",
         threadId: "thread-1",
         turnId: "turn-1",
@@ -69,11 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         usageEventId: "model-response-1",
       });
 
-      expect(await ledger.getBalance({ userId, projectId })).toBe("50");
-      expect(
-        await ledger.getRunDebitTotal({ userId, projectId, rootThreadId: "root-thread" }),
-      ).toBe("125");
-
+      expect(await ledger.getBalance({ userId })).toBe("50");
       const [lotTotal] = await db
         .select({ total: sql<bigint>`COALESCE(SUM(${creditLots.remainingMillicredits}), 0)` })
         .from(creditLots)
@@ -93,7 +84,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("short-circuits replayed model-response persistence to one debit", async () => {
       await ledger.grant({
         userId,
-        projectId,
         source: "manual",
         amountMillicredits: "1000",
         reason: "pilot",
@@ -101,7 +91,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const input = {
         userId,
-        projectId,
         rootThreadId: "root-thread",
         threadId: "thread-1",
         turnId: "turn-1",
@@ -113,11 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const replay = await ledger.debit(input);
 
       expect(replay.transactionId).toBe(first.transactionId);
-      expect(await ledger.getBalance({ userId, projectId })).toBe("875");
-      expect(
-        await ledger.getRunDebitTotal({ userId, projectId, rootThreadId: "root-thread" }),
-      ).toBe("125");
-
+      expect(await ledger.getBalance({ userId })).toBe("875");
       const consumptionRows = await db
         .select()
         .from(creditTransactions)
@@ -128,7 +113,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("maps Stripe grants to purchase source_type accepted by the DB constraint", async () => {
       await ledger.grant({
         userId,
-        projectId,
         source: "stripe",
         amountMillicredits: "500",
         reason: null,
@@ -136,24 +120,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const lots = await db.select({ sourceType: creditLots.sourceType }).from(creditLots);
       expect(lots).toEqual([{ sourceType: "purchase" }]);
-      expect(await ledger.getBalance({ userId, projectId })).toBe("500");
+      expect(await ledger.getBalance({ userId })).toBe("500");
     });
 
     it("uses subscription grant_reason as the DB-enforced idempotency key", async () => {
       const input = {
         userId,
-        projectId,
         source: "subscription" as const,
         amountMillicredits: "5000",
-        reason: "subscription:sub_123:2026-06-01T00:00:00.000Z",
-        expiresAt: "2026-07-01T00:00:00.000Z",
+        reason: "invoice paid",
+        stripeIdempotencyId: "subscription:sub_123:2026-06-01T00:00:00.000Z",
+        expiresAt: "2099-07-01T00:00:00.000Z",
       };
 
       const first = await ledger.grant(input);
       const replay = await ledger.grant(input);
 
       expect(replay).toEqual({ transactionId: first.transactionId, created: false });
-      expect(await ledger.getBalance({ userId, projectId })).toBe("5000");
+      expect(await ledger.getBalance({ userId })).toBe("5000");
       const lots = await db
         .select({ sourceType: creditLots.sourceType, reason: creditLots.grantReason })
         .from(creditLots);
@@ -178,7 +162,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("creates signup and monthly manual grants once under concurrent grant calls", async () => {
       const signupInput = {
         userId,
-        projectId,
         source: "manual" as const,
         amountMillicredits: "200000",
         reason: "signup",
@@ -189,11 +172,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const createdSignup = signupResults.filter((result) => result.created);
       expect(createdSignup).toHaveLength(1);
       expect(new Set(signupResults.map((result) => result.transactionId)).size).toBe(1);
-      expect(await ledger.getBalance({ userId, projectId })).toBe("200000");
+      expect(await ledger.getBalance({ userId })).toBe("200000");
 
       const monthlyInput = {
         userId,
-        projectId,
         source: "manual" as const,
         amountMillicredits: "200000",
         reason: "monthly_2026_07",
@@ -204,7 +186,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const createdMonthly = monthlyResults.filter((result) => result.created);
       expect(createdMonthly).toHaveLength(1);
       expect(new Set(monthlyResults.map((result) => result.transactionId)).size).toBe(1);
-      expect(await ledger.getBalance({ userId, projectId })).toBe("400000");
+      expect(await ledger.getBalance({ userId })).toBe("400000");
     });
   });
 }
