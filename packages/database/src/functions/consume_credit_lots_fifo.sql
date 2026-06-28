@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS consume_credit_lots_fifo(UUID, BIGINT, UUID, TEXT, JSONB);
+
 CREATE OR REPLACE FUNCTION consume_credit_lots_fifo(
   p_user_id UUID,
   p_amount BIGINT,
@@ -7,7 +9,8 @@ CREATE OR REPLACE FUNCTION consume_credit_lots_fifo(
 )
 RETURNS TABLE (
   remaining_balance BIGINT,
-  went_negative BOOLEAN
+  went_negative BOOLEAN,
+  consumption_group_id UUID
 )
 LANGUAGE plpgsql
 AS $$
@@ -18,6 +21,7 @@ DECLARE
   v_went_negative BOOLEAN := false;
   v_balance BIGINT;
   v_debt_lot_id UUID;
+  v_consumption_group_id UUID;
 BEGIN
   IF p_amount IS NULL OR p_amount <= 0 THEN
     RAISE EXCEPTION 'p_amount must be a positive bigint';
@@ -38,6 +42,13 @@ BEGIN
     WHERE usage_event_id = p_usage_event_id
       AND transaction_type = 'consumption'
   ) THEN
+    SELECT ct.consumption_group_id
+    INTO v_consumption_group_id
+    FROM credit_transactions ct
+    WHERE ct.usage_event_id = p_usage_event_id
+      AND ct.transaction_type = 'consumption'
+    LIMIT 1;
+
     SELECT COALESCE(cb.total_balance_millicredits, 0)
     INTO v_balance
     FROM credit_balances cb
@@ -45,7 +56,8 @@ BEGIN
 
     RETURN QUERY SELECT
       COALESCE(v_balance, 0),
-      COALESCE(v_balance, 0) < 0;
+      COALESCE(v_balance, 0) < 0,
+      v_consumption_group_id;
     RETURN;
   END IF;
 
@@ -147,6 +159,7 @@ BEGIN
 
   RETURN QUERY SELECT
     COALESCE(v_balance, 0),
-    COALESCE(v_balance, 0) < 0;
+    COALESCE(v_balance, 0) < 0,
+    p_consumption_group_id;
 END;
 $$;

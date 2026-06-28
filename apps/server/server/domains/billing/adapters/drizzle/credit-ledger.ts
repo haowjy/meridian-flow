@@ -256,19 +256,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
     async debit(input: CreditDebitInput) {
       const amount = assertPositiveMillicredits(input.millicredits);
       const tx = activeDb(db);
-      const [existing] = await tx
-        .select({ consumptionGroupId: creditTransactions.consumptionGroupId })
-        .from(creditTransactions)
-        .where(
-          and(
-            eq(creditTransactions.userId, input.userId),
-            eq(creditTransactions.transactionType, "consumption"),
-            eq(creditTransactions.usageEventId, input.usageEventId),
-          ),
-        )
-        .limit(1);
-      if (existing?.consumptionGroupId) return { transactionId: existing.consumptionGroupId };
-
       const consumptionGroupId = crypto.randomUUID();
       const metadata = JSON.stringify({
         rootThreadId: input.rootThreadId,
@@ -276,7 +263,11 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         turnId: input.turnId,
         agentSlug: input.agentSlug,
       });
-      const rows = await tx.execute<{ remaining_balance: bigint; went_negative: boolean }>(sql`
+      const rows = await tx.execute<{
+        remaining_balance: bigint;
+        went_negative: boolean;
+        consumption_group_id: string;
+      }>(sql`
         SELECT *
         FROM consume_credit_lots_fifo(
           ${input.userId}::uuid,
@@ -286,8 +277,9 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           ${metadata}::jsonb
         )
       `);
-      if (!rows[0]) throw new Error("Failed to create or find credit debit transaction");
-      return { transactionId: consumptionGroupId };
+      const row = rows[0];
+      if (!row) throw new Error("Failed to create or find credit debit transaction");
+      return { transactionId: row.consumption_group_id };
     },
 
     async getBalance(input) {
