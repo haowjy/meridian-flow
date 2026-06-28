@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 import { createInMemoryJournal } from "../in-memory/agent-edit.js";
+import { expectReversalCompactionContract } from "./journal-reversal-compaction-contract.js";
 import { expectReversalMutationStatusContract } from "./journal-reversal-mutation-status-contract.js";
 
 const DOC_ID = "doc-1";
@@ -11,6 +12,16 @@ const TURN_B = "turn-b";
 describe("in-memory journal adapter contract", () => {
   it("matches reversal mutation status transitions", async () => {
     await expectReversalMutationStatusContract({
+      journal: createInMemoryJournal(),
+      docId: DOC_ID,
+      threadId: THREAD_ID,
+      turnIds: [TURN_A, TURN_B],
+      userId: USER_ID,
+    });
+  });
+
+  it("matches reversal compaction history semantics", async () => {
+    await expectReversalCompactionContract({
       journal: createInMemoryJournal(),
       docId: DOC_ID,
       threadId: THREAD_ID,

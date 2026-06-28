@@ -104,6 +104,42 @@ describe("selectUndoClosure", () => {
     });
   });
 
+  it("ignores retained reversal-op deletes for the selected handle when checking dependencies", () => {
+    const updates = textUpdatesWithUndoRedoHistory();
+    const closure = selectUndoClosure({
+      snapshot: { checkpoint: null, updates },
+      reversals: [reversal("w1", "redone", 2, 4)],
+      rowsByHandle: new Map([["w1", [mutation("w1", 1)]]]),
+      selectedHandles: ["w1"],
+      candidateHandles: ["w1"],
+      reversalOpSeqs: new Set([2, 4]),
+      isScopeSelection: false,
+    });
+
+    expect(closure.ok && closure.handles).toEqual(["w1"]);
+    expect(closure.ok && [...closure.targetSeqs]).toEqual([4]);
+  });
+
+  it("refuses unexplained later deletes against the selected handle's retained history", () => {
+    const updates = textUpdates();
+    const closure = selectUndoClosure({
+      snapshot: { checkpoint: null, updates },
+      reversals: [reversal("w1", "redone", 2, 4)],
+      rowsByHandle: new Map([["w1", [mutation("w1", 1)]]]),
+      selectedHandles: ["w1"],
+      candidateHandles: ["w1"],
+      reversalOpSeqs: new Set([2, 4]),
+      isScopeSelection: false,
+    });
+
+    expect(closure).toEqual({
+      ok: false,
+      status: "cant_undo_dependent",
+      blockingWriteIds: ["a later edit"],
+      selectedWriteIds: ["w1"],
+    });
+  });
+
   it("returns nothing_to_undo when selected rows are not active and retained", () => {
     const snapshot = snapshotWithSeqs([1]);
 
@@ -174,6 +210,21 @@ function reversal(
     undoUpdateSeq,
     ...(redoUpdateSeq !== undefined ? { redoUpdateSeq } : {}),
   };
+}
+
+function textUpdatesWithUndoRedoHistory(): PersistedUpdate[] {
+  const doc = new Y.Doc({ gc: false });
+  const text = doc.getText("t");
+  const rows: PersistedUpdate[] = [];
+  const push = (seq: number, origin: string, mutate: () => void) => {
+    const before = Y.encodeStateVector(doc);
+    doc.transact(mutate, origin);
+    rows.push({ seq, update: Y.encodeStateAsUpdate(doc, before), meta: { origin, seq } });
+  };
+  push(1, "agent:turn", () => text.insert(0, "blade"));
+  push(2, "system", () => text.delete(0, 5));
+  push(4, "system", () => text.insert(0, "blade"));
+  return rows;
 }
 
 function textUpdates(): PersistedUpdate[] {
