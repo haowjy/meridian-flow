@@ -267,7 +267,7 @@ export function createRuntimeStore(deps: {
           ok: false,
           response: {
             status: "not_found",
-            text: `status: not_found\n\nDocument changed since your last read; a whole-block replace/delete by hash is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry with current hashes.`,
+            text: `status: not_found\n\nDocument changed since your last read; a whole-scope replace/delete with no \`find\` is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry.`,
           },
         };
       }
