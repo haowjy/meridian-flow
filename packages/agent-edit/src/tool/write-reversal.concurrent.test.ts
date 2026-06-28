@@ -137,6 +137,34 @@ describe("write reversal under concurrent edits", () => {
     ]);
   });
 
+  it("keeps a human insertion before the agent replacement at the same text boundary", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Beta shield.",
+    });
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "shield", content: "ward" },
+      { ...context, turnId: "turn-human-before-replacement" },
+    );
+
+    await applyRemoteHumanEdit(
+      scenario.ctx.liveDoc("chapter.md"),
+      scenario.ctx.journal,
+      (remote) => {
+        const block = model.getBlocks(remote)[0];
+        if (!block) throw new Error("expected first block");
+        model.applyTextEdit(remote, block, { from: "Beta ".length, to: "Beta ".length }, "bright ");
+      },
+    );
+
+    const undo = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      context,
+    );
+
+    expect(undo.status).toBe("reconciled");
+    expect(scenario.blockTexts()).toEqual(["Beta bright shield."]);
+  });
+
   it("keeps a multi-cycle undo/redo/undo/redo/undo correct with a foreign edit", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Agent target.\n\nHuman target.",
