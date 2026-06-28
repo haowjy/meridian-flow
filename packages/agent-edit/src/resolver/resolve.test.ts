@@ -147,6 +147,59 @@ describe("resolveWrite", () => {
     ).toMatchObject({ ok: false, error: { code: "invalid_write" } });
   });
 
+  it("does not resolve stale hex-shaped write fragments through section slugs", () => {
+    const doc = createDoc("# cafe\n\nScene text");
+
+    expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
+    for (const params of [
+      { command: "replace" as const, content: "Replacement", in: "#cafe" },
+      { command: "replace" as const, content: "", in: "#cafe" },
+      { command: "replace" as const, content: "Replacement", find: "Scene", in: "#cafe" },
+    ]) {
+      expect(resolve(doc, params)).toMatchObject({
+        ok: false,
+        error: { code: "not_found", message: 'Block hash "cafe" was not found' },
+      });
+    }
+  });
+
+  it("still resolves explicit non-hex section slugs for writes", () => {
+    const doc = createDoc("# my scene\n\nScene text\n\n# Next\n\nOther text");
+    const [heading, body] = model.getBlocks(doc);
+
+    const edits = expectOk(
+      resolve(doc, { command: "replace", content: "Replacement", in: "#my-scene" }),
+    );
+
+    expect(edits.map((edit) => edit.kind)).toEqual(["delete", "insert", "delete"]);
+    expect(edits[0].kind === "delete" ? edits[0].block : null).toBe(heading);
+    expect(edits[2].kind === "delete" ? edits[2].block : null).toBe(body);
+  });
+
+  it("resolves real block hashes used as mutating file fragments", () => {
+    const doc = createDoc("Alpha\n\nBeta");
+    const [, beta] = model.getBlocks(doc);
+    const hash = model.getBlockId(beta);
+
+    const edits = expectOk(
+      resolveWrite(
+        { doc, model, codec },
+        {
+          documentAddress: {
+            documentId: "123e4567-e89b-12d3-a456-426614174000",
+            filePath: "chapter.md",
+            fragment: hash,
+          },
+          command: "replace",
+          content: "Gamma",
+        },
+      ),
+    );
+
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toMatchObject({ kind: "text", block: beta, newText: "Gamma" });
+  });
+
   it("returns an actionable ambiguous error for insert block anchors", () => {
     const doc = createDoc(collisionMarkdown());
     const fixture = prefixCollisionFixture(model, model.getBlocks(doc));

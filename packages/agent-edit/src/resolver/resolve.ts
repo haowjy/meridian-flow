@@ -104,7 +104,9 @@ function resolveInsert(
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
-    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around);
+    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
+      allowSlugFallback: false,
+    });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
@@ -142,7 +144,9 @@ function resolveReplace(
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
-    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around);
+    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
+      allowSlugFallback: false,
+    });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
@@ -154,7 +158,7 @@ function resolveReplace(
   }
   const target = params.in ?? fragmentScope(params);
   if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
-  const scope = resolveScope(ctx, target);
+  const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (params.content.length === 0) return deleteScope(params, scope.scope);
   return replaceScope(ctx, params, scope.scope, parsed);
@@ -197,7 +201,7 @@ function validateSectionContent(
   if (parsed.blocks.length === 0) return { ok: true };
   const target = params.in ?? fragmentScope(params);
   if (typeof target !== "string" || !target.startsWith("#")) return { ok: true };
-  const scope = resolveScope(ctx, target);
+  const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (scope.scope.kind !== "section" || scope.scope.headingLevel === undefined) return { ok: true };
   const sectionLevel = scope.scope.headingLevel;

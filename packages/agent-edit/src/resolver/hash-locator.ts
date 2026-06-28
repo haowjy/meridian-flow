@@ -9,7 +9,7 @@ export interface HashLocateContext {
 }
 
 export type HashLocationFailure =
-  | { ok: false; code: "not_found" | "invalid_write"; message: string }
+  | { ok: false; code: "not_found"; message: string }
   | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
 
 export type HashLocationResult =

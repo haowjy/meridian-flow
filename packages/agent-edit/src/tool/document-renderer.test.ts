@@ -138,6 +138,25 @@ describe("document renderer", () => {
     });
   });
 
+  it("keeps slug fallback for hex-shaped read fragments", () => {
+    const doc = createDoc("# cafe\n\nScene text\n\n# Next\n\nOther text", 100);
+    const renderer = createDocumentRenderer({ model, codec });
+
+    expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: "chapter.md#cafe" },
+      { filePath: "chapter.md", fragment: "cafe" },
+    );
+
+    expect(selection).toMatchObject({ ok: true });
+    if (!selection.ok) throw new Error(selection.message);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual([
+      "# cafe",
+      "Scene text",
+    ]);
+  });
+
   it("selects around windows with radius three and clamps at document edges", () => {
     const doc = createDoc(numberedBlocks(9), 100);
     const renderer = createDocumentRenderer({ model, codec });

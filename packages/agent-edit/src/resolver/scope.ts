@@ -11,6 +11,10 @@ export interface ScopeContext {
   model: DocumentModel;
 }
 
+export interface ScopeResolveOptions {
+  allowSlugFallback?: boolean;
+}
+
 export interface BlockScope {
   kind: "document" | "block" | "range" | "section" | "around";
   blocks: BlockRef[];
@@ -30,17 +34,22 @@ export function resolveSearchScope(
   ctx: ScopeContext,
   input?: unknown,
   around?: string,
+  options: ScopeResolveOptions = {},
 ): ScopeResult {
   if (input !== undefined && around !== undefined) {
     return invalid("`in` and `around` are mutually exclusive scope parameters");
   }
   if (around !== undefined) return resolveAround(ctx, around);
-  if (input !== undefined) return resolveScope(ctx, input);
+  if (input !== undefined) return resolveScope(ctx, input, options);
   const blocks = ctx.model.getBlocks(ctx.doc);
   return { ok: true, scope: scopeFromIndexes("document", blocks, 0, blocks.length - 1) };
 }
 
-export function resolveScope(ctx: ScopeContext, input: unknown): ScopeResult {
+export function resolveScope(
+  ctx: ScopeContext,
+  input: unknown,
+  options: ScopeResolveOptions = {},
+): ScopeResult {
   const blocks = ctx.model.getBlocks(ctx.doc);
   if (blocks.length === 0) return notFound("Document has no blocks");
 
@@ -56,12 +65,16 @@ export function resolveScope(ctx: ScopeContext, input: unknown): ScopeResult {
     return invalid("`in` must be a block hash, range, section, or accepted positional target");
   }
 
-  if (input.startsWith("#")) return resolveFragment(ctx, input.slice(1));
+  if (input.startsWith("#")) return resolveFragment(ctx, input.slice(1), options);
   if (input.includes("..")) return resolveStringRange(ctx, input);
   return resolveSingleHash(ctx, input);
 }
 
-export function resolveFragment(ctx: ScopeContext, fragment: string): ScopeResult {
+export function resolveFragment(
+  ctx: ScopeContext,
+  fragment: string,
+  options: ScopeResolveOptions = {},
+): ScopeResult {
   if (fragment.length === 0) return invalid("Empty section fragment");
   const hexShaped = HEX_HASH_RE.test(fragment);
   if (hexShaped) {
@@ -69,6 +82,7 @@ export function resolveFragment(ctx: ScopeContext, fragment: string): ScopeResul
     if (byHash.ok) return byHash;
     if (byHash.code === "ambiguous") return byHash;
     if (byHash.code !== "not_found") return byHash;
+    if (options.allowSlugFallback === false) return byHash;
     return resolveSlug(ctx, fragment);
   }
   const bySlug = resolveSlug(ctx, fragment);
