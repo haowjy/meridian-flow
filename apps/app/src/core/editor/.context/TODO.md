@@ -15,8 +15,7 @@ which breaks agent-edit's "block hash = stable block identity" contract. See the
 no-in-place-reorder policy in `packages/agent-edit/.context/CONTEXT.md`.
 
 We removed `draggable: true` from `figure` (here and in
-`packages/prosemirror-schema`) so the inconsistency is gone; figures currently move
-via cut/paste (clean delete+insert).
+`packages/prosemirror-schema`); figures move via cut/paste (delete+insert).
 
 **Implementation when we build drag-to-place:**
 - Intercept the figure drop (custom `handleDrop` / drag handler) and decompose the

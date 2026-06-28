@@ -24,7 +24,9 @@ the update journal, and the live-document coordinator.
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
   (test/app fakes).
 - **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for the
-  post-write activity/projection hook; these are server read-model side effects,
+  post-write activity/projection hook; `domain/turn-reversal.ts` orchestrates
+  reversal across every document a turn touched and feeds the `reverseTurn` facade.
+  These are server read-model side effects and turn-level orchestration,
   not agent-edit package concerns.
 
 ## Rules

@@ -1,7 +1,7 @@
 # Meridian Flow Database Layer — Orientation Map
 
-> **Map last regenerated:** 2026-06-18
-> **Database layer last changed:** 2026-06-27 (`cf9ec532`)
+> **Map last regenerated:** 2026-06-28
+> **Database layer last changed:** 2026-06-28 (`e22d5a0a`)
 >
 > "Database layer last changed" is derived from
 > `git log -1 --date=short --format=%cd -- packages/database/src` (the schema /
@@ -121,7 +121,7 @@ async function createAppServices(): Promise<AppServices> {
 | `preferences.ts` | `project_user_preferences` |
 | `provenance.ts` | `turn_document_touches` |
 | `results.ts` | `project_results` |
-| `yjs.ts` | `document_yjs_checkpoints`, `document_yjs_updates`, `document_yjs_heads`, `document_restore_points` |
+| `yjs.ts` | `document_yjs_checkpoints`, `document_yjs_updates`, `document_yjs_reversals`, `document_yjs_reversal_ops`, `agent_edit_mutations`, `pending_undo_notifications`, `agent_edit_wid_counters`, `agent_edit_sync_state`, `document_yjs_heads`, `document_restore_points` |
 | `waitlist.ts` | `waitlist_emails` |
 | `threads.ts`, `turns.ts` | Compatibility re-exports → `agent-threads.ts` |
 
@@ -160,7 +160,9 @@ users
 threads ←M:N→ works  via thread_works (composite PK, one primary per thread)
 threads → turns → turn_blocks / model_responses
 threads → event_journal (monotonic seq per thread)
-documents → document_yjs_* (collab)
+documents → document_yjs_* (collab + reversals + mutations + reversal-ops + sync-state)
+pending_undo_notifications → threads, turns
+documents → agent_edit_wid_counters
 ```
 
 **Deferred FKs** (added in migration SQL, not inline Drizzle): `threads.parent_thread_id`, `threads.origin_turn_id`, `threads.active_leaf_turn_id`, `turns.parent_turn_id`, `folders.parent_id`, agent self-FKs (`base_definition_id`, etc.). See comment at bottom of `agent-threads.ts` lines 346–347.
@@ -174,7 +176,7 @@ documents → document_yjs_* (collab)
 
 ### Enums
 
-No PostgreSQL `ENUM` types. Constraints are **`text` columns + `CHECK (... IN (...))`** throughout (e.g. `threads.status`, `credit_lots.source_type`, `documents.file_type`).
+No PostgreSQL `ENUM` types. Constraints are **`text` columns + `CHECK (... IN (...))`** throughout (e.g. `threads.status`, `credit_lots.source_type`, `documents.file_type`, `document_yjs_reversals.status`, `document_yjs_reversal_ops.direction`, `pending_undo_notifications.direction`).
 
 ### Timestamp columns & Drizzle `mode`
 
@@ -229,6 +231,12 @@ export const softDeleteAt = () => timestamp("deleted_at", { withTimezone: true }
 | **turn_document_touches** | `touched_at` | Date | Inline |
 | **project_results** | `created_at` | Date | Via `_shared` |
 | **document_yjs_checkpoints/updates/restore_points** | `created_at` | Date | Via `_shared` |
+| **document_yjs_reversals** | `expires_at`, `reversed_at`, `created_at` | Date | Inline / Via `_shared` |
+| **document_yjs_reversal_ops** | *(none)* | — | No timestamp columns |
+| **agent_edit_mutations** | `created_at`, `reversed_at` | Date | Via `_shared` / Inline |
+| **agent_edit_wid_counters** | *(none)* | — | No timestamp columns |
+| **agent_edit_sync_state** | `updated_at` | Date | Inline |
+| **pending_undo_notifications** | `created_at` | Date | Inline (`defaultNow()`) |
 | **document_yjs_heads** | `updated_at` | Date | Inline |
 | **waitlist_emails** | `created_at` | Date | Inline |
 
@@ -403,6 +411,7 @@ export default defineConfig({
 | `0004_high_mastermind.sql` | Write-level undo handles and reversal metadata |
 | `0005_agent_edit_sync_state.sql` | Persisted agent-edit restart sync state |
 | `0006_faithful_thunderbolt_ross.sql` | `document_yjs_heads.latest_checkpoint_id` FK |
+| `0007_reversal_lineage_and_undo_notifications.sql` | Reversal-op lineage (`document_yjs_reversal_ops`), `pending_undo_notifications`, `document_yjs_reversals.redo_update_seq`, `agent_edit_mutations.thread_turn` index |
 | `meta/_journal.json` | Ordered migration journal; review with every generated migration |
 | `meta/*_snapshot.json` | Required generated Drizzle snapshots; never delete |
 
