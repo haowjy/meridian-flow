@@ -226,6 +226,44 @@ describe("StripeBillingGateway", () => {
     });
   });
 
+  it("rejects subscription invoices with unknown Stripe price IDs so Stripe retries", async () => {
+    const gateway = createStripeBillingGateway({
+      secretKey: "sk_test",
+      webhookSecret: "whsec",
+      planPrices: [
+        {
+          entryId: "plan_standard",
+          stripePriceId: "price_standard",
+          grantMillicredits: "1000000",
+        },
+      ],
+    });
+
+    await expect(
+      gateway.resolveCheckoutGrant(
+        event("invoice.paid", {
+          id: "in_123",
+          parent: {
+            subscription_details: {
+              subscription: "sub_123",
+              metadata: { userId: "user_sub" },
+            },
+          },
+          lines: {
+            data: [
+              {
+                id: "il_period",
+                period: { start: 1_782_864_000, end: 1_785_542_400 },
+                pricing: { price_details: { price: "price_rotated" } },
+                parent: { subscription_item_details: { subscription: "sub_123" } },
+              },
+            ],
+          },
+        }),
+      ),
+    ).rejects.toThrow("Unknown Stripe subscription price ID: price_rotated");
+  });
+
   it("does not grant from a proration-only invoice.paid (mid-cycle plan change)", async () => {
     const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
 
