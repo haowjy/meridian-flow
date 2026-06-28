@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore, type SyncState, type SyncStateStore } from "../index.js";
-import { blockTexts, documentBytes, humanText, outcomeText } from "./test-support/assertions.js";
+import {
+  blockTexts,
+  documentBytes,
+  hashAt,
+  humanText,
+  outcomeText,
+} from "./test-support/assertions.js";
 import {
   cloneDoc,
   codec,
@@ -182,7 +188,7 @@ describe("runtime store", () => {
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha dagger waits."]);
   });
 
-  it("invalidates a thread runtime and rebuilds the next read from recovered live state", async () => {
+  it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -200,8 +206,122 @@ describe("runtime store", () => {
 
     ctx.core.invalidateThread("chapter.md", THREAD_ID);
 
-    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    expect(outcomeText(read)).toContain("|Human Alpha blade.");
+    const edit = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
+      context,
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
+  });
+
+  it("rejects stale unconfirmed scoped replacement without mutating", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
+
+    const rejected = await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: alphaHash, content: "Agent replacement." },
+      context,
+    );
+
+    expect(rejected.status).toBe("not_found");
+    expect(outcomeText(rejected)).toContain("Document changed since your last read");
+    expect(outcomeText(rejected)).toContain('Run write(command="read", file="chapter.md")');
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
+  });
+
+  it("rejects stale unconfirmed numeric-scope delete without mutating", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
+
+    const rejected = await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 2, content: "" },
+      context,
+    );
+
+    expect(rejected.status).toBe("not_found");
+    expect(outcomeText(rejected)).toContain("whole-scope replace/delete with no `find` is unsafe");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
+  });
+
+  it("keeps non-destructive stale-doc operations on the auto-rebuild path", async () => {
+    const readCtx = harness({ "chapter.md": "Alpha sword." });
+    await readCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await appendHumanPrefixAndInvalidate(readCtx, "chapter.md");
+    const read = await readCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    expect(read.status).toBe("success");
+    expect(outcomeText(read)).toContain("Human Alpha sword.");
+
+    const insertCtx = harness({ "chapter.md": "Alpha sword.\n\nOmega." });
+    await insertCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    const alphaHash = hashAt(insertCtx.liveDoc("chapter.md"), 0);
+    await appendHumanPrefixAndInvalidate(insertCtx, "chapter.md");
+    const insert = await insertCtx.core.write(
+      { command: "insert", file: "chapter.md", after: alphaHash, content: "Inserted scene." },
+      context,
+    );
+    expect(insert.status).toBe("success");
+    expect(blockTexts(insertCtx.liveDoc("chapter.md"))).toEqual([
+      "Human Alpha sword.",
+      "Inserted scene.",
+      "Omega.",
+    ]);
+
+    const replaceCtx = harness({ "chapter.md": "Alpha sword." });
+    await replaceCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await appendHumanPrefixAndInvalidate(replaceCtx, "chapter.md");
+    const replace = await replaceCtx.core.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      context,
+    );
+    expect(replace.status).toBe("success");
+    expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
+  });
+
+  it("allows unconfirmed scoped replace and delete on non-stale docs and after re-read", async () => {
+    const nonStale = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
+    await nonStale.core.write({ command: "read", file: "chapter.md" }, context);
+    const alphaHash = hashAt(nonStale.liveDoc("chapter.md"), 0);
+    const replaced = await nonStale.core.write(
+      { command: "replace", file: "chapter.md", in: alphaHash, content: "Agent replacement." },
+      context,
+    );
+    expect(replaced.status).toBe("success");
+    expect(blockTexts(nonStale.liveDoc("chapter.md"))).toEqual([
+      "Agent replacement.",
+      "Beta shield.",
+    ]);
+    const betaHash = hashAt(nonStale.liveDoc("chapter.md"), 1);
+    const deleted = await nonStale.core.write(
+      { command: "replace", file: "chapter.md", in: betaHash, content: "" },
+      context,
+    );
+    expect(deleted.status).toBe("success");
+    expect(blockTexts(nonStale.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
+
+    const reread = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
+    await reread.core.write({ command: "read", file: "chapter.md" }, context);
+    const staleHash = hashAt(reread.liveDoc("chapter.md"), 0);
+    await appendHumanPrefixAndInvalidate(reread, "chapter.md");
+    const rejected = await reread.core.write(
+      { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
+      context,
+    );
+    expect(rejected.status).toBe("not_found");
+    const freshRead = await reread.core.write({ command: "read", file: "chapter.md" }, context);
+    expect(freshRead.status).toBe("success");
+    const retried = await reread.core.write(
+      { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
+      context,
+    );
+    expect(retried.status).toBe("success");
+    expect(blockTexts(reread.liveDoc("chapter.md"))).toEqual([
+      "Agent replacement.",
+      "Beta shield.",
+    ]);
   });
 
   it("rehydrates durable redo after restart and marks it redone", async () => {
@@ -420,4 +540,15 @@ async function waitForSyncState(
 
 function key(documentId: string, threadId: string): string {
   return `${documentId}\0${threadId}`;
+}
+
+async function appendHumanPrefixAndInvalidate(ctx: ReturnType<typeof harness>, docId: string) {
+  const live = ctx.liveDoc(docId);
+  const beforeVector = Y.encodeStateVector(live);
+  humanText(live, 0, { from: 0, to: 0 }, "Human ");
+  await ctx.journal.append(docId, Y.encodeStateAsUpdate(live, beforeVector), {
+    origin: "human:user-a",
+    seq: 0,
+  });
+  ctx.core.invalidateThread(docId, THREAD_ID);
 }

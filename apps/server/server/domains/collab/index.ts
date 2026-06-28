@@ -1,7 +1,7 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { AgentEditCore } from "@meridian/agent-edit";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
@@ -80,6 +80,15 @@ export type AgentEditAccess = {
   agentEdit(): AgentEditCore;
 };
 
+export type TurnReversalAccess = {
+  reverseTurn(input: {
+    threadId: ThreadId;
+    turnId: TurnId;
+    direction: "undo" | "redo";
+    actor: { type: "user"; userId: string } | { type: "agent" };
+  }): Promise<ReversalOutcome>;
+};
+
 export type MarkdownDocumentStore = {
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
@@ -123,6 +132,7 @@ export type DocumentAttribution = {
 
 export type CollabDomain = CollabTransport &
   AgentEditAccess &
+  TurnReversalAccess &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   DocumentCheckpoints &

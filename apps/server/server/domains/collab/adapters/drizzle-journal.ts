@@ -22,6 +22,7 @@ import {
   agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
+  documentYjsReversalOps,
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
@@ -30,7 +31,10 @@ import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "driz
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 
-type JournalDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
+type JournalDb = Pick<
+  Database,
+  "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction"
+>;
 
 type OriginType = "agent" | "human" | "system";
 type UpdateMetaMode = "journal" | "latest";
@@ -154,6 +158,7 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
     writeIds: row.writeId ? [row.writeId] : [row.turnId],
     status: row.status,
     undoUpdateSeq: row.undoUpdateSeq,
+    ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
     ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
     ...(row.reversedAt ? { reversedAt: row.reversedAt } : {}),
     ...(row.reversedByUserId ? { reversedByUserId: row.reversedByUserId } : {}),
@@ -170,18 +175,33 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
-async function latestBaselineCheckpoint(db: JournalDb, documentId: string) {
+async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
+  // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+  // above the latest compacted checkpoint; reconstruction can safely use the newest
+  // checkpoint below the earliest retained update.
+  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
+    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
+
+  // No retained updates: the document is fully checkpointed, so the latest checkpoint IS
+  // the state.
+  if (minRetainedSeq === null) return await latestCheckpoint(db, documentId);
+
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
     .where(
       and(
         eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        eq(documentYjsCheckpoints.upToSeq, 0),
+        lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
       ),
     )
-    .orderBy(desc(documentYjsCheckpoints.id))
+    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
+  // null when no checkpoint precedes the earliest retained update (e.g. the server
+  // checkpoints at the head with no upToSeq-0 baseline): reconstruct from an empty base
+  // plus every retained update row — never a checkpoint that hides the rows undo needs.
   return row ?? null;
 }
 
@@ -517,6 +537,20 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       return reserveWriteOrdinal(db, { documentId, threadId });
     },
 
+    async documentsForTurn(threadId, turnId) {
+      const rows = await db
+        .selectDistinct({ documentId: agentEditMutations.documentId })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+          ),
+        )
+        .orderBy(asc(agentEditMutations.documentId));
+      return rows.map((row) => row.documentId);
+    },
+
     async latestActiveWrite(documentId, threadId) {
       const [row] = await db
         .select({
@@ -644,10 +678,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     ): Promise<JournalSnapshot> {
       await assertReadableHead(db, docId);
 
-      const latest = await latestCheckpoint(db, docId);
       const fromCheckpoint = opts.fromCheckpoint ?? true;
-      const conditions = [eq(documentYjsUpdates.documentId, asDocumentId(docId))];
-      if (fromCheckpoint) conditions.push(gt(documentYjsUpdates.id, latest?.upToSeq ?? 0));
+      const checkpoint = fromCheckpoint
+        ? await latestCheckpoint(db, docId)
+        : await reconstructionCheckpoint(db, docId);
+      const conditions = [
+        eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
+      ];
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
       if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
 
@@ -657,7 +695,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .where(and(...conditions))
         .orderBy(asc(documentYjsUpdates.id));
 
-      const checkpoint = fromCheckpoint ? latest : await latestBaselineCheckpoint(db, docId);
       return {
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),
@@ -686,17 +723,22 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         const txDb = tx as JournalDb;
         const checkpoint = await latestCheckpoint(txDb, docId);
         const checkpointSeq = checkpoint?.upToSeq ?? 0;
-        const foldRows = await txDb
+        // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+        // above the latest compacted checkpoint; reconstruction can safely start from the
+        // newest checkpoint below the earliest retained update.
+        const candidateRows = await txDb
           .select()
           .from(documentYjsUpdates)
           .where(
             and(
               eq(documentYjsUpdates.documentId, asDocumentId(docId)),
               gt(documentYjsUpdates.id, checkpointSeq),
-              lt(documentYjsUpdates.createdAt, before),
             ),
           )
           .orderBy(asc(documentYjsUpdates.id));
+        const firstRetainedIndex = candidateRows.findIndex((row) => row.createdAt >= before);
+        const foldRows =
+          firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
 
         let compactedThroughSeq = checkpointSeq;
         if (foldRows.length > 0) {
@@ -720,7 +762,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               and(
                 eq(documentYjsUpdates.documentId, asDocumentId(docId)),
                 lte(documentYjsUpdates.id, compactedThroughSeq),
-                lt(documentYjsUpdates.createdAt, before),
+              ),
+            );
+          await txDb
+            .delete(documentYjsReversalOps)
+            .where(
+              and(
+                eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
+                lte(documentYjsReversalOps.updateSeq, compactedThroughSeq),
               ),
             );
         }
@@ -760,6 +809,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
+                redoUpdateSeq: null,
                 expiresAt: record.expiresAt ?? null,
                 reversedAt: record.reversedAt ?? null,
                 reversedByUserId: asUserId(record.reversedByUserId) ?? null,
@@ -773,11 +823,19 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 set: {
                   status: record.status,
                   undoUpdateSeq,
+                  redoUpdateSeq: null,
                   expiresAt: record.expiresAt ?? null,
                   reversedAt: record.reversedAt ?? null,
                   reversedByUserId: asUserId(record.reversedByUserId) ?? null,
                 },
               });
+            await txDb.insert(documentYjsReversalOps).values({
+              documentId: asDocumentId(docId),
+              threadId: asThreadId(record.threadId),
+              updateSeq: undoUpdateSeq,
+              handle: writeId,
+              direction: "undo",
+            });
           }
           for (const writeId of record.writeIds) {
             await reverseMutationsForWrite(txDb, {
@@ -815,9 +873,18 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         }
 
         const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
+        await txDb.insert(documentYjsReversalOps).values(
+          reversals.map((reversal) => ({
+            documentId: asDocumentId(docId),
+            threadId: asThreadId(ref.threadId),
+            updateSeq: seq,
+            handle: reversal.writeId,
+            direction: "redo" as const,
+          })),
+        );
         await txDb
           .update(documentYjsReversals)
-          .set({ status: "redone" })
+          .set({ status: "redone", redoUpdateSeq: seq })
           .where(
             and(
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
@@ -836,6 +903,21 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
         return { consumed: true, seq };
       });
+    },
+
+    async reversalOpSeqsForHandles(docId, threadId, handles) {
+      if (handles.length === 0) return new Set<number>();
+      const rows = await db
+        .select({ updateSeq: documentYjsReversalOps.updateSeq })
+        .from(documentYjsReversalOps)
+        .where(
+          and(
+            eq(documentYjsReversalOps.documentId, asDocumentId(docId)),
+            eq(documentYjsReversalOps.threadId, asThreadId(threadId)),
+            inArray(documentYjsReversalOps.handle, [...handles]),
+          ),
+        );
+      return new Set(rows.map((row) => Number(row.updateSeq)));
     },
 
     async readReversals(docId, opts = {}) {

@@ -210,6 +210,7 @@ function DesktopProject(props: ProjectViewProps) {
             // conversation survives a close/reopen.
             visible={chatPlacement === "center" || isOpen("chat")}
             onCloseDock={close("chat")}
+            onSelectContextPath={props.onSelectContextPath}
           />
         </div>
       ),

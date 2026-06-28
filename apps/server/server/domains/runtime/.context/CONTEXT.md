@@ -21,6 +21,7 @@ streaming `Gateway` port.
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
 | Cancel settlement | `Gateway.settleCancelledResult()` owns interrupted-call reconciliation and persist decisions. Generic token/missing-usage handling lives in `gateway/domain/cancel-settlement.ts`; OpenRouter-specific `/generation` settlement lives under `gateway/adapters/openrouter/`. The loop only asks the gateway to settle and then finalizes cancellation. |
+| Tool-arg JSON repair | `gateway/helpers/parse-tool-arguments.ts` repairs malformed provider JSON (e.g. unquoted hex hash `"in": 6c4a`) via `jsonrepair` before falling back to a typed `ToolArgsParseError` sentinel. Unrepairable input surfaces a clear model-actionable parse error instead of degrading into misleading downstream schema errors. See issue [#113](https://github.com/haowjy/meridian-flow/issues/113). |
 
 Canonical gateway types live in `gateway/domain/types.ts`.
 
@@ -39,7 +40,7 @@ skeleton and delegates the moving parts.
 | `tool-dispatch.ts` | Permission check, tool execution ordering, result event shaping. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `checkpoints.ts` | `CheckpointRegistry` factory; process-local pending checkpoint promises plus restart recovery from the event journal. No module-global registry state. |
-| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked. |
+| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; can inject one-turn transient undo notifications after working state. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -112,6 +113,12 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Undo notifications** — `runTurn` atomically consumes pending user undo/redo
+  rows once, immediately before the first provider stream, after the request has
+  been built and debug capture has succeeded. The undo-notifications repository
+  owns coalescing by write handle (last direction wins), and the runtime injects
+  net undone edits only into the first model request. Mid-stream undos remain
+  pending for the next turn.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes; cancellation paths

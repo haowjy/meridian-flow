@@ -47,6 +47,14 @@ export interface StoredReversal {
   createdAt: Date;
 }
 
+export interface StoredReversalOp {
+  documentId: string;
+  threadId: string;
+  updateSeq: number;
+  handle: string;
+  direction: "undo" | "redo";
+}
+
 export interface StoredCheckpoint {
   state: Uint8Array;
   upToSeq: number;
@@ -59,6 +67,7 @@ export interface JournalEntry {
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
   reversals: Map<string, StoredReversal>;
+  reversalOps: StoredReversalOp[];
   mutations: StoredAgentEditMutation[];
 }
 
@@ -131,9 +140,15 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   async compact(docId: string, before: Date): Promise<CompactionResult> {
     const entry = this.entry(docId);
     const checkpointSeq = entry.checkpoint?.upToSeq ?? 0;
-    const foldRows = entry.updates
-      .filter((update) => update.seq > checkpointSeq && update.storedAt < before)
+    // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+    // above the latest compacted checkpoint; reconstruction can safely start from the
+    // newest checkpoint below the earliest retained update.
+    const candidateRows = entry.updates
+      .filter((update) => update.seq > checkpointSeq)
       .sort((left, right) => left.seq - right.seq);
+    const firstRetainedIndex = candidateRows.findIndex((update) => update.storedAt >= before);
+    const foldRows =
+      firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
 
     let compactedThroughSeq = checkpointSeq;
     if (foldRows.length > 0) {
@@ -145,9 +160,8 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     }
 
     if (compactedThroughSeq > 0) {
-      entry.updates = entry.updates.filter(
-        (update) => !(update.seq <= compactedThroughSeq && update.storedAt < before),
-      );
+      entry.updates = entry.updates.filter((update) => update.seq > compactedThroughSeq);
+      entry.reversalOps = entry.reversalOps.filter((op) => op.updateSeq > compactedThroughSeq);
     }
 
     let reversalsExpired = 0;
@@ -181,9 +195,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           record: copyReversalRecord({
             ...record,
             documentId: docId,
+            writeIds: [writeId],
             undoUpdateSeq: seq,
+            redoUpdateSeq: undefined,
           }),
           createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
+        });
+        entry.reversalOps.push({
+          documentId: docId,
+          threadId: record.threadId,
+          updateSeq: seq,
+          handle: writeId,
+          direction: "undo",
         });
         this.reverseMutations(
           docId,
@@ -225,9 +248,16 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     for (const [key, stored] of group) {
       entry.reversals.set(key, {
         ...stored,
-        record: { ...stored.record, status: "redone" },
+        record: { ...stored.record, status: "redone", redoUpdateSeq: seq },
       });
       for (const writeId of stored.record.writeIds) {
+        entry.reversalOps.push({
+          documentId: docId,
+          threadId: ref.threadId,
+          updateSeq: seq,
+          handle: writeId,
+          direction: "redo",
+        });
         this.reactivateMutations(docId, ref.threadId, writeId, ref.undoUpdateSeq);
       }
     }
@@ -248,6 +278,33 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       )
       .sort(compareReversalRecords)
       .map(copyReversalRecord);
+  }
+
+  async reversalOpSeqsForHandles(
+    docId: string,
+    threadId: string,
+    handles: readonly string[],
+  ): Promise<Set<number>> {
+    const handleSet = new Set(handles);
+    return new Set(
+      this.entry(docId)
+        .reversalOps.filter((op) => op.threadId === threadId && handleSet.has(op.handle))
+        .map((op) => op.updateSeq),
+    );
+  }
+
+  async documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
+    const documentIds = new Set<string>();
+    for (const [documentId, entry] of this.data) {
+      if (
+        entry.mutations.some(
+          (mutation) => mutation.threadId === threadId && mutation.turnId === turnId,
+        )
+      ) {
+        documentIds.add(documentId);
+      }
+    }
+    return [...documentIds].sort();
   }
 
   async latestActiveWrite(
@@ -334,13 +391,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   ): JournalSnapshot {
     const entry = this.entry(docId);
     const fromCheckpoint = opts.fromCheckpoint ?? true;
-    const checkpointUpToSeq = fromCheckpoint ? (entry.checkpoint?.upToSeq ?? 0) : 0;
     const checkpoint = fromCheckpoint
       ? entry.checkpoint
-      : entry.checkpoints
-          .filter((candidate) => candidate.upToSeq === 0)
-          .sort((left, right) => right.upToSeq - left.upToSeq)
-          .at(0);
+      : this.selectReconstructionCheckpoint(entry);
+    const checkpointUpToSeq = checkpoint?.upToSeq ?? 0;
     return {
       checkpoint: checkpoint ? copyBytes(checkpoint.state) : null,
       updates: entry.updates
@@ -395,6 +449,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
             { record: copyReversalRecord(stored.record), createdAt: copyDate(stored.createdAt) },
           ]),
         ),
+        reversalOps: entry.reversalOps.map((op) => ({ ...op })),
         mutations: entry.mutations.map(copyMutationRecord),
       });
     }
@@ -417,6 +472,26 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
 
   debugEntry(docId: string): JournalEntry | undefined {
     return this.data.get(docId);
+  }
+
+  private selectReconstructionCheckpoint(entry: JournalEntry): StoredCheckpoint | null {
+    // Reconstruction must start from the newest checkpoint strictly BELOW the earliest
+    // retained update, then replay the retained updates — never a checkpoint at/above
+    // them, which would hide the very rows undo needs (the live server checkpoints at the
+    // head and may have no upToSeq-0 baseline; returning that head yields zero updates and
+    // a false "nothing to undo").
+    // With no retained updates the document is fully checkpointed, so the latest checkpoint
+    // IS the state.
+    if (entry.updates.length === 0) return entry.checkpoint;
+    const minRetainedSeq = Math.min(...entry.updates.map((update) => update.seq));
+    let selected: StoredCheckpoint | null = null;
+    for (const checkpoint of entry.checkpoints) {
+      if (checkpoint.upToSeq >= minRetainedSeq) continue;
+      if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
+    }
+    // null when no checkpoint precedes the earliest retained update: reconstruct from an
+    // empty base plus every retained update row.
+    return selected;
   }
 
   private appendMutationSync(
@@ -493,6 +568,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         nextWIdByThread: new Map(),
         updates: [],
         reversals: new Map(),
+        reversalOps: [],
         mutations: [],
       };
       this.data.set(docId, entry);
@@ -533,6 +609,7 @@ function copyReversalRecord(record: ReversalRecord): ReversalRecord {
     writeIds: [...record.writeIds],
     status: record.status,
     undoUpdateSeq: record.undoUpdateSeq,
+    ...(record.redoUpdateSeq !== undefined ? { redoUpdateSeq: record.redoUpdateSeq } : {}),
     ...(record.expiresAt ? { expiresAt: copyDate(record.expiresAt) } : {}),
     ...(record.reversedAt ? { reversedAt: copyDate(record.reversedAt) } : {}),
     ...(record.reversedByUserId ? { reversedByUserId: record.reversedByUserId } : {}),

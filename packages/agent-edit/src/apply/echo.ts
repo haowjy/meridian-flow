@@ -95,10 +95,15 @@ export function applyConcurrentUpdates(
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
     model.applyUpdate(doc, item.update, item.origin);
-    if (!model.stateVectorAdvanced(syncStateVector, model.encodeStateVector(doc))) continue;
     const after = snapshotBlocks(doc, model, codec);
     const diff = diffSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
+    if (
+      touched.size === 0 &&
+      !model.stateVectorAdvanced(syncStateVector, model.encodeStateVector(doc))
+    ) {
+      continue;
+    }
     const bucket = item.origin.type === "agent" ? byActor.agent : byActor.human;
     for (const hash of touched) bucket.add(hash);
   }
@@ -117,7 +122,11 @@ export function applyConcurrentUpdates(
     };
     return { info: collapsed, touchedHashes };
   }
-  return { info: { human, agent }, touchedHashes };
+  const renderedBlocks = renderConcurrentBlocks(snapshotBlocks(doc, model, codec), {
+    human,
+    agent,
+  });
+  return { info: { human, agent, renderedBlocks }, touchedHashes };
 }
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */
@@ -243,6 +252,17 @@ function truncateWords(text: string, maxWords = 8): string {
   const words = text.split(/\s+/).filter((word) => word.length > 0);
   if (words.length <= maxWords) return text;
   return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+function renderConcurrentBlocks(
+  after: readonly BlockSnapshot[],
+  hashes: { human: readonly string[]; agent: readonly string[] },
+): { human: string[]; agent: string[] } {
+  const serializedByHash = new Map(after.map((block) => [block.hash, block.serialized]));
+  return {
+    human: hashes.human.map((hash) => serializedByHash.get(hash) ?? `${hash}| (deleted)`),
+    agent: hashes.agent.map((hash) => serializedByHash.get(hash) ?? `${hash}| (deleted)`),
+  };
 }
 
 function orderedHashes(

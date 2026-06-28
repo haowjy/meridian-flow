@@ -79,6 +79,12 @@ export function createTestOrchestratorDeps(
     checkpointRegistry: createCheckpointRegistry(),
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
+    undoNotifications: {
+      async record() {},
+      async consumeForThread() {
+        return [];
+      },
+    },
     responseWrites: {
       async commitResponse() {
         return [];

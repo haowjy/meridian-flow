@@ -26,11 +26,15 @@ async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    console.log(
-      "bootstrap: DATABASE_URL not set — skip DB migrate/apply-functions (set DATABASE_URL in .env after pnpm dev:infra)",
+    // Fail loudly instead of silently skipping migrations. A missing DATABASE_URL in a
+    // worktree means direnv has not loaded .envrc, so the worktree-scoped DB was never
+    // derived — continuing would run the app against a stale/shared DB (the exact
+    // cross-worktree blast radius tools/dev is built to prevent).
+    throw new Error(
+      "bootstrap: DATABASE_URL is not set, so DB migrate/apply-functions cannot run. " +
+        "In a worktree this usually means direnv has not loaded .envrc — run `direnv allow`. " +
+        "For a fresh checkout, copy .env.example to .env and run `pnpm dev:infra`.",
     );
-    console.log(`\n${NEXT_STEP}`);
-    return;
   }
 
   console.log("bootstrap: ensuring local Postgres container is up…");

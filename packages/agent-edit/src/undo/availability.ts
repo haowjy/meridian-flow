@@ -7,6 +7,7 @@ export interface UndoAvailability {
   redo: boolean;
   undoWriteId?: string;
   redoWriteId?: string;
+  undoTarget?: { writeIds: string[]; turnId: string };
 }
 
 export interface AvailabilityDetails extends UndoAvailability {
@@ -37,7 +38,14 @@ export async function resolveUndoAvailability(input: {
   return {
     undo: undo.ok,
     redo: redo.ok,
-    ...(undo.ok ? { undoWriteId: undo.writeIds.at(-1) } : {}),
+    ...(undo.ok
+      ? {
+          undoWriteId: undo.writeIds.at(-1),
+          ...(undo.writeIds.length > 1
+            ? { undoTarget: { writeIds: undo.writeIds, turnId: undo.turnId } }
+            : {}),
+        }
+      : {}),
     ...(redo.ok
       ? {
           redoWriteId: redo.writeIds[0],

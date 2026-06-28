@@ -37,6 +37,90 @@
 - `packages/prosemirror-schema`: schema version 4 adds GFM table nodes, a
   `strike` mark, and task-list state on `list_item` for markdown/Yjs
   round-tripping.
+- Chat editing: find/replace now tolerates the `hash|` block prefixes that `read`
+  emits. The model can paste `read` output straight into a `find` without it
+  failing and triggering a "run read to re-sync" loop. The raw document is still
+  matched literally, so genuine `|` content (tables, etc.) is unaffected.
+
+- Chat editing: a block hash shown by `read` is now always resolvable. Displayed
+  hashes extend just enough to stay a unique prefix of their block, so referencing
+  a hash the model saw no longer silently fails when another block shares a short
+  prefix. Lookups also accept any unique-length prefix, so a hash stays usable
+  even as sibling blocks come and go.
+
+- Chat editing: referencing an ambiguous block hash now reports it as ambiguous
+  (not a misleading "not found"), and a `read` on an ambiguous hash shows every
+  matching block with its full disambiguating hash so the model can re-target.
+
+- Chat editing: when a concurrent edit lands mid-turn, the agent is now re-shown
+  the changed block bodies with their current hashes after its write commits,
+  instead of just a list of changed hashes — so it can keep editing against
+  current content without a full re-read. Concurrent deletions are now surfaced too.
+
+- Chat editing: a destructive whole-scope `replace`/delete addressed only by a
+  scope (hash, index, range, or section) with no `find` is now refused with a
+  "re-read and retry" prompt when the document changed since the agent's last
+  read — so a stale address can't silently destroy a moved/reclaimed target.
+  Content-confirmed (`find`-based) edits and all non-destructive ops still
+  auto-resync silently.
+
+- Chat editing: a destructive `replace`/delete targeting a hex-shaped `#hash`
+  fragment no longer silently falls back to a same-named heading section when the
+  hash is stale/missing — it returns not-found instead of editing the wrong
+  section. Reads still resolve `file#hash` to a section by slug.
+
+- Chat editing: `create` (and `create overwrite`) now checks existence and
+  computes its overwrite from the canonical + staged view, not a stale replica —
+  so an overwrite fully replaces canonical content, a duplicate create in the same
+  turn is rejected, and a non-overwrite create no longer leaves stale phantom
+  blocks attached to the session.
+
+- Chat: assistant turns with many edits no longer stall the UI. An unstable
+  checkpoint callback was defeating memoization and causing a render storm.
+
+- Collab: undo/redo after retention compaction no longer corrupts the document.
+  Reconstruction now reads from the compacted checkpoint instead of the original
+  baseline, so undoing a still-retained write stops resurrecting edits that
+  compaction folded away. Compaction now folds only a contiguous update prefix.
+
+- Collab: pending undo/redo notifications coalesce deterministically (latest wins)
+  even when several land in the same millisecond.
+
+- Collab: grouped undo/redo notifications now carry each write handle's original turn id
+  instead of collapsing mixed-turn groups onto the seed turn.
+
+- Collab: grouped redo boundaries are now treated as atomic undo units; selecting one write from a grouped redo expands to every write in that redo so document content and reversal metadata stay in sync.
+
+- Collab: undoing "the latest turn" now reverses every group that turn touched,
+  even when a grouped reversal pulled in writes from an earlier turn. The scope
+  loop pins to the selected turn instead of the representative reported turn, so
+  it no longer stops early and leaves part of the turn reversed.
+
+- Chat editing: after a writer undoes the agent's edits, the agent's next edit
+  no longer fails with "run read to re-sync." The agent's document replica
+  re-syncs automatically from canonical, so the model never spends a tool call
+  re-reading just to keep editing.
+
+- Chat editing: the message telling the model which edits a writer reversed now
+  lists the specific reversed write ids per file, so the model can tell exactly
+  what changed without re-reading.
+
+- Collab: undo/redo now uses persisted reversal lineage instead of delete-set ownership guessing, so concurrent edits in other blocks or non-overlapping ranges survive repeated undo/redo cycles without corruption.
+
+- Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.
+
+- Chat: assistant turns that edited files now show a "N files changed" footer.
+  Expand it to see each file, click a filename to open it in the editor, and
+  undo/redo per file or all at once. Already-undone or expired edits show the
+  right state.
+- Chat editing: when a writer undoes the agent's edits and then sends another
+  message, the model is told which edits were reversed (net undo/redo state,
+  injected once on the next turn) so it stops redoing unwanted work.
+
+- Chat editing: turn-scoped undo/redo can now reverse every document a turn touched.
+  The reverse API accepts `scope: "turn"` without `uri`, resolves affected
+  documents from the agent-edit journal, and returns a shared per-document
+  `TurnReversalOutcome` contract.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2

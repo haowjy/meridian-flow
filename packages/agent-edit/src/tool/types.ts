@@ -1,26 +1,10 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
+import type { z } from "zod";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { WriteResultBlock } from "./internal-result.js";
-
-export type { WriteResultBlock };
-
-import type { z } from "zod";
 import type { WriteCommandSchema } from "./command-schema.js";
-
-export type WriteCommand = z.infer<typeof WriteCommandSchema>;
-export type WriteCommandName = WriteCommand["command"];
-export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
-export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
-export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
-export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
-export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
-export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
-export type ReadFormat = ReadCommand["format"];
-export type QueryWriteCommand = ReadCommand;
-export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
-export type HistoryWriteCommand = UndoCommand | RedoCommand;
+import type { WriteResultBlock } from "./internal-result.js";
 
 export type WriteErrorStatus =
   | "not_found"
@@ -39,7 +23,22 @@ export type UndoRedoOutcome =
   | "nothing_to_redo"
   | "expired";
 
+// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type { WriteResultBlock };
+
+export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+export type WriteCommandName = WriteCommand["command"];
+export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
+export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
+export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
+export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
+export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
+export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
+export type ReadFormat = ReadCommand["format"];
+export type QueryWriteCommand = ReadCommand;
+export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
+export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export interface WriteOutcome {

@@ -85,6 +85,10 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import type {
+  PendingUndoNotification,
+  PendingUndoNotificationRepository,
+} from "../../undo-notifications/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -98,6 +102,7 @@ import {
   type CheckpointRegistry,
   defaultCheckpointAutoResumePolicy,
 } from "./checkpoints.js";
+import { undoNotificationSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -150,6 +155,7 @@ export interface OrchestratorDeps {
   checkpointRegistry: CheckpointRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
+  undoNotifications: PendingUndoNotificationRepository;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -177,6 +183,15 @@ function formatConcurrentEdits(info: ConcurrentEditInfo): string {
   const lines = ["concurrent edits:"];
   if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
   if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
+  if (info.renderedBlocks) {
+    lines.push("current blocks:");
+    if (info.renderedBlocks.human.length > 0) {
+      lines.push("  human:", ...info.renderedBlocks.human.map((line) => `    ${line}`));
+    }
+    if (info.renderedBlocks.agent.length > 0) {
+      lines.push("  agent:", ...info.renderedBlocks.agent.map((line) => `    ${line}`));
+    }
+  }
   if (info.reviewCommand) lines.push(info.reviewCommand);
   return lines.join("\n");
 }
@@ -681,6 +696,7 @@ async function buildGenerateRequest(input: {
   turns: Turn[];
   blocks: Block[];
   gatewaySignal?: AbortSignal;
+  undoNotifications?: readonly PendingUndoNotification[];
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -697,6 +713,7 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    undoNotifications: input.undoNotifications,
   });
 
   return {
@@ -744,6 +761,7 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    let shouldInjectUndoNotifications = true;
     const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -812,6 +830,21 @@ async function* generateEvents(
           toolRegistry: deps.toolRegistry,
         }),
       );
+
+      if (shouldInjectUndoNotifications) {
+        const undoNotifications = await deps.undoNotifications.consumeForThread(input.threadId);
+        shouldInjectUndoNotifications = false;
+        if (undoNotifications.length > 0) {
+          const insertAt = request.messages.findIndex((message) => message.role !== "system");
+          request.messages.splice(
+            insertAt === -1 ? request.messages.length : insertAt,
+            0,
+            undoNotificationSystemMessage(undoNotifications),
+          );
+        }
+        // After this point the consume is durable. If the provider stream throws before
+        // returning a result, the notification is lost, matching the model-call boundary.
+      }
 
       // ── Gateway stream consumption ──
       // The gateway yields a self-terminating stream: a sequence of

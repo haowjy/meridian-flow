@@ -10,7 +10,7 @@ import {
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { createAgentEditCore } from "../../index.js";
+import { createAgentEditCore, type UndoNotificationPort } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
@@ -34,6 +34,7 @@ export function harness(
     lifecycle?: boolean;
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
+    undoNotificationPort?: UndoNotificationPort;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -50,6 +51,7 @@ export function harness(
     model,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
+    ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
   });
   return {
     core,

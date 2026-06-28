@@ -9,7 +9,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
@@ -108,9 +108,10 @@ export function ChatView({
     controller.cancel(threadId);
   }
 
-  function handleRespondToCheckpoint(request: CheckpointRespondRequest) {
-    controller.respondCheckpoint(request);
-  }
+  const handleRespondToCheckpoint = useCallback(
+    (request: CheckpointRespondRequest) => controller.respondCheckpoint(request),
+    [controller],
+  );
 
   return (
     <ChatSurface

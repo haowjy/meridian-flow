@@ -7,6 +7,7 @@ import {
   type WriteMutationRow,
 } from "../ports/update-journal.js";
 import { evaluateRedoEligibility } from "./reconstruction.js";
+import { selectUndoClosure } from "./reversal-lineage.js";
 
 export type ReversalSelection =
   | { kind: "latest" }
@@ -22,17 +23,32 @@ export type ReversalPlanStatus =
   | "cant_undo_dependent"
   | "invalid_write";
 
+export interface WriteTurnId {
+  writeHandle: string;
+  turnId: string;
+}
+
 export type ReversalPlan =
   | {
       ok: true;
       direction: "undo" | "redo";
       writeIds: string[];
+      // Representative seed turn for grouping/reports; grouped reversals can span turns.
       turnId: string;
+      // Scope key for repeated turn-scoped reversal when the selected turn spans groups.
+      scopeTurnId?: string;
+      writeTurnIds: readonly WriteTurnId[];
       targetSeqs: ReadonlySet<number>;
       snapshot: JournalSnapshot;
       redoGroup?: { undoUpdateSeq: number };
     }
-  | { ok: false; status: ReversalPlanStatus; message?: string; blockingWriteIds?: string[] };
+  | {
+      ok: false;
+      status: ReversalPlanStatus;
+      message?: string;
+      blockingWriteIds?: string[];
+      selectedWriteIds?: string[];
+    };
 
 export async function planUndo(input: {
   reversalStore: ReversalStore;
@@ -45,22 +61,40 @@ export async function planUndo(input: {
   if (!selected.ok) return selected;
   if (selected.writes.length === 0) return { ok: false, status: "nothing_to_undo" };
 
-  const retained = await retainedRowsForHandles(
-    input.reversalStore,
-    input.docId,
-    input.threadId,
-    selected.writeIds,
-    state.snapshot,
-    "active",
-  );
-  const targetSeqs = mutationSeqs(retained.rows);
-  if (targetSeqs.size === 0) return { ok: false, status: "nothing_to_undo" };
+  const candidateHandles = handlesInState(state, selected.writeIds);
+  const [rowsByHandle, reversalOpSeqs] = await Promise.all([
+    input.reversalStore.mutationsForWrites(input.docId, input.threadId, candidateHandles),
+    input.reversalStore.reversalOpSeqsForHandles(input.docId, input.threadId, candidateHandles),
+  ]);
+
+  const closure = selectUndoClosure({
+    snapshot: state.snapshot,
+    reversals: state.reversals,
+    rowsByHandle,
+    selectedHandles: selected.writeIds,
+    candidateHandles,
+    reversalOpSeqs,
+    isScopeSelection: input.selection.kind === "turn",
+  });
+
+  if (!closure.ok) {
+    if (closure.status === "nothing_to_undo") return { ok: false, status: "nothing_to_undo" };
+    return {
+      ok: false,
+      status: "cant_undo_dependent",
+      blockingWriteIds: closure.blockingWriteIds,
+      selectedWriteIds: closure.selectedWriteIds,
+    };
+  }
+
   return {
     ok: true,
     direction: "undo",
-    writeIds: retained.writeIds,
-    turnId: retained.rows[0]?.turnId ?? "unknown",
-    targetSeqs,
+    writeIds: closure.handles,
+    turnId: rowsByHandle.get(closure.handles[0] ?? "")?.[0]?.turnId ?? "unknown",
+    ...(selected.scopeTurnId !== undefined ? { scopeTurnId: selected.scopeTurnId } : {}),
+    writeTurnIds: writeTurnIdsForHandles(closure.handles, rowsByHandle),
+    targetSeqs: closure.targetSeqs,
     snapshot: state.snapshot,
   };
 }
@@ -74,7 +108,13 @@ export async function planRedo(input: {
 }): Promise<ReversalPlan> {
   const state = await loadState(input.reversalStore, input.docId, input.threadId);
   const groups = redoGroups(state, input.now ?? new Date());
-  const selected = selectRedoGroup(groups, input.selection);
+  const selected = await selectRedoGroup({
+    reversalStore: input.reversalStore,
+    docId: input.docId,
+    threadId: input.threadId,
+    groups,
+    selection: input.selection,
+  });
   if (!selected.ok) return selected;
   if (!selected.group) return { ok: false, status: "nothing_to_redo" };
 
@@ -105,6 +145,8 @@ export async function planRedo(input: {
     direction: "redo",
     writeIds: group.writeIds,
     turnId: group.turnId,
+    ...(selected.scopeTurnId !== undefined ? { scopeTurnId: selected.scopeTurnId } : {}),
+    writeTurnIds: writeTurnIdsForHandles(group.writeIds, retained.rowsByHandle),
     targetSeqs,
     snapshot: state.snapshot,
     redoGroup: { undoUpdateSeq: group.undoUpdateSeq },
@@ -132,7 +174,11 @@ async function retainedRowsForHandles(
   snapshot: JournalSnapshot,
   status: WriteMutationRow["status"],
   undoUpdateSeq?: number,
-): Promise<{ writeIds: string[]; rows: WriteMutationRow[] }> {
+): Promise<{
+  writeIds: string[];
+  rows: WriteMutationRow[];
+  rowsByHandle: Map<string, WriteMutationRow[]>;
+}> {
   const retainedSeqs = new Set(snapshot.updates.map((update) => update.seq));
   const rowsByHandle = await reversalStore.mutationsForWrites(docId, threadId, handles);
   const retained: { handle: string; rows: WriteMutationRow[] }[] = [];
@@ -149,6 +195,7 @@ async function retainedRowsForHandles(
   return {
     writeIds: retained.map(({ handle }) => handle),
     rows: retained.flatMap(({ rows }) => rows),
+    rowsByHandle: new Map(retained.map(({ handle, rows }) => [handle, rows])),
   };
 }
 
@@ -156,15 +203,42 @@ function mutationSeqs(rows: readonly WriteMutationRow[]): ReadonlySet<number> {
   return new Set(rows.map((row) => row.createdSeq));
 }
 
+function writeTurnIdsForHandles(
+  handles: readonly string[],
+  rowsByHandle: ReadonlyMap<string, readonly WriteMutationRow[]>,
+): WriteTurnId[] {
+  return handles.map((writeHandle) => ({
+    writeHandle,
+    turnId: rowsByHandle.get(writeHandle)?.[0]?.turnId ?? "unknown",
+  }));
+}
+
+function handlesInState(
+  state: Awaited<ReturnType<typeof loadState>>,
+  selectedHandles: readonly string[],
+): string[] {
+  const handles = new Set(selectedHandles);
+  for (const write of state.activeWrites) handles.add(write.handle);
+  for (const reversal of state.reversals) {
+    for (const writeId of reversal.writeIds) handles.add(writeId);
+  }
+  return [...handles].filter((handle) => parseWriteHandle(handle) !== undefined);
+}
+
 function selectActiveWrites(
   activeWrites: readonly ActiveWriteSummary[],
   selection: ReversalSelection,
 ):
-  | { ok: true; writes: ActiveWriteSummary[]; writeIds: string[] }
+  | { ok: true; writes: ActiveWriteSummary[]; writeIds: string[]; scopeTurnId?: string }
   | { ok: false; status: "invalid_write"; message: string } {
   const selected = selectByHandle(activeWrites, selection);
   if (!selected.ok) return selected;
-  return { ok: true, writes: selected.items, writeIds: selected.items.map((row) => row.handle) };
+  return {
+    ok: true,
+    writes: selected.items,
+    writeIds: selected.items.map((row) => row.handle),
+    ...(selected.scopeTurnId !== undefined ? { scopeTurnId: selected.scopeTurnId } : {}),
+  };
 }
 
 interface RedoGroup {
@@ -199,16 +273,44 @@ function redoGroups(state: Awaited<ReturnType<typeof loadState>>, now: Date): Re
     );
 }
 
-function selectRedoGroup(
-  groups: readonly RedoGroup[],
-  selection: ReversalSelection,
-): { ok: true; group?: RedoGroup } | { ok: false; status: "invalid_write"; message: string } {
+async function selectRedoGroup(input: {
+  reversalStore: ReversalStore;
+  docId: string;
+  threadId: string;
+  groups: readonly RedoGroup[];
+  selection: ReversalSelection;
+}): Promise<
+  | { ok: true; group?: RedoGroup; scopeTurnId?: string }
+  | { ok: false; status: "invalid_write"; message: string }
+> {
+  const { groups, selection } = input;
   if (selection.kind === "latest") return { ok: true, group: groups.at(-1) };
   if (selection.kind === "last") return { ok: true, group: groups.slice(-selection.count).at(0) };
   if (selection.kind === "all") return { ok: true, group: groups.at(0) };
   if (selection.kind === "turn") {
-    const targetTurnId = selection.turnId ?? groups.at(-1)?.turnId;
-    return { ok: true, group: groups.filter((group) => group.turnId === targetTurnId).at(0) };
+    if (selection.turnId === undefined) {
+      const targetTurnId = groups.at(-1)?.turnId;
+      return {
+        ok: true,
+        group: groups.find((group) => group.turnId === targetTurnId),
+        ...(targetTurnId !== undefined ? { scopeTurnId: targetTurnId } : {}),
+      };
+    }
+    const rowsByHandle = await input.reversalStore.mutationsForWrites(input.docId, input.threadId, [
+      ...new Set(groups.flatMap((group) => group.writeIds)),
+    ]);
+    const targetTurnId = selection.turnId;
+    return {
+      ok: true,
+      group: groups.find((group) =>
+        group.writeIds.some((handle) =>
+          (rowsByHandle.get(handle) ?? []).some(
+            (row) => row.status === "reversed" && row.turnId === targetTurnId,
+          ),
+        ),
+      ),
+      scopeTurnId: targetTurnId,
+    };
   }
   const selected = groups.filter((group) => handlesOverlapSelection(group.writeIds, selection));
   if (selection.kind === "single") return { ok: true, group: selected.at(-1) };
@@ -218,7 +320,9 @@ function selectRedoGroup(
 function selectByHandle<T extends { handle: string; turnId: string; createdSeq: number }>(
   items: readonly T[],
   selection: ReversalSelection,
-): { ok: true; items: T[] } | { ok: false; status: "invalid_write"; message: string } {
+):
+  | { ok: true; items: T[]; scopeTurnId?: string }
+  | { ok: false; status: "invalid_write"; message: string } {
   if (selection.kind === "latest") return { ok: true, items: items.slice(-1) };
   if (selection.kind === "single")
     return { ok: true, items: items.filter((item) => item.handle === selection.to) };
@@ -226,7 +330,11 @@ function selectByHandle<T extends { handle: string; turnId: string; createdSeq: 
   if (selection.kind === "last") return { ok: true, items: items.slice(-selection.count) };
   if (selection.kind === "turn") {
     const targetTurnId = selection.turnId ?? latestByCreatedSeq(items)?.turnId;
-    return { ok: true, items: items.filter((item) => item.turnId === targetTurnId) };
+    return {
+      ok: true,
+      items: items.filter((item) => item.turnId === targetTurnId),
+      ...(targetTurnId !== undefined ? { scopeTurnId: targetTurnId } : {}),
+    };
   }
   const from = parseWriteHandle(selection.from);
   const to = parseWriteHandle(selection.to);

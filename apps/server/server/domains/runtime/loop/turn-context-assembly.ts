@@ -15,6 +15,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
+import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
 import {
   applyBakedInvokeAdvertisement,
@@ -39,6 +40,7 @@ export interface AssembleNextTurnContextInput {
     threadId: ThreadId,
     input: BakeComposedSystemPromptInput,
   ) => Promise<Thread>;
+  undoNotifications?: readonly PendingUndoNotification[];
 }
 
 export interface AssembledNextTurnContext {
@@ -128,6 +130,7 @@ export async function assembleNextTurnContext(
       blocks: input.blocks,
       tools,
       skillsSystemPromptSection,
+      undoNotifications: input.undoNotifications,
     });
 
     const gatewayParams = agentContext.gatewayParams;

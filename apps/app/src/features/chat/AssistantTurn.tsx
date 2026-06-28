@@ -10,7 +10,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
@@ -24,6 +24,8 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
+import { TurnChangeFooter } from "./TurnChangeFooter";
+import { turnWrittenDocuments } from "./turn-written-documents";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -38,13 +40,21 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToCheckpoint,
 }: AssistantTurnProps) {
-  const sortedBlocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
-  const segments = partitionTurnSegments(sortedBlocks);
+  const sortedBlocks = useMemo(
+    () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
+    [turn.blocks],
+  );
+  const segments = useMemo(() => partitionTurnSegments(sortedBlocks), [sortedBlocks]);
   const isErrored = turn.status === "error";
   const isCancelled = turn.status === "cancelled";
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
+  const writtenDocuments = useMemo(
+    () => (isLive ? [] : turnWrittenDocuments(turn)),
+    [isLive, turn],
+  );
+  const hasReversibleWrites = writtenDocuments.length > 0;
 
   return (
     <div
@@ -63,6 +73,14 @@ function AssistantTurnComponent({
           onRespondToCheckpoint={onRespondToCheckpoint}
         />
       ))}
+
+      {hasReversibleWrites ? (
+        <TurnChangeFooter
+          threadId={threadId ?? turn.threadId}
+          turn={turn}
+          writtenDocuments={writtenDocuments}
+        />
+      ) : null}
 
       {isLive ? <LiveTurnStatusBar /> : null}
       {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
@@ -217,7 +235,7 @@ function DeliverySegments({
   mode: DeliveryMode;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
 }) {
-  const segments = groupDeliverySegments(blocks);
+  const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
     <>
       {segments.flatMap((segment) => {

@@ -131,6 +131,34 @@ window.
 
 ## Stable server-side helpers
 
+### Turn-reversal orchestration (`domain/turn-reversal.ts`)
+
+`reverseTurn` iterates every document a thread turn touched (queried via
+`ReversalStore.documentsForTurn`) and calls `agentEdit.reverse()` per document
+with a `{ kind: "turn", turnId }` selection. The per-document outcome is
+enriched with a context URI via `resolveDocumentUri`; the aggregate status is
+`reversed`/`reconciled` when all documents succeed, `nothing_to_undo`/
+`nothing_to_redo` when none have reversible writes, `expired`, or `partial`.
+
+`TurnReversalAccess` (`index.ts:78`) exposes this as `reverseTurn(input)` on
+`CollabDomain`. Route handlers also call `agentEdit().reverse()` directly when
+the caller specifies a single document URI.
+
+**Reverse route** — `routes/api/threads/[threadId]/context/reverse.post.ts`
+accepts `{ uri?, direction, scope, target? }`. Without a `uri`, it calls
+`documentSync.reverseTurn()` for the whole turn. With a `uri`, it resolves the
+single document and calls `agentEdit().reverse()` directly.
+
+### Undo-notification delivery
+
+The collab composition (`composition.ts:103-134`) adapts agent-edit's
+`UndoNotificationPort` to a server-side `PendingUndoNotificationRepository`
+(`domains/undo-notifications/`). After a successful user reversal, the port
+resolves `docId` to a context URI and writes a row to `pending_undo_notifications`.
+The runtime orchestrator consumes these rows once at `runTurn` start to inject
+net undone edits into the first model request. Coalescing by write handle
+(last direction wins) lives in the undo-notifications repository.
+
 `document-activity.ts` contains DB helpers for document write read models:
 `touchDocumentActivity` and `updateMarkdownProjection`. `createCollabDomain`
 wires them through the facade document-write hook; the in-memory collab domain

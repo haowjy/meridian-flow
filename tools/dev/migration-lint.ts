@@ -18,7 +18,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 interface Rule {
@@ -88,6 +88,10 @@ interface Finding {
 }
 
 function lintFile(filePath: string): Finding[] {
+  // A staged/changed migration set can include deletions (e.g. squashing or
+  // renaming migrations); a deleted file has nothing to lint.
+  if (!existsSync(filePath)) return [];
+
   const findings: Finding[] = [];
   const content = readFileSync(filePath, "utf8");
   const lines = content.split("\n");

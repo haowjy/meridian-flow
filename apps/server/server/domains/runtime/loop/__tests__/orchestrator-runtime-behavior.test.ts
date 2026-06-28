@@ -263,6 +263,236 @@ describe("runtime orchestrator behavior", () => {
     );
   });
 
+  it("backfills rendered concurrent edit blocks into the next tool result", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "saw concurrent blocks" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({
+          toolCallId: call.id,
+          output: [{ type: "text", text: "status: success" }],
+          metadata: { documentId: "doc-1" },
+        }),
+      },
+      responseWrites: {
+        async commitResponse() {
+          return [
+            {
+              documentId: "doc-1",
+              concurrentEdits: {
+                human: ["abcd"],
+                agent: [],
+                renderedBlocks: { human: ["abcd|Human changed line."], agent: [] },
+              },
+            },
+          ];
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    const secondRequest = JSON.stringify(requests[1]?.messages);
+    expect(secondRequest).toContain("concurrent edits:\\n  human: abcd");
+    expect(secondRequest).toContain("current blocks:");
+    expect(secondRequest).toContain("abcd|Human changed line.");
+  });
+
+  it("injects consumed undo notifications only on the first model call", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "done" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    let consumeCount = 0;
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({ toolCallId: call.id, output: "tool result" }),
+      },
+      undoNotifications: {
+        async record() {},
+        async consumeForThread(threadId) {
+          consumeCount += 1;
+          return [
+            {
+              id: 1,
+              threadId: threadId as never,
+              writeHandle: "w1",
+              turnId: "00000000-0000-4000-8000-000000000001" as never,
+              uri: "manuscript://chapter-1.md",
+              direction: "undo",
+              createdAt: new Date("2026-06-27T00:00:00.000Z"),
+            },
+          ];
+        },
+      },
+    });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+
+    expect(consumeCount).toBe(1);
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[0]?.messages)).toContain(
+      "The writer reversed the following edits before this message",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain(
+      "The writer reversed the following edits before this message",
+    );
+  });
+
+  it("keeps pending undo notifications when the first model call is not issued", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    let consumeCount = 0;
+    const deps = createTestOrchestratorDeps({
+      gateway: textGateway(),
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      checkpointRegistry: createCheckpointRegistry(),
+      undoNotifications: {
+        async record() {},
+        async consumeForThread() {
+          consumeCount += 1;
+          return [];
+        },
+      },
+      modelRequestDebug: {
+        captureEnabled: true,
+        record() {
+          throw new Error("debug store unavailable before gateway stream");
+        },
+        listByTurn() {
+          return [];
+        },
+        listByThread() {
+          return [];
+        },
+      },
+    });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+
+    expect(consumeCount).toBe(0);
+  });
+
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
     const gateway = gatewayFromResults([
       {

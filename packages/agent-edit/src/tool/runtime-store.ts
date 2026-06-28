@@ -54,20 +54,25 @@ export interface RuntimeStore {
   requireSynced(
     session: ActorSession,
     docId: string,
+    commandName: WriteCommand["command"],
     filePath?: string,
     runtime?: RuntimeDocumentState,
+    options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
 }
 
 export interface RuntimeEvictOptions {
-  needsRecovery?: boolean;
+  markLiveDocStale?: boolean;
 }
 
 export interface RuntimeRestoreOptions {
-  recoverFromJournal?: boolean;
   filePath?: string;
+}
+
+export interface RuntimeSyncOptions {
+  rejectOnStale?: boolean;
 }
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -79,7 +84,16 @@ export function createRuntimeStore(deps: {
 }): RuntimeStore {
   const { coordinator, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
-  const docsNeedingRecovery = new Set<string>();
+  // Live docs whose canonical journal has updates not yet replayed into the
+  // shared in-memory live Y.Doc; the next access replays (coordinator.recover)
+  // before trusting the doc, then clears the flag.
+  //
+  // Doc-scoped, NOT thread-scoped, on purpose: the live doc is shared canonical
+  // state, so any thread that touches a stale live doc must replay first
+  // (recover is idempotent). This is distinct from a missing runtime replica
+  // (removed from runtimeDocs) — that needs no flag because a missing replica is
+  // always lazily rebuilt from canonical.
+  const staleLiveDocs = new Set<string>();
 
   return {
     runtimeFor,
@@ -113,7 +127,7 @@ export function createRuntimeStore(deps: {
     docId: string,
     runtime: RuntimeDocumentState,
   ): void {
-    docsNeedingRecovery.delete(docId);
+    staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
     const stateVector = Y.encodeStateVector(runtime.doc);
     // At commit, synced and committed snapshots are the same — both
@@ -139,7 +153,7 @@ export function createRuntimeStore(deps: {
   ): void {
     runtimeDocs.delete(runtimeKey(session, docId));
     session.documents.delete(docId);
-    if (options.needsRecovery) docsNeedingRecovery.add(docId);
+    if (options.markLiveDocStale) staleLiveDocs.add(docId);
   }
 
   function evictThreadRuntimes(
@@ -153,7 +167,7 @@ export function createRuntimeStore(deps: {
       runtimeDocs.delete(key);
       runtime.session.documents.delete(docId);
     }
-    if (options.needsRecovery) docsNeedingRecovery.add(docId);
+    if (options.markLiveDocStale) staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(
@@ -164,7 +178,7 @@ export function createRuntimeStore(deps: {
     options: RuntimeRestoreOptions = {},
   ): Promise<InternalWriteResult | null> {
     const filePath = options.filePath ?? docId;
-    if (options.recoverFromJournal || docsNeedingRecovery.has(docId)) {
+    if (staleLiveDocs.has(docId)) {
       const recovered = await recoverLiveDocFromJournal(docId, commandName, filePath);
       if (recovered) return recovered;
     }
@@ -209,7 +223,7 @@ export function createRuntimeStore(deps: {
       if (seen.has(document.docId)) continue;
       seen.add(document.docId);
       await coordinator.recover(document.docId);
-      docsNeedingRecovery.delete(document.docId);
+      staleLiveDocs.delete(document.docId);
     }
   }
 
@@ -219,7 +233,7 @@ export function createRuntimeStore(deps: {
     runtime: RuntimeDocumentState,
     commandName: WriteCommand["command"],
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
-    if (docsNeedingRecovery.has(docId)) {
+    if (staleLiveDocs.has(docId)) {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return { ok: false, response: recovered };
     }
@@ -281,17 +295,26 @@ export function createRuntimeStore(deps: {
   async function requireSynced(
     session: ActorSession,
     docId: string,
+    commandName: WriteCommand["command"],
     filePath = docId,
     runtime?: RuntimeDocumentState,
+    options: RuntimeSyncOptions = {},
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    if (docsNeedingRecovery.has(docId)) {
-      return {
-        ok: false,
-        response: {
-          status: "not_found",
-          text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
-        },
-      };
+    if (staleLiveDocs.has(docId) && runtime) {
+      if (options.rejectOnStale) {
+        return {
+          ok: false,
+          response: {
+            status: "not_found",
+            text: `status: not_found\n\nDocument changed since your last read; a whole-scope replace/delete with no \`find\` is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry.`,
+          },
+        };
+      }
+      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+        filePath,
+      });
+      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
     const state = session.documents.get(docId);
@@ -305,6 +328,14 @@ export function createRuntimeStore(deps: {
         committedSnapshot: persisted.committedSnapshot,
       });
       return { ok: true, stateVector: persisted.stateVector };
+    }
+
+    if (runtime) {
+      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+        filePath,
+      });
+      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
     return {
@@ -353,7 +384,7 @@ export function createRuntimeStore(deps: {
   ): Promise<InternalWriteResult | null> {
     try {
       await coordinator.recover(docId);
-      docsNeedingRecovery.delete(docId);
+      staleLiveDocs.delete(docId);
       return null;
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, filePath);

@@ -38,6 +38,7 @@ import type {
   StreamEvent,
   ToolCall,
 } from "../../domain/index.js";
+import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 
 // ── Accumulator ───────────────────────────────────────────────────
 
@@ -386,24 +387,25 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
 
   const toolCalls: ToolCall[] = [];
   for (const [index, entry] of acc.toolCalls.entries()) {
-    // Anthropic streams tool input as JSON text. Preserve malformed JSON as a
-    // structured raw payload rather than dropping the tool_use part.
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = entry.arguments ? (JSON.parse(entry.arguments) as Record<string, unknown>) : {};
-    } catch {
-      parsed = { raw: entry.arguments };
-    }
+    const parsed = parseToolCallArguments(entry.arguments);
+    const input = parsed.ok ? parsed.arguments : {};
+    const parseError = parsed.ok ? undefined : { raw: parsed.raw, message: parsed.message };
     indexedParts.push({
       index,
       part: {
         type: "tool_use",
         toolCallId: entry.id,
         toolName: entry.name,
-        input: parsed,
+        input,
+        ...(parseError ? { inputParseError: parseError } : {}),
       },
     });
-    toolCalls.push({ id: entry.id, name: entry.name, arguments: parsed });
+    toolCalls.push({
+      id: entry.id,
+      name: entry.name,
+      arguments: input,
+      ...(parseError ? { argumentsParseError: parseError } : {}),
+    });
   }
 
   const content = indexedParts
