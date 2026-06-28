@@ -13,7 +13,7 @@ import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { context, model, REVERSAL_CLIENT_ID } from "./test-support/write-tool-harness.js";
 
 describe("write reversal dependencies", () => {
-  it("refuses the swordblade case when a later undone write consumed the selected write", async () => {
+  it("ignores a later already-reversed write when checking selected-write dependencies", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
       { undoClientId: REVERSAL_CLIENT_ID },
@@ -32,12 +32,9 @@ describe("write reversal dependencies", () => {
       context,
     );
 
-    expectOutcome(undoEarlier, "cant_undo_dependent", true);
-    expect(outcomeText(undoEarlier)).toContain("w2 was built on it");
-    expect(outcomeText(undoEarlier)).toContain("undo the range w1..w2");
+    expectOutcome(undoEarlier, "reconciled");
     expectNoInternalIds(outcomeText(undoEarlier));
-    expect(outcomeText(undoEarlier)).not.toMatch(/\b(Yjs|struct|delete set|documentId)\b/i);
-    expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
+    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
   });
 
   it("refuses the swordsaber case while the dependent later write is still active", async () => {

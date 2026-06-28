@@ -72,7 +72,7 @@ export async function planUndo(input: {
     selectedHandles: selected.writeIds,
     candidateHandles,
     reversalOpSeqs,
-    isScopeSelection: isScopeSelection(input.selection),
+    isScopeSelection: input.selection.kind === "turn",
   });
 
   if (!closure.ok) {
@@ -209,10 +209,6 @@ function writeTurnIdsForHandles(
   }));
 }
 
-function isScopeSelection(selection: ReversalSelection): boolean {
-  return selection.kind === "turn" || selection.kind === "all";
-}
-
 function handlesInState(
   state: Awaited<ReturnType<typeof loadState>>,
   selectedHandles: readonly string[],
@@ -282,27 +278,23 @@ async function selectRedoGroup(input: {
   if (selection.kind === "last") return { ok: true, group: groups.slice(-selection.count).at(0) };
   if (selection.kind === "all") return { ok: true, group: groups.at(0) };
   if (selection.kind === "turn") {
-    const rowsByHandle = await input.reversalStore.mutationsForWrites(
-      input.docId,
-      input.threadId,
-      unique(groups.flatMap((group) => group.writeIds)),
-    );
-    const targetTurnId =
-      selection.turnId ??
-      latestByCreatedSeq(
-        [...rowsByHandle.values()].flat().filter((row) => row.status === "reversed"),
-      )?.turnId;
+    if (selection.turnId === undefined) {
+      const targetTurnId = groups.at(-1)?.turnId;
+      return { ok: true, group: groups.find((group) => group.turnId === targetTurnId) };
+    }
+    const rowsByHandle = await input.reversalStore.mutationsForWrites(input.docId, input.threadId, [
+      ...new Set(groups.flatMap((group) => group.writeIds)),
+    ]);
+    const targetTurnId = selection.turnId;
     return {
       ok: true,
-      group: groups
-        .filter((group) =>
-          group.writeIds.some((handle) =>
-            (rowsByHandle.get(handle) ?? []).some(
-              (row) => row.status === "reversed" && row.turnId === targetTurnId,
-            ),
+      group: groups.find((group) =>
+        group.writeIds.some((handle) =>
+          (rowsByHandle.get(handle) ?? []).some(
+            (row) => row.status === "reversed" && row.turnId === targetTurnId,
           ),
-        )
-        .at(0),
+        ),
+      ),
     };
   }
   const selected = groups.filter((group) => handlesOverlapSelection(group.writeIds, selection));
@@ -362,8 +354,4 @@ function sortHandles(handles: readonly string[]): string[] {
   return [...handles].sort(
     (left, right) => (parseWriteHandle(left) ?? 0) - (parseWriteHandle(right) ?? 0),
   );
-}
-
-function unique<T>(items: readonly T[]): T[] {
-  return [...new Set(items)];
 }

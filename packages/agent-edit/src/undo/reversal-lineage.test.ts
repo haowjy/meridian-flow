@@ -120,6 +120,25 @@ describe("selectUndoClosure", () => {
     expect(closure.ok && [...closure.targetSeqs]).toEqual([4]);
   });
 
+  it("ignores forward updates owned by currently reversed writes when checking dependencies", () => {
+    const updates = textUpdates();
+    const closure = selectUndoClosure({
+      snapshot: { checkpoint: null, updates },
+      reversals: [reversal("w1", "redone", 2, 4), reversal("w2", "reversed", 6)],
+      rowsByHandle: new Map([
+        ["w1", [mutation("w1", 1)]],
+        ["w2", [{ ...mutation("w2", 5), status: "reversed", undoUpdateSeq: 6 }]],
+      ]),
+      selectedHandles: ["w1"],
+      candidateHandles: ["w1", "w2"],
+      reversalOpSeqs: new Set([2, 4, 6]),
+      isScopeSelection: false,
+    });
+
+    expect(closure.ok && closure.handles).toEqual(["w1"]);
+    expect(closure.ok && [...closure.targetSeqs]).toEqual([4]);
+  });
+
   it("refuses unexplained later deletes against the selected handle's retained history", () => {
     const updates = textUpdates();
     const closure = selectUndoClosure({
