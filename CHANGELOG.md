@@ -64,6 +64,17 @@
   Content-confirmed (`find`-based) edits and all non-destructive ops still
   auto-resync silently.
 
+- Chat editing: a destructive `replace`/delete targeting a hex-shaped `#hash`
+  fragment no longer silently falls back to a same-named heading section when the
+  hash is stale/missing — it returns not-found instead of editing the wrong
+  section. Reads still resolve `file#hash` to a section by slug.
+
+- Chat editing: `create` (and `create overwrite`) now checks existence and
+  computes its overwrite from the canonical + staged view, not a stale replica —
+  so an overwrite fully replaces canonical content, a duplicate create in the same
+  turn is rejected, and a non-overwrite create no longer leaves stale phantom
+  blocks attached to the session.
+
 - Chat: assistant turns with many edits no longer stall the UI. An unstable
   checkpoint callback was defeating memoization and causing a render storm.
 
