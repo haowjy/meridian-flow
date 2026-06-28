@@ -9,8 +9,6 @@ import {
 export const billingQueryKeys = {
   balance: ["billing", "balance"] as const,
   transactions: ["billing", "transactions"] as const,
-  // Query key stays "products" to match the contract shape; the route path
-  // helper is still named `apiBillingPacksPath` until both sides rename.
   products: ["billing", "products"] as const,
 };
 

@@ -1,7 +1,7 @@
 /** Drizzle/Postgres CreditLedger adapter over credit_lots and credit_transactions. */
 import type { Database } from "@meridian/database";
 import { creditLots, creditTransactions } from "@meridian/database/schema";
-import { and, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, like, type SQL, sql } from "drizzle-orm";
 import type { IndexColumn } from "drizzle-orm/pg-core";
 import {
   currentDrizzleDb,
@@ -47,6 +47,23 @@ function iso(value: unknown): string {
 function nullableIso(value: unknown): string | null {
   if (value == null) return null;
   return iso(value);
+}
+
+function displayTransactionReason(input: {
+  metadata: unknown;
+  lotReason: string | null;
+  sourceType: string | null;
+}): string | null {
+  const metadata =
+    input.metadata && typeof input.metadata === "object"
+      ? (input.metadata as Record<string, unknown>)
+      : {};
+  const metadataReason = metadata.reason;
+  if (typeof metadataReason === "string" && metadataReason.length > 0) return metadataReason;
+  if (input.sourceType === "grant" && input.lotReason?.startsWith("free_tier_")) {
+    return "Free monthly usage";
+  }
+  return input.lotReason;
 }
 
 interface GrantIdentity {
@@ -101,7 +118,9 @@ function resolveLotConflictGuard(identity: GrantIdentity): LotConflictGuard | nu
   if (identity.sourceType === "grant" && identity.grantReason?.startsWith("free_tier_")) {
     return {
       target: [creditLots.userId, creditLots.grantReason],
-      where: sql`${creditLots.grantReason} LIKE 'free_tier_%'`,
+      where:
+        and(eq(creditLots.sourceType, "grant"), like(creditLots.grantReason, "free_tier_%")) ??
+        sql`${creditLots.sourceType} = 'grant' AND ${creditLots.grantReason} LIKE 'free_tier_%'`,
     };
   }
   return null;
@@ -291,6 +310,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           balanceMillicredits: creditLots.remainingMillicredits,
           originalMillicredits: creditLots.originalAmountMillicredits,
           expiresAt: creditLots.expiresAt,
+          grantReason: creditLots.grantReason,
         })
         .from(creditLots)
         .where(
@@ -306,6 +326,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           balanceMillicredits: toBigInt(row.balanceMillicredits).toString(),
           originalMillicredits: toBigInt(row.originalMillicredits).toString(),
           expiresAt: nullableIso(row.expiresAt),
+          grantReason: row.grantReason ?? null,
         })),
       };
     },
@@ -317,7 +338,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
           transactionType: creditTransactions.transactionType,
           amountMillicredits: creditTransactions.amountMillicredits,
           sourceType: creditLots.sourceType,
-          reason: creditLots.grantReason,
+          lotReason: creditLots.grantReason,
           usageEventId: creditTransactions.usageEventId,
           createdAt: creditTransactions.createdAt,
           metadata: creditTransactions.metadata,
@@ -332,7 +353,11 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         transactionType: row.transactionType,
         amountMillicredits: toBigInt(row.amountMillicredits).toString(),
         sourceType: row.sourceType ?? null,
-        reason: row.reason ?? null,
+        reason: displayTransactionReason({
+          metadata: row.metadata,
+          lotReason: row.lotReason ?? null,
+          sourceType: row.sourceType ?? null,
+        }),
         usageEventId: row.usageEventId ?? null,
         createdAt: iso(row.createdAt),
         metadata: (row.metadata && typeof row.metadata === "object" ? row.metadata : {}) as Record<
@@ -362,6 +387,10 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         sourceType === "subscription"
           ? sql`${creditLots.expiresAt} > NOW()`
           : sql`(${creditLots.expiresAt} IS NULL OR ${creditLots.expiresAt} > NOW())`;
+      const freeTierPredicate =
+        input.source === "free"
+          ? and(eq(creditLots.sourceType, "grant"), like(creditLots.grantReason, "free_tier_%"))
+          : undefined;
       const [row] = await activeDb(db)
         .select({ id: creditLots.id })
         .from(creditLots)
@@ -370,6 +399,7 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
             eq(creditLots.userId, input.userId),
             eq(creditLots.sourceType, sourceType),
             expiryPredicate,
+            freeTierPredicate,
           ),
         )
         .limit(1);

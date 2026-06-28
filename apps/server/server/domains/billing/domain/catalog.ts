@@ -30,7 +30,6 @@ export const FREE_TIER = {
 };
 
 export const BILLING_PLANS = [
-  FREE_TIER,
   {
     id: "plan_standard",
     kind: "plan" as const,

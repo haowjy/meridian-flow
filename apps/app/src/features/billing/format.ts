@@ -3,9 +3,9 @@
  * decimal strings ("7.35", "0.004", "-0.12") — the server owns the
  * millicredits → USD conversion, so this layer only formats.
  *
- * Sub-cent rule: positive amounts strictly less than $0.01 render `< $0.01`
- * (never "$0.00" — the server is metering a real, billable cost).
- * Otherwise: `$X.XX` for non-negative, `-$X.XX` for negative; thousands
+ * Sub-cent rule: non-zero amounts with absolute value below one cent render
+ * `< $0.01` or `-< $0.01` (never "$0.00" — the server is metering a real,
+ * billable cost). Otherwise: `$X.XX` for non-negative, `-$X.XX` for negative; thousands
  * separators via `BigInt.toLocaleString`. Fractions are truncated, not
  * rounded — pairs cleanly with the sub-cent rule so a half-cent never
  * silently rounds up into a full cent.
@@ -21,9 +21,9 @@ export function formatUsd(value: string): string {
   const cents = fracRaw.padEnd(2, "0").slice(0, 2);
 
   const isZero = whole === "0" && /^0*$/.test(fracRaw);
-  if (!negative && whole === "0" && cents === "00" && !isZero) {
-    // Positive sub-cent amount: real cost the user should still see.
-    return "< $0.01";
+  if (whole === "0" && cents === "00" && !isZero) {
+    // Sub-cent amount: real cost the user should still see.
+    return negative ? "-< $0.01" : "< $0.01";
   }
 
   const wholeFormatted = BigInt(whole).toLocaleString("en-US");

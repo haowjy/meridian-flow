@@ -373,10 +373,12 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       userId: thread.userId,
     }),
   );
-  if (balance < 0n) {
+  // New turns require positive balance; the mid-stream gate in turn-accounting
+  // allows zero/negative grace only after an already-started turn is in flight.
+  if (balance <= 0n) {
     throw meridianErrorFromSystem(
       "credits_exhausted",
-      "Project credits are exhausted; add credits before starting a new turn",
+      "Your usage balance is exhausted; add balance before starting a new turn",
     );
   }
 

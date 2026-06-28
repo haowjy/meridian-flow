@@ -22,8 +22,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { sql } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleCreditLedger } = await import("../drizzle/credit-ledger.js");
+    const { ensureFreeTier } = await import("../../domain/free-grants.js");
 
-    const db = createDb(DATABASE_URL, { max: 1 });
+    const db = createDb(DATABASE_URL, { max: 8 });
     const ledger = createDrizzleCreditLedger(db);
 
     const userId = "00000000-0000-4000-8000-000000000101";
@@ -157,6 +158,40 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grantReason: "subscription:sub_123:2026-06-01T00:00:00.000Z",
         }),
       ).rejects.toThrow();
+    });
+
+    it("creates one free-tier lot and transaction under concurrent ensureFreeTier calls", async () => {
+      const now = new Date("2026-06-15T12:00:00.000Z");
+
+      await Promise.all(
+        Array.from({ length: 8 }, () =>
+          ensureFreeTier(ledger, userId, { clock: { now: () => now } }),
+        ),
+      );
+
+      const lots = await db
+        .select({
+          id: creditLots.id,
+          sourceType: creditLots.sourceType,
+          reason: creditLots.grantReason,
+          remaining: creditLots.remainingMillicredits,
+        })
+        .from(creditLots)
+        .where(sql`${creditLots.grantReason} LIKE 'free_tier_%'`);
+      expect(lots).toEqual([
+        {
+          id: expect.any(String),
+          sourceType: "grant",
+          reason: `free_tier_${userId}_2026-06-01`,
+          remaining: 200000,
+        },
+      ]);
+
+      const transactions = await db
+        .select({ id: creditTransactions.id, amount: creditTransactions.amountMillicredits })
+        .from(creditTransactions)
+        .where(sql`${creditTransactions.transactionType} = 'grant'`);
+      expect(transactions).toEqual([{ id: expect.any(String), amount: 200000 }]);
     });
 
     it("creates signup and monthly manual grants once under concurrent grant calls", async () => {

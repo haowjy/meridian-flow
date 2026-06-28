@@ -14,7 +14,6 @@ import {
   type BillingPlanCatalogEntry,
   catalogEntry,
   EXTRA_USAGE,
-  FREE_TIER,
   publicCatalogEntry,
 } from "../domains/billing/domain/catalog.js";
 import type {
@@ -22,6 +21,13 @@ import type {
   CreditLotView,
   CreditTransactionRow,
 } from "../domains/billing/domain/credit-ledger.js";
+
+export class BillingRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BillingRequestError";
+  }
+}
 
 export interface BillingRouteDeps {
   ledger: CreditLedger;
@@ -65,26 +71,40 @@ function millicreditsToUsd(value: string | bigint): string {
 
 function parseUsdToMillicredits(value: string): bigint {
   if (!/^\d+(?:\.\d{1,5})?$/.test(value)) {
-    throw new Error("amountUsd must be a positive USD decimal with at most 5 decimal places");
+    throw new BillingRequestError(
+      "amountUsd must be a positive USD decimal with at most 5 decimal places",
+    );
   }
   const [whole, fraction = ""] = value.split(".");
-  return BigInt(whole) * 100_000n + BigInt(fraction.padEnd(5, "0"));
+  const amount = BigInt(whole) * 100_000n + BigInt(fraction.padEnd(5, "0"));
+  if (amount <= 0n) throw new BillingRequestError("amountUsd must be positive");
+  return amount;
+}
+
+function isFreeTierLot(lot: CreditLotView): boolean {
+  return lot.source === "grant" && (lot.grantReason ?? "").startsWith("free_tier_");
 }
 
 function includedLot(lots: CreditLotView[]): CreditLotView | null {
   const unexpired = lots.filter((lot) => isUnexpired(lot));
   return (
-    unexpired.find((lot) => lot.source === "subscription") ??
-    unexpired.find((lot) => lot.source === "grant") ??
-    null
+    unexpired.find((lot) => lot.source === "subscription") ?? unexpired.find(isFreeTierLot) ?? null
   );
 }
 
-function includedUsagePercent(lot: CreditLotView | null): number | null {
+function debtMagnitude(lots: CreditLotView[]): bigint {
+  return lots.reduce((sum, lot) => {
+    if (lot.source !== "debt") return sum;
+    const balance = BigInt(lot.balanceMillicredits);
+    return balance < 0n ? sum - balance : sum;
+  }, 0n);
+}
+
+function includedUsagePercent(lot: CreditLotView | null, lots: CreditLotView[]): number | null {
   if (!lot) return null;
   const original = BigInt(lot.originalMillicredits);
   if (original <= 0n) return null;
-  const used = original - BigInt(lot.balanceMillicredits);
+  const used = original - BigInt(lot.balanceMillicredits) + debtMagnitude(lots);
   return Number((used * 10_000n) / original) / 100;
 }
 
@@ -105,11 +125,11 @@ export async function billingBalance(
 
   return {
     purchasedBalanceUsd: millicreditsToUsd(purchasedBalance),
-    includedUsagePercent: includedUsagePercent(displayLot),
+    includedUsagePercent: includedUsagePercent(displayLot, breakdown.lots),
     usageMode:
       displayLot?.source === "subscription"
         ? "subscription"
-        : displayLot?.source === "grant"
+        : displayLot && isFreeTierLot(displayLot)
           ? "free"
           : "none",
     canStartTurn: totalBalance > 0n,
@@ -150,9 +170,7 @@ export async function billingTransactions(
 
 export function billingProducts(deps: BillingRouteDeps): BillingProductsResponse {
   return {
-    entries: [...BILLING_PLANS.filter((entry) => entry.id !== FREE_TIER.id), EXTRA_USAGE].map(
-      publicCatalogEntry,
-    ),
+    entries: [...BILLING_PLANS, EXTRA_USAGE].map(publicCatalogEntry),
     stripeConfigured: deps.stripeGateway !== null,
   };
 }
@@ -164,13 +182,15 @@ function stripePriceId(env: NodeJS.ProcessEnv, entry: BillingPlanCatalogEntry): 
 }
 
 function extraUsageGrantMillicredits(body: CreateCheckoutSessionRequest): string {
-  if (!body.amountUsd) throw new Error("amountUsd is required for extra usage checkout");
+  if (!body.amountUsd)
+    throw new BillingRequestError("amountUsd is required for extra usage checkout");
   const amount = parseUsdToMillicredits(body.amountUsd);
   const min = parseUsdToMillicredits(EXTRA_USAGE.minUsd);
   const increment = parseUsdToMillicredits(EXTRA_USAGE.incrementUsd);
-  if (amount < min) throw new Error(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
+  if (amount < min)
+    throw new BillingRequestError(`amountUsd must be at least ${EXTRA_USAGE.minUsd}`);
   if (amount % increment !== 0n) {
-    throw new Error(`amountUsd must be in ${EXTRA_USAGE.incrementUsd} increments`);
+    throw new BillingRequestError(`amountUsd must be in ${EXTRA_USAGE.incrementUsd} increments`);
   }
   return ((amount * BigInt(EXTRA_USAGE.millicreditsPerUsd)) / 100_000n).toString();
 }
@@ -197,8 +217,7 @@ export async function createBillingCheckoutSession(
 ): Promise<CreateCheckoutSessionResponse> {
   if (!deps.stripeGateway) throw new Error("Stripe checkout is not configured");
   const entry = catalogEntry(input.body.entryId);
-  if (!entry) throw new Error("Unknown billing entry");
-  if (entry.id === FREE_TIER.id) throw new Error("Free tier is provisioned automatically");
+  if (!entry) throw new BillingRequestError("Unknown billing entry");
 
   const customerId = await deps.getOrCreateStripeCustomer(input.userId);
   if (entry.kind === "plan") {

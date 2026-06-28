@@ -9,7 +9,10 @@
  * shows a quiet "checkout unavailable" note instead of dead buttons.
  */
 import { Trans } from "@lingui/react/macro";
-import type { BillingCatalogEntry } from "@meridian/contracts/protocol";
+import type {
+  BillingCatalogEntry,
+  CreateCheckoutSessionRequest,
+} from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
@@ -25,6 +28,20 @@ import { UsageCard } from "./UsageCard";
 function returnUrl(path: string): string {
   if (typeof window === "undefined") return path;
   return new URL(path, window.location.origin).toString();
+}
+
+function checkoutSessionRequest(entry: BillingCatalogEntry): CreateCheckoutSessionRequest {
+  const request: CreateCheckoutSessionRequest = {
+    entryId: entry.id,
+    successUrl: returnUrl("/billing?checkout=success"),
+    cancelUrl: returnUrl("/billing?checkout=cancelled"),
+  };
+
+  if (entry.kind === "extra-usage") {
+    return { ...request, amountUsd: entry.priceUsd };
+  }
+
+  return request;
 }
 
 export function BillingPage() {
@@ -79,13 +96,7 @@ export function BillingPage() {
                 key={entry.id}
                 entry={entry}
                 disabled={!stripeConfigured || checkout.isPending}
-                onPurchase={() =>
-                  checkout.mutate({
-                    entryId: entry.id,
-                    successUrl: returnUrl("/billing?checkout=success"),
-                    cancelUrl: returnUrl("/billing?checkout=cancelled"),
-                  })
-                }
+                onPurchase={() => checkout.mutate(checkoutSessionRequest(entry))}
               />
             ))}
             {products.data && entries.length === 0 ? (
