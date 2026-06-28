@@ -53,6 +53,17 @@ export function humanText(
   );
 }
 
+export function humanDeleteBlock(doc: Y.Doc, blockIndex: number): void {
+  const block = model.getBlocks(doc)[blockIndex];
+  if (!block) throw new Error(`No block at ${blockIndex}`);
+  doc.transact(
+    () => {
+      model.deleteBlock(doc, block);
+    },
+    { type: "human" },
+  );
+}
+
 export function serializeDoc(doc: Y.Doc): string {
   return codec.serialize(model.projectBlocks(doc));
 }
