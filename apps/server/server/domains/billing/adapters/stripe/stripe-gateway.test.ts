@@ -176,6 +176,56 @@ describe("StripeBillingGateway", () => {
     });
   });
 
+  it("uses the paid invoice line price to resolve subscription grant amount after portal plan changes", async () => {
+    const gateway = createStripeBillingGateway({
+      secretKey: "sk_test",
+      webhookSecret: "whsec",
+      planPrices: [
+        {
+          entryId: "plan_standard",
+          stripePriceId: "price_standard",
+          grantMillicredits: "1000000",
+        },
+        {
+          entryId: "plan_premium",
+          stripePriceId: "price_premium",
+          grantMillicredits: "2800000",
+        },
+      ],
+    });
+
+    await expect(
+      gateway.resolveCheckoutGrant(
+        event("invoice.paid", {
+          id: "in_123",
+          parent: {
+            subscription_details: {
+              subscription: "sub_123",
+              metadata: {
+                userId: "user_sub",
+                grantMillicredits: "1000000",
+                entryId: "plan_standard",
+              },
+            },
+          },
+          lines: {
+            data: [
+              {
+                id: "il_period",
+                period: { start: 1_782_864_000, end: 1_785_542_400 },
+                pricing: { price_details: { price: "price_premium" } },
+                parent: { subscription_item_details: { subscription: "sub_123" } },
+              },
+            ],
+          },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      amountMillicredits: "2800000",
+      metadata: { entryId: "plan_premium" },
+    });
+  });
+
   it("does not grant from a proration-only invoice.paid (mid-cycle plan change)", async () => {
     const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
 

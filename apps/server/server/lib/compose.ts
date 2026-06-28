@@ -9,6 +9,7 @@ import {
   createStripeBillingGateway,
   type StripeBillingGateway,
 } from "../domains/billing/adapters/stripe/stripe-gateway.js";
+import { billingPlanPriceBindings } from "../domains/billing/domain/catalog.js";
 import {
   type CreditLedger,
   createDrizzleCreditLedger,
@@ -292,6 +293,7 @@ export async function createProductionAppPorts(input: {
     ? createStripeBillingGateway({
         secretKey: environment.STRIPE_SECRET_KEY as string,
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
+        planPrices: billingPlanPriceBindings(environment),
       })
     : null;
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
