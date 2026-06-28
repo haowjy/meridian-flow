@@ -78,6 +78,8 @@ export interface ApplyEchoHunk {
 export interface ConcurrentEditInfo {
   human: string[];
   agent: string[];
+  /** Read-format `hash|body` lines for changed/inserted blocks; `hash| (deleted)` for deletes. */
+  renderedBlocks?: { human: string[]; agent: string[] };
   collapsed?: boolean;
   reviewCommand?: string;
 }

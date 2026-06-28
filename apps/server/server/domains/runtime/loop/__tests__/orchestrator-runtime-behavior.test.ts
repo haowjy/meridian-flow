@@ -263,6 +263,185 @@ describe("runtime orchestrator behavior", () => {
     );
   });
 
+  it("backfills rendered concurrent edit blocks into the next tool result", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "saw concurrent blocks" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({
+          toolCallId: call.id,
+          output: [{ type: "text", text: "status: success" }],
+          metadata: { documentId: "doc-1" },
+        }),
+      },
+      responseWrites: {
+        async commitResponse() {
+          return [
+            {
+              documentId: "doc-1",
+              concurrentEdits: {
+                human: ["abcd"],
+                agent: [],
+                renderedBlocks: { human: ["abcd|Human changed line."], agent: [] },
+              },
+            },
+          ];
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    const secondRequest = JSON.stringify(requests[1]?.messages);
+    expect(secondRequest).toContain("concurrent edits:\\n  human: abcd");
+    expect(secondRequest).toContain("current blocks:");
+    expect(secondRequest).toContain("abcd|Human changed line.");
+  });
+
+  it("keeps collapsed concurrent edit backfill as a summary plus read command", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "saw collapsed summary" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      checkpointRegistry: createCheckpointRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({
+          toolCallId: call.id,
+          output: [{ type: "text", text: "status: success" }],
+          metadata: { documentId: "doc-1" },
+        }),
+      },
+      responseWrites: {
+        async commitResponse() {
+          return [
+            {
+              documentId: "doc-1",
+              concurrentEdits: {
+                human: ["*"],
+                agent: [],
+                collapsed: true,
+                reviewCommand: 'write(command="read", file="<current>")',
+              },
+            },
+          ];
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      projectId: project.id,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    const secondRequest = JSON.stringify(requests[1]?.messages);
+    expect(secondRequest).toContain("concurrent edits:\\n  human: *");
+    expect(secondRequest).toContain('write(command=\\"read\\", file=\\"<current>\\")');
+    expect(secondRequest).not.toContain("current blocks:");
+  });
+
   it("injects consumed undo notifications only on the first model call", async () => {
     const requests: GenerateRequest[] = [];
     const gateway: Gateway = {

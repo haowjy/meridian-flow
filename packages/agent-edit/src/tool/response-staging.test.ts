@@ -306,7 +306,9 @@ describe("response staging", () => {
 
     const commit = await ctx.core.commitResponse("response-staged-read-absorbed-concurrent");
 
-    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [blockHash], agent: [] });
+    expect(commit.documents[0]?.concurrentEdits).toEqual(
+      expect.objectContaining({ human: [blockHash], agent: [] }),
+    );
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent blade waits."]);
   });
 
@@ -370,7 +372,9 @@ describe("response staging", () => {
 
     const commit = await ctx.core.commitResponse("response-staged-per-write-overlap");
 
-    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
+    expect(commit.documents[0]?.concurrentEdits).toEqual(
+      expect.objectContaining({ human: [overlapHash], agent: [] }),
+    );
   });
 
   it("reports staged commit concurrent edits without post-commit echo recomputation", async () => {
@@ -400,11 +404,13 @@ describe("response staging", () => {
 
     const commit = await ctx.core.commitResponse("response-staged-replace-all-windowed-overlap");
 
-    expect(commit.documents[0]?.concurrentEdits).toEqual({ human: [overlapHash], agent: [] });
+    expect(commit.documents[0]?.concurrentEdits).toEqual(
+      expect.objectContaining({ human: [overlapHash], agent: [] }),
+    );
     expect(commit.documents[0]).toEqual({
       documentId: "chapter.md",
       updateCount: 1,
-      concurrentEdits: { human: [overlapHash], agent: [] },
+      concurrentEdits: expect.objectContaining({ human: [overlapHash], agent: [] }),
     });
     void expectedEchoHashes;
     void farHashes;
@@ -454,7 +460,7 @@ describe("response staging", () => {
     expect(commit.documents[0]).toMatchObject({
       documentId: "chapter.md",
       updateCount: 1,
-      concurrentEdits: { human: [blockHash], agent: [] },
+      concurrentEdits: expect.objectContaining({ human: [blockHash], agent: [] }),
     });
   });
 
