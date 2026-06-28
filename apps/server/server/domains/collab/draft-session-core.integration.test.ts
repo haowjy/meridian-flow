@@ -1,0 +1,262 @@
+/** Integration proof for draft-scoped agent-edit response commits. */
+import type { Hocuspocus } from "@hocuspocus/server";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import { and, eq } from "drizzle-orm";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  createInMemoryCoordinator,
+  createInMemoryDocumentLifecycle,
+  createInMemoryJournal,
+} from "./adapters/in-memory/agent-edit.js";
+import { createInMemoryDraftAcceptJournal } from "./adapters/in-memory/drafts.js";
+import {
+  type CollabFacadeStore,
+  createDrizzleDraftSessionCore,
+  createFacade,
+} from "./composition.js";
+
+const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+const DATABASE_URL = process.env.DATABASE_URL;
+
+const USER_ID = "00000000-0000-4000-8000-000000000501" as UserId;
+const PROJECT_ID = "00000000-0000-4000-8000-000000000502";
+const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000503";
+const DOC_ID = "00000000-0000-4000-8000-000000000504" as DocumentId;
+const THREAD_ID = "00000000-0000-4000-8000-000000000505" as ThreadId;
+const TURN_ID = "00000000-0000-4000-8000-000000000506" as TurnId;
+
+if (!RUN_DB_TESTS || !DATABASE_URL) {
+  describe.skip("draft session core (postgres)", () => {
+    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
+  });
+} else {
+  describe("draft session core write-to-draft persistence (postgres)", async () => {
+    const { createDb } = await import("@meridian/database");
+    const dbSchema = await import("@meridian/database/schema");
+    const {
+      agentEditMutations,
+      agentEditSyncState,
+      agentEditWidCounters,
+      contextSources,
+      documentYjsDrafts,
+      documentYjsDraftUpdates,
+      documentYjsReversals,
+      documents,
+      folders,
+      projects,
+      threads,
+      turns,
+      users,
+    } = dbSchema;
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { createDrizzleDraftStore } = await import("./adapters/drizzle-drafts.js");
+
+    const db = createDb(DATABASE_URL, { max: 4 });
+    const draftStore = createDrizzleDraftStore(db);
+
+    beforeEach(async () => {
+      await truncateDrizzleTables(db, [
+        documentYjsDraftUpdates,
+        documentYjsDrafts,
+        agentEditSyncState,
+        agentEditMutations,
+        agentEditWidCounters,
+        documentYjsReversals,
+        turns,
+        threads,
+        documents,
+        folders,
+        contextSources,
+        projects,
+        users,
+      ]);
+      await db.insert(users).values(conformanceUserValues(USER_ID, "draft-session-core"));
+      await db.insert(projects).values({
+        id: PROJECT_ID,
+        userId: USER_ID,
+        name: "Draft Core Project",
+        slug: "draft-core-project",
+      });
+      await db.insert(contextSources).values({
+        id: CONTEXT_SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Draft Core Source",
+        slug: "draft-core-source",
+        scope: "project",
+      });
+      await db.insert(documents).values({
+        id: DOC_ID,
+        contextSourceId: CONTEXT_SOURCE_ID,
+        name: "chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db.insert(threads).values({
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Draft Core Thread",
+        kind: "primary",
+        status: "active",
+      });
+      await db.insert(turns).values({
+        id: TURN_ID,
+        threadId: THREAD_ID,
+        role: "assistant",
+        status: "complete",
+      });
+    });
+
+    afterAll(async () => {
+      await db.$client.end();
+    });
+
+    it("commits response writes into draft updates and applies them only after accept", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const before = await readMarkdown(domain, DOC_ID);
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        draftStore,
+      });
+
+      await expect(
+        draftCore.write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        draftCore.write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Draft Beta.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-draft" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(draftCore.commitResponse("response-draft")).resolves.toMatchObject({
+        documentCount: 1,
+        updateCount: 1,
+      });
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      expect(draft).toMatchObject({ status: "active", lastActorTurnId: TURN_ID });
+      if (!draft) throw new Error("expected active draft");
+      expect(await draftStore.listUpdates(draft.id)).toHaveLength(1);
+      expect(await readMarkdown(domain, DOC_ID)).toBe(before);
+
+      const mutationRows = await db
+        .select({ scopeId: agentEditMutations.scopeId })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, DOC_ID),
+            eq(agentEditMutations.threadId, THREAD_ID),
+          ),
+        );
+      expect(mutationRows).toEqual([{ scopeId: draft.id }]);
+
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
+      expect(liveJournal.updateRecords(DOC_ID).length).toBeGreaterThan(1);
+    });
+
+    it("accepts a draft on top of live edits made after the draft commit", async () => {
+      const { domain, liveCoordinator } = createLiveHarness(draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        draftStore,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await draftCore.write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-draft-merge" },
+      );
+      await draftCore.commitResponse("response-draft-merge");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      await domain.editDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        transform: (markdown) => `${markdown}\n\nLive Gamma.`,
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft Beta.");
+
+      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      const afterAccept = await readMarkdown(domain, DOC_ID);
+      expect(afterAccept).toContain("Draft Beta.");
+      expect(afterAccept).toContain("Live Gamma.");
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
+    });
+  });
+}
+
+function createLiveHarness(
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+): {
+  domain: ReturnType<typeof createFacade>;
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>;
+  liveJournal: ReturnType<typeof createInMemoryJournal>;
+} {
+  const liveJournal = createInMemoryJournal();
+  const liveCoordinator = createInMemoryCoordinator(liveJournal);
+  return {
+    domain: createFacade({
+      journal: liveJournal,
+      coordinator: liveCoordinator,
+      lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+      store: storeFor(liveJournal),
+      hocuspocus: () => null,
+      bindHocuspocus: (_instance: Hocuspocus) => {},
+      draftStore,
+      draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
+    }),
+    liveCoordinator,
+    liveJournal,
+  };
+}
+
+function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFacadeStore {
+  return {
+    createCheckpoint: (docId, state, reason, upToSeq) =>
+      journal.createCheckpoint(docId, state, reason, upToSeq),
+    getCheckpoint: (id) => journal.getCheckpoint(id),
+    listCheckpoints: (docId) => journal.listCheckpoints(docId),
+    latestUpdate: (docId) => journal.latestUpdate(docId),
+  };
+}
+
+async function readMarkdown(domain: ReturnType<typeof createFacade>, documentId: DocumentId) {
+  const read = await domain.readAsMarkdown(documentId);
+  if (!read.ok) throw new Error(`read failed: ${read.error.code}`);
+  return read.value;
+}

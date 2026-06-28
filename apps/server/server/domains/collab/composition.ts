@@ -23,6 +23,12 @@ import {
 } from "@meridian/prosemirror-schema";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import {
+  createDraftProjectionDocumentCoordinator,
+  createDrizzleDraftAgentEditJournal,
+  createDrizzleDraftSyncStateStore,
+  createNoopDraftDocumentLifecycle,
+} from "./adapters/drizzle-draft-agent-edit.js";
+import {
   createDrizzleDraftAcceptJournal,
   createDrizzleDraftStore,
 } from "./adapters/drizzle-drafts.js";
@@ -149,6 +155,55 @@ export function createInMemoryCollabDomain(): CollabDomain {
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
     },
+  });
+}
+
+export type DraftSessionCoreDeps = {
+  threadId: ThreadId;
+  journal: UpdateJournal & ReversalStore;
+  liveCoordinator: DocumentCoordinator;
+  draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
+  syncStateStore?: SyncStateStore;
+  eventSink?: EventSink;
+};
+
+export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCore {
+  const schema = buildDocumentSchema();
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodec(markupCodec);
+  const model = yProsemirrorModel(schema);
+  return createAgentEditCore({
+    journal: deps.journal,
+    coordinator: createDraftProjectionDocumentCoordinator({
+      liveCoordinator: deps.liveCoordinator,
+      draftStore: deps.draftStore,
+      threadId: deps.threadId,
+    }),
+    lifecycle: createNoopDraftDocumentLifecycle(),
+    codec,
+    model,
+    defaultThreadId: deps.threadId,
+    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+    syncStateStore: deps.syncStateStore,
+    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+  });
+}
+
+export function createDrizzleDraftSessionCore(deps: {
+  db: Database;
+  threadId: ThreadId;
+  liveCoordinator: DocumentCoordinator;
+  draftStore: DraftStore;
+  eventSink?: EventSink;
+}): AgentEditCore {
+  return createDraftSessionCore({
+    threadId: deps.threadId,
+    journal: createDrizzleDraftAgentEditJournal(deps.db, { threadId: deps.threadId }),
+    liveCoordinator: deps.liveCoordinator,
+    draftStore: deps.draftStore,
+    syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
+    eventSink: deps.eventSink,
   });
 }
 
