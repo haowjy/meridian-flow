@@ -47,7 +47,11 @@ export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
         {actions}
         {right && !right.open ? (
           <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
-        ) : right ? (
+        ) : right && !actions ? (
+          // Rail open: its own header owns the close control. Keep a width-matched
+          // spacer only when nothing trails it, so the title doesn't reflow. When
+          // actions are present they should hug the pane's right edge instead — no
+          // phantom gap reserving space for a button that has moved into the rail.
           <Spacer />
         ) : null}
       </div>
