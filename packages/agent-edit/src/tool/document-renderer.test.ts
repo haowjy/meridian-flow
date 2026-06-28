@@ -1,6 +1,10 @@
 // Document-renderer block selection and agent-facing text rendering contracts.
 import { describe, expect, it } from "vitest";
 
+import {
+  collisionMarkdown,
+  prefixCollisionFixture,
+} from "../resolver/test-support/hash-collision.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { hashAt, renderedBlockBodies } from "./test-support/assertions.js";
 import { codec, createDoc, model } from "./test-support/write-tool-harness.js";
@@ -30,6 +34,138 @@ describe("document renderer", () => {
 
     const outline = renderer.renderOutline(doc, model.getBlocks(doc), "chapter.md");
     expect(outline).toContain(`write(command="read", file="chapter.md#${headingHash}")`);
+  });
+
+  it("renders every candidate for an ambiguous file hash fragment", () => {
+    const doc = createDoc(collisionMarkdown(), 100);
+    const renderer = createDocumentRenderer({ model, codec });
+    const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: `chapter.md#${fixture.sharedPrefix}` },
+      { filePath: "chapter.md", fragment: fixture.sharedPrefix },
+    );
+
+    expect(selection).toMatchObject({ ok: true });
+    if (!selection.ok) throw new Error(selection.message);
+    expect(selection.blocks).toEqual(fixture.candidates.map((candidate) => candidate.block));
+    const rendered = renderer.renderBlocks(doc, selection.blocks);
+    for (const candidate of fixture.candidates) {
+      expect(rendered).toContain(`${candidate.displayHash}|${model.getText(candidate.block)}`);
+    }
+    expect(rendered).not.toContain("not found");
+  });
+
+  it.each([
+    {
+      label: "unique file hash prefix",
+      setup: () => {
+        const doc = createDoc(numberedBlocks(32), 100);
+        const target = model.getBlocks(doc)[10];
+        return {
+          doc,
+          fragment: uniquePrefixFor(doc, target),
+          blocks: [target],
+          bodies: ["Block 11"],
+        };
+      },
+    },
+    {
+      label: "displayed collision hash",
+      setup: () => {
+        const doc = createDoc(collisionMarkdown(), 100);
+        const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+        return {
+          doc,
+          fragment: fixture.target.displayHash,
+          blocks: [fixture.target.block],
+          bodies: [model.getText(fixture.target.block)],
+        };
+      },
+    },
+    {
+      label: "shorter shared collision prefix",
+      setup: () => {
+        const doc = createDoc(collisionMarkdown(), 100);
+        const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
+        return {
+          doc,
+          fragment: fixture.sharedPrefix,
+          blocks: fixture.candidates.map((candidate) => candidate.block),
+          bodies: fixture.candidates.map((candidate) => model.getText(candidate.block)),
+        };
+      },
+    },
+  ])("selects hash fragment: $label", ({ setup }) => {
+    const renderer = createDocumentRenderer({ model, codec });
+    const { doc, fragment, blocks, bodies } = setup();
+
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: `chapter.md#${fragment}` },
+      { filePath: "chapter.md", fragment },
+    );
+
+    expect(selection).toMatchObject({ ok: true });
+    if (!selection.ok) throw new Error(selection.message);
+    expect(selection.blocks).toEqual(blocks);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual(bodies);
+  });
+
+  it("keeps heading-hash file fragments section scoped", () => {
+    const doc = createDoc("# One\n\nAlpha\n\n## Two\n\nBeta\n\n# Three\n\nGamma", 100);
+    const renderer = createDocumentRenderer({ model, codec });
+    const headingHash = hashAt(doc, 2);
+
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: `chapter.md#${headingHash}` },
+      { filePath: "chapter.md", fragment: headingHash },
+    );
+
+    expect(selection).toMatchObject({ ok: true });
+    if (!selection.ok) throw new Error(selection.message);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual([
+      "## Two",
+      "Beta",
+    ]);
+  });
+
+  it("keeps missing file hash fragments as not found", () => {
+    const doc = createDoc("Alpha\n\nBeta", 100);
+    const renderer = createDocumentRenderer({ model, codec });
+
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: "chapter.md#deadbeef" },
+      { filePath: "chapter.md", fragment: "deadbeef" },
+    );
+
+    expect(selection).toMatchObject({
+      ok: false,
+      code: "not_found",
+      message: 'Section "#deadbeef" was not found',
+    });
+  });
+
+  it("keeps slug fallback for hex-shaped read fragments", () => {
+    const doc = createDoc("# cafe\n\nScene text\n\n# Next\n\nOther text", 100);
+    const renderer = createDocumentRenderer({ model, codec });
+
+    expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
+    const selection = renderer.selectReadBlocks(
+      doc,
+      { command: "read", file: "chapter.md#cafe" },
+      { filePath: "chapter.md", fragment: "cafe" },
+    );
+
+    expect(selection).toMatchObject({ ok: true });
+    if (!selection.ok) throw new Error(selection.message);
+    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual([
+      "# cafe",
+      "Scene text",
+    ]);
   });
 
   it("selects around windows with radius three and clamps at document edges", () => {
@@ -87,4 +223,17 @@ function selectedReadText(
 
 function numberedBlocks(count: number): string {
   return Array.from({ length: count }, (_, index) => `Block ${index + 1}`).join("\n\n");
+}
+
+function uniquePrefixFor(
+  doc: ReturnType<typeof createDoc>,
+  target: ReturnType<typeof model.getBlocks>[number],
+): string {
+  const targetFullHash = model.getBlockId(target);
+  const displayHashes = model.getBlocks(doc).map((block) => model.getBlockId(block));
+  for (let length = 1; length <= targetFullHash.length; length += 1) {
+    const prefix = targetFullHash.slice(0, length);
+    if (displayHashes.filter((hash) => hash.startsWith(prefix)).length === 1) return prefix;
+  }
+  throw new Error("Expected a unique full-hash prefix");
 }

@@ -45,6 +45,7 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -62,6 +63,7 @@ export interface BuildContextInput {
    * `thread.composedSystemPrompt` is already frozen.
    */
   skillsSystemPromptSection?: string;
+  undoNotifications?: readonly PendingUndoNotification[];
 }
 
 export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
@@ -85,6 +87,10 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   // persistent scratch state at every turn.
   if (input.thread.workingState) {
     messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
+  }
+
+  if (input.undoNotifications?.length) {
+    messages.push(undoNotificationSystemMessage(input.undoNotifications));
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -228,4 +234,49 @@ function blockToContentPart(block: Block): ContentPart | null {
     default:
       return null;
   }
+}
+
+export function undoNotificationSystemMessage(
+  notifications: readonly PendingUndoNotification[],
+): Message {
+  return system(formatUndoNotificationMessage(notifications));
+}
+
+export function formatUndoNotificationMessage(
+  notifications: readonly PendingUndoNotification[],
+): string {
+  // Group by uri (the document identity), not filename — distinct docs can share
+  // a basename, and merging their handles would mislabel which file changed.
+  const grouped = new Map<string, { label: string; handles: string[] }>();
+  for (const notification of notifications) {
+    const key = notification.uri || notification.writeHandle;
+    const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
+    const entry = grouped.get(key) ?? { label, handles: [] };
+    entry.handles.push(notification.writeHandle);
+    grouped.set(key, entry);
+  }
+
+  const lines = Array.from(
+    grouped.values(),
+    ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
+  );
+  return [
+    "The writer reversed the following edits before this message:",
+    ...lines,
+    "They are signaling these changes were unwanted.",
+  ].join("\n");
+}
+
+function filenameFromUri(uri: string): string {
+  const withoutQuery = uri.split(/[?#]/, 1)[0] ?? uri;
+  const trimmed = withoutQuery.replace(/\/+$/, "");
+  const lastSlash = trimmed.lastIndexOf("/");
+  if (lastSlash >= 0 && lastSlash < trimmed.length - 1) {
+    return decodeURIComponent(trimmed.slice(lastSlash + 1));
+  }
+  const schemeSeparator = trimmed.indexOf("://");
+  if (schemeSeparator >= 0 && schemeSeparator < trimmed.length - 3) {
+    return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
+  }
+  return uri;
 }

@@ -2,12 +2,43 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { parseWriteHandle } from "../ports/update-journal.js";
-import { expectOutcome, outcomeText } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario, setStoredUpdateTime } from "./test-support/write-reversal-scenario.js";
 import { context, REVERSAL_CLIENT_ID, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("write reversal selectors", () => {
+  it("supports agent-driven undo → redo → undo via the write tool", async () => {
+    // Agent undo/redo (write command=undo/redo) shares the exact reversal core as
+    // user/footer reversal — the actor only changes notification/attribution, not
+    // mechanics. This pins the repeatable cycle at the agent tool surface so a
+    // regression in the dependent-undo guard can't silently break it.
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    const { ctx } = scenario;
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-agent-cycle" },
+    );
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(outcomeText(undo)).not.toContain("cant_undo_dependent");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(redo)).toContain("status: reconciled");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+
+    // The regression: a second undo after redo must still reverse, not bail with
+    // cant_undo_dependent on the redo's own re-apply update.
+    const secondUndo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(outcomeText(secondUndo)).not.toContain("cant_undo_dependent");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+
+    const secondRedo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expect(outcomeText(secondRedo)).toContain("status: reconciled");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
+  });
+
   it("flips mutation status when undoing and redoing a write", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
     const { ctx } = scenario;
@@ -138,16 +169,6 @@ describe("write reversal selectors", () => {
     expect(scenario.blockTexts()).toEqual(["Base.", "Block 1.", "Block 11."]);
     expect(await scenario.mutationsFor("w10")).toMatchObject([{ status: "reversed" }]);
     expect(await scenario.mutationsFor("w11")).toMatchObject([{ status: "active" }]);
-  });
-
-  it("compares write handles by numeric ordinal", async () => {
-    const handles = ["w1", "w2", "w10", "w11"].sort((left, right) => {
-      const leftOrdinal = parseWriteHandle(left) ?? 0;
-      const rightOrdinal = parseWriteHandle(right) ?? 0;
-      return leftOrdinal - rightOrdinal;
-    });
-
-    expect(handles).toEqual(["w1", "w2", "w10", "w11"]);
   });
 
   it("targets a range across turns", async () => {

@@ -133,7 +133,12 @@ export async function dispatchToolCall(
     : undefined;
 
   const execResult = await deps.toolExecutor.executeTool(
-    { id: call.id, name: call.name, arguments: call.arguments },
+    {
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+      ...(call.argumentsParseError ? { argumentsParseError: call.argumentsParseError } : {}),
+    },
     {
       threadId: ctx.state.threadId,
       turnId: ctx.state.currentTurn.id,

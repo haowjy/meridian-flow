@@ -62,6 +62,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
     const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
+    const { expectReversalCompactionContract } = await import(
+      "./journal-reversal-compaction-contract.js"
+    );
     const { expectReversalMutationStatusContract } = await import(
       "./journal-reversal-mutation-status-contract.js"
     );
@@ -201,10 +204,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("matches reversal compaction history semantics", async () => {
+      await expectReversalCompactionContract({
+        journal: createDrizzleJournal(db),
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        turnIds: [TURN_A, TURN_B],
+        userId: USER_ID,
+      });
+    });
+
     it("matches append/read/checkpoint/compact/reversal contract behavior", async () => {
       const journal = createDrizzleJournal(db);
       const doc = new Y.Doc({ gc: false });
       doc.clientID = LIVE_CLIENT_ID;
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), 0);
 
       const updateA = appendText(doc, "Alpha");
       const seqA = await journal.append(DOC_ID, updateA, {
@@ -228,7 +242,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(bounded.updates.map((update) => update.seq)).toEqual([seqB, seqC]);
 
       const initial = await journal.read(DOC_ID);
-      expect(initial.checkpoint).toBeNull();
+      expect(initial.checkpoint).toBeInstanceOf(Uint8Array);
       expect(initial.updates.map((update) => update.seq)).toEqual([seqA, seqB, seqC]);
       expect(initial.updates[0]?.meta).toEqual({
         origin: `agent:${TURN_A}`,
@@ -247,12 +261,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
       const fullLogAfterCheckpoint = await journal.readForReconstruction(DOC_ID);
-      expect(fullLogAfterCheckpoint.checkpoint).toBeNull();
+      expect(fullLogAfterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(fullLogAfterCheckpoint.updates.map((update) => update.seq)).toEqual([
         seqA,
         seqB,
         seqC,
       ]);
+      expect(
+        textFromSnapshot(fullLogAfterCheckpoint.checkpoint, fullLogAfterCheckpoint.updates),
+      ).toBe("Alpha Beta Gamma");
 
       const updateD = appendText(doc, " Delta");
       const seqD = await journal.append(DOC_ID, updateD, {
@@ -377,6 +394,59 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toEqual({ consumed: false });
       expect(await updateIds()).toEqual(idsAfterRedo);
+    });
+
+    it("compacts only the contiguous old seq prefix when update timestamps are skewed", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), 0);
+
+      const seqA = await journal.append(DOC_ID, appendText(doc, "Alpha"), {
+        origin: `agent:${TURN_A}`,
+        actorTurnId: TURN_A,
+        seq: 0,
+      });
+      const seqB = await journal.append(DOC_ID, appendText(doc, " Beta"), {
+        origin: `agent:${TURN_B}`,
+        actorTurnId: TURN_B,
+        seq: 0,
+      });
+      const seqC = await journal.append(DOC_ID, appendText(doc, " Gamma"), {
+        origin: `agent:${TURN_C}`,
+        actorTurnId: TURN_C,
+        seq: 0,
+      });
+
+      const oldEnough = new Date("2026-01-01T00:00:00.000Z");
+      const tooNew = new Date("2026-01-03T00:00:00.000Z");
+      const before = new Date("2026-01-02T00:00:00.000Z");
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: oldEnough })
+        .where(eq(documentYjsUpdates.id, seqA));
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: tooNew })
+        .where(eq(documentYjsUpdates.id, seqB));
+      await db
+        .update(documentYjsUpdates)
+        .set({ createdAt: oldEnough })
+        .where(eq(documentYjsUpdates.id, seqC));
+
+      const compacted = await journal.compact(DOC_ID, before);
+
+      expect(compacted).toEqual({ updatesFolded: 1, reversalsExpired: 0 });
+      expect(await updateIds()).toEqual([seqB, seqC]);
+      const snapshot = await journal.read(DOC_ID);
+      expect(snapshot.updates.map((update) => update.seq)).toEqual([seqB, seqC]);
+      expect(textFromSnapshot(snapshot.checkpoint, snapshot.updates)).toBe("Alpha Beta Gamma");
+      const reconstruction = await journal.readForReconstruction(DOC_ID);
+      expect(reconstruction.checkpoint).toBeInstanceOf(Uint8Array);
+      expect(reconstruction.updates.map((update) => update.seq)).toEqual([seqB, seqC]);
+      expect(textFromSnapshot(reconstruction.checkpoint, reconstruction.updates)).toBe(
+        "Alpha Beta Gamma",
+      );
     });
 
     it("appends journal batches in one transaction", async () => {
@@ -556,6 +626,86 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("reconstructs from retained rows when only a head checkpoint exists", async () => {
+      const journal = createDrizzleJournal(db);
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID;
+
+      const [first, second] = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(doc, "Alpha"),
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_A },
+        },
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Beta"),
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_B },
+        },
+      ]);
+      expect([first?.wId, second?.wId]).toEqual([1, 2]);
+
+      await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), second?.seq ?? -1);
+
+      const reconstruction = await journal.readForReconstruction(DOC_ID);
+      expect(reconstruction.checkpoint).toBeNull();
+      expect(reconstruction.updates.map((update) => update.seq)).toEqual([first?.seq, second?.seq]);
+      expect(textFromSnapshot(reconstruction.checkpoint, reconstruction.updates)).toBe(
+        "Alpha Beta",
+      );
+
+      const undoUpdate = deleteAllText(doc);
+      const undoRecord = {
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_B,
+        writeIds: ["w1", "w2"],
+        status: "reversed" as const,
+        undoUpdateSeq: 0,
+      };
+      await journal.persistUndo(DOC_ID, undoUpdate, [undoRecord]);
+      expect(doc.getText("body").toString()).toBe("");
+      expect(await mutationRows()).toMatchObject([
+        { wId: 1, status: "reversed", undoUpdateSeq: undoRecord.undoUpdateSeq },
+        { wId: 2, status: "reversed", undoUpdateSeq: undoRecord.undoUpdateSeq },
+      ]);
+
+      const afterUndo = await journal.readForReconstruction(DOC_ID);
+      expect(afterUndo.checkpoint).toBeNull();
+      expect(afterUndo.updates.map((update) => update.seq)).toEqual([
+        first?.seq,
+        second?.seq,
+        undoRecord.undoUpdateSeq,
+      ]);
+      expect(textFromSnapshot(afterUndo.checkpoint, afterUndo.updates)).toBe("");
+
+      const redoUpdate = appendText(doc, "Alpha Beta");
+      const redo = await journal.persistRedo(
+        DOC_ID,
+        redoUpdate,
+        { threadId: THREAD_ID, undoUpdateSeq: undoRecord.undoUpdateSeq },
+        { origin: "system", seq: 0 },
+      );
+      expect(redo.consumed).toBe(true);
+      expect(doc.getText("body").toString()).toBe("Alpha Beta");
+      expect(await mutationRows()).toMatchObject([
+        { wId: 1, status: "active", undoUpdateSeq: null },
+        { wId: 2, status: "active", undoUpdateSeq: null },
+      ]);
+
+      const afterRedo = await journal.readForReconstruction(DOC_ID);
+      expect(afterRedo.checkpoint).toBeNull();
+      expect(afterRedo.updates.map((update) => update.seq)).toEqual([
+        first?.seq,
+        second?.seq,
+        undoRecord.undoUpdateSeq,
+        redo.seq,
+      ]);
+      expect(textFromSnapshot(afterRedo.checkpoint, afterRedo.updates)).toBe("Alpha Beta");
+    });
+
     it("does not fail spuriously when concurrent batches mint w-ids for the same thread", async () => {
       const journal = createDrizzleJournal(db);
 
@@ -699,6 +849,13 @@ function appendText(doc: Y.Doc, value: string): Uint8Array {
   const text = doc.getText("body");
   const before = Y.encodeStateVector(doc);
   text.insert(text.toString().length, value);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function deleteAllText(doc: Y.Doc): Uint8Array {
+  const text = doc.getText("body");
+  const before = Y.encodeStateVector(doc);
+  text.delete(0, text.length);
   return Y.encodeStateAsUpdate(doc, before);
 }
 

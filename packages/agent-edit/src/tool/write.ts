@@ -45,7 +45,7 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
-import { createWriteReversal } from "./write-reversal.js";
+import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -72,6 +72,8 @@ export interface CreateWriteToolOptions {
    * Y.Doc for standalone use.
    */
   createRuntimeDoc?: () => Y.Doc;
+  /** Host-owned notification sink for user-triggered undo/redo context. */
+  undoNotificationPort?: UndoNotificationPort;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
 }
@@ -151,6 +153,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
     undoClientId,
+    undoNotificationPort: options.undoNotificationPort,
     onInvariantViolation: options.onInvariantViolation,
   });
 
@@ -285,13 +288,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
-    if (existingBlocks.length > 0 && !overwriting) {
-      return status(
-        "invalid_write",
-        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
-      );
-    }
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -315,6 +311,34 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     // Response-staged creates may intentionally defer live document creation
     // until commit so rollback leaves no empty Y.Doc behind.
     if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
+
+    // Reconstruct the authoritative current view so existence and the overwrite
+    // delete-set come from canonical plus staged updates, never a stale replica.
+    if (!missingLiveForStagedCreate) {
+      const restored = await runtimeStore.restoreRuntimeFromLive(
+        session,
+        address.documentId,
+        runtime,
+        command.command,
+        { filePath: address.filePath },
+      );
+      if (isInternalWriteResult(restored)) return restored;
+    }
+    if (context.responseId) {
+      for (const update of responseStaging.bufferedUpdatesForDoc(
+        context.responseId,
+        address.documentId,
+      )) {
+        Y.applyUpdate(runtime.doc, update, { type: "system" });
+      }
+    }
+    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    if (existingBlocks.length > 0 && !overwriting) {
+      return status(
+        "invalid_write",
+        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+      );
+    }
 
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
@@ -390,7 +414,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(session, address.documentId, address.filePath, runtime);
+    const synced = await requireSynced(
+      session,
+      address.documentId,
+      command.command,
+      address.filePath,
+      runtime,
+      { rejectOnStale: isUnconfirmedDestructiveReplace(command, address) },
+    );
     if (!synced.ok) return synced.response;
 
     const resolved = resolveWrite(
@@ -567,7 +598,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   function invalidateThread(docId: string, threadId: string): void {
     responseStaging.dropForThread(docId, threadId);
-    runtimeStore.evictThreadRuntimes(docId, threadId, { needsRecovery: true });
+    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     threadOrigins.evictThread(docId, threadId);
   }
 
@@ -731,4 +762,17 @@ function writeSchemaError(error: {
       return `${path}${issue.message}`;
     })
     .join("; ");
+}
+
+function isUnconfirmedDestructiveReplace(
+  command: Extract<WriteCommand, { command: "insert" | "replace" }>,
+  address: DocumentAddress,
+): boolean {
+  // A stale scope address (hash, index, range, or section) can resolve to a different
+  // block after concurrent edits; with no `find` to confirm content, the target can't be verified.
+  return (
+    command.command === "replace" &&
+    command.find === undefined &&
+    (command.in !== undefined || address.fragment !== undefined)
+  );
 }

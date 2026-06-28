@@ -32,7 +32,13 @@ function isScreenKey(value: unknown): value is ScreenKey {
 }
 
 function isContextScheme(value: unknown): value is ProjectContextTreeScheme {
-  return value === "kb" || value === "user" || value === "work" || value === "manuscript";
+  return (
+    value === "kb" ||
+    value === "user" ||
+    value === "work" ||
+    value === "uploads" ||
+    value === "manuscript"
+  );
 }
 
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {

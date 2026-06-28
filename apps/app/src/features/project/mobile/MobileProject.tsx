@@ -135,6 +135,7 @@ function renderActiveView(
           projectId={props.projectId}
           activeThreadId={props.activeThreadId}
           onSelectThread={props.onSelectThread}
+          onSelectContextPath={props.onSelectContextPath}
         />
       );
     case "context":

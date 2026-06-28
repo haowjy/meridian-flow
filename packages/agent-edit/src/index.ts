@@ -78,7 +78,11 @@ export type {
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
 export type { WriteCommandCategory } from "./tool/command-schema.js";
-export { WriteCommandSchema, writeCommandCategory } from "./tool/command-schema.js";
+export {
+  MUTATING_WRITE_COMMANDS,
+  WriteCommandSchema,
+  writeCommandCategory,
+} from "./tool/command-schema.js";
 export type {
   RedoResult,
   ResponseCommitDocumentResult,
@@ -97,5 +101,6 @@ export type {
   WriteStatus,
 } from "./tool/types.js";
 export type { ReverseInput } from "./tool/write.js";
+export type { UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type { ReversalSelection } from "./undo/reversal-plan.js";

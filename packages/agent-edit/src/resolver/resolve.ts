@@ -11,12 +11,14 @@ import {
   serializePmBlockBody,
   type TextFindMatch,
 } from "./find.js";
+import { locateBlockByHash } from "./hash-locator.js";
 import {
   type BlockScope,
   headingLevel,
   isHeading,
   resolveScope,
   resolveSearchScope,
+  type ScopeFailure,
 } from "./scope.js";
 
 export type WriteCommandName = "insert" | "replace";
@@ -102,7 +104,9 @@ function resolveInsert(
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
-    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around);
+    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
+      allowSlugFallback: false,
+    });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
@@ -140,7 +144,9 @@ function resolveReplace(
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
-    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around);
+    const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
+      allowSlugFallback: false,
+    });
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
@@ -152,7 +158,7 @@ function resolveReplace(
   }
   const target = params.in ?? fragmentScope(params);
   if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
-  const scope = resolveScope(ctx, target);
+  const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (params.content.length === 0) return deleteScope(params, scope.scope);
   return replaceScope(ctx, params, scope.scope, parsed);
@@ -195,7 +201,7 @@ function validateSectionContent(
   if (parsed.blocks.length === 0) return { ok: true };
   const target = params.in ?? fragmentScope(params);
   if (typeof target !== "string" || !target.startsWith("#")) return { ok: true };
-  const scope = resolveScope(ctx, target);
+  const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (scope.scope.kind !== "section" || scope.scope.headingLevel === undefined) return { ok: true };
   const sectionLevel = scope.scope.headingLevel;
@@ -216,16 +222,14 @@ function lowerInsertPosition(
 ): ResolveWriteFailure | { ok: true; after?: BlockRef } {
   const blocks = ctx.model.getBlocks(ctx.doc);
   if (params.after) {
-    const lookup = ctx.model.lookupBlock(ctx.doc, params.after);
-    if (!lookup.ok) return error("not_found", `Block hash "${params.after}" was not found`);
-    return { ok: true, after: lookup.block };
+    const located = locateBlockByHash(ctx, params.after);
+    if (!located.ok) return scopeError(located);
+    return { ok: true, after: located.block };
   }
   if (params.before) {
-    const lookup = ctx.model.lookupBlock(ctx.doc, params.before);
-    if (!lookup.ok) return error("not_found", `Block hash "${params.before}" was not found`);
-    const index = blocks.indexOf(lookup.block);
-    if (index < 0) return error("not_found", `Block hash "${params.before}" was not found`);
-    return index === 0 ? { ok: true } : { ok: true, after: blocks[index - 1] };
+    const located = locateBlockByHash(ctx, params.before);
+    if (!located.ok) return scopeError(located);
+    return located.index === 0 ? { ok: true } : { ok: true, after: blocks[located.index - 1] };
   }
   const last = blocks.at(-1);
   return last ? { ok: true, after: last } : { ok: true };
@@ -475,10 +479,8 @@ function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
-function scopeError(
-  result: Extract<ReturnType<typeof resolveScope>, { ok: false }>,
-): ResolveWriteResult {
-  return error(result.code, result.message);
+function scopeError(result: ScopeFailure): ResolveWriteResult {
+  return error(result.code === "ambiguous" ? "ambiguous_match" : result.code, result.message);
 }
 
 function findError(

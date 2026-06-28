@@ -8,6 +8,7 @@ import {
   journalWithMissingMutationTarget,
   markStoredReversalStatus,
   ReversalScenario,
+  setStoredUpdateTime,
 } from "./test-support/write-reversal-scenario.js";
 import {
   codec,
@@ -18,6 +19,149 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("write reversal retention", () => {
+  it("undoes a retained later replacement after compaction folded an earlier replacement", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha sword.\n\nBeta shield." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-compacted-replace" },
+    );
+    await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "ward", find: "shield" },
+      { ...context, turnId: "turn-retained-replace" },
+    );
+
+    const undoLater = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expectOutcome(undoLater, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+
+    const undoCompacted = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expectOutcome(undoCompacted, "nothing_to_undo");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+
+    const redoLater = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
+    expectOutcome(redoLater, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward."]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
+
+    const undoAll = await ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      context,
+    );
+    expectOutcome(undoAll, "reconciled");
+    expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("compacts only the contiguous old seq prefix when update timestamps are skewed", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "First old write." },
+      { ...context, turnId: "turn-old-prefix" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Middle new write." },
+      { ...context, turnId: "turn-new-gap" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Later old write." },
+      { ...context, turnId: "turn-old-after-gap" },
+    );
+
+    const oldEnough = new Date("2026-01-01T00:00:00.000Z");
+    const tooNew = new Date("2026-01-03T00:00:00.000Z");
+    const before = new Date("2026-01-02T00:00:00.000Z");
+    setStoredUpdateTime(ctx.journal, "chapter.md", 1, oldEnough);
+    setStoredUpdateTime(ctx.journal, "chapter.md", 2, tooNew);
+    setStoredUpdateTime(ctx.journal, "chapter.md", 3, oldEnough);
+
+    const compacted = await ctx.journal.compact("chapter.md", before);
+
+    expect(compacted).toEqual({ updatesFolded: 1, reversalsExpired: 0 });
+    expect(ctx.journal.updateRecords("chapter.md").map((update) => update.seq)).toEqual([2, 3]);
+    expect((await ctx.journal.read("chapter.md")).updates.map((update) => update.seq)).toEqual([
+      2, 3,
+    ]);
+    const reconstruction = await ctx.journal.readForReconstruction("chapter.md");
+    expect(reconstruction.checkpoint).toBeInstanceOf(Uint8Array);
+    expect(reconstruction.updates.map((update) => update.seq)).toEqual([2, 3]);
+
+    const undoLaterOldWrite = await ctx.core.write(
+      { command: "undo", file: "chapter.md" },
+      context,
+    );
+
+    expectOutcome(undoLaterOldWrite, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Base.", "First old write.", "Middle new write."]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w3")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("undoes a retained later insert after compaction folded an earlier insert", async () => {
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Alpha." },
+      { undoClientId: REVERSAL_CLIENT_ID },
+    );
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, turnId: "turn-compacted-insert" },
+    );
+    await ctx.journal.compact("chapter.md", new Date(Date.now() + 1_000));
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Gamma." },
+      { ...context, turnId: "turn-retained-insert" },
+    );
+
+    const undoLater = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undoLater, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Alpha.", "Beta."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
+  it("reconstructs from retained rows when only a head checkpoint exists", async () => {
+    const scenario = ReversalScenario.raw({}, { undoClientId: REVERSAL_CLIENT_ID });
+    const { ctx } = scenario;
+
+    await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Alpha." },
+      { ...context, turnId: "turn-head-checkpoint-create" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, turnId: "turn-head-checkpoint-insert" },
+    );
+    await scenario.checkpointLiveDoc(2);
+
+    const entry = ctx.journal.debugEntry("chapter.md");
+    if (!entry?.checkpoint) throw new Error("expected head checkpoint");
+    entry.checkpoints = [entry.checkpoint];
+
+    const reconstruction = await ctx.journal.readForReconstruction("chapter.md");
+    expect(reconstruction.checkpoint).toBeNull();
+    expect(reconstruction.updates.map((update) => update.seq)).toEqual([1, 2]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(scenario.blockTexts()).toEqual(["Alpha."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+  });
+
   it("undoes a later write first, then a checkpointed earlier write", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Alpha sword." },
@@ -227,22 +371,6 @@ describe("write reversal retention", () => {
     expect(
       outcomeText(await scenario.ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
     ).toBe("status: nothing_to_redo");
-  });
-
-  it("exposes user turn undo and redo seams by document and thread", async () => {
-    const scenario = await ReversalScenario.read(
-      { "chapter.md": "Alpha sword." },
-      { undoClientId: REVERSAL_CLIENT_ID },
-    );
-    await scenario.simpleReplace("turn-user-seam");
-
-    const undo = await scenario.ctx.core.undoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(undo)).toContain("status: reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
-
-    const redo = await scenario.ctx.core.redoTurn("chapter.md", THREAD_ID);
-    expect(outcomeText(redo)).toContain("status: reconciled");
-    expect(scenario.blockTexts()).toEqual(["Alpha blade."]);
   });
 
   it("cold undo filters interleaved journal targets by thread", async () => {

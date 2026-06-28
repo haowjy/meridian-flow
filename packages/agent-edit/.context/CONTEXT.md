@@ -7,14 +7,14 @@ The persistence seam is split by concern:
 
 - `UpdateJournal` is the ordered Yjs update log: append, `appendBatch`, live-load
   `read`, checkpoint, and compact.
-- `ReversalStore` owns write-level reversal state: write ordinal reservation,
+- `ReversalStore` owns reversal state: write ordinal reservation,
   active/reversed write metadata queries, `readForReconstruction(docId)`,
   per-handle `mutationsForWrite` and the batch `mutationsForWrites` (one query for
   multiple handles), `persistUndo`, `persistRedo`, and `readReversals`.
 
-`readForReconstruction` is the domain-level retained-log read used by cold
-undo/redo so checkpoint mechanics stay adapter-local; reversal code no longer
-passes `read(..., { fromCheckpoint: false })` through the generic log port.
+`readForReconstruction` is the retained-log read used by cold undo/redo;
+checkpoint mechanics stay adapter-local. Reversal code no longer passes
+`read(..., { fromCheckpoint: false })` through the generic update-log port.
 Adapters may implement both interfaces in one class when the update log,
 mutation rows, and reversal rows are co-sourced (Drizzle and the in-memory test
 journal do).
@@ -25,13 +25,22 @@ Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 use the same store to plan against retained update rows and mutation metadata.
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
-atomically.
+atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
+`persistRedo` sets it to the redo update seq for every row in the group, and
+`persistUndo` clears it when the same write enters a new undo cycle.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
 for the same docId (KeyedMutex on server, process-level lock on desktop).
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
+
+### UndoNotificationPort (`src/tool/write-reversal.ts`)
+Optional host callback for user-triggered reversal delivery. Agent-edit passes
+`threadId`, `docId`, a representative `turnId`, write handles, direction, and
+`writeHandleTurns` (the per-handle turn mapping) after a successful user-actor
+undo/redo persist; hosts resolve `docId` to any product URI outside the package.
+Agent-actor reversals and hosts without the port keep the old behavior.
 
 ### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
 Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
@@ -176,7 +185,21 @@ doc+thread+turn reversal is still `status: "reversed"` inside the append
 transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
-**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged.
+Lineage has two distinct persisted authorities.
+`document_yjs_reversals.redo_update_seq` records the current active redo closure
+(state): handles that are active because of the same redo update must undo
+together. `document_yjs_reversal_ops` records durable reversal op identity
+(history): old undo/redo update seqs are exempt from dependency blocking even
+when the current state has moved on. Both authorities compact with the retained
+Yjs update log so closure and dependency checks only target retained update seqs.
+The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
+journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
+handles, candidate handles, and reversal-op seqs, then receive the undo closure or
+refusal verdict. The helper steps behind that API (compatible groups, boundary
+expansion, seq ownership, dependency evaluation) are private implementation
+details.
+
+**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
 
 
 ### CRDT-neutral seam, ProseMirror content currency
@@ -192,9 +215,37 @@ deferred in [TODO.md](TODO.md).
 
 ## Key invariants
 
-- **Block hash stable under edits.** Derived from CRDT item ID (assigned at
-  element creation). Survives content edits, position shifts, reordering.
-  Lost on type change or deletion (new element → new ID).
+- **Block hash = the live `Y.XmlElement`'s CRDT item ID** (assigned at element
+  creation). Stable across content edits of that element, and across **neighbor**
+  insert/delete shifts (insert/delete preserve relative order, so y-prosemirror's
+  prefix/suffix matching leaves untouched blocks' item ids intact). Lost on type
+  change or deletion (new element → new ID).
+
+- **In-place block reorder is NOT a supported operation — by policy.** y-prosemirror
+  reconciles a same-order-breaking change (a drag/move) by *position*: it keeps each
+  item id pinned to its slot and **rewrites content in place**, so a "moved" block
+  would land on a different item id and its hash would silently re-bind to whatever
+  content shifted into that slot. We therefore do **not** expose drag-to-reorder for
+  text blocks (paragraph/heading carry no `draggable`). **Any future move feature
+  MUST be implemented as delete-old + insert-new (copy-paste semantics)** — the
+  moved block gets a fresh identity, and the hash model stays "item id = stable block
+  identity" for every supported edit. Do not wire a node's `draggable`/default DnD to
+  reposition blocks; that reintroduces the in-place rebind.
+  - `MeridianFigure`'s `draggable` was removed (here + `packages/prosemirror-schema`)
+    for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
+    to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
+
+### Destructive scoped replace/delete wrong-target residual
+
+Scope addresses are view-scoped; durable identity is the full CRDT item hash and
+its content. A stale no-`find` destructive replace/delete scoped by hash, numeric
+index, range, or section can resolve to a different current block after
+concurrent edits, and without content confirmation the target cannot be verified.
+Mitigations are layered: `find`-based replace is content-backstopped;
+no-`find` destructive scoped replace/delete is staleness-gated and asks for a
+re-read when the doc changed since the last read; any remaining wrong-target is
+visible in the op echo and recoverable through undo lineage.
+
 - **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
@@ -217,8 +268,13 @@ going blind to a concurrent human edit.
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
 - **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
   runtime has seen") is set by `markSynced` on read / create / write / commit. A
-  mutating write requires a prior sync (`requireSynced`) or returns
-  `document_not_synced` ("run read").
+  mutating write requires a prior sync (`requireSynced`); when the runtime replica
+  is missing or the live doc is stale, `requireSynced` transparently cold-rebuilds
+  from canonical rather than forcing the model to `read` — a read is never
+  *required* to edit. Only a genuinely missing document errors. Staleness of the
+  shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
+  in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
+  cache.
 - **Persisted sync state is a restart baseline, reconciled before mutate.**
   `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`) let a
   post-restart write skip an explicit `read`, but `requireSynced` treats a loaded row
@@ -235,11 +291,11 @@ going blind to a concurrent human edit.
   Tests for this must assert the durable `SyncStateStore` row, not in-memory
   `session.documents` — the in-memory copy can look right while the durable one is wrong.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
-  the runtime, rebuilds from canonical (live), and replays the response's pending
-  staged updates: `runtime = canonical ⊕ replay(pending)`. It never trusts
-  accumulated local state, so a `read` is a read that can never carry runtime drift
-  forward or corrupt the doc. At turn start (no pending) it is exactly canonical.
-  The reversal path still uses the delta merge `syncLocalFromLive`; `read` does not.
+  the runtime, rebuilds from canonical (live), and replays pending staged updates:
+  `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
+  so `read` can never carry runtime drift forward or corrupt the doc. At turn start
+  (no pending) it is exactly canonical. The reversal path uses the delta merge
+  `syncLocalFromLive`; `read` does not.
 - **`read` and `find` read the same doc.** Both resolve against the runtime, so the
   model can always `find` what `read` showed it. This is *why* `read` replays
   pending: otherwise a write after a mid-response `read` could re-match
@@ -348,8 +404,7 @@ paths so accidental UUID interpolation fails loudly.
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
-- **Multi-document turn reversal** not yet implemented. Each document's
-  undo runs independently; no turn-level coordination across documents.
+
 - **Cross-block `find`** (find string containing `\n\n`) supported via
   structural lowering in the resolver. Routes to Tier 2+3.
 

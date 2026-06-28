@@ -31,7 +31,12 @@ const userId = "user-1";
 const documentId = "doc-1";
 
 function makeApp(
-  options: { threadUserId?: string; reverseOutcome?: unknown; availability?: unknown } = {},
+  options: {
+    threadUserId?: string;
+    reverseOutcome?: unknown;
+    turnReverseOutcome?: unknown;
+    availability?: unknown;
+  } = {},
 ) {
   const refreshed: Array<{ documentId: string; threadId?: string }> = [];
   const reverse = vi.fn(
@@ -41,6 +46,13 @@ function makeApp(
         status: "reversed",
         isError: false,
         text: "status: reversed",
+      },
+  );
+  const reverseTurn = vi.fn(
+    async () =>
+      options.turnReverseOutcome ?? {
+        status: "reversed",
+        documents: [{ uri: "manuscript://chapter.md", status: "reversed" }],
       },
   );
   const getAvailability = vi.fn(async () => options.availability ?? { undo: true, redo: false });
@@ -66,12 +78,14 @@ function makeApp(
       },
       documentSync: {
         agentEdit: () => ({ reverse, getAvailability }),
+        reverseTurn,
         refreshDocumentProjection: vi.fn(async (input) => {
           refreshed.push(input);
         }),
       },
     },
     reverse,
+    reverseTurn,
     getAvailability,
     refreshed,
   };
@@ -124,8 +138,11 @@ describe("thread context reverse routes", () => {
 
     const response = await route(event);
 
-    expect(event.status).toBe(202);
-    expect(response).toMatchObject({ status: "reversed" });
+    expect(event.status).toBe(200);
+    expect(response).toMatchObject({
+      status: "reversed",
+      documents: [{ uri: "manuscript://chapter.md", status: "reversed" }],
+    });
     expect(reverse).toHaveBeenCalledWith({
       docId: documentId,
       threadId,
@@ -136,7 +153,82 @@ describe("thread context reverse routes", () => {
     expect(refreshed).toEqual([{ documentId, threadId }]);
   });
 
-  it("maps dependent undo refusal to 409", async () => {
+  it("returns 404 before uri-less turn reversal for a thread owned by another user", async () => {
+    const { app, reverseTurn } = makeApp({ threadUserId: "user-2" });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { direction: "undo", scope: "turn", target: "turn-1" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(reverseTurn).not.toHaveBeenCalled();
+  });
+
+  it("accepts turn-scope reversal without a uri", async () => {
+    const { app, reverse, reverseTurn } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+    const event: TestEvent = {
+      params: { threadId },
+      body: { direction: "undo", scope: "turn", target: "turn-1" },
+    };
+
+    const response = await route(event);
+
+    expect(event.status).toBe(200);
+    expect(response).toMatchObject({
+      status: "reversed",
+      documents: [{ uri: "manuscript://chapter.md" }],
+    });
+    expect(reverseTurn).toHaveBeenCalledWith({
+      threadId,
+      turnId: "turn-1",
+      direction: "undo",
+      actor: { type: "user", userId },
+    });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
+  it("requires target for turn-scope reversal even with a uri", async () => {
+    const { app, reverse } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { uri: "manuscript://chapter.md", direction: "undo", scope: "turn" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: "target is required for turn scope" });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
+  it("requires uri for thread-scope reversal", async () => {
+    const { app, reverseTurn } = makeApp();
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({
+        params: { threadId },
+        body: { direction: "undo", scope: "thread" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: "uri required for thread scope" });
+    expect(reverseTurn).not.toHaveBeenCalled();
+  });
+
+  it("returns dependent undo refusal in the unified reversal body", async () => {
     const { app } = makeApp({
       reverseOutcome: {
         command: "undo",
@@ -150,21 +242,33 @@ describe("thread context reverse routes", () => {
       event: TestEvent,
     ) => Promise<unknown>;
 
-    await expect(
-      route({
-        params: { threadId },
-        body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write", target: "w1" },
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
+    const event: TestEvent = {
+      params: { threadId },
+      body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write", target: "w1" },
+    };
+
+    const response = await route(event);
+
+    expect(event.status).toBe(200);
+    expect(response).toMatchObject({
+      status: "partial",
+      documents: [
+        {
+          uri: "manuscript://chapter.md",
+          status: "cant_undo_dependent",
+          text: "status: cant_undo_dependent",
+        },
+      ],
+    });
   });
 
   it.each([
-    "nothing_to_undo",
-    "nothing_to_redo",
-    "expired",
-  ])("returns %s without refreshing projection", async (status) => {
+    ["undo", "nothing_to_undo"],
+    ["redo", "nothing_to_redo"],
+    ["undo", "expired"],
+  ] as const)("returns %s %s without refreshing projection", async (direction, status) => {
     const outcome = {
-      command: "undo",
+      command: direction,
       status,
       isError: false,
       text: `status: ${status}`,
@@ -176,13 +280,16 @@ describe("thread context reverse routes", () => {
     ) => Promise<unknown>;
     const event: TestEvent = {
       params: { threadId },
-      body: { uri: "manuscript://chapter.md", direction: "undo", scope: "write" },
+      body: { uri: "manuscript://chapter.md", direction, scope: "write" },
     };
 
     const response = await route(event);
 
     expect(event.status).toBe(200);
-    expect(response).toBe(outcome);
+    expect(response).toEqual({
+      status,
+      documents: [{ uri: "manuscript://chapter.md", status, text: `status: ${status}` }],
+    });
     expect(refreshed).toEqual([]);
   });
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
+import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
@@ -18,22 +19,18 @@ import { createWriteTool } from "./write.js";
 const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
 const MODEL_PATH = "work://chapter-2.md";
 
-describe("write tool dispatch", () => {
-  it("requires reversal store capabilities at construction time", () => {
-    if (Date.now() < 0) {
-      const oldJournalOnly = {} as UpdateJournal;
-      createWriteTool({
-        // @ts-expect-error write-level mutations require ReversalStore capabilities.
-        journal: oldJournalOnly,
-        coordinator: undefined as never,
-        codec: undefined as never,
-        model: undefined as never,
-      });
-    }
-
-    expect(true).toBe(true);
+if (Date.now() < 0) {
+  const oldJournalOnly = {} as UpdateJournal;
+  createWriteTool({
+    // @ts-expect-error write-level mutations require ReversalStore capabilities.
+    journal: oldJournalOnly,
+    coordinator: undefined as never,
+    codec: undefined as never,
+    model: undefined as never,
   });
+}
 
+describe("write tool dispatch", () => {
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const oldJournalOnly = {
@@ -135,6 +132,181 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh", "New content."]);
   });
 
+  it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha canonical." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement only.",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
+  });
+
+  it("fully replaces canonical blocks on staged stale-replica create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha canonical." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-overwrite-stale",
+      responseId: "response-staged-overwrite-stale",
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement only.",
+        overwrite: true,
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha canonical.", "Beta canonical."]);
+
+    await ctx.core.commitResponse("response-staged-overwrite-stale");
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
+  });
+
+  it("rejects non-overwrite create against canonical content even when the replica is empty", async () => {
+    const ctx = harness({ "chapter.md": "Canonical content." });
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Replacement." },
+      context,
+    );
+
+    expectOutcome(result, "invalid_write", true);
+    expect(outcomeText(result)).toContain("File already exists: chapter.md");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Canonical content."]);
+  });
+
+  it("allows non-overwrite create when canonical is empty despite phantom replica blocks", async () => {
+    const ctx = harness({ "chapter.md": "Phantom replica content." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    clearLiveBlocks(ctx.liveDoc("chapter.md"));
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: "Fresh canonical content." },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(outcomeText(result)).not.toContain("Phantom replica content.");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh canonical content."]);
+
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "chapter.md" }, context)),
+    ).toEqual(["Fresh canonical content."]);
+    const phantomReplace = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Leaked.",
+        find: "Phantom replica content.",
+      },
+      context,
+    );
+    expectOutcome(phantomReplace, "not_found", true);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh canonical content."]);
+  });
+
+  it.each([
+    { label: "non-overwrite", overwrite: false },
+    { label: "overwrite", overwrite: true },
+  ])("creates a fresh staged $label document without live document creation", async ({
+    overwrite,
+  }) => {
+    const ctx = harness();
+    const responseId = `response-staged-create-new-${overwrite ? "overwrite" : "default"}`;
+    const responseContext = {
+      ...context,
+      turnId: `turn-staged-create-new-${overwrite ? "overwrite" : "default"}`,
+      responseId,
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "new.md",
+        content: "Fresh content.",
+        ...(overwrite ? { overwrite: true } : {}),
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+
+    const commit = await ctx.core.commitResponse(responseId);
+
+    expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);
+  });
+
+  it.each([
+    {
+      label: "rejects",
+      overwrite: false,
+      expectedOutcome: "invalid_write" as const,
+      expectedContent: "First staged content.",
+    },
+    {
+      label: "overwrites",
+      overwrite: true,
+      expectedOutcome: "success" as const,
+      expectedContent: "Replacement staged content.",
+    },
+  ])("$label a duplicate staged create for the same new document in one response", async ({
+    overwrite,
+    expectedOutcome,
+    expectedContent,
+  }) => {
+    const ctx = harness();
+    const responseId = `response-staged-duplicate-${overwrite ? "overwrite" : "create"}`;
+    const responseContext = {
+      ...context,
+      turnId: `turn-staged-duplicate-${overwrite ? "overwrite" : "create"}`,
+      responseId,
+    };
+
+    const first = await ctx.core.write(
+      { command: "create", file: "new.md", content: "First staged content." },
+      responseContext,
+    );
+    const second = await ctx.core.write(
+      {
+        command: "create",
+        file: "new.md",
+        content: "Replacement staged content.",
+        ...(overwrite ? { overwrite: true } : {}),
+      },
+      responseContext,
+    );
+
+    expectOutcome(first, "success");
+    expectOutcome(second, expectedOutcome, expectedOutcome === "invalid_write");
+    if (expectedOutcome === "invalid_write") {
+      expect(outcomeText(second)).toContain("File already exists: new.md");
+    }
+    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
+
+    await ctx.core.commitResponse(responseId);
+
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([expectedContent]);
+  });
+
   it("keeps internal document ids out of model-facing write text", async () => {
     const ctx = harness({ [INTERNAL_DOCUMENT_ID]: "# Already here." });
 
@@ -150,7 +322,7 @@ describe("write tool dispatch", () => {
     expect(outcomeText(createExisting)).toContain(`File already exists: ${MODEL_PATH}`);
     expect(outcomeText(createExisting)).not.toContain(INTERNAL_DOCUMENT_ID);
 
-    const unsynced = await ctx.core.write(
+    const autoSynced = await ctx.core.write(
       {
         command: "replace",
         documentId: INTERNAL_DOCUMENT_ID,
@@ -160,10 +332,8 @@ describe("write tool dispatch", () => {
       },
       context,
     );
-    expect(outcomeText(unsynced)).toContain(
-      `Run write(command="read", file="${MODEL_PATH}") to re-sync.`,
-    );
-    expect(outcomeText(unsynced)).not.toContain(INTERNAL_DOCUMENT_ID);
+    expect(outcomeText(autoSynced)).toContain("status: success");
+    expect(outcomeText(autoSynced)).not.toContain(INTERNAL_DOCUMENT_ID);
 
     const read = await ctx.core.write(
       { command: "read", documentId: INTERNAL_DOCUMENT_ID, file: MODEL_PATH, format: "outline" },
@@ -178,7 +348,7 @@ describe("write tool dispatch", () => {
         documentId: INTERNAL_DOCUMENT_ID,
         file: MODEL_PATH,
         content: "Still",
-        find: "Already",
+        find: "New",
       },
       context,
     );
@@ -382,6 +552,45 @@ describe("write tool dispatch", () => {
     expect(outcomeText(deletion)).toContain("status: success");
     expect(outcomeText(deletion)).toContain(`deleted: ${deleteHash}`);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+  });
+
+  it("replaces with a find needle copied from hash-prefixed read output", async () => {
+    const ctx = harness({ "chapter.md": "The heavens rumbled...\n\nTail." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+    const replaced = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "The sky split.",
+        find: `${firstHash}|The heavens rumbled...`,
+      },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["The sky split.", "Tail."]);
+  });
+
+  it("replaces a multi-block range with a find needle copied from hash-prefixed read output", async () => {
+    const ctx = harness({ "chapter.md": "First.\n\nSecond.\n\nTail." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const secondHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+
+    const replaced = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Merged.",
+        find: `${firstHash}|First.\n${secondHash}|Second.`,
+      },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Merged.", "Tail."]);
   });
 
   it("replaces and inserts with find anchors copied from markdown-form read", async () => {
@@ -666,9 +875,15 @@ describe("write tool dispatch", () => {
     const missingCtx = harness();
 
     const missing = await missingCtx.core.write({ command: "read", file: "missing.md" }, context);
+    const missingEdit = await missingCtx.core.write(
+      { command: "replace", file: "missing.md", find: "x", content: "y" },
+      context,
+    );
 
     expect(outcomeText(missing)).toContain("status: document_not_found");
     expectOutcome(missing, "document_not_found", true);
+    expect(outcomeText(missingEdit)).toContain("status: document_not_found");
+    expectOutcome(missingEdit, "document_not_found", true);
 
     const failingCtx = harness({ "chapter.md": "Alpha." });
     failingCtx.coordinator.failWith(new Error("database unavailable"));
@@ -693,4 +908,24 @@ function aroundNeedleBlocks(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
+}
+
+function appendLiveBlock(doc: Y.Doc, markdown: string): void {
+  doc.transact(
+    () => {
+      const blocks = model.getBlocks(doc);
+      model.insertBlocks(doc, blocks.at(-1) ?? null, codec.parse(markdown));
+    },
+    { type: "human" },
+  );
+}
+
+function clearLiveBlocks(doc: Y.Doc): void {
+  doc.transact(
+    () => {
+      const fragment = fragmentOf(doc);
+      fragment.delete(0, fragment.length);
+    },
+    { type: "human" },
+  );
 }

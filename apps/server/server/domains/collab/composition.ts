@@ -10,6 +10,7 @@ import {
   type PersistedUpdate as JournalUpdate,
   type ReversalStore,
   type SyncStateStore,
+  type UndoNotificationPort,
   type UpdateJournal,
   type UpdateMeta,
   yProsemirrorModel,
@@ -26,7 +27,12 @@ import {
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok } from "../../shared/result.js";
+import {
+  createDocumentUriResolver,
+  type DocumentUriResolver,
+} from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
@@ -43,6 +49,7 @@ import {
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
+import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import type {
   CheckpointInfo,
   CollabDomain,
@@ -56,6 +63,7 @@ export type { DocumentWriteHook } from "./index.js";
 type CollabDomainDeps = {
   db: Database;
   eventSink?: EventSink;
+  pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
 
 type CheckpointRecord = {
@@ -87,8 +95,44 @@ export type CollabFacadeDeps = {
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
+  documentUriResolver?: DocumentUriResolver;
+  undoNotificationPort?: UndoNotificationPort;
   syncStateStore?: SyncStateStore;
 };
+
+function createUndoNotificationPort(deps: {
+  repository: PendingUndoNotificationRepository;
+  documentUriResolver: DocumentUriResolver;
+  eventSink?: EventSink;
+}): UndoNotificationPort {
+  return {
+    async record(input) {
+      const uri = await deps.documentUriResolver(input.docId);
+      if (!uri) {
+        if (deps.eventSink) {
+          emitEvent(deps.eventSink, {
+            level: "warn",
+            source: "collab.undo_notifications",
+            name: "document_uri_missing",
+            payload: {
+              docId: input.docId,
+              threadId: input.threadId,
+              representativeTurnId: input.writeHandleTurns[0]?.turnId,
+            },
+          });
+        }
+        return;
+      }
+      await deps.repository.record({
+        threadId: input.threadId,
+        writeHandles: input.writeHandles,
+        writeHandleTurns: input.writeHandleTurns,
+        uri,
+        direction: input.direction,
+      });
+    },
+  };
+}
 
 type PendingAppend = {
   documentId: string;
@@ -108,6 +152,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
 
+  const documentUriResolver = createDocumentUriResolver(deps.db);
+
   return createFacade({
     journal,
     coordinator,
@@ -119,6 +165,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     eventSink: deps.eventSink,
     syncStateStore,
+    documentUriResolver,
+    undoNotificationPort: deps.pendingUndoNotifications
+      ? createUndoNotificationPort({
+          repository: deps.pendingUndoNotifications,
+          documentUriResolver,
+          eventSink: deps.eventSink,
+        })
+      : undefined,
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -162,6 +216,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
     syncStateStore: deps.syncStateStore,
+    undoNotificationPort: deps.undoNotificationPort,
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
   const pendingAppends = new Map<number, PendingAppend>();
@@ -372,6 +427,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
+    },
+
+    reverseTurn(input) {
+      return reverseTurnAcrossDocuments(
+        {
+          reversalStore: deps.journal,
+          agentEdit: agentEditCore,
+          resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          refreshDocumentProjection: (projection) =>
+            refreshDocumentProjection(projection.documentId, projection.threadId),
+        },
+        input,
+      );
     },
 
     async checkpoint(documentId, reason) {

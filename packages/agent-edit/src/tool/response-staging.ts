@@ -21,7 +21,6 @@ export interface ResponseStaging {
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
-  hasBufferedWritesForDoc(responseId: string, docId: string): boolean;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   dropForThread(docId: string, threadId: string): void;
 }
@@ -83,7 +82,6 @@ export function createResponseStaging(deps: {
     commitResponse,
     rollbackResponse,
     hasBufferedWrites,
-    hasBufferedWritesForDoc,
     bufferedUpdatesForDoc,
     dropForThread,
   };
@@ -158,7 +156,7 @@ export function createResponseStaging(deps: {
         return responseCommitResult(responseId, buffer, docBuffers, documents);
       }
 
-      runtimeStore.evictResponseRuntimes(docBuffers, { needsRecovery: true });
+      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
       throw responseCommitError(responseId, true, cause, recoveryFailure);
     }
   }
@@ -189,7 +187,6 @@ export function createResponseStaging(deps: {
           docBuffer.docId,
           docBuffer.runtime,
           docBuffer.commandName,
-          { recoverFromJournal: buffer.journalCommitted },
         );
         if (isInternalWriteResult(restored)) throw new Error(restored.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -202,7 +199,7 @@ export function createResponseStaging(deps: {
         }),
       };
     } catch (cause) {
-      runtimeStore.evictResponseRuntimes(docBuffers, { needsRecovery: buffer.journalCommitted });
+      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: buffer.journalCommitted });
       responseBuffers.delete(responseId);
       throw cause;
     }
@@ -212,10 +209,6 @@ export function createResponseStaging(deps: {
     const buffer = responseBuffers.get(responseId);
     if (!buffer) return false;
     return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
-  }
-
-  function hasBufferedWritesForDoc(responseId: string, docId: string): boolean {
-    return (responseBuffers.get(responseId)?.docs.get(docId)?.updates.length ?? 0) > 0;
   }
 
   function bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[] {

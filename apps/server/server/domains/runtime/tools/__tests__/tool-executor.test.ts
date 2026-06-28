@@ -77,6 +77,40 @@ describe("createToolExecutor", () => {
     });
   });
 
+  it("returns a clear parse error for malformed tool arguments", async () => {
+    const registry = createToolRegistry();
+    let handlerCalled = false;
+    registry.register(
+      serverTool("read_file", async () => {
+        handlerCalled = true;
+        return "handler result";
+      }),
+    );
+    const executor = createToolExecutor(registry);
+
+    const result = await executor.executeTool(
+      {
+        id: "call-parse-error",
+        name: "read_file",
+        arguments: {},
+        argumentsParseError: {
+          raw: '{"path":"manuscript://chapter-1.md","in": 6c4a,"command":"read"}',
+          message: "Unexpected character",
+        },
+      },
+      ctx,
+    );
+
+    expect(result).toEqual({
+      toolCallId: "call-parse-error",
+      output: toolErrorOutput(
+        'Tool arguments for "read_file" were not valid JSON and could not be parsed or repaired (Unexpected character). Received: {"path":"manuscript://chapter-1.md","in": 6c4a,"command":"read"} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).',
+      ),
+      isError: true,
+    });
+    expect(handlerCalled).toBe(false);
+  });
+
   it("binds handler output deltas to the current tool call id", async () => {
     const registry = createToolRegistry();
     registry.register(

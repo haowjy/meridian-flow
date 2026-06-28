@@ -317,6 +317,20 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         return errorResult(call.id, meridianErrorFromTool("Client tool dispatch not implemented"));
       }
 
+      if (call.argumentsParseError) {
+        const { raw, message } = call.argumentsParseError;
+        // Echo the offending fragment (truncated) so the model can see what it
+        // emitted and self-correct — a clear JSON-parse error, never a misleading
+        // downstream schema error like "path is required".
+        const fragment = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+        return errorResult(
+          call.id,
+          meridianErrorFromTool(
+            `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).`,
+          ),
+        );
+      }
+
       if (ctx.signal?.aborted) {
         // Early-exit: the turn was already cancelled before we started.
         // This skips handler invocation entirely, avoiding wasted work.
