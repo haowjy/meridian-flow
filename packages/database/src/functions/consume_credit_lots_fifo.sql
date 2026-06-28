@@ -36,16 +36,22 @@ BEGIN
     hashtext(p_user_id::text)
   );
 
+  -- Replay idempotency is scoped per (user_id, usage_event_id) to match the
+  -- per-user advisory lock above and the CreditLedger port contract. A single
+  -- debit may write several consumption rows (one per consumed lot) sharing this
+  -- usage_event_id, so this is an existence fence, NOT a unique index.
   IF EXISTS (
     SELECT 1
     FROM credit_transactions
-    WHERE usage_event_id = p_usage_event_id
+    WHERE user_id = p_user_id
+      AND usage_event_id = p_usage_event_id
       AND transaction_type = 'consumption'
   ) THEN
     SELECT ct.consumption_group_id
     INTO v_consumption_group_id
     FROM credit_transactions ct
-    WHERE ct.usage_event_id = p_usage_event_id
+    WHERE ct.user_id = p_user_id
+      AND ct.usage_event_id = p_usage_event_id
       AND ct.transaction_type = 'consumption'
     LIMIT 1;
 
