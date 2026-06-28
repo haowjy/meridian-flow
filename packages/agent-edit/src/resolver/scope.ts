@@ -1,6 +1,6 @@
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { DocumentModel } from "../ports/model.js";
-import { ambiguousHashMessage } from "./ambiguous-hash.js";
+import { locateBlockByHash } from "./hash-locator.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
 
@@ -20,14 +20,11 @@ export interface BlockScope {
   headingLevel?: number;
 }
 
-export type ScopeResult =
-  | { ok: true; scope: BlockScope }
-  | {
-      ok: false;
-      code: "not_found" | "invalid_write";
-      message: string;
-      reason?: "ambiguous_hash";
-    };
+export type ScopeResult = { ok: true; scope: BlockScope } | ScopeFailure;
+
+export type ScopeFailure =
+  | { ok: false; code: "not_found" | "invalid_write"; message: string }
+  | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
 
 export function resolveSearchScope(
   ctx: ScopeContext,
@@ -69,9 +66,9 @@ export function resolveFragment(ctx: ScopeContext, fragment: string): ScopeResul
   const hexShaped = HEX_HASH_RE.test(fragment);
   if (hexShaped) {
     const byHash = resolveHashAsBlockOrSection(ctx, fragment);
-    if (byHash.ok || byHash.code !== "not_found" || byHash.reason === "ambiguous_hash") {
-      return byHash;
-    }
+    if (byHash.ok) return byHash;
+    if (byHash.code === "ambiguous") return byHash;
+    if (byHash.code !== "not_found") return byHash;
     return resolveSlug(ctx, fragment);
   }
   const bySlug = resolveSlug(ctx, fragment);
@@ -101,56 +98,54 @@ export function slugForHeadingText(text: string): string {
 
 function resolveAround(ctx: ScopeContext, around: string): ScopeResult {
   const hash = around.startsWith("#") ? around.slice(1) : around;
-  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
-  if (!lookup.ok) return hashLookupError(ctx, hash, lookup);
-  const blocks = ctx.model.getBlocks(ctx.doc);
-  const index = blocks.indexOf(lookup.block);
-  if (index < 0) return notFound(`Block hash "${hash}" was not found`);
+  const located = locateBlockByHash(ctx, hash);
+  if (!located.ok) return located;
   return {
     ok: true,
     scope: scopeFromIndexes(
       "around",
-      blocks,
-      Math.max(0, index - AROUND_BLOCK_RADIUS),
-      Math.min(blocks.length - 1, index + AROUND_BLOCK_RADIUS),
+      located.blocks,
+      Math.max(0, located.index - AROUND_BLOCK_RADIUS),
+      Math.min(located.blocks.length - 1, located.index + AROUND_BLOCK_RADIUS),
     ),
   };
 }
 
 function resolveSingleHash(ctx: ScopeContext, hash: string): ScopeResult {
-  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
-  if (!lookup.ok) return hashLookupError(ctx, hash, lookup);
-  const blocks = ctx.model.getBlocks(ctx.doc);
-  const index = blocks.indexOf(lookup.block);
-  if (index < 0) return notFound(`Block hash "${hash}" was not found`);
-  return { ok: true, scope: scopeFromIndexes("block", blocks, index, index) };
+  const located = locateBlockByHash(ctx, hash);
+  if (!located.ok) return located;
+  return {
+    ok: true,
+    scope: scopeFromIndexes("block", located.blocks, located.index, located.index),
+  };
 }
 
 function resolveHashAsBlockOrSection(ctx: ScopeContext, hash: string): ScopeResult {
-  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
-  if (!lookup.ok) return hashLookupError(ctx, hash, lookup);
-  const blocks = ctx.model.getBlocks(ctx.doc);
-  const index = blocks.indexOf(lookup.block);
-  if (index < 0) return notFound(`Block hash "${hash}" was not found`);
-  if (!isHeading(ctx.model, lookup.block)) {
-    return { ok: true, scope: scopeFromIndexes("block", blocks, index, index) };
+  const located = locateBlockByHash(ctx, hash);
+  if (!located.ok) return located;
+  if (!isHeading(ctx.model, located.block)) {
+    return {
+      ok: true,
+      scope: scopeFromIndexes("block", located.blocks, located.index, located.index),
+    };
   }
-  return sectionFromHeading(ctx, index);
+  return sectionFromHeading(ctx, located.index);
 }
 
 function resolveStringRange(ctx: ScopeContext, input: string): ScopeResult {
   const [startHash, endHash] = input.split("..");
   if (!startHash) return invalid("Range start is required");
   const blocks = ctx.model.getBlocks(ctx.doc);
-  const start = ctx.model.lookupBlock(ctx.doc, startHash);
-  if (!start.ok) return rangeEndpointLookupError(ctx, "start", startHash, start);
-  const startIndex = blocks.indexOf(start.block);
+  const start = locateBlockByHash(ctx, startHash, {
+    notFoundMessage: `Range start block "${startHash}" was not found`,
+  });
+  if (!start.ok) return start;
   const endIndex: BlockIndexResult = endHash
     ? blockIndexForHash(ctx, endHash)
     : { ok: true, index: blocks.length - 1 };
   if (!endIndex.ok) return endIndex.error;
-  if (startIndex > endIndex.index) return invalid("Range start must not come after range end");
-  return { ok: true, scope: scopeFromIndexes("range", blocks, startIndex, endIndex.index) };
+  if (start.index > endIndex.index) return invalid("Range start must not come after range end");
+  return { ok: true, scope: scopeFromIndexes("range", blocks, start.index, endIndex.index) };
 }
 
 function resolveTupleRange(ctx: ScopeContext, input: unknown[]): ScopeResult {
@@ -165,7 +160,6 @@ function resolveTupleRange(ctx: ScopeContext, input: unknown[]): ScopeResult {
   return { ok: true, scope: scopeFromIndexes("range", blocks, startIndex.index, endIndex.index) };
 }
 
-type ScopeFailure = Extract<ScopeResult, { ok: false }>;
 type BlockIndexResult = { ok: true; index: number } | { ok: false; error: ScopeFailure };
 
 function tupleEndpointIndex(ctx: ScopeContext, value: unknown): BlockIndexResult {
@@ -183,12 +177,10 @@ function tupleEndpointIndex(ctx: ScopeContext, value: unknown): BlockIndexResult
 }
 
 function blockIndexForHash(ctx: ScopeContext, hash: string): BlockIndexResult {
-  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
-  if (!lookup.ok) return { ok: false, error: hashLookupError(ctx, hash, lookup) };
-  const index = ctx.model.getBlocks(ctx.doc).indexOf(lookup.block);
-  return index < 0
-    ? { ok: false, error: notFound(`Block hash "${hash}" was not found`) }
-    : { ok: true, index };
+  const located = locateBlockByHash(ctx, hash, {
+    notFoundMessage: `Range end block "${hash}" was not found`,
+  });
+  return located.ok ? { ok: true, index: located.index } : { ok: false, error: located };
 }
 
 function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
@@ -251,31 +243,6 @@ function scopeFromIndexes(
 
 function notFound(message: string): ScopeFailure {
   return { ok: false, code: "not_found", message };
-}
-
-function hashLookupError(
-  ctx: ScopeContext,
-  hash: string,
-  lookup: Exclude<ReturnType<DocumentModel["lookupBlock"]>, { ok: true }>,
-): ScopeFailure {
-  return lookup.reason === "ambiguous"
-    ? ambiguous(ambiguousHashMessage(ctx.model, hash, lookup.matches))
-    : notFound(`Block hash "${hash}" was not found`);
-}
-
-function rangeEndpointLookupError(
-  ctx: ScopeContext,
-  endpoint: "start" | "end",
-  hash: string,
-  lookup: Exclude<ReturnType<DocumentModel["lookupBlock"]>, { ok: true }>,
-): ScopeFailure {
-  return lookup.reason === "ambiguous"
-    ? ambiguous(ambiguousHashMessage(ctx.model, hash, lookup.matches))
-    : notFound(`Range ${endpoint} block "${hash}" was not found`);
-}
-
-function ambiguous(message: string): ScopeFailure {
-  return { ok: false, code: "not_found", message, reason: "ambiguous_hash" };
 }
 
 function invalid(message: string): ScopeFailure {
