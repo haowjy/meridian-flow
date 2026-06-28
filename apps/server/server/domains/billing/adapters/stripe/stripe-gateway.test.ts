@@ -176,6 +176,39 @@ describe("StripeBillingGateway", () => {
     });
   });
 
+  it("does not grant from a proration-only invoice.paid (mid-cycle plan change)", async () => {
+    const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
+
+    await expect(
+      gateway.resolveCheckoutGrant(
+        event("invoice.paid", {
+          id: "in_proration",
+          parent: {
+            subscription_details: {
+              subscription: "sub_123",
+              metadata: {
+                userId: "user_sub",
+                grantMillicredits: "1000000",
+                entryId: "plan_standard",
+              },
+            },
+          },
+          lines: {
+            data: [
+              {
+                id: "il_proration_only",
+                period: { start: 1_780_272_000, end: 1_782_864_000 },
+                parent: {
+                  subscription_item_details: { subscription: "sub_123", proration: true },
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    ).resolves.toBeNull();
+  });
+
   it("ignores unrelated events", async () => {
     const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
 

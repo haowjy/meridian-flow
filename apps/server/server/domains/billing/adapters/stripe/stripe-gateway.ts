@@ -128,7 +128,10 @@ function subscriptionGrantLine(invoice: Stripe.Invoice): Stripe.InvoiceLineItem 
     if (!subscriptionId) return Boolean(lineSubscriptionId);
     return lineSubscriptionId === subscriptionId;
   });
-  return candidates.find((line) => !isProrationLine(line)) ?? candidates[0] ?? null;
+  // Only a full subscription-period line may anchor a monthly grant. Proration
+  // lines (mid-cycle upgrade/downgrade) must NOT mint a fresh period of usage —
+  // returning null here skips the grant rather than over-crediting.
+  return candidates.find((line) => !isProrationLine(line)) ?? null;
 }
 
 function isoFromStripeSeconds(seconds: number): string {
