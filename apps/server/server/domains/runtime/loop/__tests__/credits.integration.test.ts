@@ -82,7 +82,6 @@ describe("runtime credits", () => {
     const { thread, creditLedger, orchestrator } = await setup(gateway);
     await creditLedger.grant({
       userId: "user-1",
-      projectId: thread.projectId,
       source: "manual",
       amountMillicredits: "200000",
       reason: "single call",
@@ -92,17 +91,13 @@ describe("runtime credits", () => {
       await orchestrator.runTurn({ threadId: thread.id, userText: "first" }),
     );
     expect(completed.at(-1)?.type).toBe("turn.completed");
-    expect(await creditLedger.getBalance({ userId: "user-1", projectId: thread.projectId })).toBe(
-      "0",
-    );
+    expect(await creditLedger.getBalance({ userId: "user-1" })).toBe("170000");
 
     const second = await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "second" }),
     );
     expect(second.at(-1)?.type).toBe("turn.completed");
-    expect(await creditLedger.getBalance({ userId: "user-1", projectId: thread.projectId })).toBe(
-      "-200000",
-    );
+    expect(await creditLedger.getBalance({ userId: "user-1" })).toBe("-60000");
 
     await expect(
       orchestrator.runTurn({ threadId: thread.id, userText: "third" }),
@@ -143,7 +138,6 @@ describe("runtime credits", () => {
       await setup(gateway);
     await creditLedger.grant({
       userId: "user-1",
-      projectId: thread.projectId,
       source: "manual",
       amountMillicredits: "1000000",
       reason: "checkpoint",
@@ -174,21 +168,19 @@ describe("runtime credits", () => {
     const eventsPromise = collectEvents(handle);
     await waitForEvent(eventWriter, thread.id, "checkpoint.created");
     expect(
-      await creditLedger.getRunDebitTotal({
+      await creditLedger.getThreadDebitTotal({
         userId: "user-1",
-        projectId: thread.projectId,
-        rootThreadId: thread.id,
+        threadId: thread.id,
       }),
-    ).toBe("200000");
+    ).toBe("230000");
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(
-      await creditLedger.getRunDebitTotal({
+      await creditLedger.getThreadDebitTotal({
         userId: "user-1",
-        projectId: thread.projectId,
-        rootThreadId: thread.id,
+        threadId: thread.id,
       }),
-    ).toBe("200000");
+    ).toBe("230000");
 
     checkpointRegistry.resolve({
       threadId: thread.id,

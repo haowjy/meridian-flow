@@ -1,6 +1,6 @@
 import type {
   BillingBalanceResponse,
-  BillingPacksPlansResponse,
+  BillingProductsResponse,
   BillingTransactionsResponse,
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
@@ -8,7 +8,7 @@ import type {
 import {
   apiBillingBalancePath,
   apiBillingCheckoutSessionsPath,
-  apiBillingPacksPath,
+  apiBillingProductsPath,
   apiBillingTransactionsPath,
 } from "@meridian/contracts/protocol";
 import { getJson, postJson } from "./http-client";
@@ -21,8 +21,8 @@ export function getBillingTransactions(): Promise<BillingTransactionsResponse> {
   return getJson(apiBillingTransactionsPath());
 }
 
-export function getBillingPacks(): Promise<BillingPacksPlansResponse> {
-  return getJson(apiBillingPacksPath());
+export function getBillingProducts(): Promise<BillingProductsResponse> {
+  return getJson(apiBillingProductsPath());
 }
 
 export function createCheckoutSession(

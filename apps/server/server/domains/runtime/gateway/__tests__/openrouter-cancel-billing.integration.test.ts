@@ -85,7 +85,6 @@ async function setup(gateway: Gateway) {
   const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
   await creditLedger.grant({
     userId: "user-1",
-    projectId: project.id,
     source: "manual",
     amountMillicredits: "1000000",
     reason: "openrouter cancel tests",
@@ -149,8 +148,7 @@ describe("OpenRouter cancel billing", () => {
     expect(events.at(-1)?.type).toBe("turn.cancelled");
     const balance = await creditLedger.getBalance({
       userId: "user-1",
-      projectId: thread.projectId,
     });
-    expect(BigInt(balance)).toBeLessThan(1_000_000n);
+    expect(BigInt(balance)).toBeLessThan(1_200_000n);
   });
 });

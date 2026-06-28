@@ -57,8 +57,8 @@ describe("model-request debug prompt leak guard", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
     const thread = await repos.threads.create({
-      id: "thread-leak-probe",
       projectId: project.id,
+      id: "thread-leak-probe",
       userId: "user-1",
       title: null,
       systemPrompt: `You are helpful. ${LEAK_PROBE_MARKER}`,
@@ -67,7 +67,6 @@ describe("model-request debug prompt leak guard", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",

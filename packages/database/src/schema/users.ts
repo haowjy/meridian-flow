@@ -14,6 +14,7 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name"),
     avatarUrl: text("avatar_url"),
+    stripeCustomerId: text("stripe_customer_id"),
     /**
      * Nullable user-level landing preference. Deliberately no FK: `projects`
      * already references `users`, and route resolution re-validates ownership

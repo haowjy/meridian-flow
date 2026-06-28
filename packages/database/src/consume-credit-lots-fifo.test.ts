@@ -34,8 +34,8 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, grant_reason, expires_at)
         VALUES
-          (${grantA}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'signup', ${soon}),
-          (${grantB}::uuid, ${userId}::uuid, 'grant', 3000, 3000, 'monthly_2026_05', ${later})
+          (${grantA}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'free_tier_user_2026_05', ${soon}),
+          (${grantB}::uuid, ${userId}::uuid, 'grant', 3000, 3000, 'free_tier_user_2026_06', ${later})
       `;
 
       const first = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
@@ -72,10 +72,10 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
         ORDER BY grant_reason NULLS LAST
       `;
 
-      const signupLot = lotsAfter.find((l) => l.grant_reason === "signup");
-      const monthlyLot = lotsAfter.find((l) => l.grant_reason === "monthly_2026_05");
-      expect(Number(signupLot?.remaining_millicredits)).toBe(0);
-      expect(Number(monthlyLot?.remaining_millicredits)).toBe(2000);
+      const firstGrantLot = lotsAfter.find((l) => l.grant_reason === "free_tier_user_2026_05");
+      const secondGrantLot = lotsAfter.find((l) => l.grant_reason === "free_tier_user_2026_06");
+      expect(Number(firstGrantLot?.remaining_millicredits)).toBe(0);
+      expect(Number(secondGrantLot?.remaining_millicredits)).toBe(2000);
 
       const second = await sql<{ remaining_balance: string; went_negative: boolean }[]>`
         SELECT * FROM consume_credit_lots_fifo(
@@ -156,38 +156,12 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
     try {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
-
       const grantId = randomUUID();
       const purchaseId = randomUUID();
       const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const periodStart = new Date();
-      const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-      await sql`
-        INSERT INTO user_subscriptions (
-          user_id,
-          stripe_subscription_id,
-          stripe_customer_id,
-          status,
-          credits_per_period,
-          current_period_start,
-          current_period_end
-        )
-        VALUES (
-          ${userId}::uuid,
-          ${`sub_${randomUUID()}`},
-          ${`cus_${randomUUID()}`},
-          'active',
-          10000,
-          ${periodStart},
-          ${periodEnd}
-        )
-      `;
-
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, grant_reason, expires_at)
-        VALUES (${grantId}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'signup', ${soon})
+        VALUES (${grantId}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'free_tier_user_2026_05', ${soon})
       `;
       await sql`
         INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits)
@@ -215,12 +189,11 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
     } finally {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
       await sql.end();
     }
   });
 
-  it("rejects purchase lots without an active subscription", async () => {
+  it("allows purchase lots without a subscription", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
     const { databaseUrl: dbUrl, userId } = testConfig();
     const sql = postgres(dbUrl, { max: 1 });
@@ -228,45 +201,8 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
     try {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
 
-      await expect(
-        sql`
-          INSERT INTO credit_lots (
-            user_id,
-            source_type,
-            original_amount_millicredits,
-            remaining_millicredits,
-            stripe_session_id
-          )
-          VALUES (${userId}::uuid, 'purchase', 1000, 1000, ${`cs_${randomUUID()}`})
-        `,
-      ).rejects.toThrow(/purchase credit lots require an active subscription/);
-
-      const periodStart = new Date();
-      const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       const purchaseId = randomUUID();
-
-      await sql`
-        INSERT INTO user_subscriptions (
-          user_id,
-          stripe_subscription_id,
-          stripe_customer_id,
-          status,
-          credits_per_period,
-          current_period_start,
-          current_period_end
-        )
-        VALUES (
-          ${userId}::uuid,
-          ${`sub_${randomUUID()}`},
-          ${`cus_${randomUUID()}`},
-          'active',
-          10000,
-          ${periodStart},
-          ${periodEnd}
-        )
-      `;
       await sql`
         INSERT INTO credit_lots (
           id,
@@ -278,19 +214,20 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
         )
         VALUES (${purchaseId}::uuid, ${userId}::uuid, 'purchase', 1000, 1000, ${`cs_${randomUUID()}`})
       `;
-      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
 
-      await expect(
-        sql`
-          UPDATE credit_lots
-          SET metadata = jsonb_build_object('updated_after_subscription', true)
-          WHERE id = ${purchaseId}::uuid
-        `,
-      ).rejects.toThrow(/purchase credit lots require an active subscription/);
+      await sql`
+        UPDATE credit_lots
+        SET metadata = jsonb_build_object('updated_without_subscription', true)
+        WHERE id = ${purchaseId}::uuid
+      `;
+
+      const rows = await sql<{ metadata: { updated_without_subscription?: boolean } }[]>`
+        SELECT metadata FROM credit_lots WHERE id = ${purchaseId}::uuid
+      `;
+      expect(rows[0]?.metadata.updated_without_subscription).toBe(true);
     } finally {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM user_subscriptions WHERE user_id = ${userId}::uuid`;
       await sql.end();
     }
   });

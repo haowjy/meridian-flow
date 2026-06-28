@@ -87,7 +87,7 @@ child-run coordinator can create subagent threads.
 These are one concept-cluster with three facets; use each name only for its
 facet.
 
-## Cost, credits, and permissions
+## Cost, billing, and permissions
 
 - Tool permissions are enforced by `PermissionGate.check()` before dispatch.
   `lib/compose.ts` explicitly composes the pilot `coding` profile, which is
@@ -95,8 +95,12 @@ facet.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
+- `costing/` owns model token-rate resolution and applies the fixed 1.15
+  `COST_MULTIPLIER` when converting raw provider USD-micro cost into metered
+  millicredits before ledger debits. Billing owns only ledger behavior and route
+  display conversion.
 - `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`; billing
-  owns price conversion and ledger behavior in `domains/billing`.
+  owns ledger behavior in `domains/billing`.
 
 ## Invariants
 

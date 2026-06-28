@@ -112,7 +112,6 @@
       <li class="flex gap-3 items-start"><span style="border:2px solid #d97706" class="rounded px-2 py-0.5 text-xs">amber</span><span><b>Timestamp <code>mode:"string"</code></b> — returns ISO strings instead of <code>Date</code>. Only <code>users</code> &amp; <code>thread_works</code>.</span></li>
       <li class="flex gap-3 items-start"><span style="border:1.5px solid #0ea5e9" class="rounded px-2 py-0.5 text-xs">sky</span><span><b>Soft-delete</b> — has <code>deleted_at</code>; active queries filter <code>IS NULL</code>.</span></li>
       <li class="flex gap-3 items-start"><span class="rounded px-2 py-0.5 text-xs border" style="border-style:double;border-width:3px">▌▌</span><span><b>Composite PK</b> — multi-column primary key (junction / state tables).</span></li>
-      <li class="flex gap-3 items-start"><span style="border:2px dashed #7c3aed" class="rounded-full px-2 py-0.5 text-xs">view</span><span><b>View</b> — <code>credit_balances</code> is a SQL view, not a table.</span></li>
       <li class="flex gap-3 items-start"><span class="muted text-xs">- - -&gt;</span><span><b>Deferred / self FK</b> — dotted edge = FK added in migration SQL (self-refs, tree parents) rather than inline Drizzle.</span></li>
       <li class="flex gap-3 items-start"><span class="muted text-xs">faded</span><span><b>External</b> — a table shown for context; it lives in another group.</span></li>
     </ul>
@@ -675,26 +674,6 @@ export const creditTransactions = pgTable(
 );
 </script>
 
-<script type="text/plain" data-code="credit_balances">
-// VIEW — aggregates live credit_lots per user (not a table).
-export const creditBalances = pgView("credit_balances").as((qb) =>
-  qb.select({
-      userId: creditLots.userId,
-      totalBalanceMillicredits:
-        sql<number>`COALESCE(SUM(${creditLots.remainingMillicredits}), 0)`.as("total_balance_millicredits"),
-      grantBalanceMillicredits:
-        sql<number>`COALESCE(SUM(${creditLots.remainingMillicredits})
-          FILTER (WHERE ${creditLots.sourceType} = 'grant'), 0)`.as("grant_balance_millicredits"),
-      purchasedBalanceMillicredits: /* … FILTER 'purchase' … */ sql<number>``.as("purchased_balance_millicredits"),
-      debtBalanceMillicredits:     /* … FILTER 'debt'     … */ sql<number>``.as("debt_balance_millicredits"),
-    })
-    .from(creditLots)
-    .where(sql`${creditLots.expiresAt} IS NULL
-      OR ${creditLots.expiresAt} > NOW() OR ${creditLots.sourceType} = 'debt'`)
-    .groupBy(creditLots.userId),
-);
-</script>
-
 <script type="text/plain" data-code="document_yjs_checkpoints">
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -959,17 +938,15 @@ const DIAGRAMS = {
   user_subscriptions["user_subscriptions"]
   credit_lots["credit_lots"]
   credit_transactions["credit_transactions"]
-  credit_balances(["credit_balances (view)"]):::viewNode
   user_subscriptions -->|"user_id"| usersExt
   credit_lots -->|"user_id"| usersExt
   credit_transactions -->|"user_id"| usersExt
   credit_transactions -->|"lot_id"| credit_lots
-  credit_balances -. "aggregates" .-> credit_lots
   click usersExt showDetail "users"
   click user_subscriptions showDetail "user_subscriptions"
   click credit_lots showDetail "credit_lots"
   click credit_transactions showDetail "credit_transactions"
-  click credit_balances showDetail "credit_balances"`,
+  click credit_transactions showDetail "credit_transactions"`,
   },
   packages: {
     label: '4 · Agent Packages',
@@ -1188,8 +1165,8 @@ const DETAIL = {
   credit_lots: {
     title: 'credit_lots', group: 'Billing & Credits', src: `${SRC}/billing.ts:58-106`,
     desc: 'Balance truth. Each lot has remaining millicredits; FIFO consumption order is the credit_lots_fifo_spend index. source_type ∈ purchase|grant|subscription|debt with one debt lot per user (partial unique).',
-    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('source_type','text','purchase | grant | subscription | debt'), C('remaining_millicredits','bigint','consumed FIFO'), C('expires_at','timestamptz','nullable Date'), C('grant_reason','text','signup | monthly_* …')],
-    rels: ['→ users (user_id)', 'Referenced by credit_transactions.lot_id; aggregated by credit_balances view'],
+    cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('source_type','text','purchase | grant | subscription | debt'), C('remaining_millicredits','bigint','consumed FIFO'), C('expires_at','timestamptz','nullable Date'), C('grant_reason','text','free_tier_* or subscription period key')],
+    rels: ['→ users (user_id)', 'Referenced by credit_transactions.lot_id; balances are computed from live lots'],
     flags: [],
   },
   credit_transactions: {
@@ -1198,13 +1175,6 @@ const DETAIL = {
     cols: [C('id','uuid PK',''), C('user_id','uuid FK → users','cascade'), C('transaction_type','text','purchase | grant | consumption | expiration | refund'), C('amount_millicredits','bigint','CHECK != 0'), C('lot_id','uuid FK → credit_lots','set null'), C('usage_event_id','text','idempotency key')],
     rels: ['→ users (user_id)', '→ credit_lots (lot_id)'],
     flags: [],
-  },
-  credit_balances: {
-    title: 'credit_balances', group: 'Billing & Credits', src: `${SRC}/billing.ts:149-175`,
-    desc: 'A SQL VIEW (not a table) aggregating live credit_lots per user into total / grant / purchased / debt balances. Excludes expired lots (keeps debt).',
-    cols: [C('user_id','uuid','group key'), C('total_balance_millicredits','bigint','SUM remaining'), C('grant / purchased / debt _balance','bigint','FILTERed SUMs')],
-    rels: ['Reads credit_lots (no FK; it is a view)'],
-    flags: ['view'],
   },
   document_yjs_checkpoints: {
     title: 'document_yjs_checkpoints', group: 'Collab (YJS) & Misc', src: `${SRC}/yjs.ts:8-25`,
@@ -1396,7 +1366,6 @@ const WHY = {
   user_subscriptions: 'Your Pro subscription state from Stripe. It unlocks the monthly credit allotment and the full creative orchestration (more helpers, deeper fan-out).',
   credit_lots: 'The actual buckets of AI credits you hold \u2014 free monthly grant, subscription, purchased. FIFO spend (free expires first) is what makes AI spend fair and predictable.',
   credit_transactions: 'The receipt history of every credit movement, so you can see exactly where your AI budget went. Idempotency keys mean one turn is never double-charged.',
-  credit_balances: 'A live total of your remaining credits plus the breakdown. It\u2019s what the always-visible balance in the UI reads from. A read-only convenience view.',
   document_yjs_checkpoints: 'Compacted snapshots of a chapter\u2019s edit history. They keep reopening a long chapter fast and underpin restore points. Infrastructure behind seamless editing.',
   document_yjs_updates: 'Every fine-grained edit to a chapter, tagged with who made it (you or which agent). This is how two devices editing the same chapter stay in sync, and how AI edits get attribution.',
   document_yjs_heads: 'A bookmark to the latest synced state of each chapter, so a reopened editor jumps straight to current without replaying the whole history.',

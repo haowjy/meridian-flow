@@ -122,6 +122,19 @@
   documents from the agent-edit journal, and returns a shared per-document
   `TurnReversalOutcome` contract.
 
+- Billing: stripped to a thin Stripe gateway + FIFO usage ledger. No "credits"
+  anywhere — users see dollars (extra-usage balance, per-message cost) and a
+  monthly-usage percentage; grant amounts stay server-side. Free tier is a $0/mo
+  plan granting $2/mo of usage; paid plans are Standard $10 and Premium $25.
+  Extra usage is a free-form top-up requiring no subscription — pick any amount
+  from $5 to $500 (quick-pick chips + custom input, default $10). Deleted the
+  custom payment-provider/subscription machinery and the `user_subscriptions`
+  table; added `users.stripe_customer_id`. Model calls now meter at provider cost
+  ×1.15. Checkout is unavailable in dev until Stripe test keys are set; free tier
+  and consumption work regardless. The recent-activity feed shows friendly labels
+  ("Monthly usage", "Extra usage") instead of leaking raw Stripe ids, and the
+  usage meter reads as a remaining-percentage gauge.
+
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2
   ProseMirror construction) behind the model adapter, so the editing protocol no

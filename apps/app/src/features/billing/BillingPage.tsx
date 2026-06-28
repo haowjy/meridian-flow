@@ -1,33 +1,71 @@
+/**
+ * /billing — usage summary, catalog (subscription plans + extra usage), and
+ * recent activity. The server emits USD strings + percentages; this page is
+ * pure presentation over those values.
+ *
+ * Purchase actions go through Stripe Checkout / Customer Portal — the create
+ * mutation returns a discriminated `{ kind: "checkout" | "portal", url }` and
+ * the hook redirects. The server marks checkout availability per catalog entry
+ * so one missing Stripe price does not disable unrelated purchases.
+ *
+ * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
+ * usage has `amountOptions` instead — the user picks an amount via
+ * `ExtraUsagePicker` and that value becomes `amountUsd` in the request.
+ *
+ * Layout: single calm centered column (max-w-2xl) — Usage hero → Plans
+ * section → Extra usage section → Recent activity. Plans and extra-usage
+ * sit in their own labeled sections (not crammed into one mixed grid).
+ *
+ * Scroll: the route mounts inside a bounded, non-flex, overflow-hidden
+ * wrapper in `_authenticated.tsx`, so this page owns its own scroll with
+ * `h-full overflow-y-auto`. Using `app-scroll` (which assumes a flex parent)
+ * here would clip content with no scrollbar.
+ */
 import { Trans } from "@lingui/react/macro";
+import type {
+  BillingCatalogEntry,
+  BillingPlanEntry,
+  CreateCheckoutSessionRequest,
+} from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2, CreditCard } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+
 import {
-  useBillingBalance,
-  useBillingPacks,
+  useBillingProducts,
   useBillingTransactions,
   useCreateCheckoutSession,
 } from "@/client/query/useBilling";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { CreditBalanceCard } from "./CreditBalanceCard";
-import { creditsFromMillicredits } from "./format";
+import { ExtraUsagePicker } from "./ExtraUsagePicker";
+import { formatUsd } from "./format";
+import { UsageCard } from "./UsageCard";
 
 function returnUrl(path: string): string {
   if (typeof window === "undefined") return path;
   return new URL(path, window.location.origin).toString();
 }
 
+function baseCheckoutRequest(entry: BillingCatalogEntry): CreateCheckoutSessionRequest {
+  return {
+    entryId: entry.id,
+    successUrl: returnUrl("/billing?checkout=success"),
+    cancelUrl: returnUrl("/billing?checkout=cancelled"),
+  };
+}
+
 export function BillingPage() {
-  const balance = useBillingBalance();
-  const packs = useBillingPacks();
+  const products = useBillingProducts();
   const transactions = useBillingTransactions();
   const checkout = useCreateCheckoutSession();
-  const provider = packs.data?.provider;
-  const entries = packs.data?.entries.filter((entry) => entry.kind !== "needs-credentials") ?? [];
+  const stripeConfigured = products.data?.stripeConfigured ?? false;
+  const entries = products.data?.entries ?? [];
+
+  const planEntries = entries.filter((entry) => entry.kind === "plan");
+  const extraEntry = entries.find((entry) => entry.kind === "extra-usage");
 
   return (
-    <main className="app-scroll bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-6 py-8">
         <Link
           to="/"
           className="focus-ring inline-flex w-fit items-center gap-2 rounded-md text-sm text-muted-foreground hover:text-foreground"
@@ -41,100 +79,88 @@ export function BillingPage() {
             <Trans>Settings</Trans>
           </p>
           <h1 className="text-headline-section">
-            <Trans>Billing and credits</Trans>
+            <Trans>Billing</Trans>
           </h1>
-          <p className="max-w-2xl text-muted-foreground">
+          <p className="text-muted-foreground">
             <Trans>
-              Meridian uses credits only: every agent turn spends from free monthly credits,
-              subscription credits, then purchased bundles.
+              Your monthly plan covers included usage. Top up extra usage any time to keep going
+              past your plan.
             </Trans>
           </p>
         </header>
 
-        {provider?.needsCredentials ? (
-          <Alert>
-            <CreditCard aria-hidden />
-            <AlertTitle>
-              <Trans>Fake checkout is active</Trans>
-            </AlertTitle>
-            <AlertDescription>{provider.message}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-          <CreditBalanceCard variant="full" />
-
-          <div className="surface-card p-5">
-            <p className="text-sm text-muted-foreground">
-              <Trans>Credit buckets</Trans>
-            </p>
-            <dl className="mt-3 space-y-2 text-sm">
-              <Bucket label="Free monthly" value={balance.data?.grantBalanceMillicredits} />
-              <Bucket label="Subscription" value={balance.data?.subscriptionBalanceMillicredits} />
-              <Bucket label="Purchased" value={balance.data?.purchasedBalanceMillicredits} />
-            </dl>
-          </div>
-        </section>
+        <UsageCard variant="full" />
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">
-            <Trans>Buy credits</Trans>
-          </h2>
-          <div className="grid gap-3 md:grid-cols-3">
-            {entries.map((entry) => (
-              <article key={entry.id} className="surface-card flex flex-col gap-4 p-4">
-                <div>
-                  <p className="font-medium">{entry.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
-                </div>
-                <div className="mt-auto">
-                  <p className="text-2xl font-semibold">
-                    {entry.kind === "payg" ? "PAYG" : `${entry.credits.toLocaleString()} credits`}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {entry.interval ? `$${entry.priceUsd}/${entry.interval}` : `$${entry.priceUsd}`}
-                  </p>
-                  {entry.kind === "payg" ? (
-                    <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="size-4" aria-hidden />
-                      <Trans>Enabled by default</Trans>
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      className="mt-3 w-full"
-                      disabled={checkout.isPending}
-                      onClick={() =>
-                        checkout.mutate({
-                          entryId: entry.id,
-                          successUrl: returnUrl("/billing?checkout=success"),
-                          cancelUrl: returnUrl("/billing?checkout=cancelled"),
-                        })
-                      }
-                    >
-                      <Trans>Checkout</Trans>
-                    </Button>
-                  )}
-                </div>
-              </article>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-lg font-semibold">
+              <Trans>Plans</Trans>
+            </h2>
+            {products.data && !stripeConfigured ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>Checkout unavailable.</Trans>
+              </p>
+            ) : null}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {planEntries.map((entry) => (
+              <PlanCard
+                key={entry.id}
+                entry={entry}
+                disabled={!entry.checkoutAvailable || checkout.isPending}
+                onCheckout={(request) => checkout.mutate(request)}
+              />
             ))}
+            {products.data && planEntries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>No plans available.</Trans>
+              </p>
+            ) : null}
           </div>
         </section>
+
+        {extraEntry ? (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">
+                <Trans>Extra usage</Trans>
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                <Trans>Top up any time. Extra usage carries over month to month.</Trans>
+              </p>
+            </div>
+            <article className="surface-card p-5">
+              <ExtraUsagePicker
+                amountOptions={extraEntry.amountOptions}
+                disabled={!extraEntry.checkoutAvailable || checkout.isPending}
+                onPurchase={(amountUsd) =>
+                  checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
+                }
+              />
+            </article>
+          </section>
+        ) : null}
 
         <section className="surface-card p-5">
           <h2 className="text-lg font-semibold">
-            <Trans>Recent usage</Trans>
+            <Trans>Recent activity</Trans>
           </h2>
           <div className="mt-3 divide-y divide-border-subtle">
-            {(transactions.data?.transactions ?? []).slice(0, 8).map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                <span className="text-muted-foreground">{tx.reason ?? tx.transactionType}</span>
-                <span className="font-medium">
-                  {creditsFromMillicredits(tx.amountMillicredits)} credits
-                </span>
-              </div>
-            ))}
-            {transactions.data?.transactions.length === 0 ? (
+            {(transactions.data?.transactions ?? []).slice(0, 8).map((tx, index) => {
+              const activityKey = `${tx.createdAt}:${tx.kind}:${tx.amountUsd}:${index}`;
+              return (
+                <div
+                  key={activityKey}
+                  className="flex items-center justify-between gap-4 py-2 text-sm"
+                >
+                  <span className="text-muted-foreground">{tx.label}</span>
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatUsd(tx.amountUsd)}
+                  </span>
+                </div>
+              );
+            })}
+            {transactions.data && transactions.data.transactions.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
                 <Trans>No billing activity yet.</Trans>
               </p>
@@ -146,11 +172,34 @@ export function BillingPage() {
   );
 }
 
-function Bucket({ label, value }: { label: string; value?: string }) {
+function PlanCard({
+  entry,
+  disabled,
+  onCheckout,
+}: {
+  entry: BillingPlanEntry;
+  disabled: boolean;
+  onCheckout: (request: CreateCheckoutSessionRequest) => void;
+}) {
+  const priceLine = `${formatUsd(entry.priceUsd)} / ${entry.interval}`;
+
   return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value ? creditsFromMillicredits(value) : "—"}</dd>
-    </div>
+    <article className="surface-card flex flex-col gap-4 p-4">
+      <div>
+        <p className="font-medium">{entry.name}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
+      </div>
+      <div className="mt-auto">
+        <p className="text-2xl font-semibold tracking-tight">{priceLine}</p>
+        <Button
+          type="button"
+          className="mt-3 w-full"
+          disabled={disabled}
+          onClick={() => onCheckout(baseCheckoutRequest(entry))}
+        >
+          <Trans>Subscribe</Trans>
+        </Button>
+      </div>
+    </article>
   );
 }
