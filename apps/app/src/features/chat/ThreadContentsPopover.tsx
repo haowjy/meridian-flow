@@ -3,14 +3,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FileText, Info, Upload, X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import { useState } from "react";
 
-import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
-import { useThreadUploads } from "@/client/query/useThreadUploads";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-import { DocumentRailSection } from "./ThreadDocumentList";
+import { ThreadDocumentSections } from "./ThreadDocumentSections";
 
 export type ThreadContentsPopoverProps = {
   /** Active thread; when null, sections render their disabled empty state. */
@@ -21,8 +19,6 @@ export type ThreadContentsPopoverProps = {
 export function ThreadContentsPopover({ threadId, onOpenDocument }: ThreadContentsPopoverProps) {
   const [open, setOpen] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
-  const uploads = useThreadUploads(threadId);
-  const recent = useThreadRecentDocuments(threadId);
 
   function selectDocument(documentId: string) {
     setActiveDocumentId(documentId);
@@ -61,33 +57,8 @@ export function ThreadContentsPopover({ threadId, onOpenDocument }: ThreadConten
         </div>
         <div className="max-h-[min(24rem,50svh)] overflow-y-auto p-2">
           <div className="flex flex-col gap-0.5">
-            <DocumentRailSection
-              title={t`Uploads`}
-              icon={<Upload className="size-3.5" />}
-              defaultOpen
-              status={uploads}
-              rows={uploads.uploads}
-              messages={{
-                disabled: t`Open a chat to see its uploads.`,
-                loading: t`Loading uploads…`,
-                empty: t`No files uploaded yet.`,
-                error: t`Couldn't load uploads.`,
-              }}
-              activeDocumentId={activeDocumentId}
-              onSelectDocument={selectDocument}
-            />
-            <DocumentRailSection
-              title={t`Recent writes`}
-              icon={<FileText className="size-3.5" />}
-              defaultOpen
-              status={recent}
-              rows={recent.documents}
-              messages={{
-                disabled: t`Open a chat to see what the AI touched.`,
-                loading: t`Loading recent documents…`,
-                empty: t`Documents the AI touches in this chat appear here.`,
-                error: t`Couldn't load recent documents.`,
-              }}
+            <ThreadDocumentSections
+              threadId={threadId}
               activeDocumentId={activeDocumentId}
               onSelectDocument={selectDocument}
             />

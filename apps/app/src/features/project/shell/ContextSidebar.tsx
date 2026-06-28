@@ -5,13 +5,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FileText, Sparkles, Upload } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
-import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
-import { useThreadUploads } from "@/client/query/useThreadUploads";
-import { DocumentRailSection, Section } from "@/features/chat/ThreadDocumentList";
+import { Section } from "@/features/chat/ThreadDocumentList";
+import { ThreadDocumentSections } from "@/features/chat/ThreadDocumentSections";
 
 import { RailHeader } from "./RailHeader";
 import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
@@ -47,8 +46,6 @@ export type ContextSidebarProps = {
 };
 
 export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarProps) {
-  const uploads = useThreadUploads(threadId);
-  const recent = useThreadRecentDocuments(threadId);
   // Results live at the project scope (artifact persistence outlives any
   // single chat), so the rail tracks `projectId` independently of the
   // thread state. Open-result is local state — at most one viewer at a time.
@@ -64,31 +61,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
       </RailHeader>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
-        <DocumentRailSection
-          title={t`Uploads`}
-          icon={<Upload className="size-3.5" />}
-          defaultOpen
-          status={uploads}
-          rows={uploads.uploads}
-          messages={{
-            disabled: t`Open a chat to see its uploads.`,
-            loading: t`Loading uploads…`,
-            empty: t`No files uploaded yet.`,
-            error: t`Couldn't load uploads.`,
-          }}
-        />
-        <DocumentRailSection
-          title={t`Recent`}
-          icon={<FileText className="size-3.5" />}
-          status={recent}
-          rows={recent.documents}
-          messages={{
-            disabled: t`Open a chat to see what the AI referenced.`,
-            loading: t`Loading recent documents…`,
-            empty: t`Documents the AI reads in this chat appear here.`,
-            error: t`Couldn't load recent documents.`,
-          }}
-        />
+        <ThreadDocumentSections threadId={threadId} />
         <Section
           title={t`Results`}
           icon={<Sparkles className="size-3.5" />}

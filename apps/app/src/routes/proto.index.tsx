@@ -23,11 +23,6 @@ const PROTO_LINKS = [
     title: "Stable-identity layout (spike)",
     note: "GO/NO-GO: custom resize handle, CSS-grid named slots, reverse-portal identity.",
   },
-  {
-    href: "/proto/thread-info",
-    title: "Thread info header",
-    note: "Variant A (folded dropdown) vs Variant B (dedicated info popover) for thread uploads/writes/settings.",
-  },
 ] as const;
 
 function ProtoIndex() {

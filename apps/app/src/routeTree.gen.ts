@@ -14,7 +14,6 @@ import { Route as DevLoginRouteImport } from './routes/dev-login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as ProtoIndexRouteImport } from './routes/proto.index'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as ProtoThreadInfoRouteImport } from './routes/proto.thread-info'
 import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
 import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
 import { Route as ProtoLogoMarkRouteImport } from './routes/proto.logo-mark'
@@ -61,11 +60,6 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
-} as any)
-const ProtoThreadInfoRoute = ProtoThreadInfoRouteImport.update({
-  id: '/proto/thread-info',
-  path: '/proto/thread-info',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const ProtoSpikeLayoutRoute = ProtoSpikeLayoutRouteImport.update({
   id: '/proto/spike-layout',
@@ -144,7 +138,6 @@ export interface FileRoutesByFullPath {
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
-  '/proto/thread-info': typeof ProtoThreadInfoRoute
   '/proto/': typeof ProtoIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/project/$projectId': typeof AuthenticatedProjectProjectIdRoute
@@ -164,7 +157,6 @@ export interface FileRoutesByTo {
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
-  '/proto/thread-info': typeof ProtoThreadInfoRoute
   '/': typeof AuthenticatedIndexRoute
   '/proto': typeof ProtoIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -187,7 +179,6 @@ export interface FileRoutesById {
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
-  '/proto/thread-info': typeof ProtoThreadInfoRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/proto/': typeof ProtoIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
@@ -211,7 +202,6 @@ export interface FileRouteTypes {
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
-    | '/proto/thread-info'
     | '/proto/'
     | '/chat/$threadId'
     | '/project/$projectId'
@@ -231,7 +221,6 @@ export interface FileRouteTypes {
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
-    | '/proto/thread-info'
     | '/'
     | '/proto'
     | '/chat/$threadId'
@@ -253,7 +242,6 @@ export interface FileRouteTypes {
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
-    | '/proto/thread-info'
     | '/_authenticated/'
     | '/proto/'
     | '/_authenticated/chat/$threadId'
@@ -273,7 +261,6 @@ export interface RootRouteChildren {
   ProtoLogoMarkRoute: typeof ProtoLogoMarkRoute
   ProtoPersistentSurfacesRoute: typeof ProtoPersistentSurfacesRoute
   ProtoSpikeLayoutRoute: typeof ProtoSpikeLayoutRoute
-  ProtoThreadInfoRoute: typeof ProtoThreadInfoRoute
   ProtoIndexRoute: typeof ProtoIndexRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
@@ -329,13 +316,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
-    }
-    '/proto/thread-info': {
-      id: '/proto/thread-info'
-      path: '/proto/thread-info'
-      fullPath: '/proto/thread-info'
-      preLoaderRoute: typeof ProtoThreadInfoRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/proto/spike-layout': {
       id: '/proto/spike-layout'
@@ -460,7 +440,6 @@ const rootRouteChildren: RootRouteChildren = {
   ProtoLogoMarkRoute: ProtoLogoMarkRoute,
   ProtoPersistentSurfacesRoute: ProtoPersistentSurfacesRoute,
   ProtoSpikeLayoutRoute: ProtoSpikeLayoutRoute,
-  ProtoThreadInfoRoute: ProtoThreadInfoRoute,
   ProtoIndexRoute: ProtoIndexRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
