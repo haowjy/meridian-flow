@@ -5,6 +5,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import {
   blockHashesForDoc,
+  DEFAULT_HASH_LENGTH,
   fullHashForItemId,
   getBlockItemId,
   getTopLevelXmlBlocks,
@@ -27,10 +28,22 @@ describe("yProsemirrorModel block hashes", () => {
     expect(blockHashes(replayed)).toEqual(blockHashes(first));
   });
 
-  it("guards exact block hash strings for a known document", () => {
+  it("uses default-width display hashes when no full-hash prefixes collide", () => {
     const doc = createDoc("# One\n\nAlpha\n\nBeta");
 
-    expect(blockHashes(doc)).toEqual(["0f7a", "ef62", "9e93"]);
+    const hashes = blockHashes(doc);
+
+    expect(hashes).toHaveLength(3);
+    expect(hashes.every((hash) => hash.length === DEFAULT_HASH_LENGTH)).toBe(true);
+    expect(new Set(hashes).size).toBe(hashes.length);
+  });
+
+  it("displays the shortest full-hash prefix that resolves back to each block", () => {
+    const doc = docWithDisplayExtension();
+    const hashes = blockHashesForDoc(doc);
+
+    expect(hashes.some((hash) => hash.length > DEFAULT_HASH_LENGTH)).toBe(true);
+    expectEveryDisplayedHashResolvesToItsBlock(doc);
   });
 
   it("keeps a block hash stable when that block text changes", () => {
@@ -64,6 +77,20 @@ describe("yProsemirrorModel block hashes", () => {
 
     expect(model.getBlockId(alpha)).toBe(before.get(alpha));
     expect(model.getBlockId(gamma)).toBe(before.get(gamma));
+  });
+
+  it("keeps a held display hash resolvable when a different block changes", () => {
+    const doc = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma rests.");
+    const blocks = getTopLevelXmlBlocks(doc);
+    const modelBlocks = model.getBlocks(doc);
+    const alphaHash = blockHashesForDoc(doc)[0];
+
+    model.applyTextEdit(doc, modelBlocks[1], { from: 0, to: 4 }, "Delta");
+
+    expect(blockHashesForDoc(doc)[0]).toBe(alphaHash);
+    const lookup = lookupBlockHash(doc, alphaHash);
+    expect(lookup).toMatchObject({ ok: true, hash: alphaHash });
+    expect(lookup.ok && getBlockItemId(lookup.block)).toEqual(getBlockItemId(blocks[0]));
   });
 });
 
@@ -142,6 +169,26 @@ describe("lookupBlockHash", () => {
     expect(lookupBlockHash(doc, "   ")).toEqual({ ok: false, reason: "not_found" });
   });
 });
+
+function docWithDisplayExtension(): Y.Doc {
+  for (let blockCount = 256; blockCount <= 4096; blockCount *= 2) {
+    const doc = createDoc(numberedBlocks(blockCount));
+    if (blockHashesForDoc(doc).some((hash) => hash.length > DEFAULT_HASH_LENGTH)) return doc;
+  }
+  throw new Error("Expected generated document to contain a display hash collision");
+}
+
+function expectEveryDisplayedHashResolvesToItsBlock(doc: Y.Doc): void {
+  const blocks = getTopLevelXmlBlocks(doc);
+  const hashes = blockHashesForDoc(doc);
+
+  expect(hashes).toHaveLength(blocks.length);
+  for (let i = 0; i < blocks.length; i += 1) {
+    const lookup = lookupBlockHash(doc, hashes[i]);
+    expect(lookup).toMatchObject({ ok: true, hash: hashes[i] });
+    expect(lookup.ok && getBlockItemId(lookup.block)).toEqual(getBlockItemId(blocks[i]));
+  }
+}
 
 function createDoc(markdown: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });

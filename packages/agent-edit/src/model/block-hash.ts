@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 
-const DEFAULT_HASH_LENGTH = 4;
+export const DEFAULT_HASH_LENGTH = 4;
 const FNV_64_OFFSET = 0xcbf29ce484222325n;
 const FNV_64_PRIME = 0x100000001b3n;
 const HEX_FIELD_WIDTH = 16;
@@ -94,22 +94,29 @@ function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): s
 /** Compute unique hashes for a set of blocks in one sorted pass. */
 function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
   if (blocks.length === 0) return [];
-  const indexed = blocks.map((block, i) => ({ block, i, id: getBlockItemId(block) }));
-  indexed.sort((a, b) => a.id.clientID - b.id.clientID || a.id.clock - b.id.clock);
+  const byFullHash = blocks
+    .map((block, i) => ({ i, fullHash: fullHashForItemId(getBlockItemId(block)) }))
+    .sort((a, b) => (a.fullHash < b.fullHash ? -1 : a.fullHash > b.fullHash ? 1 : 0));
+
   const hashes: string[] = new Array(blocks.length);
-  const used = new Set<string>();
-  for (const entry of indexed) {
-    const fullHash = fullHashForItemId(entry.id);
-    let length = DEFAULT_HASH_LENGTH;
-    let hash = fullHash.slice(0, length);
-    while (used.has(hash) && length < fullHash.length) {
-      length += 1;
-      hash = fullHash.slice(0, length);
-    }
-    hashes[entry.i] = hash;
-    used.add(hash);
+  for (let sortedIndex = 0; sortedIndex < byFullHash.length; sortedIndex += 1) {
+    const current = byFullHash[sortedIndex];
+    const previous = byFullHash[sortedIndex - 1];
+    const next = byFullHash[sortedIndex + 1];
+    const lcp = Math.max(
+      previous ? commonPrefixLen(current.fullHash, previous.fullHash) : 0,
+      next ? commonPrefixLen(current.fullHash, next.fullHash) : 0,
+    );
+    const length = Math.min(current.fullHash.length, Math.max(DEFAULT_HASH_LENGTH, lcp + 1));
+    hashes[current.i] = current.fullHash.slice(0, length);
   }
   return hashes;
+}
+
+function commonPrefixLen(first: string, second: string): number {
+  let length = 0;
+  while (length < first.length && first[length] === second[length]) length += 1;
+  return length;
 }
 
 function siblingBlocks(block: Y.XmlElement | BlockRef): Y.XmlElement[] {
