@@ -332,7 +332,6 @@ describe("runtime orchestrator behavior", () => {
     });
     await deps.creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",
@@ -393,7 +392,6 @@ describe("runtime orchestrator behavior", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",
@@ -449,7 +447,6 @@ describe("runtime orchestrator behavior", () => {
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
       userId: "user-1",
-      projectId: project.id,
       source: "manual",
       amountMillicredits: "1000000000",
       reason: "test",
