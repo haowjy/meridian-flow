@@ -173,6 +173,97 @@ describe("reversal planner", () => {
     expect(plan).toMatchObject({ ok: true, writeIds: ["w2"], turnId: "turn-latest" });
   });
 
+  it.each([
+    ["latest", { kind: "latest" }],
+    ["single", { kind: "single", to: "w1" }],
+    ["range", { kind: "range", from: "w1", to: "w2" }],
+    ["all", { kind: "all" }],
+    ["turn", { kind: "turn", turnId: "turn-b" }],
+  ] as const)("expands undo %s selections to the active grouped-redo boundary", async (_name, selection) => {
+    const store = fakeReversalStore(groupedRedoState());
+
+    const plan = await planUndo({
+      reversalStore: store,
+      docId: DOC_ID,
+      threadId: THREAD_ID,
+      selection,
+    });
+
+    expect(plan).toMatchObject({ ok: true, writeIds: ["w1", "w2", "w3"] });
+    expect(plan.ok && [...plan.targetSeqs]).toEqual([8]);
+    expect(plan.ok && plan.writeTurnIds).toEqual([
+      { writeHandle: "w1", turnId: "turn-a" },
+      { writeHandle: "w2", turnId: "turn-b" },
+      { writeHandle: "w3", turnId: "turn-c" },
+    ]);
+  });
+
+  it("keeps latest undo scoped to one write when redo operations have separate boundaries", async () => {
+    const store = fakeReversalStore({
+      snapshot: snapshotWithSeqs([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      activeWrites: [
+        activeWrite("w1", 1, "turn-a"),
+        activeWrite("w2", 2, "turn-b"),
+        activeWrite("w3", 3, "turn-c"),
+      ],
+      mutations: new Map([
+        ["w1", [mutation("w1", 1, "active", "turn-a")]],
+        ["w2", [mutation("w2", 2, "active", "turn-b")]],
+        ["w3", [mutation("w3", 3, "active", "turn-c")]],
+      ]),
+      reversals: [
+        reversal(["w1"], "turn-a", 4, "redone", 7),
+        reversal(["w2"], "turn-b", 5, "redone", 8),
+        reversal(["w3"], "turn-c", 6, "redone", 9),
+      ],
+      reversalOpSeqs: new Set([4, 5, 6, 7, 8, 9]),
+    });
+
+    const plan = await planUndo({
+      reversalStore: store,
+      docId: DOC_ID,
+      threadId: THREAD_ID,
+      selection: { kind: "latest" },
+    });
+
+    expect(plan).toMatchObject({ ok: true, writeIds: ["w3"] });
+    expect(plan.ok && [...plan.targetSeqs]).toEqual([9]);
+  });
+
+  it.each([
+    ["all", { kind: "all" }],
+    ["turn", { kind: "turn", turnId: "turn-b" }],
+    ["range", { kind: "range", from: "w1", to: "w2" }],
+  ] as const)("expands redo %s selections to the grouped undo boundary", async (_name, selection) => {
+    const store = fakeReversalStore({
+      snapshot: snapshotWithSeqs([1, 2, 3, 4]),
+      mutations: new Map([
+        ["w1", [mutation("w1", 1, "reversed", "turn-a", 4)]],
+        ["w2", [mutation("w2", 2, "reversed", "turn-b", 4)]],
+        ["w3", [mutation("w3", 3, "reversed", "turn-c", 4)]],
+      ]),
+      reversals: [
+        reversal(["w1"], "turn-a", 4),
+        reversal(["w2"], "turn-b", 4),
+        reversal(["w3"], "turn-c", 4),
+      ],
+    });
+
+    const plan = await planRedo({
+      reversalStore: store,
+      docId: DOC_ID,
+      threadId: THREAD_ID,
+      selection,
+    });
+
+    expect(plan).toMatchObject({
+      ok: true,
+      writeIds: ["w1", "w2", "w3"],
+      redoGroup: { undoUpdateSeq: 4 },
+    });
+    expect(plan.ok && [...plan.targetSeqs]).toEqual([1, 2, 3]);
+  });
+
   it("returns nothing_to_redo for an empty or active turn", async () => {
     const store = fakeReversalStore({
       snapshot: snapshotWithSeqs([1]),
@@ -190,6 +281,28 @@ describe("reversal planner", () => {
     ).resolves.toEqual({ ok: false, status: "nothing_to_redo" });
   });
 });
+
+function groupedRedoState(): Parameters<typeof fakeReversalStore>[0] {
+  return {
+    snapshot: snapshotWithSeqs([1, 2, 3, 5, 8]),
+    activeWrites: [
+      activeWrite("w1", 1, "turn-a"),
+      activeWrite("w2", 2, "turn-b"),
+      activeWrite("w3", 3, "turn-c"),
+    ],
+    mutations: new Map([
+      ["w1", [mutation("w1", 1, "active", "turn-a")]],
+      ["w2", [mutation("w2", 2, "active", "turn-b")]],
+      ["w3", [mutation("w3", 3, "active", "turn-c")]],
+    ]),
+    reversals: [
+      reversal(["w1"], "turn-a", 5, "redone", 8),
+      reversal(["w2"], "turn-b", 5, "redone", 8),
+      reversal(["w3"], "turn-c", 5, "redone", 8),
+    ],
+    reversalOpSeqs: new Set([5, 8]),
+  };
+}
 
 function snapshotWithSeqs(seqs: readonly number[]): JournalSnapshot {
   return {
@@ -226,14 +339,21 @@ function mutation(
   };
 }
 
-function reversal(writeIds: string[], turnId: string, undoUpdateSeq: number): ReversalRecord {
+function reversal(
+  writeIds: string[],
+  turnId: string,
+  undoUpdateSeq: number,
+  status: ReversalRecord["status"] = "reversed",
+  redoUpdateSeq?: number,
+): ReversalRecord {
   return {
     documentId: DOC_ID,
     threadId: THREAD_ID,
     turnId,
     writeIds,
-    status: "reversed",
+    status,
     undoUpdateSeq,
+    ...(redoUpdateSeq !== undefined ? { redoUpdateSeq } : {}),
     reversedAt: new Date(undoUpdateSeq),
   };
 }
@@ -243,6 +363,7 @@ function fakeReversalStore(input: {
   activeWrites?: ActiveWriteSummary[];
   mutations: Map<string, WriteMutationRow[]>;
   reversals?: ReversalRecord[];
+  reversalOpSeqs?: Set<number>;
 }): ReversalStore {
   return {
     reserveWriteOrdinal: async () => 1,
@@ -263,6 +384,6 @@ function fakeReversalStore(input: {
     persistUndo: async () => {},
     persistRedo: async () => ({ consumed: false }),
     readReversals: async () => input.reversals ?? [],
-    reversalOpSeqsForHandles: async () => new Set<number>(),
+    reversalOpSeqsForHandles: async () => input.reversalOpSeqs ?? new Set<number>(),
   } satisfies ReversalStore;
 }

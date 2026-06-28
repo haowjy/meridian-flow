@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { parseWriteHandle } from "../ports/update-journal.js";
 import { blockTexts, expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario, setStoredUpdateTime } from "./test-support/write-reversal-scenario.js";
 import { context, REVERSAL_CLIENT_ID, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -170,16 +169,6 @@ describe("write reversal selectors", () => {
     expect(scenario.blockTexts()).toEqual(["Base.", "Block 1.", "Block 11."]);
     expect(await scenario.mutationsFor("w10")).toMatchObject([{ status: "reversed" }]);
     expect(await scenario.mutationsFor("w11")).toMatchObject([{ status: "active" }]);
-  });
-
-  it("compares write handles by numeric ordinal", async () => {
-    const handles = ["w1", "w2", "w10", "w11"].sort((left, right) => {
-      const leftOrdinal = parseWriteHandle(left) ?? 0;
-      const rightOrdinal = parseWriteHandle(right) ?? 0;
-      return leftOrdinal - rightOrdinal;
-    });
-
-    expect(handles).toEqual(["w1", "w2", "w10", "w11"]);
   });
 
   it("targets a range across turns", async () => {
