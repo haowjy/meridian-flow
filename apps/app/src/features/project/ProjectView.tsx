@@ -153,8 +153,9 @@ function DesktopProject(props: ProjectViewProps) {
     (doc: RailOpenDocument) => {
       if (doc.kind === "context") {
         // Context doc: identity lives in the URL. Context screen opens the
-        // visible center pane; Home/Chat open the chat rail instead.
-        if (activeScreen !== "context") openChatRail();
+        // visible center pane for center-browsable schemes; Home/Chat and
+        // rail-only uploads open the chat rail instead.
+        if (activeScreen !== "context" || doc.scheme === "uploads") openChatRail();
         onSetActiveDocument(doc.path, doc.scheme);
         setRailUploadTarget(null);
         setDismissedDocKey(null);
