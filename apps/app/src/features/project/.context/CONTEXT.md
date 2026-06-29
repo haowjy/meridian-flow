@@ -153,6 +153,26 @@ single source of screen/thread ownership. The per-screen controllers
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
 
+## Known limitation — dual editor binding for the active doc
+
+The rail (Chat screen) and the center pane (Context screen) both render the
+active document through the same editable `context/ActiveDocumentSurface`
+(`ContextEditorMountHost` → `EditorView`). They use **distinct registry owners**
+(`desktop-context-editor-mount-host` vs `context-rail-active-document-surface`),
+so there is no `DocumentSessionRegistry` collision.
+
+But the `active`-gate in `ContextPaneController` only suppresses *route-driven*
+auto-opens — an **already-open** center tab stays mounted while parked offscreen.
+So opening a doc on Context, switching to Chat, then opening the *same* doc in the
+rail yields **two `EditorView`s bound to one shared `Y.Doc` + awareness**. Content
+stays correct (canonical Yjs split-pane), but the writer may see their own cursor
+flicker/echo while both surfaces are live.
+
+**Decision: accepted for now (KISS)** — requires a deliberate stale-tab sequence
+and never corrupts content. The better fix (share the single mounted active-doc
+editor across both surfaces) is tracked in
+[issue #117](https://github.com/haowjy/meridian-flow/issues/117).
+
 ## Don't
 
 - Don't hardcode a surface background — let the slot paint the material.
