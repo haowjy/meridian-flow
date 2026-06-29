@@ -355,6 +355,14 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       documentWriteHook: options.hook,
       draftStore,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+      liveLineage: {
+        async listLiveDocumentsForTurn(threadId, turnId) {
+          return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+            documentId: documentId as DocumentId,
+            uri: documentId,
+          }));
+        },
+      },
       threads: {
         async findById(id) {
           return id === THREAD_ID ? { userId: USER_ID, projectId: "project-1" } : null;
@@ -377,6 +385,7 @@ function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFaca
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
+    latestUpdateSeq: (docId) => journal.latestUpdateSeq(docId),
   };
 }
 

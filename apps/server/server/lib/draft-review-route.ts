@@ -3,7 +3,6 @@ import type {
   DraftAcceptResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
-  DraftReviewSummary,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -51,22 +50,26 @@ export async function requireDraftDocumentAccess(
 
 export async function handleDraftPreviewRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId },
+  input: { threadId: ThreadId; documentId: DocumentId; draftId?: string; userId: UserId },
 ): Promise<DraftPreviewResponse> {
   await requireDraftDocumentAccess(deps, input);
   const live = await deps.documentSync.readAsMarkdown(input.documentId);
   if (!live.ok) throwReadFailure(live.error.code);
 
   const draft = await deps.documentSync.drafts.getActiveDraft(input);
-  if (!draft) return { draft: null, live: live.value };
+  if (!draft) return { draftId: null, live: live.value };
+  if (input.draftId && draft.id !== input.draftId) return { draftId: null, live: live.value };
+
+  const preview = await deps.documentSync.drafts.previewDraft({
+    documentId: input.documentId,
+    draftId: draft.id,
+  });
 
   return {
-    draft: serializeDraft(draft),
-    live: live.value,
-    preview: await deps.documentSync.drafts.previewMarkdown({
-      documentId: input.documentId,
-      draftId: draft.id,
-    }),
+    draftId: draft.id,
+    live: preview.live,
+    preview: preview.markdown,
+    liveRevisionToken: preview.liveRevisionToken,
   };
 }
 
@@ -91,7 +94,14 @@ export async function handleThreadDraftListRequest(
 
 export async function handleDraftAcceptRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId; confirmOverlap?: boolean },
+  input: {
+    threadId: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    confirmOverlap?: boolean;
+    confirmedLiveRevisionToken?: number;
+  },
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.acceptDraft(input);
@@ -106,7 +116,7 @@ export async function handleDraftAcceptRequest(
 
 export async function handleDraftRejectRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId },
+  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
 ): Promise<DraftRejectResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.rejectDraft(input);
@@ -137,20 +147,6 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
     }),
   );
   return checks.filter((draft): draft is T => draft !== null);
-}
-
-function serializeDraft(draft: {
-  id: string;
-  status: DraftReviewSummary["status"];
-  lastActorTurnId: string | null;
-  updatedAt: Date;
-}): DraftReviewSummary {
-  return {
-    id: draft.id,
-    status: draft.status,
-    lastActorTurnId: draft.lastActorTurnId,
-    updatedAt: draft.updatedAt.toISOString(),
-  };
 }
 
 function serializeThreadDraft(draft: {

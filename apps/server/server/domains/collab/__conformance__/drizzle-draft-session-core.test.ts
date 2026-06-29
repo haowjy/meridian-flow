@@ -2,25 +2,30 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
+  createDrizzleDraftAcceptJournal,
+  createDrizzleDraftStore,
+} from "../adapters/drizzle-drafts.js";
+import { createDrizzleCollabPersistence } from "../adapters/drizzle-journal.js";
+import { createDrizzleTurnLiveLineageStore } from "../adapters/drizzle-turn-live-lineage.js";
+import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
-import {
-  createInMemoryDraftAcceptJournal,
-  createInMemoryDraftStore,
-} from "../adapters/in-memory/drafts.js";
+import { createInMemoryDraftAcceptJournal } from "../adapters/in-memory/drafts.js";
 import {
   type CollabFacadeStore,
   createDrizzleDraftSessionCore,
   createFacade,
 } from "../composition.js";
 import { updateMarkdownProjection } from "../domain/document-activity.js";
+import { createTurnLiveLineageReadModel } from "../domain/turn-live-lineage.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -33,6 +38,7 @@ const DOC_B_ID = "00000000-0000-4000-8000-000000000507" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000505" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000506" as TurnId;
 const LATER_TURN_ID = "00000000-0000-4000-8000-000000000508" as TurnId;
+const TEST_CLAIM_TOKEN = "00000000-0000-4000-8000-000000000509";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("draft session core (postgres)", () => {
@@ -66,11 +72,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { createDrizzleDraftAcceptJournal, createDrizzleDraftStore } = await import(
-      "../adapters/drizzle-drafts.js"
-    );
-    const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
-
     const db = createDb(DATABASE_URL, { max: 4 });
     let draftStore = createDrizzleDraftStore(db);
 
@@ -202,7 +203,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(mutationRows).toEqual([{ scopeId: draft.id }]);
 
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
@@ -243,7 +249,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft Beta.");
 
-      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      });
       const afterAccept = await readMarkdown(domain, DOC_ID);
       expect(afterAccept).toContain("Draft Beta.");
       expect(afterAccept).toContain("Live Gamma.");
@@ -302,7 +313,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
       expect(hook).toHaveBeenCalledTimes(1);
@@ -315,7 +331,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("lets only one concurrent draft finalizer mutate live state", async () => {
-      const { domain, liveCoordinator } = createLiveHarness(db, draftStore);
+      const { domain, liveCoordinator } = createDrizzleLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -341,8 +357,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       const [accept, reject] = await Promise.all([
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ]);
 
       const final = await draftStore.getDraft(draft.id);
@@ -360,7 +381,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("B1: fences stale accept after reject reclaims an expired claim before live journal append", async () => {
-      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
+      const { domain, liveCoordinator } = createDrizzleLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -369,39 +390,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "reclaim-reject");
 
-      const staleClaim = await draftStore.claimActive({ documentId: DOC_ID, threadId: THREAD_ID });
+      const staleClaim = await claimActiveForTest(db, documentYjsDrafts, draft.id);
       expect(staleClaim).toMatchObject({ id: draft.id, status: "active" });
       if (!staleClaim?.claimToken) throw new Error("expected stale claim token");
       await expireClaim(db, documentYjsDrafts, draft.id);
 
       await expect(
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ).resolves.toEqual({
         status: "discarded",
         draftId: draft.id,
       });
 
-      const staleApplied = await staleAcceptResume({
-        draft: staleClaim,
-        draftStore,
-        liveJournal,
-        liveCoordinator,
-      });
-
-      expect(staleApplied).toBe(false);
-      expect(
-        liveJournal
-          .mutationRecords(DOC_ID)
-          .some((mutation) => mutation.writeId === `draft-accept:${draft.id}`),
-      ).toBe(false);
+      await expect(
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toEqual({ status: "not_found" });
+      const mutationRows = await db
+        .select({ writeId: agentEditMutations.writeId })
+        .from(agentEditMutations)
+        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}`));
+      expect(mutationRows).toHaveLength(0);
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft reclaim-reject.");
-      expect(await readMarkdown(restartDomain(liveJournal), DOC_ID)).not.toContain(
-        "Draft reclaim-reject.",
-      );
+      const restart = createDrizzleLiveHarness(db, draftStore);
+      await restart.liveCoordinator.recover(DOC_ID);
+      expect(await readMarkdown(restart.domain, DOC_ID)).not.toContain("Draft reclaim-reject.");
     });
 
-    it("fences a stale double-accept after another accept reclaims an expired claim", async () => {
+    it("treats exact-draft applied retries as idempotent after reclaiming an expired active claim", async () => {
       const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
@@ -411,23 +432,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "reclaim-accept");
 
-      const staleClaim = await draftStore.claimActive({ documentId: DOC_ID, threadId: THREAD_ID });
+      const staleClaim = await claimActiveForTest(db, documentYjsDrafts, draft.id);
       expect(staleClaim).toMatchObject({ id: draft.id, status: "active" });
       if (!staleClaim?.claimToken) throw new Error("expected stale claim token");
       await expireClaim(db, documentYjsDrafts, draft.id);
 
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
 
-      const staleApplied = await staleAcceptResume({
-        draft: staleClaim,
-        draftStore,
-        liveJournal,
-        liveCoordinator,
-      });
-
-      expect(staleApplied).toBe(false);
+      await expect(
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       const after = await readMarkdown(domain, DOC_ID);
       expect(after).toContain("Draft reclaim-accept.");
@@ -481,7 +507,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Stale draft." },
           { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-pending-close" },
         );
-      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      });
       releasePreferences();
 
       await expect(pendingWrite).resolves.toMatchObject({
@@ -539,7 +570,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toMatchObject({ isError: false });
 
-      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      });
       await expect(
         domain
           .agentEdit()
@@ -581,7 +617,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-append-fence" },
       );
       await expect(
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ).resolves.toEqual({ status: "discarded", draftId: draft.id });
 
       await expect(staleCore.commitResponse("response-append-fence")).rejects.toThrow(
@@ -595,45 +631,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("B3: applied retry recovers live doc after journal append succeeds but live apply crashes", async () => {
-      const liveJournal = createInMemoryJournal();
-      const liveCoordinator = createInMemoryCoordinator(liveJournal);
       let failNextApply = false;
-      const crashyCoordinator: Parameters<typeof createFacade>[0]["coordinator"] = {
-        withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-          if (failNextApply) {
-            failNextApply = false;
-            throw new Error("simulated crash after markApplied");
-          }
-          return liveCoordinator.withDocument(documentId, fn);
+      const { domain, liveCoordinator, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        coordinatorFactory(base) {
+          return {
+            withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+              if (failNextApply) {
+                failNextApply = false;
+                throw new Error("simulated crash after markApplied");
+              }
+              return base.withDocument(documentId, fn);
+            },
+            recover: base.recover,
+          };
         },
-        recover: liveCoordinator.recover,
-      };
-      const domain = createFacade({
-        journal: liveJournal,
-        coordinator: crashyCoordinator,
-        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
-        store: storeFor(liveJournal),
-        hocuspocus: () => null,
-        bindHocuspocus: (_instance: Hocuspocus) => {},
-        draftStore,
-        draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
-        threads: {
-          async findById(id) {
-            return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
-          },
-        },
-        projectPreferences: {
-          async read() {
-            return { aiWriteMode: "direct" as const };
-          },
-        },
-        createDraftSessionCore: ({ threadId }) =>
-          createDrizzleDraftSessionCore({
-            db,
-            threadId,
-            liveCoordinator: crashyCoordinator,
-            draftStore,
-          }),
       });
       await domain.writeDocument({
         documentId: DOC_ID,
@@ -641,8 +652,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
-      const draft = await createCommittedDraft(db, crashyCoordinator, draftStore, "recovery", {
-        latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+      const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "recovery", {
+        latestLiveUpdateSeq: liveStore.latestUpdateSeq,
       });
 
       failNextApply = true;
@@ -650,17 +661,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         domain.drafts.acceptDraft({
           documentId: DOC_ID,
           threadId: THREAD_ID,
+          draftId: draft.id,
           userId: USER_ID,
           confirmOverlap: true,
+          confirmedLiveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
         }),
       ).rejects.toThrow("simulated crash after markApplied");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft recovery.");
 
+      const retry = createDrizzleLiveHarness(db, draftStore);
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        retry.domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
-      expect(await readMarkdown(domain, DOC_ID)).toContain("Draft recovery.");
+      expect(await readMarkdown(retry.domain, DOC_ID)).toContain("Draft recovery.");
     });
 
     it("SF6: concurrent second accept reports in_progress instead of not_found", async () => {
@@ -682,7 +701,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         };
       });
-      const { domain, liveCoordinator } = createLiveHarness(db, draftStore);
+      const { domain, liveCoordinator } = createDrizzleLiveHarness(db, draftStore);
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -694,11 +713,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const firstAccept = domain.drafts.acceptDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        draftId: draft.id,
         userId: USER_ID,
       });
       await firstAcceptBlocked;
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toEqual({ status: "in_progress", draftId: draft.id });
       releaseFirstAccept();
       await expect(firstAccept).resolves.toMatchObject({ status: "applied", draftId: draft.id });
@@ -708,10 +733,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let cleanupCalls = 0;
       const flakyDraftStore = {
         ...draftStore,
-        async deleteScopedState(input: Parameters<typeof draftStore.deleteScopedState>[0]) {
+        async deleteDraftState(input: Parameters<typeof draftStore.deleteDraftState>[0]) {
           cleanupCalls += 1;
           if (cleanupCalls === 1) throw new Error("cleanup failed once");
-          await draftStore.deleteScopedState(input);
+          await draftStore.deleteDraftState(input);
         },
       };
       const { domain, liveCoordinator } = createLiveHarness(db, flakyDraftStore);
@@ -740,11 +765,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).rejects.toThrow("cleanup failed once");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
       expect(cleanupCalls).toBe(2);
     });
@@ -761,6 +796,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         bindHocuspocus: (_instance: Hocuspocus) => {},
         draftStore,
         draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
+        liveLineage: createTurnLiveLineageReadModel({
+          store: createDrizzleTurnLiveLineageStore(db),
+          resolveDocumentUri: async (documentId) => documentId,
+        }),
         threads: {
           async findById(id) {
             return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
@@ -803,6 +842,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const accept = await domain.drafts.acceptDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        draftId: draft.id,
         userId: USER_ID,
       });
       if (accept.status !== "applied") throw new Error("expected applied accept");
@@ -819,20 +859,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
         parentTurnId: LATER_TURN_ID,
       });
-      expect(acceptTurn?.requestParams).toMatchObject({
-        kind: "draft_accept",
-        draftId: draft.id,
-        documentId: DOC_ID,
-      });
-      expect(acceptTurn?.requestParams).not.toHaveProperty("actorTurnId");
-      const acceptBlocks = await db
-        .select()
-        .from(turnBlocks)
-        .where(eq(turnBlocks.turnId, accept.acceptTurnId));
-      expect(acceptBlocks).toMatchObject([
-        { blockType: "text", modelText: "You accepted this draft" },
-      ]);
-
       const mutationRows = await db
         .select()
         .from(agentEditMutations)
@@ -840,11 +866,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(mutationRows).toMatchObject([
         { turnId: accept.acceptTurnId, createdSeq: accept.appliedUpdateSeq },
       ]);
-      const updateRows = await db
-        .select()
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.id, accept.appliedUpdateSeq));
-      expect(updateRows).toMatchObject([{ actorTurnId: TURN_ID }]);
       await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
       await expect(
         domain.listLiveDocumentsForTurn(THREAD_ID, accept.acceptTurnId),
@@ -872,11 +893,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.\n\nBeta live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
-      await writeDraftReplacement(domain, "response-disjoint", "Beta live.", "Beta draft.");
+      const draft = await writeDraftReplacement(
+        domain,
+        "response-disjoint",
+        "Beta live.",
+        "Beta draft.",
+      );
       await replaceLiveText(liveCoordinator, liveJournal, "Alpha live.", "Alpha human.");
 
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
       ).resolves.toMatchObject({ status: "applied" });
 
       const markdown = await readMarkdown(domain, DOC_ID);
@@ -894,12 +925,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.\n\nBeta live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
-      await writeDraftReplacement(domain, "response-overlap", "Beta live.", "Beta draft.");
+      const draft = await writeDraftReplacement(
+        domain,
+        "response-overlap",
+        "Beta live.",
+        "Beta draft.",
+      );
       await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
 
       const overlap = await domain.drafts.acceptDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        draftId: draft.id,
         userId: USER_ID,
       });
       expect(overlap).toMatchObject({
@@ -911,11 +948,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(overlap.status === "overlap" ? overlap.overlappingBlocks : []).not.toHaveLength(0);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta human.");
 
+      await replaceLiveText(liveCoordinator, liveJournal, "Beta human.", "Beta later.");
+      const staleConfirm = await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        confirmOverlap: true,
+        confirmedLiveRevisionToken: overlap.status === "overlap" ? overlap.liveRevisionToken : 0,
+      });
+      expect(staleConfirm).toMatchObject({
+        status: "overlap",
+        draftId: draft.id,
+        live: expect.stringContaining("Beta later."),
+        preview: expect.stringContaining("Beta draft."),
+      });
+      if (staleConfirm.status !== "overlap") throw new Error("expected refreshed overlap");
+
       const applied = await domain.drafts.acceptDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        draftId: draft.id,
         userId: USER_ID,
         confirmOverlap: true,
+        confirmedLiveRevisionToken: staleConfirm.liveRevisionToken,
       });
       expect(applied).toMatchObject({ status: "applied" });
       if (applied.status !== "applied") throw new Error("expected applied accept");
@@ -928,7 +984,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: { type: "user", userId: USER_ID },
       });
       expect(["reversed", "reconciled", "partial"]).toContain(undo.status);
-      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta human.");
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta later.");
     });
 
     it("P6: a missed-overlap accept remains non-destructive and undoable", async () => {
@@ -941,14 +997,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.\n\nBeta live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
-      await writeDraftReplacement(domain, "response-bounded", "Beta live.", "Beta draft.");
+      const draft = await writeDraftReplacement(
+        domain,
+        "response-bounded",
+        "Beta live.",
+        "Beta draft.",
+      );
       await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
 
       const applied = await domain.drafts.acceptDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        draftId: draft.id,
         userId: USER_ID,
         confirmOverlap: true,
+        confirmedLiveRevisionToken: await liveJournal.latestUpdateSeq(DOC_ID),
       });
       expect(applied).toMatchObject({ status: "applied" });
       if (applied.status !== "applied") throw new Error("expected applied accept");
@@ -1005,7 +1068,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toMatchObject({ isError: false });
 
-      await domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID });
+      await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      });
       await expect(
         domain.finalizeResponseCommit("response-stale-draft", {
           threadId: THREAD_ID,
@@ -1051,6 +1119,7 @@ function createLiveHarness(
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
+      liveLineage: createTestLiveLineage(liveJournal),
       threads: {
         async findById(id) {
           return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
@@ -1077,8 +1146,71 @@ function createLiveHarness(
   };
 }
 
+function createDrizzleLiveHarness(
+  db: Database,
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  options: LiveHarnessOptions & {
+    coordinatorFactory?: (
+      base: ReturnType<typeof createInMemoryCoordinator>,
+    ) => Parameters<typeof createFacade>[0]["coordinator"];
+  } = {},
+): {
+  domain: ReturnType<typeof createFacade>;
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>;
+  liveJournal: ReturnType<typeof createDrizzleCollabPersistence>["journal"];
+  liveStore: ReturnType<typeof createDrizzleCollabPersistence>["store"];
+} {
+  const { journal, lifecycle, store } = createDrizzleCollabPersistence(db);
+  const liveCoordinator = createInMemoryCoordinator(journal);
+  const coordinator = options.coordinatorFactory?.(liveCoordinator) ?? liveCoordinator;
+  return {
+    domain: createFacade({
+      journal,
+      coordinator,
+      lifecycle: {
+        async ensureDocument(documentId) {
+          await lifecycle.ensureDocument(documentId);
+          liveCoordinator.ensureEmpty(documentId);
+        },
+      },
+      store,
+      hocuspocus: () => null,
+      bindHocuspocus: (_instance: Hocuspocus) => {},
+      draftStore,
+      draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
+      liveLineage: createTurnLiveLineageReadModel({
+        store: createDrizzleTurnLiveLineageStore(db),
+        resolveDocumentUri: async (documentId) => documentId,
+      }),
+      threads: {
+        async findById(id) {
+          return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
+        },
+      },
+      projectPreferences: {
+        async read() {
+          await options.beforePreferenceRead?.();
+          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+        },
+      },
+      createDraftSessionCore: ({ threadId }) =>
+        createDrizzleDraftSessionCore({
+          db,
+          threadId,
+          liveCoordinator: coordinator,
+          draftStore,
+          latestLiveUpdateSeq: store.latestUpdateSeq,
+        }),
+      documentWriteHook: options.documentWriteHook,
+    }),
+    liveCoordinator,
+    liveJournal: journal,
+    liveStore: store,
+  };
+}
+
 function latestLiveUpdateSeq(liveJournal: ReturnType<typeof createInMemoryJournal>) {
-  return async (documentId: DocumentId) => (await liveJournal.latestUpdate(documentId))?.seq ?? 0;
+  return async (documentId: DocumentId) => liveJournal.latestUpdateSeq(documentId);
 }
 
 async function writeDraftReplacement(
@@ -1086,7 +1218,7 @@ async function writeDraftReplacement(
   responseId: string,
   find: string,
   content: string,
-): Promise<void> {
+): Promise<{ id: string }> {
   await domain
     .agentEdit()
     .write(
@@ -1106,6 +1238,9 @@ async function writeDraftReplacement(
     ),
   ).resolves.toMatchObject({ isError: false });
   await domain.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID });
+  const draft = await domain.drafts.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+  if (!draft) throw new Error("expected active draft");
+  return draft;
 }
 
 async function replaceLiveText(
@@ -1146,6 +1281,18 @@ function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFaca
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
+    latestUpdateSeq: (docId) => journal.latestUpdateSeq(docId),
+  };
+}
+
+function createTestLiveLineage(journal: ReturnType<typeof createInMemoryJournal>) {
+  return {
+    async listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId) {
+      return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+        documentId: documentId as DocumentId,
+        uri: documentId,
+      }));
+    },
   };
 }
 
@@ -1193,86 +1340,21 @@ async function expireClaim(
     .where(eq(documentYjsDrafts.id, draftId));
 }
 
-async function staleAcceptResume(input: {
-  draft: NonNullable<
-    Awaited<
-      ReturnType<Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"]["claimActive"]>
-    >
-  >;
-  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"];
-  liveJournal: ReturnType<typeof createInMemoryJournal>;
-  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>;
-}) {
-  const current = await input.draftStore.getDraft(input.draft.id);
-  if (current?.status !== "accepting" || current.claimToken !== input.draft.claimToken) {
-    return false;
-  }
-
-  const updates = await input.draftStore.listUpdates(input.draft.id);
-  if (!input.draft.claimToken) throw new Error("expected claim token");
-  if (!input.draft.lastActorTurnId) throw new Error("expected last actor turn");
-  const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
-  const acceptJournal = createInMemoryDraftAcceptJournal(input.liveJournal);
-  const writeId = `draft-accept:${input.draft.id}`;
-  const acceptedAppend =
-    (await acceptJournal.findAcceptedDraftAppend({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      writeId,
-    })) ??
-    (await acceptJournal.appendAcceptedDraft({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: input.draft.id,
-      update: mergedUpdate,
-      writeId,
-      actorTurnId: input.draft.lastActorTurnId,
-      acceptTurnId: input.draft.lastActorTurnId,
-      acceptBlockId: input.draft.lastActorTurnId as never,
-    }));
-  const appliedUpdateSeq = acceptedAppend.appliedUpdateSeq;
-  const applied = await input.draftStore.markApplied(input.draft.id, {
-    claimToken: input.draft.claimToken,
-    appliedByUserId: USER_ID,
-    appliedUpdateSeq,
-  });
-  if (applied) {
-    await input.liveCoordinator.withDocument(DOC_ID, async (doc) => {
-      Y.applyUpdate(doc, mergedUpdate, { type: "system" });
-    });
-  }
-  return applied;
-}
-
-function restartDomain(liveJournal: ReturnType<typeof createInMemoryJournal>) {
-  const liveCoordinator = createInMemoryCoordinator(liveJournal);
-  const domain = createFacade({
-    journal: liveJournal,
-    coordinator: liveCoordinator,
-    lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
-    store: storeFor(liveJournal),
-    hocuspocus: () => null,
-    bindHocuspocus: (_instance: Hocuspocus) => {},
-    draftStore: createInMemoryDraftStore(),
-    draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
-    threads: {
-      async findById() {
-        return null;
-      },
-    },
-    projectPreferences: {
-      async read() {
-        return { aiWriteMode: "direct" as const };
-      },
-    },
-  });
-  return {
-    ...domain,
-    async readAsMarkdown(documentId: DocumentId) {
-      await liveCoordinator.recover(documentId);
-      return domain.readAsMarkdown(documentId);
-    },
-  };
+async function claimActiveForTest(
+  db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
+  documentYjsDrafts: typeof import("@meridian/database/schema").documentYjsDrafts,
+  draftId: string,
+) {
+  const [draft] = await db
+    .update(documentYjsDrafts)
+    .set({
+      claimedAt: sql`now()`,
+      claimToken: TEST_CLAIM_TOKEN,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(documentYjsDrafts.id, draftId))
+    .returning();
+  return draft ?? null;
 }
 
 async function readMarkdown(domain: ReturnType<typeof createFacade>, documentId: DocumentId) {

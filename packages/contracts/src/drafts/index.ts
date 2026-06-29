@@ -24,10 +24,12 @@ export interface ThreadDraftListResponse {
 }
 
 export interface DraftPreviewResponse {
-  draft: DraftReviewSummary | null;
+  draftId: string | null;
   live: string;
   /** Current live markdown plus active draft deltas. Omitted when no active draft exists. */
   preview?: string;
+  /** Latest persisted live Yjs update seq used to build this preview. */
+  liveRevisionToken?: number;
 }
 
 export const DRAFT_ACCEPT_TURN_KIND = "draft_accept";
@@ -67,6 +69,7 @@ export type DraftAcceptResponse =
   | {
       status: "overlap";
       draftId: string;
+      liveRevisionToken: number;
       live: string;
       preview: string;
       overlappingBlocks: string[];
@@ -78,9 +81,15 @@ export type DraftAcceptResponse =
   | { status: "not_found"; draftId?: null; appliedUpdateSeq?: null; acceptTurnId?: null };
 
 export type DraftAcceptRequest = {
+  draftId: string;
   confirmOverlap?: boolean;
+  confirmedLiveRevisionToken?: number;
 };
 
 export type DraftRejectResponse =
   | { status: "discarded"; draftId: string }
   | { status: "not_found"; draftId?: null };
+
+export type DraftRejectRequest = {
+  draftId: string;
+};

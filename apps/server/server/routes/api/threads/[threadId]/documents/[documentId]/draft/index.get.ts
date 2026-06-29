@@ -1,6 +1,6 @@
 /** GET /api/threads/:threadId/documents/:documentId/draft: authenticated live-vs-draft markdown preview. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { defineEventHandler, getRouterParam } from "nitro/h3";
+import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../lib/auth-gate.js";
 import {
   handleDraftPreviewRequest,
@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   return handleDraftPreviewRequest(selectDraftRouteServices(app), {
     threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
+    draftId: typeof getQuery(event).draftId === "string" ? getQuery(event).draftId : undefined,
     userId: user.userId,
   });
 });

@@ -175,13 +175,23 @@ export type CollabDrafts = {
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
     previewMarkdown(input: { documentId: DocumentId; draftId: string }): Promise<string>;
+    previewDraft(input: {
+      documentId: DocumentId;
+      draftId: string;
+    }): Promise<{ live: string; markdown: string; liveRevisionToken: number }>;
     acceptDraft(input: {
       documentId: DocumentId;
       threadId: ThreadId;
+      draftId: string;
       userId: UserId;
       confirmOverlap?: boolean;
+      confirmedLiveRevisionToken?: number;
     }): Promise<DraftAcceptResult>;
-    rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
+    rejectDraft(input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      draftId: string;
+    }): Promise<DraftRejectResult>;
   };
 };
 

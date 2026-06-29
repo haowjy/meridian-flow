@@ -158,9 +158,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         lastActorTurnId: TURN_B as never,
       });
-      const claimed = await store.claimActive({
+      const claimed = await store.claimForAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
+        draftId: first.id,
       });
       if (!claimed?.claimToken) throw new Error("expected claim token");
       await store.markDiscarded(first.id, { claimToken: claimed.claimToken });
@@ -179,29 +180,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    it("issues a fresh fencing token on claim reclaim and fences stale terminal writes", async () => {
+    it("issues a fresh accept fencing token on reclaim and fences stale terminal writes", async () => {
       const draft = await store.createActiveDraft({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         lastActorTurnId: TURN_A as never,
       });
 
-      const firstClaim = await store.claimActive({
+      const firstClaim = await store.claimForAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
+        draftId: draft.id,
       });
-      expect(firstClaim).toMatchObject({ id: draft.id, status: "active" });
+      expect(firstClaim).toMatchObject({ id: draft.id, status: "accepting" });
       if (!firstClaim?.claimToken) throw new Error("expected first claim token");
       await db
         .update(documentYjsDrafts)
         .set({ claimedAt: sql`now() - interval '11 minutes'` })
         .where(eq(documentYjsDrafts.id, draft.id));
 
-      const secondClaim = await store.claimActive({
+      const secondClaim = await store.claimForAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
+        draftId: draft.id,
       });
-      expect(secondClaim).toMatchObject({ id: draft.id, status: "active" });
+      expect(secondClaim).toMatchObject({ id: draft.id, status: "accepting" });
       if (!secondClaim?.claimToken) throw new Error("expected second claim token");
       expect(secondClaim.claimToken).not.toBe(firstClaim.claimToken);
 

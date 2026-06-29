@@ -35,8 +35,10 @@ import { collapseDiffBlocks, type DiffBlock, diffLines } from "./diff-lines";
 export type DraftPreviewOverlayProps = {
   threadId: string;
   documentId: string;
+  draftId: string;
   documentName: string | null;
   requireOverlapConfirm?: boolean;
+  overlapConfirmLiveRevisionToken?: number;
   onOverlapConfirmResolved?: () => void;
   onClose: () => void;
 };
@@ -46,33 +48,64 @@ type ViewMode = "changes" | "preview";
 export function DraftPreviewOverlay({
   threadId,
   documentId,
+  draftId,
   documentName,
   requireOverlapConfirm = false,
+  overlapConfirmLiveRevisionToken,
   onOverlapConfirmResolved,
   onClose,
 }: DraftPreviewOverlayProps) {
   useEscapeToClose(onClose);
   const accept = useAcceptDraft();
   const reject = useRejectDraft();
-  const { live, previewMarkdown, isFetching, isError } = useDraftPreview(threadId, documentId);
+  const { live, previewMarkdown, liveRevisionToken, isFetching, isError } = useDraftPreview(
+    threadId,
+    documentId,
+    draftId,
+  );
   const [view, setView] = useState<ViewMode>("changes");
   const [needsOverlapConfirm, setNeedsOverlapConfirm] = useState(requireOverlapConfirm);
+  const [overlapReview, setOverlapReview] = useState<{
+    live: string;
+    preview: string;
+    liveRevisionToken: number;
+  } | null>(null);
 
   useEffect(() => {
     setNeedsOverlapConfirm(requireOverlapConfirm);
     if (requireOverlapConfirm) setView("preview");
   }, [requireOverlapConfirm]);
 
+  useEffect(() => {
+    setOverlapReview(null);
+  }, [draftId]);
+
   const isPending = accept.isPending || reject.isPending;
   const heading = documentName ?? t`Document draft`;
+  const reviewLive = overlapReview?.live ?? live;
+  const reviewPreview = overlapReview?.preview ?? previewMarkdown;
+  const reviewLiveRevisionToken = overlapReview?.liveRevisionToken ?? liveRevisionToken;
 
   function handleAccept() {
     if (isPending) return;
     accept.mutate(
-      { threadId, documentId, confirmOverlap: needsOverlapConfirm },
+      {
+        threadId,
+        documentId,
+        draftId,
+        confirmOverlap: needsOverlapConfirm,
+        confirmedLiveRevisionToken: needsOverlapConfirm
+          ? (reviewLiveRevisionToken ?? overlapConfirmLiveRevisionToken)
+          : undefined,
+      },
       {
         onSuccess(response) {
           if (response.status === "overlap") {
+            setOverlapReview({
+              live: response.live,
+              preview: response.preview,
+              liveRevisionToken: response.liveRevisionToken,
+            });
             setNeedsOverlapConfirm(true);
             setView("preview");
             return;
@@ -86,7 +119,7 @@ export function DraftPreviewOverlay({
 
   function handleDiscard() {
     if (isPending) return;
-    reject.mutate({ threadId, documentId }, { onSuccess: onClose });
+    reject.mutate({ threadId, documentId, draftId }, { onSuccess: onClose });
   }
 
   return (
@@ -147,8 +180,8 @@ export function DraftPreviewOverlay({
         <main className="prose-tokens min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <PreviewBody
             view={view}
-            live={live}
-            previewMarkdown={previewMarkdown}
+            live={reviewLive}
+            previewMarkdown={reviewPreview}
             isFetching={isFetching}
             isError={isError}
           />

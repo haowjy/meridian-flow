@@ -11,6 +11,7 @@ import {
   documents,
   documentYjsDrafts,
   documentYjsDraftUpdates,
+  documentYjsHeads,
   documentYjsReversals,
   documentYjsUpdates,
   threads,
@@ -79,18 +80,11 @@ export function createDrizzleDraftStore(
       return rows.map((row) => mapActiveDraft(row.draft, row.documentName));
     },
 
-    async getLastAppliedDraft(input) {
+    async getAppliedDraft(draftId) {
       const [row] = await db
         .select()
         .from(documentYjsDrafts)
-        .where(
-          and(
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
-            eq(documentYjsDrafts.status, "applied"),
-          ),
-        )
-        .orderBy(desc(documentYjsDrafts.appliedAt), desc(documentYjsDrafts.updatedAt))
+        .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "applied")))
         .limit(1);
       return row ? mapDraft(row) : null;
     },
@@ -151,25 +145,6 @@ export function createDrizzleDraftStore(
       return rows.map(mapDraftUpdate);
     },
 
-    async claimActive(input) {
-      const [row] = await db
-        .update(documentYjsDrafts)
-        .set({ claimedAt: sql`now()`, claimToken: randomUUID(), updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
-            eq(documentYjsDrafts.status, "active"),
-            or(
-              isNull(documentYjsDrafts.claimedAt),
-              sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
-            ),
-          ),
-        )
-        .returning();
-      return row ? mapDraft(row) : null;
-    },
-
     async claimForAccept(input) {
       const [row] = await db
         .update(documentYjsDrafts)
@@ -181,6 +156,7 @@ export function createDrizzleDraftStore(
         })
         .where(
           and(
+            eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
             eq(documentYjsDrafts.threadId, input.threadId),
             or(
@@ -208,6 +184,7 @@ export function createDrizzleDraftStore(
         .from(documentYjsDrafts)
         .where(
           and(
+            eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
             eq(documentYjsDrafts.threadId, input.threadId),
             eq(documentYjsDrafts.status, "accepting"),
@@ -229,6 +206,7 @@ export function createDrizzleDraftStore(
         })
         .where(
           and(
+            eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
             eq(documentYjsDrafts.threadId, input.threadId),
             eq(documentYjsDrafts.status, "active"),
@@ -286,13 +264,18 @@ export function createDrizzleDraftStore(
       return row.length > 0;
     },
 
-    async deleteScopedState(input) {
+    async deleteDraftState(input) {
+      const scopedInput = { ...input, scopeId: input.draftId };
       await db.transaction(async (tx) => {
         const txDb = tx as DraftDb;
-        await txDb.delete(agentEditSyncState).where(scopedWhere(agentEditSyncState, input));
-        await txDb.delete(documentYjsReversals).where(scopedWhere(documentYjsReversals, input));
-        await txDb.delete(agentEditMutations).where(scopedWhere(agentEditMutations, input));
-        await txDb.delete(agentEditWidCounters).where(scopedWhere(agentEditWidCounters, input));
+        await txDb.delete(agentEditSyncState).where(scopedWhere(agentEditSyncState, scopedInput));
+        await txDb
+          .delete(documentYjsReversals)
+          .where(scopedWhere(documentYjsReversals, scopedInput));
+        await txDb.delete(agentEditMutations).where(scopedWhere(agentEditMutations, scopedInput));
+        await txDb
+          .delete(agentEditWidCounters)
+          .where(scopedWhere(agentEditWidCounters, scopedInput));
       });
     },
   };
@@ -422,10 +405,18 @@ async function latestLiveUpdateSeq(
 ): Promise<number> {
   if (override) return override(documentId);
   const [row] = await db
+    .select({ latestSeq: documentYjsHeads.latestUpdateSeq })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, documentId))
+    .limit(1);
+  if (row?.latestSeq !== null && row?.latestSeq !== undefined) return Number(row.latestSeq);
+  const [updateRow] = await db
     .select({ latestSeq: max(documentYjsUpdates.id) })
     .from(documentYjsUpdates)
     .where(eq(documentYjsUpdates.documentId, documentId));
-  return row?.latestSeq === null || row?.latestSeq === undefined ? 0 : Number(row.latestSeq);
+  return updateRow?.latestSeq === null || updateRow?.latestSeq === undefined
+    ? 0
+    : Number(updateRow.latestSeq);
 }
 
 function mapActiveDraft(
