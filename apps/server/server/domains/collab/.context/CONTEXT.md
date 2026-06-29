@@ -17,6 +17,7 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Hocuspocus load | `collab/adapters/document-loader.ts` | Rebuilds Y.Doc state from journal |
 | In-memory app/test adapters | `collab/adapters/in-memory/agent-edit.ts` | Real in-memory journal/coordinator/lifecycle |
 | Document write read models | `collab/domain/document-activity.ts` | Production post-write hook for activity/projection |
+| Turn live-lineage read-model | `collab/domain/turn-live-lineage.ts` + `adapters/drizzle-turn-live-lineage.ts` | Footer authority over live agent-edit mutations |
 
 ## Domain behavior
 
@@ -130,6 +131,18 @@ in the WS route) — a checkpoint every ≤10s of active editing bounds the repl
 window.
 
 ## Stable server-side helpers
+
+
+### Turn live-lineage read-model
+
+`domain/turn-live-lineage.ts` is the server-owned authority for which documents a
+turn has durably changed in live state. The Drizzle adapter reads distinct
+documents from live `agent_edit_mutations` for `(threadId, turnId)` and filters to
+the live scope inside the adapter. Higher layers call
+`listLiveDocumentsForTurn(threadId, turnId)` and receive document ids + canonical
+context URIs; they never pass or branch on raw `scope_id`. Draft-only mutations do
+not appear. Applying a draft creates the live mutation that makes the footer
+appear.
 
 ### Turn-reversal orchestration (`domain/turn-reversal.ts`)
 

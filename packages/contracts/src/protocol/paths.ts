@@ -123,6 +123,10 @@ export function apiThreadDraftsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/drafts`;
 }
 
+export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
+}
+
 export function apiThreadDocumentDraftPath(threadId: string, documentId: string): string {
   return `${API_THREADS_PATH}/${threadId}/documents/${documentId}/draft`;
 }

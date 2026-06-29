@@ -1,10 +1,10 @@
 /**
  * TurnChangeFooter — compact per-turn summary and undo/redo controls.
  *
- * Scans settled assistant turns for write/edit tool calls, gathers the touched
- * documents into one footer, and calls the thread reverse API for per-document
- * or whole-turn undo/redo. Document content refresh is handled by Yjs sync; the
- * footer keeps only local affordance state.
+ * Receives the server-owned live-lineage documents for a settled assistant
+ * turn, then calls the thread reverse API for per-document or whole-turn
+ * undo/redo. Document content refresh is handled by Yjs sync; the footer keeps
+ * only local affordance state.
  */
 import { t } from "@lingui/core/macro";
 import type {
@@ -14,7 +14,7 @@ import type {
   WriteStatus,
 } from "@meridian/contracts/protocol";
 import { ChevronDown, LoaderCircle, Redo2, Undo2 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 
 import type { ReversalDirection } from "@/client/api/reverse-api";
 import {
@@ -24,12 +24,16 @@ import {
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { turnWrittenDocuments, type WrittenDocument } from "./turn-written-documents";
 
 export type TurnChangeFooterProps = {
   threadId: string;
   turn: Turn;
-  writtenDocuments?: WrittenDocument[];
+  documents: TurnChangeDocument[];
+};
+
+export type TurnChangeDocument = {
+  path: string;
+  uri: string;
 };
 
 type RowState = {
@@ -37,13 +41,9 @@ type RowState = {
   statusText?: string;
 };
 
-export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChangeFooterProps) {
+export function TurnChangeFooter({ threadId, turn, documents }: TurnChangeFooterProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
-  const documents = useMemo(
-    () => writtenDocuments ?? turnWrittenDocuments(turn),
-    [turn, writtenDocuments],
-  );
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [pendingUri, setPendingUri] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChang
   const turnDirection: ReversalDirection = allActionableReversed ? "redo" : "undo";
   const turnActionDisabled = turnPending || Boolean(pendingUri) || actionableDocuments.length === 0;
 
-  async function reverseOne(doc: WrittenDocument) {
+  async function reverseOne(doc: TurnChangeDocument) {
     const current = rowState(doc.uri);
     if (current.disposition === "disabled" || pendingUri || turnPending) return;
     const direction: ReversalDirection = current.disposition === "reversed" ? "redo" : "undo";
@@ -199,7 +199,7 @@ function DocumentName({
   document,
   onOpenContextUri,
 }: {
-  document: WrittenDocument;
+  document: TurnChangeDocument;
   onOpenContextUri: ((uri: string) => void) | null;
 }) {
   const label = basename(displayContextPath(document.uri, document.path));

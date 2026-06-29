@@ -6,6 +6,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type { ActiveDraft, Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
+import type { LiveLineageDocument } from "./domain/turn-live-lineage.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -89,6 +90,7 @@ export type TurnReversalAccess = {
     turnId: TurnId;
     direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
+    documentIds?: DocumentId[];
   }): Promise<ReversalOutcome>;
 };
 
@@ -182,6 +184,10 @@ export type CollabDrafts = {
   };
 };
 
+export type TurnLiveLineageAccess = {
+  listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
+};
+
 export type DocumentAttribution = {
   getLastUpdateAttribution(documentId: DocumentId): Promise<{
     originType: string | null;
@@ -196,6 +202,7 @@ export type CollabDomain = CollabTransport &
   TurnReversalAccess &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
+  TurnLiveLineageAccess &
   ThreadWriteModeResolver &
   ResponseWriteFinalizer &
   DocumentCheckpoints &

@@ -14,10 +14,11 @@ import {
 } from "../../../../../domains/collab/domain/turn-reversal.js";
 import type { AppServices } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { readThreadContextDocument } from "../../../../../lib/thread-context-route.js";
 import {
-  readThreadContextDocument,
-  resolveThreadContextPort,
-} from "../../../../../lib/thread-context-route.js";
+  handleTurnLiveLineageRequest,
+  selectTurnLiveLineageRouteServices,
+} from "../../../../../lib/turn-live-lineage-route.js";
 
 type ReverseBody = {
   uri?: unknown;
@@ -50,12 +51,20 @@ export default defineEventHandler(async (event) => {
   const input = parseReverseBody(body);
 
   if (!input.uri) {
-    await resolveThreadContextPort(services, threadId, user.userId);
+    const liveLineage = await handleTurnLiveLineageRequest(
+      selectTurnLiveLineageRouteServices(app),
+      {
+        threadId,
+        turnId: input.turnId,
+        userId: user.userId,
+      },
+    );
     const outcome = await services.documentSync.reverseTurn({
       threadId,
       turnId: input.turnId,
       direction: input.direction,
       actor: { type: "user", userId: user.userId },
+      documentIds: liveLineage.documents.map((document) => document.documentId as DocumentId),
     });
     setResponseStatus(event, 200);
     return outcome;

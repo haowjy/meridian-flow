@@ -38,10 +38,11 @@ the live document).
   `document-loader.ts` (journal → Yjs state), and `in-memory/agent-edit.ts`
   (test/app fakes).
 - **Server-side helpers** — `domain/document-activity.ts` holds DB helpers for the
-  post-write activity/projection hook; `domain/turn-reversal.ts` orchestrates
-  reversal across every document a turn touched and feeds the `reverseTurn` facade.
-  These are server read-model side effects and turn-level orchestration,
-  not agent-edit package concerns.
+  post-write activity/projection hook; `domain/turn-live-lineage.ts` exposes the
+  server-owned read-model for live documents keyed by `(threadId, turnId)`;
+  `domain/turn-reversal.ts` orchestrates reversal across every document a turn
+  touched and feeds the `reverseTurn` facade. These are server read-model side
+  effects and turn-level orchestration, not agent-edit package concerns.
 
 ## Rules
 

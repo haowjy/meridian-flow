@@ -1,6 +1,6 @@
 /**
  * thread-query-keys — the canonical React Query key factory for thread-scoped
- * data (snapshot, uploads rail, recent-documents rail, draft review).
+ * data (snapshot, uploads rail, recent-documents rail, live lineage, draft review).
  * Single source of key shapes for thread reads/invalidations.
  *
  * All thread-scoped keys share a `["threads", threadId, ...]` prefix derived
@@ -15,6 +15,9 @@ export const threadQueryKeys = {
   uploads: (threadId: string) => ["threads", threadId, "uploads"] as const,
   recentDocuments: (threadId: string, limit?: number) =>
     ["threads", threadId, "recent-documents", limit ?? null] as const,
+  liveLineageRoot: (threadId: string) => ["threads", threadId, "live-lineage"] as const,
+  liveLineage: (threadId: string, turnId: string) =>
+    ["threads", threadId, "live-lineage", turnId] as const,
   drafts: (threadId: string) => ["threads", threadId, "drafts"] as const,
   draftPreview: (threadId: string, documentId: string) =>
     ["threads", threadId, "documents", documentId, "draft"] as const,

@@ -43,6 +43,7 @@ import {
 } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
+import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -62,6 +63,10 @@ import {
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
+import {
+  createTurnLiveLineageReadModel,
+  type TurnLiveLineageReadModel,
+} from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import type {
@@ -122,6 +127,7 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   syncStateStore?: SyncStateStore;
+  liveLineage?: TurnLiveLineageReadModel;
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
@@ -167,6 +173,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const syncStateStore = createDrizzleSyncStateStore(deps.db);
   const draftStore = createDrizzleDraftStore(deps.db);
+  const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -188,6 +195,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink,
     syncStateStore,
     documentUriResolver,
+    liveLineage: createTurnLiveLineageReadModel({
+      store: liveLineageStore,
+      resolveDocumentUri: documentUriResolver,
+    }),
     undoNotificationPort: deps.pendingUndoNotifications
       ? createUndoNotificationPort({
           repository: deps.pendingUndoNotifications,
@@ -764,6 +775,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
+  const liveLineage =
+    deps.liveLineage ??
+    createTurnLiveLineageReadModel({
+      store: {
+        listLiveDocumentIdsForTurn: (threadId, turnId) =>
+          deps.journal.documentsForTurn(threadId, turnId),
+      },
+      resolveDocumentUri: async (documentId) => documentId,
+    });
+
   const checkpoints = createCheckpointService({
     coordinator: deps.coordinator,
     store: deps.store,
@@ -796,6 +817,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     refreshDocumentProjection(input) {
       return refreshDocumentProjection(input.documentId, input.threadId);
+    },
+
+    listLiveDocumentsForTurn(threadId, turnId) {
+      return liveLineage.listLiveDocumentsForTurn(threadId, turnId);
     },
 
     resolveThreadWriteMode(threadId) {
