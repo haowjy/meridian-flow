@@ -108,13 +108,11 @@ function RouteComponent() {
   }
 
   function handleSelectScreen(next: ScreenKey) {
-    const reset: Partial<ProjectSearch> = { screen: next, results: undefined };
-    if (next !== "context") {
-      reset.scheme = undefined;
-      reset.folder = undefined;
-      reset.path = undefined;
-    }
-    patchSearch(reset);
+    // Active document (scheme/folder/path) is intentionally NOT cleared on
+    // screen switch — same primitive as `thread`. The rail viewer and the
+    // center context viewer read the same URL state so switching screens
+    // changes layout, not what's open.
+    patchSearch({ screen: next, results: undefined });
   }
 
   function handleSelectThread(threadId: string) {
@@ -169,6 +167,18 @@ function RouteComponent() {
     patchSearch(patch, options);
   }
 
+  // Sets the active document in the URL WITHOUT switching screens. The rail
+  // viewer reads scheme/path off the URL; the context screen reads the same.
+  // Distinct from handleSelectContextPath, which is "navigate to context".
+  function handleSetActiveDocument(nextPath: string, nextScheme: ProjectContextTreeScheme) {
+    patchSearch({
+      scheme: nextScheme,
+      path: nextPath || undefined,
+      folder: nextPath ? dirname(nextPath) : undefined,
+      results: undefined,
+    });
+  }
+
   return (
     <ProjectView
       projectId={projectId}
@@ -185,6 +195,7 @@ function RouteComponent() {
       onExitContextScheme={handleExitContextScheme}
       onSelectContextFolder={handleSelectContextFolder}
       onSelectContextPath={handleSelectContextPath}
+      onSetActiveDocument={handleSetActiveDocument}
       onOpenResults={() => patchSearch({ results: "" })}
       onCloseResults={() => patchSearch({ results: undefined })}
     />

@@ -69,6 +69,13 @@ export type ProjectViewProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
+  /**
+   * Sets the active document (scheme + path) in the URL WITHOUT switching
+   * screens. The rail viewer reads scheme/path off the URL — same state the
+   * center context viewer sees. Distinct from `onSelectContextPath`, which
+   * navigates to the context screen.
+   */
+  onSetActiveDocument: (path: string, scheme: ProjectContextTreeScheme) => void;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };

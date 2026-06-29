@@ -66,7 +66,12 @@ export function ContextViewerSurfaceController({
       ? lastActiveTabIdRef.current
       : null);
 
-  const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
+  // Gate route-tab auto-open on `active`: scheme/path now persist across all
+  // screens (the rail viewer reads them too), so without this guard the
+  // offscreen center viewer would open background tabs while the writer is
+  // on Chat.
+  const needsRouteTab =
+    active && activeContextScheme !== null && activeContextPath !== null && !activeTab;
   const { tree: routeTree } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: needsRouteTab,
     activeThreadId,
