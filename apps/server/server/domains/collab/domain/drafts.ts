@@ -1,6 +1,14 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
 import { createHash, randomBytes } from "node:crypto";
-import type { DocumentCoordinator } from "@meridian/agent-edit";
+import {
+  type AgentEditCodec,
+  type AgentEditModel,
+  type DocumentCoordinator,
+  type JournalSnapshot,
+  toDocHandle,
+  touchedBlockHashesBetween,
+  type UpdateJournal,
+} from "@meridian/agent-edit";
 import type {
   DocumentId,
   ThreadId,
@@ -19,6 +27,7 @@ export type Draft = {
   documentId: DocumentId;
   threadId: ThreadId;
   status: DraftStatus;
+  baseLiveUpdateSeq: number;
   lastActorTurnId: TurnId | null;
   appliedAt: Date | null;
   appliedByUserId: UserId | null;
@@ -67,6 +76,7 @@ export type DraftStore = {
     documentId: DocumentId;
     threadId: ThreadId;
     lastActorTurnId?: TurnId;
+    baseLiveUpdateSeq?: number;
   }): Promise<Draft>;
   appendUpdate(input: {
     draftId: string;
@@ -124,6 +134,13 @@ export type DraftAcceptResult =
   | { status: "not_found" }
   | { status: "in_progress"; draftId: string }
   | { status: "discarded"; draftId: string }
+  | {
+      status: "overlap";
+      draftId: string;
+      live: string;
+      preview: string;
+      overlappingBlocks: string[];
+    }
   | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: TurnId };
 
 export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
@@ -139,6 +156,7 @@ export type DraftService = DraftProjectionCoordinator & {
     documentId: DocumentId;
     threadId: ThreadId;
     userId: UserId;
+    confirmOverlap?: boolean;
   }): Promise<DraftAcceptResult>;
   rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
 };
@@ -167,7 +185,10 @@ export function createDraftProjectionCoordinator(deps: {
 export function createDraftService(deps: {
   draftStore: DraftStore;
   liveJournal: DraftAcceptJournal;
+  liveUpdateJournal: Pick<UpdateJournal, "read">;
   liveCoordinator: DocumentCoordinator;
+  model: AgentEditModel;
+  codec: AgentEditCodec;
   invalidateInFlight?: InvalidateInFlightDrafts;
   refreshAcceptedProjection?: RefreshAcceptedDraftProjection;
 }): DraftService {
@@ -189,7 +210,17 @@ export function createDraftService(deps: {
     documentId: DocumentId;
     threadId: ThreadId;
     userId: UserId;
+    confirmOverlap?: boolean;
   }): Promise<DraftAcceptResult> {
+    const activeDraft = await deps.draftStore.getActiveDraft(input);
+    if (activeDraft) {
+      const updates = await deps.draftStore.listUpdates(activeDraft.id);
+      if (!input.confirmOverlap && updates.length > 0) {
+        const overlap = await detectAcceptOverlap(input.documentId, activeDraft);
+        if ("status" in overlap) return overlap;
+      }
+    }
+
     const draft = await deps.draftStore.claimForAccept(input);
     if (!draft) {
       const accepting = await deps.draftStore.getAcceptingDraft(input);
@@ -283,6 +314,89 @@ export function createDraftService(deps: {
       appliedUpdateSeq,
       acceptTurnId: acceptedAppend.acceptTurnId,
     };
+  }
+
+  async function detectAcceptOverlap(
+    documentId: DocumentId,
+    draft: Draft,
+  ): Promise<Extract<DraftAcceptResult, { status: "overlap" }> | { overlappingBlocks: [] }> {
+    // Block overlap is an accept-time UX gate, not the data-integrity boundary:
+    // if this conservative diff ever misses an overlap, Yjs still CRDT-merges
+    // non-destructively and the P5 accept event remains independently undoable.
+    // Compacted history can only make this gate less precise; it must not grow
+    // a second apply path or replace the independent undo safety net.
+    const base = await buildLiveDocThroughSeq(documentId, draft.baseLiveUpdateSeq);
+    const liveNow = await cloneLiveDoc(documentId);
+    const previewDoc = await projection.buildDraftDoc({ documentId, draftId: draft.id });
+    try {
+      const liveTouched = touchedBlockHashesBetween({
+        before: toDocHandle(base),
+        after: toDocHandle(liveNow),
+        model: deps.model,
+        codec: deps.codec,
+      });
+      const draftTouched = touchedBlockHashesBetween({
+        before: toDocHandle(liveNow),
+        after: toDocHandle(previewDoc),
+        model: deps.model,
+        codec: deps.codec,
+      });
+      const overlappingBlocks = [...draftTouched].filter((hash) => liveTouched.has(hash)).sort();
+
+      if (overlappingBlocks.length === 0) return { overlappingBlocks: [] };
+
+      return {
+        status: "overlap",
+        draftId: draft.id,
+        live: serializeDoc(liveNow),
+        preview: serializeDoc(previewDoc),
+        overlappingBlocks,
+      };
+    } finally {
+      base.destroy();
+      liveNow.destroy();
+      previewDoc.destroy();
+    }
+  }
+
+  async function buildLiveDocThroughSeq(documentId: DocumentId, seq: number): Promise<Y.Doc> {
+    const snapshot = await readLiveSnapshotThroughSeq(documentId, seq);
+    const doc = createCollabYDoc({ gc: false });
+    applySnapshot(doc, snapshot);
+    return doc;
+  }
+
+  async function readLiveSnapshotThroughSeq(
+    documentId: DocumentId,
+    seq: number,
+  ): Promise<JournalSnapshot> {
+    return (
+      deps.liveUpdateJournal.read as (
+        docId: string,
+        opts: { until: number; fromCheckpoint?: boolean },
+      ) => Promise<JournalSnapshot>
+    )(documentId, { until: seq, fromCheckpoint: false });
+  }
+
+  async function cloneLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
+    const doc = createCollabYDoc({ gc: false });
+    await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+    });
+    return doc;
+  }
+
+  function applySnapshot(doc: Y.Doc, snapshot: JournalSnapshot): void {
+    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
+    for (const update of snapshot.updates) {
+      Y.applyUpdate(doc, update.update, { type: "system" });
+    }
+  }
+
+  function serializeDoc(doc: Y.Doc): string {
+    const handle = toDocHandle(doc);
+    if (deps.model.getBlocks(handle).length === 0) return "";
+    return deps.codec.serialize(deps.model.projectBlocks(handle));
   }
 
   async function acceptTurnIdForAppliedDraft(

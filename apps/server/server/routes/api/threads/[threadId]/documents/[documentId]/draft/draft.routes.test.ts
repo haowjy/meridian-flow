@@ -13,11 +13,12 @@ vi.mock("nitro/h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   getRouterParam: (event: { params?: Record<string, string> }, name: string) =>
     event.params?.[name],
+  readBody: (event: { body?: unknown }) => event.body ?? {},
   createError: (input: { statusCode: number; message: string }) =>
     Object.assign(new Error(input.message), input),
 }));
 
-type TestEvent = { params?: Record<string, string> };
+type TestEvent = { params?: Record<string, string>; body?: unknown };
 
 const threadId = "thread-1";
 const documentId = "doc-1";
@@ -145,6 +146,31 @@ describe("thread document draft routes", () => {
       threadId,
       documentId,
       userId,
+      confirmOverlap: false,
+    });
+  });
+
+  it("passes overlap confirmation through to accept", async () => {
+    const app = makeApp({
+      acceptResult: {
+        status: "applied",
+        draftId: "draft-1",
+        appliedUpdateSeq: 42,
+        acceptTurnId: "turn-accept",
+      },
+    });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./accept/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await route({ params: { threadId, documentId }, body: { confirmOverlap: true } });
+
+    expect(app.documentSync.drafts.acceptDraft).toHaveBeenCalledWith({
+      threadId,
+      documentId,
+      userId,
+      confirmOverlap: true,
     });
   });
 

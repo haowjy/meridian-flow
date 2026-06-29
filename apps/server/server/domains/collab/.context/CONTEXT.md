@@ -219,30 +219,37 @@ so adapters compose the partition without code duplication.
 
 ### Draft persistence tables
 
-- **`document_yjs_drafts`** — one row per draft; `UNIQUE(documentId, threadId)`
-  partial index on `status IN ('active', 'accepting')` enforces one open draft
-  per (document, thread). `accepting` is the fenced accept-in-progress state:
-  it is not listed as an active review draft, but it blocks new draft creation
-  and marks the live accept as already underway. An expired `accepting` claim can
-  be reclaimed by accept retry; fresh concurrent accepts report in-progress.
+- **`document_yjs_drafts`** — one row per draft, including
+  `base_live_update_seq` (the live Yjs update sequence the draft branched from).
+  `UNIQUE(documentId, threadId)` partial index on `status IN ('active',
+  'accepting')` enforces one open draft per (document, thread). `accepting` is
+  the fenced accept-in-progress state: it is not listed as an active review
+  draft, but it blocks new draft creation and marks the live accept as already
+  underway. An expired `accepting` claim can be reclaimed by accept retry; fresh
+  concurrent accepts report in-progress.
 - **`document_yjs_draft_updates`** — append-only agent deltas per draft
   (no seed, no live updates in the log).
 
 ### Accept lifecycle (journal-first, idempotent)
 
-1. **Accept claim closes the draft in DB** — `claimForAccept` atomically moves the
+1. **Read-only overlap preflight** — unless the caller confirms an overlap,
+   accept rebuilds the draft base from `base_live_update_seq`, diffs stable
+   top-level block hashes for base→current-live and base→draft, and returns
+   `status: "overlap"` without mutating when the sets intersect. Disjoint edits
+   continue silently.
+2. **Accept claim closes the draft in DB** — `claimForAccept` atomically moves the
    draft from `active` to `accepting` with `claimedAt` + `claimToken`. Reject
    atomically moves `active` to `discarded`. This DB state is the fence; the
    in-memory response invalidation is advisory.
-2. **Invalidate** in-flight responses for this `(documentId, threadId)`.
-3. **Merge** all draft deltas via `Y.mergeUpdates`.
-4. **Journal-first** persistence: create the user accept turn and append the
+3. **Invalidate** in-flight responses for this `(documentId, threadId)`.
+4. **Merge** all draft deltas via `Y.mergeUpdates`.
+5. **Journal-first** persistence: create the user accept turn and append the
    live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
    unique constraint prevents double-apply on retry. The mutation metadata keeps
    `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
-5. **Durable status**: `markApplied` is claim-token fenced and only succeeds from
+6. **Durable status**: `markApplied` is claim-token fenced and only succeeds from
    `accepting`.
-6. **Side effects** (recoverable): apply/recover the live coordinator projection,
+7. **Side effects** (recoverable): apply/recover the live coordinator projection,
    refresh read models, delete draft-scoped agent-edit state.
 
 Draft response sessions capture the active draft id they read from. Draft-scoped

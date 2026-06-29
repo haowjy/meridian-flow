@@ -12,11 +12,12 @@ import {
   documentYjsDrafts,
   documentYjsDraftUpdates,
   documentYjsReversals,
+  documentYjsUpdates,
   threads,
   turnBlocks,
   turns,
 } from "@meridian/database";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
@@ -34,7 +35,10 @@ const ACTIVE_DRAFT_UNIQUE_CONSTRAINT = "document_yjs_drafts_active_document_thre
 // Drizzle's transaction subtype is structurally compatible with the table methods we use.
 type DraftDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
-export function createDrizzleDraftStore(db: DraftDb): DraftStore {
+export function createDrizzleDraftStore(
+  db: DraftDb,
+  options: { latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number> } = {},
+): DraftStore {
   return {
     async getDraft(draftId) {
       const [row] = await db
@@ -93,6 +97,9 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
 
     async createActiveDraft(input) {
       try {
+        const baseLiveUpdateSeq =
+          input.baseLiveUpdateSeq ??
+          (await latestLiveUpdateSeq(db, options.latestLiveUpdateSeq, input.documentId));
         const [row] = await db
           .insert(documentYjsDrafts)
           .values({
@@ -100,6 +107,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
             documentId: input.documentId,
             threadId: input.threadId,
             status: "active",
+            baseLiveUpdateSeq,
             lastActorTurnId: input.lastActorTurnId ?? null,
           })
           .returning();
@@ -394,6 +402,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     documentId: row.documentId as DocumentId,
     threadId: row.threadId as ThreadId,
     status: row.status,
+    baseLiveUpdateSeq: Number(row.baseLiveUpdateSeq),
     lastActorTurnId: (row.lastActorTurnId as TurnId | null) ?? null,
     appliedAt: row.appliedAt,
     appliedByUserId: (row.appliedByUserId as UserId | null) ?? null,
@@ -404,6 +413,19 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+async function latestLiveUpdateSeq(
+  db: DraftDb,
+  override: ((documentId: DocumentId) => Promise<number>) | undefined,
+  documentId: DocumentId,
+): Promise<number> {
+  if (override) return override(documentId);
+  const [row] = await db
+    .select({ latestSeq: max(documentYjsUpdates.id) })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, documentId));
+  return row?.latestSeq === null || row?.latestSeq === undefined ? 0 : Number(row.latestSeq);
 }
 
 function mapActiveDraft(

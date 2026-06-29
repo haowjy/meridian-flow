@@ -301,6 +301,7 @@ export function createDrizzleDraftSessionCore(deps: {
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
   draftStore: DraftStore;
+  latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
   eventSink?: EventSink;
 }): AgentEditCore {
   const draftFence = createDraftSessionFence();
@@ -309,6 +310,7 @@ export function createDrizzleDraftSessionCore(deps: {
     journal: createDrizzleDraftAgentEditJournal(deps.db, {
       threadId: deps.threadId,
       draftFence,
+      latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
     }),
     liveCoordinator: deps.liveCoordinator,
     draftStore: deps.draftStore,
@@ -607,7 +609,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const draftLifecycle = createDraftService({
     draftStore: deps.draftStore,
     liveJournal: deps.draftAcceptJournal,
+    liveUpdateJournal: deps.journal,
     liveCoordinator: deps.coordinator,
+    model,
+    codec,
     invalidateInFlight: responseRegistry.invalidateDraft,
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),

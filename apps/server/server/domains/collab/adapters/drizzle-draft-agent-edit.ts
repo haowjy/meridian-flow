@@ -25,9 +25,10 @@ import {
   agentEditWidCounters,
   documentYjsDrafts,
   documentYjsDraftUpdates,
+  documentYjsUpdates,
 } from "@meridian/database";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { ActiveDraftConflictError, createDraftId, type DraftStore } from "../domain/drafts.js";
@@ -90,9 +91,16 @@ function toBuffer(bytes: Uint8Array): Buffer {
 
 export function createDrizzleDraftAgentEditJournal(
   db: DraftAgentEditDb,
-  options: { threadId?: string; draftFence?: DraftSessionFence } = {},
+  options: {
+    threadId?: string;
+    draftFence?: DraftSessionFence;
+    latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+  } = {},
 ): UpdateJournal & ReversalStore {
-  const resolver = createDrizzleDraftResolver(db, options.draftFence);
+  const resolver = createDrizzleDraftResolver(db, {
+    draftFence: options.draftFence,
+    latestLiveUpdateSeq: options.latestLiveUpdateSeq,
+  });
 
   async function mutationsForWrites(
     documentId: string,
@@ -154,6 +162,7 @@ export function createDrizzleDraftAgentEditJournal(
             documentId: entry.docId,
             threadId: entry.mutation.threadId,
             actorTurnId: entry.mutation.turnId,
+            latestLiveUpdateSeq: options.latestLiveUpdateSeq,
             expectedDraftId: options.draftFence?.expectedDraftId({
               documentId: entry.docId,
               threadId: entry.mutation.threadId,
@@ -433,7 +442,10 @@ export function createNoopDraftDocumentLifecycle(): Pick<DocumentLifecycle, "ens
 
 function createDrizzleDraftResolver(
   db: DraftAgentEditDb,
-  draftFence?: DraftSessionFence,
+  options: {
+    draftFence?: DraftSessionFence;
+    latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+  } = {},
 ): DraftResolver {
   return {
     async activeDraftId(documentId, threadId) {
@@ -449,7 +461,7 @@ function createDrizzleDraftResolver(
           ),
         )
         .limit(1);
-      if (row?.id) draftFence?.capture({ documentId, threadId, draftId: row.id });
+      if (row?.id) options.draftFence?.capture({ documentId, threadId, draftId: row.id });
       return row?.id ?? null;
     },
 
@@ -458,8 +470,9 @@ function createDrizzleDraftResolver(
         documentId,
         threadId,
         actorTurnId,
-        expectedDraftId: draftFence?.expectedDraftId({ documentId, threadId }),
-        draftFence,
+        latestLiveUpdateSeq: options.latestLiveUpdateSeq,
+        expectedDraftId: options.draftFence?.expectedDraftId({ documentId, threadId }),
+        draftFence: options.draftFence,
       });
     },
   };
@@ -471,6 +484,7 @@ async function ensureDraftIdInDb(
     documentId: string;
     threadId: string;
     actorTurnId?: string;
+    latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
     expectedDraftId?: string;
     draftFence?: DraftSessionFence;
   },
@@ -492,6 +506,11 @@ async function ensureDraftIdInDb(
   }
 
   try {
+    const baseLiveUpdateSeq = await latestLiveUpdateSeqInDb(
+      db,
+      input.latestLiveUpdateSeq,
+      asDocumentId(input.documentId),
+    );
     const [row] = await db
       .insert(documentYjsDrafts)
       .values({
@@ -499,6 +518,7 @@ async function ensureDraftIdInDb(
         documentId: asDocumentId(input.documentId),
         threadId: asThreadId(input.threadId),
         status: "active",
+        baseLiveUpdateSeq,
         lastActorTurnId: input.actorTurnId ? asTurnId(input.actorTurnId) : null,
       })
       .returning({ id: documentYjsDrafts.id });
@@ -556,6 +576,19 @@ async function activeDraftIdInDb(
     )
     .limit(1);
   return row?.id ?? null;
+}
+
+async function latestLiveUpdateSeqInDb(
+  db: DraftAgentEditDb,
+  override: ((documentId: DocumentId) => Promise<number>) | undefined,
+  documentId: DocumentId,
+): Promise<number> {
+  if (override) return override(documentId);
+  const [row] = await db
+    .select({ latestSeq: max(documentYjsUpdates.id) })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, documentId));
+  return row?.latestSeq === null || row?.latestSeq === undefined ? 0 : Number(row.latestSeq);
 }
 
 async function reserveDraftWriteOrdinal(

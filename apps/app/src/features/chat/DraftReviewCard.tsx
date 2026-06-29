@@ -33,7 +33,7 @@ export type DraftReviewCardProps = {
   threadId: string;
   group: ThreadDraftGroup;
   /** Open the (ChatView-owned) preview overlay for this group's document. */
-  onReview: (documentId: string) => void;
+  onReview: (documentId: string, options?: { requireOverlapConfirm?: boolean }) => void;
   /** Visual variant: anchored under an assistant turn, or stacked in the unanchored fallback strip. */
   variant?: "inline" | "compact";
 };
@@ -59,7 +59,16 @@ export function DraftReviewCard({
 
   function handleAccept() {
     if (isPending) return;
-    accept.mutate({ threadId, documentId: group.documentId });
+    accept.mutate(
+      { threadId, documentId: group.documentId },
+      {
+        onSuccess(response) {
+          if (response.status === "overlap") {
+            onReview(group.documentId, { requireOverlapConfirm: true });
+          }
+        },
+      },
+    );
   }
 
   function handleDiscard() {
@@ -120,7 +129,7 @@ export function DraftReviewCard({
           disabled={isPending}
         >
           {accept.isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-          <Trans>Accept changes</Trans>
+          <Trans>Apply draft</Trans>
         </Button>
         <Button
           type="button"

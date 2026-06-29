@@ -1,4 +1,8 @@
 /** Unit coverage for collab draft persistence, projection, and lifecycle. */
+
+import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
@@ -213,7 +217,10 @@ async function createScenario() {
   const service = createDraftService({
     draftStore: store,
     liveJournal: createInMemoryDraftAcceptJournal(journal),
+    liveUpdateJournal: journal,
     liveCoordinator: coordinator,
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
   });
   return { journal, coordinator, store: store as DraftStore, service, deleteScopedState };
 }

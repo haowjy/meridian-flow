@@ -22,7 +22,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
@@ -36,6 +36,8 @@ export type DraftPreviewOverlayProps = {
   threadId: string;
   documentId: string;
   documentName: string | null;
+  requireOverlapConfirm?: boolean;
+  onOverlapConfirmResolved?: () => void;
   onClose: () => void;
 };
 
@@ -45,6 +47,8 @@ export function DraftPreviewOverlay({
   threadId,
   documentId,
   documentName,
+  requireOverlapConfirm = false,
+  onOverlapConfirmResolved,
   onClose,
 }: DraftPreviewOverlayProps) {
   useEscapeToClose(onClose);
@@ -52,13 +56,32 @@ export function DraftPreviewOverlay({
   const reject = useRejectDraft();
   const { live, previewMarkdown, isFetching, isError } = useDraftPreview(threadId, documentId);
   const [view, setView] = useState<ViewMode>("changes");
+  const [needsOverlapConfirm, setNeedsOverlapConfirm] = useState(requireOverlapConfirm);
+
+  useEffect(() => {
+    setNeedsOverlapConfirm(requireOverlapConfirm);
+    if (requireOverlapConfirm) setView("preview");
+  }, [requireOverlapConfirm]);
 
   const isPending = accept.isPending || reject.isPending;
   const heading = documentName ?? t`Document draft`;
 
   function handleAccept() {
     if (isPending) return;
-    accept.mutate({ threadId, documentId }, { onSuccess: onClose });
+    accept.mutate(
+      { threadId, documentId, confirmOverlap: needsOverlapConfirm },
+      {
+        onSuccess(response) {
+          if (response.status === "overlap") {
+            setNeedsOverlapConfirm(true);
+            setView("preview");
+            return;
+          }
+          onOverlapConfirmResolved?.();
+          onClose();
+        },
+      },
+    );
   }
 
   function handleDiscard() {
@@ -87,7 +110,13 @@ export function DraftPreviewOverlay({
             </p>
             <h2 className="mt-0.5 truncate text-foreground text-base font-medium">{heading}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              <Trans>Your live document is untouched until you accept.</Trans>
+              {needsOverlapConfirm ? (
+                <Trans>
+                  You and the AI both edited this passage. Review the merged result first.
+                </Trans>
+              ) : (
+                <Trans>Your live document is untouched until you accept.</Trans>
+              )}
             </p>
           </div>
           <button
@@ -103,6 +132,17 @@ export function DraftPreviewOverlay({
         <div className="flex items-center gap-1 border-border-subtle border-b px-5 py-2">
           <ViewToggle view={view} onChange={setView} />
         </div>
+
+        {needsOverlapConfirm ? (
+          <div className="border-border-subtle border-b bg-surface-subtle px-5 py-3 text-sm text-foreground">
+            <p className="font-medium">
+              <Trans>Review the merged passage before applying.</Trans>
+            </p>
+            <p className="mt-1 text-muted-foreground text-xs">
+              <Trans>The preview below includes your latest edits and the AI draft together.</Trans>
+            </p>
+          </div>
+        ) : null}
 
         <main className="prose-tokens min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <PreviewBody
@@ -130,7 +170,7 @@ export function DraftPreviewOverlay({
           </Button>
           <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
             {accept.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-            <Trans>Accept changes</Trans>
+            {needsOverlapConfirm ? <Trans>Apply merged draft</Trans> : <Trans>Apply draft</Trans>}
           </Button>
         </footer>
       </div>

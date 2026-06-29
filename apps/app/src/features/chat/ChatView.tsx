@@ -121,10 +121,21 @@ export function ChatView({
   // recycling. Cards call `handleReview`; the overlay reads the document
   // name from the currently-active drafts list.
   const [previewingDocId, setPreviewingDocId] = useState<string | null>(null);
-  const handleReview = useCallback((documentId: string) => {
-    setPreviewingDocId(documentId);
+  const [overlapConfirmDocId, setOverlapConfirmDocId] = useState<string | null>(null);
+  const handleReview = useCallback(
+    (documentId: string, options?: { requireOverlapConfirm?: boolean }) => {
+      setOverlapConfirmDocId(options?.requireOverlapConfirm ? documentId : null);
+      setPreviewingDocId(documentId);
+    },
+    [],
+  );
+  const handleClosePreview = useCallback(() => {
+    setPreviewingDocId(null);
+    setOverlapConfirmDocId(null);
   }, []);
-  const handleClosePreview = useCallback(() => setPreviewingDocId(null), []);
+  const clearOverlapConfirm = useCallback(() => {
+    setOverlapConfirmDocId(null);
+  }, []);
   const previewingDocumentName = useMemo(() => {
     if (previewingDocId == null) return null;
     return (
@@ -139,8 +150,8 @@ export function ChatView({
     if (previewingDocId == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillActive = drafts.groups?.some((group) => group.documentId === previewingDocId);
-    if (!stillActive) setPreviewingDocId(null);
-  }, [previewingDocId, drafts.status, drafts.groups]);
+    if (!stillActive) handleClosePreview();
+  }, [previewingDocId, drafts.status, drafts.groups, handleClosePreview]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -228,6 +239,8 @@ export function ChatView({
           threadId={threadId}
           documentId={previewingDocId}
           documentName={previewingDocumentName}
+          requireOverlapConfirm={overlapConfirmDocId === previewingDocId}
+          onOverlapConfirmResolved={clearOverlapConfirm}
           onClose={handleClosePreview}
         />
       ) : null}
