@@ -1,7 +1,7 @@
 # domains/preferences — project preferences
 
 Manages per-project user preferences (thread grouping, pinned threads, default
-agent, auto-resume settings). Copy-on-write merge semantics keep in-memory and
+agent, auto-resume settings, AI write mode). Copy-on-write merge semantics keep in-memory and
 Drizzle adapters behaviorally identical.
 
 ## What it owns

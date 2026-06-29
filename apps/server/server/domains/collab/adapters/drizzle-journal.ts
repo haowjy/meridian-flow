@@ -30,6 +30,12 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
+import {
+  LIVE_SCOPE,
+  scopedConflictTarget,
+  scopedValues,
+  scopedWhere,
+} from "./drizzle-agent-edit-scope";
 
 type JournalDb = Pick<
   Database,
@@ -314,17 +320,16 @@ async function appendUpdate(
 
 async function reserveWriteOrdinal(
   db: JournalDb,
-  input: { documentId: string; threadId: string },
+  input: { documentId: string; threadId: string; scopeId: string },
 ): Promise<number> {
   const [counter] = await db
     .insert(agentEditWidCounters)
     .values({
-      documentId: asDocumentId(input.documentId),
-      threadId: asThreadId(input.threadId),
+      ...scopedValues(input),
       nextWid: 1,
     })
     .onConflictDoUpdate({
-      target: [agentEditWidCounters.documentId, agentEditWidCounters.threadId],
+      target: scopedConflictTarget(agentEditWidCounters),
       set: { nextWid: sql`${agentEditWidCounters.nextWid} + 1` },
     })
     .returning({ wId: agentEditWidCounters.nextWid });
@@ -337,6 +342,7 @@ async function reverseMutationsForWrite(
   input: {
     documentId: string;
     threadId: string;
+    scopeId: string;
     writeId: string;
     undoUpdateSeq: number;
     at: Date;
@@ -357,9 +363,9 @@ async function reverseMutationsForWrite(
       reversedBy: input.actor.type,
     })
     .where(
-      and(
-        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
-        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
+      scopedWhere(
+        agentEditMutations,
+        input,
         eq(agentEditMutations.wId, ordinal),
         eq(agentEditMutations.status, "active"),
       ),
@@ -368,7 +374,13 @@ async function reverseMutationsForWrite(
 
 async function reactivateMutationsForWrite(
   db: JournalDb,
-  input: { documentId: string; threadId: string; writeId: string; undoUpdateSeq: number },
+  input: {
+    documentId: string;
+    threadId: string;
+    scopeId: string;
+    writeId: string;
+    undoUpdateSeq: number;
+  },
 ): Promise<void> {
   // writeId here is a handle ("w3"); match on the wId ordinal (see reverseMutationsForWrite).
   const ordinal = parseWriteHandle(input.writeId);
@@ -382,9 +394,9 @@ async function reactivateMutationsForWrite(
       reversedBy: null,
     })
     .where(
-      and(
-        eq(agentEditMutations.documentId, asDocumentId(input.documentId)),
-        eq(agentEditMutations.threadId, asThreadId(input.threadId)),
+      scopedWhere(
+        agentEditMutations,
+        input,
         eq(agentEditMutations.wId, ordinal),
         eq(agentEditMutations.status, "reversed"),
         eq(agentEditMutations.undoUpdateSeq, input.undoUpdateSeq),
@@ -487,6 +499,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             (await reserveWriteOrdinal(txDb, {
               documentId: entry.docId,
               threadId: entry.mutation.threadId,
+              scopeId: LIVE_SCOPE,
             }));
           mutationValues.push({
             index: i,
@@ -506,8 +519,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           await txDb.insert(agentEditMutations).values(
             mutationValues.map((mv) => ({
               wId: mv.wId,
-              documentId: asDocumentId(mv.docId),
-              threadId: asThreadId(mv.threadId),
+              ...scopedValues({ documentId: mv.docId, threadId: mv.threadId, scopeId: LIVE_SCOPE }),
               turnId: asTurnId(mv.turnId),
               writeId: mv.writeId,
               status: "active" as const,
@@ -534,7 +546,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async reserveWriteOrdinal(documentId, threadId) {
-      return reserveWriteOrdinal(db, { documentId, threadId });
+      return reserveWriteOrdinal(db, { documentId, threadId, scopeId: LIVE_SCOPE });
     },
 
     async documentsForTurn(threadId, turnId) {
@@ -561,9 +573,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         })
         .from(agentEditMutations)
         .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
+          scopedWhere(
+            agentEditMutations,
+            { documentId, threadId, scopeId: LIVE_SCOPE },
             eq(agentEditMutations.status, "active"),
           ),
         )
@@ -582,9 +594,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         })
         .from(agentEditMutations)
         .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
+          scopedWhere(
+            agentEditMutations,
+            { documentId, threadId, scopeId: LIVE_SCOPE },
             eq(agentEditMutations.status, "active"),
           ),
         )
@@ -599,9 +611,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .select({ minSeq: sql<number>`min(${agentEditMutations.createdSeq})` })
         .from(agentEditMutations)
         .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
+          scopedWhere(
+            agentEditMutations,
+            { documentId, threadId, scopeId: LIVE_SCOPE },
             eq(agentEditMutations.wId, ordinal),
           ),
         );
@@ -622,9 +634,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         })
         .from(agentEditMutations)
         .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
+          scopedWhere(
+            agentEditMutations,
+            { documentId, threadId, scopeId: LIVE_SCOPE },
             eq(agentEditMutations.wId, ordinal),
           ),
         )
@@ -654,9 +666,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         })
         .from(agentEditMutations)
         .where(
-          and(
-            eq(agentEditMutations.documentId, asDocumentId(documentId)),
-            eq(agentEditMutations.threadId, asThreadId(threadId)),
+          scopedWhere(
+            agentEditMutations,
+            { documentId, threadId, scopeId: LIVE_SCOPE },
             inArray(agentEditMutations.wId, ordinals),
           ),
         )
@@ -780,6 +792,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .where(
             and(
               eq(documentYjsReversals.documentId, asDocumentId(docId)),
+              eq(documentYjsReversals.scopeId, LIVE_SCOPE),
               ne(documentYjsReversals.status, "expired"),
               or(
                 lt(documentYjsReversals.createdAt, before),
@@ -803,8 +816,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             await txDb
               .insert(documentYjsReversals)
               .values({
-                documentId: asDocumentId(docId),
-                threadId: asThreadId(record.threadId),
+                ...scopedValues({
+                  documentId: docId,
+                  threadId: record.threadId,
+                  scopeId: LIVE_SCOPE,
+                }),
                 turnId: asTurnId(record.turnId),
                 writeId,
                 status: record.status,
@@ -815,11 +831,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 reversedByUserId: asUserId(record.reversedByUserId) ?? null,
               })
               .onConflictDoUpdate({
-                target: [
-                  documentYjsReversals.documentId,
-                  documentYjsReversals.threadId,
-                  documentYjsReversals.writeId,
-                ],
+                target: scopedConflictTarget(documentYjsReversals, documentYjsReversals.writeId),
                 set: {
                   status: record.status,
                   undoUpdateSeq,
@@ -841,6 +853,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             await reverseMutationsForWrite(txDb, {
               documentId: docId,
               threadId: record.threadId,
+              scopeId: LIVE_SCOPE,
               writeId,
               undoUpdateSeq,
               at: record.reversedAt ?? new Date(),
@@ -860,9 +873,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
           .from(documentYjsReversals)
           .where(
-            and(
-              eq(documentYjsReversals.documentId, asDocumentId(docId)),
-              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
+            scopedWhere(
+              documentYjsReversals,
+              { documentId: docId, threadId: ref.threadId, scopeId: LIVE_SCOPE },
               eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           )
@@ -886,9 +899,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .update(documentYjsReversals)
           .set({ status: "redone", redoUpdateSeq: seq })
           .where(
-            and(
-              eq(documentYjsReversals.documentId, asDocumentId(docId)),
-              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
+            scopedWhere(
+              documentYjsReversals,
+              { documentId: docId, threadId: ref.threadId, scopeId: LIVE_SCOPE },
               eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
             ),
           );
@@ -896,6 +909,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           await reactivateMutationsForWrite(txDb, {
             documentId: docId,
             threadId: ref.threadId,
+            scopeId: LIVE_SCOPE,
             writeId: reversal.writeId,
             undoUpdateSeq: ref.undoUpdateSeq,
           });
@@ -921,7 +935,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async readReversals(docId, opts = {}) {
-      const conditions = [eq(documentYjsReversals.documentId, asDocumentId(docId))];
+      // Intentionally not scopedWhere: callers may read all live reversals for a document.
+      const conditions = [
+        eq(documentYjsReversals.documentId, asDocumentId(docId)),
+        eq(documentYjsReversals.scopeId, LIVE_SCOPE),
+      ];
       if (opts.threadId !== undefined) {
         conditions.push(eq(documentYjsReversals.threadId, asThreadId(opts.threadId)));
       }

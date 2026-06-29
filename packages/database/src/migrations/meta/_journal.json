@@ -71,6 +71,13 @@
       "when": 1782667522416,
       "tag": "0009_bouncy_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782695104007,
+      "tag": "0010_first_ogun",
+      "breakpoints": true
     }
   ]
 }

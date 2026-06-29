@@ -119,6 +119,22 @@ export function apiThreadContextReversePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/context/reverse`;
 }
 
+export function apiThreadDraftsPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/drafts`;
+}
+
+export function apiThreadDocumentDraftPath(threadId: string, documentId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/documents/${documentId}/draft`;
+}
+
+export function apiThreadDocumentDraftAcceptPath(threadId: string, documentId: string): string {
+  return `${apiThreadDocumentDraftPath(threadId, documentId)}/accept`;
+}
+
+export function apiThreadDocumentDraftRejectPath(threadId: string, documentId: string): string {
+  return `${apiThreadDocumentDraftPath(threadId, documentId)}/reject`;
+}
+
 export function apiThreadModelRequestsDebugPath(
   threadId: string,
   opts?: { turnId?: string },

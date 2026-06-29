@@ -240,10 +240,13 @@ export async function createProductionAppPorts(input: {
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
   const undoNotifications = createDrizzlePendingUndoNotificationRepository(db);
+  const preferences = createDrizzleProjectPreferencesRepository({ db });
   const documentSync = createCollabDomain({
     db,
     eventSink,
     pendingUndoNotifications: undoNotifications,
+    threads: threadRepos.threads,
+    projectPreferences: preferences,
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
@@ -277,7 +280,6 @@ export async function createProductionAppPorts(input: {
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
-  const preferences = createDrizzleProjectPreferencesRepository({ db });
   const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository(db);
@@ -344,7 +346,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    eventSink: ports.eventSink,
   });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
@@ -801,6 +802,9 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentAccess: {
       async canAccessDocument() {
+        return true;
+      },
+      async canAccessProjectDocument() {
         return true;
       },
       async requireOwnedDocument() {},

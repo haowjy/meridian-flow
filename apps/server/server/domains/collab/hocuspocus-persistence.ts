@@ -1,0 +1,184 @@
+/** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
+import type { Hocuspocus } from "@hocuspocus/server";
+import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import * as Y from "yjs";
+import { type EventSink, emitEvent } from "../observability/index.js";
+import { loadDocumentState } from "./adapters/document-loader.js";
+import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
+
+type PendingAppend = {
+  documentId: string;
+  startedAt: number;
+  promise: Promise<void>;
+};
+
+type HocuspocusPersistenceDeps = {
+  journal: UpdateJournal;
+  hocuspocus(): Hocuspocus | null;
+  eventSink?: EventSink;
+  metaForOrigin(origin: UpdateOrigin): UpdateMeta;
+  latestUpdateSeq(documentId: string): Promise<number>;
+  emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
+};
+
+export type HocuspocusPersistenceService = Pick<
+  CollabTransport,
+  | "loadHocuspocusDocument"
+  | "persistConnectionUpdate"
+  | "storeHocuspocusDocument"
+  | "drainHocuspocusPersistence"
+  | "getPersistenceQueueMetrics"
+>;
+
+export function createHocuspocusPersistenceService(
+  deps: HocuspocusPersistenceDeps,
+): HocuspocusPersistenceService {
+  const pendingAppends = new Map<number, PendingAppend>();
+  const droppedByDocument = new Map<string, number>();
+  const unsafeCheckpointDocuments = new Map<string, number>();
+  let nextPendingId = 1;
+
+  async function drainPending(documentId?: string): Promise<void> {
+    while (true) {
+      const pending = [...pendingAppends.values()].filter(
+        (entry) => !documentId || entry.documentId === documentId,
+      );
+      if (pending.length === 0) return;
+      await Promise.allSettled(pending.map((entry) => entry.promise));
+    }
+  }
+
+  function trackAppend(documentId: string, promise: Promise<number>): void {
+    const id = nextPendingId++;
+    const tracked = promise
+      .then(() => undefined)
+      .catch((cause) => {
+        recordDroppedConnectionUpdate(documentId);
+        emitPersistenceAppendFailure(documentId, cause);
+      })
+      .finally(() => {
+        pendingAppends.delete(id);
+      });
+    pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
+  }
+
+  function rejectReservedClientIdUpdate(input: {
+    documentId: DocumentId;
+    origin: UpdateOrigin;
+    reservedClientId: number;
+  }): void {
+    unsafeCheckpointDocuments.set(input.documentId, input.reservedClientId);
+    recordDroppedConnectionUpdate(input.documentId);
+    deps.emitAgentEditInvariantViolation({
+      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${input.reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+      documentId: input.documentId,
+      originType: input.origin.type,
+      reservedClientId: input.reservedClientId,
+      reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+    });
+  }
+
+  function recordDroppedConnectionUpdate(documentId: string): void {
+    droppedByDocument.set(documentId, (droppedByDocument.get(documentId) ?? 0) + 1);
+  }
+
+  function emitPersistenceAppendFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "persistence_append.failed",
+      payload: {
+        documentId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
+  function latestMetrics(): CollabPersistenceMetrics {
+    const byDocument = new Map<
+      string,
+      { depth: number; oldestStartedAt: number; dropped: number }
+    >();
+    for (const entry of pendingAppends.values()) {
+      const current = byDocument.get(entry.documentId) ?? {
+        depth: 0,
+        oldestStartedAt: entry.startedAt,
+        dropped: droppedByDocument.get(entry.documentId) ?? 0,
+      };
+      current.depth += 1;
+      current.oldestStartedAt = Math.min(current.oldestStartedAt, entry.startedAt);
+      byDocument.set(entry.documentId, current);
+    }
+    for (const [documentId, dropped] of droppedByDocument) {
+      if (!byDocument.has(documentId) && dropped > 0) {
+        byDocument.set(documentId, { depth: 0, oldestStartedAt: Date.now(), dropped });
+      }
+    }
+    const hocuspocus = deps.hocuspocus();
+    return {
+      queues: [...byDocument.entries()].map(([documentId, queue]) => ({
+        documentId,
+        depth: queue.depth,
+        oldestAgeMs: queue.depth === 0 ? 0 : Date.now() - queue.oldestStartedAt,
+        dropped: queue.dropped,
+      })),
+      liveDocumentCount: hocuspocus?.getDocumentsCount() ?? hocuspocus?.documents.size ?? 0,
+      openConnectionCount: hocuspocus?.getConnectionsCount() ?? 0,
+    };
+  }
+
+  return {
+    async loadHocuspocusDocument(documentId) {
+      unsafeCheckpointDocuments.delete(documentId);
+      return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
+    },
+
+    persistConnectionUpdate(input) {
+      const reservedClientId = reservedClientIdInUpdate(input.update);
+      if (reservedClientId !== null) {
+        rejectReservedClientIdUpdate({ ...input, reservedClientId });
+        return;
+      }
+      trackAppend(
+        input.documentId,
+        deps.journal.append(input.documentId, input.update, deps.metaForOrigin(input.origin)),
+      );
+    },
+
+    async storeHocuspocusDocument(documentId, document) {
+      await drainPending(documentId);
+      const reservedClientId = unsafeCheckpointDocuments.get(documentId);
+      if (reservedClientId !== undefined) {
+        deps.emitAgentEditInvariantViolation({
+          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update with reserved Yjs clientID ${reservedClientId} may still be present in the live Y.Doc. The reserved band is [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          documentId,
+          reservedClientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+        });
+        return;
+      }
+      const upToSeq = await deps.latestUpdateSeq(documentId);
+      // upToSeq must be ≤ the updates reflected in state; appends after this
+      // point are intentionally replayed when the document reloads.
+      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
+    },
+
+    drainHocuspocusPersistence() {
+      return drainPending();
+    },
+
+    getPersistenceQueueMetrics() {
+      return latestMetrics();
+    },
+  };
+}
+
+function reservedClientIdInUpdate(update: Uint8Array): number | null {
+  return (
+    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
+      .client ?? null
+  );
+}

@@ -55,9 +55,35 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
   };
 }
 
+function responseFinalizerWithCommit(commitResult: ResponseCommitResult) {
+  return {
+    finalizeResponseCommit: async () => ({
+      documents: commitResult.documents,
+      stagedCreates: commitResult.stagedCreates,
+    }),
+    finalizeResponseRollback: async () => ({
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+    resolveThreadWriteMode: async () => "direct" as const,
+  };
+}
+
+function noopResponseFinalizer() {
+  return {
+    finalizeResponseCommit: async () => ({
+      documents: [],
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+    finalizeResponseRollback: async () => ({
+      stagedCreates: { committed: [], discarded: [] },
+    }),
+    resolveThreadWriteMode: async () => "direct" as const,
+  };
+}
+
 describe("agent-edit response write lifecycle", () => {
-  it("commits response after refreshing projections", async () => {
-    const refreshed: string[] = [];
+  it("commits response through the collab finalizer and maps concurrent edits", async () => {
+    const finalized: string[] = [];
     const commitResult: ResponseCommitResult = {
       responseId: "response-1",
       documentCount: 1,
@@ -74,18 +100,31 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () => agentEditCoreWithCommit(commitResult),
-        refreshDocumentProjection: async ({ documentId }) => {
-          refreshed.push(documentId);
+        refreshDocumentProjection: async () => {
+          throw new Error("response lifecycle should not refresh projections directly");
         },
+        resolveThreadWriteMode: async () => "direct" as const,
+        finalizeResponseCommit: async (responseId, ctx) => {
+          const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
+          for (const document of result.documents) {
+            finalized.push(`${responseId}:${document.documentId}:${ctx.threadId}:${ctx.turnId}`);
+          }
+          return { documents: result.documents, stagedCreates: result.stagedCreates };
+        },
+        finalizeResponseRollback: async () => ({
+          stagedCreates: { committed: [], discarded: [] },
+        }),
       },
-      eventSink: createInMemoryEventSink(),
     });
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual([{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }]);
+    ).resolves.toEqual({
+      status: "committed",
+      concurrentEdits: [{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }],
+    });
 
-    expect(refreshed).toEqual(["doc-1"]);
+    expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
   });
 
   it("commits response when there are no concurrent edits", async () => {
@@ -100,13 +139,54 @@ describe("agent-edit response write lifecycle", () => {
             stagedCreates: { committed: [], discarded: [] },
           }),
         refreshDocumentProjection: async () => {},
+        ...responseFinalizerWithCommit({
+          responseId: "response-1",
+          documentCount: 1,
+          updateCount: 1,
+          documents: [{ documentId: "doc-1", updateCount: 1 }],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
       },
-      eventSink: createInMemoryEventSink(),
     });
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+  });
+
+  it("surfaces draft_closed as an explicit response commit result", async () => {
+    const lifecycle = createAgentEditResponseWriteLifecycle({
+      documentSync: {
+        agentEdit: () =>
+          agentEditCoreWithCommit({
+            responseId: "response-closed",
+            documentCount: 0,
+            updateCount: 0,
+            documents: [],
+            stagedCreates: { committed: [], discarded: [] },
+          }),
+        refreshDocumentProjection: async () => {},
+        resolveThreadWriteMode: async () => "direct" as const,
+        finalizeResponseCommit: async () => ({
+          status: "draft_closed" as const,
+          responseId: "response-closed",
+          mode: "draft" as const,
+          documents: [],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+        finalizeResponseRollback: async () => ({
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+      },
+    });
+
+    await expect(
+      lifecycle.commitResponse("response-closed", { threadId: "thread-1", turnId: "turn-1" }),
+    ).resolves.toEqual({
+      status: "draft_closed",
+      responseId: "response-closed",
+      mode: "draft",
+    });
   });
 });
 
@@ -187,6 +267,49 @@ describe("wired write tool", () => {
     expect(updatedRead).toContain("Beta");
     expect([initialRead, insert, updatedRead, missing].join("\n")).not.toContain(documentId);
   });
+
+  it("rejects draft-mode create before creating a tracked document", async () => {
+    const documentId = "123e4567-e89b-12d3-a456-426614174999";
+    const filePath = "new-chapter.md";
+    let ensureCalls = 0;
+    const port = {
+      ...contextPortFor(documentId, filePath),
+      ensureTrackedDocument: async () => {
+        ensureCalls += 1;
+        return { ok: true as const, value: { documentId, created: true } };
+      },
+    };
+    const [writeRegistration] = createWiredCoreToolRegistrations({
+      threads: { findById: async () => thread() } as never,
+      threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
+      contextPorts: { forProject: () => port, forWork: () => port },
+      documentSync: {
+        agentEdit: () =>
+          agentEditCoreWithCommit({
+            responseId: "response-draft-create",
+            documentCount: 0,
+            updateCount: 0,
+            documents: [],
+            stagedCreates: { committed: [], discarded: [] },
+          }),
+        refreshDocumentProjection: async () => {},
+        ...noopResponseFinalizer(),
+        resolveThreadWriteMode: async () => "draft" as const,
+      },
+      responseWrites: { trackStagedCreate: () => {} },
+      eventSink: createInMemoryEventSink(),
+    });
+    if (writeRegistration?.definition.name !== "write") throw new Error("missing write");
+    if (writeRegistration.execution.type !== "server") throw new Error("write must be server");
+
+    const result = await (writeRegistration.execution.handler as TestWriteHandler)(
+      { command: "create", path: filePath, content: "Draft" },
+      { ...toolContext(), responseId: "response-draft-create" },
+    );
+
+    expect(JSON.stringify(result)).toContain("Creating new documents in draft mode");
+    expect(ensureCalls).toBe(0);
+  });
 });
 
 async function writeText(
@@ -240,6 +363,7 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
     documentSync: {
       agentEdit: () => input.core,
       refreshDocumentProjection: async () => {},
+      ...noopResponseFinalizer(),
     },
     responseWrites: { trackStagedCreate: () => {} },
     eventSink: createInMemoryEventSink(),
