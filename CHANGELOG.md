@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- `apps/app`: the chat-screen context rail is now a mini file browser. Drill into
+  Manuscript / KB / User / Work (plus this thread's Uploads and Results), click a
+  file, and it opens in an inline read-only viewer right in the rail — no screen
+  switch. The Thread-contents popover opens documents the same way. The active
+  document now persists when switching between Chat and Context: the same doc that
+  is previewed in the rail is open in the full editor on the Context screen.
+  Thread uploads (images/PDFs/markdown) view inline in the rail. The offscreen
+  Context viewer no longer opens background tabs while you're on Chat. Replaces the
+  old passive `ContextSidebar`. (#116)
+
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
   in-flight agent turn. The run finishes server-side and a reconnecting client
   reattaches via the existing snapshot/resume path — long turns survive accidental
