@@ -45,7 +45,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       agentEditMutations,
       agentEditWidCounters,
       documentYjsCheckpoints,
+      documentYjsDrafts,
+      documentYjsDraftUpdates,
       documentYjsHeads,
+      documentYjsReversalOps,
       documentYjsReversals,
       documentYjsUpdates,
       documents,
@@ -60,6 +63,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { asc, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { LIVE_SCOPE } = await import("../drizzle-agent-edit-scope.js");
+    const { createDrizzleDraftAgentEditJournal } = await import("../drizzle-draft-agent-edit.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
     const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
     const { expectReversalCompactionContract } = await import(
@@ -75,6 +80,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await truncateDrizzleTables(db, [
         agentEditMutations,
         agentEditWidCounters,
+        documentYjsDraftUpdates,
+        documentYjsDrafts,
+        documentYjsReversalOps,
         documentYjsReversals,
         documentYjsHeads,
         documentYjsUpdates,
@@ -567,6 +575,143 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await updateIds()).toEqual(idsBeforeFailure);
       expect((await mutationRows()).map((row) => row.wId)).toEqual([1, 2, 3]);
+    });
+
+    it("keeps draft-scoped mutation and reversal rows out of live reversal reads", async () => {
+      const journal = createDrizzleJournal(db);
+      const draftJournal = createDrizzleDraftAgentEditJournal(db, { threadId: THREAD_ID });
+      const draftDoc = new Y.Doc({ gc: false });
+      draftDoc.clientID = LIVE_CLIENT_ID + 1;
+
+      const [draftOnly] = await draftJournal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(draftDoc, "Draft only"),
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_A },
+        },
+      ]);
+      expect(draftOnly?.wId).toBe(1);
+
+      expect(await journal.documentsForTurn(THREAD_ID, TURN_A)).toEqual([]);
+      expect(await journal.latestActiveWrite(DOC_ID, THREAD_ID)).toBeUndefined();
+      expect(await journal.activeWriteSummary(DOC_ID, THREAD_ID)).toEqual([]);
+      expect(await journal.writeMinCreatedSeq(DOC_ID, THREAD_ID, "w1")).toBeUndefined();
+      expect(await journal.mutationsForWrite(DOC_ID, THREAD_ID, "w1")).toEqual([]);
+      expect(await journal.mutationsForWrites(DOC_ID, THREAD_ID, ["w1"])).toEqual(new Map());
+
+      const liveDoc = new Y.Doc({ gc: false });
+      liveDoc.clientID = LIVE_CLIENT_ID;
+      const [liveWrite] = await journal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(liveDoc, "Live write"),
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_B },
+        },
+      ]);
+      expect(liveWrite?.wId).toBe(1);
+
+      const [draft] = await db
+        .select({ id: documentYjsDrafts.id })
+        .from(documentYjsDrafts)
+        .where(eq(documentYjsDrafts.status, "active"));
+      if (!draft) throw new Error("expected active draft fixture");
+
+      expect(await journal.documentsForTurn(THREAD_ID, TURN_A)).toEqual([]);
+      expect(await journal.documentsForTurn(THREAD_ID, TURN_B)).toEqual([DOC_ID]);
+      expect(await journal.latestActiveWrite(DOC_ID, THREAD_ID)).toMatchObject({
+        handle: "w1",
+        wId: 1,
+        turnId: TURN_B,
+        createdSeq: liveWrite?.seq,
+      });
+      expect(await journal.activeWriteSummary(DOC_ID, THREAD_ID)).toMatchObject([
+        { handle: "w1", wId: 1, turnId: TURN_B, createdSeq: liveWrite?.seq },
+      ]);
+
+      const undoRecord = {
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_B,
+        writeIds: ["w1"],
+        status: "reversed" as const,
+        undoUpdateSeq: 0,
+        reversedAt: new Date("2026-06-21T00:00:00.000Z"),
+        reversedByUserId: USER_ID,
+      };
+      await journal.persistUndo(DOC_ID, appendText(liveDoc, " Undo live"), [undoRecord], {
+        type: "user",
+        userId: USER_ID,
+      });
+
+      const mutationsAfterUndo = await db
+        .select({
+          scopeId: agentEditMutations.scopeId,
+          status: agentEditMutations.status,
+          undoUpdateSeq: agentEditMutations.undoUpdateSeq,
+        })
+        .from(agentEditMutations)
+        .where(eq(agentEditMutations.wId, 1))
+        .orderBy(asc(agentEditMutations.scopeId));
+      const liveMutation = mutationsAfterUndo.find((row) => row.scopeId === LIVE_SCOPE);
+      const draftMutation = mutationsAfterUndo.find((row) => row.scopeId === draft.id);
+      expect(liveMutation).toMatchObject({
+        status: "reversed",
+        undoUpdateSeq: undoRecord.undoUpdateSeq,
+      });
+      expect(draftMutation).toMatchObject({ status: "active", undoUpdateSeq: null });
+
+      await db.insert(documentYjsReversals).values({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        scopeId: draft.id,
+        turnId: TURN_A,
+        writeId: "w1",
+        status: "reversed",
+        undoUpdateSeq: undoRecord.undoUpdateSeq,
+        reversedAt: new Date("2026-06-21T00:00:00.000Z"),
+      });
+      await db.insert(documentYjsReversalOps).values({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        scopeId: draft.id,
+        updateSeq: 9_999_999,
+        handle: "w1",
+        direction: "undo",
+      });
+
+      expect(await journal.readReversals(DOC_ID, { threadId: THREAD_ID })).toMatchObject([
+        { turnId: TURN_B, writeIds: ["w1"], status: "reversed" },
+      ]);
+      expect(await journal.reversalOpSeqsForHandles(DOC_ID, THREAD_ID, ["w1"])).toEqual(
+        new Set([undoRecord.undoUpdateSeq]),
+      );
+
+      const redo = await journal.persistRedo(
+        DOC_ID,
+        appendText(liveDoc, " Redo live"),
+        { threadId: THREAD_ID, undoUpdateSeq: undoRecord.undoUpdateSeq },
+        { origin: "system", seq: 0 },
+      );
+      expect(redo.consumed).toBe(true);
+
+      const reversalRows = await db
+        .select({
+          scopeId: documentYjsReversals.scopeId,
+          status: documentYjsReversals.status,
+          redoUpdateSeq: documentYjsReversals.redoUpdateSeq,
+        })
+        .from(documentYjsReversals)
+        .where(eq(documentYjsReversals.undoUpdateSeq, undoRecord.undoUpdateSeq));
+      expect(reversalRows.find((row) => row.scopeId === LIVE_SCOPE)).toMatchObject({
+        status: "redone",
+        redoUpdateSeq: redo.seq,
+      });
+      expect(reversalRows.find((row) => row.scopeId === draft.id)).toMatchObject({
+        status: "reversed",
+        redoUpdateSeq: null,
+      });
     });
 
     it("persists user and agent reversal attribution on mutation rows", async () => {
