@@ -85,6 +85,13 @@
       "when": 1782701023700,
       "tag": "0011_stiff_randall",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782701784286,
+      "tag": "0012_hard_lizard",
+      "breakpoints": true
     }
   ]
 }

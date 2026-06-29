@@ -30,9 +30,12 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
 import {
   createDraftProjectionDocumentCoordinator,
+  createDraftSessionFence,
   createDrizzleDraftAgentEditJournal,
   createDrizzleDraftSyncStateStore,
   createNoopDraftDocumentLifecycle,
+  type DraftSessionFence,
+  isDraftClosedForAppendError,
 } from "./adapters/drizzle-draft-agent-edit.js";
 import {
   createDrizzleDraftAcceptJournal,
@@ -253,6 +256,7 @@ export type DraftSessionCoreDeps = {
   draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
   syncStateStore?: SyncStateStore;
   eventSink?: EventSink;
+  draftFence?: DraftSessionFence;
 };
 
 export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCore {
@@ -266,6 +270,7 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
       liveCoordinator: deps.liveCoordinator,
       draftStore: deps.draftStore,
       threadId: deps.threadId,
+      draftFence: deps.draftFence,
     }),
     lifecycle: createNoopDraftDocumentLifecycle(),
     codec,
@@ -287,13 +292,18 @@ export function createDrizzleDraftSessionCore(deps: {
   draftStore: DraftStore;
   eventSink?: EventSink;
 }): AgentEditCore {
+  const draftFence = createDraftSessionFence();
   return createDraftSessionCore({
     threadId: deps.threadId,
-    journal: createDrizzleDraftAgentEditJournal(deps.db, { threadId: deps.threadId }),
+    journal: createDrizzleDraftAgentEditJournal(deps.db, {
+      threadId: deps.threadId,
+      draftFence,
+    }),
     liveCoordinator: deps.liveCoordinator,
     draftStore: deps.draftStore,
     syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
     eventSink: deps.eventSink,
+    draftFence,
   });
 }
 
@@ -430,7 +440,21 @@ function createResponseSessionRegistry(deps: {
             stagedCreates: { committed: [], discarded: [] },
           } satisfies DraftClosedCommitResult;
         }
-        return await session.core.commitResponse(responseId);
+        try {
+          return await session.core.commitResponse(responseId);
+        } catch (cause) {
+          if (session.mode !== "draft" || !isDraftClosedForAppendError(cause)) throw cause;
+          await session.core.rollbackResponse(responseId);
+          return {
+            responseId,
+            status: "draft_closed",
+            mode: "draft",
+            documentCount: 0,
+            updateCount: 0,
+            documents: [],
+            stagedCreates: { committed: [], discarded: [] },
+          } satisfies DraftClosedCommitResult;
+        }
       } finally {
         sessions.delete(responseId);
       }
@@ -452,8 +476,7 @@ function createResponseSessionRegistry(deps: {
         currentEpoch(threadId, documentId) + 1,
       );
       for (const session of sessions.values()) {
-        if (session.threadId !== threadId) continue;
-        if (session.documentIds.has(documentId)) session.stale = true;
+        if (session.threadId === threadId) session.stale = true;
       }
     },
   };

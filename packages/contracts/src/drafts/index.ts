@@ -1,6 +1,6 @@
 /** JSON wire contracts for reviewing AI document drafts before they touch live documents. */
 
-export type DraftReviewStatus = "active" | "applied" | "discarded";
+export type DraftReviewStatus = "active" | "accepting" | "applied" | "discarded";
 
 export interface DraftReviewSummary {
   id: string;
@@ -32,6 +32,7 @@ export interface DraftPreviewResponse {
 export type DraftAcceptResponse =
   | { status: "applied"; draftId: string; appliedUpdateSeq: number }
   | { status: "discarded"; draftId: string; appliedUpdateSeq?: null }
+  | { status: "in_progress"; draftId: string; appliedUpdateSeq?: null }
   | { status: "not_found"; draftId?: null; appliedUpdateSeq?: null };
 
 export type DraftRejectResponse =

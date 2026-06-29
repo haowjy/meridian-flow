@@ -23,7 +23,7 @@ type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
 type UndoNotificationDirection = "undo" | "redo";
 type ReversalOpDirection = "undo" | "redo";
-type DraftStatus = "active" | "applied" | "discarded";
+type DraftStatus = "active" | "accepting" | "applied" | "discarded";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -99,10 +99,10 @@ export const documentYjsDrafts = pgTable(
   (table) => [
     uniqueIndex("document_yjs_drafts_active_document_thread")
       .on(table.documentId, table.threadId)
-      .where(sql`status = 'active'`),
+      .where(sql`status IN ('active', 'accepting')`),
     check(
       "document_yjs_drafts_status_valid",
-      sql`${table.status} IN ('active', 'applied', 'discarded')`,
+      sql`${table.status} IN ('active', 'accepting', 'applied', 'discarded')`,
     ),
   ],
 );

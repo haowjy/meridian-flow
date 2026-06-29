@@ -114,13 +114,17 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
           updateData: Buffer.from(input.updateData),
           actorTurnId: input.actorTurnId ?? null,
         });
-        await (tx as DraftDb)
+        const updated = await (tx as DraftDb)
           .update(documentYjsDrafts)
           .set({
             ...(input.actorTurnId ? { lastActorTurnId: input.actorTurnId } : {}),
             updatedAt: sql`now()`,
           })
-          .where(eq(documentYjsDrafts.id, input.draftId));
+          .where(
+            and(eq(documentYjsDrafts.id, input.draftId), eq(documentYjsDrafts.status, "active")),
+          )
+          .returning({ id: documentYjsDrafts.id });
+        if (updated.length === 0) throw new Error(`Draft is closed: ${input.draftId}`);
       });
     },
 
@@ -152,6 +156,78 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
       return row ? mapDraft(row) : null;
     },
 
+    async claimForAccept(input) {
+      const [row] = await db
+        .update(documentYjsDrafts)
+        .set({
+          status: "accepting",
+          claimedAt: sql`now()`,
+          claimToken: randomUUID(),
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.threadId, input.threadId),
+            or(
+              and(
+                eq(documentYjsDrafts.status, "active"),
+                or(
+                  isNull(documentYjsDrafts.claimedAt),
+                  sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+                ),
+              ),
+              and(
+                eq(documentYjsDrafts.status, "accepting"),
+                sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+              ),
+            ),
+          ),
+        )
+        .returning();
+      return row ? mapDraft(row) : null;
+    },
+
+    async getAcceptingDraft(input) {
+      const [row] = await db
+        .select()
+        .from(documentYjsDrafts)
+        .where(
+          and(
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.status, "accepting"),
+          ),
+        )
+        .limit(1);
+      return row ? mapDraft(row) : null;
+    },
+
+    async discardActive(input) {
+      const [row] = await db
+        .update(documentYjsDrafts)
+        .set({
+          status: "discarded",
+          discardedAt: sql`now()`,
+          claimedAt: null,
+          claimToken: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.status, "active"),
+            or(
+              isNull(documentYjsDrafts.claimedAt),
+              sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+            ),
+          ),
+        )
+        .returning();
+      return row ? mapDraft(row) : null;
+    },
+
     async markApplied(draftId, input) {
       const row = await db
         .update(documentYjsDrafts)
@@ -167,7 +243,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
         .where(
           and(
             eq(documentYjsDrafts.id, draftId),
-            eq(documentYjsDrafts.status, "active"),
+            eq(documentYjsDrafts.status, "accepting"),
             eq(documentYjsDrafts.claimToken, input.claimToken),
           ),
         )
@@ -188,7 +264,7 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
         .where(
           and(
             eq(documentYjsDrafts.id, draftId),
-            eq(documentYjsDrafts.status, "active"),
+            or(eq(documentYjsDrafts.status, "active"), eq(documentYjsDrafts.status, "accepting")),
             eq(documentYjsDrafts.claimToken, input.claimToken),
           ),
         )

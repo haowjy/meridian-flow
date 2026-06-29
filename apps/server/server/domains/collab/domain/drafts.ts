@@ -6,7 +6,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 
-export type DraftStatus = "active" | "applied" | "discarded";
+export type DraftStatus = "active" | "accepting" | "applied" | "discarded";
 
 export type Draft = {
   id: string;
@@ -69,6 +69,9 @@ export type DraftStore = {
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
   claimActive(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  claimForAccept(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  getAcceptingDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  discardActive(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   markApplied(
     draftId: string,
     input: { claimToken: string; appliedByUserId: UserId; appliedUpdateSeq: number },
@@ -101,6 +104,7 @@ export type RefreshAcceptedDraftProjection = (input: {
 
 export type DraftAcceptResult =
   | { status: "not_found" }
+  | { status: "in_progress"; draftId: string }
   | { status: "discarded"; draftId: string }
   | { status: "applied"; draftId: string; appliedUpdateSeq: number };
 
@@ -168,15 +172,14 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     userId: UserId;
   }): Promise<DraftAcceptResult> {
-    const draft = await deps.draftStore.claimActive(input);
+    const draft = await deps.draftStore.claimForAccept(input);
     if (!draft) {
+      const accepting = await deps.draftStore.getAcceptingDraft(input);
+      if (accepting) return { status: "in_progress", draftId: accepting.id };
+
       const applied = await deps.draftStore.getLastAppliedDraft(input);
       if (applied && applied.appliedUpdateSeq !== null) {
-        await deps.draftStore.deleteScopedState({
-          documentId: input.documentId,
-          threadId: input.threadId,
-          scopeId: applied.id,
-        });
+        await recoverAppliedDraftSideEffects(input, applied);
         return {
           status: "applied",
           draftId: applied.id,
@@ -258,6 +261,33 @@ export function createDraftService(deps: {
       Y.applyUpdate(doc, mergedUpdate, { type: "system" });
     });
 
+    await recoverAppliedDraftSideEffects(input, { ...draft, appliedUpdateSeq });
+
+    return { status: "applied", draftId: draft.id, appliedUpdateSeq };
+  }
+
+  async function rejectDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+  }): Promise<DraftRejectResult> {
+    const draft = await deps.draftStore.discardActive(input);
+    if (!draft) return { status: "not_found" };
+
+    await invalidateInFlight(input);
+    await deps.draftStore.deleteScopedState({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      scopeId: draft.id,
+    });
+    return { status: "discarded", draftId: draft.id };
+  }
+
+  async function recoverAppliedDraftSideEffects(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    draft: Pick<Draft, "id" | "appliedUpdateSeq">,
+  ): Promise<void> {
+    if (draft.appliedUpdateSeq === null) return;
+    await deps.liveCoordinator.recover(input.documentId);
     await deps.refreshAcceptedProjection?.({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -267,29 +297,6 @@ export function createDraftService(deps: {
       threadId: input.threadId,
       scopeId: draft.id,
     });
-
-    return { status: "applied", draftId: draft.id, appliedUpdateSeq };
-  }
-
-  async function rejectDraft(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-  }): Promise<DraftRejectResult> {
-    const draft = await deps.draftStore.claimActive(input);
-    if (!draft) return { status: "not_found" };
-
-    await invalidateInFlight(input);
-    if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
-    const discarded = await deps.draftStore.markDiscarded(draft.id, {
-      claimToken: draft.claimToken,
-    });
-    if (!discarded) return { status: "not_found" };
-    await deps.draftStore.deleteScopedState({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      scopeId: draft.id,
-    });
-    return { status: "discarded", draftId: draft.id };
   }
 }
 

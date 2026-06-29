@@ -36,12 +36,45 @@ import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent
 // Drizzle's transaction subtype is structurally compatible with the table methods we use.
 type DraftAgentEditDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
+export type DraftSessionFence = {
+  capture(input: { documentId: string; threadId: string; draftId: string }): void;
+  expectedDraftId(input: { documentId: string; threadId: string }): string | undefined;
+};
+
 type DraftResolver = {
   activeDraftId(documentId: string, threadId: string): Promise<string | null>;
   ensureDraftId(documentId: string, threadId: string, actorTurnId?: string): Promise<string>;
 };
 
 const DRAFT_UNDO_UNSUPPORTED = "Draft-scoped agent-edit undo/redo is deferred and not supported";
+const DRAFT_CLOSED_FOR_APPEND = "Draft review was closed before this response could commit";
+
+export class DraftClosedForAppendError extends Error {
+  constructor(draftId: string) {
+    super(`${DRAFT_CLOSED_FOR_APPEND}: ${draftId}`);
+    this.name = "DraftClosedForAppendError";
+  }
+}
+
+export function isDraftClosedForAppendError(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes(DRAFT_CLOSED_FOR_APPEND);
+}
+
+export function createDraftSessionFence(): DraftSessionFence {
+  const draftIds = new Map<string, string>();
+  return {
+    capture(input) {
+      draftIds.set(draftFenceKey(input.documentId, input.threadId), input.draftId);
+    },
+    expectedDraftId(input) {
+      return draftIds.get(draftFenceKey(input.documentId, input.threadId));
+    },
+  };
+}
+
+function draftFenceKey(documentId: string, threadId: string): string {
+  return `${documentId}:${threadId}`;
+}
 
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
@@ -57,9 +90,9 @@ function toBuffer(bytes: Uint8Array): Buffer {
 
 export function createDrizzleDraftAgentEditJournal(
   db: DraftAgentEditDb,
-  options: { threadId?: string } = {},
+  options: { threadId?: string; draftFence?: DraftSessionFence } = {},
 ): UpdateJournal & ReversalStore {
-  const resolver = createDrizzleDraftResolver(db);
+  const resolver = createDrizzleDraftResolver(db, options.draftFence);
 
   async function mutationsForWrites(
     documentId: string,
@@ -121,6 +154,11 @@ export function createDrizzleDraftAgentEditJournal(
             documentId: entry.docId,
             threadId: entry.mutation.threadId,
             actorTurnId: entry.mutation.turnId,
+            expectedDraftId: options.draftFence?.expectedDraftId({
+              documentId: entry.docId,
+              threadId: entry.mutation.threadId,
+            }),
+            draftFence: options.draftFence,
           });
           const [updateRow] = await txDb
             .insert(documentYjsDraftUpdates)
@@ -132,10 +170,12 @@ export function createDrizzleDraftAgentEditJournal(
             .returning({ id: documentYjsDraftUpdates.id });
           if (!updateRow) throw new Error("Failed to append draft Yjs update");
 
-          await txDb
+          const touchedDraft = await txDb
             .update(documentYjsDrafts)
             .set({ lastActorTurnId: asTurnId(entry.mutation.turnId), updatedAt: sql`now()` })
-            .where(eq(documentYjsDrafts.id, draftId));
+            .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "active")))
+            .returning({ id: documentYjsDrafts.id });
+          if (touchedDraft.length === 0) throw new DraftClosedForAppendError(draftId);
 
           const wId =
             entry.mutation.wId ??
@@ -286,6 +326,7 @@ export function createDraftProjectionDocumentCoordinator(deps: {
   liveCoordinator: DocumentCoordinator;
   draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
   threadId: string;
+  draftFence?: DraftSessionFence;
 }): DocumentCoordinator {
   const mutex = new KeyedMutex();
 
@@ -301,6 +342,7 @@ export function createDraftProjectionDocumentCoordinator(deps: {
           threadId: deps.threadId as ThreadId,
         });
         if (draft) {
+          deps.draftFence?.capture({ documentId, threadId: deps.threadId, draftId: draft.id });
           const updates = await deps.draftStore.listUpdates(draft.id);
           for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
         }
@@ -389,7 +431,10 @@ export function createNoopDraftDocumentLifecycle(): Pick<DocumentLifecycle, "ens
   };
 }
 
-function createDrizzleDraftResolver(db: DraftAgentEditDb): DraftResolver {
+function createDrizzleDraftResolver(
+  db: DraftAgentEditDb,
+  draftFence?: DraftSessionFence,
+): DraftResolver {
   return {
     async activeDraftId(documentId, threadId) {
       if (!threadId) return null;
@@ -404,21 +449,47 @@ function createDrizzleDraftResolver(db: DraftAgentEditDb): DraftResolver {
           ),
         )
         .limit(1);
+      if (row?.id) draftFence?.capture({ documentId, threadId, draftId: row.id });
       return row?.id ?? null;
     },
 
     async ensureDraftId(documentId, threadId, actorTurnId) {
-      return ensureDraftIdInDb(db, { documentId, threadId, actorTurnId });
+      return ensureDraftIdInDb(db, {
+        documentId,
+        threadId,
+        actorTurnId,
+        expectedDraftId: draftFence?.expectedDraftId({ documentId, threadId }),
+        draftFence,
+      });
     },
   };
 }
 
 async function ensureDraftIdInDb(
   db: DraftAgentEditDb,
-  input: { documentId: string; threadId: string; actorTurnId?: string },
+  input: {
+    documentId: string;
+    threadId: string;
+    actorTurnId?: string;
+    expectedDraftId?: string;
+    draftFence?: DraftSessionFence;
+  },
 ): Promise<string> {
+  if (input.expectedDraftId) {
+    const activeExpected = await activeDraftIdByIdInDb(db, input.expectedDraftId);
+    if (activeExpected) return activeExpected;
+    throw new DraftClosedForAppendError(input.expectedDraftId);
+  }
+
   const existing = await activeDraftIdInDb(db, input.documentId, input.threadId);
-  if (existing) return existing;
+  if (existing) {
+    input.draftFence?.capture({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: existing,
+    });
+    return existing;
+  }
 
   try {
     const [row] = await db
@@ -432,16 +503,40 @@ async function ensureDraftIdInDb(
       })
       .returning({ id: documentYjsDrafts.id });
     if (!row) throw new Error("Failed to create active draft");
+    input.draftFence?.capture({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: row.id,
+    });
     return row.id;
   } catch (cause) {
     if (!isUniqueConstraintViolation(cause)) throw cause;
     const concurrent = await activeDraftIdInDb(db, input.documentId, input.threadId);
-    if (concurrent) return concurrent;
+    if (concurrent) {
+      input.draftFence?.capture({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draftId: concurrent,
+      });
+      return concurrent;
+    }
     throw new ActiveDraftConflictError({
       documentId: input.documentId as DocumentId,
       threadId: input.threadId as ThreadId,
     });
   }
+}
+
+async function activeDraftIdByIdInDb(
+  db: DraftAgentEditDb,
+  draftId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ id: documentYjsDrafts.id })
+    .from(documentYjsDrafts)
+    .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "active")))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 async function activeDraftIdInDb(
