@@ -31,12 +31,10 @@ export type ContextSchemeSurface = "rail" | "center";
  *   the primary editing workspace stays focused on project-level structure.
  * - `rail`: full list, including work-scoped schemes when a work is active.
  *
- * Default surface is `rail` so existing callers (mobile browser, etc.) keep
- * their full list without touch-ups.
  */
 export function visibleContextSchemes(
   workId: string | null,
-  surface: ContextSchemeSurface = "rail",
+  surface: ContextSchemeSurface,
 ): readonly ProjectContextTreeScheme[] {
   return CONTEXT_SCHEMES.filter((scheme) => {
     if (isWorkScopedProjectContextScheme(scheme)) {

@@ -61,7 +61,7 @@ export function MobileContextBrowser({
   onCreateDone,
 }: MobileContextBrowserProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
-  const schemes = visibleContextSchemes(workId);
+  const schemes = visibleContextSchemes(workId, "rail");
 
   if (activeContextScheme) {
     return (

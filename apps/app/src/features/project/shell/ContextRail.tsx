@@ -19,7 +19,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type {
-  DocumentFileType,
   Filetype,
   ProjectContextTreeFile,
   ProjectContextTreeScheme,
@@ -72,9 +71,17 @@ const RAIL_REGISTRY_OWNER = "context-rail-document-host";
 export type RailUploadTarget = {
   documentId: string;
   name: string;
-  fileType: DocumentFileType | null;
   mimeType: string | null;
-  editable: boolean;
+  filetype: Filetype | null;
+  schemaType: YjsTrackedSchemaType | null;
+};
+
+export type RailOpenDocument = {
+  documentId: string;
+  scheme: ProjectContextTreeScheme | null;
+  path: string | null;
+  name: string;
+  mimeType: string | null;
   filetype: Filetype | null;
   schemaType: YjsTrackedSchemaType | null;
 };
@@ -90,10 +97,8 @@ export type ContextRailProps = {
   railUploadTarget: RailUploadTarget | null;
   /** When true the writer has explicitly returned to the tree from a context-doc viewer. */
   railViewerDismissed: boolean;
-  /** Update the active context document in the URL without switching screens. */
-  onSetActiveDocument: (path: string, scheme: ProjectContextTreeScheme) => void;
-  /** Open a thread upload in the rail viewer (clears any context-doc viewer). */
-  onOpenUpload: (target: RailUploadTarget) => void;
+  /** Open a context doc or upload in the rail viewer through the parent-owned path. */
+  onOpenInRail: (doc: RailOpenDocument) => void;
   /** ← Back: drop both viewer modes and return to the tree. */
   onDismissViewer: () => void;
   /** Collapse the rail (header chrome). */
@@ -113,8 +118,7 @@ export function ContextRail({
   activePath,
   railUploadTarget,
   railViewerDismissed,
-  onSetActiveDocument,
-  onOpenUpload,
+  onOpenInRail,
   onDismissViewer,
   onClose,
 }: ContextRailProps) {
@@ -123,8 +127,9 @@ export function ContextRail({
   // Viewer mode is DERIVED: context doc lives in the URL (scheme/path)
   // gated by an explicit dismiss; uploads have no URL representation so
   // they need their own target.
-  const showContextViewer = activeScheme !== null && activePath !== null && !railViewerDismissed;
   const showUploadViewer = railUploadTarget !== null;
+  const showContextViewer =
+    !showUploadViewer && activeScheme !== null && activePath !== null && !railViewerDismissed;
   // Tree mode is implicit: rendered when neither viewer derivation fires.
   // `showTree` would be the third disjoint flag — read it off the others.
 
@@ -144,18 +149,18 @@ export function ContextRail({
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {showContextViewer ? (
+        {showUploadViewer ? (
+          <RailUploadViewerSlot
+            projectId={projectId}
+            threadId={threadId}
+            target={railUploadTarget}
+          />
+        ) : showContextViewer ? (
           <RailContextDocViewerSlot
             projectId={projectId}
             threadId={threadId}
             scheme={activeScheme}
             path={activePath}
-          />
-        ) : showUploadViewer ? (
-          <RailUploadViewerSlot
-            projectId={projectId}
-            threadId={threadId}
-            target={railUploadTarget}
           />
         ) : (
           <RailTreeBody
@@ -163,8 +168,7 @@ export function ContextRail({
             threadId={threadId}
             drill={drill}
             onDrill={setDrill}
-            onSetActiveDocument={onSetActiveDocument}
-            onOpenUpload={onOpenUpload}
+            onOpenInRail={onOpenInRail}
           />
         )}
       </div>
@@ -217,15 +221,13 @@ function RailTreeBody({
   threadId,
   drill,
   onDrill,
-  onSetActiveDocument,
-  onOpenUpload,
+  onOpenInRail,
 }: {
   projectId: string;
   threadId: string | null;
   drill: RailDrill;
   onDrill: (next: RailDrill) => void;
-  onSetActiveDocument: (path: string, scheme: ProjectContextTreeScheme) => void;
-  onOpenUpload: (target: RailUploadTarget) => void;
+  onOpenInRail: (doc: RailOpenDocument) => void;
 }) {
   const workId = useContextWorkId(projectId, threadId);
   const schemes = visibleContextSchemes(workId, "rail");
@@ -237,7 +239,6 @@ function RailTreeBody({
         threadId={threadId}
         scheme={drill.scheme}
         folder={drill.level === "folder" ? drill.folder : null}
-        workId={workId}
         onDrillFolder={(folder) => onDrill({ level: "folder", scheme: drill.scheme, folder })}
         onBackUp={() => {
           if (drill.level === "folder") {
@@ -255,7 +256,15 @@ function RailTreeBody({
         }}
         onOpenFile={(file) => {
           const tab = contextTabFromFile(drill.scheme, file, workId);
-          onSetActiveDocument(tab.path, tab.scheme);
+          onOpenInRail({
+            documentId: tab.documentId,
+            scheme: tab.scheme,
+            path: tab.path,
+            name: tab.name,
+            mimeType: null,
+            filetype: null,
+            schemaType: null,
+          });
         }}
       />
     );
@@ -264,7 +273,7 @@ function RailTreeBody({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
       <SchemeList schemes={schemes} onDrill={(scheme) => onDrill({ level: "scheme", scheme })} />
-      <RailUploadsSection threadId={threadId} onOpenUpload={onOpenUpload} />
+      <RailUploadsSection threadId={threadId} onOpenInRail={onOpenInRail} />
       <RailResultsSection projectId={projectId} />
     </div>
   );
@@ -298,10 +307,10 @@ function SchemeList({
 
 function RailUploadsSection({
   threadId,
-  onOpenUpload,
+  onOpenInRail,
 }: {
   threadId: string | null;
-  onOpenUpload: (target: RailUploadTarget) => void;
+  onOpenInRail: (doc: RailOpenDocument) => void;
 }) {
   const uploads = useThreadUploads(threadId);
   // The DocumentRailSection primitive owns the disabled/loading/empty/
@@ -323,12 +332,12 @@ function RailUploadsSection({
       onSelectDocument={(documentId) => {
         const row = uploads.uploads?.find((u) => u.documentId === documentId);
         if (!row) return;
-        onOpenUpload({
+        onOpenInRail({
           documentId: row.documentId,
+          scheme: null,
+          path: null,
           name: row.name,
-          fileType: row.fileType,
           mimeType: row.mimeType,
-          editable: row.editable,
           filetype: row.filetype,
           schemaType: row.schemaType,
         });
@@ -373,7 +382,6 @@ function RailFolderDrill({
   threadId,
   scheme,
   folder,
-  workId,
   onDrillFolder,
   onBackUp,
   onOpenFile,
@@ -383,7 +391,6 @@ function RailFolderDrill({
   scheme: ProjectContextTreeScheme;
   /** Current folder path (`/a/b`) or null for the scheme root. */
   folder: string | null;
-  workId: string | null;
   onDrillFolder: (folder: string) => void;
   onBackUp: () => void;
   onOpenFile: (file: ProjectContextTreeFile) => void;
@@ -393,7 +400,7 @@ function RailFolderDrill({
   });
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <DrillBreadcrumb scheme={scheme} folder={folder} workId={workId} onBackUp={onBackUp} />
+      <DrillBreadcrumb scheme={scheme} folder={folder} onBackUp={onBackUp} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <DrillListingBody
           tree={tree}
@@ -411,12 +418,10 @@ function RailFolderDrill({
 function DrillBreadcrumb({
   scheme,
   folder,
-  workId: _workId,
   onBackUp,
 }: {
   scheme: ProjectContextTreeScheme;
   folder: string | null;
-  workId: string | null;
   onBackUp: () => void;
 }) {
   const tail = folder ? folder.split("/").filter(Boolean).pop() : null;
@@ -454,15 +459,15 @@ function DrillListingBody({
 }) {
   if (isError) {
     return (
-      <ListingStatus tone="error">
+      <RailStatus tone="error">
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Could not load files.</Trans>
-      </ListingStatus>
+      </RailStatus>
     );
   }
   if (!tree) {
     return (
-      <ListingStatus tone="muted">
+      <RailStatus tone="muted">
         {isFetching ? (
           <>
             <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -471,24 +476,24 @@ function DrillListingBody({
         ) : (
           <Trans>No context files yet.</Trans>
         )}
-      </ListingStatus>
+      </RailStatus>
     );
   }
   const dir = findContextDir(tree, folder ?? "");
   if (!dir) {
     return (
-      <ListingStatus tone="muted">
+      <RailStatus tone="muted">
         <Trans>This folder no longer exists.</Trans>
-      </ListingStatus>
+      </RailStatus>
     );
   }
   const folders = dir.children.filter((c): c is ContextDir => c.kind === "dir");
   const files = dir.children.filter((c): c is ContextFile => c.kind === "file");
   if (folders.length === 0 && files.length === 0) {
     return (
-      <ListingStatus tone="muted">
+      <RailStatus tone="muted">
         <Trans>This folder is empty.</Trans>
-      </ListingStatus>
+      </RailStatus>
     );
   }
   return (
@@ -536,18 +541,18 @@ function RailContextDocViewerSlot({
   if (!tree) {
     if (isError) {
       return (
-        <ViewerStatus tone="error">
+        <RailStatus tone="error">
           <AlertCircle className="size-4" aria-hidden />
           <Trans>Couldn't open this document.</Trans>
-        </ViewerStatus>
+        </RailStatus>
       );
     }
     if (isFetching) {
       return (
-        <ViewerStatus tone="muted">
+        <RailStatus tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           <Trans>Opening document…</Trans>
-        </ViewerStatus>
+        </RailStatus>
       );
     }
     return null;
@@ -555,9 +560,9 @@ function RailContextDocViewerSlot({
   const file = findContextFile(tree, path);
   if (!file) {
     return (
-      <ViewerStatus tone="muted">
+      <RailStatus tone="muted">
         <Trans>This document no longer exists.</Trans>
-      </ViewerStatus>
+      </RailStatus>
     );
   }
   const tab = contextTabFromFile(scheme, file, workId);
@@ -580,7 +585,7 @@ function RailUploadViewerSlot({
   threadId: string | null;
   target: RailUploadTarget;
 }) {
-  if (target.editable && target.schemaType && target.filetype) {
+  if (target.schemaType && target.filetype) {
     // Tracked uploads (rare but valid — e.g. a dropped `.md` becomes a
     // tracked doc) flow through the shared read-only editor host. The
     // synthesized tab carries the metadata `ReadOnlyDocHost` needs for the
@@ -617,18 +622,18 @@ function RailBinaryUploadViewer({
   const signed = useDocumentFigureSignedUrl(projectId, target.documentId);
   if (signed.status === "loading") {
     return (
-      <ViewerStatus tone="muted">
+      <RailStatus tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
         <Trans>Loading file…</Trans>
-      </ViewerStatus>
+      </RailStatus>
     );
   }
   if (signed.status === "error") {
     return (
-      <ViewerStatus tone="error">
+      <RailStatus tone="error">
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't load this file.</Trans>
-      </ViewerStatus>
+      </RailStatus>
     );
   }
   if (signed.status === "disabled") return null;
@@ -672,20 +677,7 @@ function DrillRow({
   );
 }
 
-function ListingStatus({ children, tone }: { children: React.ReactNode; tone: "muted" | "error" }) {
-  return (
-    <div
-      className={cn(
-        "grid h-full place-items-center px-6 text-center text-sm",
-        tone === "error" ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      <div className="flex items-center gap-2">{children}</div>
-    </div>
-  );
-}
-
-function ViewerStatus({ children, tone }: { children: React.ReactNode; tone: "muted" | "error" }) {
+function RailStatus({ children, tone }: { children: React.ReactNode; tone: "muted" | "error" }) {
   return (
     <div
       className={cn(

@@ -31,7 +31,7 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
-import { ContextRail, type RailUploadTarget } from "./shell/ContextRail";
+import { ContextRail, type RailOpenDocument, type RailUploadTarget } from "./shell/ContextRail";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
@@ -144,17 +144,7 @@ function DesktopProject(props: ProjectViewProps) {
 
   const { onSetActiveDocument } = props;
   const handleOpenInRail = useCallback(
-    (doc: {
-      documentId: string;
-      scheme: ProjectContextTreeScheme | null;
-      path: string | null;
-      name: string;
-      fileType: RailUploadTarget["fileType"];
-      mimeType: RailUploadTarget["mimeType"];
-      editable: boolean;
-      filetype: RailUploadTarget["filetype"];
-      schemaType: RailUploadTarget["schemaType"];
-    }) => {
+    (doc: RailOpenDocument) => {
       if (doc.scheme && doc.path) {
         // Context doc: identity lives in the URL — rail derives viewer mode
         // from it. Clear any upload target so the two viewers don't fight.
@@ -167,9 +157,7 @@ function DesktopProject(props: ProjectViewProps) {
       setRailUploadTarget({
         documentId: doc.documentId,
         name: doc.name,
-        fileType: doc.fileType,
         mimeType: doc.mimeType,
-        editable: doc.editable,
         filetype: doc.filetype,
         schemaType: doc.schemaType,
       });
@@ -189,9 +177,7 @@ function DesktopProject(props: ProjectViewProps) {
         scheme: row.scheme,
         path: row.path,
         name: row.name,
-        fileType: row.fileType,
         mimeType: row.mimeType,
-        editable: row.editable,
         filetype: row.filetype,
         schemaType: row.schemaType,
       });
@@ -248,11 +234,7 @@ function DesktopProject(props: ProjectViewProps) {
           activePath={props.activeContextPath}
           railUploadTarget={railUploadTarget}
           railViewerDismissed={railViewerDismissed}
-          onSetActiveDocument={props.onSetActiveDocument}
-          onOpenUpload={(target) => {
-            setRailUploadTarget(target);
-            setRailViewerDismissed(false);
-          }}
+          onOpenInRail={handleOpenInRail}
           onDismissViewer={() => {
             setRailViewerDismissed(true);
             setRailUploadTarget(null);
