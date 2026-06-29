@@ -1,0 +1,224 @@
+/** Unit coverage for collab draft persistence, projection, and lifecycle. */
+import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import {
+  createInMemoryCoordinator,
+  createInMemoryDocumentLifecycle,
+  createInMemoryJournal,
+} from "../adapters/in-memory/agent-edit.js";
+import {
+  createInMemoryDraftAcceptJournal,
+  createInMemoryDraftStore,
+} from "../adapters/in-memory/drafts.js";
+import { ActiveDraftConflictError, createDraftService, type DraftStore } from "./drafts.js";
+
+const DOC_ID = "doc-1" as never;
+const THREAD_ID = "thread-1" as never;
+const USER_ID = "user-1" as never;
+const TURN_A = "turn-a" as never;
+const TURN_B = "turn-b" as never;
+
+describe("draft store", () => {
+  it("creates one active draft per document/thread and lists updates in append order", async () => {
+    const store = createInMemoryDraftStore();
+    const draft = await store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+
+    await expect(
+      store.createActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID, lastActorTurnId: TURN_B }),
+    ).rejects.toBeInstanceOf(ActiveDraftConflictError);
+
+    await store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText("first"),
+      actorTurnId: TURN_A,
+    });
+    await store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText("second"),
+      actorTurnId: TURN_B,
+    });
+
+    expect(await store.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID })).toMatchObject({
+      id: draft.id,
+      status: "active",
+      lastActorTurnId: TURN_B,
+    });
+    expect((await store.listUpdates(draft.id)).map((update) => update.actorTurnId)).toEqual([
+      TURN_A,
+      TURN_B,
+    ]);
+  });
+});
+
+describe("draft lifecycle service", () => {
+  it("accepts journal-first as one merged update, applies to live, cleans scoped state, and is idempotent", async () => {
+    const scenario = await createScenario();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    const runtime = new Y.Doc({ gc: false });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendText(runtime, "Alpha"),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendText(runtime, " Beta"),
+      actorTurnId: TURN_B,
+    });
+
+    const first = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      userId: USER_ID,
+    });
+    const second = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      userId: USER_ID,
+    });
+
+    expect(first).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(second).toEqual(first);
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
+    expect(await liveText(scenario.coordinator)).toBe("Alpha Beta");
+    expect(scenario.deleteScopedState).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      scopeId: draft.id,
+    });
+    expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
+      {
+        writeId: `draft-accept:${draft.id}`,
+        turnId: TURN_B,
+        createdSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
+      },
+    ]);
+    expect(await scenario.store.getDraft(draft.id)).toMatchObject({
+      status: "applied",
+      appliedUpdateSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
+      appliedByUserId: USER_ID,
+    });
+  });
+
+  it("rejects without touching live and deletes draft-scoped state", async () => {
+    const scenario = await createScenario();
+    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(0, "Live");
+    });
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText(" Draft"),
+      actorTurnId: TURN_A,
+    });
+
+    await expect(
+      scenario.service.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+    ).resolves.toEqual({
+      status: "discarded",
+      draftId: draft.id,
+    });
+
+    expect(await liveText(scenario.coordinator)).toBe("Live");
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
+    expect(await scenario.store.getDraft(draft.id)).toMatchObject({ status: "discarded" });
+    expect(scenario.deleteScopedState).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      scopeId: draft.id,
+    });
+  });
+
+  it("builds draft docs from current live state plus ordered draft deltas", async () => {
+    const scenario = await createScenario();
+    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(0, "Live");
+    });
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    const runtime = new Y.Doc({ gc: false });
+    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+      Y.applyUpdate(runtime, Y.encodeStateAsUpdate(doc));
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendText(runtime, " Draft"),
+      actorTurnId: TURN_A,
+    });
+    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(doc.getText("body").length, " Now");
+    });
+
+    const projected = await scenario.service.buildDraftDoc({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    expect(projected.getText("body").toString()).toContain("Live");
+    expect(projected.getText("body").toString()).toContain("Draft");
+    expect(projected.getText("body").toString()).toContain("Now");
+  });
+
+  it("auto-discards zero-update drafts on accept", async () => {
+    const scenario = await createScenario();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+    });
+
+    await expect(
+      scenario.service.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+    ).resolves.toEqual({ status: "discarded", draftId: draft.id });
+
+    expect(await scenario.store.getDraft(draft.id)).toMatchObject({ status: "discarded" });
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
+  });
+});
+
+async function createScenario() {
+  const journal = createInMemoryJournal();
+  const coordinator = createInMemoryCoordinator(journal);
+  const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+  await lifecycle.ensureDocument(DOC_ID);
+  const store = createInMemoryDraftStore();
+  const deleteScopedState = vi.spyOn(store, "deleteScopedState");
+  const service = createDraftService({
+    draftStore: store,
+    liveJournal: createInMemoryDraftAcceptJournal(journal),
+    liveCoordinator: coordinator,
+  });
+  return { journal, coordinator, store: store as DraftStore, service, deleteScopedState };
+}
+
+function updateFromText(value: string): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  return appendText(doc, value);
+}
+
+function appendText(doc: Y.Doc, value: string): Uint8Array {
+  const text = doc.getText("body");
+  const before = Y.encodeStateVector(doc);
+  text.insert(text.length, value);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+async function liveText(coordinator: {
+  withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
+}) {
+  return coordinator.withDocument(DOC_ID, async (doc) => doc.getText("body").toString());
+}

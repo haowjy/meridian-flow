@@ -6,6 +6,15 @@
  * `turns` array by id (see `useChatThreadSession`). When the turn settles,
  * the same `turn.id` row stays mounted and only its `Turn` data changes — no
  * remount, no flicker, expand/collapse and scroll position survive.
+ *
+ * Draft anchoring: `draftsByTurnId` (computed by ChatView from
+ * `useThreadDrafts`) hands per-turn `ThreadDraftGroup[]` arrays to assistant
+ * turns so the DraftReviewCard renders inside the producing turn's row.
+ * Keeping the lookup in the parent keeps Virtuoso item identity stable.
+ *
+ * Cards inside a virtualized row CANNOT own a fixed-position modal — when
+ * Virtuoso recycles the row the modal vanishes with it. The card calls
+ * `onReviewDraft`; the overlay lives at the (non-virtualized) ChatView root.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import {
@@ -19,6 +28,9 @@ import {
   useRef,
 } from "react";
 import { type Components, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+
+import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+
 import { AssistantTurn } from "./AssistantTurn";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
@@ -33,6 +45,10 @@ export type TurnListProps = {
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  /** Active AI draft groups keyed by the assistant turn that produced them. */
+  draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
+  /** Open the ChatView-owned preview overlay for a draft's document. */
+  onReviewDraft?: (documentId: string) => void;
 };
 
 /**
@@ -45,6 +61,8 @@ export function TurnList({
   scrollParent,
   tailFollowRevision,
   onRespondToCheckpoint,
+  draftsByTurnId,
+  onReviewDraft,
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -67,18 +85,25 @@ export function TurnList({
   }, []);
 
   const itemContent = useCallback(
-    (idx: number, turn: Turn) =>
-      turn.role === "user" ? (
-        <UserTurn turn={turn} />
-      ) : (
+    (idx: number, turn: Turn) => {
+      if (turn.role === "user") {
+        return <UserTurn turn={turn} />;
+      }
+      // Lookup is per-row so most assistant turns get undefined (memo stable);
+      // only turns with anchored drafts re-render when the map identity flips.
+      const draftGroups = draftsByTurnId?.get(turn.id);
+      return (
         <AssistantTurn
           threadId={threadId}
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToCheckpoint={onRespondToCheckpoint}
+          draftGroups={draftGroups}
+          onReviewDraft={onReviewDraft}
         />
-      ),
-    [lastAssistantIdx, onRespondToCheckpoint, threadId],
+      );
+    },
+    [draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, onReviewDraft, threadId],
   );
 
   const components = useMemo<Components<Turn>>(

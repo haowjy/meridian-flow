@@ -14,7 +14,8 @@
     "./protocol": "./src/protocol/index.ts",
     "./runtime": "./src/runtime/index.ts",
     "./agents": "./src/agents/index.ts",
-    "./preferences": "./src/preferences/index.ts"
+    "./preferences": "./src/preferences/index.ts",
+    "./drafts": "./src/drafts/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

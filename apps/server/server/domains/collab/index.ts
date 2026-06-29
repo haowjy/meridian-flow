@@ -1,10 +1,11 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { AgentEditCore } from "@meridian/agent-edit";
+import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { ActiveDraft, Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -76,6 +77,8 @@ export type CollabTransport = {
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
+export type WriteMode = "direct" | "draft";
+
 export type AgentEditAccess = {
   agentEdit(): AgentEditCore;
 };
@@ -115,10 +118,68 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
+export type ThreadWriteModeResolver = {
+  resolveThreadWriteMode(threadId: ThreadId): Promise<WriteMode>;
+};
+
+export type ResponseWriteStagedCreates = {
+  committed: DocumentId[];
+  discarded: DocumentId[];
+};
+
+export type ResponseWriteCommitDocument = {
+  documentId: DocumentId;
+  updateCount: number;
+  concurrentEdits?: ConcurrentEditInfo;
+};
+
+export type DraftClosedFinalizeResult = {
+  status: "draft_closed";
+  responseId: string;
+  mode: "draft";
+  documents: [];
+  stagedCreates: ResponseWriteStagedCreates;
+};
+
+export type ResponseWriteCommitFinalizeResult =
+  | {
+      status?: "committed";
+      documents: ResponseWriteCommitDocument[];
+      stagedCreates: ResponseWriteStagedCreates;
+    }
+  | DraftClosedFinalizeResult;
+
+export type ResponseWriteRollbackFinalizeResult = {
+  stagedCreates: ResponseWriteStagedCreates;
+};
+
+export type ResponseWriteFinalizer = {
+  finalizeResponseCommit(
+    responseId: string,
+    ctx: { threadId: ThreadId; turnId: TurnId },
+  ): Promise<ResponseWriteCommitFinalizeResult>;
+  finalizeResponseRollback(responseId: string): Promise<ResponseWriteRollbackFinalizeResult>;
+};
+
 export type DocumentCheckpoints = {
   checkpoint(documentId: string, reason: string): Promise<Result<string, SyncError>>;
   restore(documentId: string, checkpointId: string): Promise<Result<void, SyncError>>;
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
+};
+
+export type CollabDrafts = {
+  drafts: {
+    getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+    listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
+    buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
+    previewMarkdown(input: { documentId: DocumentId; draftId: string }): Promise<string>;
+    acceptDraft(input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      userId: UserId;
+    }): Promise<DraftAcceptResult>;
+    rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
+  };
 };
 
 export type DocumentAttribution = {
@@ -135,8 +196,11 @@ export type CollabDomain = CollabTransport &
   TurnReversalAccess &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
+  ThreadWriteModeResolver &
+  ResponseWriteFinalizer &
   DocumentCheckpoints &
-  DocumentAttribution;
+  DocumentAttribution &
+  CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";
 export {

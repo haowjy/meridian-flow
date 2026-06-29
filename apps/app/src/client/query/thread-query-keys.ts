@@ -1,7 +1,7 @@
 /**
  * thread-query-keys — the canonical React Query key factory for thread-scoped
- * data (snapshot, uploads rail, recent-documents rail). Single source of key
- * shapes for thread reads/invalidations.
+ * data (snapshot, uploads rail, recent-documents rail, draft review).
+ * Single source of key shapes for thread reads/invalidations.
  *
  * All thread-scoped keys share a `["threads", threadId, ...]` prefix derived
  * from `thread(threadId)` so `queryClient.invalidateQueries({ queryKey:
@@ -15,4 +15,7 @@ export const threadQueryKeys = {
   uploads: (threadId: string) => ["threads", threadId, "uploads"] as const,
   recentDocuments: (threadId: string, limit?: number) =>
     ["threads", threadId, "recent-documents", limit ?? null] as const,
+  drafts: (threadId: string) => ["threads", threadId, "drafts"] as const,
+  draftPreview: (threadId: string, documentId: string) =>
+    ["threads", threadId, "documents", documentId, "draft"] as const,
 };

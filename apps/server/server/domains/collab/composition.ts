@@ -6,7 +6,6 @@ import {
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
-  isDocumentNotFoundError,
   type PersistedUpdate as JournalUpdate,
   type ReversalStore,
   type SyncStateStore,
@@ -15,25 +14,30 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
-  isReservedClientId,
-  RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import { Err, Ok } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
 } from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
-import { loadDocumentState } from "./adapters/document-loader.js";
+import {
+  createDraftProjectionDocumentCoordinator,
+  createDrizzleDraftAgentEditJournal,
+  createDrizzleDraftSyncStateStore,
+  createNoopDraftDocumentLifecycle,
+} from "./adapters/drizzle-draft-agent-edit.js";
+import {
+  createDrizzleDraftAcceptJournal,
+  createDrizzleDraftStore,
+} from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -43,27 +47,44 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import {
+  createInMemoryDraftAcceptJournal,
+  createInMemoryDraftStore,
+} from "./adapters/in-memory/drafts.js";
+import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { createDraftService, type DraftAcceptJournal, type DraftStore } from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
+import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import type {
-  CheckpointInfo,
   CollabDomain,
-  CollabPersistenceMetrics,
   DocumentWriteHook,
-  UpdateOrigin,
+  ResponseWriteCommitFinalizeResult,
+  ResponseWriteRollbackFinalizeResult,
+  WriteMode,
 } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
+  threads: ThreadModeRepository;
+  projectPreferences: ProjectWriteModePreferences;
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
+};
+
+type ThreadModeRepository = {
+  findById(id: ThreadId): Promise<{ userId: UserId; projectId: ProjectId } | null>;
+};
+
+type ProjectWriteModePreferences = {
+  read(userId: UserId, projectId: ProjectId): Promise<{ aiWriteMode?: WriteMode }>;
 };
 
 type CheckpointRecord = {
@@ -98,6 +119,11 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   syncStateStore?: SyncStateStore;
+  draftStore: DraftStore;
+  draftAcceptJournal: DraftAcceptJournal;
+  threads: ThreadModeRepository;
+  projectPreferences: ProjectWriteModePreferences;
+  createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
 };
 
 function createUndoNotificationPort(deps: {
@@ -134,17 +160,10 @@ function createUndoNotificationPort(deps: {
   };
 }
 
-type PendingAppend = {
-  documentId: string;
-  startedAt: number;
-  promise: Promise<void>;
-};
-
-const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
-
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const syncStateStore = createDrizzleSyncStateStore(deps.db);
+  const draftStore = createDrizzleDraftStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -173,6 +192,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           eventSink: deps.eventSink,
         })
       : undefined,
+    draftStore,
+    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db, journal),
+    threads: deps.threads,
+    projectPreferences: deps.projectPreferences,
+    createDraftSessionCore: ({ threadId }) =>
+      createDrizzleDraftSessionCore({
+        db: deps.db,
+        threadId,
+        liveCoordinator: coordinator,
+        draftStore,
+        eventSink: deps.eventSink,
+      }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -188,6 +219,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+  const draftStore = createInMemoryDraftStore();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -195,6 +227,18 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
+    draftStore,
+    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+    threads: {
+      async findById() {
+        return null;
+      },
+    },
+    projectPreferences: {
+      async read() {
+        return { aiWriteMode: "direct" as const };
+      },
+    },
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
@@ -202,28 +246,321 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 }
 
+export type DraftSessionCoreDeps = {
+  threadId: ThreadId;
+  journal: UpdateJournal & ReversalStore;
+  liveCoordinator: DocumentCoordinator;
+  draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
+  syncStateStore?: SyncStateStore;
+  eventSink?: EventSink;
+};
+
+export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCore {
+  const schema = buildDocumentSchema();
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodec(markupCodec);
+  const model = yProsemirrorModel(schema);
+  return createAgentEditCore({
+    journal: deps.journal,
+    coordinator: createDraftProjectionDocumentCoordinator({
+      liveCoordinator: deps.liveCoordinator,
+      draftStore: deps.draftStore,
+      threadId: deps.threadId,
+    }),
+    lifecycle: createNoopDraftDocumentLifecycle(),
+    codec,
+    model,
+    defaultThreadId: deps.threadId,
+    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+    syncStateStore: deps.syncStateStore,
+    // Draft sessions never emit undo notifications: draft edits are not reversible
+    // (DRAFT_UNDO_UNSUPPORTED), so there is no human-undo to surface to the model.
+    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+  });
+}
+
+export function createDrizzleDraftSessionCore(deps: {
+  db: Database;
+  threadId: ThreadId;
+  liveCoordinator: DocumentCoordinator;
+  draftStore: DraftStore;
+  eventSink?: EventSink;
+}): AgentEditCore {
+  return createDraftSessionCore({
+    threadId: deps.threadId,
+    journal: createDrizzleDraftAgentEditJournal(deps.db, { threadId: deps.threadId }),
+    liveCoordinator: deps.liveCoordinator,
+    draftStore: deps.draftStore,
+    syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
+    eventSink: deps.eventSink,
+  });
+}
+
+type ResponseSession = {
+  mode: WriteMode;
+  core: AgentEditCore;
+  threadId: ThreadId;
+  documentIds: Set<DocumentId>;
+  capturedEpochs: Map<DocumentId, number>;
+  stale?: boolean;
+};
+
+type PendingResponseSession = {
+  threadId: ThreadId;
+  documentIds: Set<DocumentId>;
+  capturedEpochs: Map<DocumentId, number>;
+  promise: Promise<ResponseSession>;
+  stale?: boolean;
+};
+
+type ResponseSessionEntry = ResponseSession | PendingResponseSession;
+
+type DraftClosedCommitResult = {
+  responseId: string;
+  status: "draft_closed";
+  mode: "draft";
+  documentCount: 0;
+  updateCount: 0;
+  documents: [];
+  stagedCreates: { committed: []; discarded: [] };
+};
+
+function createResponseSessionRegistry(deps: {
+  createLiveCore(): AgentEditCore;
+  createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
+  resolveMode(threadId: ThreadId): Promise<WriteMode>;
+}): {
+  sessionMode(responseId: string): WriteMode | undefined;
+  coreFor(responseId: string, threadId: ThreadId): Promise<ResponseSession>;
+  trackDocument(responseId: string, threadId: ThreadId, documentId: DocumentId): void;
+  isDraftClosed(responseId: string): boolean;
+  commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
+  rollbackResponse(
+    responseId: string,
+  ): Promise<Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>>;
+  invalidateDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+} {
+  const sessions = new Map<string, ResponseSessionEntry>();
+  const invalidationEpochs = new Map<string, number>();
+
+  return {
+    sessionMode(responseId) {
+      const session = sessions.get(responseId);
+      return session && "mode" in session ? session.mode : undefined;
+    },
+
+    async coreFor(responseId, threadId) {
+      const existing = sessions.get(responseId);
+      if (existing) return "promise" in existing ? existing.promise : existing;
+
+      const pending: PendingResponseSession = {
+        threadId,
+        documentIds: new Set(),
+        capturedEpochs: new Map(),
+        promise: Promise.resolve().then(async () => {
+          const mode = await deps.resolveMode(threadId);
+          const resolved: ResponseSession = {
+            mode,
+            core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
+            threadId,
+            documentIds: pending.documentIds,
+            capturedEpochs: pending.capturedEpochs,
+            stale: pending.stale,
+          };
+          sessions.set(responseId, resolved);
+          return resolved;
+        }),
+      };
+      sessions.set(responseId, pending);
+      return pending.promise;
+    },
+
+    trackDocument(responseId, threadId, documentId) {
+      const existing = sessions.get(responseId);
+      const entry: ResponseSessionEntry =
+        existing ??
+        ({
+          threadId,
+          documentIds: new Set(),
+          capturedEpochs: new Map(),
+          promise: Promise.resolve().then(async () => {
+            const mode = await deps.resolveMode(threadId);
+            const current = sessions.get(responseId);
+            const base = current && "promise" in current ? current : entry;
+            const resolved: ResponseSession = {
+              mode,
+              core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
+              threadId,
+              documentIds: base.documentIds,
+              capturedEpochs: base.capturedEpochs,
+              stale: base.stale,
+            };
+            sessions.set(responseId, resolved);
+            return resolved;
+          }),
+        } satisfies PendingResponseSession);
+      entry.documentIds.add(documentId);
+      if (!entry.capturedEpochs.has(documentId)) {
+        entry.capturedEpochs.set(documentId, currentEpoch(threadId, documentId));
+      }
+      if (!existing) sessions.set(responseId, entry);
+    },
+
+    isDraftClosed(responseId) {
+      const entry = sessions.get(responseId);
+      if (!entry || !("mode" in entry) || entry.mode !== "draft") return false;
+      return shouldCloseDraftSession(entry);
+    },
+
+    async commitResponse(responseId) {
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
+      if (!session) return deps.createLiveCore().commitResponse(responseId);
+      try {
+        if (shouldCloseDraftSession(session)) {
+          await session.core.rollbackResponse(responseId);
+          return {
+            responseId,
+            status: "draft_closed",
+            mode: "draft",
+            documentCount: 0,
+            updateCount: 0,
+            documents: [],
+            stagedCreates: { committed: [], discarded: [] },
+          } satisfies DraftClosedCommitResult;
+        }
+        return await session.core.commitResponse(responseId);
+      } finally {
+        sessions.delete(responseId);
+      }
+    },
+
+    async rollbackResponse(responseId) {
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
+      try {
+        return await (session?.core ?? deps.createLiveCore()).rollbackResponse(responseId);
+      } finally {
+        sessions.delete(responseId);
+      }
+    },
+
+    async invalidateDraft({ documentId, threadId }) {
+      invalidationEpochs.set(
+        epochKey(threadId, documentId),
+        currentEpoch(threadId, documentId) + 1,
+      );
+      for (const session of sessions.values()) {
+        if (session.threadId !== threadId) continue;
+        if (session.documentIds.has(documentId)) session.stale = true;
+      }
+    },
+  };
+
+  function shouldCloseDraftSession(session: ResponseSession): boolean {
+    return session.mode === "draft" && (session.stale === true || hasAdvancedEpoch(session));
+  }
+
+  function hasAdvancedEpoch(session: ResponseSession): boolean {
+    for (const documentId of session.documentIds) {
+      if (
+        currentEpoch(session.threadId, documentId) > (session.capturedEpochs.get(documentId) ?? 0)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function currentEpoch(threadId: ThreadId, documentId: DocumentId): number {
+    return invalidationEpochs.get(epochKey(threadId, documentId)) ?? 0;
+  }
+
+  function epochKey(threadId: ThreadId, documentId: DocumentId): string {
+    return `${threadId}:${documentId}`;
+  }
+}
+
+function createAgentEditProxy(deps: {
+  liveUtilityCore: AgentEditCore;
+  registry: ReturnType<typeof createResponseSessionRegistry>;
+}): AgentEditCore {
+  return {
+    async write(command, context) {
+      const responseId = context?.responseId;
+      if (!responseId) return deps.liveUtilityCore.write(command, context);
+      const threadId = context.threadId as ThreadId | undefined;
+      if (!threadId) return deps.liveUtilityCore.write(command, context);
+      if ("documentId" in command && command.documentId) {
+        deps.registry.trackDocument(responseId, threadId, command.documentId as DocumentId);
+      }
+      const session = await deps.registry.coreFor(responseId, threadId);
+      if (deps.registry.isDraftClosed(responseId)) {
+        await session.core.rollbackResponse(responseId);
+        return {
+          command: command.command,
+          status: "internal_error",
+          isError: true,
+          text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
+        } as Awaited<ReturnType<AgentEditCore["write"]>>;
+      }
+      return session.core.write(command, context);
+    },
+    recover: deps.liveUtilityCore.recover,
+    commitResponse: deps.registry.commitResponse,
+    rollbackResponse: deps.registry.rollbackResponse,
+    getAvailability: deps.liveUtilityCore.getAvailability,
+    undo: deps.liveUtilityCore.undo,
+    redo: deps.liveUtilityCore.redo,
+    reverse: deps.liveUtilityCore.reverse,
+    undoTurn: deps.liveUtilityCore.undoTurn,
+    redoTurn: deps.liveUtilityCore.redoTurn,
+    invalidateThread: deps.liveUtilityCore.invalidateThread,
+  };
+}
+
+async function resolveThreadWriteMode(
+  deps: Pick<CollabFacadeDeps, "threads" | "projectPreferences">,
+  threadId: ThreadId,
+): Promise<WriteMode> {
+  const thread = await deps.threads.findById(threadId);
+  if (!thread) return "direct";
+  const prefs = await deps.projectPreferences.read(thread.userId, thread.projectId);
+  return prefs.aiWriteMode ?? "direct";
+}
+
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
-  const agentEditCore: AgentEditCore = createAgentEditCore({
-    journal: deps.journal,
-    coordinator: deps.coordinator,
-    lifecycle: deps.lifecycle,
-    codec,
-    model,
-    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
-    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-    syncStateStore: deps.syncStateStore,
-    undoNotificationPort: deps.undoNotificationPort,
-    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+  const createLiveCore = () =>
+    createAgentEditCore({
+      journal: deps.journal,
+      coordinator: deps.coordinator,
+      lifecycle: deps.lifecycle,
+      codec,
+      model,
+      undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+      createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      syncStateStore: deps.syncStateStore,
+      onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+    });
+  const liveUtilityCore: AgentEditCore = createLiveCore();
+  const responseRegistry = createResponseSessionRegistry({
+    createLiveCore: () => liveUtilityCore,
+    createDraftCore:
+      deps.createDraftSessionCore ??
+      (() => {
+        throw new Error("Draft-mode response writes require a draft session core factory");
+      }),
+    resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
   });
-  const pendingAppends = new Map<number, PendingAppend>();
-  const droppedByDocument = new Map<string, number>();
-  const unsafeCheckpointDocuments = new Map<string, number>();
-  let nextPendingId = 1;
-
+  const agentEditCore = createAgentEditProxy({
+    liveUtilityCore,
+    registry: responseRegistry,
+  });
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -233,10 +570,30 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
+  const draftLifecycle = createDraftService({
+    draftStore: deps.draftStore,
+    liveJournal: deps.draftAcceptJournal,
+    liveCoordinator: deps.coordinator,
+    invalidateInFlight: responseRegistry.invalidateDraft,
+    refreshAcceptedProjection: ({ documentId, threadId }) =>
+      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
+  });
+  const draftService = {
+    ...draftLifecycle,
+    async previewMarkdown(input: { documentId: DocumentId; draftId: string }) {
+      const doc = await draftLifecycle.buildDraftDoc(input);
+      try {
+        return markdownDocuments.serializeDoc(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
+  };
 
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
+    source = "collab.document_write",
   ): Promise<void> {
     try {
       const read = await markdownDocuments.readAsMarkdown(documentId);
@@ -244,6 +601,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         emitProjectionRefreshFailure({
           documentId,
           threadId,
+          source,
           payload: {
             code: read.error.code,
             message: syncErrorMessage(read.error),
@@ -251,11 +609,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         });
         return;
       }
-      await runDocumentWriteHook({ documentId, threadId, markdown: read.value });
+      await runDocumentWriteHook({ documentId, threadId, markdown: read.value }, source);
     } catch (cause) {
       emitProjectionRefreshFailure({
         documentId,
         threadId,
+        source,
         payload: unknownToEventPayload(cause),
       });
     }
@@ -263,6 +622,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
   async function runDocumentWriteHook(
     event: Omit<Parameters<DocumentWriteHook>[0], "at">,
+    source = "collab.document_write",
   ): Promise<void> {
     if (!deps.documentWriteHook) return;
     const hookEvent = { ...event, at: new Date() };
@@ -275,7 +635,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       if (!deps.eventSink) return;
       emitEvent(deps.eventSink, {
         level: "error",
-        source: "collab.document_write",
+        source,
         name: "post_write_hook.failed",
         payload: {
           documentId: hookEvent.documentId,
@@ -289,12 +649,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   function emitProjectionRefreshFailure(input: {
     documentId: DocumentId;
     threadId?: ThreadId;
+    source: string;
     payload: Record<string, unknown>;
   }): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
       level: "error",
-      source: "collab.document_write",
+      source: input.source,
       name: "projection_refresh.failed",
       payload: {
         documentId: input.documentId,
@@ -304,65 +665,70 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
+  async function finalizeResponseCommit(
+    responseId: string,
+    ctx: { threadId: ThreadId; turnId: TurnId },
+  ): Promise<ResponseWriteCommitFinalizeResult> {
+    const mode = responseRegistry.sessionMode(responseId) ?? "direct";
+    const result = await agentEditCore.commitResponse(responseId);
+    if ("status" in result && result.status === "draft_closed") {
+      return {
+        status: "draft_closed",
+        responseId,
+        mode: "draft",
+        documents: [],
+        stagedCreates: { committed: [], discarded: [] },
+      };
+    }
+    if (mode === "draft") {
+      return {
+        status: "committed",
+        documents: result.documents.map((document) => ({
+          documentId: document.documentId as DocumentId,
+          updateCount: document.updateCount,
+        })),
+        stagedCreates: {
+          committed: [],
+          discarded: result.stagedCreates.discarded as DocumentId[],
+        },
+      };
+    }
+    await Promise.all(
+      result.documents.map((document) =>
+        refreshDocumentProjection(
+          document.documentId as DocumentId,
+          ctx.threadId,
+          "collab.response_finalize",
+        ),
+      ),
+    );
+    return {
+      documents: result.documents.map((document) => ({
+        documentId: document.documentId as DocumentId,
+        updateCount: document.updateCount,
+        ...(document.concurrentEdits ? { concurrentEdits: document.concurrentEdits } : {}),
+      })),
+      stagedCreates: {
+        committed: result.stagedCreates.committed as DocumentId[],
+        discarded: result.stagedCreates.discarded as DocumentId[],
+      },
+    };
+  }
+
+  async function finalizeResponseRollback(
+    responseId: string,
+  ): Promise<ResponseWriteRollbackFinalizeResult> {
+    const result = await agentEditCore.rollbackResponse(responseId);
+    return {
+      stagedCreates: {
+        committed: result.stagedCreates.committed as DocumentId[],
+        discarded: result.stagedCreates.discarded as DocumentId[],
+      },
+    };
+  }
+
   async function latestUpdateSeq(documentId: string): Promise<number> {
     return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
-  }
-
-  async function drainPending(documentId?: string): Promise<void> {
-    while (true) {
-      const pending = [...pendingAppends.values()].filter(
-        (entry) => !documentId || entry.documentId === documentId,
-      );
-      if (pending.length === 0) return;
-      await Promise.allSettled(pending.map((entry) => entry.promise));
-    }
-  }
-
-  function trackAppend(documentId: string, promise: Promise<number>): void {
-    const id = nextPendingId++;
-    const tracked = promise
-      .then(() => undefined)
-      .catch((cause) => {
-        recordDroppedConnectionUpdate(documentId);
-        emitPersistenceAppendFailure(documentId, cause);
-      })
-      .finally(() => {
-        pendingAppends.delete(id);
-      });
-    pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
-  }
-
-  function rejectReservedClientIdUpdate(input: {
-    documentId: DocumentId;
-    origin: UpdateOrigin;
-    reservedClientId: number;
-  }): void {
-    unsafeCheckpointDocuments.set(input.documentId, input.reservedClientId);
-    recordDroppedConnectionUpdate(input.documentId);
-    emitAgentEditInvariantViolation({
-      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${input.reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
-      documentId: input.documentId,
-      originType: input.origin.type,
-      reservedClientId: input.reservedClientId,
-      reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-    });
-  }
-
-  function recordDroppedConnectionUpdate(documentId: string): void {
-    droppedByDocument.set(documentId, (droppedByDocument.get(documentId) ?? 0) + 1);
-  }
-
-  function emitPersistenceAppendFailure(documentId: string, cause: unknown): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "error",
-      source: "collab.hocuspocus",
-      name: "persistence_append.failed",
-      payload: {
-        documentId,
-        error: cause instanceof Error ? cause.message : String(cause),
-      },
-    });
   }
 
   function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
@@ -375,43 +741,27 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  function latestMetrics(): CollabPersistenceMetrics {
-    const byDocument = new Map<
-      string,
-      { depth: number; oldestStartedAt: number; dropped: number }
-    >();
-    for (const entry of pendingAppends.values()) {
-      const current = byDocument.get(entry.documentId) ?? {
-        depth: 0,
-        oldestStartedAt: entry.startedAt,
-        dropped: droppedByDocument.get(entry.documentId) ?? 0,
-      };
-      current.depth += 1;
-      current.oldestStartedAt = Math.min(current.oldestStartedAt, entry.startedAt);
-      byDocument.set(entry.documentId, current);
-    }
-    for (const [documentId, dropped] of droppedByDocument) {
-      if (!byDocument.has(documentId) && dropped > 0) {
-        byDocument.set(documentId, { depth: 0, oldestStartedAt: Date.now(), dropped });
-      }
-    }
-    const hocuspocus = deps.hocuspocus();
-    return {
-      queues: [...byDocument.entries()].map(([documentId, queue]) => ({
-        documentId,
-        depth: queue.depth,
-        oldestAgeMs: queue.depth === 0 ? 0 : Date.now() - queue.oldestStartedAt,
-        dropped: queue.dropped,
-      })),
-      liveDocumentCount: hocuspocus?.getDocumentsCount() ?? hocuspocus?.documents.size ?? 0,
-      openConnectionCount: hocuspocus?.getConnectionsCount() ?? 0,
-    };
-  }
+  const checkpoints = createCheckpointService({
+    coordinator: deps.coordinator,
+    store: deps.store,
+    latestUpdateSeq,
+    markdownDocuments,
+  });
+  const hocuspocusPersistence = createHocuspocusPersistenceService({
+    journal: deps.journal,
+    hocuspocus: deps.hocuspocus,
+    eventSink: deps.eventSink,
+    metaForOrigin,
+    latestUpdateSeq,
+    emitAgentEditInvariantViolation,
+  });
 
   return {
     agentEdit() {
       return agentEditCore;
     },
+
+    drafts: draftService,
 
     ensureDocument(documentId) {
       return deps.lifecycle.ensureDocument(documentId);
@@ -424,6 +774,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     refreshDocumentProjection(input) {
       return refreshDocumentProjection(input.documentId, input.threadId);
     },
+
+    resolveThreadWriteMode(threadId) {
+      return resolveThreadWriteMode(deps, threadId);
+    },
+
+    finalizeResponseCommit,
+
+    finalizeResponseRollback,
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
@@ -442,57 +800,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       );
     },
 
-    async checkpoint(documentId, reason) {
-      try {
-        const { state, upToSeq } = await deps.coordinator.withDocument(documentId, async (doc) => {
-          const upToSeq = await latestUpdateSeq(documentId);
-          // upToSeq must be ≤ the updates reflected in state; any later
-          // update is replayed after the checkpoint, which is safe in Yjs.
-          return { state: Y.encodeStateAsUpdate(doc), upToSeq };
-        });
-        return Ok(await deps.store.createCheckpoint(documentId, state, reason, upToSeq));
-      } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
-        throw cause;
-      }
-    },
+    checkpoint: checkpoints.checkpoint,
 
-    async restore(documentId, checkpointId) {
-      const checkpoint = await deps.store.getCheckpoint(checkpointId);
-      if (!checkpoint || checkpoint.documentId !== documentId) {
-        return Err({ code: "checkpoint_not_found", checkpointId });
-      }
-      try {
-        const restored = createCollabYDoc({ gc: false });
-        Y.applyUpdate(restored, checkpoint.state);
-        const result = await markdownDocuments.setMarkdown({
-          documentId: documentId as DocumentId,
-          markdown: markdownDocuments.serializeDoc(restored),
-          origin: SYSTEM_ORIGIN,
-        });
-        if (!result.ok) return result;
-        return Ok(undefined);
-      } catch (cause) {
-        return Err({
-          code: "corrupt_state",
-          documentId,
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      }
-    },
+    restore: checkpoints.restore,
 
-    async listCheckpoints(documentId) {
-      const checkpoints = await deps.store.listCheckpoints(documentId);
-      return Ok(
-        checkpoints.map(
-          (checkpoint): CheckpointInfo => ({
-            id: checkpoint.id,
-            reason: checkpoint.reason,
-            createdAt: checkpoint.createdAt,
-          }),
-        ),
-      );
-    },
+    listCheckpoints: checkpoints.listCheckpoints,
 
     async writeDocument(input) {
       return markdownDocuments.writeDocument(input);
@@ -514,48 +826,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       deps.bindHocuspocus(instance);
     },
 
-    async loadHocuspocusDocument(documentId) {
-      unsafeCheckpointDocuments.delete(documentId);
-      return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
-    },
+    loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
 
-    persistConnectionUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
-      if (reservedClientId !== null) {
-        rejectReservedClientIdUpdate({ ...input, reservedClientId });
-        return;
-      }
-      trackAppend(
-        input.documentId,
-        deps.journal.append(input.documentId, input.update, metaForOrigin(input.origin)),
-      );
-    },
+    persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
-    async storeHocuspocusDocument(documentId, document) {
-      await drainPending(documentId);
-      const reservedClientId = unsafeCheckpointDocuments.get(documentId);
-      if (reservedClientId !== undefined) {
-        emitAgentEditInvariantViolation({
-          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update with reserved Yjs clientID ${reservedClientId} may still be present in the live Y.Doc. The reserved band is [0, ${RESERVED_CLIENT_ID_MAX}].`,
-          documentId,
-          reservedClientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-        });
-        return;
-      }
-      const upToSeq = await latestUpdateSeq(documentId);
-      // upToSeq must be ≤ the updates reflected in state; appends after this
-      // point are intentionally replayed when the document reloads.
-      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
-    },
+    storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 
-    drainHocuspocusPersistence() {
-      return drainPending();
-    },
+    drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
 
-    getPersistenceQueueMetrics() {
-      return latestMetrics();
-    },
+    getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
 }
 
@@ -619,13 +898,6 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
-}
-
-function reservedClientIdInUpdate(update: Uint8Array): number | null {
-  return (
-    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
-      .client ?? null
-  );
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

@@ -1,10 +1,4 @@
-import type {
-  DocumentId,
-  DocumentRestorePointId,
-  ThreadId,
-  TurnId,
-  UserId,
-} from "@meridian/contracts";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -19,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
@@ -29,6 +23,7 @@ type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
 type UndoNotificationDirection = "undo" | "redo";
 type ReversalOpDirection = "undo" | "redo";
+type DraftStatus = "active" | "applied" | "discarded";
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -69,10 +64,63 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
-    actorAgentRunId: uuid("actor_agent_run_id"),
     createdAt: createdAt(),
   },
   (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
+);
+
+export const documentYjsDrafts = pgTable(
+  "document_yjs_drafts",
+  {
+    id: text("id").primaryKey(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    status: text("status").$type<DraftStatus>().notNull(),
+    lastActorTurnId: uuid("last_actor_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    appliedByUserId: uuid("applied_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    appliedUpdateSeq: bigint("applied_update_seq", { mode: "number" }),
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimToken: uuid("claim_token"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("document_yjs_drafts_active_document_thread")
+      .on(table.documentId, table.threadId)
+      .where(sql`status = 'active'`),
+    check(
+      "document_yjs_drafts_status_valid",
+      sql`${table.status} IN ('active', 'applied', 'discarded')`,
+    ),
+  ],
+);
+
+export const documentYjsDraftUpdates = pgTable(
+  "document_yjs_draft_updates",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => documentYjsDrafts.id, { onDelete: "cascade" }),
+    updateData: byteaColumn("update_data").notNull(),
+    actorTurnId: uuid("actor_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("document_yjs_draft_updates_draft_id").on(table.draftId, table.id)],
 );
 
 export const documentYjsReversals = pgTable(
@@ -87,10 +135,13 @@ export const documentYjsReversals = pgTable(
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
+    // 'live' for the canonical doc; a draft ULID for draft-scoped agent-edit state.
+    scopeId: text("scope_id").notNull().default("live"),
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
     // No FK: compaction can delete the undo update row after expiring reversal metadata.
@@ -111,8 +162,13 @@ export const documentYjsReversals = pgTable(
       table.documentId,
       table.threadId,
       table.writeId,
+      table.scopeId,
     ),
-    index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
+    index("document_yjs_reversals_document_thread").on(
+      table.documentId,
+      table.threadId,
+      table.scopeId,
+    ),
     check(
       "document_yjs_reversals_status_valid",
       sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
@@ -162,10 +218,13 @@ export const agentEditMutations = pgTable(
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
+    // 'live' for the canonical doc; a draft ULID for draft-scoped agent-edit state.
+    scopeId: text("scope_id").notNull().default("live"),
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
+    // Durable idempotency key for the edit mutation, distinct from reversal handles.
     writeId: text("write_id").notNull(),
     status: text("status").$type<MutationStatus>().notNull().default("active"),
     createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
@@ -180,14 +239,26 @@ export const agentEditMutations = pgTable(
       table.documentId,
       table.threadId,
       table.writeId,
+      table.scopeId,
     ),
     uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
       table.documentId,
       table.threadId,
       table.wId,
+      table.scopeId,
     ),
-    index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
-    index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
+    index("agent_edit_mutations_thread_status").on(
+      table.documentId,
+      table.threadId,
+      table.status,
+      table.scopeId,
+    ),
+    index("agent_edit_mutations_turn").on(
+      table.documentId,
+      table.threadId,
+      table.turnId,
+      table.scopeId,
+    ),
     index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
     check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
@@ -224,9 +295,11 @@ export const agentEditWidCounters = pgTable(
   {
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
     threadId: uuid("thread_id").$type<ThreadId>().notNull(),
+    // 'live' for the canonical doc; a draft ULID for draft-scoped agent-edit state.
+    scopeId: text("scope_id").notNull().default("live"),
     nextWid: integer("next_wid").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
+  (table) => [primaryKey({ columns: [table.documentId, table.threadId, table.scopeId] })],
 );
 
 export const agentEditSyncState = pgTable(
@@ -240,12 +313,14 @@ export const agentEditSyncState = pgTable(
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
+    // 'live' for the canonical doc; a draft ULID for draft-scoped agent-edit state.
+    scopeId: text("scope_id").notNull().default("live"),
     stateVector: byteaColumn("state_vector").notNull(),
     syncedSnapshot: byteaColumn("synced_snapshot").notNull(),
     committedSnapshot: byteaColumn("committed_snapshot").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.documentId, table.threadId] })],
+  (table) => [primaryKey({ columns: [table.documentId, table.threadId, table.scopeId] })],
 );
 
 export const documentYjsHeads = pgTable("document_yjs_heads", {
@@ -265,23 +340,4 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     { onDelete: "set null" },
   ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const documentRestorePoints = pgTable("document_restore_points", {
-  id: idColumn<DocumentRestorePointId>(),
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  checkpointId: bigint("checkpoint_id", { mode: "number" }).references(
-    () => documentYjsCheckpoints.id,
-  ),
-  upToSeq: bigint("up_to_seq", { mode: "number" }),
-  createdByUserId: uuid("created_by_user_id")
-    .$type<UserId>()
-    .references(() => users.id, {
-      onDelete: "set null",
-    }),
-  createdAt: createdAt(),
 });
