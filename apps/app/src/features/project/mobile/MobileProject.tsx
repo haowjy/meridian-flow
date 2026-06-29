@@ -15,10 +15,10 @@ import { useEffect, useState } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import type { ContextCreateKind } from "../context/context-create-kind";
+import { folderAncestry, pathLeafName } from "../context/context-location";
 import { schemeLabel } from "../context/context-schemes";
 import { useProjectThreadGroups } from "../data/dashboard-data";
 import type { ProjectViewProps } from "../ProjectView";
-import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
 import { MobileContextBrowser } from "./MobileContextBrowser";

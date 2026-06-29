@@ -1,12 +1,14 @@
 /**
- * context-location — pure helpers describing the phone shell's drilled-in
- * context location (Files › scheme › folders › file) for the top-bar
- * breadcrumb.
+ * context-location — pure helpers describing a drilled-in context location
+ * (Files › scheme › folders › file) for breadcrumb renderers.
  *
- * Key decision: folder paths follow the route's URL convention — absolute
- * `/a/b` strings, with `""` meaning the scheme root (empty search params are
- * stripped, so the scheme root has no `folder` param at all). Everything here
- * is pure string/array logic so it unit-tests without the shell or Lingui.
+ * Shared by every shell that needs a breadcrumb over the context tree: the
+ * mobile top-bar breadcrumb, the chat-screen rail's drill-mode header, and
+ * the rail viewer's location chip. Folder paths follow the route's URL
+ * convention — absolute `/a/b` strings, with `""` meaning the scheme root
+ * (empty search params are stripped, so the scheme root has no `folder` param
+ * at all). Everything here is pure string/array logic so it unit-tests
+ * without any shell or Lingui.
  */
 
 /** One ancestor folder of the current context location. */
@@ -33,6 +35,21 @@ export function folderAncestry(folder: string | null): FolderCrumb[] {
 /** Leaf display name of a file path: `/notes/file.md` → `file.md`. */
 export function pathLeafName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+/**
+ * Parent folder for a `/a/b/c` path. The scheme root is represented as
+ * `null` (one level up from the immediate scheme root is "leave the
+ * scheme", which callers express however they want).
+ *
+ *   "/a/b" → "/a";  "/a" → null;  null → null
+ */
+export function parentFolder(folder: string | null): string | null {
+  if (!folder) return null;
+  const segments = folder.split("/").filter(Boolean);
+  segments.pop();
+  if (segments.length === 0) return null;
+  return `/${segments.join("/")}`;
 }
 
 /**

@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 
-import { collapseBreadcrumbSegments } from "./context-location";
+import { collapseBreadcrumbSegments } from "../context/context-location";
 
 export type MobileBreadcrumbSegment = {
   label: string;
