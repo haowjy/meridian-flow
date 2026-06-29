@@ -10,6 +10,7 @@ import { threadQueryKeys } from "./thread-query-keys";
 export type DraftReviewMutationInput = {
   threadId: string;
   documentId: string;
+  confirmOverlap?: boolean;
 };
 
 function invalidateDraftReviewQueries(
@@ -28,8 +29,8 @@ export function useAcceptDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ threadId, documentId }: DraftReviewMutationInput) =>
-      acceptDraft(threadId, documentId),
+    mutationFn: ({ threadId, documentId, confirmOverlap }: DraftReviewMutationInput) =>
+      acceptDraft(threadId, documentId, confirmOverlap ? { confirmOverlap } : {}),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },

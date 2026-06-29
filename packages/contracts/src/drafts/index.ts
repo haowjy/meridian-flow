@@ -64,9 +64,22 @@ export function isDraftAcceptTurnRequestParams(
 
 export type DraftAcceptResponse =
   | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: string }
+  | {
+      status: "overlap";
+      draftId: string;
+      live: string;
+      preview: string;
+      overlappingBlocks: string[];
+      appliedUpdateSeq?: null;
+      acceptTurnId?: null;
+    }
   | { status: "discarded"; draftId: string; appliedUpdateSeq?: null; acceptTurnId?: null }
   | { status: "in_progress"; draftId: string; appliedUpdateSeq?: null; acceptTurnId?: null }
   | { status: "not_found"; draftId?: null; appliedUpdateSeq?: null; acceptTurnId?: null };
+
+export type DraftAcceptRequest = {
+  confirmOverlap?: boolean;
+};
 
 export type DraftRejectResponse =
   | { status: "discarded"; draftId: string }

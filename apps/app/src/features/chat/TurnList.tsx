@@ -50,7 +50,7 @@ export type TurnListProps = {
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
   /** Open the ChatView-owned preview overlay for a draft's document. */
-  onReviewDraft?: (documentId: string) => void;
+  onReviewDraft?: (documentId: string, options?: { requireOverlapConfirm?: boolean }) => void;
 };
 
 /**

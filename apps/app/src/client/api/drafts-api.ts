@@ -6,6 +6,7 @@
  * strings to query hooks.
  */
 import type {
+  DraftAcceptRequest,
   DraftAcceptResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
@@ -34,8 +35,12 @@ export async function getDraftPreview(
 export async function acceptDraft(
   threadId: string,
   documentId: string,
+  request: DraftAcceptRequest = {},
 ): Promise<DraftAcceptResponse> {
-  return postJson<DraftAcceptResponse>(apiThreadDocumentDraftAcceptPath(threadId, documentId), {});
+  return postJson<DraftAcceptResponse>(
+    apiThreadDocumentDraftAcceptPath(threadId, documentId),
+    request,
+  );
 }
 
 export async function rejectDraft(

@@ -1,6 +1,8 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
+import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -639,11 +641,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
-      const draft = await createCommittedDraft(db, crashyCoordinator, draftStore, "recovery");
+      const draft = await createCommittedDraft(db, crashyCoordinator, draftStore, "recovery", {
+        latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+      });
 
       failNextApply = true;
       await expect(
-        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          userId: USER_ID,
+          confirmOverlap: true,
+        }),
       ).rejects.toThrow("simulated crash after markApplied");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft recovery.");
@@ -853,6 +862,109 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
     });
 
+    it("P6: silently accepts when live edits touched different blocks than the draft", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n\nBeta live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await writeDraftReplacement(domain, "response-disjoint", "Beta live.", "Beta draft.");
+      await replaceLiveText(liveCoordinator, liveJournal, "Alpha live.", "Alpha human.");
+
+      await expect(
+        domain.drafts.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      ).resolves.toMatchObject({ status: "applied" });
+
+      const markdown = await readMarkdown(domain, DOC_ID);
+      expect(markdown).toContain("Alpha human.");
+      expect(markdown).toContain("Beta draft.");
+    });
+
+    it("P6: flags same-block live edits, then confirmed accept applies and remains undoable", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n\nBeta live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await writeDraftReplacement(domain, "response-overlap", "Beta live.", "Beta draft.");
+      await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
+
+      const overlap = await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        userId: USER_ID,
+      });
+      expect(overlap).toMatchObject({
+        status: "overlap",
+        draftId: expect.any(String),
+        live: expect.stringContaining("Beta human."),
+        preview: expect.stringContaining("Beta draft."),
+      });
+      expect(overlap.status === "overlap" ? overlap.overlappingBlocks : []).not.toHaveLength(0);
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta human.");
+
+      const applied = await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        confirmOverlap: true,
+      });
+      expect(applied).toMatchObject({ status: "applied" });
+      if (applied.status !== "applied") throw new Error("expected applied accept");
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta draft.");
+
+      const undo = await domain.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: applied.acceptTurnId,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(["reversed", "reconciled", "partial"]).toContain(undo.status);
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta human.");
+    });
+
+    it("P6: a missed-overlap accept remains non-destructive and undoable", async () => {
+      const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n\nBeta live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await writeDraftReplacement(domain, "response-bounded", "Beta live.", "Beta draft.");
+      await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
+
+      const applied = await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        confirmOverlap: true,
+      });
+      expect(applied).toMatchObject({ status: "applied" });
+      if (applied.status !== "applied") throw new Error("expected applied accept");
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Beta draft.");
+
+      await domain.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: applied.acceptTurnId,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      const afterUndo = await readMarkdown(domain, DOC_ID);
+      expect(afterUndo).toContain("Alpha live.");
+      expect(afterUndo).toContain("Beta human.");
+    });
+
     it("invalidates active draft response sessions before they can commit", async () => {
       const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await domain.writeDocument({
@@ -956,12 +1068,75 @@ function createLiveHarness(
           threadId,
           liveCoordinator,
           draftStore,
+          latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
         }),
       documentWriteHook: options.documentWriteHook,
     }),
     liveCoordinator,
     liveJournal,
   };
+}
+
+function latestLiveUpdateSeq(liveJournal: ReturnType<typeof createInMemoryJournal>) {
+  return async (documentId: DocumentId) => (await liveJournal.latestUpdate(documentId))?.seq ?? 0;
+}
+
+async function writeDraftReplacement(
+  domain: ReturnType<typeof createFacade>,
+  responseId: string,
+  find: string,
+  content: string,
+): Promise<void> {
+  await domain
+    .agentEdit()
+    .write(
+      { command: "read", file: "chapter.md", documentId: DOC_ID },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId },
+    );
+  await expect(
+    domain.agentEdit().write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        documentId: DOC_ID,
+        find,
+        content,
+      },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId },
+    ),
+  ).resolves.toMatchObject({ isError: false });
+  await domain.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID });
+}
+
+async function replaceLiveText(
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>,
+  liveJournal: ReturnType<typeof createInMemoryJournal>,
+  find: string,
+  replacement: string,
+): Promise<void> {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  let update: Uint8Array | null = null;
+
+  await liveCoordinator.withDocument(DOC_ID, async (doc) => {
+    const handle = toDocHandle(doc);
+    const block = model
+      .getBlocks(handle)
+      .find((candidate) => model.getText(candidate).includes(find));
+    if (!block) throw new Error(`Block not found for ${find}`);
+    const text = model.getText(block);
+    const from = text.indexOf(find);
+    const before = Y.encodeStateVector(doc);
+    model.transact(
+      handle,
+      () => model.applyTextEdit(handle, block, { from, to: from + find.length }, replacement),
+      { type: "user", userId: USER_ID },
+    );
+    update = Y.encodeStateAsUpdate(doc, before);
+  });
+
+  if (!update) throw new Error("Expected live update");
+  await liveJournal.append(DOC_ID, update, { origin: `human:${USER_ID}`, seq: 0 });
 }
 
 function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFacadeStore {
@@ -979,12 +1154,14 @@ async function createCommittedDraft(
   liveCoordinator: Parameters<typeof createDrizzleDraftSessionCore>[0]["liveCoordinator"],
   draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
   label: string,
+  options: { latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number> } = {},
 ) {
   const draftCore = createDrizzleDraftSessionCore({
     db,
     threadId: THREAD_ID,
     liveCoordinator,
     draftStore,
+    latestLiveUpdateSeq: options.latestLiveUpdateSeq,
   });
   await draftCore.write(
     { command: "read", file: "chapter.md", documentId: DOC_ID },

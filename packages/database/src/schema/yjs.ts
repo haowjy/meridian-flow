@@ -82,6 +82,7 @@ export const documentYjsDrafts = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     status: text("status").$type<DraftStatus>().notNull(),
+    baseLiveUpdateSeq: bigint("base_live_update_seq", { mode: "number" }).notNull().default(0),
     lastActorTurnId: uuid("last_actor_turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),

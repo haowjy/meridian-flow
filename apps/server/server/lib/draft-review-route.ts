@@ -91,11 +91,12 @@ export async function handleThreadDraftListRequest(
 
 export async function handleDraftAcceptRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId },
+  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId; confirmOverlap?: boolean },
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.acceptDraft(input);
   if (result.status === "applied") return result;
+  if (result.status === "overlap") return { ...result, appliedUpdateSeq: null, acceptTurnId: null };
   if (result.status === "discarded")
     return { ...result, appliedUpdateSeq: null, acceptTurnId: null };
   if (result.status === "in_progress")

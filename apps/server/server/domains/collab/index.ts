@@ -179,6 +179,7 @@ export type CollabDrafts = {
       documentId: DocumentId;
       threadId: ThreadId;
       userId: UserId;
+      confirmOverlap?: boolean;
     }): Promise<DraftAcceptResult>;
     rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
   };

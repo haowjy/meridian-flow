@@ -60,6 +60,7 @@ export function createInMemoryDraftStore(): DraftStore {
         documentId: input.documentId,
         threadId: input.threadId,
         status: "active",
+        baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
         lastActorTurnId: input.lastActorTurnId ?? null,
         appliedAt: null,
         appliedByUserId: null,
