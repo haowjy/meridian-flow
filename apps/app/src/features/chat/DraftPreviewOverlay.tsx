@@ -112,7 +112,7 @@ export function DraftPreviewOverlay({
             <p className="mt-0.5 text-xs text-muted-foreground">
               {needsOverlapConfirm ? (
                 <Trans>
-                  You and the AI both edited this passage. Review the merged result first.
+                  Because you and the AI both edited this passage, review the merged result first.
                 </Trans>
               ) : (
                 <Trans>Your live document is untouched until you accept.</Trans>
@@ -170,7 +170,7 @@ export function DraftPreviewOverlay({
           </Button>
           <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
             {accept.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-            {needsOverlapConfirm ? <Trans>Apply merged draft</Trans> : <Trans>Apply draft</Trans>}
+            <Trans>Apply to chapter</Trans>
           </Button>
         </footer>
       </div>
