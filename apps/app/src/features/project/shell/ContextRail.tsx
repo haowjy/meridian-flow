@@ -27,6 +27,7 @@ import type {
 import {
   AlertCircle,
   ArrowLeft,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Folder,
@@ -34,7 +35,7 @@ import {
   Sparkles,
   Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
@@ -45,6 +46,12 @@ import type { ContextTab } from "@/client/stores";
 import { DocumentRailSection, Section } from "@/features/chat/ThreadDocumentList";
 import { cn } from "@/lib/utils";
 import { ActiveDocumentSurface } from "../context/ActiveDocumentSurface";
+import {
+  collapseBreadcrumbSegments,
+  folderAncestry,
+  parentFolder as parentFolderOf,
+  pathLeafName,
+} from "../context/context-location";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import {
@@ -136,35 +143,55 @@ export function ContextRail({
   // Tree mode is implicit: rendered when neither viewer derivation fires.
   // `showTree` would be the third disjoint flag — read it off the others.
 
+  // Drop the viewer and jump the tree's drill position in one click. The
+  // viewer-mode location breadcrumb uses this so clicking an ancestor lands
+  // the writer in the tree at that level (vs. back-button-then-drill).
+  const navigateToTree = useCallback(
+    (next: RailDrill) => {
+      setDrill(next);
+      onDismissViewer();
+    },
+    [onDismissViewer],
+  );
+
   return (
     <aside aria-label={t`Thread context`} className="flex h-full min-h-0 w-full flex-col">
       <ContextRailHeader
         viewing={showContextViewer || showUploadViewer}
-        title={
-          showUploadViewer
-            ? railUploadTarget.name
-            : showContextViewer
-              ? (activePath?.split("/").filter(Boolean).pop() ?? "")
-              : null
-        }
         onBack={onDismissViewer}
         onClose={onClose}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showUploadViewer ? (
-          <RailUploadViewerSlot
-            projectId={projectId}
-            threadId={threadId}
-            target={railUploadTarget}
-          />
+          <>
+            <UploadLocationBreadcrumb
+              uploadName={railUploadTarget.name}
+              onSelectUploadsRoot={() => navigateToTree({ level: "root" })}
+            />
+            <RailUploadViewerSlot
+              projectId={projectId}
+              threadId={threadId}
+              target={railUploadTarget}
+            />
+          </>
         ) : showContextViewer ? (
-          <RailContextDocViewerSlot
-            projectId={projectId}
-            threadId={threadId}
-            scheme={activeScheme}
-            path={activePath}
-          />
+          <>
+            <ContextDocLocationBreadcrumb
+              scheme={activeScheme}
+              path={activePath}
+              onSelectSchemeRoot={() => navigateToTree({ level: "scheme", scheme: activeScheme })}
+              onSelectFolder={(folder) =>
+                navigateToTree({ level: "folder", scheme: activeScheme, folder })
+              }
+            />
+            <RailContextDocViewerSlot
+              projectId={projectId}
+              threadId={threadId}
+              scheme={activeScheme}
+              path={activePath}
+            />
+          </>
         ) : (
           <RailTreeBody
             projectId={projectId}
@@ -181,14 +208,19 @@ export function ContextRail({
 
 /* ── Header ──────────────────────────────────────────────────────────── */
 
+/**
+ * Rail chrome bar. In tree mode it shows the "Context" section label; in
+ * viewer mode it swaps to a "← Back to files" return affordance. The
+ * document's location renders as a separate breadcrumb sub-row below the
+ * header (`ContextDocLocationBreadcrumb` / `UploadLocationBreadcrumb`),
+ * matching the drill-mode two-row layout.
+ */
 function ContextRailHeader({
   viewing,
-  title,
   onBack,
   onClose,
 }: {
   viewing: boolean;
-  title: string | null;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -206,12 +238,12 @@ function ContextRailHeader({
       <button
         type="button"
         onClick={onBack}
-        aria-label={t`Back to files`}
-        title={t`Back to files`}
         className="focus-ring inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-foreground transition-colors hover:bg-sidebar-accent"
       >
         <ArrowLeft className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="min-w-0 truncate font-medium">{title ?? ""}</span>
+        <span className="min-w-0 truncate font-medium">
+          <Trans>Back to files</Trans>
+        </span>
       </button>
     </RailHeader>
   );
@@ -236,27 +268,17 @@ function RailTreeBody({
   const schemes = visibleContextSchemes(workId, "rail");
 
   if (drill.level === "scheme" || drill.level === "folder") {
+    const currentFolder = drill.level === "folder" ? drill.folder : null;
     return (
       <RailFolderDrill
         projectId={projectId}
         threadId={threadId}
         scheme={drill.scheme}
-        folder={drill.level === "folder" ? drill.folder : null}
+        folder={currentFolder}
         onDrillFolder={(folder) => onDrill({ level: "folder", scheme: drill.scheme, folder })}
-        onBackUp={() => {
-          if (drill.level === "folder") {
-            // Up one folder; if we were at the immediate scheme root, drop
-            // back to the scheme listing.
-            const parent = parentFolder(drill.folder);
-            if (parent === null) {
-              onDrill({ level: "scheme", scheme: drill.scheme });
-              return;
-            }
-            onDrill({ level: "folder", scheme: drill.scheme, folder: parent });
-            return;
-          }
-          onDrill({ level: "root" });
-        }}
+        onSelectRoot={() => onDrill({ level: "root" })}
+        onSelectSchemeRoot={() => onDrill({ level: "scheme", scheme: drill.scheme })}
+        onSelectFolder={(folder) => onDrill({ level: "folder", scheme: drill.scheme, folder })}
         onOpenFile={(file) => {
           const tab = contextTabFromFile(drill.scheme, file, workId);
           onOpenInRail({
@@ -386,7 +408,9 @@ function RailFolderDrill({
   scheme,
   folder,
   onDrillFolder,
-  onBackUp,
+  onSelectRoot,
+  onSelectSchemeRoot,
+  onSelectFolder,
   onOpenFile,
 }: {
   projectId: string;
@@ -395,7 +419,12 @@ function RailFolderDrill({
   /** Current folder path (`/a/b`) or null for the scheme root. */
   folder: string | null;
   onDrillFolder: (folder: string) => void;
-  onBackUp: () => void;
+  /** Return to the rail's scheme-picker root. */
+  onSelectRoot: () => void;
+  /** Jump to the scheme's root folder (clears any folder drill). */
+  onSelectSchemeRoot: () => void;
+  /** Jump to a specific ancestor folder (`/a/b` path). */
+  onSelectFolder: (folder: string) => void;
   onOpenFile: (file: ProjectContextTreeFile) => void;
 }) {
   const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
@@ -403,7 +432,13 @@ function RailFolderDrill({
   });
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <DrillBreadcrumb scheme={scheme} folder={folder} onBackUp={onBackUp} />
+      <DrillBreadcrumb
+        scheme={scheme}
+        folder={folder}
+        onSelectRoot={onSelectRoot}
+        onSelectSchemeRoot={onSelectSchemeRoot}
+        onSelectFolder={onSelectFolder}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <DrillListingBody
           tree={tree}
@@ -418,30 +453,49 @@ function RailFolderDrill({
   );
 }
 
+/**
+ * Clickable trail for the drill position: `[‹] SchemeLabel › folderA ›
+ * folderB`. The leading `‹` button returns to the rail's scheme picker; the
+ * scheme crumb returns to the scheme's root folder; each folder crumb jumps
+ * to that ancestor; the current location (last crumb) is non-interactive.
+ *
+ * Deep trails collapse the middle via `collapseBreadcrumbSegments` so the
+ * row stays readable inside the ~240–280px rail width.
+ */
 function DrillBreadcrumb({
   scheme,
   folder,
-  onBackUp,
+  onSelectRoot,
+  onSelectSchemeRoot,
+  onSelectFolder,
 }: {
   scheme: ProjectContextTreeScheme;
   folder: string | null;
-  onBackUp: () => void;
+  onSelectRoot: () => void;
+  onSelectSchemeRoot: () => void;
+  onSelectFolder: (folder: string) => void;
 }) {
-  const tail = folder ? folder.split("/").filter(Boolean).pop() : null;
-  const label = tail ?? schemeLabel(scheme);
+  const ancestry = folderAncestry(folder);
+  const lastAncestorIdx = ancestry.length - 1;
+  const segments: RailBreadcrumbSegment[] = [
+    // The scheme crumb returns to the scheme's root folder UNLESS we're
+    // already there — then it's the current (non-interactive) segment.
+    {
+      label: schemeLabel(scheme),
+      onSelect: folder === null ? undefined : onSelectSchemeRoot,
+    },
+    ...ancestry.map((entry, idx) => ({
+      label: entry.name,
+      // The deepest ancestor IS the current folder, so it doesn't navigate.
+      onSelect: idx === lastAncestorIdx ? undefined : () => onSelectFolder(entry.path),
+    })),
+  ];
+
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
-      <button
-        type="button"
-        onClick={onBackUp}
-        aria-label={t`Up one level`}
-        title={t`Up one level`}
-        className="focus-ring inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-sm text-foreground transition-colors hover:bg-sidebar-accent"
-      >
-        <ArrowLeft className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="min-w-0 truncate font-medium">{label}</span>
-      </button>
-    </div>
+    <BreadcrumbRow>
+      <BackToRootButton onClick={onSelectRoot} label={t`Back to all sections`} />
+      <RailBreadcrumb segments={segments} ariaLabel={t`Current folder`} />
+    </BreadcrumbRow>
   );
 }
 
@@ -661,6 +715,196 @@ function RailBinaryUploadViewer({
   return <BinaryFallbackViewer url={url} mimeType={mime} name={target.name} />;
 }
 
+/* ── Viewer-mode location breadcrumbs ────────────────────────────────── */
+
+/**
+ * Location breadcrumb for the open context document — `SchemeLabel ›
+ * folderA › chapter-7.md`. Ancestor crumbs drop the viewer and land the
+ * rail's tree at that level so the writer can keep navigating without an
+ * extra back-tap.
+ */
+function ContextDocLocationBreadcrumb({
+  scheme,
+  path,
+  onSelectSchemeRoot,
+  onSelectFolder,
+}: {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  onSelectSchemeRoot: () => void;
+  onSelectFolder: (folder: string) => void;
+}) {
+  // The route's path is the file (e.g. `/a/b/chapter-7.md`). The folder
+  // ancestry is `dirname(path)` walked from the scheme root inward.
+  const parentDir = parentFolderOf(path);
+  const ancestry = folderAncestry(parentDir);
+  const leaf = pathLeafName(path);
+  const segments: RailBreadcrumbSegment[] = [
+    { label: schemeLabel(scheme), onSelect: onSelectSchemeRoot },
+    ...ancestry.map((entry) => ({
+      label: entry.name,
+      onSelect: () => onSelectFolder(entry.path),
+    })),
+    // File itself is the current location — non-interactive.
+    { label: leaf },
+  ];
+  return (
+    <BreadcrumbRow>
+      <RailBreadcrumb segments={segments} ariaLabel={t`Document location`} />
+    </BreadcrumbRow>
+  );
+}
+
+/**
+ * Uploads are flat (no folder structure), so the trail is always
+ * `Uploads › <filename>`. Clicking `Uploads` returns to the rail's scheme
+ * picker, where the uploads section is rendered.
+ */
+function UploadLocationBreadcrumb({
+  uploadName,
+  onSelectUploadsRoot,
+}: {
+  uploadName: string;
+  onSelectUploadsRoot: () => void;
+}) {
+  const segments: RailBreadcrumbSegment[] = [
+    { label: schemeLabel("uploads"), onSelect: onSelectUploadsRoot },
+    { label: uploadName },
+  ];
+  return (
+    <BreadcrumbRow>
+      <RailBreadcrumb segments={segments} ariaLabel={t`Upload location`} />
+    </BreadcrumbRow>
+  );
+}
+
+/* ── Breadcrumb primitives ───────────────────────────────────────────── */
+
+type RailBreadcrumbSegment = {
+  label: string;
+  /** Omit on the current (last) segment to mark it non-interactive. */
+  onSelect?: () => void;
+};
+
+/**
+ * Compact horizontal breadcrumb tuned for the chat-screen rail width
+ * (~240–280px). Trails of more than four segments middle-truncate via
+ * `collapseBreadcrumbSegments`; per-segment labels truncate within a small
+ * max-width so the current location keeps the leftover room.
+ */
+function RailBreadcrumb({
+  segments,
+  ariaLabel,
+}: {
+  segments: RailBreadcrumbSegment[];
+  ariaLabel: string;
+}) {
+  if (segments.length === 0) return null;
+  const { leading, elided, trailing } = collapseBreadcrumbSegments(segments);
+  type Item =
+    | { kind: "segment"; key: string; segment: RailBreadcrumbSegment }
+    | { kind: "ellipsis"; key: string };
+  const items: Item[] = leading.map((segment, position) => ({
+    kind: "segment",
+    key: `segment-${position}`,
+    segment,
+  }));
+  if (elided) items.push({ kind: "ellipsis", key: "ellipsis" });
+  const trailingStart = segments.length - trailing.length;
+  trailing.forEach((segment, offset) => {
+    items.push({ kind: "segment", key: `segment-${trailingStart + offset}`, segment });
+  });
+  const lastIndex = items.length - 1;
+  return (
+    <nav aria-label={ariaLabel} className="flex min-w-0 flex-1 items-center">
+      <ol className="flex min-w-0 items-center">
+        {items.map((item, index) => {
+          const separator =
+            index > 0 ? (
+              <ChevronRight aria-hidden className="size-3 shrink-0 text-ink-subtle" />
+            ) : null;
+          if (item.kind === "ellipsis") {
+            return (
+              <li
+                aria-hidden
+                key={item.key}
+                className="flex shrink-0 items-center text-sm text-muted-foreground"
+              >
+                {separator}
+                <span className="px-0.5">…</span>
+              </li>
+            );
+          }
+          if (index === lastIndex || !item.segment.onSelect) {
+            return (
+              <li
+                aria-current={index === lastIndex ? "page" : undefined}
+                key={item.key}
+                className="flex min-w-0 items-center"
+              >
+                {separator}
+                <span
+                  className={cn(
+                    "block truncate px-1 text-sm",
+                    index === lastIndex ? "font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {item.segment.label}
+                </span>
+              </li>
+            );
+          }
+          return (
+            <li key={item.key} className="flex min-w-0 max-w-28 shrink items-center">
+              {separator}
+              <button
+                type="button"
+                onClick={item.segment.onSelect}
+                className="focus-ring inline-flex min-w-0 cursor-pointer items-center rounded-md px-1 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+              >
+                <span className="truncate">{item.segment.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/**
+ * Two-row layout chrome: a thin border-b strip below the rail header that
+ * houses the breadcrumb (drill or location). Matches the height of the old
+ * DrillBreadcrumb so the rail's overall geometry doesn't shift between
+ * modes.
+ */
+function BreadcrumbRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Compact icon-only return affordance ("‹") rendered before the drill
+ * breadcrumb. Distinct from the viewer header's full "← Back to files" so
+ * the breadcrumb row stays narrow and the trail starts immediately.
+ */
+function BackToRootButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="focus-ring inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+    >
+      <ChevronLeft className="size-4" aria-hidden />
+    </button>
+  );
+}
+
 /* ── Primitives (rail-flavour DrillRow + status) ─────────────────────── */
 
 function DrillRow({
@@ -700,12 +944,4 @@ function RailStatus({ children, tone }: { children: React.ReactNode; tone: "mute
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );
-}
-
-function parentFolder(path: string): string | null {
-  // "/a/b" -> "/a"; "/a" -> null (back to scheme root).
-  const segments = path.split("/").filter(Boolean);
-  segments.pop();
-  if (segments.length === 0) return null;
-  return `/${segments.join("/")}`;
 }
