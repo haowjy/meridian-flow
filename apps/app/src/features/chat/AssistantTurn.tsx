@@ -74,6 +74,7 @@ function AssistantTurnComponent({
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
   const liveLineageDocuments = liveLineage.documents ?? [];
   const hasReversibleWrites = liveLineageDocuments.length > 0;
+  const hasActiveDrafts = Boolean(draftGroups?.some((group) => group.drafts.length > 0));
 
   return (
     <div
@@ -90,6 +91,7 @@ function AssistantTurnComponent({
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToCheckpoint={onRespondToCheckpoint}
+          draftWrite={hasActiveDrafts}
         />
       ))}
 
@@ -131,12 +133,14 @@ function TurnSegmentView({
   threadId,
   turnStatus,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   segment: TurnSegment;
   segmentIndex: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   return (
     <div data-turn-segment={segmentIndex + 1}>
@@ -149,6 +153,7 @@ function TurnSegmentView({
               threadId={threadId}
               turnStatus={turnStatus}
               onRespondToCheckpoint={onRespondToCheckpoint}
+              draftWrite={draftWrite}
             />
           ))}
         </ProcessDisclosure>
@@ -162,6 +167,7 @@ function TurnSegmentView({
             turnStatus={turnStatus}
             mode="frontier"
             onRespondToCheckpoint={onRespondToCheckpoint}
+            draftWrite={draftWrite}
           />
         </div>
       ) : null}
@@ -180,11 +186,13 @@ function FoldRun({
   threadId,
   turnStatus,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   if (run.kind === "reasoning") {
     return (
@@ -204,6 +212,7 @@ function FoldRun({
         turnStatus={turnStatus}
         mode="fold"
         onRespondToCheckpoint={onRespondToCheckpoint}
+        draftWrite={draftWrite}
       />
     </div>
   );
@@ -262,26 +271,34 @@ function DeliverySegments({
   turnStatus,
   mode,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
   mode: DeliveryMode;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
     <>
       {segments.flatMap((segment) => {
         if (segment.kind === "tool") {
-          return [<ToolRow key={blockRenderKey(segment.tool.keyBlock)} tool={segment.tool} />];
+          return [
+            <ToolRow
+              key={blockRenderKey(segment.tool.keyBlock)}
+              tool={segment.tool}
+              draftWrite={draftWrite}
+            />,
+          ];
         }
         // Claude-style timeline: adjacent tools stack as siblings instead of
         // collapsing into a grouping disclosure. With text-altitude rows the
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
           return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} />
+            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} draftWrite={draftWrite} />
           ));
         }
         return [

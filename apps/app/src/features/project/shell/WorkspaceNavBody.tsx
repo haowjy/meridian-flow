@@ -12,8 +12,10 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Plus } from "lucide-react";
-import { useState } from "react";
+import type { AiWriteMode } from "@meridian/contracts/preferences";
+import { FilePen, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { useId, useState } from "react";
 
 import {
   useProjectPreferences,
@@ -70,6 +72,13 @@ export function WorkspaceNavBody({
           />
         ))}
       </div>
+
+      <AiWriteModeControl
+        value={preferences.aiWriteMode ?? "direct"}
+        disabled={updatePreferences.isPending}
+        presentation={presentation}
+        onChange={(aiWriteMode) => updatePreferences.mutate({ aiWriteMode })}
+      />
 
       {/* Chats label + new chat · single-row search/view controls */}
       <div
@@ -134,6 +143,110 @@ export function WorkspaceNavBody({
         <AccountMenu />
       </div>
     </>
+  );
+}
+
+function AiWriteModeControl({
+  value,
+  disabled,
+  presentation,
+  onChange,
+}: {
+  value: AiWriteMode;
+  disabled: boolean;
+  presentation: WorkspaceNavPresentation;
+  onChange: (value: AiWriteMode) => void;
+}) {
+  const phone = presentation === "phone";
+  const groupName = useId();
+  return (
+    <fieldset
+      className={cn(
+        "min-w-0 shrink-0 border-0 border-t border-border-subtle",
+        phone ? "px-3 py-3" : "mt-2 px-3 pt-2",
+      )}
+    >
+      <legend className="visually-hidden">
+        <Trans>AI write mode</Trans>
+      </legend>
+      <div className="mb-1.5 flex items-center gap-1.5 text-ink-muted">
+        <FilePen className="size-3.5" aria-hidden />
+        <SidebarSectionLabel>
+          <Trans>AI write mode</Trans>
+        </SidebarSectionLabel>
+      </div>
+      <div className={cn("grid gap-1", phone ? "grid-cols-1" : "grid-cols-2")}>
+        <AiWriteModeOption
+          name={groupName}
+          value="draft"
+          selected={value === "draft"}
+          disabled={disabled}
+          phone={phone}
+          onSelect={onChange}
+        >
+          <Trans>Review before applying</Trans>
+        </AiWriteModeOption>
+        <AiWriteModeOption
+          name={groupName}
+          value="direct"
+          selected={value === "direct"}
+          disabled={disabled}
+          phone={phone}
+          onSelect={onChange}
+        >
+          <Trans>Apply directly</Trans>
+        </AiWriteModeOption>
+      </div>
+    </fieldset>
+  );
+}
+
+function AiWriteModeOption({
+  name,
+  value,
+  selected,
+  disabled,
+  phone,
+  onSelect,
+  children,
+}: {
+  name: string;
+  value: AiWriteMode;
+  selected: boolean;
+  disabled: boolean;
+  phone: boolean;
+  onSelect: (value: AiWriteMode) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "focus-within:focus-ring rounded-md",
+        disabled ? "cursor-default" : "cursor-pointer",
+      )}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={selected}
+        disabled={disabled}
+        onChange={() => onSelect(value)}
+        className="visually-hidden"
+      />
+      <span
+        className={cn(
+          "block rounded-md border border-border-subtle px-2 text-left text-xs leading-snug transition-colors",
+          phone ? "min-h-11 py-2.5" : "py-1.5",
+          selected
+            ? "bg-sidebar-accent font-medium text-foreground"
+            : "bg-surface-warm text-ink-muted hover:border-border-focus hover:bg-sidebar-accent/60 hover:text-foreground",
+          disabled && "opacity-60",
+        )}
+      >
+        {children}
+      </span>
+    </label>
   );
 }
 

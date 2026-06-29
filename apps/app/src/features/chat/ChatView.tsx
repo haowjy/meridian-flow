@@ -204,8 +204,7 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         scrollRef={scrollRef}
         scrollAriaLabel={t`Conversation`}
-        // pb-36 clears the pinned composer; taller than --chat-scroll-fade-size (visual hint only).
-        scrollClassName="pt-6 pb-36"
+        scrollClassName="pt-6"
         scrollFadeBottom
         footer={
           <div data-debug-composer={threadId} className="flex flex-col gap-2">

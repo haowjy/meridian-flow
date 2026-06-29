@@ -20,9 +20,10 @@ import { rendererFor } from "./tool-renderers";
 
 export type ToolRowProps = {
   tool: ToolView;
+  draftWrite?: boolean;
 };
 
-export function ToolRow({ tool }: ToolRowProps) {
+export function ToolRow({ tool, draftWrite = false }: ToolRowProps) {
   if (shouldHideToolView(tool)) return null;
 
   const renderer = rendererFor(tool.toolName);
@@ -35,7 +36,7 @@ export function ToolRow({ tool }: ToolRowProps) {
     <ActivityRow
       Icon={renderer.Icon}
       iconTint={renderer.iconTint}
-      title={renderer.title(tool)}
+      title={renderer.title(tool, { writeMode: draftWrite ? "draft" : "direct" })}
       status={status}
       expand={expand}
       onClick={onClick}
