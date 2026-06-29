@@ -18,6 +18,7 @@ function invalidateDraftReviewQueries(
 ): void {
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.drafts(threadId) });
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   void queryClient.invalidateQueries({
     queryKey: threadQueryKeys.draftPreview(threadId, documentId),
   });
@@ -31,8 +32,6 @@ export function useAcceptDraft() {
       acceptDraft(threadId, documentId),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
-      // TODO: Accept also changes the live document; live Yjs sessions update separately,
-      // so do not refetch or replace the collaborative document here.
     },
   });
 }

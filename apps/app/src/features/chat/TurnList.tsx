@@ -33,6 +33,8 @@ import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 
 import { AssistantTurn } from "./AssistantTurn";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import { DraftAcceptTurn } from "./DraftAcceptTurn";
+import { isDraftAcceptTurn } from "./draft-accept-turn";
 import { UserTurn } from "./UserTurn";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
@@ -86,6 +88,9 @@ export function TurnList({
 
   const itemContent = useCallback(
     (idx: number, turn: Turn) => {
+      if (isDraftAcceptTurn(turn)) {
+        return <DraftAcceptTurn threadId={threadId} turn={turn} />;
+      }
       if (turn.role === "user") {
         return <UserTurn turn={turn} />;
       }

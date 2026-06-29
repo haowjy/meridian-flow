@@ -1,6 +1,7 @@
 /** Drizzle adapter for persisted collab draft review state. */
 
 import { randomUUID } from "node:crypto";
+import { DRAFT_ACCEPT_TURN_TEXT, draftAcceptTurnRequestParams } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -11,9 +12,13 @@ import {
   documentYjsDrafts,
   documentYjsDraftUpdates,
   documentYjsReversals,
+  threads,
+  turnBlocks,
+  turns,
 } from "@meridian/database";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import type {
+  AcceptedDraftAppend,
   ActiveDraft,
   Draft,
   DraftAcceptJournal,
@@ -22,6 +27,7 @@ import type {
 } from "../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
 import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
+import { createDrizzleJournal } from "./drizzle-journal.js";
 
 const ACTIVE_DRAFT_UNIQUE_CONSTRAINT = "document_yjs_drafts_active_document_thread";
 
@@ -284,27 +290,102 @@ export function createDrizzleDraftStore(db: DraftDb): DraftStore {
   };
 }
 
-export function createDrizzleDraftAcceptJournal(
-  db: Pick<Database, "select">,
-  journal: Pick<DraftAcceptJournal, "appendBatch">,
-): DraftAcceptJournal {
+export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal {
   return {
-    appendBatch: journal.appendBatch.bind(journal),
-    async findUpdateSeqByWriteId(input) {
-      const [row] = await db
-        .select({ createdSeq: agentEditMutations.createdSeq })
-        .from(agentEditMutations)
-        .where(
-          scopedWhere(
-            agentEditMutations,
-            { documentId: input.documentId, threadId: input.threadId, scopeId: LIVE_SCOPE },
-            eq(agentEditMutations.writeId, input.writeId),
-          ),
-        )
-        .limit(1);
-      return row ? Number(row.createdSeq) : null;
+    findAcceptedDraftAppend: (input) => findAcceptedDraftAppend(db, input),
+    async appendAcceptedDraft(input) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as DraftDb;
+        await insertDraftAcceptTurn(txDb, input);
+        const existing = await findAcceptedDraftAppend(txDb, input);
+        if (existing) return existing;
+
+        const txJournal = createDrizzleJournal(tx as Parameters<typeof createDrizzleJournal>[0]);
+        const [result] = await txJournal.appendBatch([
+          {
+            docId: input.documentId,
+            update: input.update,
+            meta: { origin: "system", actorTurnId: input.actorTurnId, seq: 0 },
+            mutation: {
+              threadId: input.threadId,
+              turnId: input.acceptTurnId,
+              writeId: input.writeId,
+            },
+          },
+        ]);
+        if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
+        return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
+      });
     },
   };
+}
+
+async function findAcceptedDraftAppend(
+  db: Pick<Database, "select">,
+  input: { documentId: DocumentId; threadId: ThreadId; writeId: string },
+): Promise<AcceptedDraftAppend | null> {
+  const [row] = await db
+    .select({ createdSeq: agentEditMutations.createdSeq, turnId: agentEditMutations.turnId })
+    .from(agentEditMutations)
+    .where(
+      scopedWhere(
+        agentEditMutations,
+        { documentId: input.documentId, threadId: input.threadId, scopeId: LIVE_SCOPE },
+        eq(agentEditMutations.writeId, input.writeId),
+      ),
+    )
+    .limit(1);
+  return row ? { appliedUpdateSeq: Number(row.createdSeq), acceptTurnId: row.turnId } : null;
+}
+
+async function insertDraftAcceptTurn(
+  db: DraftDb,
+  input: Parameters<DraftAcceptJournal["appendAcceptedDraft"]>[0],
+): Promise<void> {
+  const now = new Date();
+  const [thread] = await db
+    .select({ activeLeafTurnId: threads.activeLeafTurnId })
+    .from(threads)
+    .where(eq(threads.id, input.threadId))
+    .limit(1);
+  const parentTurnId = thread?.activeLeafTurnId ?? input.actorTurnId;
+
+  await db
+    .insert(turns)
+    .values({
+      id: input.acceptTurnId,
+      threadId: input.threadId,
+      parentTurnId,
+      role: "user",
+      status: "complete",
+      finishReason: "end_turn",
+      requestParams: draftAcceptTurnRequestParams({
+        draftId: input.draftId,
+        documentId: input.documentId,
+      }),
+      completedAt: now,
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: turns.id });
+
+  await db
+    .insert(turnBlocks)
+    .values({
+      id: input.acceptBlockId,
+      turnId: input.acceptTurnId,
+      blockType: "text",
+      status: "complete",
+      sequence: 0,
+      modelText: DRAFT_ACCEPT_TURN_TEXT,
+      content: DRAFT_ACCEPT_TURN_TEXT,
+      compact: "",
+    })
+    .onConflictDoNothing({ target: turnBlocks.id });
+
+  await db
+    .update(threads)
+    .set({ activeLeafTurnId: input.acceptTurnId, updatedAt: now })
+    .where(eq(threads.id, input.threadId));
 }
 
 function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {

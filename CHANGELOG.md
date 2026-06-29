@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`, `apps/app`: accepting an AI draft is now its own user-attributed transcript event. The accept footer says "You accepted this draft · Undo", and undo reverses that accepted change instead of attaching to the proposing assistant turn.
+
 - `apps/server`: draft accept/reject is now DB-fenced. Concurrent accepts report in progress, stale draft responses cannot recreate closed drafts, and applied retry recovers the live Yjs doc after a crash between journal write and live apply.
 
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an

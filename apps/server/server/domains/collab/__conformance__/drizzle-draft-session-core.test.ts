@@ -1,7 +1,7 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
@@ -30,6 +30,7 @@ const DOC_ID = "00000000-0000-4000-8000-000000000504" as DocumentId;
 const DOC_B_ID = "00000000-0000-4000-8000-000000000507" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000505" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000506" as TurnId;
+const LATER_TURN_ID = "00000000-0000-4000-8000-000000000508" as TurnId;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("draft session core (postgres)", () => {
@@ -45,12 +46,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       agentEditWidCounters,
       contextSources,
       documentYjsDrafts,
+      documentYjsCheckpoints,
       documentYjsDraftUpdates,
+      documentYjsHeads,
+      documentYjsReversalOps,
       documentYjsReversals,
+      documentYjsUpdates,
       documents,
       folders,
       projects,
       threads,
+      turnBlocks,
       turns,
       users,
     } = dbSchema;
@@ -58,19 +64,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { createDrizzleDraftStore } = await import("../adapters/drizzle-drafts.js");
+    const { createDrizzleDraftAcceptJournal, createDrizzleDraftStore } = await import(
+      "../adapters/drizzle-drafts.js"
+    );
+    const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
     let draftStore = createDrizzleDraftStore(db);
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
+        documentYjsReversalOps,
+        documentYjsReversals,
         documentYjsDraftUpdates,
         documentYjsDrafts,
         agentEditSyncState,
         agentEditMutations,
         agentEditWidCounters,
-        documentYjsReversals,
+        documentYjsUpdates,
+        documentYjsCheckpoints,
+        documentYjsHeads,
+        turnBlocks,
         turns,
         threads,
         documents,
@@ -726,6 +740,119 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(cleanupCalls).toBe(2);
     });
 
+    it("P5: accepts as a distinct user turn whose undo reverses the accepted draft", async () => {
+      const { journal, lifecycle, store } = createDrizzleCollabPersistence(db);
+      const liveCoordinator = createInMemoryCoordinator(journal);
+      const domain = createFacade({
+        journal,
+        coordinator: liveCoordinator,
+        lifecycle,
+        store,
+        hocuspocus: () => null,
+        bindHocuspocus: (_instance: Hocuspocus) => {},
+        draftStore,
+        draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
+        threads: {
+          async findById(id) {
+            return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
+          },
+        },
+        projectPreferences: {
+          async read() {
+            return { aiWriteMode: "direct" as const };
+          },
+        },
+        createDraftSessionCore: ({ threadId }) =>
+          createDrizzleDraftSessionCore({
+            db,
+            threadId,
+            liveCoordinator,
+            draftStore,
+          }),
+      });
+      await lifecycle.ensureDocument(DOC_ID);
+      liveCoordinator.ensureEmpty(DOC_ID);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "distinct-event");
+      await db.insert(turns).values({
+        id: LATER_TURN_ID,
+        threadId: THREAD_ID,
+        parentTurnId: TURN_ID,
+        role: "user",
+        status: "complete",
+      });
+      await db
+        .update(threads)
+        .set({ activeLeafTurnId: LATER_TURN_ID })
+        .where(eq(threads.id, THREAD_ID));
+
+      const accept = await domain.drafts.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        userId: USER_ID,
+      });
+      if (accept.status !== "applied") throw new Error("expected applied accept");
+
+      const orderedTurns = await db
+        .select()
+        .from(turns)
+        .where(eq(turns.threadId, THREAD_ID))
+        .orderBy(asc(turns.createdAt));
+      const acceptTurn = orderedTurns.find((turn) => turn.id === accept.acceptTurnId);
+      expect(acceptTurn).toMatchObject({
+        id: accept.acceptTurnId,
+        role: "user",
+        status: "complete",
+        parentTurnId: LATER_TURN_ID,
+      });
+      expect(acceptTurn?.requestParams).toMatchObject({
+        kind: "draft_accept",
+        draftId: draft.id,
+        documentId: DOC_ID,
+      });
+      expect(acceptTurn?.requestParams).not.toHaveProperty("actorTurnId");
+      const acceptBlocks = await db
+        .select()
+        .from(turnBlocks)
+        .where(eq(turnBlocks.turnId, accept.acceptTurnId));
+      expect(acceptBlocks).toMatchObject([
+        { blockType: "text", modelText: "You accepted this draft" },
+      ]);
+
+      const mutationRows = await db
+        .select()
+        .from(agentEditMutations)
+        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}`));
+      expect(mutationRows).toMatchObject([
+        { turnId: accept.acceptTurnId, createdSeq: accept.appliedUpdateSeq },
+      ]);
+      const updateRows = await db
+        .select()
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.id, accept.appliedUpdateSeq));
+      expect(updateRows).toMatchObject([{ actorTurnId: TURN_ID }]);
+      await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
+      await expect(
+        domain.listLiveDocumentsForTurn(THREAD_ID, accept.acceptTurnId),
+      ).resolves.toEqual([{ documentId: DOC_ID, uri: DOC_ID }]);
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Draft distinct-event.");
+
+      await expect(
+        domain.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: accept.acceptTurnId,
+          direction: "undo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "reversed" });
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
+    });
+
     it("invalidates active draft response sessions before they can commit", async () => {
       const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await domain.writeDocument({
@@ -910,23 +1037,23 @@ async function staleAcceptResume(input: {
   const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
   const acceptJournal = createInMemoryDraftAcceptJournal(input.liveJournal);
   const writeId = `draft-accept:${input.draft.id}`;
-  let appliedUpdateSeq = await acceptJournal.findUpdateSeqByWriteId({
-    documentId: DOC_ID,
-    threadId: THREAD_ID,
-    writeId,
-  });
-  if (appliedUpdateSeq === null) {
-    const [result] = await acceptJournal.appendBatch([
-      {
-        docId: DOC_ID,
-        update: mergedUpdate,
-        meta: { origin: "system", actorTurnId: input.draft.lastActorTurnId, seq: 0 },
-        mutation: { threadId: THREAD_ID, turnId: input.draft.lastActorTurnId, writeId },
-      },
-    ]);
-    if (!result) throw new Error("expected accepted draft journal append");
-    appliedUpdateSeq = result.seq;
-  }
+  const acceptedAppend =
+    (await acceptJournal.findAcceptedDraftAppend({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      writeId,
+    })) ??
+    (await acceptJournal.appendAcceptedDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: input.draft.id,
+      update: mergedUpdate,
+      writeId,
+      actorTurnId: input.draft.lastActorTurnId,
+      acceptTurnId: input.draft.lastActorTurnId,
+      acceptBlockId: input.draft.lastActorTurnId as never,
+    }));
+  const appliedUpdateSeq = acceptedAppend.appliedUpdateSeq;
   const applied = await input.draftStore.markApplied(input.draft.id, {
     claimToken: input.draft.claimToken,
     appliedByUserId: USER_ID,
