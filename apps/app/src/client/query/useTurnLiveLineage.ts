@@ -1,4 +1,4 @@
-/** useTurnLiveLineage — live document lineage for one assistant turn. */
+/** useTurnLiveLineage — live document lineage for one undoable transcript turn. */
 import type { TurnLiveLineageDocumentItem } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 

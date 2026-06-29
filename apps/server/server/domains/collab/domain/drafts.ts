@@ -1,7 +1,13 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
-import { randomBytes } from "node:crypto";
-import type { DocumentCoordinator, UpdateJournal } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import { createHash, randomBytes } from "node:crypto";
+import type { DocumentCoordinator } from "@meridian/agent-edit";
+import type {
+  DocumentId,
+  ThreadId,
+  TurnBlockId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
@@ -84,12 +90,24 @@ export type DraftStore = {
   }): Promise<void>;
 };
 
-export type DraftAcceptJournal = Pick<UpdateJournal, "appendBatch"> & {
-  findUpdateSeqByWriteId(input: {
+export type AcceptedDraftAppend = { appliedUpdateSeq: number; acceptTurnId: TurnId };
+
+export type DraftAcceptJournal = {
+  findAcceptedDraftAppend(input: {
     documentId: DocumentId;
     threadId: ThreadId;
     writeId: string;
-  }): Promise<number | null>;
+  }): Promise<AcceptedDraftAppend | null>;
+  appendAcceptedDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    update: Uint8Array;
+    writeId: string;
+    actorTurnId: TurnId;
+    acceptTurnId: TurnId;
+    acceptBlockId: TurnBlockId;
+  }): Promise<AcceptedDraftAppend>;
 };
 
 export type InvalidateInFlightDrafts = (input: {
@@ -106,7 +124,7 @@ export type DraftAcceptResult =
   | { status: "not_found" }
   | { status: "in_progress"; draftId: string }
   | { status: "discarded"; draftId: string }
-  | { status: "applied"; draftId: string; appliedUpdateSeq: number };
+  | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: TurnId };
 
 export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
 
@@ -184,6 +202,7 @@ export function createDraftService(deps: {
           status: "applied",
           draftId: applied.id,
           appliedUpdateSeq: applied.appliedUpdateSeq,
+          acceptTurnId: await acceptTurnIdForAppliedDraft(input, applied),
         };
       }
       return { status: "not_found" };
@@ -212,42 +231,37 @@ export function createDraftService(deps: {
 
     const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
     const writeId = `draft-accept:${draft.id}`;
-    let appliedUpdateSeq = await deps.liveJournal.findUpdateSeqByWriteId({
+    const acceptTurnId = createDraftAcceptTurnId(draft.id);
+    const acceptBlockId = createDraftAcceptBlockId(draft.id);
+    let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
       threadId: input.threadId,
       writeId,
     });
 
-    if (appliedUpdateSeq === null) {
+    if (acceptedAppend === null) {
       try {
-        const [result] = await deps.liveJournal.appendBatch([
-          {
-            docId: input.documentId,
-            update: mergedUpdate,
-            meta: {
-              origin: "system",
-              actorTurnId: draft.lastActorTurnId,
-              seq: 0,
-            },
-            mutation: {
-              threadId: input.threadId,
-              turnId: draft.lastActorTurnId,
-              writeId,
-            },
-          },
-        ]);
-        if (!result) throw new Error(`Failed to append accepted draft ${draft.id}`);
-        appliedUpdateSeq = result.seq;
+        acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          draftId: draft.id,
+          update: mergedUpdate,
+          writeId,
+          actorTurnId: draft.lastActorTurnId,
+          acceptTurnId,
+          acceptBlockId,
+        });
       } catch (cause) {
         if (!isUniqueConstraintViolation(cause)) throw cause;
-        appliedUpdateSeq = await deps.liveJournal.findUpdateSeqByWriteId({
+        acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
           documentId: input.documentId,
           threadId: input.threadId,
           writeId,
         });
-        if (appliedUpdateSeq === null) throw cause;
+        if (acceptedAppend === null) throw cause;
       }
     }
+    const { appliedUpdateSeq } = acceptedAppend;
 
     if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
     const applied = await deps.draftStore.markApplied(draft.id, {
@@ -263,7 +277,26 @@ export function createDraftService(deps: {
 
     await recoverAppliedDraftSideEffects(input, { ...draft, appliedUpdateSeq });
 
-    return { status: "applied", draftId: draft.id, appliedUpdateSeq };
+    return {
+      status: "applied",
+      draftId: draft.id,
+      appliedUpdateSeq,
+      acceptTurnId: acceptedAppend.acceptTurnId,
+    };
+  }
+
+  async function acceptTurnIdForAppliedDraft(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    draft: Pick<Draft, "id">,
+  ): Promise<TurnId> {
+    const writeId = `draft-accept:${draft.id}`;
+    const acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId,
+    });
+    if (!acceptedAppend) throw new Error(`Accepted draft ${draft.id} missing live mutation`);
+    return acceptedAppend.acceptTurnId;
   }
 
   async function rejectDraft(input: {
@@ -298,6 +331,22 @@ export function createDraftService(deps: {
       scopeId: draft.id,
     });
   }
+}
+
+export function createDraftAcceptTurnId(draftId: string): TurnId {
+  return stableUuid(`draft-accept-turn:${draftId}`) as TurnId;
+}
+
+export function createDraftAcceptBlockId(draftId: string): TurnBlockId {
+  return stableUuid(`draft-accept-block:${draftId}`) as TurnBlockId;
+}
+
+function stableUuid(seed: string): string {
+  const bytes = createHash("sha256").update(seed).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function isUniqueConstraintViolation(cause: unknown): boolean {

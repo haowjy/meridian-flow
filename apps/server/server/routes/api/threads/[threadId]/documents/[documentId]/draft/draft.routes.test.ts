@@ -123,7 +123,12 @@ describe("thread document draft routes", () => {
 
   it("accepts a draft and returns the applied journal sequence", async () => {
     const app = makeApp({
-      acceptResult: { status: "applied", draftId: "draft-1", appliedUpdateSeq: 42 },
+      acceptResult: {
+        status: "applied",
+        draftId: "draft-1",
+        appliedUpdateSeq: 42,
+        acceptTurnId: "turn-accept",
+      },
     });
     auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
     const route = (await import("./accept/index.post.js")).default as unknown as (
@@ -134,6 +139,7 @@ describe("thread document draft routes", () => {
       status: "applied",
       draftId: "draft-1",
       appliedUpdateSeq: 42,
+      acceptTurnId: "turn-accept",
     });
     expect(app.documentSync.drafts.acceptDraft).toHaveBeenCalledWith({
       threadId,

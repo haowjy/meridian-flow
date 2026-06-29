@@ -10,7 +10,12 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
-import { ActiveDraftConflictError, createDraftService, type DraftStore } from "./drafts.js";
+import {
+  ActiveDraftConflictError,
+  createDraftAcceptTurnId,
+  createDraftService,
+  type DraftStore,
+} from "./drafts.js";
 
 const DOC_ID = "doc-1" as never;
 const THREAD_ID = "thread-1" as never;
@@ -85,7 +90,11 @@ describe("draft lifecycle service", () => {
       userId: USER_ID,
     });
 
-    expect(first).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(first).toMatchObject({
+      status: "applied",
+      draftId: draft.id,
+      acceptTurnId: createDraftAcceptTurnId(draft.id),
+    });
     expect(second).toEqual(first);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
     expect(await liveText(scenario.coordinator)).toBe("Alpha Beta");
@@ -97,10 +106,14 @@ describe("draft lifecycle service", () => {
     expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
       {
         writeId: `draft-accept:${draft.id}`,
-        turnId: TURN_B,
+        turnId: first.status === "applied" ? first.acceptTurnId : undefined,
         createdSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
       },
     ]);
+    expect(scenario.journal.updateRecords(DOC_ID)[0]?.meta).toMatchObject({
+      origin: "system",
+      actorTurnId: TURN_B,
+    });
     expect(await scenario.store.getDraft(draft.id)).toMatchObject({
       status: "applied",
       appliedUpdateSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,

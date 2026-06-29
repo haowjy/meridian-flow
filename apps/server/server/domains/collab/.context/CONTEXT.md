@@ -141,8 +141,9 @@ documents from live `agent_edit_mutations` for `(threadId, turnId)` and filters 
 the live scope inside the adapter. Higher layers call
 `listLiveDocumentsForTurn(threadId, turnId)` and receive document ids + canonical
 context URIs; they never pass or branch on raw `scope_id`. Draft-only mutations do
-not appear. Applying a draft creates the live mutation that makes the footer
-appear.
+not appear. Applying a draft creates a distinct user accept turn and stamps the
+live mutation with that accept turn, so the footer belongs to the writer
+acceptance event rather than the proposing assistant turn.
 
 ### Turn-reversal orchestration (`domain/turn-reversal.ts`)
 
@@ -235,8 +236,10 @@ so adapters compose the partition without code duplication.
    in-memory response invalidation is advisory.
 2. **Invalidate** in-flight responses for this `(documentId, threadId)`.
 3. **Merge** all draft deltas via `Y.mergeUpdates`.
-4. **Journal-first** persistence: `appendBatch` with `writeId = draft-accept:<id>`;
-   unique constraint prevents double-apply on retry.
+4. **Journal-first** persistence: create the user accept turn and append the
+   live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
+   unique constraint prevents double-apply on retry. The mutation metadata keeps
+   `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
 5. **Durable status**: `markApplied` is claim-token fenced and only succeeds from
    `accepting`.
 6. **Side effects** (recoverable): apply/recover the live coordinator projection,
@@ -247,8 +250,10 @@ Draft response sessions capture the active draft id they read from. Draft-scoped
 transaction before inserting mutations, so a stale response cannot append to a
 closed draft or create a replacement draft after accept/reject wins.
 
-Empty drafts (zero updates) auto-discard on accept. The `lastActorTurnId`
-anchors the accept mutation's `turnId` — no hidden system turns.
+Empty drafts (zero updates) auto-discard on accept. Non-empty accepts are
+first-class user events appended to the current thread leaf: the accept turn
+anchors the live mutation's `turnId`, while `lastActorTurnId` remains internal
+lineage to the proposing assistant turn.
 
 ### Reject lifecycle
 

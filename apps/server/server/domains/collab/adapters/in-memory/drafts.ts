@@ -7,7 +7,11 @@ import type {
   DraftStore,
   DraftUpdate,
 } from "../../domain/drafts.js";
-import { ActiveDraftConflictError, createDraftId } from "../../domain/drafts.js";
+import {
+  ActiveDraftConflictError,
+  createDraftAcceptTurnId,
+  createDraftId,
+} from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
 
 export function createInMemoryDraftStore(): DraftStore {
@@ -187,14 +191,33 @@ export function createInMemoryDraftStore(): DraftStore {
 
 export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): DraftAcceptJournal {
   return {
-    appendBatch: journal.appendBatch.bind(journal),
-    async findUpdateSeqByWriteId(input) {
+    async findAcceptedDraftAppend(input) {
       const row = journal
         .mutationRecords(input.documentId)
         .find(
           (mutation) => mutation.threadId === input.threadId && mutation.writeId === input.writeId,
         );
-      return row?.createdSeq ?? null;
+      return row ? { appliedUpdateSeq: row.createdSeq, acceptTurnId: row.turnId as never } : null;
+    },
+    async appendAcceptedDraft(input) {
+      const [result] = await journal.appendBatch([
+        {
+          docId: input.documentId,
+          update: input.update,
+          meta: {
+            origin: "system",
+            actorTurnId: input.actorTurnId,
+            seq: 0,
+          },
+          mutation: {
+            threadId: input.threadId,
+            turnId: input.acceptTurnId ?? createDraftAcceptTurnId(input.draftId),
+            writeId: input.writeId,
+          },
+        },
+      ]);
+      if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
+      return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
     },
   };
 }

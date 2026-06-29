@@ -1,4 +1,4 @@
-/** Server-owned read-model for documents with live mutations in an assistant turn. */
+/** Server-owned read-model for documents with live mutations in an undoable transcript turn. */
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 
 export type LiveLineageDocument = {

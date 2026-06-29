@@ -207,7 +207,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         })
       : undefined,
     draftStore,
-    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db, journal),
+    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
     projectPreferences: deps.projectPreferences,
     createDraftSessionCore: ({ threadId }) =>

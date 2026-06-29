@@ -50,6 +50,7 @@ vi.mock("@lingui/react/macro", () => ({
 
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
+import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { TurnChangeFooter } from "./TurnChangeFooter";
 
 describe("TurnChangeFooter", () => {
@@ -234,6 +235,24 @@ describe("TurnChangeFooter", () => {
     expect(container.textContent).toContain("1 file changed");
   });
 
+  it("renders draft accept events as user-attributed undo affordances", async () => {
+    turnMutateAsync.mockResolvedValue({
+      status: "reversed",
+      documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
+    });
+    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
+
+    renderDraftAcceptTurn();
+
+    expect(container.textContent).toContain("You accepted this draft");
+    expect(button("Undo").disabled).toBe(false);
+    await click(button("Undo"));
+
+    expect(turnMutateAsync).toHaveBeenCalledWith({ turnId: "turn-accept", direction: "undo" });
+    expect(container.textContent).toContain("You undid your acceptance");
+    expect(button("Redo").disabled).toBe(false);
+  });
+
   it("keeps the footer hidden when AssistantTurn has no live lineage", () => {
     liveLineageDocuments.current = [];
 
@@ -268,6 +287,27 @@ describe("TurnChangeFooter", () => {
       root.render(
         <ChatContextNavigationProvider onOpenContextUri={null}>
           <AssistantTurn turn={turn} />
+        </ChatContextNavigationProvider>,
+      );
+    });
+  }
+
+  function renderDraftAcceptTurn() {
+    act(() => {
+      root.render(
+        <ChatContextNavigationProvider onOpenContextUri={null}>
+          <DraftAcceptTurn
+            turn={{
+              ...turnWithBlocks([]),
+              id: "turn-accept",
+              role: "user",
+              requestParams: {
+                kind: "draft_accept",
+                draftId: "draft-1",
+                documentId: "doc-1",
+              },
+            }}
+          />
         </ChatContextNavigationProvider>,
       );
     });

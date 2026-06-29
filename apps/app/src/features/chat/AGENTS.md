@@ -71,9 +71,10 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnChangeFooter.tsx` | Per-turn summary bar below settled turns: server live-lineage document list with per-document and whole-turn undo/redo controls |
+| `TurnChangeFooter.tsx` | Per-turn summary bar below settled undoable turns: server live-lineage document list with per-document and whole-turn undo/redo controls |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
+| `DraftAcceptTurn.tsx` | User-attributed transcript event for accepted drafts; mounts the accept-specific undo footer |
 | `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; delegates preview to `onReview` |
 | `DraftPreviewOverlay.tsx` | Modal prose-diff/clean-preview surface; **owned by `ChatView`, not by the card** |
 | `diff-lines.ts` | LCS line-level diff for the preview overlay (prose, not code) |
