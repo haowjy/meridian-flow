@@ -74,7 +74,7 @@ describe("TurnChangeFooter", () => {
   it("renders server-provided live-lineage documents", () => {
     renderFooter(documentsForPaths(["/chapter-1.mdx"]));
 
-    expect(button("📝 1 file changed")).toBeDefined();
+    expect(button("📝 1 document changed")).toBeDefined();
   });
 
   it("does not render without live-lineage documents", () => {
@@ -232,7 +232,7 @@ describe("TurnChangeFooter", () => {
 
     renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
 
-    expect(container.textContent).toContain("1 file changed");
+    expect(container.textContent).toContain("1 document changed");
   });
 
   it("renders draft accept events as user-attributed undo affordances", async () => {
@@ -258,7 +258,7 @@ describe("TurnChangeFooter", () => {
 
     renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
 
-    expect(container.textContent).not.toContain("1 file changed");
+    expect(container.textContent).not.toContain("1 document changed");
   });
 
   it("keeps the footer hidden while AssistantTurn is live", () => {
@@ -266,7 +266,7 @@ describe("TurnChangeFooter", () => {
 
     renderAssistantTurn({ ...turnWithBlocks([]), status: "streaming" });
 
-    expect(container.textContent).not.toContain("1 file changed");
+    expect(container.textContent).not.toContain("1 document changed");
   });
 
   function renderFooter(
@@ -315,7 +315,7 @@ describe("TurnChangeFooter", () => {
 
   function expandFooter() {
     act(() => {
-      button(/files? changed/).click();
+      button(/documents? changed/).click();
     });
   }
 

@@ -116,9 +116,9 @@
 
 - Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.
 
-- Chat: assistant turns that edited files now show a "N files changed" footer.
-  Expand it to see each file, click a filename to open it in the editor, and
-  undo/redo per file or all at once. Already-undone or expired edits show the
+- Chat: assistant turns that edited documents now show a "N documents changed" footer.
+  Expand it to see each document, click a document name to open it in the editor, and
+  undo/redo per document or all at once. Already-undone or expired edits show the
   right state.
 - Chat editing: when a writer undoes the agent's edits and then sends another
   message, the model is told which edits were reversed (net undo/redo state,

@@ -6,7 +6,7 @@
  *
  * Trust model: the live manuscript is NEVER touched until the writer accepts.
  * Copy follows that — never imply the document already changed ("Draft ready
- * to review", "Accept changes", "Keep original" / "Discard draft"). No
+ * to review", "Apply to chapter", "Keep original" / "Discard draft"). No
  * code-review jargon (commit / hunk / patch / merge).
  *
  * The card does not own the preview overlay. Cards inside an anchored
@@ -129,7 +129,7 @@ export function DraftReviewCard({
           disabled={isPending}
         >
           {accept.isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-          <Trans>Apply draft</Trans>
+          <Trans>Apply to chapter</Trans>
         </Button>
         <Button
           type="button"

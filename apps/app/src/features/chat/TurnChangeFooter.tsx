@@ -66,7 +66,7 @@ export function TurnChangeFooter({
   const allActionableReversed =
     actionableDocuments.length > 0 &&
     actionableDocuments.every((doc) => rowState(doc.uri).disposition === "reversed");
-  const summary = `${documentIcon} ${fileCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
+  const summary = `${documentIcon} ${documentCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
   const acceptSummary = allActionableReversed
     ? t`You undid your acceptance`
     : t`You accepted this draft`;
@@ -211,7 +211,7 @@ export function TurnChangeFooter({
             type="button"
             aria-expanded={expanded}
             aria-controls={panelId}
-            aria-label={t`Show changed files`}
+            aria-label={t`Show changed documents`}
             onClick={() => setExpanded((value) => !value)}
             className="focus-ring -mr-1 inline-flex h-7 shrink-0 items-center rounded-md px-1 transition-colors hover:bg-card"
           >
@@ -310,7 +310,7 @@ function stateFromStatus(
     return { ...fallback, statusText: t`A later edit depends on this` };
   }
   if (status === "partial") {
-    return { ...fallback, statusText: t`Some files could not be updated` };
+    return { ...fallback, statusText: t`Some documents could not be updated` };
   }
   if (status === "success") return fallback;
   return { ...fallback, statusText: text || statusLabel(status) };
@@ -327,7 +327,7 @@ function statusLabel(status: WriteStatus): string {
     case "document_not_found":
       return t`Document not found`;
     case "partial_failure":
-      return t`Some files could not be updated`;
+      return t`Some documents could not be updated`;
     case "internal_error":
       return t`Undo failed`;
     default:
@@ -339,8 +339,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : t`Undo failed`;
 }
 
-function fileCountLabel(count: number): string {
-  return count === 1 ? t`1 file changed` : t`${count} files changed`;
+function documentCountLabel(count: number): string {
+  return count === 1 ? t`1 document changed` : t`${count} documents changed`;
 }
 
 function basename(path: string): string {
