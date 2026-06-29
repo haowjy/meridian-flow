@@ -44,6 +44,7 @@ import { useThreadUploads } from "@/client/query/useThreadUploads";
 import type { ContextTab } from "@/client/stores";
 import { DocumentRailSection, Section } from "@/features/chat/ThreadDocumentList";
 import { cn } from "@/lib/utils";
+import { ActiveDocumentSurface } from "../context/ActiveDocumentSurface";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import {
@@ -52,7 +53,6 @@ import {
   findContextDir,
   findContextFile,
 } from "../context/context-tree";
-import { ReadOnlyDocHost } from "../context/ReadOnlyDocHost";
 import { BinaryFallbackViewer } from "../context/viewers/BinaryFallbackViewer";
 import { ImageViewer } from "../context/viewers/ImageViewer";
 import { PdfViewer } from "../context/viewers/PdfViewer";
@@ -61,7 +61,10 @@ import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
 import { ResultViewerOverlay } from "./ResultViewerOverlay";
 import { SidebarSectionLabel } from "./SidebarSectionLabel";
 
-const RAIL_REGISTRY_OWNER = "context-rail-document-host";
+/** Owner key for the rail's editor mount host. Distinct from the center's key
+ *  so the two can coexist (center stays mounted offscreen when on Chat) without
+ *  racing each other's `DocumentSessionRegistry.retain()` calls. */
+const RAIL_EDITOR_OWNER = "context-rail-active-document-surface";
 
 /**
  * Identity of the thread upload currently shown in the rail viewer. The full
@@ -566,12 +569,19 @@ function RailContextDocViewerSlot({
     );
   }
   const tab = contextTabFromFile(scheme, file, workId);
+  // Editable context docs render through the SAME ActiveDocumentSurface as
+  // the center pane so the rail's editor is byte-for-byte the main editor:
+  // formatting toolbar, collab cursors, Yjs sync — same component, same
+  // behaviour. Non-tracked tabs route through the viewer host inside the
+  // surface (image / PDF / generic binary previews).
   return (
-    <ReadOnlyDocHost
+    <ActiveDocumentSurface
       projectId={projectId}
       activeThreadId={threadId}
-      tab={tab}
-      registryOwner={RAIL_REGISTRY_OWNER}
+      trackedTabs={tab.editable ? [tab] : []}
+      activeTab={tab}
+      activeTabId={tab.documentId}
+      registryOwner={RAIL_EDITOR_OWNER}
     />
   );
 }
@@ -587,10 +597,10 @@ function RailUploadViewerSlot({
 }) {
   if (target.schemaType && target.filetype) {
     // Tracked uploads (rare but valid — e.g. a dropped `.md` becomes a
-    // tracked doc) flow through the shared read-only editor host. The
-    // synthesized tab carries the metadata `ReadOnlyDocHost` needs for the
-    // editable branch; scheme/path are placeholders the editable branch
-    // never reads (it dispatches on documentId + schemaType only).
+    // tracked doc) flow through the same editable surface as context docs.
+    // The synthesized tab's scheme/path are placeholders the editor never
+    // reads — `EditorView` dispatches on `documentId + schemaType` only —
+    // so we just need them to satisfy the `ContextTab` shape.
     const tab: ContextTab = {
       documentId: target.documentId,
       scheme: "uploads",
@@ -601,11 +611,13 @@ function RailUploadViewerSlot({
       schemaType: target.schemaType,
     };
     return (
-      <ReadOnlyDocHost
+      <ActiveDocumentSurface
         projectId={projectId}
         activeThreadId={threadId}
-        tab={tab}
-        registryOwner={RAIL_REGISTRY_OWNER}
+        trackedTabs={[tab]}
+        activeTab={tab}
+        activeTabId={tab.documentId}
+        registryOwner={RAIL_EDITOR_OWNER}
       />
     );
   }
