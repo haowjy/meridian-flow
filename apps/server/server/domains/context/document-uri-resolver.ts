@@ -7,6 +7,7 @@ import { toCanonical } from "./context/uri.js";
 import type { ContextScheme } from "./ports/context-port.js";
 
 export type DocumentUriResolver = (documentId: string) => Promise<string | null>;
+export type DocumentLocation = { scheme: ContextScheme; path: string };
 
 type DocumentUriDb = Pick<Database, "select">;
 
@@ -30,6 +31,14 @@ export async function resolveDocumentUri(
   db: DocumentUriDb,
   documentId: string,
 ): Promise<string | null> {
+  const location = await resolveDocumentLocation(db, documentId);
+  return location ? toCanonical(location.scheme, location.path) : null;
+}
+
+export async function resolveDocumentLocation(
+  db: DocumentUriDb,
+  documentId: string,
+): Promise<DocumentLocation | null> {
   const [document] = await db
     .select({
       name: documents.name,
@@ -49,7 +58,7 @@ export async function resolveDocumentUri(
   const folderPath = await resolveFolderPath(db, document.folderId);
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...folderPath, filename].join("/");
-  return toCanonical(scheme, path);
+  return { scheme, path };
 }
 
 async function resolveFolderPath(db: DocumentUriDb, folderId: string | null): Promise<string[]> {

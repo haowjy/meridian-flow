@@ -1,6 +1,7 @@
 import type {
   DocumentFileType,
   Filetype,
+  ProjectContextTreeScheme,
   ThreadDocumentKind,
   ThreadDocumentRelationship,
   ThreadRecentDocumentItem,
@@ -11,6 +12,7 @@ import type { Database } from "@meridian/database";
 import type { ThreadDocumentRepository, TurnDocumentTouch } from "../../threads/index.js";
 import { createInMemoryInternalUploadDocumentStore } from "../adapters/thread-uploads/in-memory-internal-upload-document-store.js";
 import { createDrizzleInternalUploadDocumentStore } from "../adapters/thread-uploads/internal-upload-document-store.js";
+import { resolveDocumentLocation } from "../document-uri-resolver.js";
 import type {
   InternalUploadDocumentRecord,
   InternalUploadDocumentStore,
@@ -31,6 +33,15 @@ export interface UploadDocumentCreateInput {
 }
 
 export type UploadDocumentRecord = InternalUploadDocumentRecord;
+
+type ThreadDocumentLocation = {
+  scheme: ProjectContextTreeScheme | null;
+  path: string | null;
+};
+
+type ThreadDocumentLocationResolver = (
+  documentId: string,
+) => Promise<ThreadDocumentLocation | null>;
 
 export interface ThreadUploadDocumentStore {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
@@ -56,12 +67,15 @@ function toUploadItem(row: {
   relationship: string;
   firstTouchedAt: string;
   lastTouchedAt: string;
+  location: ThreadDocumentLocation;
 }): ThreadUploadDocumentItem {
   const filetype = row.document.filetype as Filetype | null;
   const fileType = row.document.fileType;
   return {
     threadId: row.threadId,
     documentId: row.document.id,
+    scheme: row.location.scheme,
+    path: row.location.path,
     relationship: row.relationship as ThreadDocumentRelationship,
     name: row.document.name,
     extension: row.document.extension,
@@ -81,12 +95,15 @@ function toUploadItem(row: {
 function toRecentItem(
   touch: TurnDocumentTouch,
   document: UploadDocumentRecord,
+  location: ThreadDocumentLocation,
 ): ThreadRecentDocumentItem {
   const filetype = document.filetype as Filetype | null;
   const fileType = document.fileType;
   return {
     threadId: touch.threadId,
     documentId: document.id,
+    scheme: location.scheme,
+    path: location.path,
     name: document.name,
     extension: document.extension,
     sizeBytes: document.sizeBytes,
@@ -104,8 +121,15 @@ function toRecentItem(
 function createThreadUploadDocumentStore(
   documents: InternalUploadDocumentStore,
   threadDocuments?: ThreadDocumentRepository,
+  resolveLocation?: ThreadDocumentLocationResolver,
 ): ThreadUploadDocumentStore {
   const threadByDocumentId = new Map<string, string>();
+  async function locationFor(documentId: string): Promise<ThreadDocumentLocation> {
+    // Rail lists are thread-scoped and small; resolve per document until this path needs batching.
+    const location = resolveLocation ? await resolveLocation(documentId) : null;
+    return location ?? { scheme: null, path: null };
+  }
+
   return {
     transaction(operation) {
       return documents.transaction(operation);
@@ -137,6 +161,7 @@ function createThreadUploadDocumentStore(
         relationship: attached?.relationship ?? "editing",
         firstTouchedAt: attached?.firstTouchedAt ?? document.updatedAt,
         lastTouchedAt: attached?.lastTouchedAt ?? document.updatedAt,
+        location: await locationFor(document.id),
       });
     },
     async listUploads(threadId) {
@@ -144,42 +169,50 @@ function createThreadUploadDocumentStore(
         const attached = await threadDocuments.listByThread(threadId);
         const rows = await documents.findUploadDocuments(attached.map((row) => row.documentId));
         const byId = new Map(rows.map((row) => [row.id, row]));
-        return attached.flatMap((row) => {
-          const document = byId.get(row.documentId);
-          return document
-            ? [
-                toUploadItem({
+        const items = await Promise.all(
+          attached.map(async (row) => {
+            const document = byId.get(row.documentId);
+            return document
+              ? toUploadItem({
                   document,
                   threadId,
                   relationship: row.relationship,
                   firstTouchedAt: row.firstTouchedAt,
                   lastTouchedAt: row.lastTouchedAt,
-                }),
-              ]
-            : [];
-        });
+                  location: await locationFor(document.id),
+                })
+              : null;
+          }),
+        );
+        return items.filter((item): item is ThreadUploadDocumentItem => item !== null);
       }
       const rows = await documents.findUploadDocuments([...threadByDocumentId.keys()]);
-      return rows
-        .filter((document) => threadByDocumentId.get(document.id) === threadId)
-        .map((document) =>
-          toUploadItem({
-            document,
-            threadId,
-            relationship: "editing",
-            firstTouchedAt: document.updatedAt,
-            lastTouchedAt: document.updatedAt,
-          }),
-        )
-        .sort((a, b) => b.lastTouchedAt.localeCompare(a.lastTouchedAt));
+      const items = await Promise.all(
+        rows
+          .filter((document) => threadByDocumentId.get(document.id) === threadId)
+          .map(async (document) =>
+            toUploadItem({
+              document,
+              threadId,
+              relationship: "editing",
+              firstTouchedAt: document.updatedAt,
+              lastTouchedAt: document.updatedAt,
+              location: await locationFor(document.id),
+            }),
+          ),
+      );
+      return items.sort((a, b) => b.lastTouchedAt.localeCompare(a.lastTouchedAt));
     },
     async listRecent(touches) {
       const rows = await documents.findUploadDocuments(touches.map((touch) => touch.documentId));
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return touches.flatMap((touch) => {
-        const document = byId.get(touch.documentId);
-        return document ? [toRecentItem(touch, document)] : [];
-      });
+      const items = await Promise.all(
+        touches.map(async (touch) => {
+          const document = byId.get(touch.documentId);
+          return document ? toRecentItem(touch, document, await locationFor(document.id)) : null;
+        }),
+      );
+      return items.filter((item): item is ThreadRecentDocumentItem => item !== null);
     },
   };
 }
@@ -191,6 +224,7 @@ export function createDrizzleThreadUploadDocumentStore(
   return createThreadUploadDocumentStore(
     createDrizzleInternalUploadDocumentStore(db),
     threadDocuments,
+    (documentId) => resolveDocumentLocation(db, documentId),
   );
 }
 
