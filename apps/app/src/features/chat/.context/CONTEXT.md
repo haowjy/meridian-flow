@@ -217,17 +217,22 @@ Migration is tracked in `work/activity-thinking-model`.
 ## Turn change footer (`TurnChangeFooter.tsx`)
 
 A per-turn summary bar below each settled assistant turn that shows which documents
-were touched by write/edit tool calls and surfaces per-document and whole-turn
-undo/redo controls. Key behavior:
+have durable **live** mutation lineage for that turn and surfaces per-document and
+whole-turn undo/redo controls. Key behavior:
 
-- **Document extraction** — `turnWrittenDocuments(turn)` scans the turn's `Block[]`
-  for write/edit tool calls and gathers the unique set of `{ uri, path }` documents.
+- **Document authority** — `AssistantTurn` calls `useTurnLiveLineage(threadId,
+  turnId)`, backed by `GET /api/threads/:threadId/turns/:turnId/live-lineage`.
+  The server derives documents from live `agent_edit_mutations`; tool blocks,
+  `turn_document_touches`, and recent-documents are not undo-footer authority.
+- **Draft review separation** — draft-only turns have draft review cards but no
+  footer. When a draft is applied, accept creates a live mutation and the same
+  turn's live-lineage query can then show the footer.
 - **Per-document undo/redo** — each document row shows Undo (or Redo if already
   reversed). Calls the `POST /api/threads/:threadId/context/reverse` endpoint with
   `{ uri, direction, scope: "write" }`.
 - **Whole-turn undo/redo all** — the "Undo all" / "Redo all" button calls the same
   endpoint with `{ direction, scope: "turn", target: turnId }`, which runs
-  `reverseTurn` across every document the turn touched.
+  `reverseTurn` across every live-lineage document the turn touched.
 - **Local state** — the footer tracks per-document affordance state locally
   (`applied` | `reversed` | `disabled`). Document content refresh after reversal is
   handled by Yjs sync; the footer doesn't manage editor state.

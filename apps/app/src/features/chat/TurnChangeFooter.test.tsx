@@ -6,14 +6,29 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { documentMutateAsync, turnMutateAsync } = vi.hoisted(() => ({
+const { documentMutateAsync, turnMutateAsync, liveLineageDocuments } = vi.hoisted(() => ({
   documentMutateAsync: vi.fn(),
   turnMutateAsync: vi.fn(),
+  liveLineageDocuments: {
+    current: null as Array<{ documentId: string; uri: string; path: string }> | null,
+  },
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseDocumentMutation: () => ({ mutateAsync: documentMutateAsync }),
   useReverseTurnMutation: () => ({ mutateAsync: turnMutateAsync }),
+}));
+
+vi.mock("@/client/query/useTurnLiveLineage", () => ({
+  useTurnLiveLineage: (
+    _threadId: string | null,
+    _turnId: string | null,
+    options?: { enabled?: boolean },
+  ) => ({
+    data: options?.enabled === false ? null : liveLineageDocuments.current,
+    documents: options?.enabled === false ? null : liveLineageDocuments.current,
+    status: options?.enabled === false ? "disabled" : "ready",
+  }),
 }));
 
 vi.mock("@lingui/core/macro", () => ({
@@ -44,6 +59,7 @@ describe("TurnChangeFooter", () => {
   beforeEach(() => {
     documentMutateAsync.mockReset();
     turnMutateAsync.mockReset();
+    liveLineageDocuments.current = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -54,58 +70,14 @@ describe("TurnChangeFooter", () => {
     container.remove();
   });
 
-  it("counts only write/edit calls with successful tool results", () => {
-    renderFooter(
-      turnWithBlocks([
-        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1"),
-        toolResultBlock(2, "call-1"),
-        toolUseBlock(3, "edit", "/missing.mdx", "call-2"),
-        toolResultBlock(4, "call-2", { isError: true }),
-      ]),
-    );
+  it("renders server-provided live-lineage documents", () => {
+    renderFooter(documentsForPaths(["/chapter-1.mdx"]));
 
     expect(button("📝 1 file changed")).toBeDefined();
-    expect(container.textContent).not.toContain("missing.mdx");
   });
 
-  it.each([
-    {
-      label: "ignores read/undo but counts mutations",
-      blocks: [
-        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
-        toolResultBlock(2, "call-1"),
-        toolUseBlock(3, "write", "/chapter-2.mdx", "call-2", "undo"),
-        toolResultBlock(4, "call-2"),
-        toolUseBlock(5, "write", "/chapter-3.mdx", "call-3", "replace"),
-        toolResultBlock(6, "call-3"),
-      ],
-      expectedSummary: "📝 1 file changed",
-    },
-    {
-      label: "hides footer for read-only turns",
-      blocks: [
-        toolUseBlock(1, "write", "/chapter-1.mdx", "call-1", "read"),
-        toolResultBlock(2, "call-1"),
-      ],
-      expectedSummary: null,
-    },
-  ])("$label", ({ blocks, expectedSummary }) => {
-    renderFooter(turnWithBlocks(blocks));
-
-    if (expectedSummary) {
-      expect(button(expectedSummary)).toBeDefined();
-    } else {
-      expect(container.textContent).toBe("");
-    }
-  });
-
-  it("does not render when every write/edit tool result failed", () => {
-    renderFooter(
-      turnWithBlocks([
-        toolUseBlock(1, "edit", "/missing.mdx", "call-1"),
-        toolResultBlock(2, "call-1", { isError: true }),
-      ]),
-    );
+  it("does not render without live-lineage documents", () => {
+    renderFooter([]);
 
     expect(container.textContent).toBe("");
   });
@@ -115,7 +87,7 @@ describe("TurnChangeFooter", () => {
       status: "reversed",
       documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
     });
-    renderFooter(turnWithPaths(["/chapter-1.mdx"]));
+    renderFooter(documentsForPaths(["/chapter-1.mdx"]));
     expandFooter();
 
     expect(button("Undo").disabled).toBe(false);
@@ -143,7 +115,7 @@ describe("TurnChangeFooter", () => {
         status: "reversed",
         documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
       });
-    renderFooter(turnWithPaths(["/chapter-1.mdx"]));
+    renderFooter(documentsForPaths(["/chapter-1.mdx"]));
     expandFooter();
 
     await click(button("Undo"));
@@ -173,7 +145,7 @@ describe("TurnChangeFooter", () => {
       status: "nothing_to_undo",
       documents: [{ uri: "kb://world/rules.md", status: "nothing_to_undo" }],
     });
-    renderFooter(turnWithPaths(["kb://world/rules.md"]));
+    renderFooter(documentsForPaths(["kb://world/rules.md"]));
     expandFooter();
 
     await click(button("Undo"));
@@ -186,7 +158,7 @@ describe("TurnChangeFooter", () => {
       status: "expired",
       documents: [{ uri: "work://work-1/notes/beat.md", status: "expired" }],
     });
-    renderFooter(turnWithPaths(["work://work-1/notes/beat.md"]));
+    renderFooter(documentsForPaths(["work://work-1/notes/beat.md"]));
     expandFooter();
 
     await click(button("Undo"));
@@ -203,7 +175,7 @@ describe("TurnChangeFooter", () => {
         { uri: "kb://world/rules.md", status: "reversed" },
       ],
     });
-    renderFooter(turnWithPaths(["/chapter-1.mdx", "kb://world/rules.md"]));
+    renderFooter(documentsForPaths(["/chapter-1.mdx", "kb://world/rules.md"]));
     expandFooter();
 
     await click(button("Undo all"));
@@ -221,7 +193,7 @@ describe("TurnChangeFooter", () => {
         { uri: "manuscript://chapter-1.mdx", status: "reversed" },
       ],
     });
-    renderFooter(turnWithPaths(["/expired.mdx", "/chapter-1.mdx"]));
+    renderFooter(documentsForPaths(["/expired.mdx", "/chapter-1.mdx"]));
     expandFooter();
 
     await click(button("Undo all"));
@@ -236,7 +208,7 @@ describe("TurnChangeFooter", () => {
       status: "expired",
       documents: [{ uri: "manuscript://expired.mdx", status: "expired" }],
     });
-    renderFooter(turnWithPaths(["/expired.mdx"]));
+    renderFooter(documentsForPaths(["/expired.mdx"]));
     expandFooter();
 
     await click(button("Undo all"));
@@ -246,7 +218,7 @@ describe("TurnChangeFooter", () => {
 
   it("passes canonical document URIs to the optional chat context navigation callback", async () => {
     const opened: string[] = [];
-    renderFooter(turnWithPaths(["work://work-1/notes/beat.md"]), (uri) => opened.push(uri));
+    renderFooter(documentsForPaths(["work://work-1/notes/beat.md"]), (uri) => opened.push(uri));
     expandFooter();
 
     await click(button("beat.md"));
@@ -254,31 +226,38 @@ describe("TurnChangeFooter", () => {
     expect(opened).toEqual(["work://work-1/notes/beat.md"]);
   });
 
-  it("mounts through AssistantTurn for settled error and cancelled turns with successful writes", () => {
-    renderAssistantTurn({ ...turnWithPaths(["/chapter-1.mdx"]), status: "error" });
-    expect(container.textContent).toContain("1 file changed");
+  it("mounts the footer through AssistantTurn from accepted-draft live lineage", () => {
+    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
 
-    act(() => {
-      root.render(
-        <ChatContextNavigationProvider onOpenContextUri={null}>
-          <AssistantTurn turn={{ ...turnWithPaths(["/chapter-2.mdx"]), status: "cancelled" }} />
-        </ChatContextNavigationProvider>,
-      );
-    });
+    renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
+
     expect(container.textContent).toContain("1 file changed");
   });
 
-  it("keeps the footer hidden while AssistantTurn is live", () => {
-    renderAssistantTurn({ ...turnWithPaths(["/chapter-1.mdx"]), status: "streaming" });
+  it("keeps the footer hidden when AssistantTurn has no live lineage", () => {
+    liveLineageDocuments.current = [];
+
+    renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
 
     expect(container.textContent).not.toContain("1 file changed");
   });
 
-  function renderFooter(turn: Turn, onOpenContextUri?: (uri: string) => void) {
+  it("keeps the footer hidden while AssistantTurn is live", () => {
+    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
+
+    renderAssistantTurn({ ...turnWithBlocks([]), status: "streaming" });
+
+    expect(container.textContent).not.toContain("1 file changed");
+  });
+
+  function renderFooter(
+    documents: Array<{ documentId: string; uri: string; path: string }>,
+    onOpenContextUri?: (uri: string) => void,
+  ) {
     act(() => {
       root.render(
         <ChatContextNavigationProvider onOpenContextUri={onOpenContextUri ?? null}>
-          <TurnChangeFooter threadId="thread-1" turn={turn} />
+          <TurnChangeFooter threadId="thread-1" turn={turnWithBlocks([])} documents={documents} />
         </ChatContextNavigationProvider>,
       );
     });
@@ -330,17 +309,22 @@ describe("TurnChangeFooter", () => {
   }
 });
 
-function turnWithPaths(paths: string[]): Turn {
-  return turnWithBlocks(
-    paths.flatMap((path, index) => {
-      const sequence = index * 2 + 1;
-      const toolCallId = `call-${index + 1}`;
-      return [
-        toolUseBlock(sequence, "write", path, toolCallId),
-        toolResultBlock(sequence + 1, toolCallId),
-      ];
-    }),
-  );
+function documentsForPaths(
+  paths: string[],
+): Array<{ documentId: string; uri: string; path: string }> {
+  return paths.map((path, index) => {
+    const uri = path.includes("://") ? path : `manuscript://${path.replace(/^\/+/, "")}`;
+    return {
+      documentId: `doc-${index + 1}`,
+      uri,
+      path: displayPath(uri, path),
+    };
+  });
+}
+
+function displayPath(uri: string, fallback: string): string {
+  const path = uri.includes("://") ? uri.split("://")[1] : fallback;
+  return `/${path.replace(/^\/+/, "")}`;
 }
 
 function turnWithBlocks(blocks: Block[]): Turn {
@@ -361,50 +345,5 @@ function turnWithBlocks(blocks: Block[]): Turn {
     blocks,
     siblingIds: [],
     responses: [],
-  };
-}
-
-function toolUseBlock(
-  sequence: number,
-  toolName: string,
-  path: string,
-  toolCallId = `call-${sequence}`,
-  command?: string,
-): Block {
-  return {
-    id: `block-${sequence}`,
-    turnId: "turn-1",
-    responseId: null,
-    blockType: "tool_use",
-    sequence,
-    content: {
-      toolCallId,
-      toolName,
-      input: command === undefined ? { path } : { path, command },
-    },
-    status: "complete",
-    createdAt: "2026-01-01T00:00:00.000Z",
-  };
-}
-
-function toolResultBlock(
-  sequence: number,
-  toolCallId: string,
-  options: { isError?: boolean } = {},
-): Block {
-  const isError = options.isError ?? false;
-  return {
-    id: `block-${sequence}`,
-    turnId: "turn-1",
-    responseId: null,
-    blockType: "tool_result",
-    sequence,
-    content: {
-      toolCallId,
-      output: isError ? { error: "invalid_write" } : [{ type: "text", text: "Wrote document" }],
-      isError,
-    },
-    status: "complete",
-    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }

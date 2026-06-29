@@ -54,3 +54,14 @@ export interface ThreadRecentDocumentItem {
 export interface ListThreadRecentDocumentsResponse {
   documents: ThreadRecentDocumentItem[];
 }
+
+export interface TurnLiveLineageDocumentItem {
+  documentId: string;
+  uri: string;
+  /** Slash-prefixed display path derived from the canonical context URI. */
+  path: string;
+}
+
+export interface ListTurnLiveLineageResponse {
+  documents: TurnLiveLineageDocumentItem[];
+}

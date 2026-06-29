@@ -36,6 +36,9 @@ function makeApp(
     reverseOutcome?: unknown;
     turnReverseOutcome?: unknown;
     availability?: unknown;
+    liveDocuments?: Array<{ documentId: string; uri: string }>;
+    accessibleDocumentIds?: Set<string>;
+    attachedDocumentIds?: Set<string>;
   } = {},
 ) {
   const refreshed: Array<{ documentId: string; threadId?: string }> = [];
@@ -56,6 +59,7 @@ function makeApp(
       },
   );
   const getAvailability = vi.fn(async () => options.availability ?? { undo: true, redo: false });
+  const liveDocuments = options.liveDocuments ?? [{ documentId, uri: "manuscript://chapter.md" }];
   return {
     app: {
       contextPorts: {
@@ -76,8 +80,29 @@ function makeApp(
           listByThread: vi.fn(async () => []),
         },
       },
+      projectRepo: {
+        findById: vi.fn(async () => ({ id: "project-1", userId, deletedAt: null })),
+      },
+      documentAccess: {
+        canAccessDocument: vi.fn(
+          async (_userId: string, candidateDocumentId: string) =>
+            options.accessibleDocumentIds?.has(candidateDocumentId) ?? true,
+        ),
+        canAccessProjectDocument: vi.fn(
+          async (_userId: string, candidateDocumentId: string, _projectId: string) =>
+            options.accessibleDocumentIds?.has(candidateDocumentId) ?? true,
+        ),
+      },
+      uploadDocuments: {
+        getUpload: vi.fn(async (_threadId: string, candidateDocumentId: string) =>
+          (options.attachedDocumentIds?.has(candidateDocumentId) ?? true)
+            ? { threadId, documentId: candidateDocumentId, name: "Chapter" }
+            : null,
+        ),
+      },
       documentSync: {
         agentEdit: () => ({ reverse, getAvailability }),
+        listLiveDocumentsForTurn: vi.fn(async () => liveDocuments),
         reverseTurn,
         refreshDocumentProjection: vi.fn(async (input) => {
           refreshed.push(input);
@@ -192,8 +217,36 @@ describe("thread context reverse routes", () => {
       turnId: "turn-1",
       direction: "undo",
       actor: { type: "user", userId },
+      documentIds: [documentId],
     });
     expect(reverse).not.toHaveBeenCalled();
+  });
+
+  it("limits uri-less turn reversal to visible live-lineage documents", async () => {
+    const { app, reverseTurn } = makeApp({
+      liveDocuments: [
+        { documentId, uri: "manuscript://chapter.md" },
+        { documentId: "doc-hidden", uri: "manuscript://hidden.md" },
+      ],
+      accessibleDocumentIds: new Set([documentId]),
+    });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reverse.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await route({
+      params: { threadId },
+      body: { direction: "undo", scope: "turn", target: "turn-1" },
+    });
+
+    expect(reverseTurn).toHaveBeenCalledWith({
+      threadId,
+      turnId: "turn-1",
+      direction: "undo",
+      actor: { type: "user", userId },
+      documentIds: [documentId],
+    });
   });
 
   it("requires target for turn-scope reversal even with a uri", async () => {

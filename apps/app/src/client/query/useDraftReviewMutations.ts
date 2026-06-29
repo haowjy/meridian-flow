@@ -17,6 +17,7 @@ function invalidateDraftReviewQueries(
   { threadId, documentId }: DraftReviewMutationInput,
 ): void {
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.drafts(threadId) });
+  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
   void queryClient.invalidateQueries({
     queryKey: threadQueryKeys.draftPreview(threadId, documentId),
   });

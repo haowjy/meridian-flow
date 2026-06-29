@@ -20,6 +20,7 @@ import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
@@ -35,7 +36,6 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnChangeFooter } from "./TurnChangeFooter";
-import { turnWrittenDocuments } from "./turn-written-documents";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -66,12 +66,10 @@ function AssistantTurnComponent({
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
-  const writtenDocuments = useMemo(
-    () => (isLive ? [] : turnWrittenDocuments(turn)),
-    [isLive, turn],
-  );
-  const hasReversibleWrites = writtenDocuments.length > 0;
   const resolvedThreadId = threadId ?? turn.threadId;
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineageDocuments = liveLineage.documents ?? [];
+  const hasReversibleWrites = liveLineageDocuments.length > 0;
 
   return (
     <div
@@ -93,9 +91,9 @@ function AssistantTurnComponent({
 
       {hasReversibleWrites ? (
         <TurnChangeFooter
-          threadId={threadId ?? turn.threadId}
+          threadId={resolvedThreadId}
           turn={turn}
-          writtenDocuments={writtenDocuments}
+          documents={liveLineageDocuments}
         />
       ) : null}
 
