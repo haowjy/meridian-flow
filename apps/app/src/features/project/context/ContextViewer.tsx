@@ -25,18 +25,16 @@
  *    pattern). The body-toolbar `FilesToggle` is REOPEN-ONLY.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { type CSSProperties, type ReactNode, useRef } from "react";
+import { type CSSProperties, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { ContextEditorMountHost } from "./ContextEditorMountHost";
+import { ActiveDocumentSurface } from "./ActiveDocumentSurface";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextTreePanel } from "./ContextTreePanel";
-import { ContextViewerHost } from "./ContextViewerHost";
 import {
   CONTEXT_FILES_WIDTH_BOUNDS,
   useContextFilesPanel,
@@ -44,6 +42,10 @@ import {
 } from "./context-files-store";
 import type { ContextFile } from "./context-tree";
 import { documentToolbarVariant, FilesToggle } from "./document-toolbar";
+
+/** Owner key for the center pane's editor mount host. Distinct from the rail's
+ *  key so the two can coexist without racing each other's registry retention. */
+const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { editable: true }> {
   return tab.editable;
@@ -111,7 +113,6 @@ export function ContextViewer({
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = tabs.find((candidate) => candidate.documentId === activeTabId) ?? null;
-  const activeIsTracked = activeTab?.editable ?? false;
   const variant = documentToolbarVariant(activeTab);
 
   // The editor (markdown variant) owns its own toolbar; we hand it a
@@ -178,38 +179,15 @@ export function ContextViewer({
           {variant !== "markdown" ? (
             <ViewerEmptyToolbar filesOpen={filesOpen} onExpandFiles={onExpandFiles} />
           ) : null}
-          {/* The TRACKED editor host stays mounted while ANY tracked tab is
-              open — even when the active tab is a viewer — so the warm-set
-              editors aren't torn down on a quick image/PDF detour. We just
-              hide the whole host when the active tab isn't tracked. */}
-          {trackedTabs.length > 0 ? (
-            <div
-              className={
-                activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-              }
-            >
-              <ContextEditorMountHost
-                projectId={projectId}
-                trackedTabs={trackedTabs}
-                activeTabId={activeIsTracked ? activeTabId : null}
-                toolbarLeading={editorToolbarLeading}
-              />
-            </div>
-          ) : null}
-          {activeTab && !activeIsTracked ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost
-                projectId={projectId}
-                activeThreadId={activeThreadId}
-                tab={activeTab}
-              />
-            </div>
-          ) : null}
-          {!activeTab ? (
-            <Placeholder>
-              <Trans>Select a document to begin.</Trans>
-            </Placeholder>
-          ) : null}
+          <ActiveDocumentSurface
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            trackedTabs={trackedTabs}
+            activeTab={activeTab}
+            activeTabId={activeTabId}
+            toolbarLeading={editorToolbarLeading}
+            registryOwner={DESKTOP_CONTEXT_EDITOR_OWNER}
+          />
         </div>
       </div>
     </div>
@@ -252,14 +230,6 @@ function ViewerEmptyToolbar({
   return (
     <div className="flex shrink-0 items-center gap-1 border-b border-border bg-background px-2 py-1.5">
       <FilesToggle open={filesOpen} onExpand={onExpandFiles} />
-    </div>
-  );
-}
-
-function Placeholder({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-muted-foreground">
-      {children}
     </div>
   );
 }

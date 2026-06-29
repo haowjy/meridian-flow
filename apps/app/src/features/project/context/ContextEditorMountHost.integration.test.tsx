@@ -118,6 +118,7 @@ vi.mock("./ContextViewerHost", () => ({
 import { ContextEditorMountHost, MAX_MOUNTED_EDITORS } from "./ContextEditorMountHost";
 
 const PROJECT = "00000000-0000-4000-8000-000000000001";
+const OWNER = "test-context-editor-mount-host";
 
 function makeTabs(n: number) {
   return Array.from({ length: n }, (_, i) => ({
@@ -161,6 +162,7 @@ describe("ContextEditorMountHost (registry lifecycle integration)", () => {
             projectId={PROJECT}
             trackedTabs={trackedTabs}
             activeTabId={trackedTabs[activeIndex]?.documentId ?? null}
+            registryOwner={OWNER}
           />,
         );
       });
@@ -184,6 +186,7 @@ describe("ContextEditorMountHost (registry lifecycle integration)", () => {
           projectId={PROJECT}
           trackedTabs={tabs.filter((tab) => tab.documentId !== closedDoc)}
           activeTabId={tabs[0]?.documentId ?? null}
+          registryOwner={OWNER}
         />,
       );
     });
@@ -193,7 +196,12 @@ describe("ContextEditorMountHost (registry lifecycle integration)", () => {
 
     act(() => {
       root.render(
-        <ContextEditorMountHost projectId={PROJECT} trackedTabs={tabs} activeTabId={closedDoc} />,
+        <ContextEditorMountHost
+          projectId={PROJECT}
+          trackedTabs={tabs}
+          activeTabId={closedDoc}
+          registryOwner={OWNER}
+        />,
       );
     });
 
@@ -215,6 +223,7 @@ describe("ContextEditorMountHost (registry lifecycle integration)", () => {
           projectId={PROJECT}
           trackedTabs={tabs}
           activeTabId={tabs[0]?.documentId ?? null}
+          registryOwner={OWNER}
         />,
       );
     });

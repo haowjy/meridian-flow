@@ -38,8 +38,6 @@ const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
 );
 
-const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
-
 type EditableContextTab = Extract<ContextTab, { editable: true }>;
 
 /** Concurrent-mount cap. The active tab is always counted; the remaining
@@ -58,6 +56,14 @@ export type ContextEditorMountHostProps = {
    * pass `undefined` so their toolbar stays clean (they're not painted).
    */
   toolbarLeading?: ReactNode;
+  /**
+   * Registry owner key under which this host retains its open-document set.
+   * Each concurrently-mounted host MUST pass a DISTINCT key — `retain(ownerId,
+   * ids)` overwrites the prior set for that owner, so two hosts sharing one
+   * key would race each other's reconciliation and trigger spurious teardown
+   * of the loser's sessions.
+   */
+  registryOwner: string;
 };
 
 /**
@@ -87,6 +93,7 @@ export function ContextEditorMountHost({
   trackedTabs,
   activeTabId,
   toolbarLeading,
+  registryOwner,
 }: ContextEditorMountHostProps) {
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
@@ -111,19 +118,21 @@ export function ContextEditorMountHost({
     lruRef.current = lruRef.current.filter((id) => known.has(id));
   }, [trackedIdsKey]);
 
-  // Reconcile this desktop host's open-document set with the registry.
-  // Sessions outlive view mounts (so leaving Context / warm-set eviction no
-  // longer tears down Yjs); they are reclaimed when their document closes
-  // (drops out of `trackedTabs`) or when this host unmounts entirely.
+  // Reconcile this host's open-document set with the registry under the
+  // caller's owner key. Sessions outlive view mounts (so leaving Context /
+  // warm-set eviction no longer tears down Yjs); they are reclaimed when
+  // their document closes (drops out of `trackedTabs`) or when this host
+  // unmounts entirely. Each host instance MUST pass a distinct owner key —
+  // see `registryOwner` on `ContextEditorMountHostProps`.
   useEffect(() => {
-    getDocumentSessionRegistry().retain(DESKTOP_CONTEXT_EDITOR_OWNER, trackedIds);
-  }, [trackedIdsKey]);
+    getDocumentSessionRegistry().retain(registryOwner, trackedIds);
+  }, [registryOwner, trackedIdsKey]);
 
   useEffect(() => {
     return () => {
-      getDocumentSessionRegistry().release(DESKTOP_CONTEXT_EDITOR_OWNER);
+      getDocumentSessionRegistry().release(registryOwner);
     };
-  }, []);
+  }, [registryOwner]);
 
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
 
