@@ -6,8 +6,9 @@ its stateful surfaces. This file is the colocated contract for the shell — rea
 it before touching layout, the rails/headers, or the prefs store.
 
 Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md);
-the model/view continuity rationale is the KB decision
-[persistent-surfaces-lift](persistent-surfaces-lift decision).
+the model/view continuity rationale — stable surfaces that move by grid-area,
+never reparented or unmounted — is the contract below (see
+[Layout: one flat grid, stable surfaces](#layout-one-flat-grid-stable-surfaces)).
 This page is the *implementation* contract.
 
 Mobile now lives beside this desktop shell as a sibling implementation. The
@@ -146,22 +147,86 @@ hydration cascade.
 ## Screen routing & controllers
 
 `routes/_authenticated/project/$projectId.tsx` owns **all** workspace URL params
-(`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?ext=`) and is the
-single source of screen/thread ownership. The per-screen controllers
+(`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?results=`) and is the
+single source of screen/thread/document ownership. The per-screen controllers
 (`HomePaneController`, `ChatPaneController`, `ContextPaneController`,
-`SettingsPaneController`) are **controlled** — they render into surfaces and call
-the route's handlers; they never set the URL directly. (Full ownership rules:
-[`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+`ContextViewerSurfaceController`) are **controlled** — they render into surfaces
+and call the route's handlers; they never set the URL directly. (Full ownership
+rules: [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+
+Two document-open handlers (see
+[Surface-aware document open](#surface-aware-document-open-single-path) above):
+`handleSetActiveDocument` (keep current screen) and `handleSelectContextPath`
+(switch to Context). `handleSelectScreen` no longer clears `scheme`/`path` —
+the active document persists across screen switches.
+
+## Editable context rail — shared `ActiveDocumentSurface`
+
+The rail (Chat screen) renders the active document through the same
+`context/ActiveDocumentSurface` component as the center pane (Context screen).
+Both call-sites mount a `ContextEditorMountHost` with **distinct registry owners**
+(`desktop-context-editor-mount-host` vs `context-rail-active-document-surface`),
+so each surface retains its own open-document set without racing the other's
+session reconciliation.
+
+**Decision: editable, not read-only.** The original design (open question #2 in
+the architecture doc) recommended read-only for v1. Product reversed this:
+the rail is a full editor — same formatting toolbar, collab cursors, and Yjs
+sync as the center pane. The `ReadOnlyDocHost` shared component now serves
+only the phone shell (`mobile/MobileDocumentHost`).
+
+For the shared-architecture rationale, see the KB decision
+[shared-document-surface](shared-document-surface decision).
+
+### Scroll-restore is owner-scoped
+
+`ContextEditorMountHost` stamps `data-context-editor-owner` on each editor
+wrapper div (the `editorOwner` prop, which centers on the registry owner).
+`ContextPaneController`'s scroll-restore effect calls `findEditorScroller`
+with `DESKTOP_CONTEXT_EDITOR_OWNER`, so it only queries editors owned by the
+center pane — the parked rail editor is invisible to the center's scroll
+restoration. No cross-talk.
+
+## Surface-aware document open — single path
+
+All document opens funnel through `handleOpenInRail` in
+[`ProjectView.tsx`](ProjectView.tsx). The popover, the rail tree, and
+chat document links all call it. Routing is screen-aware:
+
+- **Context screen, center-browsable scheme** (manuscript, kb, user) →
+  opens in the center pane — `onSetActiveDocument` updates the URL without
+  changing screens.
+- **Chat screen, Home screen, or `uploads` scheme** → `openChatRail()`
+  switches to Chat (if needed) and expands the dock, then
+  `onSetActiveDocument` sets the URL. The rail derives viewer mode from
+  the URL.
+- **Thread uploads** (non-routable, `scheme` = null) → switches to Chat,
+  sets `railUploadTarget` (rail-local state, no URL update).
+
+### `dismissedDocKey` model
+
+When the writer clicks "← Back" in the rail viewer, the dismiss is stored as
+a key (`scheme:path`), not a render-phase boolean. The rail derives
+`railViewerDismissed` as `dismissedDocKey !== null && dismissedDocKey === docKey`.
+This resets on `activeThreadId` change and clears when a new document is
+selected — so a dismiss survives React re-renders but not a thread switch.
+
+### `handleSetActiveDocument` vs `handleSelectContextPath`
+
+The route (`$projectId.tsx`) has two distinct handlers:
+
+- **`handleSetActiveDocument(path, scheme)`** — updates `scheme`/`path`/`folder`
+in the URL WITHOUT changing `screen`. Used by `handleOpenInRail` and the rail
+file-tree click.
+- **`handleSelectContextPath(path, scheme)`** — sets `screen: "context"` IN
+ADDITION to `scheme`/`path`/`folder`. Navigates to the Context screen.
+
+`handleSelectScreen` no longer clears `scheme`/`path` — the active document
+persists across screen switches, same as `thread`.
 
 ## Known limitation — dual editor binding for the active doc
 
-The rail (Chat screen) and the center pane (Context screen) both render the
-active document through the same editable `context/ActiveDocumentSurface`
-(`ContextEditorMountHost` → `EditorView`). They use **distinct registry owners**
-(`desktop-context-editor-mount-host` vs `context-rail-active-document-surface`),
-so there is no `DocumentSessionRegistry` collision.
-
-But the `active`-gate in `ContextPaneController` only suppresses *route-driven*
+The `active`-gate in `ContextPaneController` only suppresses *route-driven*
 auto-opens — an **already-open** center tab stays mounted while parked offscreen.
 So opening a doc on Context, switching to Chat, then opening the *same* doc in the
 rail yields **two `EditorView`s bound to one shared `Y.Doc` + awareness**. Content
@@ -181,3 +246,7 @@ editor across both surfaces) is tracked in
 - Don't reparent/unmount stateful surfaces on screen change — move the grid-area.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
+- Don't open documents by navigating to the Context screen unless the writer
+explicitly asked to switch — use `handleOpenInRail` (screen-aware).
+- Don't share a `registryOwner` key across concurrently-mounted editor hosts.
+- Don't clear `scheme`/`path` on screen switch — the active document persists.
