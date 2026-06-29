@@ -59,7 +59,7 @@ export function ContextTreePanel({
   onCollapse,
 }: ContextTreePanelProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
-  const schemes = visibleContextSchemes(workId);
+  const schemes = visibleContextSchemes(workId, "center");
   const [creating, setCreating] = useState<{
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;

@@ -17,11 +17,34 @@ export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "work",
 ];
 
-/** Schemes shown in the tree panel for the current work context. */
-export function visibleContextSchemes(workId: string | null): readonly ProjectContextTreeScheme[] {
-  return CONTEXT_SCHEMES.filter(
-    (scheme) => !isWorkScopedProjectContextScheme(scheme) || workId !== null,
-  );
+/**
+ * Which UI surface the scheme list is for. The center context viewer shows
+ * only the durable project workspace; the rail can additionally surface
+ * task-scoped schemes (Work memory) for quick access alongside chat.
+ */
+export type ContextSchemeSurface = "rail" | "center";
+
+/**
+ * Schemes shown for the given UI `surface` under the current work context.
+ *
+ * - `center`: durable project schemes only. Work-scoped schemes are hidden so
+ *   the primary editing workspace stays focused on project-level structure.
+ * - `rail`: full list, including work-scoped schemes when a work is active.
+ *
+ * Default surface is `rail` so existing callers (mobile browser, etc.) keep
+ * their full list without touch-ups.
+ */
+export function visibleContextSchemes(
+  workId: string | null,
+  surface: ContextSchemeSurface = "rail",
+): readonly ProjectContextTreeScheme[] {
+  return CONTEXT_SCHEMES.filter((scheme) => {
+    if (isWorkScopedProjectContextScheme(scheme)) {
+      if (workId === null) return false;
+      return surface === "rail";
+    }
+    return true;
+  });
 }
 
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
