@@ -86,11 +86,13 @@ describe("draft lifecycle service", () => {
     const first = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
+      draftId: draft.id,
       userId: USER_ID,
     });
     const second = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
+      draftId: draft.id,
       userId: USER_ID,
     });
 
@@ -102,10 +104,10 @@ describe("draft lifecycle service", () => {
     expect(second).toEqual(first);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
     expect(await liveText(scenario.coordinator)).toBe("Alpha Beta");
-    expect(scenario.deleteScopedState).toHaveBeenCalledWith({
+    expect(scenario.deleteDraftState).toHaveBeenCalledWith({
       documentId: DOC_ID,
       threadId: THREAD_ID,
-      scopeId: draft.id,
+      draftId: draft.id,
     });
     expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
       {
@@ -142,7 +144,7 @@ describe("draft lifecycle service", () => {
     });
 
     await expect(
-      scenario.service.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      scenario.service.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
     ).resolves.toEqual({
       status: "discarded",
       draftId: draft.id,
@@ -151,10 +153,10 @@ describe("draft lifecycle service", () => {
     expect(await liveText(scenario.coordinator)).toBe("Live");
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
     expect(await scenario.store.getDraft(draft.id)).toMatchObject({ status: "discarded" });
-    expect(scenario.deleteScopedState).toHaveBeenCalledWith({
+    expect(scenario.deleteDraftState).toHaveBeenCalledWith({
       documentId: DOC_ID,
       threadId: THREAD_ID,
-      scopeId: draft.id,
+      draftId: draft.id,
     });
   });
 
@@ -199,11 +201,60 @@ describe("draft lifecycle service", () => {
     });
 
     await expect(
-      scenario.service.acceptDraft({ documentId: DOC_ID, threadId: THREAD_ID, userId: USER_ID }),
+      scenario.service.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
     ).resolves.toEqual({ status: "discarded", draftId: draft.id });
 
     expect(await scenario.store.getDraft(draft.id)).toMatchObject({ status: "discarded" });
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
+  });
+
+  it("does not resolve stale accept/reject requests to an unrelated active or applied draft", async () => {
+    const scenario = await createScenario();
+    const appliedDraft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: appliedDraft.id,
+      updateData: updateFromText("Applied"),
+      actorTurnId: TURN_A,
+    });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: appliedDraft.id,
+      userId: USER_ID,
+    });
+    const activeDraft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_B,
+    });
+
+    await expect(
+      scenario.service.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: "stale-draft",
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "not_found" });
+    await expect(
+      scenario.service.rejectDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: "stale-draft",
+      }),
+    ).resolves.toEqual({ status: "not_found" });
+    await expect(scenario.store.getDraft(activeDraft.id)).resolves.toMatchObject({
+      status: "active",
+    });
   });
 });
 
@@ -213,16 +264,17 @@ async function createScenario() {
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   await lifecycle.ensureDocument(DOC_ID);
   const store = createInMemoryDraftStore();
-  const deleteScopedState = vi.spyOn(store, "deleteScopedState");
+  const deleteDraftState = vi.spyOn(store, "deleteDraftState");
   const service = createDraftService({
     draftStore: store,
     liveJournal: createInMemoryDraftAcceptJournal(journal),
     liveUpdateJournal: journal,
+    latestLiveUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId),
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
   });
-  return { journal, coordinator, store: store as DraftStore, service, deleteScopedState };
+  return { journal, coordinator, store: store as DraftStore, service, deleteDraftState };
 }
 
 function updateFromText(value: string): Uint8Array {

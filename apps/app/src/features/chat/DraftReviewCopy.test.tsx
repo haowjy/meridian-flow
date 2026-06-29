@@ -11,6 +11,7 @@ const { acceptMutation, rejectMutation, draftPreview } = vi.hoisted(() => ({
   draftPreview: {
     live: "Original passage",
     previewMarkdown: "Revised passage",
+    liveRevisionToken: 7,
     isFetching: false,
     isError: false,
   },
@@ -86,6 +87,7 @@ describe("draft review copy", () => {
         <DraftPreviewOverlay
           threadId="thread-1"
           documentId="doc-1"
+          draftId="draft-1"
           documentName="Chapter 1"
           requireOverlapConfirm={true}
           onClose={() => undefined}

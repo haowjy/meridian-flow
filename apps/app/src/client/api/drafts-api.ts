@@ -9,6 +9,7 @@ import type {
   DraftAcceptRequest,
   DraftAcceptResponse,
   DraftPreviewResponse,
+  DraftRejectRequest,
   DraftRejectResponse,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -28,14 +29,18 @@ export async function listThreadDrafts(threadId: string): Promise<ThreadDraftLis
 export async function getDraftPreview(
   threadId: string,
   documentId: string,
+  draftId: string,
 ): Promise<DraftPreviewResponse> {
-  return getJson<DraftPreviewResponse>(apiThreadDocumentDraftPath(threadId, documentId));
+  const params = new URLSearchParams({ draftId });
+  return getJson<DraftPreviewResponse>(
+    `${apiThreadDocumentDraftPath(threadId, documentId)}?${params}`,
+  );
 }
 
 export async function acceptDraft(
   threadId: string,
   documentId: string,
-  request: DraftAcceptRequest = {},
+  request: DraftAcceptRequest,
 ): Promise<DraftAcceptResponse> {
   return postJson<DraftAcceptResponse>(
     apiThreadDocumentDraftAcceptPath(threadId, documentId),
@@ -46,6 +51,10 @@ export async function acceptDraft(
 export async function rejectDraft(
   threadId: string,
   documentId: string,
+  request: DraftRejectRequest,
 ): Promise<DraftRejectResponse> {
-  return postJson<DraftRejectResponse>(apiThreadDocumentDraftRejectPath(threadId, documentId), {});
+  return postJson<DraftRejectResponse>(
+    apiThreadDocumentDraftRejectPath(threadId, documentId),
+    request,
+  );
 }

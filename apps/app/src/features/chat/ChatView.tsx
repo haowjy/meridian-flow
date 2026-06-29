@@ -120,38 +120,55 @@ export function ChatView({
   // Single preview overlay, owned here so it survives Virtuoso row
   // recycling. Cards call `handleReview`; the overlay reads the document
   // name from the currently-active drafts list.
-  const [previewingDocId, setPreviewingDocId] = useState<string | null>(null);
-  const [overlapConfirmDocId, setOverlapConfirmDocId] = useState<string | null>(null);
+  const [previewingDraft, setPreviewingDraft] = useState<{
+    documentId: string;
+    draftId: string;
+  } | null>(null);
+  const [overlapConfirm, setOverlapConfirm] = useState<{
+    draftId: string;
+    liveRevisionToken?: number;
+  } | null>(null);
   const handleReview = useCallback(
-    (documentId: string, options?: { requireOverlapConfirm?: boolean }) => {
-      setOverlapConfirmDocId(options?.requireOverlapConfirm ? documentId : null);
-      setPreviewingDocId(documentId);
+    (
+      documentId: string,
+      draftId: string,
+      options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
+    ) => {
+      setOverlapConfirm(
+        options?.requireOverlapConfirm
+          ? { draftId, liveRevisionToken: options.liveRevisionToken }
+          : null,
+      );
+      setPreviewingDraft({ documentId, draftId });
     },
     [],
   );
   const handleClosePreview = useCallback(() => {
-    setPreviewingDocId(null);
-    setOverlapConfirmDocId(null);
+    setPreviewingDraft(null);
+    setOverlapConfirm(null);
   }, []);
   const clearOverlapConfirm = useCallback(() => {
-    setOverlapConfirmDocId(null);
+    setOverlapConfirm(null);
   }, []);
   const previewingDocumentName = useMemo(() => {
-    if (previewingDocId == null) return null;
+    if (previewingDraft == null) return null;
     return (
-      drafts.groups?.find((group) => group.documentId === previewingDocId)?.documentName ?? null
+      drafts.groups?.find((group) => group.documentId === previewingDraft.documentId)
+        ?.documentName ?? null
     );
-  }, [previewingDocId, drafts.groups]);
+  }, [previewingDraft, drafts.groups]);
 
   // If the previewed draft disappears (writer accepted/discarded it from
   // somewhere else, or the list reloaded without it), close the overlay so
   // the chat doesn't show a stale modal over the conversation.
   useEffect(() => {
-    if (previewingDocId == null) return;
+    if (previewingDraft == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const stillActive = drafts.groups?.some((group) => group.documentId === previewingDocId);
+    const stillActive = drafts.groups?.some((group) =>
+      group.drafts.some((draft) => draft.draftId === previewingDraft.draftId),
+    );
     if (!stillActive) handleClosePreview();
-  }, [previewingDocId, drafts.status, drafts.groups, handleClosePreview]);
+  }, [previewingDraft, drafts.status, drafts.groups, handleClosePreview]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -234,12 +251,18 @@ export function ChatView({
         />
       </ChatSurface>
 
-      {previewingDocId != null ? (
+      {previewingDraft != null ? (
         <DraftPreviewOverlay
           threadId={threadId}
-          documentId={previewingDocId}
+          documentId={previewingDraft.documentId}
+          draftId={previewingDraft.draftId}
           documentName={previewingDocumentName}
-          requireOverlapConfirm={overlapConfirmDocId === previewingDocId}
+          overlapConfirmLiveRevisionToken={
+            overlapConfirm?.draftId === previewingDraft.draftId
+              ? overlapConfirm.liveRevisionToken
+              : undefined
+          }
+          requireOverlapConfirm={overlapConfirm?.draftId === previewingDraft.draftId}
           onOverlapConfirmResolved={clearOverlapConfirm}
           onClose={handleClosePreview}
         />

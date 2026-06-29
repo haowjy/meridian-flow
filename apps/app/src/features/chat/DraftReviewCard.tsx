@@ -12,15 +12,16 @@
  * The card does not own the preview overlay. Cards inside an anchored
  * assistant turn live inside a react-virtuoso row that can recycle/unmount
  * when the writer scrolls — a fixed-position modal owned by the row vanishes
- * with it. The card delegates to `onReview(documentId)`; `ChatView` owns the
+ * with it. The card delegates to `onReview(documentId, draftId)`;
+ * `ChatView` owns the
  * single overlay instance.
  *
  * Stack-ready render seam: the card iterates over `group.drafts` so a future
  * multi-alternative chooser is a render change here, not a refactor of the
  * data flow. The honest current shape: backend always returns at most one
- * active draft per (document, thread), and accept/reject are document-scoped
- * (`documentId`) — a real chooser will also need draft-id-addressable
- * preview/accept/reject endpoints before this seam carries weight.
+ * active draft per (document, thread), and accept/reject are draft-id
+ * addressable so a future chooser can route the selected draft through the
+ * same seams.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -33,7 +34,11 @@ export type DraftReviewCardProps = {
   threadId: string;
   group: ThreadDraftGroup;
   /** Open the (ChatView-owned) preview overlay for this group's document. */
-  onReview: (documentId: string, options?: { requireOverlapConfirm?: boolean }) => void;
+  onReview: (
+    documentId: string,
+    draftId: string,
+    options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
+  ) => void;
   /** Visual variant: anchored under an assistant turn, or stacked in the unanchored fallback strip. */
   variant?: "inline" | "compact";
 };
@@ -48,23 +53,26 @@ export function DraftReviewCard({
   const reject = useRejectDraft();
 
   const documentName = group.documentName;
+  const draft = group.drafts[0] ?? null;
 
   const isPending = accept.isPending || reject.isPending;
   // Stack-ready render seam: today every group has length 1 (the backend
   // returns at most one active draft per document, per thread). When a
   // multi-alternative chooser lands the chooser slots in here as a render
-  // change. The data plumbing (draft-id-addressable endpoints) is a separate
-  // step — flag it explicitly so this doesn't read as "already there".
+  // change; the action plumbing already carries the selected draft id.
   const draftCount = group.drafts.length;
 
   function handleAccept() {
-    if (isPending) return;
+    if (isPending || !draft) return;
     accept.mutate(
-      { threadId, documentId: group.documentId },
+      { threadId, documentId: group.documentId, draftId: draft.draftId },
       {
         onSuccess(response) {
           if (response.status === "overlap") {
-            onReview(group.documentId, { requireOverlapConfirm: true });
+            onReview(group.documentId, response.draftId, {
+              requireOverlapConfirm: true,
+              liveRevisionToken: response.liveRevisionToken,
+            });
           }
         },
       },
@@ -72,8 +80,8 @@ export function DraftReviewCard({
   }
 
   function handleDiscard() {
-    if (isPending) return;
-    reject.mutate({ threadId, documentId: group.documentId });
+    if (isPending || !draft) return;
+    reject.mutate({ threadId, documentId: group.documentId, draftId: draft.draftId });
   }
 
   return (
@@ -116,7 +124,7 @@ export function DraftReviewCard({
           type="button"
           variant="default"
           size="sm"
-          onClick={() => onReview(group.documentId)}
+          onClick={() => draft && onReview(group.documentId, draft.draftId)}
           disabled={isPending}
         >
           <Trans>Review</Trans>

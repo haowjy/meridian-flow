@@ -10,11 +10,16 @@ import {
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const body = (await readBody<DraftAcceptRequest>(event)) ?? {};
+  const body = (await readBody<Partial<DraftAcceptRequest>>(event)) ?? {};
   return handleDraftAcceptRequest(selectDraftRouteServices(app), {
     threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
+    draftId: typeof body.draftId === "string" ? body.draftId : "",
     userId: user.userId,
     confirmOverlap: body.confirmOverlap === true,
+    confirmedLiveRevisionToken:
+      typeof body.confirmedLiveRevisionToken === "number"
+        ? body.confirmedLiveRevisionToken
+        : undefined,
   });
 });

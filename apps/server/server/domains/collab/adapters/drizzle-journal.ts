@@ -63,6 +63,7 @@ export type CollabFacadeStore = {
   getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+  latestUpdateSeq(docId: string): Promise<number>;
 };
 
 export type DrizzleCollabPersistence = {
@@ -1022,6 +1023,22 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
         .orderBy(desc(documentYjsUpdates.id))
         .limit(1);
       return row ? mapUpdate(row, "latest") : null;
+    },
+
+    async latestUpdateSeq(docId) {
+      const [head] = await db
+        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
+        .limit(1);
+      if (head) return Number(head.latestUpdateSeq);
+      const [row] = await db
+        .select({ seq: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
+        .orderBy(desc(documentYjsUpdates.id))
+        .limit(1);
+      return row?.seq ?? 0;
     },
   };
 }

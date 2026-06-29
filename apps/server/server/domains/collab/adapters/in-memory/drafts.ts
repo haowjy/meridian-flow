@@ -38,18 +38,9 @@ export function createInMemoryDraftStore(): DraftStore {
         .map((draft) => copyActiveDraft(draft));
     },
 
-    async getLastAppliedDraft(input) {
-      return (
-        [...drafts.values()]
-          .filter(
-            (draft) =>
-              draft.documentId === input.documentId &&
-              draft.threadId === input.threadId &&
-              draft.status === "applied",
-          )
-          .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
-          .map(copyDraft)[0] ?? null
-      );
+    async getAppliedDraft(draftId) {
+      const draft = drafts.get(draftId);
+      return draft?.status === "applied" ? (copyDraft(draft) ?? draft) : null;
     },
 
     async createActiveDraft(input) {
@@ -96,15 +87,6 @@ export function createInMemoryDraftStore(): DraftStore {
       return [...(updates.get(draftId) ?? [])]
         .sort((left, right) => left.id - right.id)
         .map(copyUpdate);
-    },
-
-    async claimActive(input) {
-      const draft = findDraft({ ...input, status: "active" });
-      if (!draft || draft.claimedAt) return null;
-      draft.claimedAt = new Date();
-      draft.claimToken = randomUUID();
-      draft.updatedAt = new Date();
-      return copyDraft(draft) ?? draft;
     },
 
     async claimForAccept(input) {
@@ -161,7 +143,7 @@ export function createInMemoryDraftStore(): DraftStore {
       return true;
     },
 
-    async deleteScopedState(_input) {},
+    async deleteDraftState(_input) {},
   };
 
   function findOpenDraft(input: {
@@ -177,12 +159,14 @@ export function createInMemoryDraftStore(): DraftStore {
   }
 
   function findDraft(input: {
+    draftId?: Draft["id"];
     documentId: Draft["documentId"];
     threadId: Draft["threadId"];
     status: Draft["status"];
   }): Draft | undefined {
     return [...drafts.values()].find(
       (draft) =>
+        (input.draftId === undefined || draft.id === input.draftId) &&
         draft.documentId === input.documentId &&
         draft.threadId === input.threadId &&
         draft.status === input.status,

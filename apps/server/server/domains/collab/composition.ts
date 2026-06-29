@@ -22,6 +22,7 @@ import {
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
+import * as Y from "yjs";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -65,6 +66,7 @@ import {
 } from "./domain/markdown-document.js";
 import {
   createTurnLiveLineageReadModel,
+  type TurnLiveLineageDocumentStore,
   type TurnLiveLineageReadModel,
 } from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
@@ -113,6 +115,7 @@ export type CollabFacadeStore = {
   getCheckpoint(id: string): Promise<CheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<CheckpointRecord[]>;
   latestUpdate(docId: string): Promise<JournalUpdate | null>;
+  latestUpdateSeq(docId: string): Promise<number>;
 };
 
 export type CollabFacadeDeps = {
@@ -127,7 +130,7 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   syncStateStore?: SyncStateStore;
-  liveLineage?: TurnLiveLineageReadModel;
+  liveLineage: TurnLiveLineageReadModel;
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
@@ -243,6 +246,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
     store: inMemoryStore(journal),
     draftStore,
     draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+    liveLineage: createTurnLiveLineageReadModel({
+      store: createInMemoryTurnLiveLineageStore(journal),
+      resolveDocumentUri: async (documentId) => documentId,
+    }),
     threads: {
       async findById() {
         return null;
@@ -610,6 +617,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     draftStore: deps.draftStore,
     liveJournal: deps.draftAcceptJournal,
     liveUpdateJournal: deps.journal,
+    latestLiveUpdateSeq: deps.store.latestUpdateSeq,
     liveCoordinator: deps.coordinator,
     model,
     codec,
@@ -623,6 +631,30 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       const doc = await draftLifecycle.buildDraftDoc(input);
       try {
         return markdownDocuments.serializeDoc(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
+    async previewDraft(input: { documentId: DocumentId; draftId: string }) {
+      const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
+      const doc = createCollabYDoc({ gc: false });
+      try {
+        const snapshot = await (
+          deps.journal.read as (
+            docId: string,
+            opts: { until: number; fromCheckpoint?: boolean },
+          ) => Promise<{ checkpoint: Uint8Array | null; updates: { update: Uint8Array }[] }>
+        )(input.documentId, { until: liveRevisionToken, fromCheckpoint: false });
+        if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
+        for (const update of snapshot.updates) {
+          Y.applyUpdate(doc, update.update, { type: "system" });
+        }
+        const live = markdownDocuments.serializeDoc(doc);
+        const draftUpdates = await deps.draftStore.listUpdates(input.draftId);
+        for (const update of draftUpdates) {
+          Y.applyUpdate(doc, update.updateData, { type: "draft" });
+        }
+        return { live, markdown: markdownDocuments.serializeDoc(doc), liveRevisionToken };
       } finally {
         doc.destroy();
       }
@@ -780,16 +812,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  const liveLineage =
-    deps.liveLineage ??
-    createTurnLiveLineageReadModel({
-      store: {
-        listLiveDocumentIdsForTurn: (threadId, turnId) =>
-          deps.journal.documentsForTurn(threadId, turnId),
-      },
-      resolveDocumentUri: async (documentId) => documentId,
-    });
-
   const checkpoints = createCheckpointService({
     coordinator: deps.coordinator,
     store: deps.store,
@@ -825,7 +847,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     listLiveDocumentsForTurn(threadId, turnId) {
-      return liveLineage.listLiveDocumentsForTurn(threadId, turnId);
+      return deps.liveLineage.listLiveDocumentsForTurn(threadId, turnId);
     },
 
     resolveThreadWriteMode(threadId) {
@@ -898,6 +920,17 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
+    latestUpdateSeq: (docId) => journal.latestUpdateSeq(docId),
+  };
+}
+
+function createInMemoryTurnLiveLineageStore(
+  journal: InMemoryJournal,
+): TurnLiveLineageDocumentStore {
+  return {
+    async listLiveDocumentIdsForTurn(threadId, turnId) {
+      return (await journal.documentsForTurn(threadId, turnId)) as DocumentId[];
+    },
   };
 }
 

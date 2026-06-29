@@ -71,7 +71,7 @@ export type DraftStore = {
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
-  getLastAppliedDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  getAppliedDraft(draftId: string): Promise<Draft | null>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -84,19 +84,30 @@ export type DraftStore = {
     actorTurnId?: TurnId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
-  claimActive(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
-  claimForAccept(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
-  getAcceptingDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
-  discardActive(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  claimForAccept(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<Draft | null>;
+  getAcceptingDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<Draft | null>;
+  discardActive(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<Draft | null>;
   markApplied(
     draftId: string,
     input: { claimToken: string; appliedByUserId: UserId; appliedUpdateSeq: number },
   ): Promise<boolean>;
   markDiscarded(draftId: string, input: { claimToken: string }): Promise<boolean>;
-  deleteScopedState(input: {
+  deleteDraftState(input: {
     documentId: DocumentId;
     threadId: ThreadId;
-    scopeId: string;
+    draftId: string;
   }): Promise<void>;
 };
 
@@ -137,6 +148,7 @@ export type DraftAcceptResult =
   | {
       status: "overlap";
       draftId: string;
+      liveRevisionToken: number;
       live: string;
       preview: string;
       overlappingBlocks: string[];
@@ -155,10 +167,16 @@ export type DraftService = DraftProjectionCoordinator & {
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: string;
     userId: UserId;
     confirmOverlap?: boolean;
+    confirmedLiveRevisionToken?: number;
   }): Promise<DraftAcceptResult>;
-  rejectDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<DraftRejectResult>;
+  rejectDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<DraftRejectResult>;
 };
 
 export function createDraftProjectionCoordinator(deps: {
@@ -186,6 +204,7 @@ export function createDraftService(deps: {
   draftStore: DraftStore;
   liveJournal: DraftAcceptJournal;
   liveUpdateJournal: Pick<UpdateJournal, "read">;
+  latestLiveUpdateSeq(documentId: DocumentId): Promise<number>;
   liveCoordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodec;
@@ -209,15 +228,36 @@ export function createDraftService(deps: {
   async function acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: string;
     userId: UserId;
     confirmOverlap?: boolean;
+    confirmedLiveRevisionToken?: number;
   }): Promise<DraftAcceptResult> {
-    const activeDraft = await deps.draftStore.getActiveDraft(input);
-    if (activeDraft) {
-      const updates = await deps.draftStore.listUpdates(activeDraft.id);
-      if (!input.confirmOverlap && updates.length > 0) {
-        const overlap = await detectAcceptOverlap(input.documentId, activeDraft);
+    const requestedDraft = await deps.draftStore.getDraft(input.draftId);
+    if (
+      requestedDraft?.documentId === input.documentId &&
+      requestedDraft.threadId === input.threadId &&
+      requestedDraft.status === "active"
+    ) {
+      const updates = await deps.draftStore.listUpdates(requestedDraft.id);
+      const hasDraftContent = updates.length > 0;
+      if (hasDraftContent && !input.confirmOverlap) {
+        const overlap = await detectAcceptOverlap(input.documentId, requestedDraft);
         if ("status" in overlap) return overlap;
+      }
+      if (
+        hasDraftContent &&
+        input.confirmOverlap &&
+        (input.confirmedLiveRevisionToken === undefined ||
+          (await overlapChangedSinceConfirmation({
+            documentId: input.documentId,
+            draft: requestedDraft,
+            confirmedLiveRevisionToken: input.confirmedLiveRevisionToken,
+          })))
+      ) {
+        const overlap = await detectAcceptOverlap(input.documentId, requestedDraft);
+        if ("status" in overlap) return overlap;
+        return forcedOverlapReview(input.documentId, requestedDraft, overlap.overlappingBlocks);
       }
     }
 
@@ -226,8 +266,12 @@ export function createDraftService(deps: {
       const accepting = await deps.draftStore.getAcceptingDraft(input);
       if (accepting) return { status: "in_progress", draftId: accepting.id };
 
-      const applied = await deps.draftStore.getLastAppliedDraft(input);
-      if (applied && applied.appliedUpdateSeq !== null) {
+      const applied = await deps.draftStore.getAppliedDraft(input.draftId);
+      if (
+        applied?.documentId === input.documentId &&
+        applied.threadId === input.threadId &&
+        applied.appliedUpdateSeq !== null
+      ) {
         await recoverAppliedDraftSideEffects(input, applied);
         return {
           status: "applied",
@@ -248,10 +292,10 @@ export function createDraftService(deps: {
         claimToken: draft.claimToken,
       });
       if (!discarded) return { status: "not_found" };
-      await deps.draftStore.deleteScopedState({
+      await deps.draftStore.deleteDraftState({
         documentId: input.documentId,
         threadId: input.threadId,
-        scopeId: draft.id,
+        draftId: draft.id,
       });
       return { status: "discarded", draftId: draft.id };
     }
@@ -319,15 +363,18 @@ export function createDraftService(deps: {
   async function detectAcceptOverlap(
     documentId: DocumentId,
     draft: Draft,
+    inputLiveRevisionToken?: number,
   ): Promise<Extract<DraftAcceptResult, { status: "overlap" }> | { overlappingBlocks: [] }> {
     // Block overlap is an accept-time UX gate, not the data-integrity boundary:
     // if this conservative diff ever misses an overlap, Yjs still CRDT-merges
     // non-destructively and the P5 accept event remains independently undoable.
     // Compacted history can only make this gate less precise; it must not grow
     // a second apply path or replace the independent undo safety net.
+    const liveRevisionToken =
+      inputLiveRevisionToken ?? (await deps.latestLiveUpdateSeq(documentId));
     const base = await buildLiveDocThroughSeq(documentId, draft.baseLiveUpdateSeq);
-    const liveNow = await cloneLiveDoc(documentId);
-    const previewDoc = await projection.buildDraftDoc({ documentId, draftId: draft.id });
+    const liveNow = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
+    const previewDoc = await buildDraftDocAtLiveSeq(documentId, draft.id, liveRevisionToken);
     try {
       const liveTouched = touchedBlockHashesBetween({
         before: toDocHandle(base),
@@ -348,6 +395,7 @@ export function createDraftService(deps: {
       return {
         status: "overlap",
         draftId: draft.id,
+        liveRevisionToken,
         live: serializeDoc(liveNow),
         preview: serializeDoc(previewDoc),
         overlappingBlocks,
@@ -357,6 +405,65 @@ export function createDraftService(deps: {
       liveNow.destroy();
       previewDoc.destroy();
     }
+  }
+
+  async function overlapChangedSinceConfirmation(input: {
+    documentId: DocumentId;
+    draft: Draft;
+    confirmedLiveRevisionToken: number;
+  }): Promise<boolean> {
+    const currentLiveRevisionToken = await deps.latestLiveUpdateSeq(input.documentId);
+    if (currentLiveRevisionToken <= input.confirmedLiveRevisionToken) return false;
+    const confirmed = await overlapBlockSet(
+      input.documentId,
+      input.draft,
+      input.confirmedLiveRevisionToken,
+    );
+    const current = await overlapBlockSet(input.documentId, input.draft, currentLiveRevisionToken);
+    return current.size > 0 || !sameStringSet(confirmed, current);
+  }
+
+  async function overlapBlockSet(
+    documentId: DocumentId,
+    draft: Draft,
+    liveRevisionToken: number,
+  ): Promise<Set<string>> {
+    const overlap = await detectAcceptOverlap(documentId, draft, liveRevisionToken);
+    return new Set(overlap.overlappingBlocks);
+  }
+
+  async function forcedOverlapReview(
+    documentId: DocumentId,
+    draft: Draft,
+    overlappingBlocks: string[],
+  ): Promise<Extract<DraftAcceptResult, { status: "overlap" }>> {
+    const liveRevisionToken = await deps.latestLiveUpdateSeq(documentId);
+    const liveNow = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
+    const previewDoc = await buildDraftDocAtLiveSeq(documentId, draft.id, liveRevisionToken);
+    try {
+      return {
+        status: "overlap",
+        draftId: draft.id,
+        liveRevisionToken,
+        live: serializeDoc(liveNow),
+        preview: serializeDoc(previewDoc),
+        overlappingBlocks,
+      };
+    } finally {
+      liveNow.destroy();
+      previewDoc.destroy();
+    }
+  }
+
+  async function buildDraftDocAtLiveSeq(
+    documentId: DocumentId,
+    draftId: string,
+    liveRevisionToken: number,
+  ): Promise<Y.Doc> {
+    const doc = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
+    const updates = await deps.draftStore.listUpdates(draftId);
+    for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
+    return doc;
   }
 
   async function buildLiveDocThroughSeq(documentId: DocumentId, seq: number): Promise<Y.Doc> {
@@ -376,14 +483,6 @@ export function createDraftService(deps: {
         opts: { until: number; fromCheckpoint?: boolean },
       ) => Promise<JournalSnapshot>
     )(documentId, { until: seq, fromCheckpoint: false });
-  }
-
-  async function cloneLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
-    const doc = createCollabYDoc({ gc: false });
-    await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-      Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
-    });
-    return doc;
   }
 
   function applySnapshot(doc: Y.Doc, snapshot: JournalSnapshot): void {
@@ -416,15 +515,16 @@ export function createDraftService(deps: {
   async function rejectDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: string;
   }): Promise<DraftRejectResult> {
     const draft = await deps.draftStore.discardActive(input);
     if (!draft) return { status: "not_found" };
 
     await invalidateInFlight(input);
-    await deps.draftStore.deleteScopedState({
+    await deps.draftStore.deleteDraftState({
       documentId: input.documentId,
       threadId: input.threadId,
-      scopeId: draft.id,
+      draftId: draft.id,
     });
     return { status: "discarded", draftId: draft.id };
   }
@@ -439,12 +539,20 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
-    await deps.draftStore.deleteScopedState({
+    await deps.draftStore.deleteDraftState({
       documentId: input.documentId,
       threadId: input.threadId,
-      scopeId: draft.id,
+      draftId: draft.id,
     });
   }
+}
+
+function sameStringSet(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
 }
 
 export function createDraftAcceptTurnId(draftId: string): TurnId {

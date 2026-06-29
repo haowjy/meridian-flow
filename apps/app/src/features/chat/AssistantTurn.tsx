@@ -45,7 +45,11 @@ export type AssistantTurnProps = {
   /** Draft groups anchored to this turn (undefined when none — most rows). */
   draftGroups?: ThreadDraftGroup[];
   /** Open the ChatView-owned preview overlay for one of this turn's drafts. */
-  onReviewDraft?: (documentId: string, options?: { requireOverlapConfirm?: boolean }) => void;
+  onReviewDraft?: (
+    documentId: string,
+    draftId: string,
+    options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
+  ) => void;
 };
 
 function AssistantTurnComponent({
