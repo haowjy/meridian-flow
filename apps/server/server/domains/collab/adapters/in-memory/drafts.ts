@@ -49,7 +49,7 @@ export function createInMemoryDraftStore(): DraftStore {
     },
 
     async createActiveDraft(input) {
-      if (findDraft({ ...input, status: "active" })) throw new ActiveDraftConflictError(input);
+      if (findOpenDraft(input)) throw new ActiveDraftConflictError(input);
       const now = new Date();
       const draft: Draft = {
         id: createDraftId(),
@@ -73,6 +73,7 @@ export function createInMemoryDraftStore(): DraftStore {
     async appendUpdate(input) {
       const draft = drafts.get(input.draftId);
       if (!draft) throw new Error(`Draft not found: ${input.draftId}`);
+      if (draft.status !== "active") throw new Error(`Draft is closed: ${input.draftId}`);
       const update: DraftUpdate = {
         id: nextUpdateId++,
         draftId: input.draftId,
@@ -101,9 +102,34 @@ export function createInMemoryDraftStore(): DraftStore {
       return copyDraft(draft) ?? draft;
     },
 
+    async claimForAccept(input) {
+      const draft = findDraft({ ...input, status: "active" });
+      if (!draft || draft.claimedAt) return null;
+      draft.status = "accepting";
+      draft.claimedAt = new Date();
+      draft.claimToken = randomUUID();
+      draft.updatedAt = new Date();
+      return copyDraft(draft) ?? draft;
+    },
+
+    async getAcceptingDraft(input) {
+      return copyDraft(findDraft({ ...input, status: "accepting" })) ?? null;
+    },
+
+    async discardActive(input) {
+      const draft = findDraft({ ...input, status: "active" });
+      if (!draft || draft.claimedAt) return null;
+      draft.status = "discarded";
+      draft.discardedAt = new Date();
+      draft.claimedAt = null;
+      draft.claimToken = null;
+      draft.updatedAt = new Date();
+      return copyDraft(draft) ?? draft;
+    },
+
     async markApplied(draftId, input) {
       const draft = drafts.get(draftId);
-      if (draft?.status !== "active" || draft.claimToken !== input.claimToken) return false;
+      if (draft?.status !== "accepting" || draft.claimToken !== input.claimToken) return false;
       draft.status = "applied";
       draft.appliedAt = new Date();
       draft.appliedByUserId = input.appliedByUserId;
@@ -116,7 +142,12 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async markDiscarded(draftId, input) {
       const draft = drafts.get(draftId);
-      if (draft?.status !== "active" || draft.claimToken !== input.claimToken) return false;
+      if (
+        !draft ||
+        (draft.status !== "active" && draft.status !== "accepting") ||
+        draft.claimToken !== input.claimToken
+      )
+        return false;
       draft.status = "discarded";
       draft.discardedAt = new Date();
       draft.claimedAt = null;
@@ -127,6 +158,18 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async deleteScopedState(_input) {},
   };
+
+  function findOpenDraft(input: {
+    documentId: Draft["documentId"];
+    threadId: Draft["threadId"];
+  }): Draft | undefined {
+    return [...drafts.values()].find(
+      (draft) =>
+        draft.documentId === input.documentId &&
+        draft.threadId === input.threadId &&
+        (draft.status === "active" || draft.status === "accepting"),
+    );
+  }
 
   function findDraft(input: {
     documentId: Draft["documentId"];

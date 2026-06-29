@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: draft accept/reject is now DB-fenced. Concurrent accepts report in progress, stale draft responses cannot recreate closed drafts, and applied retry recovers the live Yjs doc after a crash between journal write and live apply.
+
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
   in-flight agent turn. The run finishes server-side and a reconnecting client
   reattaches via the existing snapshot/resume path — long turns survive accidental

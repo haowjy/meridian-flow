@@ -97,6 +97,7 @@ export async function handleDraftAcceptRequest(
   const result = await deps.documentSync.drafts.acceptDraft(input);
   if (result.status === "applied") return result;
   if (result.status === "discarded") return { ...result, appliedUpdateSeq: null };
+  if (result.status === "in_progress") return { ...result, appliedUpdateSeq: null };
   return { status: "not_found", draftId: null, appliedUpdateSeq: null };
 }
 

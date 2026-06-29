@@ -189,8 +189,10 @@ route to the same core.
   `scope_id = draft ULID`.
 
 Draft finalization (accept or reject) **invalidates in-flight responses** —
-the registry marks any active core for the finalized `(documentId, threadId)`
-as stale. `commitResponse` returns `DraftClosedFinalizeResult`
+the registry marks active cores for the finalized thread as stale. This is
+intentionally thread-wide: a response that has not touched the finalized
+document yet is still based on a pre-close review context and must not create a
+fresh replacement draft. `commitResponse` returns `DraftClosedFinalizeResult`
 (`status: "draft_closed"`) instead of flushing writes.
 
 ### State isolation via `scope_id`
@@ -204,28 +206,41 @@ so adapters compose the partition without code duplication.
 ### Draft persistence tables
 
 - **`document_yjs_drafts`** — one row per draft; `UNIQUE(documentId, threadId)`
-  partial index on `status = 'active'` enforces one active draft per
-  (document, thread).
+  partial index on `status IN ('active', 'accepting')` enforces one open draft
+  per (document, thread). `accepting` is the fenced accept-in-progress state:
+  it is not listed as an active review draft, but it blocks new draft creation
+  and marks the live accept as already underway. An expired `accepting` claim can
+  be reclaimed by accept retry; fresh concurrent accepts report in-progress.
 - **`document_yjs_draft_updates`** — append-only agent deltas per draft
   (no seed, no live updates in the log).
 
 ### Accept lifecycle (journal-first, idempotent)
 
-1. **CAS claim** — `claimActive` sets `claimedAt` + `claimToken`, returns draft.
+1. **Accept claim closes the draft in DB** — `claimForAccept` atomically moves the
+   draft from `active` to `accepting` with `claimedAt` + `claimToken`. Reject
+   atomically moves `active` to `discarded`. This DB state is the fence; the
+   in-memory response invalidation is advisory.
 2. **Invalidate** in-flight responses for this `(documentId, threadId)`.
 3. **Merge** all draft deltas via `Y.mergeUpdates`.
 4. **Journal-first** persistence: `appendBatch` with `writeId = draft-accept:<id>`;
    unique constraint prevents double-apply on retry.
-5. **Side effects** (recoverable): apply update to live coordinator, mark draft
-   applied, delete draft-scoped agent-edit state.
+5. **Durable status**: `markApplied` is claim-token fenced and only succeeds from
+   `accepting`.
+6. **Side effects** (recoverable): apply/recover the live coordinator projection,
+   refresh read models, delete draft-scoped agent-edit state.
+
+Draft response sessions capture the active draft id they read from. Draft-scoped
+`appendBatch` revalidates that exact draft id is still `active` inside the DB
+transaction before inserting mutations, so a stale response cannot append to a
+closed draft or create a replacement draft after accept/reject wins.
 
 Empty drafts (zero updates) auto-discard on accept. The `lastActorTurnId`
 anchors the accept mutation's `turnId` — no hidden system turns.
 
 ### Reject lifecycle
 
-CAS claim, invalidate in-flight responses, mark discarded, delete draft-scoped
-state. Updates never touch live.
+Reject atomically moves the active draft to `discarded`, invalidates in-flight
+responses, then deletes draft-scoped state. Updates never touch live.
 
 ### Invariants
 
