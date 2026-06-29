@@ -15,6 +15,7 @@ export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "kb",
   "user",
   "work",
+  "uploads",
 ];
 
 /**

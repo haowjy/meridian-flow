@@ -187,6 +187,7 @@ export function ContextViewer({
             activeTabId={activeTabId}
             toolbarLeading={editorToolbarLeading}
             registryOwner={DESKTOP_CONTEXT_EDITOR_OWNER}
+            editorOwner={DESKTOP_CONTEXT_EDITOR_OWNER}
           />
         </div>
       </div>

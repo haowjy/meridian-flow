@@ -69,6 +69,8 @@ export type ActiveDocumentSurfaceProps = {
    * `retain()` calls race each other's reconciliation.
    */
   registryOwner: string;
+  /** Stable UI-surface owner used to scope DOM behavior such as scroll restore. */
+  editorOwner: string;
 };
 
 export function ActiveDocumentSurface({
@@ -80,6 +82,7 @@ export function ActiveDocumentSurface({
   toolbarLeading,
   placeholder,
   registryOwner,
+  editorOwner,
 }: ActiveDocumentSurfaceProps) {
   const activeIsTracked = activeTab?.editable === true;
   const resolvedPlaceholder =
@@ -109,6 +112,7 @@ export function ActiveDocumentSurface({
             activeTabId={activeIsTracked ? activeTabId : null}
             toolbarLeading={toolbarLeading}
             registryOwner={registryOwner}
+            editorOwner={editorOwner}
           />
         </div>
       ) : null}

@@ -1,6 +1,6 @@
 /**
  * ProjectChatContextNavigationProvider — adapts chat-local document URI opens
- * to the project route's context-file selection contract.
+ * to the project route's active-document contract.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback } from "react";
@@ -14,27 +14,36 @@ type SelectContextPath = (
   options?: { replace?: boolean },
 ) => void;
 
+type OpenContextDocument = (path: string, scheme: ProjectContextTreeScheme) => void;
+
 export function ProjectChatContextNavigationProvider({
   activeWorkId,
   onSelectContextPath,
+  onOpenContextDocument,
   children,
 }: {
   activeWorkId: string | null;
   onSelectContextPath?: SelectContextPath;
+  onOpenContextDocument?: OpenContextDocument;
   children: ReactNode;
 }) {
   const openContextUri = useCallback(
     (uri: string) => {
-      if (!onSelectContextPath) return;
       const target = contextRouteTargetFromUri(uri, activeWorkId);
       if (!target) return;
-      onSelectContextPath(target.path, target.scheme);
+      if (onOpenContextDocument) {
+        onOpenContextDocument(target.path, target.scheme);
+        return;
+      }
+      onSelectContextPath?.(target.path, target.scheme);
     },
-    [activeWorkId, onSelectContextPath],
+    [activeWorkId, onOpenContextDocument, onSelectContextPath],
   );
 
   return (
-    <ChatContextNavigationProvider onOpenContextUri={onSelectContextPath ? openContextUri : null}>
+    <ChatContextNavigationProvider
+      onOpenContextUri={onOpenContextDocument || onSelectContextPath ? openContextUri : null}
+    >
       {children}
     </ChatContextNavigationProvider>
   );

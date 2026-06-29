@@ -15,8 +15,8 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useThreadDocumentResolver } from "@/features/chat/useThreadDocumentResolver";
+import { useCallback, useEffect, useState } from "react";
+import type { ThreadDocumentSelection } from "@/features/chat/ThreadDocumentSections";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
@@ -128,32 +128,41 @@ function DesktopProject(props: ProjectViewProps) {
   // popover-click and rail-tree-click on the same path. Viewer mode is
   // DERIVED by the rail from these props + URL (see ContextRail).
   const [railUploadTarget, setRailUploadTarget] = useState<RailUploadTarget | null>(null);
-  const [railViewerDismissed, setRailViewerDismissed] = useState(false);
-  // Reset the dismissed flag whenever the URL points at a new context doc,
-  // so opening a different file via popover/tree re-enters viewer mode even
-  // if the writer had just clicked Back on the previous one.
-  const lastDocKeyRef = useRef<string | null>(null);
+  const [dismissedDocKey, setDismissedDocKey] = useState<string | null>(null);
   const docKey =
     props.activeContextScheme && props.activeContextPath
       ? `${props.activeContextScheme}:${props.activeContextPath}`
       : null;
-  if (docKey !== lastDocKeyRef.current) {
-    lastDocKeyRef.current = docKey;
-    if (railViewerDismissed) setRailViewerDismissed(false);
-  }
+  const railViewerDismissed = dismissedDocKey !== null && dismissedDocKey === docKey;
 
-  const { onSetActiveDocument } = props;
+  const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
+    useProjectSurfacePrefsActions();
+
+  useEffect(() => {
+    setRailUploadTarget(null);
+    setDismissedDocKey(null);
+  }, [props.activeThreadId]);
+
+  const { activeScreen, onSelectScreen, onSetActiveDocument } = props;
+  const openChatRail = useCallback(() => {
+    if (activeScreen !== "chat") onSelectScreen("chat");
+    setDockCollapsed(false);
+  }, [activeScreen, onSelectScreen, setDockCollapsed]);
+
   const handleOpenInRail = useCallback(
     (doc: RailOpenDocument) => {
-      if (doc.scheme && doc.path) {
-        // Context doc: identity lives in the URL — rail derives viewer mode
-        // from it. Clear any upload target so the two viewers don't fight.
+      if (doc.kind === "context") {
+        // Context doc: identity lives in the URL. Context screen opens the
+        // visible center pane; Home/Chat open the chat rail instead.
+        if (activeScreen !== "context") openChatRail();
         onSetActiveDocument(doc.path, doc.scheme);
         setRailUploadTarget(null);
-        setRailViewerDismissed(false);
+        setDismissedDocKey(null);
         return;
       }
-      // Thread upload: no URL representation, rail-local target.
+      // Thread upload: no URL representation, rail-local target. Switch to
+      // Chat before setting it so the rail is visible when React renders.
+      openChatRail();
       setRailUploadTarget({
         documentId: doc.documentId,
         name: doc.name,
@@ -161,32 +170,40 @@ function DesktopProject(props: ProjectViewProps) {
         filetype: doc.filetype,
         schemaType: doc.schemaType,
       });
-      setRailViewerDismissed(false);
+      setDismissedDocKey(null);
     },
-    [onSetActiveDocument],
+    [activeScreen, onSetActiveDocument, openChatRail],
   );
 
-  const resolveThreadDocument = useThreadDocumentResolver(props.activeThreadId);
+  const handleOpenContextDocument = useCallback(
+    (path: string, scheme: ProjectContextTreeScheme) => {
+      handleOpenInRail({ kind: "context", scheme, path });
+    },
+    [handleOpenInRail],
+  );
+
   const handlePopoverOpen = useCallback(
-    (documentId: string) => {
-      const resolved = resolveThreadDocument(documentId);
-      if (!resolved) return;
-      const row = resolved.kind === "upload" ? resolved.upload : resolved.recent;
+    (selection: ThreadDocumentSelection) => {
+      const row = selection.document;
+      if (selection.kind === "recent" && row.scheme !== null && row.path !== null) {
+        handleOpenInRail({
+          kind: "context",
+          scheme: row.scheme,
+          path: row.path,
+        });
+        return;
+      }
       handleOpenInRail({
+        kind: "upload",
         documentId: row.documentId,
-        scheme: row.scheme,
-        path: row.path,
         name: row.name,
         mimeType: row.mimeType,
         filetype: row.filetype,
         schemaType: row.schemaType,
       });
     },
-    [handleOpenInRail, resolveThreadDocument],
+    [handleOpenInRail],
   );
-
-  const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
-    useProjectSurfacePrefsActions();
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
@@ -233,10 +250,11 @@ function DesktopProject(props: ProjectViewProps) {
           activeScheme={props.activeContextScheme}
           activePath={props.activeContextPath}
           railUploadTarget={railUploadTarget}
+          key={`context-rail:${props.activeThreadId ?? "none"}`}
           railViewerDismissed={railViewerDismissed}
           onOpenInRail={handleOpenInRail}
           onDismissViewer={() => {
-            setRailViewerDismissed(true);
+            setDismissedDocKey(docKey);
             setRailUploadTarget(null);
           }}
           onClose={close("context-rail")}
@@ -290,7 +308,7 @@ function DesktopProject(props: ProjectViewProps) {
             // conversation survives a close/reopen.
             visible={chatPlacement === "center" || isOpen("chat")}
             onCloseDock={close("chat")}
-            onSelectContextPath={props.onSelectContextPath}
+            onOpenContextDocument={handleOpenContextDocument}
             onOpenDocument={handlePopoverOpen}
           />
         </div>

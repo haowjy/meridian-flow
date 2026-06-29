@@ -32,6 +32,7 @@ export type ChatScreenProps = {
   writeThreadToRoute?: boolean;
   placement?: ChatPlacement;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextDocument?: (path: string, scheme: ProjectContextTreeScheme) => void;
 };
 
 /**
@@ -50,6 +51,7 @@ export function ChatScreen({
   writeThreadToRoute = true,
   placement = "center",
   onSelectContextPath,
+  onOpenContextDocument,
 }: ChatScreenProps) {
   const pendingThreadId = useThreadStore((state) => {
     for (const [tid, ps] of Object.entries(state.pendingStreamByThreadId)) {
@@ -96,6 +98,7 @@ export function ChatScreen({
       onSelectThread={onSelectThread}
       placement={placement}
       onSelectContextPath={onSelectContextPath}
+      onOpenContextDocument={onOpenContextDocument}
     />
   );
 }
@@ -106,12 +109,14 @@ function ChatScreenLoaded({
   onSelectThread,
   placement,
   onSelectContextPath,
+  onOpenContextDocument,
 }: {
   projectId: string;
   threadId: string;
   onSelectThread: (threadId: string) => void;
   placement: ChatPlacement;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextDocument?: (path: string, scheme: ProjectContextTreeScheme) => void;
 }) {
   const {
     thread: snapshotThread,
@@ -150,6 +155,7 @@ function ChatScreenLoaded({
         <ProjectChatContextNavigationProvider
           activeWorkId={thread?.workId ?? null}
           onSelectContextPath={onSelectContextPath}
+          onOpenContextDocument={onOpenContextDocument}
         >
           <ChatView
             threadId={threadId}

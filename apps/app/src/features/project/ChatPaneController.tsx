@@ -9,6 +9,7 @@ import { Trans } from "@lingui/react/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { ThreadContentsPopover } from "@/features/chat/ThreadContentsPopover";
+import type { ThreadDocumentSelection } from "@/features/chat/ThreadDocumentSections";
 
 import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -20,7 +21,7 @@ export type ChatPaneControllerProps = {
   contextToggle: PaneHeaderRailToggle;
   onSelectThread: (threadId: string) => void;
   /** Popover document-open handoff. Resolved by the parent into the rail viewer. */
-  onOpenDocument?: (documentId: string) => void;
+  onOpenDocument?: (selection: ThreadDocumentSelection) => void;
 };
 
 export function ChatPaneController({

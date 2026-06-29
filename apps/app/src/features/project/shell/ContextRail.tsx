@@ -1,6 +1,6 @@
 /**
  * ContextRail — the chat-screen right rail: a mini file browser with an
- * inline read-only document viewer.
+ * editable inline active-document surface and binary previews for non-tracked files.
  *
  * Tree mode lets the writer drill into project context (Manuscript / KB /
  * User / Work, plus a virtual Uploads section sourced from this thread's
@@ -86,15 +86,21 @@ export type RailUploadTarget = {
   schemaType: YjsTrackedSchemaType | null;
 };
 
-export type RailOpenDocument = {
+type RailOpenDocumentBase = {
   documentId: string;
-  scheme: ProjectContextTreeScheme | null;
-  path: string | null;
   name: string;
   mimeType: string | null;
   filetype: Filetype | null;
   schemaType: YjsTrackedSchemaType | null;
 };
+
+export type RailOpenDocument =
+  | {
+      kind: "context";
+      scheme: ProjectContextTreeScheme;
+      path: string;
+    }
+  | (RailOpenDocumentBase & { kind: "upload" });
 
 export type ContextRailProps = {
   projectId: string;
@@ -282,13 +288,9 @@ function RailTreeBody({
         onOpenFile={(file) => {
           const tab = contextTabFromFile(drill.scheme, file, workId);
           onOpenInRail({
-            documentId: tab.documentId,
+            kind: "context",
             scheme: tab.scheme,
             path: tab.path,
-            name: tab.name,
-            mimeType: null,
-            filetype: null,
-            schemaType: null,
           });
         }}
       />
@@ -358,9 +360,8 @@ function RailUploadsSection({
         const row = uploads.uploads?.find((u) => u.documentId === documentId);
         if (!row) return;
         onOpenInRail({
+          kind: "upload",
           documentId: row.documentId,
-          scheme: null,
-          path: null,
           name: row.name,
           mimeType: row.mimeType,
           filetype: row.filetype,
@@ -636,6 +637,7 @@ function RailContextDocViewerSlot({
       activeTab={tab}
       activeTabId={tab.documentId}
       registryOwner={RAIL_EDITOR_OWNER}
+      editorOwner={RAIL_EDITOR_OWNER}
     />
   );
 }
@@ -672,6 +674,7 @@ function RailUploadViewerSlot({
         activeTab={tab}
         activeTabId={tab.documentId}
         registryOwner={RAIL_EDITOR_OWNER}
+        editorOwner={RAIL_EDITOR_OWNER}
       />
     );
   }

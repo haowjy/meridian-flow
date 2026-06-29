@@ -8,21 +8,21 @@ import { useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-import { ThreadDocumentSections } from "./ThreadDocumentSections";
+import { ThreadDocumentSections, type ThreadDocumentSelection } from "./ThreadDocumentSections";
 
 export type ThreadContentsPopoverProps = {
   /** Active thread; when null, sections render their disabled empty state. */
   threadId: string | null;
-  onOpenDocument?: (documentId: string) => void;
+  onOpenDocument?: (selection: ThreadDocumentSelection) => void;
 };
 
 export function ThreadContentsPopover({ threadId, onOpenDocument }: ThreadContentsPopoverProps) {
   const [open, setOpen] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
-  function selectDocument(documentId: string) {
-    setActiveDocumentId(documentId);
-    onOpenDocument?.(documentId);
+  function selectDocument(selection: ThreadDocumentSelection) {
+    setActiveDocumentId(selection.document.documentId);
+    onOpenDocument?.(selection);
     // Close on hand-off: the rail viewer takes over as the focus surface,
     // and leaving the popover open would stack two doc-lookup chrome layers.
     if (onOpenDocument) setOpen(false);

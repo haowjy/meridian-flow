@@ -25,6 +25,8 @@ import { contextTabRouteKey, findContextTabForRoute } from "./context/context-ta
 import { findContextFile } from "./context/context-tree";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
+const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
+
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
   activeThreadId: string | null;
@@ -145,7 +147,7 @@ export function ContextViewerSurfaceController({
   useLayoutEffect(() => {
     if (!active) return;
     if (!retainedActiveTabId) return;
-    const scroller = findEditorScroller(retainedActiveTabId);
+    const scroller = findEditorScroller(retainedActiveTabId, DESKTOP_CONTEXT_EDITOR_OWNER);
     if (!scroller) return;
     const save = () => {
       scroller.dataset.stableLayoutScrollTop = String(scroller.scrollTop);
@@ -212,8 +214,9 @@ export function ContextViewerSurfaceController({
   );
 }
 
-function findEditorScroller(documentId: string): HTMLElement | null {
-  for (const host of document.querySelectorAll<HTMLElement>("[data-context-editor-document-id]")) {
+function findEditorScroller(documentId: string, editorOwner: string): HTMLElement | null {
+  for (const host of document.querySelectorAll<HTMLElement>("[data-context-editor-owner]")) {
+    if (host.dataset.contextEditorOwner !== editorOwner) continue;
     if (host.dataset.contextEditorDocumentId !== documentId) continue;
     return host.querySelector<HTMLElement>("[data-stable-layout-scroll]");
   }

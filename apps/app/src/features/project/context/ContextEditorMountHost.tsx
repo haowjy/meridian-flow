@@ -64,6 +64,8 @@ export type ContextEditorMountHostProps = {
    * of the loser's sessions.
    */
   registryOwner: string;
+  /** Stable UI-surface owner used by external DOM integrations (scroll restore). */
+  editorOwner?: string;
 };
 
 /**
@@ -94,6 +96,7 @@ export function ContextEditorMountHost({
   activeTabId,
   toolbarLeading,
   registryOwner,
+  editorOwner,
 }: ContextEditorMountHostProps) {
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
@@ -135,6 +138,7 @@ export function ContextEditorMountHost({
   }, [registryOwner]);
 
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
+  const resolvedEditorOwner = editorOwner ?? registryOwner;
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -146,6 +150,7 @@ export function ContextEditorMountHost({
             <div
               key={tab.documentId}
               data-context-editor-document-id={tab.documentId}
+              data-context-editor-owner={resolvedEditorOwner}
               className={cn(
                 // Each editor fills the host's frame; only the active one is
                 // visible. `hidden` keeps DOM/state alive without painting.

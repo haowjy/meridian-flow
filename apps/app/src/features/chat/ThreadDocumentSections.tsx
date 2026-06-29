@@ -10,12 +10,20 @@
  * provided — the rail omits it, the popover passes it.
  */
 import { t } from "@lingui/core/macro";
+import type {
+  ThreadRecentDocumentItem,
+  ThreadUploadDocumentItem,
+} from "@meridian/contracts/protocol";
 import { FileText, Upload } from "lucide-react";
 
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { useThreadUploads } from "@/client/query/useThreadUploads";
 
 import { DocumentRailSection } from "./ThreadDocumentList";
+
+export type ThreadDocumentSelection =
+  | { kind: "upload"; document: ThreadUploadDocumentItem }
+  | { kind: "recent"; document: ThreadRecentDocumentItem };
 
 export function ThreadDocumentSections({
   threadId,
@@ -24,7 +32,7 @@ export function ThreadDocumentSections({
 }: {
   threadId: string | null;
   activeDocumentId?: string | null;
-  onSelectDocument?: (documentId: string) => void;
+  onSelectDocument?: (selection: ThreadDocumentSelection) => void;
 }) {
   const uploads = useThreadUploads(threadId);
   const recent = useThreadRecentDocuments(threadId);
@@ -44,7 +52,14 @@ export function ThreadDocumentSections({
           error: t`Couldn't load uploads.`,
         }}
         activeDocumentId={activeDocumentId}
-        onSelectDocument={onSelectDocument}
+        onSelectDocument={
+          onSelectDocument
+            ? (documentId) => {
+                const row = uploads.uploads?.find((upload) => upload.documentId === documentId);
+                if (row) onSelectDocument({ kind: "upload", document: row });
+              }
+            : undefined
+        }
       />
       <DocumentRailSection
         title={t`Recent`}
@@ -59,7 +74,16 @@ export function ThreadDocumentSections({
           error: t`Couldn't load recent documents.`,
         }}
         activeDocumentId={activeDocumentId}
-        onSelectDocument={onSelectDocument}
+        onSelectDocument={
+          onSelectDocument
+            ? (documentId) => {
+                const row = recent.documents?.find(
+                  (document) => document.documentId === documentId,
+                );
+                if (row) onSelectDocument({ kind: "recent", document: row });
+              }
+            : undefined
+        }
       />
     </>
   );

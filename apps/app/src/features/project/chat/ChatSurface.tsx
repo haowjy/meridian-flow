@@ -13,6 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { ThreadContentsPopover } from "@/features/chat/ThreadContentsPopover";
+import type { ThreadDocumentSelection } from "@/features/chat/ThreadDocumentSections";
 import { cn } from "@/lib/utils";
 
 import { PaneTitle } from "../PaneTitle";
@@ -39,8 +40,9 @@ export type ChatSurfaceProps = {
    */
   onCloseDock?: () => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextDocument?: (path: string, scheme: ProjectContextTreeScheme) => void;
   /** Popover document-open handoff. Resolved by the parent into the rail viewer. */
-  onOpenDocument?: (documentId: string) => void;
+  onOpenDocument?: (selection: ThreadDocumentSelection) => void;
 };
 
 export function ChatSurface({
@@ -51,6 +53,7 @@ export function ChatSurface({
   visible,
   onCloseDock,
   onSelectContextPath,
+  onOpenContextDocument,
   onOpenDocument,
 }: ChatSurfaceProps) {
   return (
@@ -96,6 +99,7 @@ export function ChatSurface({
         onSelectThread={onSelectThread}
         placement={placement}
         onSelectContextPath={onSelectContextPath}
+        onOpenContextDocument={onOpenContextDocument}
         // Both placements now carry external chrome (PaneHeader for center, the
         // RailHeader above for dock), so ChatScreen never renders its own.
         // Only the centered (destination-owning) chat may write its fallback
