@@ -32,7 +32,7 @@ export async function resolveDocumentUri(
   documentId: string,
 ): Promise<string | null> {
   const location = await resolveDocumentLocation(db, documentId);
-  return location ? toCanonical(location.scheme, location.path) : null;
+  return location ? toCanonical(location.scheme, contextUriPathFromTreePath(location.path)) : null;
 }
 
 export async function resolveDocumentLocation(
@@ -57,8 +57,15 @@ export async function resolveDocumentLocation(
 
   const folderPath = await resolveFolderPath(db, document.folderId);
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
-  const path = [...folderPath, filename].join("/");
-  return { scheme, path };
+  return { scheme, path: treePathFromSegments([...folderPath, filename]) };
+}
+
+function treePathFromSegments(segments: readonly string[]): string {
+  return `/${segments.join("/")}`;
+}
+
+function contextUriPathFromTreePath(path: string): string {
+  return path.replace(/^\/+|\/+$/g, "");
 }
 
 async function resolveFolderPath(db: DocumentUriDb, folderId: string | null): Promise<string[]> {
