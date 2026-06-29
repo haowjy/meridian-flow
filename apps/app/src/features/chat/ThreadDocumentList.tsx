@@ -5,7 +5,7 @@
  * per-document row visuals.
  *
  * These are the *content* of the thread context surface, independent of the
- * *container* that hosts them. Today both the `ContextSidebar` rail and the
+ * *container* that hosts them. Today both the `ContextRail` and the
  * `ThreadContentsPopover` peek render the same sections — sourcing/timestamp
  * differences live in the data layer, not here. (When the rail is replaced by
  * the context dock, these primitives stay.)

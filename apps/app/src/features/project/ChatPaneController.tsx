@@ -19,6 +19,8 @@ export type ChatPaneControllerProps = {
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   onSelectThread: (threadId: string) => void;
+  /** Popover document-open handoff. Resolved by the parent into the rail viewer. */
+  onOpenDocument?: (documentId: string) => void;
 };
 
 export function ChatPaneController({
@@ -27,6 +29,7 @@ export function ChatPaneController({
   sidebarToggle,
   contextToggle,
   onSelectThread,
+  onOpenDocument,
 }: ChatPaneControllerProps) {
   return (
     <main className="main-pane flex shrink-0 flex-col">
@@ -46,7 +49,9 @@ export function ChatPaneController({
         }
         left={sidebarToggle}
         right={contextToggle}
-        actions={<ThreadContentsPopover threadId={activeThreadId} />}
+        actions={
+          <ThreadContentsPopover threadId={activeThreadId} onOpenDocument={onOpenDocument} />
+        }
       />
     </main>
   );

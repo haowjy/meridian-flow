@@ -190,7 +190,7 @@ function ResultRow({
   );
 }
 
-/* ── Section primitives (mirrors ContextSidebar's Section) ──────────── */
+/* ── Section primitives (mirrors ThreadDocumentList's Section) ──────────── */
 
 function Section({
   title,

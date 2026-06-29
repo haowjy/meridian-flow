@@ -5,7 +5,7 @@
  * `h-10` bar (the canonical project header height) with a `border-b`, a
  * leading content slot (a label, a thread
  * switcher, …), and a trailing collapse control on the rail's inside-facing
- * edge. Used by the Context rail (`ContextSidebar`) and the chat dock
+ * edge. Used by the Context rail (`ContextRail`) and the chat dock
  * (`ChatSurface` dock placement) so the close affordance lands in the same spot,
  * with the same icon + size, across every rail. ("Looks like the context
  * sidebar" — captured once, not re-styled per rail.)

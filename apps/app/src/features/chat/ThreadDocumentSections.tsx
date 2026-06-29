@@ -1,6 +1,6 @@
 /**
  * ThreadDocumentSections — the data-bound Uploads + Recent sections for a thread,
- * shared by the context rail (`ContextSidebar`) and the thread-contents popover
+ * shared by the context rail (`ContextRail`) and the thread-contents popover
  * (`ThreadContentsPopover`). Owns the two thread-document queries AND the canonical
  * section copy, so the two surfaces render identical content and cannot drift.
  *

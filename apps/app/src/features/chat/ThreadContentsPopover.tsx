@@ -22,8 +22,10 @@ export function ThreadContentsPopover({ threadId, onOpenDocument }: ThreadConten
 
   function selectDocument(documentId: string) {
     setActiveDocumentId(documentId);
-    // TODO(handoff): open document is deferred — design-lead to wire destination.
     onOpenDocument?.(documentId);
+    // Close on hand-off: the rail viewer takes over as the focus surface,
+    // and leaving the popover open would stack two doc-lookup chrome layers.
+    if (onOpenDocument) setOpen(false);
   }
 
   return (

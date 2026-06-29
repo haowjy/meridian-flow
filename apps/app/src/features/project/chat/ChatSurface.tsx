@@ -39,6 +39,8 @@ export type ChatSurfaceProps = {
    */
   onCloseDock?: () => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  /** Popover document-open handoff. Resolved by the parent into the rail viewer. */
+  onOpenDocument?: (documentId: string) => void;
 };
 
 export function ChatSurface({
@@ -49,6 +51,7 @@ export function ChatSurface({
   visible,
   onCloseDock,
   onSelectContextPath,
+  onOpenDocument,
 }: ChatSurfaceProps) {
   return (
     <div
@@ -70,7 +73,9 @@ export function ChatSurface({
           onClose={onCloseDock}
           closeLabel={t`Collapse chat  ]`}
           side="right"
-          actions={<ThreadContentsPopover threadId={activeThreadId} />}
+          actions={
+            <ThreadContentsPopover threadId={activeThreadId} onOpenDocument={onOpenDocument} />
+          }
         >
           {activeThreadId ? (
             <ChatThreadTitle
