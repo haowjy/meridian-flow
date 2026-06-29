@@ -86,6 +86,9 @@
 - Collab: pending undo/redo notifications coalesce deterministically (latest wins)
   even when several land in the same millisecond.
 
+- Collab: live undo/redo planning now ignores draft-scoped agent-edit rows, so
+  draft proposals cannot appear as reversible live writes before acceptance.
+
 - Collab: grouped undo/redo notifications now carry each write handle's original turn id
   instead of collapsing mixed-turn groups onto the seed turn.
 
