@@ -27,7 +27,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { type CSSProperties, useRef } from "react";
+import { type CSSProperties, type ReactNode, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
@@ -64,8 +64,10 @@ export type ContextViewerProps = {
   /**
    * Project left-sidebar expand toggle (pinned at the tab strip's leading
    * edge). Reuses the `PaneHeader` rail-toggle shape: render the expand
-   * button when collapsed, a width-matched spacer when open (the rail owns
-   * its own close).
+   * button when the sidebar is COLLAPSED; render nothing when it's open
+   * (the rail's own header owns the close). Cursor alignment across
+   * collapse↔expand comes from the pane relocating, not from a phantom
+   * width-matched spacer.
    */
   sidebarToggle?: PaneHeaderRailToggle;
   /**
@@ -130,8 +132,8 @@ export function ContextViewer({
         activeTabId={activeTabId}
         onSelect={onSelectTab}
         onClose={onCloseTab}
-        leading={<TabBarRailToggle toggle={sidebarToggle} side="left" />}
-        trailing={<TabBarRailToggle toggle={dockToggle} side="right" />}
+        leading={tabBarRailToggle(sidebarToggle, "left")}
+        trailing={tabBarRailToggle(dockToggle, "right")}
       />
       {/* Horizontal split: files panel (left) ⇄ editor / viewer (right).
           The CSS variable is written here so the shared ResizeHandle can
@@ -196,20 +198,23 @@ export function ContextViewer({
 }
 
 /**
- * Render a `PaneHeader`-style rail toggle inside the tab strip. When the
- * rail is open the rail's own header owns the close button, so we render a
- * `size-8` spacer to keep the strip's leading/trailing slot stable across
- * collapsed↔open transitions ("click without moving the cursor").
+ * Render a `PaneHeader`-style rail toggle for the tab strip's leading or
+ * trailing slot. Returns the expand button only when the matching rail is
+ * COLLAPSED; returns `null` when the rail is open (its own header owns the
+ * close button) or when no toggle was passed.
+ *
+ * Returning `null` — rather than a `size-8` spacer — lets `ContextTabBar`
+ * skip its `px-2` slot wrapper entirely, so tabs hug the strip's edge with
+ * no phantom empty gap. The collapse↔expand "click without moving the
+ * cursor" alignment is preserved by the pane relocating when the adjacent
+ * rail collapses (the expand button lands at the same screen-x as the
+ * rail's close control), not by reserving an empty slot here.
  */
-function TabBarRailToggle({
-  toggle,
-  side,
-}: {
-  toggle: PaneHeaderRailToggle | undefined;
-  side: "left" | "right";
-}) {
-  if (!toggle) return null;
-  if (toggle.open) return <span aria-hidden className="size-8 shrink-0" />;
+function tabBarRailToggle(
+  toggle: PaneHeaderRailToggle | undefined,
+  side: "left" | "right",
+): ReactNode {
+  if (!toggle || toggle.open) return null;
   const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }

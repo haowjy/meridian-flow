@@ -83,9 +83,15 @@ conventions:
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
   without moving the mouse":** a surface's collapse button and the matching
   expand control that appears after it collapses MUST sit at the same screen-x.
-  That only holds if every surface uses the *same* `px-2` inset; mixing insets
-  breaks it. (This `px-2` deliberately supersedes the earlier `px-1` alignment
-  from commit `30fa8a0`; `px-2` matches the LeftSidebar/PaneHeader reference.)
+  That alignment comes from (a) every surface sharing the *same* `px-2` inset
+  and (b) the pane *relocating* into the freed track when its adjacent rail
+  collapses — the expand button then lands exactly where the rail's close
+  button was. It is NOT preserved by reserving an empty `size-8` slot in the
+  open state: headers (`PaneHeader`, `ContextTabBar`'s leading/trailing slots)
+  render *nothing* when the adjacent rail is open, so the title/tabs hug the
+  pane edge and no phantom 32-48px gap appears. (This `px-2` deliberately
+  supersedes the earlier `px-1` alignment from commit `30fa8a0`; `px-2`
+  matches the LeftSidebar/PaneHeader reference.)
 - **One section label: `shell/SidebarSectionLabel.tsx`** ("Chats" / "Context" /
   "Files"). It pins **`font-normal`** because the `text-meta` token sets only
   font-*size*, not weight — without the pin, each label inherits its ancestor's

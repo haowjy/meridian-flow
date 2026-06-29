@@ -13,8 +13,14 @@ import { PanelToggleButton } from "./PanelToggleButton";
  *
  * The expand controls sit at the SAME x as each rail's in-rail close control,
  * so toggling a rail never moves the cursor ("click without moving the mouse").
- * When a rail is open its own header owns the close button, so this renders a
- * width-matched spacer to keep the title aligned.
+ * That alignment comes from the pane *relocating* when the rail collapses (the
+ * expand button lands where the collapsed rail's close button used to be) and
+ * from every surface sharing the `px-2` inset — NOT from reserving an empty
+ * toggle slot in the open state. When a rail is open its own header owns the
+ * close button and this header renders nothing in the matching corner, so the
+ * title hugs the pane edge with no phantom gap. The trailing slot keeps a
+ * width-matched spacer only when there are no actions, to stop the title from
+ * reflowing into the empty right corner on open↔close.
  */
 export type PaneHeaderRailToggle = {
   open: boolean;
@@ -37,8 +43,6 @@ export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
     <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
       {left && !left.open ? (
         <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
-      ) : left ? (
-        <Spacer />
       ) : null}
 
       <div className="flex min-w-0 flex-1 items-center">{title}</div>
