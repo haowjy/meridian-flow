@@ -59,7 +59,6 @@ import { touchDocumentActivity, updateMarkdownProjection } from "./domain/docume
 import { buildAtLiveSeq, buildLiveDocAtSeq, serializePreview } from "./domain/draft-projection.js";
 import {
   createDraftWriteModeRouter,
-  type ProjectWriteModePreferences,
   type ThreadModeRepository,
 } from "./domain/draft-write-mode-router.js";
 import { createDraftService, type DraftAcceptJournal, type DraftStore } from "./domain/drafts.js";
@@ -82,7 +81,6 @@ export type { DocumentWriteHook } from "./index.js";
 type CollabDomainDeps = {
   db: Database;
   threads: ThreadModeRepository;
-  projectPreferences: ProjectWriteModePreferences;
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
@@ -124,7 +122,6 @@ export type CollabFacadeDeps = {
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
-  projectPreferences: ProjectWriteModePreferences;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
 };
 
@@ -202,7 +199,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftStore,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
-    projectPreferences: deps.projectPreferences,
     createDraftSessionCore: ({ threadId }) =>
       createDrizzleDraftSessionCore({
         db: deps.db,
@@ -243,11 +239,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     threads: {
       async findById() {
         return null;
-      },
-    },
-    projectPreferences: {
-      async read() {
-        return { aiWriteMode: "direct" as const };
       },
     },
     hocuspocus: () => boundHocuspocus,
@@ -343,7 +334,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         throw new Error("Draft-mode response writes require a draft session core factory");
       }),
     threads: deps.threads,
-    projectPreferences: deps.projectPreferences,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
   });
