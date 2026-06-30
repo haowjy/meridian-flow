@@ -9,11 +9,9 @@ import type {
 } from "../index.js";
 
 export type ThreadModeRepository = {
-  findById(id: ThreadId): Promise<{ userId: UserId; projectId: ProjectId } | null>;
-};
-
-export type ProjectWriteModePreferences = {
-  read(userId: UserId, projectId: ProjectId): Promise<{ aiWriteMode?: WriteMode }>;
+  findById(
+    id: ThreadId,
+  ): Promise<{ userId: UserId; projectId: ProjectId; aiWriteMode: WriteMode } | null>;
 };
 
 type ResponseSession = {
@@ -61,7 +59,6 @@ export type DraftWriteModeRouterDeps = {
   liveUtilityCore: AgentEditCore;
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
   threads: ThreadModeRepository;
-  projectPreferences: ProjectWriteModePreferences;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 };
 
@@ -339,13 +336,12 @@ function createAgentEditProxy(deps: {
 }
 
 async function resolveThreadWriteMode(
-  deps: Pick<DraftWriteModeRouterDeps, "threads" | "projectPreferences">,
+  deps: Pick<DraftWriteModeRouterDeps, "threads">,
   threadId: ThreadId,
 ): Promise<WriteMode> {
   const thread = await deps.threads.findById(threadId);
   if (!thread) return "direct";
-  const prefs = await deps.projectPreferences.read(thread.userId, thread.projectId);
-  return prefs.aiWriteMode ?? "direct";
+  return thread.aiWriteMode;
 }
 
 function draftClosedCommitResult(responseId: string): DraftClosedCommitResult {

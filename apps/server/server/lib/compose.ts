@@ -246,7 +246,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     pendingUndoNotifications: undoNotifications,
     threads: threadRepos.threads,
-    projectPreferences: preferences,
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({

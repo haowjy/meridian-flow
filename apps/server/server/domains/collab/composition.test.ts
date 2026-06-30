@@ -365,12 +365,13 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       },
       threads: {
         async findById(id) {
-          return id === THREAD_ID ? { userId: USER_ID, projectId: "project-1" } : null;
-        },
-      },
-      projectPreferences: {
-        async read() {
-          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+          return id === THREAD_ID
+            ? {
+                userId: USER_ID,
+                projectId: "project-1",
+                aiWriteMode: options.aiWriteMode ?? "direct",
+              }
+            : null;
         },
       },
     }),
