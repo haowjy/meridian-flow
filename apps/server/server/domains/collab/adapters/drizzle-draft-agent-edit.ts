@@ -50,7 +50,7 @@ type DraftResolver = {
 const DRAFT_UNDO_UNSUPPORTED = "Draft-scoped agent-edit undo/redo is deferred and not supported";
 const DRAFT_CLOSED_FOR_APPEND = "Draft review was closed before this response could commit";
 
-export class DraftClosedForAppendError extends Error {
+class DraftClosedForAppendError extends Error {
   constructor(draftId: string) {
     super(`${DRAFT_CLOSED_FOR_APPEND}: ${draftId}`);
     this.name = "DraftClosedForAppendError";

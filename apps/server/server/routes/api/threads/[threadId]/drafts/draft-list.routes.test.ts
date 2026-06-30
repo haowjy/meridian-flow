@@ -26,12 +26,10 @@ function makeApp(
     drafts?: Array<{ documentId: string } & Record<string, unknown>>;
     accessibleDocumentIds?: Set<string>;
     projectDocumentIds?: Set<string>;
-    attachedDocumentIds?: Set<string>;
   } = {},
 ) {
   const accessibleDocumentIds = options.accessibleDocumentIds;
   const projectDocumentIds = options.projectDocumentIds;
-  const attachedDocumentIds = options.attachedDocumentIds;
   return {
     threadRepos: {
       threads: {
@@ -54,13 +52,6 @@ function makeApp(
       canAccessProjectDocument: vi.fn(
         async (_userId: string, documentId: string, _projectId: string) =>
           projectDocumentIds?.has(documentId) ?? true,
-      ),
-    },
-    uploadDocuments: {
-      getUpload: vi.fn(async (_threadId: string, documentId: string) =>
-        (attachedDocumentIds?.has(documentId) ?? true)
-          ? { threadId, documentId, name: `Document ${documentId}` }
-          : null,
       ),
     },
     documentSync: {
@@ -136,7 +127,6 @@ describe("thread draft list route", () => {
     const app = makeApp({
       accessibleDocumentIds: new Set(["doc-visible", "doc-unattached"]),
       projectDocumentIds: new Set(["doc-visible", "doc-unattached"]),
-      attachedDocumentIds: new Set(["doc-visible", "doc-inaccessible"]),
       drafts: [
         {
           id: "draft-visible",

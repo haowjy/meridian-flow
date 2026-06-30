@@ -627,14 +627,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const draftService = {
     ...draftLifecycle,
-    async previewMarkdown(input: { documentId: DocumentId; draftId: string }) {
-      const doc = await draftLifecycle.buildDraftDoc(input);
-      try {
-        return markdownDocuments.serializeDoc(doc);
-      } finally {
-        doc.destroy();
-      }
-    },
     async previewDraft(input: { documentId: DocumentId; draftId: string }) {
       const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
       const doc = createCollabYDoc({ gc: false });
