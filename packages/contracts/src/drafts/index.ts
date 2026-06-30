@@ -23,14 +23,15 @@ export interface ThreadDraftListResponse {
   drafts: ThreadDraftListItem[];
 }
 
-export interface DraftPreviewResponse {
-  draftId: string | null;
-  live: string;
-  /** Current live markdown plus active draft deltas. Omitted when no active draft exists. */
-  preview?: string;
-  /** Latest persisted live Yjs update seq used to build this preview. */
-  liveRevisionToken?: number;
-}
+export type DraftPreviewResponse =
+  | {
+      status: "active";
+      draftId: string;
+      live: string;
+      preview: string;
+      liveRevisionToken: number;
+    }
+  | { status: "gone"; live: string };
 
 export const DRAFT_ACCEPT_TURN_KIND = "draft_accept";
 export const DRAFT_ACCEPT_TURN_TEXT = "You accepted this draft";
@@ -73,12 +74,7 @@ export type DraftAcceptResponse =
       live: string;
       preview: string;
       overlappingBlocks: string[];
-      appliedUpdateSeq?: null;
-      acceptTurnId?: null;
-    }
-  | { status: "discarded"; draftId: string; appliedUpdateSeq?: null; acceptTurnId?: null }
-  | { status: "in_progress"; draftId: string; appliedUpdateSeq?: null; acceptTurnId?: null }
-  | { status: "not_found"; draftId?: null; appliedUpdateSeq?: null; acceptTurnId?: null };
+    };
 
 export type DraftAcceptRequest = {
   draftId: string;
@@ -86,9 +82,7 @@ export type DraftAcceptRequest = {
   confirmedLiveRevisionToken?: number;
 };
 
-export type DraftRejectResponse =
-  | { status: "discarded"; draftId: string }
-  | { status: "not_found"; draftId?: null };
+export type DraftRejectResponse = { status: "discarded"; draftId: string };
 
 export type DraftRejectRequest = {
   draftId: string;
