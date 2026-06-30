@@ -6,6 +6,7 @@
 
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
 import type {
+  AiWriteMode,
   Block,
   BlockType,
   ModelRequestDebugRecord,
@@ -23,6 +24,7 @@ import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
+  AiWriteMode,
   Block,
   BlockType,
   ModelResponse,
@@ -213,6 +215,14 @@ export type UpdateThreadAgentRequest = {
 };
 
 export type UpdateThreadAgentResponse = Thread;
+
+export type UpdateThreadWriteModeRequest = {
+  aiWriteMode: AiWriteMode;
+};
+
+export type UpdateThreadWriteModeResponse = {
+  aiWriteMode: AiWriteMode;
+};
 
 export type SendMessageRequest = {
   text: string;
