@@ -26,7 +26,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { Button } from "@/components/ui/button";
-import { useEscapeToClose } from "@/features/project/shell/ResultViewerOverlay";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { collapseDiffBlocks, type DiffBlock, diffLines } from "./diff-lines";
