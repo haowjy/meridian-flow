@@ -9,10 +9,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2, X } from "lucide-react";
-import { type CSSProperties, useEffect } from "react";
+import type { CSSProperties } from "react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useProjectResultSignedUrl } from "@/client/query/useProjectResultSignedUrl";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 
 import { BinaryFallbackViewer } from "../context/viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "../context/viewers/ImageViewer";
@@ -141,16 +142,6 @@ function ViewerPicker({
       <BinaryFallbackViewer url={url} mimeType={mimeType} name={name} />
     </ReadOnlyViewerFrame>
   );
-}
-
-export function useEscapeToClose(onClose: () => void) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 }
 
 function ViewerStatus({
