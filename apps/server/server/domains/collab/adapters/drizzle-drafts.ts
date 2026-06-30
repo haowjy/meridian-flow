@@ -22,6 +22,7 @@ import { and, asc, desc, eq, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
+  AppliedDraft,
   Draft,
   DraftAcceptJournal,
   DraftStore,
@@ -80,15 +81,6 @@ export function createDrizzleDraftStore(
       return rows.map((row) => mapActiveDraft(row.draft, row.documentName));
     },
 
-    async getAppliedDraft(draftId) {
-      const [row] = await db
-        .select()
-        .from(documentYjsDrafts)
-        .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "applied")))
-        .limit(1);
-      return row ? mapDraft(row) : null;
-    },
-
     async createActiveDraft(input) {
       try {
         const baseLiveUpdateSeq =
@@ -145,7 +137,7 @@ export function createDrizzleDraftStore(
       return rows.map(mapDraftUpdate);
     },
 
-    async claimForAccept(input) {
+    async beginAccept(input) {
       const [row] = await db
         .update(documentYjsDrafts)
         .set({
@@ -175,11 +167,22 @@ export function createDrizzleDraftStore(
           ),
         )
         .returning();
-      return row ? mapDraft(row) : null;
-    },
+      if (row) {
+        const draft = mapDraft(row);
+        if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+        return {
+          status: "claimed",
+          draft,
+          lease: {
+            documentId: draft.documentId,
+            threadId: draft.threadId,
+            draftId: draft.id,
+            id: draft.claimToken,
+          },
+        };
+      }
 
-    async getAcceptingDraft(input) {
-      const [row] = await db
+      const [accepting] = await db
         .select()
         .from(documentYjsDrafts)
         .where(
@@ -191,10 +194,57 @@ export function createDrizzleDraftStore(
           ),
         )
         .limit(1);
-      return row ? mapDraft(row) : null;
+      if (accepting) return { status: "in_progress", draft: mapDraft(accepting) };
+
+      const [applied] = await db
+        .select()
+        .from(documentYjsDrafts)
+        .where(
+          and(
+            eq(documentYjsDrafts.id, input.draftId),
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.status, "applied"),
+          ),
+        )
+        .limit(1);
+      const appliedDraft = applied ? mapDraft(applied) : null;
+      if (appliedDraft && appliedDraft.appliedUpdateSeq !== null) {
+        const draft: AppliedDraft = {
+          ...appliedDraft,
+          appliedUpdateSeq: appliedDraft.appliedUpdateSeq,
+        };
+        return { status: "already_applied", draft };
+      }
+      return { status: "not_found" };
     },
 
-    async discardActive(input) {
+    async reject(input) {
+      if (input.acceptLease) {
+        const [row] = await db
+          .update(documentYjsDrafts)
+          .set({
+            status: "discarded",
+            discardedAt: sql`now()`,
+            claimedAt: null,
+            claimToken: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(documentYjsDrafts.id, input.draftId),
+              eq(documentYjsDrafts.documentId, input.documentId),
+              eq(documentYjsDrafts.threadId, input.threadId),
+              eq(documentYjsDrafts.status, "accepting"),
+              eq(documentYjsDrafts.claimToken, input.acceptLease.id),
+            ),
+          )
+          .returning();
+        if (!row) return null;
+        await deleteDraftState(db, input);
+        return mapDraft(row);
+      }
+
       const [row] = await db
         .update(documentYjsDrafts)
         .set({
@@ -217,10 +267,12 @@ export function createDrizzleDraftStore(
           ),
         )
         .returning();
-      return row ? mapDraft(row) : null;
+      if (!row) return null;
+      await deleteDraftState(db, input);
+      return mapDraft(row);
     },
 
-    async markApplied(draftId, input) {
+    async completeAccept(input) {
       const row = await db
         .update(documentYjsDrafts)
         .set({
@@ -234,51 +286,35 @@ export function createDrizzleDraftStore(
         })
         .where(
           and(
-            eq(documentYjsDrafts.id, draftId),
+            eq(documentYjsDrafts.id, input.lease.draftId),
             eq(documentYjsDrafts.status, "accepting"),
-            eq(documentYjsDrafts.claimToken, input.claimToken),
+            eq(documentYjsDrafts.claimToken, input.lease.id),
           ),
         )
         .returning({ id: documentYjsDrafts.id });
-      return row.length > 0;
+      if (row.length === 0) return false;
+      await deleteDraftState(db, input.lease);
+      return true;
     },
 
-    async markDiscarded(draftId, input) {
-      const row = await db
-        .update(documentYjsDrafts)
-        .set({
-          status: "discarded",
-          discardedAt: sql`now()`,
-          claimedAt: null,
-          claimToken: null,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, draftId),
-            or(eq(documentYjsDrafts.status, "active"), eq(documentYjsDrafts.status, "accepting")),
-            eq(documentYjsDrafts.claimToken, input.claimToken),
-          ),
-        )
-        .returning({ id: documentYjsDrafts.id });
-      return row.length > 0;
-    },
-
-    async deleteDraftState(input) {
-      const scopedInput = { ...input, scopeId: input.draftId };
-      await db.transaction(async (tx) => {
-        const txDb = tx as DraftDb;
-        await txDb.delete(agentEditSyncState).where(scopedWhere(agentEditSyncState, scopedInput));
-        await txDb
-          .delete(documentYjsReversals)
-          .where(scopedWhere(documentYjsReversals, scopedInput));
-        await txDb.delete(agentEditMutations).where(scopedWhere(agentEditMutations, scopedInput));
-        await txDb
-          .delete(agentEditWidCounters)
-          .where(scopedWhere(agentEditWidCounters, scopedInput));
-      });
+    async recoverAccepted(input) {
+      await deleteDraftState(db, input);
     },
   };
+}
+
+async function deleteDraftState(
+  db: DraftDb,
+  input: { documentId: DocumentId; threadId: ThreadId; draftId: string },
+): Promise<void> {
+  const scopedInput = { ...input, scopeId: input.draftId };
+  await db.transaction(async (tx) => {
+    const txDb = tx as DraftDb;
+    await txDb.delete(agentEditSyncState).where(scopedWhere(agentEditSyncState, scopedInput));
+    await txDb.delete(documentYjsReversals).where(scopedWhere(documentYjsReversals, scopedInput));
+    await txDb.delete(agentEditMutations).where(scopedWhere(agentEditMutations, scopedInput));
+    await txDb.delete(agentEditWidCounters).where(scopedWhere(agentEditWidCounters, scopedInput));
+  });
 }
 
 export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal {

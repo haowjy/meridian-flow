@@ -238,8 +238,8 @@ so adapters compose the partition without code duplication.
    top-level block hashes for base→current-live and base→draft, and returns
    `status: "overlap"` without mutating when the sets intersect. Disjoint edits
    continue silently.
-2. **Accept claim closes the draft in DB** — `claimForAccept` atomically moves the
-   draft from `active` to `accepting` with `claimedAt` + `claimToken`. Reject
+2. **Accept claim closes the draft in DB** — `beginAccept` atomically moves the
+   draft from `active` to `accepting` with an internal claim lease. Reject
    atomically moves `active` to `discarded`. This DB state is the fence; the
    in-memory response invalidation is advisory.
 3. **Invalidate** in-flight responses for this `(documentId, threadId)`.
@@ -248,8 +248,8 @@ so adapters compose the partition without code duplication.
    live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
    unique constraint prevents double-apply on retry. The mutation metadata keeps
    `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
-6. **Durable status**: `markApplied` is claim-token fenced and only succeeds from
-   `accepting`.
+6. **Durable status**: `completeAccept` is claim-token fenced inside the store,
+   marks the draft `applied`, and cleans draft-scoped agent-edit state.
 7. **Side effects** (recoverable): apply/recover the live coordinator projection,
    refresh read models, delete draft-scoped agent-edit state.
 
@@ -265,8 +265,8 @@ lineage to the proposing assistant turn.
 
 ### Reject lifecycle
 
-Reject atomically moves the active draft to `discarded`, invalidates in-flight
-responses, then deletes draft-scoped state. Updates never touch live.
+Reject atomically moves the active draft to `discarded`, cleans draft-scoped
+state inside the store, then invalidates in-flight responses. Updates never touch live.
 
 ### Invariants
 

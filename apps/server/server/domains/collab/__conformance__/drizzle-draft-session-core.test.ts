@@ -638,7 +638,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
               if (failNextApply) {
                 failNextApply = false;
-                throw new Error("simulated crash after markApplied");
+                throw new Error("simulated crash after completeAccept");
               }
               return base.withDocument(documentId, fn);
             },
@@ -666,7 +666,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           confirmOverlap: true,
           confirmedLiveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
         }),
-      ).rejects.toThrow("simulated crash after markApplied");
+      ).rejects.toThrow("simulated crash after completeAccept");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft recovery.");
 
@@ -688,16 +688,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const release = new Promise<void>((releaseResolve) => {
           releaseFirstAccept = releaseResolve;
         });
-        const baseClaimForAccept = draftStore.claimForAccept.bind(draftStore);
+        const baseBeginAccept = draftStore.beginAccept.bind(draftStore);
         draftStore = {
           ...draftStore,
-          async claimForAccept(input) {
-            const draft = await baseClaimForAccept(input);
-            if (draft) {
+          async beginAccept(input) {
+            const result = await baseBeginAccept(input);
+            if (result.status === "claimed") {
               resolve();
               await release;
             }
-            return draft;
+            return result;
           },
         };
       });
@@ -733,10 +733,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let cleanupCalls = 0;
       const flakyDraftStore = {
         ...draftStore,
-        async deleteDraftState(input: Parameters<typeof draftStore.deleteDraftState>[0]) {
+        async recoverAccepted(input: Parameters<typeof draftStore.recoverAccepted>[0]) {
           cleanupCalls += 1;
           if (cleanupCalls === 1) throw new Error("cleanup failed once");
-          await draftStore.deleteDraftState(input);
+          await draftStore.recoverAccepted(input);
         },
       };
       const { domain, liveCoordinator } = createLiveHarness(db, flakyDraftStore);

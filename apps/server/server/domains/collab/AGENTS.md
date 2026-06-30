@@ -15,7 +15,8 @@ the live document).
   service surface.
 - **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
   `DraftStore`, `DraftProjectionCoordinator`, accept/reject with
-  claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`).
+  lifecycle operations (`beginAccept`/`completeAccept`/`reject`/`recoverAccepted`)
+  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`).
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
   per-draft journal/sync-state/lifecycle adapters that persist response writes
   under `scope_id` without touching live Yjs state.
