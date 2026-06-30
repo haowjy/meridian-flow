@@ -22,7 +22,6 @@ import {
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -57,6 +56,7 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { buildAtLiveSeq, buildLiveDocAtSeq, serializePreview } from "./domain/draft-projection.js";
 import {
   createDraftWriteModeRouter,
   type ProjectWriteModePreferences,
@@ -373,26 +373,23 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     ...draftLifecycle,
     async previewDraft(input: { documentId: DocumentId; draftId: string }) {
       const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
-      const doc = createCollabYDoc({ gc: false });
+      const liveDoc = await buildLiveDocAtSeq(deps.journal, input.documentId, liveRevisionToken);
+      const draftDoc = await buildAtLiveSeq(
+        deps.journal,
+        deps.draftStore,
+        input.documentId,
+        input.draftId,
+        liveRevisionToken,
+      );
       try {
-        const snapshot = await (
-          deps.journal.read as (
-            docId: string,
-            opts: { until: number; fromCheckpoint?: boolean },
-          ) => Promise<{ checkpoint: Uint8Array | null; updates: { update: Uint8Array }[] }>
-        )(input.documentId, { until: liveRevisionToken, fromCheckpoint: false });
-        if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
-        for (const update of snapshot.updates) {
-          Y.applyUpdate(doc, update.update, { type: "system" });
-        }
-        const live = markdownDocuments.serializeDoc(doc);
-        const draftUpdates = await deps.draftStore.listUpdates(input.draftId);
-        for (const update of draftUpdates) {
-          Y.applyUpdate(doc, update.updateData, { type: "draft" });
-        }
-        return { live, markdown: markdownDocuments.serializeDoc(doc), liveRevisionToken };
+        return {
+          live: serializePreview(liveDoc, codec, model),
+          markdown: serializePreview(draftDoc, codec, model),
+          liveRevisionToken,
+        };
       } finally {
-        doc.destroy();
+        liveDoc.destroy();
+        draftDoc.destroy();
       }
     },
   };
