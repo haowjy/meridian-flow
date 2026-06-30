@@ -33,6 +33,7 @@ function threadListItem(overrides: Partial<ThreadListItem> = {}): ThreadListItem
     status: "idle",
     title: "Thread",
     currentAgent: null,
+    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: overrides.rootThreadId ?? overrides.id ?? "thread-1",
     spawnDepth: 0,

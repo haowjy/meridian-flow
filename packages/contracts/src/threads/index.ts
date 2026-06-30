@@ -56,6 +56,7 @@ export type ThreadKind = "primary" | "subagent";
 export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
+export type AiWriteMode = "direct" | "draft";
 
 /**
  * Canonical event-name registry for the thread journal and live event hub.
@@ -140,6 +141,7 @@ export interface Thread {
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
   currentAgent: string | null;
+  aiWriteMode: AiWriteMode;
   nextSeq?: string;
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */

@@ -27,6 +27,7 @@ function makeOptimisticThread(
     status: "idle",
     title,
     currentAgent: null,
+    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: id,
     spawnDepth: 0,
