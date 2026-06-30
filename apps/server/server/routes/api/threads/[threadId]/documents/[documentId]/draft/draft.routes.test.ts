@@ -221,7 +221,6 @@ describe("thread document draft routes", () => {
   it.each([
     ["wrong user document", { hasDocumentAccess: false }],
     ["document outside thread project", { isProjectDocument: false }],
-    ["document not attached to thread", { isThreadDocument: false }],
   ])("returns 404 for %s", async (_label, options) => {
     const app = makeApp(options);
     auth.requireAppUser.mockResolvedValue({ app, user: { userId } });

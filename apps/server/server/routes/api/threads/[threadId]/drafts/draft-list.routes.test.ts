@@ -126,10 +126,13 @@ describe("thread draft list route", () => {
     expect(app.documentSync.drafts.listActiveDrafts).toHaveBeenCalledWith({ threadId });
     expect(app.documentAccess.canAccessDocument).toHaveBeenCalledTimes(2);
     expect(app.documentAccess.canAccessProjectDocument).toHaveBeenCalledTimes(2);
-    expect(app.uploadDocuments.getUpload).toHaveBeenCalledTimes(2);
   });
 
-  it("excludes inaccessible or unattached draft documents", async () => {
+  it("excludes inaccessible draft documents but keeps unattached ones", async () => {
+    // Drafts are thread-scoped in the DB; the filter only checks document
+    // ownership + project membership. Thread-document attachment is NOT
+    // required — project documents reachable via the context port may have
+    // no thread_documents row, but the AI can still draft against them.
     const app = makeApp({
       accessibleDocumentIds: new Set(["doc-visible", "doc-unattached"]),
       projectDocumentIds: new Set(["doc-visible", "doc-unattached"]),
@@ -176,11 +179,18 @@ describe("thread draft list route", () => {
           lastActorTurnId: "turn-1",
           updatedAt: "2026-06-27T12:00:00.000Z",
         },
+        {
+          draftId: "draft-unattached",
+          documentId: "doc-unattached",
+          documentName: "Detached chapter",
+          status: "active",
+          lastActorTurnId: "turn-3",
+          updatedAt: "2026-06-27T14:00:00.000Z",
+        },
       ],
     });
     expect(app.documentAccess.canAccessDocument).toHaveBeenCalledTimes(3);
     expect(app.documentAccess.canAccessProjectDocument).toHaveBeenCalledTimes(3);
-    expect(app.uploadDocuments.getUpload).toHaveBeenCalledTimes(3);
   });
 
   it("returns 404 for a thread owned by another user", async () => {
