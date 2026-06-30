@@ -6,6 +6,7 @@ import type {
   DocumentCoordinator,
   UpdateJournal,
 } from "@meridian/agent-edit";
+import type { WIdRange } from "@meridian/contracts/drafts";
 import type {
   DocumentId,
   ThreadId,
@@ -44,6 +45,11 @@ export type Draft = {
 
 export type ActiveDraft = Draft & { status: "active"; documentName: string | null };
 
+export type DraftTurnContext = {
+  documentName: string | null;
+  wIdRange: WIdRange | null;
+};
+
 export type DraftUpdate = {
   id: number;
   draftId: string;
@@ -73,6 +79,7 @@ export class ActiveDraftConflictError extends Error {
 export type DraftStore = {
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   createActiveDraft(input: {
     documentId: DocumentId;
@@ -119,7 +126,7 @@ export type DraftBeginAcceptResult =
 
 export type AcceptedDraftAppend = { appliedUpdateSeq: number; acceptTurnId: TurnId };
 
-export type DraftAcceptJournal = {
+export type DraftLifecycleJournal = {
   findAcceptedDraftAppend(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -134,8 +141,22 @@ export type DraftAcceptJournal = {
     actorTurnId: TurnId;
     acceptTurnId: TurnId;
     acceptBlockId: TurnBlockId;
+    documentName?: string | null;
+    wIdRange?: WIdRange | null;
   }): Promise<AcceptedDraftAppend>;
+  createRejectTurn(input: {
+    threadId: ThreadId;
+    draftId: string;
+    documentId: DocumentId;
+    rejectTurnId: TurnId;
+    rejectBlockId: TurnBlockId;
+    actorTurnId: TurnId | null;
+    documentName: string | null;
+    wIdRange: WIdRange | null;
+  }): Promise<void>;
 };
+
+export type DraftAcceptJournal = DraftLifecycleJournal;
 
 type InvalidateInFlightDrafts = (input: {
   documentId: DocumentId;
@@ -161,7 +182,9 @@ export type DraftAcceptResult =
     }
   | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: TurnId };
 
-export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
+export type DraftRejectResult =
+  | { status: "not_found" }
+  | { status: "discarded"; draftId: string; rejectTurnId: TurnId };
 
 type DraftProjectionCoordinator = {
   buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
@@ -169,6 +192,7 @@ type DraftProjectionCoordinator = {
 
 type DraftService = DraftProjectionCoordinator & {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   acceptDraft(input: {
     documentId: DocumentId;
@@ -230,6 +254,7 @@ export function createDraftService(deps: {
 
   return {
     getActiveDraft: deps.draftStore.getActiveDraft,
+    draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
@@ -302,6 +327,7 @@ export function createDraftService(deps: {
       throw new Error(`Cannot accept non-empty draft ${draft.id} without lastActorTurnId`);
     }
 
+    const turnContext = await deps.draftStore.draftTurnContext(draft.id);
     const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
     const writeId = `draft-accept:${draft.id}`;
     const acceptTurnId = createDraftAcceptTurnId(draft.id);
@@ -323,6 +349,8 @@ export function createDraftService(deps: {
           actorTurnId: draft.lastActorTurnId,
           acceptTurnId,
           acceptBlockId,
+          documentName: turnContext?.documentName ?? null,
+          wIdRange: turnContext?.wIdRange ?? null,
         });
       } catch (cause) {
         if (!isUniqueConstraintViolation(cause)) throw cause;
@@ -473,11 +501,30 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult> {
+    const requestedDraft = await deps.draftStore.getDraft(input.draftId);
+    const turnContext = await deps.draftStore.draftTurnContext(input.draftId);
     const draft = await deps.draftStore.reject(input);
     if (!draft) return { status: "not_found" };
 
     await invalidateInFlight(input);
-    return { status: "discarded", draftId: draft.id };
+
+    const rejectTurnId = createDraftRejectTurnId(draft.id);
+    try {
+      await deps.liveJournal.createRejectTurn({
+        threadId: input.threadId,
+        draftId: draft.id,
+        documentId: input.documentId,
+        rejectTurnId,
+        rejectBlockId: createDraftRejectBlockId(draft.id),
+        actorTurnId: requestedDraft?.lastActorTurnId ?? null,
+        documentName: turnContext?.documentName ?? null,
+        wIdRange: turnContext?.wIdRange ?? null,
+      });
+    } catch {
+      // Reject is already committed; the transcript marker is best-effort.
+    }
+
+    return { status: "discarded", draftId: draft.id, rejectTurnId };
   }
 
   async function recoverAppliedDraftSideEffects(
@@ -508,6 +555,14 @@ export function createDraftAcceptTurnId(draftId: string): TurnId {
 
 export function createDraftAcceptBlockId(draftId: string): TurnBlockId {
   return stableUuid(`draft-accept-block:${draftId}`) as TurnBlockId;
+}
+
+export function createDraftRejectTurnId(draftId: string): TurnId {
+  return stableUuid(`draft-reject-turn:${draftId}`) as TurnId;
+}
+
+export function createDraftRejectBlockId(draftId: string): TurnBlockId {
+  return stableUuid(`draft-reject-block:${draftId}`) as TurnBlockId;
 }
 
 function stableUuid(seed: string): string {
