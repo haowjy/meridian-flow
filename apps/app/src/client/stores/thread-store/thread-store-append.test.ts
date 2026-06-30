@@ -25,6 +25,7 @@ function thread(id: string): Thread {
     status: "idle",
     title: id,
     currentAgent: null,
+    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: id,
     spawnDepth: 0,

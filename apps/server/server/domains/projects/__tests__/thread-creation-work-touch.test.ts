@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createThreadForProject } from "../../../lib/thread-creation.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
+import { defaultProjectPreferences } from "../../preferences/domain.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import {
   createInMemoryProjectRepository,
@@ -30,6 +31,14 @@ describe("createThreadForProject work activity", () => {
         threads: repos.threads,
         threadWorks: repos.threadWorks,
         transaction: repos.transaction,
+        preferences: {
+          async read() {
+            return defaultProjectPreferences();
+          },
+          async upsert() {
+            return defaultProjectPreferences();
+          },
+        },
         eventSink: createInMemoryEventSink(),
       },
       { projectId: project.id, userId: "user-1", title: "Root thread" },

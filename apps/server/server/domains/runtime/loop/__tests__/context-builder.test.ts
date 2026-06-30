@@ -28,6 +28,7 @@ function thread(): Thread {
     systemPrompt: null,
     workingState: null,
     currentAgent: null,
+    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,
