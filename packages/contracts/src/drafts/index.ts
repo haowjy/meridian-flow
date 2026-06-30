@@ -132,3 +132,12 @@ export type DraftRejectResponse = { status: "discarded"; draftId: string; reject
 export type DraftRejectRequest = {
   draftId: string;
 };
+
+/** 1-day retention window for draft undo operations. */
+export const DRAFT_UNDO_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+export type DraftUndoResponse =
+  | { status: "reactivated"; draftId: string }
+  | { status: "expired"; draftId: string }
+  | { status: "conflict"; draftId: string; message: string }
+  | { status: "not_found" };

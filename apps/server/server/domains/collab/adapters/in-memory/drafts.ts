@@ -145,6 +145,23 @@ export function createInMemoryDraftStore(): DraftStore {
       return copyDraft(draft) ?? draft;
     },
 
+    async reactivate(input) {
+      const draft = drafts.get(input.draftId);
+      if (!draft) return null;
+      if (draft.status !== input.fromStatus) return null;
+      if (draft.documentId !== input.documentId || draft.threadId !== input.threadId) return null;
+      if (findOpenDraft(input)) return null;
+      draft.status = "active";
+      draft.appliedAt = null;
+      draft.appliedByUserId = null;
+      draft.appliedUpdateSeq = null;
+      draft.discardedAt = null;
+      draft.claimedAt = null;
+      draft.claimToken = null;
+      draft.updatedAt = new Date();
+      return copyDraft(draft) ?? draft;
+    },
+
     async completeAccept(input) {
       const draft = drafts.get(input.lease.draftId);
       if (draft?.status !== "accepting" || draft.claimToken !== input.lease.id) return false;
