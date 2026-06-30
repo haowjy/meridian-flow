@@ -35,7 +35,6 @@ function makeApp(
     threadUserId?: string;
     hasDocumentAccess?: boolean;
     isProjectDocument?: boolean;
-    isThreadDocument?: boolean;
     activeDraft?: unknown;
     acceptResult?: unknown;
     rejectResult?: unknown;
@@ -58,11 +57,6 @@ function makeApp(
     documentAccess: {
       canAccessDocument: vi.fn(async () => options.hasDocumentAccess ?? true),
       canAccessProjectDocument: vi.fn(async () => options.isProjectDocument ?? true),
-    },
-    uploadDocuments: {
-      getUpload: vi.fn(async () =>
-        options.isThreadDocument === false ? null : { threadId, documentId },
-      ),
     },
     documentSync: {
       readAsMarkdown: vi.fn(async () => ({ ok: true, value: "Live" })),

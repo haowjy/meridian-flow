@@ -131,12 +131,12 @@ export type DraftAcceptJournal = {
   }): Promise<AcceptedDraftAppend>;
 };
 
-export type InvalidateInFlightDrafts = (input: {
+type InvalidateInFlightDrafts = (input: {
   documentId: DocumentId;
   threadId: ThreadId;
 }) => Promise<void>;
 
-export type RefreshAcceptedDraftProjection = (input: {
+type RefreshAcceptedDraftProjection = (input: {
   documentId: DocumentId;
   threadId: ThreadId;
 }) => Promise<void>;
@@ -157,11 +157,11 @@ export type DraftAcceptResult =
 
 export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
 
-export type DraftProjectionCoordinator = {
+type DraftProjectionCoordinator = {
   buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
 };
 
-export type DraftService = DraftProjectionCoordinator & {
+type DraftService = DraftProjectionCoordinator & {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   acceptDraft(input: {
@@ -179,7 +179,7 @@ export type DraftService = DraftProjectionCoordinator & {
   }): Promise<DraftRejectResult>;
 };
 
-export function createDraftProjectionCoordinator(deps: {
+function createDraftProjectionCoordinator(deps: {
   liveCoordinator: DocumentCoordinator;
   draftStore: Pick<DraftStore, "listUpdates">;
 }): DraftProjectionCoordinator {

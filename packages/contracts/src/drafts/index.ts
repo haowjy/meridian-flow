@@ -1,15 +1,6 @@
 /** JSON wire contracts for reviewing AI document drafts before they touch live documents. */
 import type { DocumentId } from "../runtime/ids.js";
 
-export type DraftReviewStatus = "active" | "accepting" | "applied" | "discarded";
-
-export interface DraftReviewSummary {
-  id: string;
-  status: DraftReviewStatus;
-  lastActorTurnId: string | null;
-  updatedAt: string;
-}
-
 export interface ThreadDraftListItem {
   draftId: string;
   documentId: string;
@@ -33,19 +24,10 @@ export type DraftPreviewResponse =
     }
   | { status: "gone"; live: string };
 
-export const DRAFT_ACCEPT_TURN_KIND = "draft_accept";
+const DRAFT_ACCEPT_TURN_KIND = "draft_accept";
 export const DRAFT_ACCEPT_TURN_TEXT = "You accepted this draft";
 
-export type DraftAcceptTurnRequestParams = {
-  kind: typeof DRAFT_ACCEPT_TURN_KIND;
-  draftId: string;
-  documentId: DocumentId;
-};
-
-export function draftAcceptTurnRequestParams(input: {
-  draftId: string;
-  documentId: DocumentId;
-}): DraftAcceptTurnRequestParams {
+export function draftAcceptTurnRequestParams(input: { draftId: string; documentId: DocumentId }) {
   return {
     kind: DRAFT_ACCEPT_TURN_KIND,
     draftId: input.draftId,
@@ -55,7 +37,7 @@ export function draftAcceptTurnRequestParams(input: {
 
 export function isDraftAcceptTurnRequestParams(
   value: unknown,
-): value is DraftAcceptTurnRequestParams {
+): value is ReturnType<typeof draftAcceptTurnRequestParams> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return (

@@ -88,7 +88,6 @@ export async function handleThreadDraftListRequest(
   const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
     drafts,
     projectId: thread.projectId,
-    threadId: input.threadId,
     userId: input.userId,
   });
   return { drafts: visibleDrafts.map(serializeThreadDraft) };
@@ -132,7 +131,6 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
   input: {
     drafts: T[];
     projectId: ProjectId;
-    threadId: ThreadId;
     userId: UserId;
   },
 ): Promise<T[]> {
