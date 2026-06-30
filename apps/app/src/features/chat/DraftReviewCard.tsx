@@ -26,36 +26,23 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileText, Loader2 } from "lucide-react";
-import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { Button } from "@/components/ui/button";
+import type { DraftReviewController } from "./useDraftReviewController";
 
 export type DraftReviewCardProps = {
-  threadId: string;
   group: ThreadDraftGroup;
-  /** Open the (ChatView-owned) preview overlay for this group's document. */
-  onReview: (
-    documentId: string,
-    draftId: string,
-    options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
-  ) => void;
+  /** Shared review state machine owned by ChatView. */
+  controller: DraftReviewController;
   /** Visual variant: anchored under an assistant turn, or stacked in the unanchored fallback strip. */
   variant?: "inline" | "compact";
 };
 
-export function DraftReviewCard({
-  threadId,
-  group,
-  onReview,
-  variant = "inline",
-}: DraftReviewCardProps) {
-  const accept = useAcceptDraft();
-  const reject = useRejectDraft();
-
+export function DraftReviewCard({ group, controller, variant = "inline" }: DraftReviewCardProps) {
   const documentName = group.documentName;
   const draft = group.drafts[0] ?? null;
 
-  const isPending = accept.isPending || reject.isPending;
+  const isPending = controller.isPending;
   // Stack-ready render seam: today every group has length 1 (the backend
   // returns at most one active draft per document, per thread). When a
   // multi-alternative chooser lands the chooser slots in here as a render
@@ -64,24 +51,12 @@ export function DraftReviewCard({
 
   function handleAccept() {
     if (isPending || !draft) return;
-    accept.mutate(
-      { threadId, documentId: group.documentId, draftId: draft.draftId },
-      {
-        onSuccess(response) {
-          if (response.status === "overlap") {
-            onReview(group.documentId, response.draftId, {
-              requireOverlapConfirm: true,
-              liveRevisionToken: response.liveRevisionToken,
-            });
-          }
-        },
-      },
-    );
+    controller.accept(group.documentId, draft.draftId);
   }
 
   function handleDiscard() {
     if (isPending || !draft) return;
-    reject.mutate({ threadId, documentId: group.documentId, draftId: draft.draftId });
+    controller.reject(group.documentId, draft.draftId);
   }
 
   return (
@@ -124,7 +99,7 @@ export function DraftReviewCard({
           type="button"
           variant="default"
           size="sm"
-          onClick={() => draft && onReview(group.documentId, draft.draftId)}
+          onClick={() => draft && controller.openReview(group.documentId, draft.draftId)}
           disabled={isPending}
         >
           <Trans>Review</Trans>
@@ -136,7 +111,7 @@ export function DraftReviewCard({
           onClick={handleAccept}
           disabled={isPending}
         >
-          {accept.isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           <Trans>Apply to chapter</Trans>
         </Button>
         <Button
@@ -147,7 +122,7 @@ export function DraftReviewCard({
           disabled={isPending}
           className="text-muted-foreground hover:text-foreground"
         >
-          {reject.isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          {controller.isRejecting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           <Trans>Discard draft</Trans>
         </Button>
       </div>

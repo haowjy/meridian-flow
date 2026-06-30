@@ -11,8 +11,8 @@
  * DraftReviewCard anchoring: when the writer has at least one active AI draft
  * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
  * the draft-review card(s) directly beneath its segments. The card opens the
- * (ChatView-owned) preview overlay via `onReviewDraft` and owns the
- * accept/discard mutations directly. Groups that don't anchor are surfaced
+ * (ChatView-owned) preview overlay via the shared review controller for
+ * review/apply/discard actions. Groups that don't anchor are surfaced
  * by ChatView in the unanchored fallback strip above the Composer.
  */
 import { Trans } from "@lingui/react/macro";
@@ -36,6 +36,7 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnChangeFooter } from "./TurnChangeFooter";
+import type { DraftReviewController } from "./useDraftReviewController";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -44,12 +45,8 @@ export type AssistantTurnProps = {
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
   /** Draft groups anchored to this turn (undefined when none — most rows). */
   draftGroups?: ThreadDraftGroup[];
-  /** Open the ChatView-owned preview overlay for one of this turn's drafts. */
-  onReviewDraft?: (
-    documentId: string,
-    draftId: string,
-    options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
-  ) => void;
+  /** Shared draft review state machine owned by ChatView. */
+  draftReviewController?: DraftReviewController;
 };
 
 function AssistantTurnComponent({
@@ -58,7 +55,7 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToCheckpoint,
   draftGroups,
-  onReviewDraft,
+  draftReviewController,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -111,14 +108,13 @@ function AssistantTurnComponent({
         </p>
       ) : null}
 
-      {draftGroups && draftGroups.length > 0 && onReviewDraft ? (
+      {draftGroups && draftGroups.length > 0 && draftReviewController ? (
         <div data-draft-anchor>
           {draftGroups.map((group) => (
             <DraftReviewCard
               key={group.documentId}
-              threadId={resolvedThreadId}
               group={group}
-              onReview={onReviewDraft}
+              controller={draftReviewController}
             />
           ))}
         </div>
@@ -247,7 +243,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
     prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
     prev.draftGroups === next.draftGroups &&
-    prev.onReviewDraft === next.onReviewDraft
+    prev.draftReviewController === next.draftReviewController
   );
 }
 

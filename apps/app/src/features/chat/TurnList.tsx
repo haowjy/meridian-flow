@@ -13,8 +13,9 @@
  * Keeping the lookup in the parent keeps Virtuoso item identity stable.
  *
  * Cards inside a virtualized row CANNOT own a fixed-position modal — when
- * Virtuoso recycles the row the modal vanishes with it. The card calls
- * `onReviewDraft`; the overlay lives at the (non-virtualized) ChatView root.
+ * Virtuoso recycles the row the modal vanishes with it. The card calls the
+ * shared draft-review controller; the overlay lives at the (non-virtualized)
+ * ChatView root.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import {
@@ -36,6 +37,7 @@ import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { isDraftAcceptTurn } from "./draft-accept-turn";
 import { UserTurn } from "./UserTurn";
+import type { DraftReviewController } from "./useDraftReviewController";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
@@ -49,12 +51,8 @@ export type TurnListProps = {
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
-  /** Open the ChatView-owned preview overlay for a draft's document. */
-  onReviewDraft?: (
-    documentId: string,
-    draftId: string,
-    options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
-  ) => void;
+  /** Shared draft review state machine owned by ChatView. */
+  draftReviewController?: DraftReviewController;
 };
 
 /**
@@ -68,7 +66,7 @@ export function TurnList({
   tailFollowRevision,
   onRespondToCheckpoint,
   draftsByTurnId,
-  onReviewDraft,
+  draftReviewController,
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -101,6 +99,7 @@ export function TurnList({
       // Lookup is per-row so most assistant turns get undefined (memo stable);
       // only turns with anchored drafts re-render when the map identity flips.
       const draftGroups = draftsByTurnId?.get(turn.id);
+      const rowDraftReviewController = draftGroups?.length ? draftReviewController : undefined;
       return (
         <AssistantTurn
           threadId={threadId}
@@ -108,11 +107,11 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToCheckpoint={onRespondToCheckpoint}
           draftGroups={draftGroups}
-          onReviewDraft={onReviewDraft}
+          draftReviewController={rowDraftReviewController}
         />
       );
     },
-    [draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, onReviewDraft, threadId],
+    [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, threadId],
   );
 
   const components = useMemo<Components<Turn>>(
