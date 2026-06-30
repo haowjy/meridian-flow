@@ -29,6 +29,10 @@ export function createInMemoryDraftStore(): DraftStore {
       return copyDraft(findDraft({ ...input, status: "active" })) ?? null;
     },
 
+    async draftTurnContext(draftId) {
+      return drafts.has(draftId) ? { documentName: null, wIdRange: null } : null;
+    },
+
     async listActiveDrafts(input) {
       return [...drafts.values()]
         .filter((draft) => draft.threadId === input.threadId && draft.status === "active")
@@ -215,6 +219,7 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
       if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
       return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
     },
+    async createRejectTurn(_input) {},
   };
 }
 

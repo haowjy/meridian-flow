@@ -17,6 +17,7 @@ import {
 import {
   ActiveDraftConflictError,
   createDraftAcceptTurnId,
+  createDraftRejectTurnId,
   createDraftService,
   type DraftStore,
 } from "./drafts.js";
@@ -149,6 +150,7 @@ describe("draft lifecycle service", () => {
     ).resolves.toEqual({
       status: "discarded",
       draftId: draft.id,
+      rejectTurnId: createDraftRejectTurnId(draft.id),
     });
 
     expect(await liveText(scenario.coordinator)).toBe("Live");
