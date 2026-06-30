@@ -14,7 +14,7 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec } from "@meridian/markup";
 import {
@@ -36,7 +36,6 @@ import {
   createDrizzleDraftSyncStateStore,
   createNoopDraftDocumentLifecycle,
   type DraftSessionFence,
-  isDraftClosedForAppendError,
 } from "./adapters/drizzle-draft-agent-edit.js";
 import {
   createDrizzleDraftAcceptJournal,
@@ -58,6 +57,11 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import {
+  createDraftWriteModeRouter,
+  type ProjectWriteModePreferences,
+  type ThreadModeRepository,
+} from "./domain/draft-write-mode-router.js";
 import { createDraftService, type DraftAcceptJournal, type DraftStore } from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
@@ -71,13 +75,7 @@ import {
 } from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import type {
-  CollabDomain,
-  DocumentWriteHook,
-  ResponseWriteCommitFinalizeResult,
-  ResponseWriteRollbackFinalizeResult,
-  WriteMode,
-} from "./index.js";
+import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
@@ -87,14 +85,6 @@ type CollabDomainDeps = {
   projectPreferences: ProjectWriteModePreferences;
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
-};
-
-type ThreadModeRepository = {
-  findById(id: ThreadId): Promise<{ userId: UserId; projectId: ProjectId } | null>;
-};
-
-type ProjectWriteModePreferences = {
-  read(userId: UserId, projectId: ProjectId): Promise<{ aiWriteMode?: WriteMode }>;
 };
 
 type CheckpointRecord = {
@@ -327,252 +317,6 @@ export function createDrizzleDraftSessionCore(deps: {
   });
 }
 
-type ResponseSession = {
-  mode: WriteMode;
-  core: AgentEditCore;
-  threadId: ThreadId;
-  documentIds: Set<DocumentId>;
-  capturedEpochs: Map<DocumentId, number>;
-  stale?: boolean;
-};
-
-type PendingResponseSession = {
-  threadId: ThreadId;
-  documentIds: Set<DocumentId>;
-  capturedEpochs: Map<DocumentId, number>;
-  promise: Promise<ResponseSession>;
-  stale?: boolean;
-};
-
-type ResponseSessionEntry = ResponseSession | PendingResponseSession;
-
-type DraftClosedCommitResult = {
-  responseId: string;
-  status: "draft_closed";
-  mode: "draft";
-  documentCount: 0;
-  updateCount: 0;
-  documents: [];
-  stagedCreates: { committed: []; discarded: [] };
-};
-
-function createResponseSessionRegistry(deps: {
-  createLiveCore(): AgentEditCore;
-  createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
-  resolveMode(threadId: ThreadId): Promise<WriteMode>;
-}): {
-  sessionMode(responseId: string): WriteMode | undefined;
-  coreFor(responseId: string, threadId: ThreadId): Promise<ResponseSession>;
-  trackDocument(responseId: string, threadId: ThreadId, documentId: DocumentId): void;
-  isDraftClosed(responseId: string): boolean;
-  commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
-  rollbackResponse(
-    responseId: string,
-  ): Promise<Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>>;
-  invalidateDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
-} {
-  const sessions = new Map<string, ResponseSessionEntry>();
-  const invalidationEpochs = new Map<string, number>();
-
-  return {
-    sessionMode(responseId) {
-      const session = sessions.get(responseId);
-      return session && "mode" in session ? session.mode : undefined;
-    },
-
-    async coreFor(responseId, threadId) {
-      const existing = sessions.get(responseId);
-      if (existing) return "promise" in existing ? existing.promise : existing;
-
-      const pending: PendingResponseSession = {
-        threadId,
-        documentIds: new Set(),
-        capturedEpochs: new Map(),
-        promise: Promise.resolve().then(async () => {
-          const mode = await deps.resolveMode(threadId);
-          const resolved: ResponseSession = {
-            mode,
-            core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
-            threadId,
-            documentIds: pending.documentIds,
-            capturedEpochs: pending.capturedEpochs,
-            stale: pending.stale,
-          };
-          sessions.set(responseId, resolved);
-          return resolved;
-        }),
-      };
-      sessions.set(responseId, pending);
-      return pending.promise;
-    },
-
-    trackDocument(responseId, threadId, documentId) {
-      const existing = sessions.get(responseId);
-      const entry: ResponseSessionEntry =
-        existing ??
-        ({
-          threadId,
-          documentIds: new Set(),
-          capturedEpochs: new Map(),
-          promise: Promise.resolve().then(async () => {
-            const mode = await deps.resolveMode(threadId);
-            const current = sessions.get(responseId);
-            const base = current && "promise" in current ? current : entry;
-            const resolved: ResponseSession = {
-              mode,
-              core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.createLiveCore(),
-              threadId,
-              documentIds: base.documentIds,
-              capturedEpochs: base.capturedEpochs,
-              stale: base.stale,
-            };
-            sessions.set(responseId, resolved);
-            return resolved;
-          }),
-        } satisfies PendingResponseSession);
-      entry.documentIds.add(documentId);
-      if (!entry.capturedEpochs.has(documentId)) {
-        entry.capturedEpochs.set(documentId, currentEpoch(threadId, documentId));
-      }
-      if (!existing) sessions.set(responseId, entry);
-    },
-
-    isDraftClosed(responseId) {
-      const entry = sessions.get(responseId);
-      if (!entry || !("mode" in entry) || entry.mode !== "draft") return false;
-      return shouldCloseDraftSession(entry);
-    },
-
-    async commitResponse(responseId) {
-      const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (!session) return deps.createLiveCore().commitResponse(responseId);
-      try {
-        if (shouldCloseDraftSession(session)) {
-          await session.core.rollbackResponse(responseId);
-          return {
-            responseId,
-            status: "draft_closed",
-            mode: "draft",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          } satisfies DraftClosedCommitResult;
-        }
-        try {
-          return await session.core.commitResponse(responseId);
-        } catch (cause) {
-          if (session.mode !== "draft" || !isDraftClosedForAppendError(cause)) throw cause;
-          await session.core.rollbackResponse(responseId);
-          return {
-            responseId,
-            status: "draft_closed",
-            mode: "draft",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          } satisfies DraftClosedCommitResult;
-        }
-      } finally {
-        sessions.delete(responseId);
-      }
-    },
-
-    async rollbackResponse(responseId) {
-      const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      try {
-        return await (session?.core ?? deps.createLiveCore()).rollbackResponse(responseId);
-      } finally {
-        sessions.delete(responseId);
-      }
-    },
-
-    async invalidateDraft({ documentId, threadId }) {
-      invalidationEpochs.set(
-        epochKey(threadId, documentId),
-        currentEpoch(threadId, documentId) + 1,
-      );
-      for (const session of sessions.values()) {
-        if (session.threadId === threadId) session.stale = true;
-      }
-    },
-  };
-
-  function shouldCloseDraftSession(session: ResponseSession): boolean {
-    return session.mode === "draft" && (session.stale === true || hasAdvancedEpoch(session));
-  }
-
-  function hasAdvancedEpoch(session: ResponseSession): boolean {
-    for (const documentId of session.documentIds) {
-      if (
-        currentEpoch(session.threadId, documentId) > (session.capturedEpochs.get(documentId) ?? 0)
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function currentEpoch(threadId: ThreadId, documentId: DocumentId): number {
-    return invalidationEpochs.get(epochKey(threadId, documentId)) ?? 0;
-  }
-
-  function epochKey(threadId: ThreadId, documentId: DocumentId): string {
-    return `${threadId}:${documentId}`;
-  }
-}
-
-function createAgentEditProxy(deps: {
-  liveUtilityCore: AgentEditCore;
-  registry: ReturnType<typeof createResponseSessionRegistry>;
-}): AgentEditCore {
-  return {
-    async write(command, context) {
-      const responseId = context?.responseId;
-      if (!responseId) return deps.liveUtilityCore.write(command, context);
-      const threadId = context.threadId as ThreadId | undefined;
-      if (!threadId) return deps.liveUtilityCore.write(command, context);
-      if ("documentId" in command && command.documentId) {
-        deps.registry.trackDocument(responseId, threadId, command.documentId as DocumentId);
-      }
-      const session = await deps.registry.coreFor(responseId, threadId);
-      if (deps.registry.isDraftClosed(responseId)) {
-        await session.core.rollbackResponse(responseId);
-        return {
-          command: command.command,
-          status: "internal_error",
-          isError: true,
-          text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
-        } as Awaited<ReturnType<AgentEditCore["write"]>>;
-      }
-      return session.core.write(command, context);
-    },
-    recover: deps.liveUtilityCore.recover,
-    commitResponse: deps.registry.commitResponse,
-    rollbackResponse: deps.registry.rollbackResponse,
-    getAvailability: deps.liveUtilityCore.getAvailability,
-    undo: deps.liveUtilityCore.undo,
-    redo: deps.liveUtilityCore.redo,
-    reverse: deps.liveUtilityCore.reverse,
-    undoTurn: deps.liveUtilityCore.undoTurn,
-    redoTurn: deps.liveUtilityCore.redoTurn,
-    invalidateThread: deps.liveUtilityCore.invalidateThread,
-  };
-}
-
-async function resolveThreadWriteMode(
-  deps: Pick<CollabFacadeDeps, "threads" | "projectPreferences">,
-  threadId: ThreadId,
-): Promise<WriteMode> {
-  const thread = await deps.threads.findById(threadId);
-  if (!thread) return "direct";
-  const prefs = await deps.projectPreferences.read(thread.userId, thread.projectId);
-  return prefs.aiWriteMode ?? "direct";
-}
-
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -591,19 +335,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
     });
   const liveUtilityCore: AgentEditCore = createLiveCore();
-  const responseRegistry = createResponseSessionRegistry({
-    createLiveCore: () => liveUtilityCore,
+  const draftWriteRouter = createDraftWriteModeRouter({
+    liveUtilityCore,
     createDraftCore:
       deps.createDraftSessionCore ??
       (() => {
         throw new Error("Draft-mode response writes require a draft session core factory");
       }),
-    resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
+    threads: deps.threads,
+    projectPreferences: deps.projectPreferences,
+    refreshLiveProjection: ({ documentId, threadId }) =>
+      refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
   });
-  const agentEditCore = createAgentEditProxy({
-    liveUtilityCore,
-    registry: responseRegistry,
-  });
+  const agentEditCore = draftWriteRouter.agentEditCore;
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -621,7 +365,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     liveCoordinator: deps.coordinator,
     model,
     codec,
-    invalidateInFlight: responseRegistry.invalidateDraft,
+    invalidateInFlight: draftWriteRouter.invalidateDraft,
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
   });
@@ -728,68 +472,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  async function finalizeResponseCommit(
-    responseId: string,
-    ctx: { threadId: ThreadId; turnId: TurnId },
-  ): Promise<ResponseWriteCommitFinalizeResult> {
-    const mode = responseRegistry.sessionMode(responseId) ?? "direct";
-    const result = await agentEditCore.commitResponse(responseId);
-    if ("status" in result && result.status === "draft_closed") {
-      return {
-        status: "draft_closed",
-        responseId,
-        mode: "draft",
-        documents: [],
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    }
-    if (mode === "draft") {
-      return {
-        status: "committed",
-        documents: result.documents.map((document) => ({
-          documentId: document.documentId as DocumentId,
-          updateCount: document.updateCount,
-        })),
-        stagedCreates: {
-          committed: [],
-          discarded: result.stagedCreates.discarded as DocumentId[],
-        },
-      };
-    }
-    await Promise.all(
-      result.documents.map((document) =>
-        refreshDocumentProjection(
-          document.documentId as DocumentId,
-          ctx.threadId,
-          "collab.response_finalize",
-        ),
-      ),
-    );
-    return {
-      documents: result.documents.map((document) => ({
-        documentId: document.documentId as DocumentId,
-        updateCount: document.updateCount,
-        ...(document.concurrentEdits ? { concurrentEdits: document.concurrentEdits } : {}),
-      })),
-      stagedCreates: {
-        committed: result.stagedCreates.committed as DocumentId[],
-        discarded: result.stagedCreates.discarded as DocumentId[],
-      },
-    };
-  }
-
-  async function finalizeResponseRollback(
-    responseId: string,
-  ): Promise<ResponseWriteRollbackFinalizeResult> {
-    const result = await agentEditCore.rollbackResponse(responseId);
-    return {
-      stagedCreates: {
-        committed: result.stagedCreates.committed as DocumentId[],
-        discarded: result.stagedCreates.discarded as DocumentId[],
-      },
-    };
-  }
-
   async function latestUpdateSeq(documentId: string): Promise<number> {
     return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
   }
@@ -843,12 +525,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     resolveThreadWriteMode(threadId) {
-      return resolveThreadWriteMode(deps, threadId);
+      return draftWriteRouter.resolveThreadWriteMode(threadId);
     },
 
-    finalizeResponseCommit,
+    finalizeResponseCommit: draftWriteRouter.finalizeResponseCommit,
 
-    finalizeResponseRollback,
+    finalizeResponseRollback: draftWriteRouter.finalizeResponseRollback,
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
