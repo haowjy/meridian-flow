@@ -27,10 +27,10 @@ import {
   documentYjsDraftUpdates,
   documentYjsUpdates,
 } from "@meridian/database";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { buildDraftDoc as projectDraftDoc } from "../domain/draft-projection.js";
 import { ActiveDraftConflictError, createDraftId, type DraftStore } from "../domain/drafts.js";
 import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
@@ -342,19 +342,19 @@ export function createDraftProjectionDocumentCoordinator(deps: {
   return {
     withDocument(documentId, fn) {
       return mutex.run(`${documentId}:${deps.threadId}`, async () => {
-        const doc = createCollabYDoc({ gc: false });
+        let liveState: Uint8Array | null = null;
         await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-          Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+          liveState = Y.encodeStateAsUpdate(liveDoc);
         });
         const draft = await deps.draftStore.getActiveDraft({
           documentId: documentId as DocumentId,
           threadId: deps.threadId as ThreadId,
         });
+        const updates = draft ? await deps.draftStore.listUpdates(draft.id) : [];
         if (draft) {
           deps.draftFence?.capture({ documentId, threadId: deps.threadId, draftId: draft.id });
-          const updates = await deps.draftStore.listUpdates(draft.id);
-          for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
         }
+        const doc = projectDraftDoc({ checkpoint: liveState, updates: [] }, updates);
         return fn(doc);
       });
     },
