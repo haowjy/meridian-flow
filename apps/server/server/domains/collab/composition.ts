@@ -358,14 +358,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     invalidateInFlight: draftWriteRouter.invalidateDraft,
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
-    reverseTurn: async ({ documentId, threadId, turnId }) => {
-      await agentEditCore.reverse({
+    reverseTurn: async ({ documentId, threadId, turnId, userId }) => {
+      const result = await agentEditCore.reverse({
         docId: documentId,
         threadId,
         direction: "undo",
         selection: { kind: "turn", turnId },
-        actor: { type: "user", userId: "system" },
+        actor: { type: "user", userId },
       });
+      return result.status === "success" ? "reversed" : "not_reversed";
     },
   });
   const draftService = {
