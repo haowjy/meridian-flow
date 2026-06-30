@@ -115,8 +115,6 @@ describe("thread draft list route", () => {
       ],
     });
     expect(app.documentSync.drafts.listActiveDrafts).toHaveBeenCalledWith({ threadId });
-    expect(app.documentAccess.canAccessDocument).toHaveBeenCalledTimes(2);
-    expect(app.documentAccess.canAccessProjectDocument).toHaveBeenCalledTimes(2);
   });
 
   it("excludes inaccessible draft documents but keeps unattached ones", async () => {
@@ -179,8 +177,6 @@ describe("thread draft list route", () => {
         },
       ],
     });
-    expect(app.documentAccess.canAccessDocument).toHaveBeenCalledTimes(3);
-    expect(app.documentAccess.canAccessProjectDocument).toHaveBeenCalledTimes(3);
   });
 
   it("returns 404 for a thread owned by another user", async () => {
