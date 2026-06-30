@@ -15,7 +15,6 @@ type DraftRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   projects: AppServices["projectRepo"];
   documentAccess: AppServices["documentAccess"];
-  uploadDocuments: AppServices["uploadDocuments"];
   documentSync: AppServices["documentSync"];
 };
 
@@ -24,7 +23,6 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
     threads: app.threadRepos.threads,
     projects: app.projectRepo,
     documentAccess: app.documentAccess,
-    uploadDocuments: app.uploadDocuments,
     documentSync: app.documentSync,
   };
 }
@@ -38,12 +36,15 @@ export async function requireDraftDocumentAccess(
     input.threadId,
     input.userId,
   );
-  const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
+  // Drafts are already thread-scoped in document_yjs_drafts (threadId FK).
+  // We verify the user owns the document and it belongs to the project —
+  // thread_documents attachment is NOT required because project documents
+  // are accessible through the context port without explicit thread attachment.
+  const [hasDocumentAccess, isProjectDocument] = await Promise.all([
     deps.documentAccess.canAccessDocument(input.userId, input.documentId),
     deps.documentAccess.canAccessProjectDocument(input.userId, input.documentId, thread.projectId),
-    deps.uploadDocuments.getUpload(input.threadId, input.documentId),
   ]);
-  if (!hasDocumentAccess || !isProjectDocument || !threadDocument) {
+  if (!hasDocumentAccess || !isProjectDocument) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
 }
@@ -132,18 +133,22 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
     userId: UserId;
   },
 ): Promise<T[]> {
+  // Drafts are already thread-scoped (listActiveDrafts filters by threadId).
+  // We verify document ownership + project membership. Thread-document
+  // attachment (thread_documents row) is NOT required — project documents
+  // reachable through the context port may have no thread_documents row,
+  // but the AI can still create drafts against them.
   const checks: Array<T | null> = await Promise.all(
     input.drafts.map(async (draft): Promise<T | null> => {
-      const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
+      const [hasDocumentAccess, isProjectDocument] = await Promise.all([
         deps.documentAccess.canAccessDocument(input.userId, draft.documentId),
         deps.documentAccess.canAccessProjectDocument(
           input.userId,
           draft.documentId,
           input.projectId,
         ),
-        deps.uploadDocuments.getUpload(input.threadId, draft.documentId),
       ]);
-      return hasDocumentAccess && isProjectDocument && threadDocument ? draft : null;
+      return hasDocumentAccess && isProjectDocument ? draft : null;
     }),
   );
   return checks.filter((draft): draft is T => draft !== null);
