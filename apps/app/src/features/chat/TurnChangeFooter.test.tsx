@@ -6,9 +6,17 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { documentMutateAsync, turnMutateAsync, liveLineageDocuments } = vi.hoisted(() => ({
+const {
+  documentMutateAsync,
+  turnMutateAsync,
+  undoAcceptMutateAsync,
+  undoRejectMutateAsync,
+  liveLineageDocuments,
+} = vi.hoisted(() => ({
   documentMutateAsync: vi.fn(),
   turnMutateAsync: vi.fn(),
+  undoAcceptMutateAsync: vi.fn(),
+  undoRejectMutateAsync: vi.fn(),
   liveLineageDocuments: {
     current: null as Array<{ documentId: string; uri: string; path: string }> | null,
   },
@@ -17,6 +25,11 @@ const { documentMutateAsync, turnMutateAsync, liveLineageDocuments } = vi.hoiste
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseDocumentMutation: () => ({ mutateAsync: documentMutateAsync }),
   useReverseTurnMutation: () => ({ mutateAsync: turnMutateAsync }),
+}));
+
+vi.mock("@/client/query/useDraftReviewMutations", () => ({
+  useUndoDraftAccept: () => ({ mutateAsync: undoAcceptMutateAsync }),
+  useUndoDraftReject: () => ({ mutateAsync: undoRejectMutateAsync }),
 }));
 
 vi.mock("@/client/query/useTurnLiveLineage", () => ({
@@ -60,6 +73,8 @@ describe("TurnChangeFooter", () => {
   beforeEach(() => {
     documentMutateAsync.mockReset();
     turnMutateAsync.mockReset();
+    undoAcceptMutateAsync.mockReset();
+    undoRejectMutateAsync.mockReset();
     liveLineageDocuments.current = null;
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -236,21 +251,20 @@ describe("TurnChangeFooter", () => {
   });
 
   it("renders draft accept events as user-attributed undo affordances", async () => {
-    turnMutateAsync.mockResolvedValue({
-      status: "reversed",
-      documents: [{ uri: "manuscript://chapter-1.mdx", status: "reversed" }],
-    });
-    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
+    undoAcceptMutateAsync.mockResolvedValue({ status: "reactivated", draftId: "draft-1" });
 
     renderDraftAcceptTurn();
 
-    expect(container.textContent).toContain("You accepted this draft");
-    expect(button("Undo").disabled).toBe(false);
-    await click(button("Undo"));
+    expect(container.textContent).toContain("Chapter 1");
+    expect(button("Undo acceptance").disabled).toBe(false);
+    await click(button("Undo acceptance"));
 
-    expect(turnMutateAsync).toHaveBeenCalledWith({ turnId: "turn-accept", direction: "undo" });
-    expect(container.textContent).toContain("You undid your acceptance");
-    expect(button("Redo").disabled).toBe(false);
+    expect(undoAcceptMutateAsync).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+    });
+    expect(button("Undone").disabled).toBe(true);
   });
 
   it("keeps the footer hidden when AssistantTurn has no live lineage", () => {
@@ -305,6 +319,7 @@ describe("TurnChangeFooter", () => {
                 kind: "draft_accept",
                 draftId: "draft-1",
                 documentId: "doc-1",
+                documentName: "Chapter 1",
               },
             }}
           />

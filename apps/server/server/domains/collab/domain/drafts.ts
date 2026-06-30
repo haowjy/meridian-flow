@@ -6,7 +6,7 @@ import type {
   DocumentCoordinator,
   UpdateJournal,
 } from "@meridian/agent-edit";
-import type { WIdRange } from "@meridian/contracts/drafts";
+import { DRAFT_UNDO_RETENTION_MS, type WIdRange } from "@meridian/contracts/drafts";
 import type {
   DocumentId,
   ThreadId,
@@ -100,6 +100,9 @@ export type DraftStore = {
     appliedUpdateSeq: number;
   }): Promise<boolean>;
   reject(input: DraftLifecycleInput & { acceptLease?: DraftAcceptLease }): Promise<Draft | null>;
+  reactivate(
+    input: DraftLifecycleInput & { fromStatus: "applied" | "discarded" },
+  ): Promise<Draft | null>;
   recoverAccepted(input: DraftLifecycleInput): Promise<void>;
 };
 
@@ -186,6 +189,12 @@ export type DraftRejectResult =
   | { status: "not_found" }
   | { status: "discarded"; draftId: string; rejectTurnId: TurnId };
 
+export type DraftUndoDomainResult =
+  | { status: "reactivated"; draftId: string }
+  | { status: "expired"; draftId: string }
+  | { status: "conflict"; draftId: string }
+  | { status: "not_found" };
+
 type DraftProjectionCoordinator = {
   buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
 };
@@ -207,6 +216,17 @@ type DraftService = DraftProjectionCoordinator & {
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult>;
+  undoAcceptDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    userId: UserId;
+  }): Promise<DraftUndoDomainResult>;
+  undoRejectDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<DraftUndoDomainResult>;
 };
 
 function createDraftProjectionCoordinator(deps: {
@@ -245,6 +265,11 @@ export function createDraftService(deps: {
   codec: AgentEditCodec;
   invalidateInFlight?: InvalidateInFlightDrafts;
   refreshAcceptedProjection?: RefreshAcceptedDraftProjection;
+  reverseTurn?(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    turnId: TurnId;
+  }): Promise<void>;
 }): DraftService {
   const invalidateInFlight = deps.invalidateInFlight ?? (async () => {});
   const projection = createDraftProjectionCoordinator({
@@ -259,6 +284,8 @@ export function createDraftService(deps: {
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,
+    undoAcceptDraft,
+    undoRejectDraft,
   };
 
   async function acceptDraft(input: {
@@ -525,6 +552,80 @@ export function createDraftService(deps: {
     }
 
     return { status: "discarded", draftId: draft.id, rejectTurnId };
+  }
+
+  async function undoAcceptDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    userId: UserId;
+  }): Promise<DraftUndoDomainResult> {
+    const draft = await deps.draftStore.getDraft(input.draftId);
+    if (
+      !draft ||
+      draft.documentId !== input.documentId ||
+      draft.threadId !== input.threadId ||
+      draft.status !== "applied"
+    ) {
+      return { status: "not_found" };
+    }
+    if (draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
+      return { status: "expired", draftId: input.draftId };
+    }
+
+    if (deps.reverseTurn) {
+      try {
+        await deps.reverseTurn({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          turnId: createDraftAcceptTurnId(input.draftId),
+        });
+      } catch {
+        // Draft reactivation is the lifecycle source of truth; a missing or already-reversed
+        // live mutation should not strand the writer outside review.
+      }
+    }
+
+    const reactivated = await deps.draftStore.reactivate({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: input.draftId,
+      fromStatus: "applied",
+    });
+    if (!reactivated) return { status: "conflict", draftId: input.draftId };
+
+    await invalidateInFlight(input);
+    return { status: "reactivated", draftId: input.draftId };
+  }
+
+  async function undoRejectDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<DraftUndoDomainResult> {
+    const draft = await deps.draftStore.getDraft(input.draftId);
+    if (
+      !draft ||
+      draft.documentId !== input.documentId ||
+      draft.threadId !== input.threadId ||
+      draft.status !== "discarded"
+    ) {
+      return { status: "not_found" };
+    }
+    if (draft.discardedAt && Date.now() - draft.discardedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
+      return { status: "expired", draftId: input.draftId };
+    }
+
+    const reactivated = await deps.draftStore.reactivate({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: input.draftId,
+      fromStatus: "discarded",
+    });
+    if (!reactivated) return { status: "conflict", draftId: input.draftId };
+
+    await invalidateInFlight(input);
+    return { status: "reactivated", draftId: input.draftId };
   }
 
   async function recoverAppliedDraftSideEffects(
