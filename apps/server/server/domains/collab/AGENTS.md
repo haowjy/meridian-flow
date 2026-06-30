@@ -23,9 +23,11 @@ the live document).
   vs draft-ULID `scope_id`, plus composable `scopedWhere`/`scopedValues` helpers.
 - **Composition** (`composition.ts`) — builds the codec/model, translates
   Meridian origins to journal meta, wires the markdown-document engine, handles
-  checkpoint / restore, Hocuspocus hooks, in-memory/prod factory wiring,
-  the response-session registry (routes write-mode-aware cores), and
+  checkpoint / restore, Hocuspocus hooks, in-memory/prod factory wiring, and
   the draft-service lifecycle (accept/reject with claim-token fencing).
+- **Draft write-mode routing** (`domain/draft-write-mode-router.ts`) — owns
+  per-thread write-mode resolution, response-scoped live-vs-draft core routing,
+  stale response invalidation, and response finalization for draft sessions.
 - **Full-document markdown engine** (`domain/markdown-document.ts`) —
   server-side read/SET/edit orchestration over the package codec/model, journal,
   and coordinator. This is not part of the `@meridian/agent-edit` public mutation

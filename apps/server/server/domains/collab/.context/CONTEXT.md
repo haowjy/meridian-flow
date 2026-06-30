@@ -11,6 +11,7 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
 | Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade wiring over package codec/model plus journal/coordinator |
+| Response write-mode routing | `collab/domain/draft-write-mode-router.ts` | Per-response live/draft core routing, stale epoch invalidation, response finalization |
 | Full-document markdown SET/read | `collab/domain/markdown-document.ts` | Server-side engine over package primitives; not package public API |
 | Journal/mutation persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` with mutation queries, lifecycle, checkpoint, and latest-update helpers |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |
@@ -165,7 +166,7 @@ single document and calls `agentEdit().reverse()` directly.
 
 ### Undo-notification delivery
 
-The collab composition (`composition.ts:103-134`) adapts agent-edit's
+The collab composition adapts agent-edit's
 `UndoNotificationPort` to a server-side `PendingUndoNotificationRepository`
 (`domains/undo-notifications/`). After a successful user reversal, the port
 resolves `docId` to a context URI and writes a row to `pending_undo_notifications`.
@@ -191,7 +192,7 @@ discards.
 
 ### Response session registry
 
-Keyed by `responseId`. On first write, resolves the thread's effective
+`domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, resolves the thread's effective
 `WriteMode` (`direct` | `draft`), creates the appropriate `AgentEditCore`
 (live or draft-scoped), memoizes it. `commitResponse` / `rollbackResponse`
 route to the same core.
