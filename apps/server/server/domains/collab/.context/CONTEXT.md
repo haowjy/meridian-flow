@@ -281,3 +281,38 @@ state inside the store, then invalidates in-flight responses. Updates never touc
 ## Deferred cutover work
 
 - Keep schema-parity and TipTap extension work in the package cutover plan.
+
+## Undo/Redo Model — Decisions and Open Questions
+
+### Current model
+Turn-level, CRDT-based. Undo creates a new Yjs update that reverses a turn's
+writes. Redo creates a new update reversing the undo. Linear stack per document
+per thread (not branching).
+
+### Branching undo tree (Vim/Emacs-style)
+**Open question.** In Vim (`undotree`) and Emacs (`undo-tree-mode`), undo → edit
+→ redo preserves all history branches. Our current model is linear: editing after
+undo may discard the redo target. Since Yjs undo is CRDT-composed (undo/redo are
+new updates, not history rewrites), undo → edit → redo may produce merged results
+rather than clean redo — CRDT conflict resolution decides the merge, which may
+feel "mangled" to the writer.
+
+**Human decision (2026-06-29):** "Mangling the document after undo/redo is
+probably okay if you knowingly made an edit in between." The user accepts that
+editing after undo may produce imperfect redo results. A branching undo tree is a
+tracked future enhancement, not a current blocker.
+
+**Context:** see related GitHub issue (likely #86 or linked from #122).
+
+## Multi-Draft Support
+
+**Invariant to preserve:** Do not close doors on having multiple drafts within
+the same thread. The current backend enforces one active draft per
+(documentId, threadId), but the client grouping model (`ThreadDraftGroup.drafts:
+ThreadDraftListItem[]`) is intentionally array-shaped to keep this option open.
+The unique partial index on `document_yjs_drafts` is the constraint to relax if
+multi-draft support is added.
+
+**Human decision (2026-06-29):** Keep the multi-draft-ready shape in the client
+types. Do not simplify `ThreadDraftGroup.drafts` to a single item, even though
+reviewers flagged it as speculative. This is intentional future-proofing.
