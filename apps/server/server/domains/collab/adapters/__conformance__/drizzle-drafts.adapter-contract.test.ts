@@ -158,13 +158,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         lastActorTurnId: TURN_B as never,
       });
-      const claimed = await store.claimForAccept({
+      const claimed = await store.beginAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         draftId: first.id,
       });
-      if (!claimed?.claimToken) throw new Error("expected claim token");
-      await store.markDiscarded(first.id, { claimToken: claimed.claimToken });
+      if (claimed.status !== "claimed") throw new Error("expected accept claim");
+      await store.reject({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        draftId: first.id,
+        acceptLease: claimed.lease,
+      });
 
       await expect(store.listActiveDrafts({ threadId: THREAD_ID as never })).resolves.toMatchObject(
         [
@@ -187,33 +192,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lastActorTurnId: TURN_A as never,
       });
 
-      const firstClaim = await store.claimForAccept({
+      const firstClaim = await store.beginAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         draftId: draft.id,
       });
-      expect(firstClaim).toMatchObject({ id: draft.id, status: "accepting" });
-      if (!firstClaim?.claimToken) throw new Error("expected first claim token");
+      expect(firstClaim).toMatchObject({
+        status: "claimed",
+        draft: { id: draft.id, status: "accepting" },
+      });
+      if (firstClaim.status !== "claimed") throw new Error("expected first claim");
       await db
         .update(documentYjsDrafts)
         .set({ claimedAt: sql`now() - interval '11 minutes'` })
         .where(eq(documentYjsDrafts.id, draft.id));
 
-      const secondClaim = await store.claimForAccept({
+      const secondClaim = await store.beginAccept({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         draftId: draft.id,
       });
-      expect(secondClaim).toMatchObject({ id: draft.id, status: "accepting" });
-      if (!secondClaim?.claimToken) throw new Error("expected second claim token");
-      expect(secondClaim.claimToken).not.toBe(firstClaim.claimToken);
+      expect(secondClaim).toMatchObject({
+        status: "claimed",
+        draft: { id: draft.id, status: "accepting" },
+      });
+      if (secondClaim.status !== "claimed") throw new Error("expected second claim");
+      expect(secondClaim.lease.id).not.toBe(firstClaim.lease.id);
 
       await expect(
-        store.markDiscarded(draft.id, { claimToken: firstClaim.claimToken }),
-      ).resolves.toBe(false);
+        store.reject({
+          documentId: DOC_ID as never,
+          threadId: THREAD_ID as never,
+          draftId: draft.id,
+          acceptLease: firstClaim.lease,
+        }),
+      ).resolves.toBeNull();
       await expect(
-        store.markDiscarded(draft.id, { claimToken: secondClaim.claimToken }),
-      ).resolves.toBe(true);
+        store.reject({
+          documentId: DOC_ID as never,
+          threadId: THREAD_ID as never,
+          draftId: draft.id,
+          acceptLease: secondClaim.lease,
+        }),
+      ).resolves.toMatchObject({ status: "discarded" });
       await expect(store.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
     });
   });

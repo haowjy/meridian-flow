@@ -104,11 +104,12 @@ describe("draft lifecycle service", () => {
     expect(second).toEqual(first);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
     expect(await liveText(scenario.coordinator)).toBe("Alpha Beta");
-    expect(scenario.deleteDraftState).toHaveBeenCalledWith({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
-    });
+    expect(scenario.completeAccept).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appliedByUserId: USER_ID,
+        appliedUpdateSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
+      }),
+    );
     expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
       {
         writeId: `draft-accept:${draft.id}`,
@@ -153,7 +154,7 @@ describe("draft lifecycle service", () => {
     expect(await liveText(scenario.coordinator)).toBe("Live");
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
     expect(await scenario.store.getDraft(draft.id)).toMatchObject({ status: "discarded" });
-    expect(scenario.deleteDraftState).toHaveBeenCalledWith({
+    expect(scenario.reject).toHaveBeenCalledWith({
       documentId: DOC_ID,
       threadId: THREAD_ID,
       draftId: draft.id,
@@ -264,7 +265,8 @@ async function createScenario() {
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   await lifecycle.ensureDocument(DOC_ID);
   const store = createInMemoryDraftStore();
-  const deleteDraftState = vi.spyOn(store, "deleteDraftState");
+  const completeAccept = vi.spyOn(store, "completeAccept");
+  const reject = vi.spyOn(store, "reject");
   const service = createDraftService({
     draftStore: store,
     liveJournal: createInMemoryDraftAcceptJournal(journal),
@@ -274,7 +276,7 @@ async function createScenario() {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
   });
-  return { journal, coordinator, store: store as DraftStore, service, deleteDraftState };
+  return { journal, coordinator, store: store as DraftStore, service, completeAccept, reject };
 }
 
 function updateFromText(value: string): Uint8Array {

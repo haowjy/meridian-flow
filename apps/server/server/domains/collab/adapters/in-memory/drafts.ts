@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   ActiveDraft,
+  AppliedDraft,
   Draft,
   DraftAcceptJournal,
   DraftStore,
@@ -36,11 +37,6 @@ export function createInMemoryDraftStore(): DraftStore {
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
         )
         .map((draft) => copyActiveDraft(draft));
-    },
-
-    async getAppliedDraft(draftId) {
-      const draft = drafts.get(draftId);
-      return draft?.status === "applied" ? (copyDraft(draft) ?? draft) : null;
     },
 
     async createActiveDraft(input) {
@@ -89,23 +85,54 @@ export function createInMemoryDraftStore(): DraftStore {
         .map(copyUpdate);
     },
 
-    async claimForAccept(input) {
+    async beginAccept(input) {
       const draft = findDraft({ ...input, status: "active" });
-      if (!draft || draft.claimedAt) return null;
+      if (!draft || draft.claimedAt) {
+        const accepting = findDraft({ ...input, status: "accepting" });
+        if (accepting) return { status: "in_progress", draft: copyDraft(accepting) ?? accepting };
+        const applied = drafts.get(input.draftId);
+        if (
+          applied?.documentId === input.documentId &&
+          applied.threadId === input.threadId &&
+          applied.status === "applied" &&
+          applied.appliedUpdateSeq !== null
+        ) {
+          const draft = copyDraft(applied) ?? applied;
+          return {
+            status: "already_applied",
+            draft: { ...draft, appliedUpdateSeq: applied.appliedUpdateSeq } satisfies AppliedDraft,
+          };
+        }
+        return { status: "not_found" };
+      }
       draft.status = "accepting";
       draft.claimedAt = new Date();
       draft.claimToken = randomUUID();
       draft.updatedAt = new Date();
-      return copyDraft(draft) ?? draft;
+      if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+      return {
+        status: "claimed",
+        draft: copyDraft(draft) ?? draft,
+        lease: {
+          documentId: draft.documentId,
+          threadId: draft.threadId,
+          draftId: draft.id,
+          id: draft.claimToken,
+        },
+      };
     },
 
-    async getAcceptingDraft(input) {
-      return copyDraft(findDraft({ ...input, status: "accepting" })) ?? null;
-    },
-
-    async discardActive(input) {
-      const draft = findDraft({ ...input, status: "active" });
-      if (!draft || draft.claimedAt) return null;
+    async reject(input) {
+      const draft = input.acceptLease
+        ? drafts.get(input.draftId)
+        : findDraft({ ...input, status: "active" });
+      if (!draft || draft.documentId !== input.documentId || draft.threadId !== input.threadId)
+        return null;
+      if (input.acceptLease) {
+        if (draft.status !== "accepting" || draft.claimToken !== input.acceptLease.id) return null;
+      } else if (draft.claimedAt) {
+        return null;
+      }
       draft.status = "discarded";
       draft.discardedAt = new Date();
       draft.claimedAt = null;
@@ -114,9 +141,9 @@ export function createInMemoryDraftStore(): DraftStore {
       return copyDraft(draft) ?? draft;
     },
 
-    async markApplied(draftId, input) {
-      const draft = drafts.get(draftId);
-      if (draft?.status !== "accepting" || draft.claimToken !== input.claimToken) return false;
+    async completeAccept(input) {
+      const draft = drafts.get(input.lease.draftId);
+      if (draft?.status !== "accepting" || draft.claimToken !== input.lease.id) return false;
       draft.status = "applied";
       draft.appliedAt = new Date();
       draft.appliedByUserId = input.appliedByUserId;
@@ -127,23 +154,7 @@ export function createInMemoryDraftStore(): DraftStore {
       return true;
     },
 
-    async markDiscarded(draftId, input) {
-      const draft = drafts.get(draftId);
-      if (
-        !draft ||
-        (draft.status !== "active" && draft.status !== "accepting") ||
-        draft.claimToken !== input.claimToken
-      )
-        return false;
-      draft.status = "discarded";
-      draft.discardedAt = new Date();
-      draft.claimedAt = null;
-      draft.claimToken = null;
-      draft.updatedAt = new Date();
-      return true;
-    },
-
-    async deleteDraftState(_input) {},
+    async recoverAccepted(_input) {},
   };
 
   function findOpenDraft(input: {

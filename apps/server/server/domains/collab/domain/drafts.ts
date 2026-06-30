@@ -1,13 +1,10 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
 import { createHash, randomBytes } from "node:crypto";
-import {
-  type AgentEditCodec,
-  type AgentEditModel,
-  type DocumentCoordinator,
-  type JournalSnapshot,
-  toDocHandle,
-  touchedBlockHashesBetween,
-  type UpdateJournal,
+import type {
+  AgentEditCodec,
+  AgentEditModel,
+  DocumentCoordinator,
+  UpdateJournal,
 } from "@meridian/agent-edit";
 import type {
   DocumentId,
@@ -16,9 +13,15 @@ import type {
   TurnId,
   UserId,
 } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import {
+  buildAtLiveSeq,
+  buildLiveDocAtSeq,
+  computeOverlapBlocks,
+  buildDraftDoc as projectDraftDoc,
+  serializePreview,
+} from "./draft-projection.js";
 
 export type DraftStatus = "active" | "accepting" | "applied" | "discarded";
 
@@ -71,7 +74,6 @@ export type DraftStore = {
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
-  getAppliedDraft(draftId: string): Promise<Draft | null>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -84,32 +86,36 @@ export type DraftStore = {
     actorTurnId?: TurnId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
-  claimForAccept(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<Draft | null>;
-  getAcceptingDraft(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<Draft | null>;
-  discardActive(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<Draft | null>;
-  markApplied(
-    draftId: string,
-    input: { claimToken: string; appliedByUserId: UserId; appliedUpdateSeq: number },
-  ): Promise<boolean>;
-  markDiscarded(draftId: string, input: { claimToken: string }): Promise<boolean>;
-  deleteDraftState(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<void>;
+  beginAccept(input: DraftLifecycleInput): Promise<DraftBeginAcceptResult>;
+  completeAccept(input: {
+    lease: DraftAcceptLease;
+    appliedByUserId: UserId;
+    appliedUpdateSeq: number;
+  }): Promise<boolean>;
+  reject(input: DraftLifecycleInput & { acceptLease?: DraftAcceptLease }): Promise<Draft | null>;
+  recoverAccepted(input: DraftLifecycleInput): Promise<void>;
 };
+
+export type DraftLifecycleInput = {
+  documentId: DocumentId;
+  threadId: ThreadId;
+  draftId: string;
+};
+
+export type DraftAcceptLease = {
+  readonly documentId: DocumentId;
+  readonly threadId: ThreadId;
+  readonly draftId: string;
+  readonly id: string;
+};
+
+export type AppliedDraft = Draft & { appliedUpdateSeq: number };
+
+export type DraftBeginAcceptResult =
+  | { status: "claimed"; draft: Draft; lease: DraftAcceptLease }
+  | { status: "in_progress"; draft: Draft }
+  | { status: "already_applied"; draft: AppliedDraft }
+  | { status: "not_found" };
 
 export type AcceptedDraftAppend = { appliedUpdateSeq: number; acceptTurnId: TurnId };
 
@@ -188,13 +194,18 @@ function createDraftProjectionCoordinator(deps: {
   return {
     buildDraftDoc({ documentId, draftId }) {
       return mutex.run(`${documentId}:${draftId}`, async () => {
-        const doc = createCollabYDoc({ gc: false });
+        let liveState: Uint8Array | null = null;
         await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-          Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+          liveState = Y.encodeStateAsUpdate(liveDoc);
         });
         const updates = await deps.draftStore.listUpdates(draftId);
-        for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
-        return doc;
+        return projectDraftDoc(
+          {
+            checkpoint: liveState,
+            updates: [],
+          },
+          updates,
+        );
       });
     },
   };
@@ -262,42 +273,28 @@ export function createDraftService(deps: {
       }
     }
 
-    const draft = await deps.draftStore.claimForAccept(input);
-    if (!draft) {
-      const accepting = await deps.draftStore.getAcceptingDraft(input);
-      if (accepting) return { status: "in_progress", draftId: accepting.id };
-
-      const applied = await deps.draftStore.getAppliedDraft(input.draftId);
-      if (
-        applied?.documentId === input.documentId &&
-        applied.threadId === input.threadId &&
-        applied.appliedUpdateSeq !== null
-      ) {
-        await recoverAppliedDraftSideEffects(input, applied);
-        return {
-          status: "applied",
-          draftId: applied.id,
-          appliedUpdateSeq: applied.appliedUpdateSeq,
-          acceptTurnId: await acceptTurnIdForAppliedDraft(input, applied),
-        };
-      }
+    const accept = await deps.draftStore.beginAccept(input);
+    if (accept.status === "in_progress") return { status: "in_progress", draftId: accept.draft.id };
+    if (accept.status === "already_applied") {
+      await recoverAppliedDraftSideEffects(input, accept.draft);
+      return {
+        status: "applied",
+        draftId: accept.draft.id,
+        appliedUpdateSeq: accept.draft.appliedUpdateSeq,
+        acceptTurnId: await acceptTurnIdForAppliedDraft(input, accept.draft),
+      };
+    }
+    if (accept.status === "not_found") {
       return { status: "not_found" };
     }
 
+    const { draft, lease } = accept;
     await invalidateInFlight(input);
 
     const updates = await deps.draftStore.listUpdates(draft.id);
     if (updates.length === 0) {
-      if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
-      const discarded = await deps.draftStore.markDiscarded(draft.id, {
-        claimToken: draft.claimToken,
-      });
+      const discarded = await deps.draftStore.reject({ ...input, acceptLease: lease });
       if (!discarded) return { status: "not_found" };
-      await deps.draftStore.deleteDraftState({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draftId: draft.id,
-      });
       return { status: "discarded", draftId: draft.id };
     }
 
@@ -339,9 +336,8 @@ export function createDraftService(deps: {
     }
     const { appliedUpdateSeq } = acceptedAppend;
 
-    if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
-    const applied = await deps.draftStore.markApplied(draft.id, {
-      claimToken: draft.claimToken,
+    const applied = await deps.draftStore.completeAccept({
+      lease,
       appliedByUserId: input.userId,
       appliedUpdateSeq,
     });
@@ -377,20 +373,13 @@ export function createDraftService(deps: {
     const liveNow = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
     const previewDoc = await buildDraftDocAtLiveSeq(documentId, draft.id, liveRevisionToken);
     try {
-      const liveTouched = touchedBlockHashesBetween({
-        before: toDocHandle(base),
-        after: toDocHandle(liveNow),
+      const overlappingBlocks = computeOverlapBlocks({
+        baseDoc: base,
+        liveDoc: liveNow,
+        draftDoc: previewDoc,
         model: deps.model,
         codec: deps.codec,
       });
-      const draftTouched = touchedBlockHashesBetween({
-        before: toDocHandle(liveNow),
-        after: toDocHandle(previewDoc),
-        model: deps.model,
-        codec: deps.codec,
-      });
-      const overlappingBlocks = [...draftTouched].filter((hash) => liveTouched.has(hash)).sort();
-
       return overlappingBlocks.length > 0 ? overlappingBlocks : null;
     } finally {
       base.destroy();
@@ -437,8 +426,8 @@ export function createDraftService(deps: {
         status: "overlap",
         draftId: draft.id,
         liveRevisionToken,
-        live: serializeDoc(liveNow),
-        preview: serializeDoc(previewDoc),
+        live: serializePreview(liveNow, deps.codec, deps.model),
+        preview: serializePreview(previewDoc, deps.codec, deps.model),
         overlappingBlocks,
       };
     } finally {
@@ -447,47 +436,22 @@ export function createDraftService(deps: {
     }
   }
 
-  async function buildDraftDocAtLiveSeq(
+  function buildDraftDocAtLiveSeq(
     documentId: DocumentId,
     draftId: string,
     liveRevisionToken: number,
   ): Promise<Y.Doc> {
-    const doc = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
-    const updates = await deps.draftStore.listUpdates(draftId);
-    for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
-    return doc;
+    return buildAtLiveSeq(
+      deps.liveUpdateJournal,
+      deps.draftStore,
+      documentId,
+      draftId,
+      liveRevisionToken,
+    );
   }
 
-  async function buildLiveDocThroughSeq(documentId: DocumentId, seq: number): Promise<Y.Doc> {
-    const snapshot = await readLiveSnapshotThroughSeq(documentId, seq);
-    const doc = createCollabYDoc({ gc: false });
-    applySnapshot(doc, snapshot);
-    return doc;
-  }
-
-  async function readLiveSnapshotThroughSeq(
-    documentId: DocumentId,
-    seq: number,
-  ): Promise<JournalSnapshot> {
-    return (
-      deps.liveUpdateJournal.read as (
-        docId: string,
-        opts: { until: number; fromCheckpoint?: boolean },
-      ) => Promise<JournalSnapshot>
-    )(documentId, { until: seq, fromCheckpoint: false });
-  }
-
-  function applySnapshot(doc: Y.Doc, snapshot: JournalSnapshot): void {
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
-    for (const update of snapshot.updates) {
-      Y.applyUpdate(doc, update.update, { type: "system" });
-    }
-  }
-
-  function serializeDoc(doc: Y.Doc): string {
-    const handle = toDocHandle(doc);
-    if (deps.model.getBlocks(handle).length === 0) return "";
-    return deps.codec.serialize(deps.model.projectBlocks(handle));
+  function buildLiveDocThroughSeq(documentId: DocumentId, seq: number): Promise<Y.Doc> {
+    return buildLiveDocAtSeq(deps.liveUpdateJournal, documentId, seq);
   }
 
   async function acceptTurnIdForAppliedDraft(
@@ -509,15 +473,10 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult> {
-    const draft = await deps.draftStore.discardActive(input);
+    const draft = await deps.draftStore.reject(input);
     if (!draft) return { status: "not_found" };
 
     await invalidateInFlight(input);
-    await deps.draftStore.deleteDraftState({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      draftId: draft.id,
-    });
     return { status: "discarded", draftId: draft.id };
   }
 
@@ -531,11 +490,7 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
-    await deps.draftStore.deleteDraftState({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      draftId: draft.id,
-    });
+    await deps.draftStore.recoverAccepted({ ...input, draftId: draft.id });
   }
 }
 
