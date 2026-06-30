@@ -35,7 +35,9 @@ import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { AssistantTurn } from "./AssistantTurn";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { DraftAcceptTurn } from "./DraftAcceptTurn";
+import { DraftRejectTurn } from "./DraftRejectTurn";
 import { isDraftAcceptTurn } from "./draft-accept-turn";
+import { isDraftRejectTurn } from "./draft-reject-turn";
 import { UserTurn } from "./UserTurn";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { filterVisibleTurns } from "./visible-chat-turns";
@@ -92,6 +94,9 @@ export function TurnList({
     (idx: number, turn: Turn) => {
       if (isDraftAcceptTurn(turn)) {
         return <DraftAcceptTurn threadId={threadId} turn={turn} />;
+      }
+      if (isDraftRejectTurn(turn)) {
+        return <DraftRejectTurn turn={turn} />;
       }
       if (turn.role === "user") {
         return <UserTurn turn={turn} />;
