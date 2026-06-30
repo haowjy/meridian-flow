@@ -12,8 +12,9 @@
  *
  * Owns the AI-draft preview overlay. The DraftReviewCard sits inside a
  * react-virtuoso row for anchored cards, so any modal it tried to own would
- * vanish when Virtuoso recycles the row. Cards call `handleReview` and the
- * overlay is rendered once here at the non-virtualized root.
+ * vanish when Virtuoso recycles the row. Cards use the shared
+ * draft-review controller, and the overlay is rendered once here at the
+ * non-virtualized root.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
@@ -36,6 +37,7 @@ import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
 import { DraftReviewCard } from "./DraftReviewCard";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useDraftReviewController } from "./useDraftReviewController";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -117,58 +119,28 @@ export function ChatView({
     [drafts.groups, turnIdSet],
   );
 
-  // Single preview overlay, owned here so it survives Virtuoso row
-  // recycling. Cards call `handleReview`; the overlay reads the document
-  // name from the currently-active drafts list.
-  const [previewingDraft, setPreviewingDraft] = useState<{
-    documentId: string;
-    draftId: string;
-  } | null>(null);
-  const [overlapConfirm, setOverlapConfirm] = useState<{
-    draftId: string;
-    liveRevisionToken?: number;
-  } | null>(null);
-  const handleReview = useCallback(
-    (
-      documentId: string,
-      draftId: string,
-      options?: { requireOverlapConfirm?: boolean; liveRevisionToken?: number },
-    ) => {
-      setOverlapConfirm(
-        options?.requireOverlapConfirm
-          ? { draftId, liveRevisionToken: options.liveRevisionToken }
-          : null,
-      );
-      setPreviewingDraft({ documentId, draftId });
-    },
-    [],
-  );
-  const handleClosePreview = useCallback(() => {
-    setPreviewingDraft(null);
-    setOverlapConfirm(null);
-  }, []);
-  const clearOverlapConfirm = useCallback(() => {
-    setOverlapConfirm(null);
-  }, []);
+  const draftReview = useDraftReviewController(threadId);
+  const selectedDraft = draftReview.selectedDraft;
+
   const previewingDocumentName = useMemo(() => {
-    if (previewingDraft == null) return null;
+    if (selectedDraft == null) return null;
     return (
-      drafts.groups?.find((group) => group.documentId === previewingDraft.documentId)
-        ?.documentName ?? null
+      drafts.groups?.find((group) => group.documentId === selectedDraft.documentId)?.documentName ??
+      null
     );
-  }, [previewingDraft, drafts.groups]);
+  }, [selectedDraft, drafts.groups]);
 
   // If the previewed draft disappears (writer accepted/discarded it from
   // somewhere else, or the list reloaded without it), close the overlay so
   // the chat doesn't show a stale modal over the conversation.
   useEffect(() => {
-    if (previewingDraft == null) return;
+    if (selectedDraft == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillActive = drafts.groups?.some((group) =>
-      group.drafts.some((draft) => draft.draftId === previewingDraft.draftId),
+      group.drafts.some((draft) => draft.draftId === selectedDraft.draftId),
     );
-    if (!stillActive) handleClosePreview();
-  }, [previewingDraft, drafts.status, drafts.groups, handleClosePreview]);
+    if (!stillActive) draftReview.closeReview();
+  }, [selectedDraft, drafts.status, drafts.groups, draftReview.closeReview]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -213,9 +185,8 @@ export function ChatView({
                 {unanchoredDrafts.map((group) => (
                   <DraftReviewCard
                     key={group.documentId}
-                    threadId={threadId}
                     group={group}
-                    onReview={handleReview}
+                    controller={draftReview}
                     variant="compact"
                   />
                 ))}
@@ -246,25 +217,12 @@ export function ChatView({
           tailFollowRevision={tailFollowRevision}
           onRespondToCheckpoint={handleRespondToCheckpoint}
           draftsByTurnId={draftsByTurnId}
-          onReviewDraft={handleReview}
+          draftReviewController={draftReview}
         />
       </ChatSurface>
 
-      {previewingDraft != null ? (
-        <DraftPreviewOverlay
-          threadId={threadId}
-          documentId={previewingDraft.documentId}
-          draftId={previewingDraft.draftId}
-          documentName={previewingDocumentName}
-          overlapConfirmLiveRevisionToken={
-            overlapConfirm?.draftId === previewingDraft.draftId
-              ? overlapConfirm.liveRevisionToken
-              : undefined
-          }
-          requireOverlapConfirm={overlapConfirm?.draftId === previewingDraft.draftId}
-          onOverlapConfirmResolved={clearOverlapConfirm}
-          onClose={handleClosePreview}
-        />
+      {selectedDraft != null ? (
+        <DraftPreviewOverlay controller={draftReview} documentName={previewingDocumentName} />
       ) : null}
     </>
   );

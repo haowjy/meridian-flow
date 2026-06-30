@@ -25,101 +25,62 @@ import { AlertCircle, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
-import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
 import { useEscapeToClose } from "@/features/project/shell/ResultViewerOverlay";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { collapseDiffBlocks, type DiffBlock, diffLines } from "./diff-lines";
+import type { DraftReviewController } from "./useDraftReviewController";
 
 export type DraftPreviewOverlayProps = {
-  threadId: string;
-  documentId: string;
-  draftId: string;
+  controller: DraftReviewController;
   documentName: string | null;
-  requireOverlapConfirm?: boolean;
-  overlapConfirmLiveRevisionToken?: number;
-  onOverlapConfirmResolved?: () => void;
-  onClose: () => void;
 };
 
 type ViewMode = "changes" | "preview";
 
-export function DraftPreviewOverlay({
-  threadId,
-  documentId,
-  draftId,
-  documentName,
-  requireOverlapConfirm = false,
-  overlapConfirmLiveRevisionToken,
-  onOverlapConfirmResolved,
-  onClose,
-}: DraftPreviewOverlayProps) {
-  useEscapeToClose(onClose);
-  const accept = useAcceptDraft();
-  const reject = useRejectDraft();
+export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOverlayProps) {
+  const selectedDraft = controller.selectedDraft;
+  const documentId = selectedDraft?.documentId ?? null;
+  const draftId = selectedDraft?.draftId ?? null;
+  useEscapeToClose(controller.closeReview);
   const { live, previewMarkdown, liveRevisionToken, isFetching, isError } = useDraftPreview(
-    threadId,
+    controller.threadId,
     documentId,
     draftId,
   );
   const [view, setView] = useState<ViewMode>("changes");
-  const [needsOverlapConfirm, setNeedsOverlapConfirm] = useState(requireOverlapConfirm);
-  const [overlapReview, setOverlapReview] = useState<{
-    live: string;
-    preview: string;
-    liveRevisionToken: number;
-  } | null>(null);
+  const needsOverlapConfirm = controller.overlap?.draftId === draftId;
 
   useEffect(() => {
-    setNeedsOverlapConfirm(requireOverlapConfirm);
-    if (requireOverlapConfirm) setView("preview");
-  }, [requireOverlapConfirm]);
+    if (needsOverlapConfirm) setView("preview");
+  }, [needsOverlapConfirm]);
 
-  useEffect(() => {
-    setOverlapReview(null);
-  }, [draftId]);
-
-  const isPending = accept.isPending || reject.isPending;
+  const isPending = controller.isPending;
   const heading = documentName ?? t`Document draft`;
-  const reviewLive = overlapReview?.live ?? live;
-  const reviewPreview = overlapReview?.preview ?? previewMarkdown;
-  const reviewLiveRevisionToken = overlapReview?.liveRevisionToken ?? liveRevisionToken;
+  const reviewLive =
+    controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
+  const reviewPreview =
+    controller.overlap?.draftId === draftId
+      ? (controller.overlap.preview ?? previewMarkdown)
+      : previewMarkdown;
+  const reviewLiveRevisionToken =
+    controller.overlap?.draftId === draftId
+      ? (controller.overlap.liveRevisionToken ?? liveRevisionToken)
+      : liveRevisionToken;
 
   function handleAccept() {
-    if (isPending) return;
-    accept.mutate(
-      {
-        threadId,
-        documentId,
-        draftId,
-        confirmOverlap: needsOverlapConfirm,
-        confirmedLiveRevisionToken: needsOverlapConfirm
-          ? (reviewLiveRevisionToken ?? overlapConfirmLiveRevisionToken)
-          : undefined,
-      },
-      {
-        onSuccess(response) {
-          if (response.status === "overlap") {
-            setOverlapReview({
-              live: response.live,
-              preview: response.preview,
-              liveRevisionToken: response.liveRevisionToken,
-            });
-            setNeedsOverlapConfirm(true);
-            setView("preview");
-            return;
-          }
-          onOverlapConfirmResolved?.();
-          onClose();
-        },
-      },
-    );
+    if (isPending || documentId == null || draftId == null) return;
+    controller.accept(documentId, draftId, {
+      confirmedLiveRevisionToken: needsOverlapConfirm
+        ? (reviewLiveRevisionToken ?? undefined)
+        : undefined,
+    });
   }
 
   function handleDiscard() {
-    if (isPending) return;
-    reject.mutate({ threadId, documentId, draftId }, { onSuccess: onClose });
+    if (isPending || documentId == null || draftId == null) return;
+    controller.reject(documentId, draftId);
   }
 
   return (
@@ -133,7 +94,7 @@ export function DraftPreviewOverlay({
         type="button"
         aria-label={t`Close`}
         className="absolute inset-0 cursor-default"
-        onClick={onClose}
+        onClick={controller.closeReview}
       />
       <div className="relative flex h-[min(90vh,900px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg">
         <header className="flex items-start justify-between gap-3 border-border-subtle border-b px-5 py-3">
@@ -154,7 +115,7 @@ export function DraftPreviewOverlay({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={controller.closeReview}
             className="focus-ring grid size-7 shrink-0 place-items-center rounded-md border border-border-subtle bg-card text-muted-foreground hover:text-foreground"
             aria-label={t`Close`}
           >
@@ -195,14 +156,23 @@ export function DraftPreviewOverlay({
             disabled={isPending}
             className="text-muted-foreground hover:text-foreground"
           >
-            {reject.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+            {controller.isRejecting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : null}
             <Trans>Discard draft</Trans>
           </Button>
-          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={controller.closeReview}
+            disabled={isPending}
+          >
             <Trans>Keep reading</Trans>
           </Button>
           <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
-            {accept.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+            {controller.isAccepting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : null}
             <Trans>Apply to chapter</Trans>
           </Button>
         </footer>
