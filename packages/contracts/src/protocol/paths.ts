@@ -139,6 +139,14 @@ export function apiThreadDocumentDraftRejectPath(threadId: string, documentId: s
   return `${apiThreadDocumentDraftPath(threadId, documentId)}/reject`;
 }
 
+export function apiThreadDocumentDraftUndoAcceptPath(threadId: string, documentId: string): string {
+  return `${apiThreadDocumentDraftPath(threadId, documentId)}/undo-accept`;
+}
+
+export function apiThreadDocumentDraftUndoRejectPath(threadId: string, documentId: string): string {
+  return `${apiThreadDocumentDraftPath(threadId, documentId)}/undo-reject`;
+}
+
 export function apiThreadModelRequestsDebugPath(
   threadId: string,
   opts?: { turnId?: string },

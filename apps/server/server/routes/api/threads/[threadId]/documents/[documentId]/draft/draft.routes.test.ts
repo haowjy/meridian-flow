@@ -38,6 +38,8 @@ function makeApp(
     activeDraft?: unknown;
     acceptResult?: unknown;
     rejectResult?: unknown;
+    undoAcceptResult?: unknown;
+    undoRejectResult?: unknown;
   } = {},
 ) {
   return {
@@ -69,6 +71,8 @@ function makeApp(
         })),
         acceptDraft: vi.fn(async () => options.acceptResult ?? { status: "not_found" }),
         rejectDraft: vi.fn(async () => options.rejectResult ?? { status: "not_found" }),
+        undoAcceptDraft: vi.fn(async () => options.undoAcceptResult ?? { status: "not_found" }),
+        undoRejectDraft: vi.fn(async () => options.undoRejectResult ?? { status: "not_found" }),
       },
     },
   };
@@ -258,6 +262,77 @@ describe("thread document draft routes", () => {
     await expect(
       route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
     ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("undoes an accepted draft", async () => {
+    const app = makeApp({
+      undoAcceptResult: { status: "reactivated", draftId: "draft-1" },
+    });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./undo-accept/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
+    expect(app.documentSync.drafts.undoAcceptDraft).toHaveBeenCalledWith({
+      threadId,
+      documentId,
+      draftId: "draft-1",
+      userId,
+    });
+  });
+
+  it.each([
+    ["missing", { status: "not_found" }, 404],
+    ["expired", { status: "expired", draftId: "draft-1" }, 410],
+    ["conflict", { status: "conflict", draftId: "draft-1" }, 409],
+  ])("returns HTTP error for %s undo-accept result", async (_label, undoAcceptResult, statusCode) => {
+    const app = makeApp({ undoAcceptResult });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./undo-accept/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).rejects.toMatchObject({ statusCode });
+  });
+
+  it("undoes a rejected draft", async () => {
+    const app = makeApp({
+      undoRejectResult: { status: "reactivated", draftId: "draft-1" },
+    });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./undo-reject/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
+    expect(app.documentSync.drafts.undoRejectDraft).toHaveBeenCalledWith({
+      threadId,
+      documentId,
+      draftId: "draft-1",
+    });
+  });
+
+  it.each([
+    ["missing", { status: "not_found" }, 404],
+    ["expired", { status: "expired", draftId: "draft-1" }, 410],
+    ["conflict", { status: "conflict", draftId: "draft-1" }, 409],
+  ])("returns HTTP error for %s undo-reject result", async (_label, undoRejectResult, statusCode) => {
+    const app = makeApp({ undoRejectResult });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./undo-reject/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).rejects.toMatchObject({ statusCode });
   });
 
   it("returns 404 for a thread owned by another user", async () => {

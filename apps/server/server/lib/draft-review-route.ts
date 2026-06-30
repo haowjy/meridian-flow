@@ -3,6 +3,7 @@ import type {
   DraftAcceptResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
+  DraftUndoResponse,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -123,6 +124,53 @@ export async function handleDraftRejectRequest(
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.rejectDraft(input);
   if (result.status === "discarded") return result;
+  throw createError({ statusCode: 404, message: "Draft not found" });
+}
+
+export async function handleDraftUndoAcceptRequest(
+  deps: DraftRouteServices,
+  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
+): Promise<DraftUndoResponse> {
+  await requireDraftDocumentAccess(deps, input);
+  const result = await deps.documentSync.drafts.undoAcceptDraft({
+    documentId: input.documentId,
+    threadId: input.threadId,
+    draftId: input.draftId,
+    userId: input.userId,
+  });
+  if (result.status === "reactivated") return result;
+  if (result.status === "expired") {
+    throw createError({ statusCode: 410, message: "Draft acceptance can no longer be undone" });
+  }
+  if (result.status === "conflict") {
+    throw createError({
+      statusCode: 409,
+      message: "Another active draft exists for this document",
+    });
+  }
+  throw createError({ statusCode: 404, message: "Draft not found" });
+}
+
+export async function handleDraftUndoRejectRequest(
+  deps: DraftRouteServices,
+  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
+): Promise<DraftUndoResponse> {
+  await requireDraftDocumentAccess(deps, input);
+  const result = await deps.documentSync.drafts.undoRejectDraft({
+    documentId: input.documentId,
+    threadId: input.threadId,
+    draftId: input.draftId,
+  });
+  if (result.status === "reactivated") return result;
+  if (result.status === "expired") {
+    throw createError({ statusCode: 410, message: "Draft discard can no longer be undone" });
+  }
+  if (result.status === "conflict") {
+    throw createError({
+      statusCode: 409,
+      message: "Another active draft exists for this document",
+    });
+  }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 

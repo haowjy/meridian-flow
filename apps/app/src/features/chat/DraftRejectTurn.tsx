@@ -1,9 +1,13 @@
 /** DraftRejectTurn — user-attributed transcript event for discarding an AI draft. */
 import { t } from "@lingui/core/macro";
+import { isDraftRejectTurnRequestParams } from "@meridian/contracts/drafts";
 import { blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import { memo } from "react";
 
+import { DraftUndoFooter } from "./DraftUndoFooter";
+
 function DraftRejectTurnComponent({ turn }: { turn: Turn }) {
+  const params = isDraftRejectTurnRequestParams(turn.requestParams) ? turn.requestParams : null;
   const text = draftTurnText(turn, t`You discarded this draft`);
   return (
     <article
@@ -13,7 +17,17 @@ function DraftRejectTurnComponent({ turn }: { turn: Turn }) {
       data-turn-kind="draft-reject"
       aria-label={text}
     >
-      <p className="text-[12.5px] font-medium text-ink-muted">{text}</p>
+      {params ? (
+        <DraftUndoFooter
+          threadId={turn.threadId}
+          documentId={params.documentId}
+          documentName={params.documentName ?? null}
+          draftId={params.draftId}
+          variant="reject"
+        />
+      ) : (
+        <p className="text-[12.5px] font-medium text-ink-muted">{text}</p>
+      )}
     </article>
   );
 }

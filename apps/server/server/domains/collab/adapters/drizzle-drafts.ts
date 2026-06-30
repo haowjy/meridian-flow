@@ -304,6 +304,36 @@ export function createDrizzleDraftStore(
       return mapDraft(row);
     },
 
+    async reactivate(input) {
+      try {
+        const [row] = await db
+          .update(documentYjsDrafts)
+          .set({
+            status: "active",
+            appliedAt: null,
+            appliedByUserId: null,
+            appliedUpdateSeq: null,
+            discardedAt: null,
+            claimedAt: null,
+            claimToken: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(documentYjsDrafts.id, input.draftId),
+              eq(documentYjsDrafts.documentId, input.documentId),
+              eq(documentYjsDrafts.threadId, input.threadId),
+              eq(documentYjsDrafts.status, input.fromStatus),
+            ),
+          )
+          .returning();
+        return row ? mapDraft(row) : null;
+      } catch (cause) {
+        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) return null;
+        throw cause;
+      }
+    },
+
     async completeAccept(input) {
       const row = await db
         .update(documentYjsDrafts)

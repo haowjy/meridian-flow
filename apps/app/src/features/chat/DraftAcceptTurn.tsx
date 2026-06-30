@@ -1,10 +1,10 @@
 /** DraftAcceptTurn — user-attributed transcript event for accepting an AI draft. */
 import { t } from "@lingui/core/macro";
+import { isDraftAcceptTurnRequestParams } from "@meridian/contracts/drafts";
 import { blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import { memo } from "react";
 
-import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
-import { TurnChangeFooter } from "./TurnChangeFooter";
+import { DraftUndoFooter } from "./DraftUndoFooter";
 
 export type DraftAcceptTurnProps = {
   threadId?: string;
@@ -13,8 +13,7 @@ export type DraftAcceptTurnProps = {
 
 function DraftAcceptTurnComponent({ threadId, turn }: DraftAcceptTurnProps) {
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: true });
-  const liveLineageDocuments = liveLineage.documents ?? [];
+  const params = isDraftAcceptTurnRequestParams(turn.requestParams) ? turn.requestParams : null;
   const text = draftTurnText(turn, t`You accepted this draft`);
 
   return (
@@ -25,12 +24,13 @@ function DraftAcceptTurnComponent({ threadId, turn }: DraftAcceptTurnProps) {
       data-turn-kind="draft-accept"
       aria-label={text}
     >
-      {liveLineageDocuments.length > 0 ? (
-        <TurnChangeFooter
+      {params ? (
+        <DraftUndoFooter
           threadId={resolvedThreadId}
-          turn={turn}
-          documents={liveLineageDocuments}
-          variant="draftAccept"
+          documentId={params.documentId}
+          documentName={params.documentName ?? null}
+          draftId={params.draftId}
+          variant="accept"
         />
       ) : (
         <p className="text-[12.5px] font-medium text-ink-muted">{text}</p>

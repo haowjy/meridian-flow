@@ -5,7 +5,13 @@ import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { ActiveDraft, Draft, DraftAcceptResult, DraftRejectResult } from "./domain/drafts.js";
+import type {
+  ActiveDraft,
+  Draft,
+  DraftAcceptResult,
+  DraftRejectResult,
+  DraftUndoDomainResult,
+} from "./domain/drafts.js";
 import type { LiveLineageDocument } from "./domain/turn-live-lineage.js";
 
 export type SchemaType = YjsTrackedSchemaType;
@@ -191,6 +197,17 @@ export type CollabDrafts = {
       threadId: ThreadId;
       draftId: string;
     }): Promise<DraftRejectResult>;
+    undoAcceptDraft(input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      draftId: string;
+      userId: UserId;
+    }): Promise<DraftUndoDomainResult>;
+    undoRejectDraft(input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      draftId: string;
+    }): Promise<DraftUndoDomainResult>;
   };
 };
 
