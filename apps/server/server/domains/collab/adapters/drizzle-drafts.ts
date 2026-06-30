@@ -1,7 +1,12 @@
 /** Drizzle adapter for persisted collab draft review state. */
 
 import { randomUUID } from "node:crypto";
-import { DRAFT_ACCEPT_TURN_TEXT, draftAcceptTurnRequestParams } from "@meridian/contracts/drafts";
+import {
+  draftAcceptTurnRequestParams,
+  draftRejectTurnRequestParams,
+  formatDraftAcceptTurnText,
+  formatDraftRejectTurnText,
+} from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -64,6 +69,33 @@ export function createDrizzleDraftStore(
         )
         .limit(1);
       return row ? mapDraft(row) : null;
+    },
+
+    async draftTurnContext(draftId) {
+      const [row] = await db
+        .select({
+          documentName: documents.name,
+          minWid: sql<number | null>`min(${agentEditMutations.wId})`,
+          maxWid: sql<number | null>`max(${agentEditMutations.wId})`,
+        })
+        .from(documentYjsDrafts)
+        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+        .leftJoin(
+          agentEditMutations,
+          and(
+            eq(agentEditMutations.documentId, documentYjsDrafts.documentId),
+            eq(agentEditMutations.threadId, documentYjsDrafts.threadId),
+            eq(agentEditMutations.scopeId, documentYjsDrafts.id),
+          ),
+        )
+        .where(eq(documentYjsDrafts.id, draftId))
+        .groupBy(documentYjsDrafts.id, documents.name);
+      if (!row) return null;
+      return {
+        documentName: row.documentName,
+        wIdRange:
+          row.minWid !== null && row.maxWid !== null ? { min: row.minWid, max: row.maxWid } : null,
+      };
     },
 
     async listActiveDrafts(input) {
@@ -344,6 +376,11 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
         return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
       });
     },
+    async createRejectTurn(input) {
+      return db.transaction(async (tx) => {
+        await insertDraftRejectTurn(tx as DraftDb, input);
+      });
+    },
   };
 }
 
@@ -389,11 +426,15 @@ async function insertDraftAcceptTurn(
       requestParams: draftAcceptTurnRequestParams({
         draftId: input.draftId,
         documentId: input.documentId,
+        documentName: input.documentName ?? null,
+        wIdRange: input.wIdRange ?? null,
       }),
       completedAt: now,
       createdAt: now,
     })
     .onConflictDoNothing({ target: turns.id });
+
+  const text = formatDraftAcceptTurnText(input.documentName ?? null, input.wIdRange ?? null);
 
   await db
     .insert(turnBlocks)
@@ -403,8 +444,8 @@ async function insertDraftAcceptTurn(
       blockType: "text",
       status: "complete",
       sequence: 0,
-      modelText: DRAFT_ACCEPT_TURN_TEXT,
-      content: DRAFT_ACCEPT_TURN_TEXT,
+      modelText: text,
+      content: text,
       compact: "",
     })
     .onConflictDoNothing({ target: turnBlocks.id });
@@ -412,6 +453,59 @@ async function insertDraftAcceptTurn(
   await db
     .update(threads)
     .set({ activeLeafTurnId: input.acceptTurnId, updatedAt: now })
+    .where(eq(threads.id, input.threadId));
+}
+
+async function insertDraftRejectTurn(
+  db: DraftDb,
+  input: Parameters<DraftAcceptJournal["createRejectTurn"]>[0],
+): Promise<void> {
+  const now = new Date();
+  const [thread] = await db
+    .select({ activeLeafTurnId: threads.activeLeafTurnId })
+    .from(threads)
+    .where(eq(threads.id, input.threadId))
+    .limit(1);
+  const parentTurnId = thread?.activeLeafTurnId ?? input.actorTurnId;
+  const text = formatDraftRejectTurnText(input.documentName, input.wIdRange);
+
+  await db
+    .insert(turns)
+    .values({
+      id: input.rejectTurnId,
+      threadId: input.threadId,
+      parentTurnId,
+      role: "user",
+      status: "complete",
+      finishReason: "end_turn",
+      requestParams: draftRejectTurnRequestParams({
+        draftId: input.draftId,
+        documentId: input.documentId,
+        documentName: input.documentName,
+        wIdRange: input.wIdRange,
+      }),
+      completedAt: now,
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: turns.id });
+
+  await db
+    .insert(turnBlocks)
+    .values({
+      id: input.rejectBlockId,
+      turnId: input.rejectTurnId,
+      blockType: "text",
+      status: "complete",
+      sequence: 0,
+      modelText: text,
+      content: text,
+      compact: "",
+    })
+    .onConflictDoNothing({ target: turnBlocks.id });
+
+  await db
+    .update(threads)
+    .set({ activeLeafTurnId: input.rejectTurnId, updatedAt: now })
     .where(eq(threads.id, input.threadId));
 }
 

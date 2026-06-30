@@ -231,7 +231,9 @@ describe("thread document draft routes", () => {
   });
 
   it("rejects a draft", async () => {
-    const app = makeApp({ rejectResult: { status: "discarded", draftId: "draft-1" } });
+    const app = makeApp({
+      rejectResult: { status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" },
+    });
     auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
     const route = (await import("./reject/index.post.js")).default as unknown as (
       event: TestEvent,
@@ -242,6 +244,7 @@ describe("thread document draft routes", () => {
     ).resolves.toEqual({
       status: "discarded",
       draftId: "draft-1",
+      rejectTurnId: "turn-reject",
     });
   });
 
