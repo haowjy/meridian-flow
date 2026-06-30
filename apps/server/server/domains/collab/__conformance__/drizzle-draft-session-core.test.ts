@@ -802,12 +802,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         threads: {
           async findById(id) {
-            return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
-          },
-        },
-        projectPreferences: {
-          async read() {
-            return { aiWriteMode: "direct" as const };
+            return id === THREAD_ID
+              ? { userId: USER_ID, projectId: PROJECT_ID, aiWriteMode: "direct" as const }
+              : null;
           },
         },
         createDraftSessionCore: ({ threadId }) =>
@@ -1122,13 +1119,14 @@ function createLiveHarness(
       liveLineage: createTestLiveLineage(liveJournal),
       threads: {
         async findById(id) {
-          return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
-        },
-      },
-      projectPreferences: {
-        async read() {
           await options.beforePreferenceRead?.();
-          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+          return id === THREAD_ID
+            ? {
+                userId: USER_ID,
+                projectId: PROJECT_ID,
+                aiWriteMode: options.aiWriteMode ?? "direct",
+              }
+            : null;
         },
       },
       createDraftSessionCore: ({ threadId }) =>
@@ -1184,13 +1182,14 @@ function createDrizzleLiveHarness(
       }),
       threads: {
         async findById(id) {
-          return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
-        },
-      },
-      projectPreferences: {
-        async read() {
           await options.beforePreferenceRead?.();
-          return { aiWriteMode: options.aiWriteMode ?? "direct" };
+          return id === THREAD_ID
+            ? {
+                userId: USER_ID,
+                projectId: PROJECT_ID,
+                aiWriteMode: options.aiWriteMode ?? "direct",
+              }
+            : null;
         },
       },
       createDraftSessionCore: ({ threadId }) =>
