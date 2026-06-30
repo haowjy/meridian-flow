@@ -7,6 +7,7 @@
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
+  AiWriteMode,
   Block,
   BlockStatus,
   BlockType,
@@ -105,6 +106,7 @@ export interface CreateThreadInput {
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
   spawnDepth?: number;
+  aiWriteMode?: AiWriteMode;
 }
 
 export interface UpdateSpawnLifecycleInput {
@@ -129,6 +131,7 @@ export interface ThreadRepository {
   /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
   listByWork(projectId: ProjectId, workId: WorkId): Promise<ThreadListItem[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
+  updateWriteMode(id: ThreadId, aiWriteMode: AiWriteMode): Promise<void>;
   /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
   updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
   /**
