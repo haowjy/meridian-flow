@@ -242,8 +242,10 @@ export function createDraftService(deps: {
       const updates = await deps.draftStore.listUpdates(requestedDraft.id);
       const hasDraftContent = updates.length > 0;
       if (hasDraftContent && !input.confirmOverlap) {
-        const overlap = await detectAcceptOverlap(input.documentId, requestedDraft);
-        if ("status" in overlap) return overlap;
+        const overlappingBlocks = await detectAcceptOverlap(input.documentId, requestedDraft);
+        if (overlappingBlocks) {
+          return overlapReview(input.documentId, requestedDraft, overlappingBlocks);
+        }
       }
       if (
         hasDraftContent &&
@@ -255,9 +257,8 @@ export function createDraftService(deps: {
             confirmedLiveRevisionToken: input.confirmedLiveRevisionToken,
           })))
       ) {
-        const overlap = await detectAcceptOverlap(input.documentId, requestedDraft);
-        if ("status" in overlap) return overlap;
-        return forcedOverlapReview(input.documentId, requestedDraft, overlap.overlappingBlocks);
+        const overlappingBlocks = await detectAcceptOverlap(input.documentId, requestedDraft);
+        return overlapReview(input.documentId, requestedDraft, overlappingBlocks ?? []);
       }
     }
 
@@ -364,7 +365,7 @@ export function createDraftService(deps: {
     documentId: DocumentId,
     draft: Draft,
     inputLiveRevisionToken?: number,
-  ): Promise<Extract<DraftAcceptResult, { status: "overlap" }> | { overlappingBlocks: [] }> {
+  ): Promise<string[] | null> {
     // Block overlap is an accept-time UX gate, not the data-integrity boundary:
     // if this conservative diff ever misses an overlap, Yjs still CRDT-merges
     // non-destructively and the P5 accept event remains independently undoable.
@@ -390,16 +391,7 @@ export function createDraftService(deps: {
       });
       const overlappingBlocks = [...draftTouched].filter((hash) => liveTouched.has(hash)).sort();
 
-      if (overlappingBlocks.length === 0) return { overlappingBlocks: [] };
-
-      return {
-        status: "overlap",
-        draftId: draft.id,
-        liveRevisionToken,
-        live: serializeDoc(liveNow),
-        preview: serializeDoc(previewDoc),
-        overlappingBlocks,
-      };
+      return overlappingBlocks.length > 0 ? overlappingBlocks : null;
     } finally {
       base.destroy();
       liveNow.destroy();
@@ -429,10 +421,10 @@ export function createDraftService(deps: {
     liveRevisionToken: number,
   ): Promise<Set<string>> {
     const overlap = await detectAcceptOverlap(documentId, draft, liveRevisionToken);
-    return new Set(overlap.overlappingBlocks);
+    return new Set(overlap ?? []);
   }
 
-  async function forcedOverlapReview(
+  async function overlapReview(
     documentId: DocumentId,
     draft: Draft,
     overlappingBlocks: string[],
