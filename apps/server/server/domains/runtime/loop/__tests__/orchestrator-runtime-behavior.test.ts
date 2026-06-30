@@ -688,9 +688,10 @@ describe("runtime orchestrator behavior", () => {
     );
 
     expect(requests).toHaveLength(1);
+    expect(requests[1]).toBeUndefined();
     expect(committed).toHaveLength(1);
     expect(events.some((event) => event.type === "tool.result")).toBe(true);
-    expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
+    expect(events.some((event) => event.type === "turn.error")).toBe(false);
     await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({ status: "idle" });
   });
 

@@ -157,6 +157,34 @@ describe("thread document draft routes", () => {
     });
   });
 
+  it("returns overlap details when accepting a draft needs writer confirmation", async () => {
+    const app = makeApp({
+      acceptResult: {
+        status: "overlap",
+        draftId: "draft-1",
+        liveRevisionToken: 8,
+        live: "Live changed",
+        preview: "Draft preview",
+        overlappingBlocks: ["block-1"],
+      },
+    });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./accept/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).resolves.toEqual({
+      status: "overlap",
+      draftId: "draft-1",
+      liveRevisionToken: 8,
+      live: "Live changed",
+      preview: "Draft preview",
+      overlappingBlocks: ["block-1"],
+    });
+  });
+
   it.each([
     ["missing", { status: "not_found" }, 404],
     ["already discarded", { status: "discarded", draftId: "draft-1" }, 410],
