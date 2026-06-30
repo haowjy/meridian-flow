@@ -1,38 +1,41 @@
 /**
- * TurnList — single Virtuoso list keyed by `turn.id` that renders BOTH live
- * and settled assistant turns through the same row position.
+ * TurnList — the conversation scroller: one message-scroller viewport that owns
+ * all scroll/follow behavior, with TanStack Virtual rows keyed by `turn.id`.
  *
- * After Stream S3 convergence, the live assistant turn is merged into the
- * `turns` array by id (see `useChatThreadSession`). When the turn settles,
- * the same `turn.id` row stays mounted and only its `Turn` data changes — no
- * remount, no flicker, expand/collapse and scroll position survive.
+ * Single source of truth for scrolling. The `@shadcn/react` message-scroller owns
+ * follow: it stays pinned to the live edge while the reader is at the bottom, and
+ * RELEASES follow the moment they scroll up (wheel/touch/keyboard/drag) — streamed
+ * chunks then arrive without yanking them back. We virtualize the rows ourselves so
+ * long threads stay performant; the primitive only sees the viewport.
  *
- * Draft anchoring: `draftsByTurnId` (computed by ChatView from
- * `useThreadDrafts`) hands per-turn `ThreadDraftGroup[]` arrays to assistant
- * turns so the DraftReviewCard renders inside the producing turn's row.
- * Keeping the lookup in the parent keeps Virtuoso item identity stable.
+ * Rows are keyed by `turn.id`, so when the live assistant turn settles the same row
+ * stays mounted and only its `Turn` data changes — no remount, expand/collapse and
+ * scroll position survive (Stream S3 convergence; see `useChatThreadSession`).
  *
- * Cards inside a virtualized row CANNOT own a fixed-position modal — when
- * Virtuoso recycles the row the modal vanishes with it. The card calls the
- * shared draft-review controller; the overlay lives at the (non-virtualized)
- * ChatView root.
+ * Draft anchoring: `draftsByTurnId` (computed by ChatView from `useThreadDrafts`)
+ * hands per-turn `ThreadDraftGroup[]` arrays to assistant turns so the
+ * DraftReviewCard renders inside the producing turn's row. The lookup stays in the
+ * parent so most rows get `undefined` (memo stays stable). A card inside a
+ * virtualized row CANNOT own a fixed-position modal — when the virtualizer recycles
+ * the row the modal vanishes with it; the card calls the shared draft-review
+ * controller and the overlay lives at the (non-virtualized) ChatView root.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import {
-  type ComponentPropsWithoutRef,
-  type CSSProperties,
-  forwardRef,
-  type Ref,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
-import { type Components, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller,
+} from "@/components/ui/message-scroller";
 
 import { AssistantTurn } from "./AssistantTurn";
+import { ChatColumn } from "./ChatColumn";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { DraftRejectTurn } from "./DraftRejectTurn";
@@ -46,10 +49,10 @@ export type TurnListProps = {
   threadId: string;
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
-  /** ChatSurface's scroll element; Virtuoso must not create a second scroller. */
-  scrollParent: HTMLElement | null;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
+  /** Accessible label for the scroll log region. */
+  ariaLabel: string;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
@@ -57,41 +60,39 @@ export type TurnListProps = {
   draftReviewController?: DraftReviewController;
 };
 
-/**
- * Renders the conversation column: settled + live turns through one Virtuoso
- * data list keyed by `turn.id`.
- */
+/** Estimated row height before measurement; corrected by `measureElement`. */
+const ESTIMATED_TURN_HEIGHT = 160;
+
 export function TurnList({
   threadId,
   turns,
-  scrollParent,
   tailFollowRevision,
+  ariaLabel,
   onRespondToCheckpoint,
   draftsByTurnId,
   draftReviewController,
 }: TurnListProps) {
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const atBottomRef = useRef(true);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
-  // Whether the current tail is a live assistant turn whose internal block
-  // mutations should keep the list pinned to the bottom while we autoscroll.
-  const tailTurn = visibleTurns[visibleTurns.length - 1];
-  const isTailLive =
-    tailTurn?.role === "assistant" &&
-    (tailTurn.status === "streaming" || tailTurn.status === "pending");
-  const initialTopMostItemIndex =
-    visibleTurns.length > 0
-      ? ({ index: visibleTurns.length - 1, align: "end" } as const)
-      : undefined;
 
-  const followOutput = useCallback((isAtBottom: boolean) => {
-    atBottomRef.current = isAtBottom;
-    return isAtBottom ? "smooth" : false;
-  }, []);
+  const virtualizer = useVirtualizer({
+    count: visibleTurns.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => ESTIMATED_TURN_HEIGHT,
+    getItemKey: (index) => visibleTurns[index]?.id ?? index,
+    overscan: 8,
+    // The list starts below the column's top padding; offset measurements so
+    // virtual positions are relative to the list element, not the viewport top.
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  });
 
-  const itemContent = useCallback(
-    (idx: number, turn: Turn) => {
+  const virtualItems = virtualizer.getVirtualItems();
+  const { scrollMargin } = virtualizer.options;
+
+  const renderTurn = useCallback(
+    (turn: Turn, idx: number) => {
       if (isDraftAcceptTurn(turn)) {
         return <DraftAcceptTurn threadId={threadId} turn={turn} />;
       }
@@ -119,90 +120,76 @@ export function TurnList({
     [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, threadId],
   );
 
-  const components = useMemo<Components<Turn>>(
-    () => ({
-      List: ConversationList,
-      Item: ConversationItem,
-    }),
-    [],
-  );
-
-  useEffect(() => {
-    if (tailFollowRevision === 0 || visibleTurns.length === 0) return;
-    atBottomRef.current = true;
-    virtuosoRef.current?.scrollToIndex({
-      index: visibleTurns.length - 1,
-      align: "end",
-      behavior: "smooth",
-    });
-  }, [tailFollowRevision, visibleTurns.length]);
-
-  // While the tail turn is live, content height grows as deltas arrive. Stay
-  // pinned to the bottom whenever the user has not scrolled away. Use the
-  // turn's identity AND its block count so Virtuoso autoscrolls on every
-  // streamed block change.
-  const tailBlockCount = tailTurn?.blocks.length ?? 0;
-  useEffect(() => {
-    if (!isTailLive) return;
-    if (!atBottomRef.current) return;
-    virtuosoRef.current?.autoscrollToBottom();
-  }, [isTailLive, tailBlockCount, tailTurn?.id]);
-
   return (
-    <Virtuoso
-      ref={virtuosoRef}
-      aria-label="Conversation turns"
-      alignToBottom
-      atBottomStateChange={(atBottom) => {
-        atBottomRef.current = atBottom;
-      }}
-      atBottomThreshold={300}
-      components={components}
-      computeItemKey={(_idx, turn) => turn.id}
-      customScrollParent={scrollParent ?? undefined}
-      data={visibleTurns}
-      data-chat-virtual-list
-      data-settled-turn-count={visibleTurns.length}
-      followOutput={followOutput}
-      initialTopMostItemIndex={initialTopMostItemIndex}
-      itemContent={itemContent}
-      style={virtuosoStyle}
-    />
+    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      <MessageScroller>
+        <MessageScrollerViewport
+          ref={viewportRef}
+          role="log"
+          aria-label={ariaLabel}
+          className="chat-scroll-fade-bottom"
+        >
+          {/* Vertical padding lives on Content (not a nested child) because the
+              primitive reads Content's own padding to size its end spacer and
+              compute "at end" — so the bottom clearance that keeps the last turn
+              above the pinned composer also counts as the true scroll end, and
+              the jump-to-latest pill hides when pinned. --chat-footer-clearance
+              is the composer footer's measured height (published by ChatSurface,
+              variable: composer growth + unanchored-drafts strip). */}
+          <MessageScrollerContent className="block pt-6 pb-[calc(var(--chat-footer-clearance,9rem)+1.5rem)]">
+            <ChatColumn>
+              <ol
+                ref={listRef}
+                aria-label="Conversation turns"
+                data-chat-virtual-list
+                data-settled-turn-count={visibleTurns.length}
+                className="relative w-full list-none"
+                style={{ height: virtualizer.getTotalSize() }}
+              >
+                {virtualItems.map((virtualItem) => {
+                  const turn = visibleTurns[virtualItem.index];
+                  if (!turn) return null;
+                  return (
+                    <li
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      data-chat-turn-row="settled"
+                      ref={virtualizer.measureElement}
+                      className="absolute inset-x-0 top-0 pb-6"
+                      style={{
+                        transform: `translateY(${virtualItem.start - scrollMargin}px)`,
+                      }}
+                    >
+                      {renderTurn(turn, virtualItem.index)}
+                    </li>
+                  );
+                })}
+              </ol>
+            </ChatColumn>
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        {/* Lift the jump-to-latest pill above the pinned composer, which paints
+            over the bottom of this same body. --chat-footer-clearance is the
+            composer footer's measured height (published by ChatSurface). */}
+        <MessageScrollerButton className="bottom-[calc(var(--chat-footer-clearance,9rem)+0.75rem)]" />
+        <TailFollowController revision={tailFollowRevision} />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 }
 
-const virtuosoStyle: CSSProperties = {
-  height: "100%",
-  overflowAnchor: "none",
-};
-
-const ConversationList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<"div">>(
-  function ConversationList(props, ref) {
-    return (
-      <ol
-        {...(props as ComponentPropsWithoutRef<"ol">)}
-        ref={ref as unknown as Ref<HTMLOListElement>}
-        className="flex list-none flex-col"
-        aria-label="Conversation turns"
-      />
-    );
-  },
-);
-
-type VirtuosoItemProps = ComponentPropsWithoutRef<"div"> & { item?: unknown };
-
-const ConversationItem = forwardRef<HTMLDivElement, VirtuosoItemProps>(
-  function ConversationItem(props, ref) {
-    const { item: _item, ...domProps } = props;
-    return (
-      <li
-        {...(domProps as ComponentPropsWithoutRef<"li">)}
-        ref={ref as unknown as Ref<HTMLLIElement>}
-        data-chat-turn-row="settled"
-      />
-    );
-  },
-);
+/**
+ * Reacquires tail-follow when the user submits. `tailFollowRevision` bumps on each
+ * local message; `scrollToEnd` snaps to the bottom and re-engages follow-output.
+ */
+function TailFollowController({ revision }: { revision: number }) {
+  const { scrollToEnd } = useMessageScroller();
+  useEffect(() => {
+    if (revision === 0) return;
+    scrollToEnd({ behavior: "smooth" });
+  }, [revision, scrollToEnd]);
+  return null;
+}
 
 /** Index of the last assistant turn in `turns`, or -1 if none. */
 function findLastAssistantIndex(turns: Turn[]): number {

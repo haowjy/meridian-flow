@@ -2,14 +2,18 @@
  * ChatSurface — the viewport-locked frame shared by every chat view.
  *
  * Provides the `main-pane` shell, the visually-hidden page heading, an optional
- * designated scroll region, a `ChatColumn` body, and a pinned composer footer.
- * Owns the chat scroll/overflow chrome; conversation content is passed in as
- * children. Used by `ChatView` and the compose (draft) surfaces.
+ * fixed header, a flex body slot, and a pinned composer footer. The conversation
+ * body owns its OWN scroll (see `TurnList` → message-scroller); this frame only
+ * positions the body and the pinned composer over it.
+ *
+ * The pinned footer is variable-height (composer growth + the unanchored-drafts
+ * review strip), so we publish its measured height as `--chat-footer-clearance`
+ * for the body to pad its final turns clear of the composer. We only MEASURE —
+ * the message-scroller owns follow, so there is no scroll repin here. Used by
+ * `ChatView`.
  */
-import type { ReactNode, Ref, RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useCallback, useLayoutEffect, useRef } from "react";
-
-import { cn } from "@/lib/utils";
 
 import { ChatColumn } from "./ChatColumn";
 
@@ -19,40 +23,15 @@ export type ChatSurfaceProps = {
   surfaceRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
   footer?: ReactNode;
-  /** Fixed thread chrome (title + switcher) rendered above the scroll region. */
+  /** Fixed thread chrome (title + switcher) rendered above the body. */
   header?: ReactNode;
-  /** When set, main content scrolls (conversation layout). */
-  scrollRef?: Ref<HTMLDivElement>;
-  onScroll?: () => void;
-  scrollAriaLabel?: string;
-  scrollClassName?: string;
-  /**
-   * Bottom-edge mask on the scrollport so messages fade behind the pinned composer.
-   * Defaults to `true` when `footer` is set; pass `false` to keep scroll content sharp.
-   */
-  scrollFadeBottom?: boolean;
-  /** Compose-only: pin content to the bottom (draft new chat). */
-  composePinned?: boolean;
 };
 
-export function ChatSurface({
-  title,
-  surfaceRef,
-  children,
-  footer,
-  header,
-  scrollRef,
-  onScroll,
-  scrollAriaLabel,
-  scrollClassName,
-  scrollFadeBottom,
-  composePinned = false,
-}: ChatSurfaceProps) {
+export function ChatSurface({ title, surfaceRef, children, footer, header }: ChatSurfaceProps) {
   const hasFooter = Boolean(footer);
-  const showScrollFadeBottom = scrollFadeBottom ?? hasFooter;
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const scrollElementRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
+
   const setRootRef = useCallback(
     (node: HTMLDivElement | null) => {
       rootRef.current = node;
@@ -61,14 +40,9 @@ export function ChatSurface({
     [surfaceRef],
   );
 
-  const setScrollElementRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      scrollElementRef.current = node;
-      assignRef(scrollRef, node);
-    },
-    [scrollRef],
-  );
-
+  // Publish the pinned footer's height so the self-scrolling body can clear its
+  // last turns from behind the composer. The body owns scroll/follow, so we
+  // only measure — no manual scroll repin.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -82,22 +56,10 @@ export function ChatSurface({
     if (!footerElement) return;
 
     const syncFooterClearance = () => {
-      const scrollElement = scrollElementRef.current;
-      const wasPinnedToBottom = scrollElement
-        ? scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight <= 8
-        : false;
-      const nextClearance = Math.ceil(footerElement.getBoundingClientRect().height);
-
-      root.style.setProperty("--chat-footer-clearance", `${nextClearance}px`);
-
-      if (scrollElement && wasPinnedToBottom) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(() => {
-            scrollElement.scrollTop = scrollElement.scrollHeight;
-          });
-        }
-      }
+      root.style.setProperty(
+        "--chat-footer-clearance",
+        `${Math.ceil(footerElement.getBoundingClientRect().height)}px`,
+      );
     };
 
     syncFooterClearance();
@@ -118,26 +80,7 @@ export function ChatSurface({
 
       {header}
 
-      {composePinned ? (
-        <div className="main-pane flex flex-1 flex-col justify-end pb-5">
-          <ChatColumn className={scrollClassName}>{children}</ChatColumn>
-        </div>
-      ) : (
-        <div
-          ref={setScrollElementRef}
-          onScroll={onScroll}
-          role="log"
-          aria-label={scrollAriaLabel}
-          className={cn(
-            "main-pane flex-1 overflow-y-auto",
-            showScrollFadeBottom && "chat-scroll-fade-bottom",
-          )}
-          style={hasFooter ? { paddingBottom: "var(--chat-footer-clearance, 0px)" } : undefined}
-          data-stable-layout-scroll
-        >
-          <ChatColumn className={scrollClassName}>{children}</ChatColumn>
-        </div>
-      )}
+      <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
 
       {footer ? (
         <div ref={footerRef} className="pointer-events-none absolute inset-x-0 bottom-0">
@@ -156,13 +99,4 @@ export function ChatSurface({
       ) : null}
     </div>
   );
-}
-
-function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
-  if (!ref) return;
-  if (typeof ref === "function") {
-    ref(value);
-    return;
-  }
-  ref.current = value;
 }
