@@ -41,16 +41,24 @@ export function useDraftPreview(
     enabled,
   });
 
+  const activePreview = isActiveDraftPreview(data) ? data : null;
+
   return {
     data: data ?? null,
-    draftId: data?.draftId ?? null,
+    draftId: activePreview?.draftId ?? null,
     live: data?.live ?? null,
-    previewMarkdown: data?.preview ?? null,
-    liveRevisionToken: data?.liveRevisionToken ?? null,
+    previewMarkdown: activePreview?.preview ?? null,
+    liveRevisionToken: activePreview?.liveRevisionToken ?? null,
     isError,
     isFetching,
     refetch: () => {
       void refetch();
     },
   };
+}
+
+function isActiveDraftPreview(
+  data: DraftPreviewResponse | undefined,
+): data is Extract<DraftPreviewResponse, { status: "active" }> {
+  return data?.status === "active";
 }

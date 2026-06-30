@@ -94,7 +94,7 @@ describe("thread document draft routes", () => {
     ) => Promise<unknown>;
 
     await expect(route({ params: { threadId, documentId } })).resolves.toEqual({
-      draftId: null,
+      status: "gone",
       live: "Live",
     });
   });
@@ -119,6 +119,7 @@ describe("thread document draft routes", () => {
     });
 
     expect(response).toEqual({
+      status: "active",
       draftId: "draft-1",
       live: "Live",
       preview: "Preview",
@@ -160,6 +161,22 @@ describe("thread document draft routes", () => {
       confirmOverlap: false,
       confirmedLiveRevisionToken: undefined,
     });
+  });
+
+  it.each([
+    ["missing", { status: "not_found" }, 404],
+    ["already discarded", { status: "discarded", draftId: "draft-1" }, 410],
+    ["accept in progress", { status: "in_progress", draftId: "draft-1" }, 409],
+  ])("returns HTTP error for %s accept result", async (_label, acceptResult, statusCode) => {
+    const app = makeApp({ acceptResult });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./accept/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).rejects.toMatchObject({ statusCode });
   });
 
   it("passes overlap confirmation through to accept", async () => {
@@ -204,6 +221,18 @@ describe("thread document draft routes", () => {
       status: "discarded",
       draftId: "draft-1",
     });
+  });
+
+  it("returns 404 when rejecting a missing draft", async () => {
+    const app = makeApp({ rejectResult: { status: "not_found" } });
+    auth.requireAppUser.mockResolvedValue({ app, user: { userId } });
+    const route = (await import("./reject/index.post.js")).default as unknown as (
+      event: TestEvent,
+    ) => Promise<unknown>;
+
+    await expect(
+      route({ params: { threadId, documentId }, body: { draftId: "draft-1" } }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("returns 404 for a thread owned by another user", async () => {

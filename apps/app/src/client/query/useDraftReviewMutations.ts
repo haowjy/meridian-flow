@@ -46,6 +46,9 @@ export function useAcceptDraft() {
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
+    onError: (_error, variables) => {
+      invalidateDraftReviewQueries(queryClient, variables);
+    },
   });
 }
 
@@ -56,6 +59,9 @@ export function useRejectDraft() {
     mutationFn: ({ threadId, documentId, draftId }: DraftReviewMutationInput) =>
       rejectDraft(threadId, documentId, { draftId }),
     onSuccess: (_response, variables) => {
+      invalidateDraftReviewQueries(queryClient, variables);
+    },
+    onError: (_error, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
   });

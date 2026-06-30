@@ -58,8 +58,8 @@ export async function handleDraftPreviewRequest(
   if (!live.ok) throwReadFailure(live.error.code);
 
   const draft = await deps.documentSync.drafts.getActiveDraft(input);
-  if (!draft) return { draftId: null, live: live.value };
-  if (input.draftId && draft.id !== input.draftId) return { draftId: null, live: live.value };
+  if (!draft) return { status: "gone", live: live.value };
+  if (input.draftId && draft.id !== input.draftId) return { status: "gone", live: live.value };
 
   const preview = await deps.documentSync.drafts.previewDraft({
     documentId: input.documentId,
@@ -67,6 +67,7 @@ export async function handleDraftPreviewRequest(
   });
 
   return {
+    status: "active",
     draftId: draft.id,
     live: preview.live,
     preview: preview.markdown,
@@ -106,13 +107,14 @@ export async function handleDraftAcceptRequest(
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.acceptDraft(input);
-  if (result.status === "applied") return result;
-  if (result.status === "overlap") return { ...result, appliedUpdateSeq: null, acceptTurnId: null };
-  if (result.status === "discarded")
-    return { ...result, appliedUpdateSeq: null, acceptTurnId: null };
-  if (result.status === "in_progress")
-    return { ...result, appliedUpdateSeq: null, acceptTurnId: null };
-  return { status: "not_found", draftId: null, appliedUpdateSeq: null, acceptTurnId: null };
+  if (result.status === "applied" || result.status === "overlap") return result;
+  if (result.status === "in_progress") {
+    throw createError({ statusCode: 409, message: "Draft accept already in progress" });
+  }
+  if (result.status === "discarded") {
+    throw createError({ statusCode: 410, message: "Draft is no longer active" });
+  }
+  throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
 export async function handleDraftRejectRequest(
@@ -121,7 +123,8 @@ export async function handleDraftRejectRequest(
 ): Promise<DraftRejectResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.rejectDraft(input);
-  return result.status === "discarded" ? result : { status: "not_found", draftId: null };
+  if (result.status === "discarded") return result;
+  throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
 async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }>(
