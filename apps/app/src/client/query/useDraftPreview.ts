@@ -9,14 +9,10 @@ import { useIsThreadPendingCreation } from "@/client/stores";
 
 import { threadQueryKeys } from "./thread-query-keys";
 
-export type DraftPreviewStatus = {
-  data: DraftPreviewResponse | null;
-  draftId: string | null;
-  live: string | null;
-  previewMarkdown: string | null;
-  liveRevisionToken: number | null;
-  isError: boolean;
+export type DraftPreviewState = {
+  preview: DraftPreviewResponse | null;
   isFetching: boolean;
+  isError: boolean;
   refetch: () => void;
 };
 
@@ -25,7 +21,7 @@ export function useDraftPreview(
   documentId: string | null,
   draftId: string | null,
   options?: { enabled?: boolean },
-): DraftPreviewStatus {
+): DraftPreviewState {
   const callerEnabled = options?.enabled ?? true;
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const enabled =
@@ -41,24 +37,12 @@ export function useDraftPreview(
     enabled,
   });
 
-  const activePreview = isActiveDraftPreview(data) ? data : null;
-
   return {
-    data: data ?? null,
-    draftId: activePreview?.draftId ?? null,
-    live: data?.live ?? null,
-    previewMarkdown: activePreview?.preview ?? null,
-    liveRevisionToken: activePreview?.liveRevisionToken ?? null,
+    preview: data ?? null,
     isError,
     isFetching,
     refetch: () => {
       void refetch();
     },
   };
-}
-
-function isActiveDraftPreview(
-  data: DraftPreviewResponse | undefined,
-): data is Extract<DraftPreviewResponse, { status: "active" }> {
-  return data?.status === "active";
 }

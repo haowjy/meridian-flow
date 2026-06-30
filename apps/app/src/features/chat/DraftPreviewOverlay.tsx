@@ -44,7 +44,7 @@ export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOv
   const documentId = selectedDraft?.documentId ?? null;
   const draftId = selectedDraft?.draftId ?? null;
   useEscapeToClose(controller.closeReview);
-  const { live, previewMarkdown, liveRevisionToken, isFetching, isError } = useDraftPreview(
+  const { preview, isFetching, isError } = useDraftPreview(
     controller.threadId,
     documentId,
     draftId,
@@ -58,6 +58,9 @@ export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOv
 
   const isPending = controller.isPending;
   const heading = documentName ?? t`Document draft`;
+  const live = preview?.live ?? null;
+  const previewMarkdown = preview?.status === "active" ? preview.preview : null;
+  const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
   const reviewLive =
     controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
   const reviewPreview =
