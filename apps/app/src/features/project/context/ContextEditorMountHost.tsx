@@ -32,6 +32,8 @@ import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { DraftReviewBar } from "@/features/chat/DraftReviewBar";
+import { useRegisterDraftReviewEditor } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 
 const EditorView = lazy(() =>
@@ -52,6 +54,8 @@ export type ContextEditorMountHostProps = {
   trackedTabs: EditableContextTab[];
   /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
   activeTabId: string | null;
+  /** Whether the context destination is currently visible. */
+  active: boolean;
   /**
    * Leading slot threaded to the ACTIVE editor's formatting toolbar. Only
    * the active tab's `EditorView` receives it — hidden warm-set editors
@@ -86,8 +90,10 @@ export function ContextEditorMountHost({
   projectId,
   trackedTabs,
   activeTabId,
+  active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
+  useRegisterDraftReviewEditor(active ? activeTabId : null);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -153,6 +159,7 @@ export function ContextEditorMountHost({
                 documentId={tab.documentId}
                 schemaType={tab.schemaType}
                 toolbarLeading={isActive ? toolbarLeading : undefined}
+                belowToolbar={isActive ? <DraftReviewBar documentId={tab.documentId} /> : undefined}
               />
             </div>
           );

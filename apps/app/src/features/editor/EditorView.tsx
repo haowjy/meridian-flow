@@ -44,6 +44,8 @@ export type EditorViewProps = {
    * without this view knowing what they are.
    */
   toolbarLeading?: ReactNode;
+  /** Optional in-flow surface rendered below the formatting toolbar. */
+  belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -103,6 +105,7 @@ function SessionEditorView({
   className,
   user,
   toolbarLeading,
+  belowToolbar,
   editable = true,
   showToolbar = true,
   ariaLabel,
@@ -302,6 +305,7 @@ function SessionEditorView({
           />
         </div>
       ) : null}
+      {belowToolbar}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
       {session ? (
@@ -353,7 +357,12 @@ function SessionEditorView({
   );
 }
 
-function PendingEditorShell({ className, toolbarLeading, showToolbar = true }: EditorViewProps) {
+function PendingEditorShell({
+  className,
+  toolbarLeading,
+  belowToolbar,
+  showToolbar = true,
+}: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -366,6 +375,7 @@ function PendingEditorShell({ className, toolbarLeading, showToolbar = true }: E
           <EditorToolbar editor={null} figureUploadDisabled leading={toolbarLeading} />
         </div>
       ) : null}
+      {belowToolbar}
       <div
         className="meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto"
         data-stable-layout-scroll
