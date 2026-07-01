@@ -1,8 +1,8 @@
 /**
  * DraftPreviewOverlay — modal review surface for one document's active AI
  * draft. Owned and rendered by `ChatView` (not by `DraftReviewCard`): cards
- * inside an anchored assistant turn live in a react-virtuoso row that may
- * recycle/unmount as the writer scrolls, and a fixed-position modal mounted
+ * inside an anchored assistant turn live in a virtualized `TurnList` row that
+ * may recycle/unmount as the writer scrolls, and a fixed-position modal mounted
  * under that row vanishes with it.
  *
  * Reuses the dialog/dock chrome pattern from `ResultViewerOverlay`: fixed

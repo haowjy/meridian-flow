@@ -3,7 +3,7 @@
  *
  * Rendering now reads `Turn[]` directly from ThreadStore. This hook only tears
  * down the active transport subscription on route switch and marks the active
- * streaming thread for shell chrome. Scroll/follow is owned by the message-scroller
+ * streaming thread for shell chrome. Scroll/follow is owned by the virtualized
  * viewport inside `TurnList`, so there is no scroll-parent seam here.
  */
 import { useEffect, useRef } from "react";

@@ -106,17 +106,17 @@ export function TurnList({
     // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
     // Native follow: stick to the live edge while near the bottom, release on
-    // scroll-up. Above-viewport size changes are compensated automatically so the
-    // reader's place holds while scrolled up.
+    // scroll-up. Above-viewport size changes are compensated so the reader's place
+    // holds while scrolled up.
     anchorTo: "end",
     scrollEndThreshold: END_THRESHOLD,
     onChange: (instance) => setIsAtBottom(instance.isAtEnd()),
-    // Preserve the reader's place when a row ABOVE the viewport changes height
-    // (a disclosure expands, an image/code block renders). The virtualizer's
-    // default skips this while `scrollDirection` is "backward" — which persists
-    // after a scroll-up, so a stationary expand-above would jump the view. Always
-    // compensate for above-viewport size changes instead. `scrollTop` is the
-    // scroll offset; a row starting above it is off the top of the viewport.
+    // Preserve the reader's place when a row ABOVE the viewport changes height (a
+    // disclosure expands, an image/code block renders). virtual-core's default
+    // compensates first-measurement but SKIPS re-measurement while `scrollDirection`
+    // is "backward" — which persists after a scroll-up, so expanding settled content
+    // above would jump the view. Compensate for every above-viewport size change.
+    // `scrollTop` is the scroll offset; a row starting above it is off the top.
     shouldAdjustScrollPositionOnItemSizeChange: (item: VirtualItem) =>
       item.start < (viewportRef.current?.scrollTop ?? 0),
   };
@@ -186,7 +186,11 @@ export function TurnList({
         // `auto` (CSS spec), giving an implicit horizontal scroll/rubber-band range we
         // never want — code blocks scroll internally. min-w-0 keeps children from
         // widening the flex column.
-        className="chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain"
+        // [overflow-anchor:none]: the virtualizer is the single scroll owner and does
+        // its own scrollTop compensation for above-viewport resizes; browser native
+        // scroll anchoring would be a competing second owner, double-correcting and
+        // leaving the reader's place off. Disable it so TanStack alone drives scroll.
+        className="chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
           <ol

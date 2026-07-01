@@ -5,7 +5,7 @@
  * Composition root for the chat feature: reads canonical turns directly from
  * ThreadStore, wires snapshot sync, handoff, announcements, and renders
  * `ChatSurface` + `TurnList` + `Composer`. Scroll/follow is owned by the
- * message-scroller viewport inside `TurnList`, so there is no scroll-parent
+ * virtualized viewport inside `TurnList`, so there is no scroll-parent
  * plumbing here.
  *
  * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
@@ -14,7 +14,7 @@
  *
  * Owns the AI-draft preview overlay. The DraftReviewCard sits inside a
  * virtualized `TurnList` row for anchored cards, so any modal it tried to own
- * would vanish when the virtualizer recycles the row. Cards use the shared
+ * would vanish when the virtualizer recycles that row. Cards use the shared
  * draft-review controller, and the overlay is rendered once here at the
  * non-virtualized root.
  */
