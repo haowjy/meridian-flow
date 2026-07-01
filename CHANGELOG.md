@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `apps/app`: draft review is one flow with two surfaces. The editor now keeps a docked review bar with Show changes / Apply / Discard plus a docked diff panel; the centered modal is only the no-editor fallback. Chat cards and the bar share server-backed undo state that survives reloads, and every document draft gets its own row so Undo stays visible when another draft arrives.
+
+- `apps/app`: threads with unreviewed AI drafts now show a count chip in the sidebar and Switch chat menu, so pending changes outside the focused conversation stay findable.
+
+- `apps/server`, `apps/app`, contracts: runtime human pause is now an interrupt; checkpoint is reserved for Yjs restore snapshots. The blocked-thread badge says "Needs your answer", wire/status names moved to interrupt (`waiting_interrupt`, `kind: "form"`, `kind: "ask"`), and a migration updates the turn status constraint.
+
 - Tests: billing free-tier grants use deterministic ledger time, and draft/write-mode route
   coverage now protects behavior without pinning route-core choreography.
 
