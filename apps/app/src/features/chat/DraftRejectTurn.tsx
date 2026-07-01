@@ -1,14 +1,21 @@
-/** DraftRejectTurn — user-attributed transcript event for discarding an AI draft. */
+/** DraftRejectTurn — user-attributed transcript receipt for discarding an AI draft. */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { isDraftRejectTurnRequestParams } from "@meridian/contracts/drafts";
 import { blockPlainText, type Turn } from "@meridian/contracts/protocol";
+import { FileText } from "lucide-react";
 import { memo } from "react";
 
-import { DraftUndoFooter } from "./DraftUndoFooter";
+import { relativeTime } from "@/features/project/relative-time";
+
+import { ComponentResolvedSummary } from "./ComponentCard";
 
 function DraftRejectTurnComponent({ turn }: { turn: Turn }) {
   const params = isDraftRejectTurnRequestParams(turn.requestParams) ? turn.requestParams : null;
   const text = draftTurnText(turn, t`You discarded this draft`);
+  const documentName = params?.documentName ?? t`Untitled document`;
+  const age = relativeTime(turn.createdAt, Date.now());
+
   return (
     <article
       className="mb-10"
@@ -18,12 +25,12 @@ function DraftRejectTurnComponent({ turn }: { turn: Turn }) {
       aria-label={text}
     >
       {params ? (
-        <DraftUndoFooter
-          threadId={turn.threadId}
-          documentId={params.documentId}
-          documentName={params.documentName ?? null}
-          draftId={params.draftId}
-          variant="reject"
+        <ComponentResolvedSummary
+          icon={FileText}
+          title={<Trans>Discarded</Trans>}
+          value={documentName}
+          statusLabel={<Trans>discarded {age} ago</Trans>}
+          className="mb-0"
         />
       ) : (
         <p className="text-[12.5px] font-medium text-ink-muted">{text}</p>
