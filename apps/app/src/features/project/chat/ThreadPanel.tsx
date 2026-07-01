@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadGroupBy } from "@meridian/contracts/preferences";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { Check, ChevronRight, PanelLeftClose, Pause, Plus, Star } from "lucide-react";
+import { Check, ChevronRight, FileText, PanelLeftClose, Pause, Plus, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -25,7 +25,12 @@ import {
   useProjectThreadGroups,
   type WorkItem,
 } from "../data/dashboard-data";
-import { type LifecycleState, lifecycleDisplay, lifecycleFor } from "../lifecycle";
+import {
+  draftIndicatorDisplay,
+  type LifecycleState,
+  lifecycleDisplay,
+  lifecycleFor,
+} from "../lifecycle";
 import { relativeTime } from "../relative-time";
 import { useCreateChat } from "./use-create-chat";
 
@@ -482,6 +487,10 @@ function ThreadRow({
   );
   const rel = relativeTime(thread.updatedAt, now);
   const lifecycleLabel = lifecycleDisplay(lifecycle).label;
+  const draftDisplay = draftIndicatorDisplay(thread.pendingDraftCount);
+  const rowLabel = draftDisplay
+    ? `${title} — ${lifecycleLabel} — ${draftDisplay.label}`
+    : `${title} — ${lifecycleLabel}`;
   const pinLabel = pinned ? t`Unpin chat` : t`Pin chat`;
 
   return (
@@ -507,7 +516,7 @@ function ThreadRow({
         <button
           type="button"
           onClick={() => onSelect(thread.id)}
-          aria-label={`${title} — ${lifecycleLabel}`}
+          aria-label={rowLabel}
           className={cn(
             "focus-ring mb-px flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1 text-left transition-colors",
             active
@@ -521,6 +530,7 @@ function ThreadRow({
               {rel}
             </span>
           ) : null}
+          <DraftIndicator count={thread.pendingDraftCount} />
           {dot}
         </button>
         <button
@@ -581,9 +591,21 @@ function SubagentRow({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        <DraftIndicator count={thread.pendingDraftCount} />
         <StatusDot lifecycle={lifecycle} small />
       </button>
     </li>
+  );
+}
+
+function DraftIndicator({ count }: { count: number }) {
+  const display = draftIndicatorDisplay(count);
+  if (!display) return null;
+  return (
+    <span className={display.className} role="img" aria-label={display.label} title={display.label}>
+      <FileText className={display.iconClassName} aria-hidden />
+      <span>{count}</span>
+    </span>
   );
 }
 

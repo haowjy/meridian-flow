@@ -10,6 +10,7 @@ import {
   undoRejectDraft,
 } from "@/client/api/drafts-api";
 
+import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
 export type DraftReviewMutationInput = {
@@ -27,6 +28,10 @@ function invalidateDraftReviewQueries(
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.drafts(threadId) });
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
   void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === projectQueryKeys.all[0] && query.queryKey[2] === "threads",
+  });
   void queryClient.invalidateQueries({
     queryKey: ["threads", threadId, "documents", documentId, "draft"],
   });

@@ -89,6 +89,23 @@ export function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   }
 }
 
+export type DraftIndicatorDisplay = {
+  label: string;
+  className: string;
+  iconClassName: string;
+};
+
+/** Token-driven display for the additive draft-review chip beside lifecycle badges. */
+export function draftIndicatorDisplay(count: number): DraftIndicatorDisplay | null {
+  if (count <= 0) return null;
+  return {
+    label: t`${count} changes to review`,
+    className:
+      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-fine font-semibold tabular-nums text-primary",
+    iconClassName: "size-3",
+  };
+}
+
 export type LifecycleDisplay = {
   /** Short label for the badge. */
   label: string;
