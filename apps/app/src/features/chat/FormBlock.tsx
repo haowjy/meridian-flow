@@ -1,5 +1,5 @@
 /**
- * Checkpoint — the generic checkpoint card (execution-model §8.1).
+ * FormBlock — schema-driven ask_user component block.
  *
  * Purpose: renders any `CheckpointRequest` payload that flows through the
  * `componentContentForCheckpoint` builder. ZERO domain vocabulary: the prompt,
@@ -26,7 +26,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import { CheckCircle2, Pause } from "lucide-react";
+import { Pause } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 
 import {
@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-
+import { ComponentCard, ComponentResolvedSummary } from "./ComponentCard";
 import {
   type CheckpointField,
   type CheckpointFormErrors,
@@ -87,7 +87,7 @@ function isArtifactRef(value: unknown): value is ArtifactRef {
   return false;
 }
 
-export function Checkpoint({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
   const parsed = readCheckpointProps(content);
   const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
   const resolvedValue =
@@ -99,18 +99,23 @@ export function Checkpoint({ content, respond, isAwaitingResponse }: ComponentBl
 
   if (!parsed) {
     return (
-      <section className="mb-4 rounded-lg border border-border-subtle bg-surface-subtle px-3 py-2 text-xs text-muted-foreground">
-        <Trans>Checkpoint payload is malformed.</Trans>
-      </section>
+      <ComponentCard icon={Pause} tone="resolved" title={t`Form payload is malformed.`}>
+        <p className="text-xs text-muted-foreground">
+          <Trans>Form payload is malformed.</Trans>
+        </p>
+      </ComponentCard>
     );
   }
 
   if (!isAwaitingResponse && hasResolvedValue) {
     return (
-      <ResolvedCheckpointSummary
-        prompt={parsed.prompt}
-        answer={resolvedValue ?? t`No answer`}
-        provenance={provenance}
+      <ComponentResolvedSummary
+        icon={Pause}
+        title={parsed.prompt}
+        value={resolvedValue ?? t`No answer`}
+        statusLabel={
+          provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>
+        }
       />
     );
   }
@@ -171,31 +176,14 @@ function CheckpointForm({
   }
 
   return (
-    <section
-      className="mb-4 overflow-hidden rounded-xl border border-border-subtle bg-card shadow-xs"
-      aria-labelledby="checkpoint-heading"
-    >
-      <header className="flex items-start gap-2 border-border-subtle border-b bg-surface-subtle px-4 py-3">
-        <div className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-card text-primary">
-          <Pause className="size-3.5" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <p className="font-medium text-foreground text-xs uppercase tracking-wide">
-            <Trans>Checkpoint</Trans>
-          </p>
-          <h3 id="checkpoint-heading" className="mt-0.5 font-medium text-foreground text-sm">
-            {prompt}
-          </h3>
-        </div>
-      </header>
-
+    <ComponentCard icon={Pause} tone="pending" title={prompt}>
       {artifacts.length > 0 ? (
-        <div className="border-border-subtle border-b px-4 py-3">
+        <div className="mb-3 border-border-subtle border-b pb-3">
           <ArtifactGrid artifacts={artifacts} />
         </div>
       ) : null}
 
-      <form className="flex flex-col gap-3 px-4 py-3" onSubmit={handleSubmit} noValidate>
+      <form className="flex flex-col gap-3" onSubmit={handleSubmit} noValidate>
         {fields.length === 0 ? (
           <p className="text-muted-foreground text-xs">
             <Trans>No fields required; confirm to continue.</Trans>
@@ -231,7 +219,7 @@ function CheckpointForm({
           </button>
         </div>
       </form>
-    </section>
+    </ComponentCard>
   );
 }
 
@@ -532,30 +520,4 @@ function FieldErrorText({ error }: { error: string }) {
     return <Trans>Must be at most {value}</Trans>;
   }
   return <>{error}</>;
-}
-
-function ResolvedCheckpointSummary({
-  prompt,
-  answer,
-  provenance,
-}: {
-  prompt: string;
-  answer: string;
-  provenance: "user" | "auto" | null;
-}) {
-  return (
-    <section className="mb-4 rounded-lg border border-border-subtle bg-surface-subtle px-3 py-2">
-      <div className="mb-1 flex items-center gap-1.5 text-foreground text-xs">
-        <CheckCircle2 className="size-3.5 text-primary" aria-hidden />
-        <Trans>Checkpoint resolved</Trans>
-      </div>
-      <p className="text-muted-foreground text-xs">{prompt}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-foreground text-sm">
-        <span className="font-medium">{answer}</span>
-        <span className="status-pill">
-          {provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>}
-        </span>
-      </div>
-    </section>
-  );
 }

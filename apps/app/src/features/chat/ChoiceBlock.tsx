@@ -1,5 +1,5 @@
 /**
- * ChoiceCheckpoint — inline ask_user checkpoint for discrete options.
+ * ChoiceBlock — inline ask_user component block for discrete options.
  *
  * Purpose: renders the `kind:"choice"` custom block as a waiting question with
  * option buttons, then as a compact resolved summary after the checkpoint
@@ -15,9 +15,10 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { ComponentCard, ComponentResolvedSummary } from "./ComponentCard";
 import type { ComponentBlockProps } from "./component-registry";
 
-export function ChoiceCheckpoint({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
   const props = askUserChoiceProps(content);
   const question = props?.question ?? t`Choose an option`;
   const options = props?.options ?? [];
@@ -32,30 +33,24 @@ export function ChoiceCheckpoint({ content, respond, isAwaitingResponse }: Compo
 
   if (!isAwaitingResponse && hasResolvedValue) {
     return (
-      <ResolvedCheckpointSummary
-        question={question}
-        answer={resolvedText ?? t`No answer`}
-        provenance={provenance}
+      <ComponentResolvedSummary
+        icon={CheckCircle2}
+        title={question}
+        value={resolvedText ?? t`No answer`}
+        statusLabel={
+          provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>
+        }
       />
     );
   }
 
   return (
-    <section className="mb-4 rounded-lg border border-border-subtle bg-card p-3 shadow-xs">
-      <div className="mb-3 flex items-start gap-2">
-        <div className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-surface-subtle text-primary">
-          <CheckCircle2 className="size-3.5" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{question}</p>
-          {recommended ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              <Trans>Recommended option is highlighted.</Trans>
-            </p>
-          ) : null}
-        </div>
-      </div>
-
+    <ComponentCard
+      icon={CheckCircle2}
+      tone="pending"
+      title={question}
+      hint={recommended ? <Trans>Recommended option is highlighted.</Trans> : undefined}
+    >
       <fieldset className="flex flex-wrap gap-2">
         <legend className="visually-hidden">{question}</legend>
         {options.map((option) => {
@@ -89,29 +84,7 @@ export function ChoiceCheckpoint({ content, respond, isAwaitingResponse }: Compo
           );
         })}
       </fieldset>
-    </section>
-  );
-}
-
-function ResolvedCheckpointSummary({
-  question,
-  answer,
-  provenance,
-}: {
-  question: string;
-  answer: string;
-  provenance: "user" | "auto" | null;
-}) {
-  return (
-    <section className="mb-4 rounded-lg border border-border-subtle bg-surface-subtle px-3 py-2">
-      <p className="text-xs text-muted-foreground">{question}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-foreground">
-        <span className="font-medium">{answer}</span>
-        <span className="status-pill">
-          {provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>}
-        </span>
-      </div>
-    </section>
+    </ComponentCard>
   );
 }
 
