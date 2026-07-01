@@ -25,7 +25,11 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
 import { FileText, Loader2 } from "lucide-react";
+import { useMemo } from "react";
+
+import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { Button } from "@/components/ui/button";
 import type { DraftReviewController } from "./useDraftReviewController";
@@ -41,6 +45,8 @@ export type DraftReviewCardProps = {
 export function DraftReviewCard({ group, controller, variant = "inline" }: DraftReviewCardProps) {
   const documentName = group.documentName;
   const draft = group.drafts[0] ?? null;
+  const undoAccept = useUndoDraftAccept();
+  const undoReject = useUndoDraftReject();
 
   const isPending = controller.isPending;
   // Stack-ready render seam: today every group has length 1 (the backend
@@ -49,23 +55,83 @@ export function DraftReviewCard({ group, controller, variant = "inline" }: Draft
   // change; the action plumbing already carries the selected draft id.
   const draftCount = group.drafts.length;
 
+  const isUndoPending = undoAccept.isPending || undoReject.isPending;
+  const canUndoTerminalDraft = useMemo(() => {
+    if (!draft || draft.status === "active") return false;
+    const updatedAtMs = Date.parse(draft.updatedAt);
+    return Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs <= DRAFT_UNDO_RETENTION_MS;
+  }, [draft]);
+
   function handleAccept() {
-    if (isPending || !draft) return;
+    if (isPending || !draft || draft.status !== "active") return;
     controller.accept(group.documentId, draft.draftId);
   }
 
   function handleDiscard() {
-    if (isPending || !draft) return;
+    if (isPending || !draft || draft.status !== "active") return;
     controller.reject(group.documentId, draft.draftId);
+  }
+
+  function handleUndo() {
+    if (!draft || draft.status === "active" || isUndoPending || !canUndoTerminalDraft) return;
+    const mutation = draft.status === "applied" ? undoAccept : undoReject;
+    mutation.mutate({
+      threadId: controller.threadId,
+      documentId: group.documentId,
+      draftId: draft.draftId,
+    });
+  }
+
+  const cardClassName =
+    variant === "inline"
+      ? "surface-card mt-3 mb-1 rounded-xl border border-border-subtle px-4 py-3 shadow-xs"
+      : "surface-card rounded-xl border border-border-subtle px-3.5 py-2.5 shadow-xs";
+
+  if (draft?.status === "discarded" || draft?.status === "applied") {
+    const isApplied = draft.status === "applied";
+    return (
+      <section
+        className={cardClassName}
+        aria-label={isApplied ? t`AI draft applied` : t`AI draft discarded`}
+        data-draft-card
+        data-document-id={group.documentId}
+        data-draft-status={draft.status}
+      >
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-subtle text-muted-foreground">
+            <FileText className="size-3.5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="status-pill border border-border-subtle bg-surface-subtle text-muted-foreground">
+              {isApplied ? <Trans>Applied to chapter</Trans> : <Trans>Discarded</Trans>}
+            </span>
+            <p className="mt-1 truncate text-muted-foreground text-sm">
+              {documentName ?? <Trans>Untitled document</Trans>}
+            </p>
+          </div>
+        </div>
+        {canUndoTerminalDraft ? (
+          <div className="mt-3 flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleUndo}
+              disabled={isUndoPending}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {isUndoPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+              {isApplied ? <Trans>Undo acceptance</Trans> : <Trans>Undo discard</Trans>}
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    );
   }
 
   return (
     <section
-      className={
-        variant === "inline"
-          ? "surface-card mt-3 mb-1 rounded-xl border border-border-subtle px-4 py-3 shadow-xs"
-          : "surface-card rounded-xl border border-border-subtle px-3.5 py-2.5 shadow-xs"
-      }
+      className={cardClassName}
       aria-label={t`AI draft ready to review`}
       data-draft-card
       data-document-id={group.documentId}
