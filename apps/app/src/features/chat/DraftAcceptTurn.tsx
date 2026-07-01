@@ -1,20 +1,25 @@
-/** DraftAcceptTurn — user-attributed transcript event for accepting an AI draft. */
+/** DraftAcceptTurn — user-attributed transcript receipt for accepting an AI draft. */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { isDraftAcceptTurnRequestParams } from "@meridian/contracts/drafts";
 import { blockPlainText, type Turn } from "@meridian/contracts/protocol";
+import { FileText } from "lucide-react";
 import { memo } from "react";
 
-import { DraftUndoFooter } from "./DraftUndoFooter";
+import { relativeTime } from "@/features/project/relative-time";
+
+import { ComponentResolvedSummary } from "./ComponentCard";
 
 export type DraftAcceptTurnProps = {
   threadId?: string;
   turn: Turn;
 };
 
-function DraftAcceptTurnComponent({ threadId, turn }: DraftAcceptTurnProps) {
-  const resolvedThreadId = threadId ?? turn.threadId;
+function DraftAcceptTurnComponent({ turn }: DraftAcceptTurnProps) {
   const params = isDraftAcceptTurnRequestParams(turn.requestParams) ? turn.requestParams : null;
   const text = draftTurnText(turn, t`You accepted this draft`);
+  const documentName = params?.documentName ?? t`Untitled document`;
+  const age = relativeTime(turn.createdAt, Date.now());
 
   return (
     <article
@@ -25,12 +30,12 @@ function DraftAcceptTurnComponent({ threadId, turn }: DraftAcceptTurnProps) {
       aria-label={text}
     >
       {params ? (
-        <DraftUndoFooter
-          threadId={resolvedThreadId}
-          documentId={params.documentId}
-          documentName={params.documentName ?? null}
-          draftId={params.draftId}
-          variant="accept"
+        <ComponentResolvedSummary
+          icon={FileText}
+          title={<Trans>Applied to chapter</Trans>}
+          value={documentName}
+          statusLabel={<Trans>applied {age} ago</Trans>}
+          className="mb-0"
         />
       ) : (
         <p className="text-[12.5px] font-medium text-ink-muted">{text}</p>
