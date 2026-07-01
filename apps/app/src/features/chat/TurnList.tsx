@@ -1,17 +1,18 @@
 /**
  * TurnList — the conversation transcript and the SINGLE scroll owner.
  *
- * One plain viewport is the only scroll container. `@tanstack/react-virtual` owns
- * everything: row layout/height (virtualized for long threads) AND follow, using
- * its native scroll model:
- *   - `anchorTo: "end"` sticks to the live edge while the reader is within
- *     `scrollEndThreshold` of the bottom, and lets go the instant they scroll up.
- *   - the virtualizer's default anchoring compensates scrollTop when a row ABOVE
- *     the viewport changes height (images load, markdown/code render), so the
- *     reader's place is preserved while scrolled up — new content arrives without
- *     moving what they're looking at.
- *   - `isAtEnd()` (surfaced via `onChange`) drives the jump-to-latest pill.
- * There is no second scroll engine, no nested scroller, and no hand-rolled follow.
+ * One plain viewport is the only scroll container, with two clearly split owners:
+ *   - `@tanstack/react-virtual` owns GEOMETRY: row layout/height (virtualized for
+ *     long threads) and scrollTop compensation when a row ABOVE the viewport
+ *     changes height (images load, disclosures expand), so the reader's place is
+ *     preserved while scrolled up.
+ *   - `useChatFollowScroll` owns POLICY: the explicit `follow | free` state
+ *     machine. In `follow` every content revision (`getTotalSize()` change)
+ *     re-pins the viewport to the live edge; in `free` nothing auto-scrolls. The
+ *     jump-to-latest pill is visible iff `free`.
+ * Geometry never doubles as policy state — deriving "at bottom" per-frame from
+ * `isAtEnd()` is what made the pill flicker and follow-release feel inconsistent.
+ * There is no second scroll engine and no nested scroller.
  *
  * Top inset and composer clearance are the virtualizer's own `paddingStart` /
  * `paddingEnd`, so "scrolled to the end" lines up exactly with the last turn resting
@@ -30,7 +31,7 @@
 import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import { DraftRejectTurn } from "./DraftRejectTurn";
 import { isDraftAcceptTurn } from "./draft-accept-turn";
 import { isDraftRejectTurn } from "./draft-reject-turn";
 import { UserTurn } from "./UserTurn";
+import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
@@ -66,8 +68,6 @@ export type TurnListProps = {
 const ESTIMATED_TURN_HEIGHT = 160;
 /** Top breathing room above the first turn (virtual paddingStart, px). */
 const TOP_INSET = 24;
-/** Distance from the end that still counts as "following" (px). */
-const END_THRESHOLD = 32;
 
 /**
  * react-virtual@3.14's option type omits virtual-core@3.17's
@@ -91,7 +91,6 @@ export function TurnList({
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
-  const [isAtBottom, setIsAtBottom] = useState(true);
 
   // react-virtual@3.14's option TYPE predates virtual-core@3.17's
   // `shouldAdjustScrollPositionOnItemSizeChange`, but the installed core (3.17.2)
@@ -105,12 +104,6 @@ export function TurnList({
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
-    // Native follow: stick to the live edge while near the bottom, release on
-    // scroll-up. Above-viewport size changes are compensated so the reader's place
-    // holds while scrolled up.
-    anchorTo: "end",
-    scrollEndThreshold: END_THRESHOLD,
-    onChange: (instance) => setIsAtBottom(instance.isAtEnd()),
     // Preserve the reader's place when a row ABOVE the viewport changes height (a
     // disclosure expands, an image/code block renders). virtual-core's default
     // compensates first-measurement but SKIPS re-measurement while `scrollDirection`
@@ -122,28 +115,20 @@ export function TurnList({
   };
   const virtualizer = useVirtualizer(virtualizerOptions);
 
-  const lastIndex = visibleTurns.length - 1;
-  const scrollToLatest = useCallback(
-    (behavior: ScrollBehavior = "smooth") => {
-      if (lastIndex < 0) return;
-      virtualizer.scrollToIndex(lastIndex, { align: "end", behavior });
-    },
-    [virtualizer, lastIndex],
-  );
-
-  // Open anchored to the newest turn (bottom of the thread).
-  const didInit = useRef(false);
-  useEffect(() => {
-    if (didInit.current || lastIndex < 0) return;
-    didInit.current = true;
-    virtualizer.scrollToIndex(lastIndex, { align: "end" });
-  }, [virtualizer, lastIndex]);
+  // Follow policy. `getTotalSize()` is the content revision: it changes on turn
+  // append, on measured streaming-row growth, and on composer-inset change — and
+  // each change re-renders this component, so the follow pin fires before paint.
+  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
+  const { mode, enterFollow } = useChatFollowScroll({
+    scrollRef: viewportRef,
+    contentRevision: virtualizer.getTotalSize(),
+  });
 
   // Reacquire follow when the user submits (each local message bumps the revision).
   useEffect(() => {
     if (tailFollowRevision === 0) return;
-    scrollToLatest("smooth");
-  }, [tailFollowRevision, scrollToLatest]);
+    enterFollow("smooth");
+  }, [tailFollowRevision, enterFollow]);
 
   const renderTurn = useCallback(
     (turn: Turn, idx: number) => {
@@ -221,9 +206,11 @@ export function TurnList({
       </div>
 
       <JumpToLatestButton
-        hidden={isAtBottom}
+        hidden={mode === "follow"}
         bottomInset={bottomInset}
-        onClick={() => scrollToLatest("smooth")}
+        // Instant jump: mode flips to follow synchronously inside enterFollow, so
+        // the pill hides the same frame the viewport lands at the live edge.
+        onClick={() => enterFollow("auto")}
       />
     </div>
   );
