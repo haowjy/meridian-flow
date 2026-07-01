@@ -99,7 +99,7 @@ export function ChatView({
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  const { controller: draftReview, drafts } = useDraftReview();
+  const { drafts } = useDraftReview();
 
   // The transcript turn objects are recreated on every streaming tick, but
   // for anchoring all we care about is "is this turn id in the transcript?".
@@ -157,12 +157,7 @@ export function ChatView({
             {unanchoredDrafts.length > 0 ? (
               <div data-unanchored-drafts className="flex flex-col gap-2">
                 {unanchoredDrafts.map((group) => (
-                  <DraftReviewCard
-                    key={group.documentId}
-                    group={group}
-                    controller={draftReview}
-                    variant="compact"
-                  />
+                  <DraftReviewCard key={group.documentId} group={group} variant="compact" />
                 ))}
               </div>
             ) : null}
@@ -191,7 +186,6 @@ export function ChatView({
           tailFollowRevision={tailFollowRevision}
           onRespondToInterrupt={handleRespondToInterrupt}
           draftsByTurnId={draftsByTurnId}
-          draftReviewController={draftReview}
         />
       </ChatSurface>
 
