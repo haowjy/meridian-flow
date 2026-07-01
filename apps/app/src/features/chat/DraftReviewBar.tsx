@@ -10,7 +10,7 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
@@ -30,28 +30,62 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const undoAccept = useUndoDraftAccept();
   const undoReject = useUndoDraftReject();
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const selectedDraftStatusRef = useRef<{
+    draftId: string;
+    status: ThreadDraftListItem["status"];
+  } | null>(null);
   const { visible: reviewableDrafts, active: activeDrafts } =
     reviewableDraftsForDocument(documentId);
 
   const selectedDraft = controller.selectedDraft;
-  useEffect(() => {
-    if (selectedDraft?.documentId === documentId) setSelectedDraftId(selectedDraft.draftId);
-  }, [documentId, selectedDraft?.documentId, selectedDraft?.draftId]);
-
   const selectedVisibleDraft =
     reviewableDrafts.find((item) => item.draftId === selectedDraftId) ?? null;
-  const draft =
-    selectedVisibleDraft?.status === "active" || activeDrafts.length === 0
-      ? (selectedVisibleDraft ?? activeDrafts[0] ?? reviewableDrafts[0] ?? null)
-      : (activeDrafts[0] ?? reviewableDrafts[0] ?? null);
+  const firstActiveDraft = activeDrafts[0] ?? null;
+
+  useEffect(() => {
+    if (selectedDraft?.documentId !== documentId || selectedDraft.draftId === selectedDraftId) {
+      return;
+    }
+
+    const selectedReviewDraft = reviewableDrafts.find(
+      (item) => item.draftId === selectedDraft.draftId,
+    );
+    if (selectedReviewDraft?.status === "active") setSelectedDraftId(selectedDraft.draftId);
+  }, [
+    documentId,
+    reviewableDrafts,
+    selectedDraft?.documentId,
+    selectedDraft?.draftId,
+    selectedDraftId,
+  ]);
+  const draft = selectedVisibleDraft ?? firstActiveDraft ?? reviewableDrafts[0] ?? null;
 
   useEffect(() => {
     if (!draft) {
+      selectedDraftStatusRef.current = null;
       setSelectedDraftId(null);
       return;
     }
+
+    const previous = selectedDraftStatusRef.current;
+    const advancedDraft = firstActiveDraft;
+    if (
+      previous?.draftId === draft.draftId &&
+      previous.status === "active" &&
+      draft.status !== "active" &&
+      advancedDraft
+    ) {
+      selectedDraftStatusRef.current = {
+        draftId: draft.draftId,
+        status: draft.status,
+      };
+      setSelectedDraftId(advancedDraft.draftId);
+      return;
+    }
+
+    selectedDraftStatusRef.current = { draftId: draft.draftId, status: draft.status };
     if (draft.draftId !== selectedDraftId) setSelectedDraftId(draft.draftId);
-  }, [draft, selectedDraftId]);
+  }, [draft, selectedDraftId, firstActiveDraft]);
 
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
