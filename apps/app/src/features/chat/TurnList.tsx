@@ -1,41 +1,43 @@
 /**
- * TurnList — the conversation scroller: one message-scroller viewport that owns
- * all scroll/follow behavior, with TanStack Virtual rows keyed by `turn.id`.
+ * TurnList — the conversation transcript and the SINGLE scroll owner.
  *
- * Single source of truth for scrolling. The `@shadcn/react` message-scroller owns
- * follow: it stays pinned to the live edge while the reader is at the bottom, and
- * RELEASES follow the moment they scroll up (wheel/touch/keyboard/drag) — streamed
- * chunks then arrive without yanking them back. We virtualize the rows ourselves so
- * long threads stay performant; the primitive only sees the viewport.
+ * One plain viewport is the only scroll container. `@tanstack/react-virtual` owns
+ * everything: row layout/height (virtualized for long threads) AND follow, using
+ * its native scroll model:
+ *   - `anchorTo: "end"` sticks to the live edge while the reader is within
+ *     `scrollEndThreshold` of the bottom, and lets go the instant they scroll up.
+ *   - the virtualizer's default anchoring compensates scrollTop when a row ABOVE
+ *     the viewport changes height (images load, markdown/code render), so the
+ *     reader's place is preserved while scrolled up — new content arrives without
+ *     moving what they're looking at.
+ *   - `isAtEnd()` (surfaced via `onChange`) drives the jump-to-latest pill.
+ * There is no second scroll engine, no nested scroller, and no hand-rolled follow.
+ *
+ * Top inset and composer clearance are the virtualizer's own `paddingStart` /
+ * `paddingEnd`, so "scrolled to the end" lines up exactly with the last turn resting
+ * above the composer (the bottom inset is the measured composer height from
+ * `ChatSurface`, via `useChatSurfaceBottomInset`).
  *
  * Rows are keyed by `turn.id`, so when the live assistant turn settles the same row
- * stays mounted and only its `Turn` data changes — no remount, expand/collapse and
- * scroll position survive (Stream S3 convergence; see `useChatThreadSession`).
+ * stays mounted and only its `Turn` data changes — no remount; expand/collapse and
+ * scroll position survive (Stream S3 convergence).
  *
- * Draft anchoring: `draftsByTurnId` (computed by ChatView from `useThreadDrafts`)
- * hands per-turn `ThreadDraftGroup[]` arrays to assistant turns so the
- * DraftReviewCard renders inside the producing turn's row. The lookup stays in the
- * parent so most rows get `undefined` (memo stays stable). A card inside a
- * virtualized row CANNOT own a fixed-position modal — when the virtualizer recycles
- * the row the modal vanishes with it; the card calls the shared draft-review
- * controller and the overlay lives at the (non-virtualized) ChatView root.
+ * Draft anchoring: `draftsByTurnId` (computed by ChatView) hands per-turn
+ * `ThreadDraftGroup[]` to assistant turns so the DraftReviewCard renders inside the
+ * producing turn's row. A card inside a virtualized row cannot own a fixed-position
+ * modal — the overlay lives at the (non-virtualized) ChatView root.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+import { ArrowDownIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-  useMessageScroller,
-} from "@/components/ui/message-scroller";
+import { Button } from "@/components/ui/button";
 
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
+import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
 import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { DraftRejectTurn } from "./DraftRejectTurn";
@@ -62,6 +64,19 @@ export type TurnListProps = {
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
 const ESTIMATED_TURN_HEIGHT = 160;
+/** Top breathing room above the first turn (virtual paddingStart, px). */
+const TOP_INSET = 24;
+/** Distance from the end that still counts as "following" (px). */
+const END_THRESHOLD = 32;
+
+/**
+ * react-virtual@3.14's option type omits virtual-core@3.17's
+ * `shouldAdjustScrollPositionOnItemSizeChange` (present at runtime). Widen it so
+ * the anchoring predicate is type-checked rather than cast to `any`.
+ */
+type TurnVirtualizerOptions = Parameters<typeof useVirtualizer<HTMLDivElement, Element>>[0] & {
+  shouldAdjustScrollPositionOnItemSizeChange?: (item: VirtualItem) => boolean;
+};
 
 export function TurnList({
   threadId,
@@ -73,23 +88,62 @@ export function TurnList({
   draftReviewController,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLOListElement>(null);
+  const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const virtualizer = useVirtualizer({
+  // react-virtual@3.14's option TYPE predates virtual-core@3.17's
+  // `shouldAdjustScrollPositionOnItemSizeChange`, but the installed core (3.17.2)
+  // supports it at runtime. Widen the options type so we can pass it type-safely.
+  const virtualizerOptions: TurnVirtualizerOptions = {
     count: visibleTurns.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
     getItemKey: (index) => visibleTurns[index]?.id ?? index,
     overscan: 8,
-    // The list starts below the column's top padding; offset measurements so
-    // virtual positions are relative to the list element, not the viewport top.
-    scrollMargin: listRef.current?.offsetTop ?? 0,
-  });
+    paddingStart: TOP_INSET,
+    // Clear the pinned composer AND align the true scroll end with the last turn.
+    paddingEnd: bottomInset,
+    // Native follow: stick to the live edge while near the bottom, release on
+    // scroll-up. Above-viewport size changes are compensated automatically so the
+    // reader's place holds while scrolled up.
+    anchorTo: "end",
+    scrollEndThreshold: END_THRESHOLD,
+    onChange: (instance) => setIsAtBottom(instance.isAtEnd()),
+    // Preserve the reader's place when a row ABOVE the viewport changes height
+    // (a disclosure expands, an image/code block renders). The virtualizer's
+    // default skips this while `scrollDirection` is "backward" — which persists
+    // after a scroll-up, so a stationary expand-above would jump the view. Always
+    // compensate for above-viewport size changes instead. `scrollTop` is the
+    // scroll offset; a row starting above it is off the top of the viewport.
+    shouldAdjustScrollPositionOnItemSizeChange: (item: VirtualItem) =>
+      item.start < (viewportRef.current?.scrollTop ?? 0),
+  };
+  const virtualizer = useVirtualizer(virtualizerOptions);
 
-  const virtualItems = virtualizer.getVirtualItems();
-  const { scrollMargin } = virtualizer.options;
+  const lastIndex = visibleTurns.length - 1;
+  const scrollToLatest = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      if (lastIndex < 0) return;
+      virtualizer.scrollToIndex(lastIndex, { align: "end", behavior });
+    },
+    [virtualizer, lastIndex],
+  );
+
+  // Open anchored to the newest turn (bottom of the thread).
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current || lastIndex < 0) return;
+    didInit.current = true;
+    virtualizer.scrollToIndex(lastIndex, { align: "end" });
+  }, [virtualizer, lastIndex]);
+
+  // Reacquire follow when the user submits (each local message bumps the revision).
+  useEffect(() => {
+    if (tailFollowRevision === 0) return;
+    scrollToLatest("smooth");
+  }, [tailFollowRevision, scrollToLatest]);
 
   const renderTurn = useCallback(
     (turn: Turn, idx: number) => {
@@ -121,74 +175,89 @@ export function TurnList({
   );
 
   return (
-    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-      <MessageScroller>
-        <MessageScrollerViewport
-          ref={viewportRef}
-          role="log"
-          aria-label={ariaLabel}
-          className="chat-scroll-fade-bottom"
-        >
-          {/* Vertical padding lives on Content (not a nested child) because the
-              primitive reads Content's own padding to size its end spacer and
-              compute "at end" — so the bottom clearance that keeps the last turn
-              above the pinned composer also counts as the true scroll end, and
-              the jump-to-latest pill hides when pinned. --chat-footer-clearance
-              is the composer footer's measured height (published by ChatSurface,
-              variable: composer growth + unanchored-drafts strip). */}
-          <MessageScrollerContent className="block pt-6 pb-[calc(var(--chat-footer-clearance,9rem)+1.5rem)]">
-            <ChatColumn>
-              <ol
-                ref={listRef}
-                aria-label="Conversation turns"
-                data-chat-virtual-list
-                data-settled-turn-count={visibleTurns.length}
-                className="relative w-full list-none"
-                style={{ height: virtualizer.getTotalSize() }}
-              >
-                {virtualItems.map((virtualItem) => {
-                  const turn = visibleTurns[virtualItem.index];
-                  if (!turn) return null;
-                  return (
-                    <li
-                      key={virtualItem.key}
-                      data-index={virtualItem.index}
-                      data-chat-turn-row="settled"
-                      ref={virtualizer.measureElement}
-                      className="absolute inset-x-0 top-0 pb-6"
-                      style={{
-                        transform: `translateY(${virtualItem.start - scrollMargin}px)`,
-                      }}
-                    >
-                      {renderTurn(turn, virtualItem.index)}
-                    </li>
-                  );
-                })}
-              </ol>
-            </ChatColumn>
-          </MessageScrollerContent>
-        </MessageScrollerViewport>
-        {/* Lift the jump-to-latest pill above the pinned composer, which paints
-            over the bottom of this same body. --chat-footer-clearance is the
-            composer footer's measured height (published by ChatSurface). */}
-        <MessageScrollerButton className="bottom-[calc(var(--chat-footer-clearance,9rem)+0.75rem)]" />
-        <TailFollowController revision={tailFollowRevision} />
-      </MessageScroller>
-    </MessageScrollerProvider>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={viewportRef}
+        role="log"
+        aria-label={ariaLabel}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: transcript is a scroll region — focusable so keyboard users can scroll it (arrows/PageUp/Down).
+        tabIndex={0}
+        // overflow-x-hidden: `overflow-y:auto` forces the x-axis from `visible` to
+        // `auto` (CSS spec), giving an implicit horizontal scroll/rubber-band range we
+        // never want — code blocks scroll internally. min-w-0 keeps children from
+        // widening the flex column.
+        className="chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain"
+      >
+        <ChatColumn>
+          <ol
+            aria-label="Conversation turns"
+            data-chat-virtual-list
+            data-settled-turn-count={visibleTurns.length}
+            className="relative w-full list-none"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const turn = visibleTurns[virtualItem.index];
+              if (!turn) return null;
+              return (
+                <li
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  data-chat-turn-row="settled"
+                  ref={virtualizer.measureElement}
+                  className="absolute inset-x-0 top-0 pb-6"
+                  style={{ transform: `translateY(${virtualItem.start}px)` }}
+                >
+                  {renderTurn(turn, virtualItem.index)}
+                </li>
+              );
+            })}
+          </ol>
+        </ChatColumn>
+      </div>
+
+      <JumpToLatestButton
+        hidden={isAtBottom}
+        bottomInset={bottomInset}
+        onClick={() => scrollToLatest("smooth")}
+      />
+    </div>
   );
 }
 
 /**
- * Reacquires tail-follow when the user submits. `tailFollowRevision` bumps on each
- * local message; `scrollToEnd` snaps to the bottom and re-engages follow-output.
+ * Jump-to-latest pill. Sits above the pinned composer (offset by the measured
+ * composer height) and fades out while the reader is following the live edge.
  */
-function TailFollowController({ revision }: { revision: number }) {
-  const { scrollToEnd } = useMessageScroller();
-  useEffect(() => {
-    if (revision === 0) return;
-    scrollToEnd({ behavior: "smooth" });
-  }, [revision, scrollToEnd]);
-  return null;
+function JumpToLatestButton({
+  hidden,
+  bottomInset,
+  onClick,
+}: {
+  hidden: boolean;
+  bottomInset: number;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] duration-200 data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
+      data-hidden={hidden}
+      style={{ bottom: bottomInset + 12 }}
+    >
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon-sm"
+        onClick={onClick}
+        tabIndex={hidden ? -1 : 0}
+        aria-hidden={hidden}
+        className="pointer-events-auto rounded-full border border-border shadow-button"
+      >
+        <ArrowDownIcon />
+        <span className="sr-only">Scroll to latest</span>
+      </Button>
+    </div>
+  );
 }
 
 /** Index of the last assistant turn in `turns`, or -1 if none. */

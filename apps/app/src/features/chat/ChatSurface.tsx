@@ -3,19 +3,26 @@
  *
  * Provides the `main-pane` shell, the visually-hidden page heading, an optional
  * fixed header, a flex body slot, and a pinned composer footer. The conversation
- * body owns its OWN scroll (see `TurnList` → message-scroller); this frame only
- * positions the body and the pinned composer over it.
+ * body owns its OWN (single) scroll — see `TurnList`; this frame only positions the
+ * body and the pinned composer over it.
  *
  * The pinned footer is variable-height (composer growth + the unanchored-drafts
- * review strip), so we publish its measured height as `--chat-footer-clearance`
- * for the body to pad its final turns clear of the composer. We only MEASURE —
- * the message-scroller owns follow, so there is no scroll repin here. Used by
- * `ChatView`.
+ * review strip), so this frame MEASURES it and exposes the height via
+ * `ChatSurfaceBottomInsetContext`. The transcript reads that inset as its virtual
+ * `paddingEnd`, so the last turn rests above the composer AND "scrolled to the end"
+ * lines up exactly with it (no dead gap, no phantom scroll). Used by `ChatView`.
  */
 import type { ReactNode, RefObject } from "react";
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 
 import { ChatColumn } from "./ChatColumn";
+
+/** Measured height (px) of the pinned composer footer; the transcript's bottom inset. */
+const ChatSurfaceBottomInsetContext = createContext(0);
+
+export function useChatSurfaceBottomInset(): number {
+  return useContext(ChatSurfaceBottomInsetContext);
+}
 
 export type ChatSurfaceProps = {
   /** Screen-reader page title. */
@@ -29,58 +36,40 @@ export type ChatSurfaceProps = {
 
 export function ChatSurface({ title, surfaceRef, children, footer, header }: ChatSurfaceProps) {
   const hasFooter = Boolean(footer);
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
+  const [bottomInset, setBottomInset] = useState(0);
 
-  const setRootRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      rootRef.current = node;
-      if (surfaceRef) surfaceRef.current = node;
-    },
-    [surfaceRef],
-  );
-
-  // Publish the pinned footer's height so the self-scrolling body can clear its
-  // last turns from behind the composer. The body owns scroll/follow, so we
-  // only measure — no manual scroll repin.
+  // Measure the pinned footer so the transcript can pad its end to match. Layout
+  // effect so the first paint already has the inset (no flash of content behind the
+  // composer). We only measure — the transcript owns scroll/follow.
   useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-
-    if (!hasFooter) {
-      root.style.removeProperty("--chat-footer-clearance");
+    const footerElement = footerRef.current;
+    if (!hasFooter || !footerElement) {
+      setBottomInset(0);
       return;
     }
-
-    const footerElement = footerRef.current;
-    if (!footerElement) return;
-
-    const syncFooterClearance = () => {
-      root.style.setProperty(
-        "--chat-footer-clearance",
-        `${Math.ceil(footerElement.getBoundingClientRect().height)}px`,
-      );
-    };
-
-    syncFooterClearance();
-
+    const sync = () => setBottomInset(Math.ceil(footerElement.getBoundingClientRect().height));
+    sync();
     if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(syncFooterClearance);
+    const observer = new ResizeObserver(sync);
     observer.observe(footerElement);
     return () => observer.disconnect();
   }, [hasFooter]);
 
   return (
     <div
-      ref={setRootRef}
+      ref={surfaceRef}
       className="main-pane relative flex h-full w-full flex-col overflow-hidden"
     >
       <h1 className="visually-hidden">{title}</h1>
 
       {header}
 
-      <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ChatSurfaceBottomInsetContext.Provider value={bottomInset}>
+          {children}
+        </ChatSurfaceBottomInsetContext.Provider>
+      </div>
 
       {footer ? (
         <div ref={footerRef} className="pointer-events-none absolute inset-x-0 bottom-0">

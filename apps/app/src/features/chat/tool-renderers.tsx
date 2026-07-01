@@ -141,7 +141,10 @@ function StreamTail({ stream }: { stream: string }) {
   const visible = lines.length > 14 ? lines.slice(-14).join("\n") : stream;
   return (
     <pre
-      className="max-h-48 overflow-auto font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
+      // Transcript rows contribute height but never own a nested scroll (single
+      // scroll owner = the transcript viewport). Content is already capped to the
+      // last ~14 lines above, and wraps, so no inner max-height/overflow is needed.
+      className="font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
       aria-live="polite"
     >
       {visible}
