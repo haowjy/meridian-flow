@@ -136,8 +136,5 @@ export type DraftRejectRequest = {
 /** 1-day retention window for draft undo operations. */
 export const DRAFT_UNDO_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-export type DraftUndoResponse =
-  | { status: "reactivated"; draftId: string }
-  | { status: "expired"; draftId: string }
-  | { status: "conflict"; draftId: string; message: string }
-  | { status: "not_found" };
+/** Success response for draft undo. Non-success cases (expired, conflict, not found) are HTTP errors (410/409/404). */
+export type DraftUndoResponse = { status: "reactivated"; draftId: string };

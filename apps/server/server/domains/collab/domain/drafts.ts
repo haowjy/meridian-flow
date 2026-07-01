@@ -581,31 +581,11 @@ export function createDraftService(deps: {
       return { status: "expired", draftId: input.draftId };
     }
 
-    // Pre-check: fail fast if another active/accepting draft exists for this (doc, thread).
-    // Reactivate will also enforce this via the unique constraint, but checking first
-    // avoids reversing live state only to discover a conflict afterwards.
-    const existingActive = await deps.draftStore.getActiveDraft({
-      documentId: input.documentId,
-      threadId: input.threadId,
-    });
-    if (existingActive && existingActive.id !== input.draftId) {
-      return { status: "conflict", draftId: input.draftId };
-    }
-
-    // Reverse the live Yjs mutation before reactivating the draft.
-    if (deps.reverseTurn) {
-      const reverseOutcome = await deps.reverseTurn({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        turnId: createDraftAcceptTurnId(input.draftId),
-        userId: input.userId,
-      });
-      // If the live reversal didn't actually undo anything (expired/compacted or
-      // already reversed), still proceed — the draft content is intact and the
-      // writer can re-review and re-accept from the reactivated draft.
-      void reverseOutcome;
-    }
-
+    // Reactivate FIRST — claim the draft slot atomically via the unique partial
+    // index on (documentId, threadId) for active/accepting drafts. If another
+    // active draft exists, this returns null and we never touch the live document.
+    // This eliminates the race where reversal succeeds but reactivation fails,
+    // which would leave the live doc undone with no active draft to re-review.
     const reactivated = await deps.draftStore.reactivate({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -613,6 +593,18 @@ export function createDraftService(deps: {
       fromStatus: "applied",
     });
     if (!reactivated) return { status: "conflict", draftId: input.draftId };
+
+    // Reverse the live Yjs mutation after the draft slot is claimed. If reversal
+    // fails (expired/compacted/already reversed), the draft is safely reactivated
+    // — the writer can re-review via the draft preview and re-accept.
+    if (deps.reverseTurn) {
+      await deps.reverseTurn({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        turnId: createDraftAcceptTurnId(input.draftId),
+        userId: input.userId,
+      });
+    }
 
     await invalidateInFlight(input);
     return { status: "reactivated", draftId: input.draftId };

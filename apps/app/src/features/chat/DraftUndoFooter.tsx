@@ -34,14 +34,14 @@ export function DraftUndoFooter({
     setStatus("pending");
     try {
       const mutation = variant === "accept" ? undoAccept : undoReject;
-      const result = await mutation.mutateAsync({ threadId, documentId, draftId });
-      setStatus(result.status === "reactivated" ? "done" : "error");
+      await mutation.mutateAsync({ threadId, documentId, draftId });
+      setStatus("done");
     } catch (error: unknown) {
-      const statusCode = (error as { statusCode?: number })?.statusCode;
+      // Non-success cases arrive as HTTP errors (410 expired, 409 conflict, 404 not found).
+      // Detect expiration via the error message until the server sends structured
+      // MeridianError envelopes for draft undo failures.
       const message = error instanceof Error ? error.message : "";
-      setStatus(
-        statusCode === 410 || message.includes("can no longer be undone") ? "expired" : "error",
-      );
+      setStatus(message.includes("can no longer be undone") ? "expired" : "error");
     }
   }
 
