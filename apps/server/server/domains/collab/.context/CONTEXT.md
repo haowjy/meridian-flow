@@ -133,7 +133,6 @@ window.
 
 ## Stable server-side helpers
 
-
 ### Turn live-lineage read-model
 
 `domain/turn-live-lineage.ts` is the server-owned authority for which documents a
@@ -181,11 +180,20 @@ passes no hook.
 
 ## Draft review subsystem
 
-When a project's `aiWriteMode` is `"draft"` (default `"direct"`), AI agent
-edits are routed to a per-thread **draft** instead of the live document. The
-live doc is untouched until the writer accepts. Accept merges draft Yjs deltas
-into one journal entry (`writeId=draft-accept:<id>`, origin `system`); reject
-discards.
+When the effective write mode is `"draft"`, AI agent edits are routed to a
+per-thread **draft** instead of the live document. The live doc is untouched
+until the writer accepts. Accept merges draft Yjs deltas into one journal entry
+(`writeId=draft-accept:<id>`, origin `system`); reject discards. Both accept
+and reject create **synthetic user turns** in the transcript with document
+context (name + w-id range) so the LLM sees review lifecycle events.
+Accept and reject turns are undoable within 24 hours (see Undo lifecycle below).
+
+Write mode resolution is **per-thread**, not per-project. The `aiWriteMode`
+column on `threads` is seeded from the project preference at thread creation;
+the thread-level value is authoritative for all subsequent writes. A
+write-mode switch route blocks `draft` → `direct` while active drafts exist
+(for the reverse direction, `direct` → `draft` is always permitted). See
+[`domains/threads/.context/CONTEXT.md`](../threads/.context/CONTEXT.md).
 
 → Full architecture and deferred scope in the
 [design doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md).
@@ -268,6 +276,104 @@ lineage to the proposing assistant turn.
 Reject atomically moves the active draft to `discarded`, cleans draft-scoped
 state inside the store, then invalidates in-flight responses. Updates never touch live.
 
+Reject also creates a synthetic user turn with document context (name + w-id range)
+so the LLM sees that a draft was discarded. The reject turn ID is deterministic from
+`draft.id` (`createDraftRejectTurnId`), written via `onConflictDoNothing` for idempotency.
+
+### Undo lifecycle
+
+Both accept and reject are undoable within a 24-hour retention window
+(`DRAFT_UNDO_RETENTION_MS`). Undo reactivates the draft to `active` status so the
+writer can re-review and re-accept or re-discard.
+
+**undoAcceptDraft** (`domain/drafts.ts`):
+
+1. Validate draft exists, is `applied`, and within retention window.
+2. **Reactivate first** — claims the draft slot via the unique partial index on
+   `(documentId, threadId)` for active/accepting drafts. If another active draft
+   already exists, returns `conflict` without touching live state.
+3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
+   deterministic accept turn. If reversal fails (expired/compacted), the draft is
+   safely reactivated and the writer can re-review via preview.
+4. Invalidate in-flight responses.
+
+**undoRejectDraft** (`domain/drafts.ts`):
+
+1. Validate draft exists, is `discarded`, and within retention window.
+2. Reactivate to `active` — no Yjs reversal needed since reject never touched live.
+3. Invalidate in-flight responses.
+
+**Reactivate-first ordering** (fix from review finding, commit `4dee6e4f`):
+undo-accept reactivates the draft before reversing Yjs, not after. This eliminates
+the race where reversal succeeds but reactivation fails due to a concurrent active
+draft — which would leave the live doc undone with no active draft to re-review.
+If reversal fails, the draft is already reactivated and the writer can re-review
+via preview.
+
+**Wire contract:** `DraftUndoResponse` is narrowed to `{ status: "reactivated" }`
+only. Non-success outcomes (`expired`, `conflict`, `not_found`) are HTTP errors
+(410/409/404) from the route layer. The client uses typed error codes rather than
+parsing response body variants that never arrive on a 200.
+
+### Draft list methods
+
+Two distinct queries serve different consumers:
+
+- **`listActiveDrafts(threadId)`** — returns only `active` drafts. Used by the
+  write-mode route guard to block `draft` → `direct` switching while active drafts
+  exist.
+- **`listReviewableDrafts(threadId)`** — returns `active` + recently `applied` +
+  recently `discarded` drafts (within 24-hour retention window). Used by the
+  client to render draft review cards including terminal-state cards with undo
+  buttons. Active drafts sort first within each document group so the actionable
+  draft is always `group.drafts[0]`.
+
+The split is intentional: `listActiveDrafts` is a narrow invariant guard;
+`listReviewableDrafts` is a broader UI query.
+
+### Persistent review cards (client)
+
+After accept or discard, the draft review card does not vanish — it shows a
+terminal state:
+
+| Status | Card text | Action |
+|---|---|---|
+| `active` | Review buttons (Accept / Discard) | Accept, Discard |
+| `applied` | "Applied to chapter" | Undo accept |
+| `discarded` | "Discarded" | Undo discard |
+
+Both terminal-state cards render an undo button. Undo is disabled (gray) when
+past the 24-hour retention window. The undo button lives in `DraftUndoFooter`
+(rendered inside synthetic lifecycle turns in the transcript) and also on
+`DraftReviewCard` (rendered at the assistant turn anchor). These two surfaces
+share one server-backed draft query for state authority but use separate UI
+components — a known structural drift tracked as a deferred simplification.
+
+### Known gaps (from review, not yet addressed)
+
+- **Draft identity = event identity.** Accept/reject turn IDs and the accept
+  `writeId` are deterministic from `draft.id`. This conflates "this draft exists"
+  with "this review action happened." Re-accept after undo reuses the old turn
+  ID, which forces idempotency and lifecycle state to share one key.
+  → Introduce separate review event identity per lifecycle action.
+
+- **Client document-grouping model assumes one card per document.** The client
+  groups `listReviewableDrafts` results by `documentId`, anchors by
+  `group.drafts[0]`, and renders only `group.drafts[0]`. When a document has
+  multiple reviewable lifecycle items (e.g., an old applied draft still in
+  retention + a new active draft), older terminal cards disappear.
+  → Render per `draftId`, not per document group. Only group for concurrent
+  alternatives.
+
+- **Four sibling lifecycle flows** (`acceptDraft`, `rejectDraft`,
+  `undoAcceptDraft`, `undoRejectDraft`) could collapse to one
+  `transitionDraft()` boundary with action + state validation.
+
+- **Collab draft service trending toward god-service.** Query, lifecycle
+  mutation, and transcript-turn concerns are mixed in one surface. Split into
+  `drafts.query`, `drafts.lifecycle`, and a dedicated journal/audit port for
+  transcript event creation.
+
 ### Invariants
 
 - **Live is always canonical.** A draft is proposed changes, not a document.
@@ -276,7 +382,13 @@ state inside the store, then invalidates in-flight responses. Updates never touc
   status update are recoverable side effects.
 - **Draft finalization invalidates in-flight responses.** Accept or reject
   broadcasts to the response registry.
-- **One active draft per (document, thread).** Partial unique index.
+- **One active/accepting draft per (document, thread).** Partial unique index
+  on `status IN ('active', 'accepting')`.
+- **Undo reactivates the draft first, then reverses Yjs.** The draft slot is
+  claimed before touching live state, so a failed reversal leaves a re-reviewable
+  draft rather than a desynchronized live document.
+- **Undo retention is 24 hours.** Past the window, undo returns `expired` and
+  the client grays out the undo button. The draft row persists for audit.
 
 ## Deferred cutover work
 

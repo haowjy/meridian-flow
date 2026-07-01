@@ -34,6 +34,21 @@ instead of the N:1 `threads.workId` column.
 - **Access control** — `requireThreadOwner` gates thread operations behind
   ownership + project ownership, returning 404 on any mismatch to avoid
   existence leaks.
+- **AI write mode** — `threads.aiWriteMode` column (`'direct'` | `'draft'`)
+  controls whether AI edits go straight to the live document or into a
+  per-thread review draft. The column is seeded from the project's
+  `ProjectPreferences.aiWriteMode` at thread creation (`lib/thread-creation.ts`);
+  the thread-level value is authoritative for all subsequent writes.
+
+  A write-mode switch route (`lib/thread-write-mode-route.ts`) handles mode
+  changes: `draft` → `direct` is blocked while active drafts exist (HTTP 409);
+  `direct` → `draft` is always permitted. The route-core function
+  (`handleThreadWriteModeRequest`) owns validation, draft guard, and the
+  mode update; the Nitro wrapper at
+  `routes/api/threads/[threadId]/write-mode.patch.ts` is a thin transport adapter.
+
+  → See [`domains/collab/.context/CONTEXT.md`](../collab/.context/CONTEXT.md)
+    for the draft review lifecycle.
 
 ## Contracts (ports)
 
