@@ -85,7 +85,7 @@ export async function handleThreadDraftListRequest(
     input.threadId,
     input.userId,
   );
-  const drafts = await deps.documentSync.drafts.listActiveDrafts({ threadId: input.threadId });
+  const drafts = await deps.documentSync.drafts.listReviewableDrafts({ threadId: input.threadId });
   const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
     drafts,
     projectId: thread.projectId,
@@ -182,7 +182,7 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
     userId: UserId;
   },
 ): Promise<T[]> {
-  // Drafts are already thread-scoped (listActiveDrafts filters by threadId).
+  // Drafts are already thread-scoped (listReviewableDrafts filters by threadId).
   // We verify document ownership + project membership. Thread-document
   // attachment (thread_documents row) is NOT required — project documents
   // reachable through the context port may have no thread_documents row,
@@ -207,7 +207,7 @@ function serializeThreadDraft(draft: {
   id: string;
   documentId: string;
   documentName: string | null;
-  status: "active";
+  status: "active" | "applied" | "discarded";
   lastActorTurnId: string | null;
   updatedAt: Date;
 }): ThreadDraftListItem {

@@ -1,5 +1,5 @@
 /**
- * useThreadDrafts — active AI draft list for one thread.
+ * useThreadDrafts — reviewable AI draft list for one thread.
  *
  * Keeps the UI stack-ready by exposing drafts grouped by document even though
  * the backend currently returns at most one active draft per document.
