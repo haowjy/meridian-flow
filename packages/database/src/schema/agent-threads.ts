@@ -209,7 +209,7 @@ export const turns = pgTable(
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
     check(
       "turns_status_valid",
-      sql`${table.status} IN ('pending', 'streaming', 'waiting_checkpoint', 'complete', 'cancelled', 'error')`,
+      sql`${table.status} IN ('pending', 'streaming', 'waiting_interrupt', 'complete', 'cancelled', 'error')`,
     ),
     check(
       "turns_compaction_model_required",

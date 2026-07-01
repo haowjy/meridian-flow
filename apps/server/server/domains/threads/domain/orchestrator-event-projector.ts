@@ -12,7 +12,7 @@ import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 
-const USER_CHECKPOINT_PROVENANCE: InterruptAnswerProvenance = "user";
+const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
 function parseAguiEvent(input: Record<string, unknown>): AGUIEvent {
   return EventSchemas.parse(input);
@@ -313,7 +313,7 @@ export function createOrchestratorEventProjector() {
               blockSequence: event.blockSequence,
               state: "resolved",
               value: event.value,
-              provenance: USER_CHECKPOINT_PROVENANCE,
+              provenance: USER_INTERRUPT_PROVENANCE,
             },
           }),
         ];
