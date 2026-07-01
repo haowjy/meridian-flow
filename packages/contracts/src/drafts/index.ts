@@ -24,14 +24,24 @@ export type DraftPreviewResponse =
     }
   | { status: "gone"; live: string };
 
+export type WIdRange = { min: number; max: number };
+
 const DRAFT_ACCEPT_TURN_KIND = "draft_accept";
+const DRAFT_REJECT_TURN_KIND = "draft_reject";
 export const DRAFT_ACCEPT_TURN_TEXT = "You accepted this draft";
 
-export function draftAcceptTurnRequestParams(input: { draftId: string; documentId: DocumentId }) {
+export function draftAcceptTurnRequestParams(input: {
+  draftId: string;
+  documentId: DocumentId;
+  documentName?: string | null;
+  wIdRange?: WIdRange | null;
+}) {
   return {
     kind: DRAFT_ACCEPT_TURN_KIND,
     draftId: input.draftId,
     documentId: input.documentId,
+    documentName: input.documentName ?? null,
+    wIdRange: input.wIdRange ?? null,
   };
 }
 
@@ -45,6 +55,59 @@ export function isDraftAcceptTurnRequestParams(
     typeof record.draftId === "string" &&
     typeof record.documentId === "string"
   );
+}
+
+export function draftRejectTurnRequestParams(input: {
+  draftId: string;
+  documentId: DocumentId;
+  documentName?: string | null;
+  wIdRange?: WIdRange | null;
+}) {
+  return {
+    kind: DRAFT_REJECT_TURN_KIND,
+    draftId: input.draftId,
+    documentId: input.documentId,
+    documentName: input.documentName ?? null,
+    wIdRange: input.wIdRange ?? null,
+  };
+}
+
+export function isDraftRejectTurnRequestParams(
+  value: unknown,
+): value is ReturnType<typeof draftRejectTurnRequestParams> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === DRAFT_REJECT_TURN_KIND &&
+    typeof record.draftId === "string" &&
+    typeof record.documentId === "string"
+  );
+}
+
+export function formatDraftAcceptTurnText(
+  documentName: string | null,
+  wIdRange: WIdRange | null,
+): string {
+  const docPart = documentName ? ` for "${documentName}"` : "";
+  const widPart = wIdRange
+    ? wIdRange.min === wIdRange.max
+      ? ` (w${wIdRange.min} applied to live document)`
+      : ` (w${wIdRange.min}–w${wIdRange.max} applied to live document)`
+    : "";
+  return `Accepted AI draft${docPart}${widPart}`;
+}
+
+export function formatDraftRejectTurnText(
+  documentName: string | null,
+  wIdRange: WIdRange | null,
+): string {
+  const docPart = documentName ? ` for "${documentName}"` : "";
+  const widPart = wIdRange
+    ? wIdRange.min === wIdRange.max
+      ? ` (w${wIdRange.min} not applied)`
+      : ` (w${wIdRange.min}–w${wIdRange.max} not applied)`
+    : "";
+  return `Discarded AI draft${docPart}${widPart}`;
 }
 
 export type DraftAcceptResponse =
@@ -64,7 +127,7 @@ export type DraftAcceptRequest = {
   confirmedLiveRevisionToken?: number;
 };
 
-export type DraftRejectResponse = { status: "discarded"; draftId: string };
+export type DraftRejectResponse = { status: "discarded"; draftId: string; rejectTurnId: string };
 
 export type DraftRejectRequest = {
   draftId: string;
