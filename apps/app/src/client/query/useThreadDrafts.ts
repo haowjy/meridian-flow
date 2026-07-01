@@ -34,7 +34,14 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
   return Array.from(groups, ([documentId, groupDrafts]) => ({
     documentId,
     documentName: groupDrafts[0]?.documentName ?? null,
-    drafts: groupDrafts,
+    // Active drafts first so group.drafts[0] always picks the actionable
+    // draft over terminal (applied/discarded) ones still within the
+    // retention window.
+    drafts: groupDrafts.sort((a, b) => {
+      if (a.status === "active" && b.status !== "active") return -1;
+      if (a.status !== "active" && b.status === "active") return 1;
+      return 0;
+    }),
   }));
 }
 
