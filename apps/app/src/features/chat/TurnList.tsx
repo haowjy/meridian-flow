@@ -120,7 +120,7 @@ export function TurnList({
   // Reacquire follow when the user submits (each local message bumps the revision).
   useEffect(() => {
     if (tailFollowRevision === 0) return;
-    enterFollow("smooth");
+    enterFollow();
   }, [tailFollowRevision, enterFollow]);
 
   const renderTurn = useCallback(
@@ -203,7 +203,7 @@ export function TurnList({
         bottomInset={bottomInset}
         // Instant jump: mode flips to follow synchronously inside enterFollow, so
         // the pill hides the same frame the viewport lands at the live edge.
-        onClick={() => enterFollow("auto")}
+        onClick={enterFollow}
       />
     </div>
   );
@@ -226,6 +226,10 @@ function JumpToLatestButton({
     <div
       className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] duration-200 data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
       data-hidden={hidden}
+      // `inert` makes the faded-out pill genuinely gone — unclickable, unfocusable,
+      // and out of the accessibility tree — while CSS keeps animating the exit.
+      // Without it the invisible button would still be an enabled hit target.
+      inert={hidden}
       style={{ bottom: bottomInset + 12 }}
     >
       <Button
@@ -233,8 +237,6 @@ function JumpToLatestButton({
         variant="secondary"
         size="icon-sm"
         onClick={onClick}
-        tabIndex={hidden ? -1 : 0}
-        aria-hidden={hidden}
         className="pointer-events-auto rounded-full border border-border shadow-button"
       >
         <ArrowDownIcon />

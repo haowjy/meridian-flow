@@ -66,8 +66,13 @@ function isNearBottom(el: HTMLElement): boolean {
 
 export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
   mode: FollowMode;
-  /** Re-acquire follow (pill click, submit): flips mode synchronously, then scrolls. */
-  enterFollow: (behavior?: ScrollBehavior) => void;
+  /**
+   * Re-acquire follow (pill click, submit): flips mode synchronously — so the
+   * pill hides in the same commit — then pins instantly. Instant on purpose: a
+   * smooth scroll here would be cancelled by the very next content-revision pin,
+   * so the API only offers the behavior it can actually deliver.
+   */
+  enterFollow: () => void;
 } {
   const [mode, setMode] = useState<FollowMode>("follow");
   const modeRef = useRef(mode);
@@ -77,6 +82,14 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
   const guardTimeoutRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
+
+  // Single write path for mode. The ref mirrors state so event/timer callbacks
+  // read the current mode in the gap before React commits.
+  const commitMode = useCallback((next: FollowMode) => {
+    if (modeRef.current === next) return;
+    modeRef.current = next;
+    setMode(next);
+  }, []);
 
   // Open (or re-arm) the self-scroll guard window before any programmatic write.
   const beginProgrammaticScroll = useCallback(() => {
@@ -88,24 +101,14 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
     }, AUTOSCROLL_GUARD_MS);
   }, []);
 
-  const enterFollow = useCallback(
-    (behavior: ScrollBehavior = "auto") => {
-      // Mode flips first so the pill hides the same frame as the jump.
-      setMode("follow");
-      modeRef.current = "follow";
-      const el = scrollRef.current;
-      if (!el) return;
-      beginProgrammaticScroll();
-      el.scrollTo({ top: maxScrollTop(el), behavior });
-    },
-    [beginProgrammaticScroll, scrollRef],
-  );
-
-  const releaseToFree = useCallback(() => {
-    if (modeRef.current === "free") return;
-    modeRef.current = "free";
-    setMode("free");
-  }, []);
+  const enterFollow = useCallback(() => {
+    commitMode("follow");
+    const el = scrollRef.current;
+    if (!el) return;
+    beginProgrammaticScroll();
+    el.scrollTop = maxScrollTop(el);
+    lastScrollTopRef.current = el.scrollTop;
+  }, [beginProgrammaticScroll, commitMode, scrollRef]);
 
   // Deliberate upward intent releases immediately, independent of geometry.
   useEffect(() => {
@@ -113,11 +116,11 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
     if (!el) return;
 
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) releaseToFree();
+      if (event.deltaY < 0) commitMode("free");
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
-        releaseToFree();
+        commitMode("free");
       }
     };
     const onTouchStart = (event: TouchEvent) => {
@@ -128,7 +131,7 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
       const currentY = event.touches[0]?.clientY;
       if (startY == null || currentY == null) return;
       // Finger moving down = content moving up = reading history.
-      if (currentY > startY + 2) releaseToFree();
+      if (currentY > startY + 2) commitMode("free");
     };
 
     el.addEventListener("wheel", onWheel, { passive: true });
@@ -141,16 +144,22 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
     };
-  }, [releaseToFree, scrollRef]);
+  }, [commitMode, scrollRef]);
 
   // Geometry reconcile: silent re-lock at the bottom; scrollbar-drag-up releases.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    let reconcileTimer: number | null = null;
 
     const onScroll = () => {
-      // Defer a tick (like use-stick-to-bottom) so resize + scroll ordering settles.
-      setTimeout(() => {
+      // Defer a tick (like use-stick-to-bottom) so resize + scroll ordering
+      // settles. Coalesced: one pending reconcile serves any burst of scroll
+      // events — it reads the freshest geometry when it fires, so later events
+      // in the burst add nothing.
+      if (reconcileTimer !== null) return;
+      reconcileTimer = window.setTimeout(() => {
+        reconcileTimer = null;
         const currentTop = el.scrollTop;
         const prevTop = lastScrollTopRef.current;
         // Keep the baseline fresh even for guarded writes, so the next real user
@@ -164,27 +173,27 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
           // continuously while streaming pins, so without this the drag would be
           // swallowed and the next pin would yank the reader back down).
           const farAboveBottom = maxScrollTop(el) - currentTop > 2 * BOTTOM_THRESHOLD_PX;
-          if (farAboveBottom && currentTop < prevTop - 1) releaseToFree();
+          if (farAboveBottom && currentTop < prevTop - 1) commitMode("free");
           return;
         }
 
         // Near-bottom ALWAYS wins (invariant 2 in the header).
         if (isNearBottom(el)) {
-          if (modeRef.current !== "follow") {
-            modeRef.current = "follow";
-            setMode("follow");
-          }
+          commitMode("follow");
           return;
         }
 
-        if (currentTop < prevTop - 1) releaseToFree();
+        if (currentTop < prevTop - 1) commitMode("free");
       }, 1);
     };
 
     lastScrollTopRef.current = el.scrollTop;
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [releaseToFree, scrollRef]);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (reconcileTimer !== null) clearTimeout(reconcileTimer);
+    };
+  }, [commitMode, scrollRef]);
 
   // Follow mode: pin to the bottom on every content revision, before paint.
   useLayoutEffect(() => {
