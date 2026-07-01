@@ -28,13 +28,13 @@ describe("interrupt error serialization", () => {
   });
 
   it("maps WS boundary codes into MeridianError before serialization", () => {
-    const error = meridianErrorFromWsBoundary("checkpoint_not_pending", "No pending checkpoint");
+    const error = meridianErrorFromWsBoundary("interrupt_not_pending", "No pending interrupt");
     const httpBody = httpErrorInterruptBody(error);
     const wsPayload = wsErrorInterruptPayload(error, "thread_1");
 
     expect(httpBody.error).toMatchObject({
-      code: "checkpoint_not_pending",
-      message: "No pending checkpoint",
+      code: "interrupt_not_pending",
+      message: "No pending interrupt",
       source: "system",
       retryable: false,
     });

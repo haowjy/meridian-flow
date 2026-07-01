@@ -1,4 +1,4 @@
-/** Runtime credit-gate integration tests for ledger exhaustion and checkpoint meter-pause semantics. */
+/** Runtime credit-gate integration tests for ledger exhaustion and interrupt meter-pause semantics. */
 
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
@@ -13,12 +13,12 @@ import {
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
 import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
-  type CheckpointToolHandlerContext,
   createToolExecutor,
   createToolRegistry,
+  type InterruptToolHandlerContext,
   type ToolHandler,
 } from "../../tools/index.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -45,7 +45,7 @@ async function setup(gateway: Gateway) {
   const project = await projectRepo.create({ userId: "user-1", title: "WB" });
   const creditLedger = createInMemoryCreditLedger();
   const eventWriter = createInMemoryEventJournalWriter();
-  const checkpointRegistry = createCheckpointRegistry();
+  const interruptRegistry = createInterruptRegistry();
   const hub = createThreadEventHub({
     journalWriter: eventWriter,
     journalReader: eventWriter,
@@ -59,13 +59,13 @@ async function setup(gateway: Gateway) {
       toolExecutor,
       repos,
       eventWriter: hub,
-      checkpointRegistry,
+      interruptRegistry,
       creditLedger,
       eventSink: createInMemoryEventSink(),
     }),
   );
   const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-  return { repos, thread, creditLedger, orchestrator, registry, eventWriter, checkpointRegistry };
+  return { repos, thread, creditLedger, orchestrator, registry, eventWriter, interruptRegistry };
 }
 
 describe("runtime credits", () => {
@@ -108,7 +108,7 @@ describe("runtime credits", () => {
     });
   });
 
-  it("does not debit additional credits while parked on a checkpoint", async () => {
+  it("does not debit additional credits while parked on a interrupt", async () => {
     let call = 0;
     const gateway: Gateway = {
       ...gatewayStubDefaults,
@@ -134,13 +134,13 @@ describe("runtime credits", () => {
         throw new Error("not used");
       },
     };
-    const { thread, creditLedger, orchestrator, registry, eventWriter, checkpointRegistry } =
+    const { thread, creditLedger, orchestrator, registry, eventWriter, interruptRegistry } =
       await setup(gateway);
     await creditLedger.grant({
       userId: "user-1",
       source: "manual",
       amountMillicredits: "1000000",
-      reason: "checkpoint",
+      reason: "interrupt",
     });
     registry.register({
       source: "core",
@@ -150,23 +150,23 @@ describe("runtime credits", () => {
         description: "parks",
         inputSchema: { type: "object", properties: {} },
       },
-      capability: "checkpoint",
+      capability: "interrupt",
       execution: {
         type: "server",
-        handler: (async (_input, ctx: CheckpointToolHandlerContext) =>
-          ctx.checkpoint({
-            checkpointId: "cp-1",
+        handler: (async (_input, ctx: InterruptToolHandlerContext) =>
+          ctx.interrupt({
+            interruptId: "cp-1",
             prompt: "pause",
             artifacts: [],
             answerSchema: { type: "object", properties: {} },
             requiresHuman: true,
-          })) as ToolHandler<CheckpointToolHandlerContext>,
+          })) as ToolHandler<InterruptToolHandlerContext>,
       },
     });
 
     const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "park" });
     const eventsPromise = collectEvents(handle);
-    await waitForEvent(eventWriter, thread.id, "checkpoint.created");
+    await waitForEvent(eventWriter, thread.id, "interrupt.created");
     expect(
       await creditLedger.getThreadDebitTotal({
         userId: "user-1",
@@ -182,10 +182,10 @@ describe("runtime credits", () => {
       }),
     ).toBe("230000");
 
-    checkpointRegistry.resolve({
+    interruptRegistry.resolve({
       threadId: thread.id,
       turnId: handle.assistantTurnId,
-      checkpointId: "cp-1",
+      interruptId: "cp-1",
       value: {},
     });
     await eventsPromise;

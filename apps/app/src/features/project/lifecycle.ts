@@ -4,7 +4,7 @@
  * project workspace, plus its display label/styling.
  *
  * Single source for the lifecycle vocabulary
- * (`grilling` / `executing` / `waiting` / `checkpoint` / `completed` / `idle`);
+ * (`grilling` / `executing` / `waiting` / `interrupt` / `completed` / `idle`);
  * `grilling` and `completed` are fixture overlays until the orchestrator
  * surfaces them. Pure mapping; consumed by thread/work UI.
  */
@@ -18,7 +18,7 @@ import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
  *   `status === "active"`).
  * - `waiting` — the assistant has finished and the thread is waiting on the
  *   user (`waitingForUser === true` on the projection).
- * - `checkpoint` — `status === "blocked"` (server-side checkpoint).
+ * - `interrupt` — `status === "blocked"` (server-side interrupt).
  * - `errored` — `status === "error"` (the orchestrator failed the run). A
  *   needs-attention terminal state — must NOT collapse into `idle`.
  * - `grilling` / `completed` — reserved overlay states.
@@ -28,7 +28,7 @@ export type LifecycleState =
   | "grilling"
   | "executing"
   | "waiting"
-  | "checkpoint"
+  | "interrupt"
   | "errored"
   | "completed"
   | "idle";
@@ -71,7 +71,7 @@ export function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
     case "active":
       return "executing";
     case "blocked":
-      return "checkpoint";
+      return "interrupt";
     case "error":
       return "errored";
     case "idle":
@@ -140,9 +140,9 @@ export function lifecycleDisplay(state: LifecycleState): LifecycleDisplay {
         badgeClass: "bg-status-live-bg text-status-live-foreground",
         dotClass: "text-status-live-foreground",
       };
-    case "checkpoint":
+    case "interrupt":
       return {
-        label: t`Checkpoint`,
+        label: t`Needs your answer`,
         badgeClass: "bg-destructive-tint text-destructive",
         dotClass: "text-destructive",
       };

@@ -2,9 +2,9 @@
  * TextBlock — inline ask_user component block for open text answers.
  *
  * Purpose: renders the `kind:"free-text"` custom block as a waiting text form,
- * then as a compact resolved summary once checkpoint lifecycle events patch the
+ * then as a compact resolved summary once interrupt lifecycle events patch the
  * block props. The form submits the component-protocol `{ value }` payload only;
- * renderer-level wiring adds thread, turn, and checkpoint ids.
+ * renderer-level wiring adds thread, turn, and interrupt ids.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

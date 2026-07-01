@@ -8,11 +8,11 @@
  * single source of the orchestrator->AG-UI mapping; depends only on the protocol
  * contracts.
  */
-import type { CheckpointAnswerProvenance } from "@meridian/contracts/components";
+import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 
-const USER_CHECKPOINT_PROVENANCE: CheckpointAnswerProvenance = "user";
+const USER_CHECKPOINT_PROVENANCE: InterruptAnswerProvenance = "user";
 
 function parseAguiEvent(input: Record<string, unknown>): AGUIEvent {
   return EventSchemas.parse(input);
@@ -212,7 +212,7 @@ export function createOrchestratorEventProjector() {
 
         // Text/reasoning/tool blocks already have delta-based AG-UI paths.
         // Custom component blocks do not, so projecting only this type avoids
-        // both the checkpoint UI gap and double-emitting streamed blocks.
+        // both the interrupt UI gap and double-emitting streamed blocks.
         const events: AGUIEvent[] = closeOpenMessages();
         events.push(
           parseAguiEvent({
@@ -288,28 +288,28 @@ export function createOrchestratorEventProjector() {
         return events;
       }
 
-      case "checkpoint.created":
+      case "interrupt.created":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.checkpoint",
+            name: "meridian.interrupt",
             value: {
               turnId: event.turnId,
-              checkpointId: event.checkpointId,
+              interruptId: event.interruptId,
               blockSequence: event.blockSequence,
               state: "created",
             },
           }),
         ];
 
-      case "checkpoint.resolved":
+      case "interrupt.resolved":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.checkpoint",
+            name: "meridian.interrupt",
             value: {
               turnId: event.turnId,
-              checkpointId: event.checkpointId,
+              interruptId: event.interruptId,
               blockSequence: event.blockSequence,
               state: "resolved",
               value: event.value,
@@ -318,14 +318,14 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      case "checkpoint.expired":
+      case "interrupt.expired":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.checkpoint",
+            name: "meridian.interrupt",
             value: {
               turnId: event.turnId,
-              checkpointId: event.checkpointId,
+              interruptId: event.interruptId,
               blockSequence: event.blockSequence,
               state: "expired",
               value: null,

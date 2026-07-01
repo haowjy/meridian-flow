@@ -1,9 +1,9 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { CheckpointArtifactFlushPort } from "../../runtime/index.js";
+import type { InterruptArtifactFlushPort } from "../../runtime/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { PromotionService } from "./promotion-service.js";
 
-export interface CheckpointPromotionFlushDeps {
+export interface InterruptPromotionFlushDeps {
   promotion: PromotionService;
   objectStore: ObjectStorePort;
 }
@@ -23,11 +23,11 @@ function sourcePathForArtifact(artifact: ArtifactRef, key: string): string {
   return key.replace(/^\/+/, "");
 }
 
-export function createCheckpointArtifactFlush(
-  deps: CheckpointPromotionFlushDeps,
-): CheckpointArtifactFlushPort {
+export function createInterruptArtifactFlush(
+  deps: InterruptPromotionFlushDeps,
+): InterruptArtifactFlushPort {
   return {
-    async flushCheckpointArtifacts(input) {
+    async flushInterruptArtifacts(input) {
       for (const artifact of input.artifacts) {
         const key = objectArtifactKey(artifact);
         if (!key) continue;

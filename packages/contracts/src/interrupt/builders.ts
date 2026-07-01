@@ -1,6 +1,6 @@
 /**
- * Purpose: Builds checkpoint component blocks and ask_user CheckpointRequest payloads from the generalized interrupt contract.
- * Key decisions: ask_user remains one checkpoint mechanism — it constructs a CheckpointRequest and reuses the shared component builder.
+ * Purpose: Builds interrupt component blocks and ask_user AskRequest payloads from the generalized interrupt contract.
+ * Key decisions: ask_user remains one interrupt mechanism — it constructs a AskRequest and reuses the shared component builder.
  */
 import {
   type AskUserKind,
@@ -13,7 +13,7 @@ import {
   parseAskUserToolInput,
 } from "../components/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
-import type { CheckpointRequest, JsonSchema } from "./index.js";
+import type { AskRequest, JsonSchema } from "./index.js";
 
 export function askUserAnswerSchema(input: {
   kind: AskUserKind;
@@ -44,12 +44,9 @@ export function askUserAnswerSchema(input: {
   };
 }
 
-export function checkpointRequestFromAskUser(
-  input: AskUserToolInput,
-  checkpointId: string,
-): CheckpointRequest {
+export function askRequestFromAskUser(input: AskUserToolInput, interruptId: string): AskRequest {
   return {
-    checkpointId,
+    interruptId,
     prompt: input.question,
     artifacts: [],
     answerSchema: askUserAnswerSchema({ kind: input.kind, options: input.options }),
@@ -66,7 +63,7 @@ function jsonObjectProperty(obj: JsonValue | undefined, key: string): JsonValue 
 }
 
 function askUserInputFromAnswerSchema(
-  request: CheckpointRequest,
+  request: AskRequest,
 ): (AskUserToolInput & { question: string }) | null {
   const schema = request.answerSchema;
   const valueSchema = jsonObjectProperty(schema.properties, "value");
@@ -105,14 +102,14 @@ function askUserInputFromAnswerSchema(
   return null;
 }
 
-export function componentContentForCheckpoint(
-  request: CheckpointRequest,
+export function componentContentForAsk(
+  request: AskRequest,
   timeoutMs: number,
 ): ComponentBlockContent {
   const askUser = askUserInputFromAnswerSchema(request);
   if (askUser && isAskUserKind(askUser.kind)) {
     return buildAskUserComponentContent({
-      checkpointId: request.checkpointId,
+      interruptId: request.interruptId,
       question: askUser.question,
       kind: askUser.kind,
       options: askUser.options,
@@ -123,7 +120,7 @@ export function componentContentForCheckpoint(
   }
 
   return {
-    kind: "checkpoint",
+    kind: "form",
     props: {
       prompt: request.prompt,
       artifacts: request.artifacts as JsonValue,
@@ -131,17 +128,14 @@ export function componentContentForCheckpoint(
       recommended: request.recommended ?? null,
       requiresHuman: request.requiresHuman ?? false,
     },
-    checkpoint: {
-      id: request.checkpointId,
+    interrupt: {
+      id: request.interruptId,
       timeoutMs,
     },
   };
 }
 
-export function parseCheckpointReplyValue(
-  answerSchema: JsonSchema,
-  responseValue: JsonValue,
-): JsonValue {
+export function parseAskReplyValue(answerSchema: JsonSchema, responseValue: JsonValue): JsonValue {
   if (typeof responseValue === "string") {
     return { value: responseValue };
   }
@@ -160,9 +154,9 @@ export function parseCheckpointReplyValue(
   return responseValue;
 }
 
-export function minimalCheckpointRequest(checkpointId: string, prompt = "test"): CheckpointRequest {
+export function minimalAskRequest(interruptId: string, prompt = "test"): AskRequest {
   return {
-    checkpointId,
+    interruptId,
     prompt,
     artifacts: [],
     answerSchema: {

@@ -1,11 +1,11 @@
 /**
  * FormBlock — schema-driven ask_user component block.
  *
- * Purpose: renders any `CheckpointRequest` payload that flows through the
- * `componentContentForCheckpoint` builder. ZERO domain vocabulary: the prompt,
+ * Purpose: renders any `AskRequest` payload that flows through the
+ * `componentContentForAsk` builder. ZERO domain vocabulary: the prompt,
  * artifacts, and form fields come entirely from the package-supplied
  * `request.prompt` / `artifacts` / `answerSchema`. The same card renders any
- * future package's checkpoint unchanged.
+ * future package's interrupt unchanged.
  *
  * Key decisions:
  *  - Artifact thumbnails: `image` arms render as inline images (click to
@@ -14,13 +14,13 @@
  *    `liveView` today — the slot is reserved per execution-model §8.4 so
  *    when the live-preview probe goes green the overlay drops in
  *    without a contract or card change.
- *  - Form generated from `answerSchema` via `checkpointFieldsFromSchema`,
+ *  - Form generated from `answerSchema` via `interruptFieldsFromSchema`,
  *    which owns the supported JSON-Schema subset. Required-field validation
  *    blocks empty submits.
  *  - On submit the card emits the full answer object (one property per
  *    field, keyed by schema property name); `CustomBlockRenderer` adds the
- *    checkpoint correlation tuple.
- *  - Resolved/auto-resumed checkpoints render a compact summary so the chat
+ *    interrupt correlation tuple.
+ *  - Resolved/auto-resumed interrupts render a compact summary so the chat
  *    history reads as a conversation, not a stack of expired forms.
  */
 import { t } from "@lingui/core/macro";
@@ -39,25 +39,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ComponentCard, ComponentResolvedSummary } from "./ComponentCard";
-import {
-  type CheckpointField,
-  type CheckpointFormErrors,
-  type CheckpointFormValues,
-  checkpointFieldsFromSchema,
-  initialFormValues,
-  validateFormValues,
-} from "./checkpoint-form-schema";
 import type { ComponentBlockProps } from "./component-registry";
+import {
+  type InterruptField,
+  type InterruptFormErrors,
+  type InterruptFormValues,
+  initialFormValues,
+  interruptFieldsFromSchema,
+  validateFormValues,
+} from "./interrupt-form-schema";
 
-type CheckpointProps = {
+type InterruptProps = {
   prompt: string;
   artifacts: ArtifactRef[];
-  fields: CheckpointField[];
+  fields: InterruptField[];
   recommended: import("@meridian/contracts/threads").JsonValue | null;
 };
 
-function readCheckpointProps(content: ComponentBlockProps["content"]): CheckpointProps | null {
-  if (content.kind !== "checkpoint") return null;
+function readInterruptProps(content: ComponentBlockProps["content"]): InterruptProps | null {
+  if (content.kind !== "form") return null;
   const props = content.props;
 
   const prompt = typeof props.prompt === "string" ? props.prompt : "";
@@ -67,7 +67,7 @@ function readCheckpointProps(content: ComponentBlockProps["content"]): Checkpoin
   if (!answerSchemaRaw || typeof answerSchemaRaw !== "object" || Array.isArray(answerSchemaRaw)) {
     return null;
   }
-  const fields = checkpointFieldsFromSchema(answerSchemaRaw);
+  const fields = interruptFieldsFromSchema(answerSchemaRaw);
 
   const artifactsRaw = props.artifacts;
   const artifacts: ArtifactRef[] = Array.isArray(artifactsRaw)
@@ -88,7 +88,7 @@ function isArtifactRef(value: unknown): value is ArtifactRef {
 }
 
 export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
-  const parsed = readCheckpointProps(content);
+  const parsed = readInterruptProps(content);
   const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
   const resolvedValue =
     typeof content.props.resolvedValue === "string" ? content.props.resolvedValue : null;
@@ -121,7 +121,7 @@ export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlo
   }
 
   return (
-    <CheckpointForm
+    <InterruptForm
       prompt={parsed.prompt}
       artifacts={parsed.artifacts}
       fields={parsed.fields}
@@ -132,14 +132,14 @@ export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlo
   );
 }
 
-function CheckpointForm({
+function InterruptForm({
   prompt,
   artifacts,
   fields,
   recommended,
   isAwaitingResponse,
   respond,
-}: CheckpointProps & {
+}: InterruptProps & {
   isAwaitingResponse: boolean;
   respond: ComponentBlockProps["respond"];
 }) {
@@ -147,8 +147,8 @@ function CheckpointForm({
   // every keystroke would clobber user input. Memoize on the props that
   // actually feed the seed.
   const seedValues = useMemo(() => initialFormValues(fields, recommended), [fields, recommended]);
-  const [values, setValues] = useState<CheckpointFormValues>(seedValues);
-  const [errors, setErrors] = useState<CheckpointFormErrors>({});
+  const [values, setValues] = useState<InterruptFormValues>(seedValues);
+  const [errors, setErrors] = useState<InterruptFormErrors>({});
   const [submitted, setSubmitted] = useState(false);
 
   const formDisabled = !isAwaitingResponse || submitted;
@@ -359,13 +359,13 @@ function FieldRow({
   disabled,
   onChange,
 }: {
-  field: CheckpointField;
+  field: InterruptField;
   value: string | number | boolean | undefined;
   error: string | undefined;
   disabled: boolean;
   onChange: (value: string | number | boolean) => void;
 }) {
-  const inputId = `checkpoint-field-${field.name}`;
+  const inputId = `interrupt-field-${field.name}`;
   const labelText = field.name;
   const requiredHint = field.required ? <span aria-hidden> *</span> : null;
   const descriptionId = field.description ? `${inputId}-desc` : undefined;
@@ -413,7 +413,7 @@ function FieldInput({
   describedBy,
   onChange,
 }: {
-  field: CheckpointField;
+  field: InterruptField;
   inputId: string;
   value: string | number | boolean | undefined;
   disabled: boolean;

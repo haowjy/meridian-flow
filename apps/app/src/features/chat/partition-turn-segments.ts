@@ -1,13 +1,13 @@
 /**
  * partition-turn-segments — structural Thinking/Activity segmentation for assistant turns.
  *
- * Purpose: Converts an already ordered `Block[]` into checkpoint-bounded turn
+ * Purpose: Converts an already ordered `Block[]` into interrupt-bounded turn
  * segments, then separates each segment into process-fold runs and the visible
  * activity frontier. The key decision is that this module reads only block
  * order and block type/content shape, never streaming status, so live and
  * settled turns partition identically.
  */
-import { type Block, checkpointIdForBlock } from "@meridian/contracts/protocol";
+import { type Block, interruptIdForBlock } from "@meridian/contracts/protocol";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -20,21 +20,21 @@ export function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
 }
 
-export function isCheckpointBlock(block: Block): boolean {
-  return checkpointIdForBlock(block) !== null;
+export function isInterruptBlock(block: Block): boolean {
+  return interruptIdForBlock(block) !== null;
 }
 
 export function partitionTurnSegments(blocks: Block[]): TurnSegment[] {
-  return splitAtCheckpoints(blocks).map(partitionSegment);
+  return splitAtInterrupts(blocks).map(partitionSegment);
 }
 
-function splitAtCheckpoints(blocks: Block[]): Block[][] {
+function splitAtInterrupts(blocks: Block[]): Block[][] {
   const segments: Block[][] = [];
   let current: Block[] = [];
 
   for (const block of blocks) {
     current.push(block);
-    if (isCheckpointBlock(block)) {
+    if (isInterruptBlock(block)) {
       segments.push(current);
       current = [];
     }

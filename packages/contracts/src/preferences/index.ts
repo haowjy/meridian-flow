@@ -33,7 +33,7 @@ export interface ProjectPreferences {
    * Null means no explicit default (client falls back to builtin "general").
    */
   defaultAgentSlug: string | null;
-  /** Same-turn checkpoint timeout policy. Defaults keep runs moving if the user walks away. */
+  /** Same-turn interrupt timeout policy. Defaults keep runs moving if the user walks away. */
   autoResume?: {
     enabled: boolean;
     timeoutMs: number;

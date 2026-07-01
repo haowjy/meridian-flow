@@ -22,8 +22,8 @@ import { buildThreadsWsUrl } from "./dev-transport";
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
-  CheckpointRespondInput,
   ConnectionState,
+  InterruptRespondInput,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -128,8 +128,8 @@ export class WsThreadTransport implements ThreadTransport {
     };
   }
 
-  respondCheckpoint(input: CheckpointRespondInput): void {
-    this.send({ type: "checkpoint.respond", ...input });
+  respondInterrupt(input: InterruptRespondInput): void {
+    this.send({ type: "interrupt.respond", ...input });
   }
 
   cancel(threadId: string, turnId: string) {

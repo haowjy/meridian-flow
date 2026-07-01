@@ -587,7 +587,7 @@ function SubagentRow({
           active
             ? "bg-primary/10 font-medium text-foreground"
             : "text-ink-subtle hover:bg-sidebar-accent hover:text-foreground",
-          lifecycle === "checkpoint" ? "bg-destructive-tint/60" : undefined,
+          lifecycle === "interrupt" ? "bg-destructive-tint/60" : undefined,
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -635,7 +635,7 @@ function StatusDot({ lifecycle, small = false }: { lifecycle: LifecycleState; sm
           strokeWidth={2.5}
         />
       );
-    case "checkpoint":
+    case "interrupt":
       return (
         <Pause aria-hidden className={cn("shrink-0 text-destructive", size)} strokeWidth={2.5} />
       );

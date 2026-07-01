@@ -10,8 +10,8 @@
  * The only streaming seam is the optional output-delta sink, which the
  * orchestrator injects for tools that stream live process output.
  */
-import type { CheckpointAnswerEnvelope } from "@meridian/contracts/components";
-import type { CheckpointRequest } from "@meridian/contracts/interrupt";
+import type { InterruptAnswerEnvelope } from "@meridian/contracts/components";
+import type { AskRequest } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -64,9 +64,9 @@ export interface ToolExecutionContext {
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
   ) => void;
-  checkpointTimeoutMs?: number;
-  checkpoint?: CheckpointToolHandlerContext["checkpoint"];
-  updateComponentBlock?: CheckpointToolHandlerContext["updateComponentBlock"];
+  interruptTimeoutMs?: number;
+  interrupt?: InterruptToolHandlerContext["interrupt"];
+  updateComponentBlock?: InterruptToolHandlerContext["updateComponentBlock"];
   spawn?: SpawnToolHandlerContext["spawn"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
 }
@@ -114,7 +114,7 @@ export interface ToolExecutor {
  *
  * Base handlers receive only execution identity, cancellation, and the narrow
  * stdout/stderr streaming sink. Interactive or orchestrator-adjacent powers are
- * explicit registration-declared capabilities: `checkpoint` receives the
+ * explicit registration-declared capabilities: `interrupt` receives the
  * user-input suspend/resume callbacks, `spawn` receives the nested-agent
  * launcher, and `return_result` receives the child-to-parent completion hook.
  * The executor enforces that capability declaration before injecting those
@@ -137,11 +137,11 @@ export interface ToolHandlerContext {
   emitOutputDelta?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
 }
 
-export type CheckpointResponse = CheckpointAnswerEnvelope;
+export type InterruptResponse = InterruptAnswerEnvelope;
 
 /**
- * Richer context injected only for registrations with `capability: "checkpoint"`.
- * Checkpoint tools are still normal async handlers; these callbacks are the
+ * Richer context injected only for registrations with `capability: "interrupt"`.
+ * Interrupt tools are still normal async handlers; these callbacks are the
  * narrow suspend/resume seam the orchestrator owns.
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
@@ -157,19 +157,19 @@ export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
   returnResult(capture: ReturnResultCapture): Promise<{ ok: true }>;
 }
 
-export interface CheckpointToolHandlerContext extends ToolHandlerContext {
+export interface InterruptToolHandlerContext extends ToolHandlerContext {
   /** Effective timeout in milliseconds from project preferences unless the tool overrides it. */
-  checkpointTimeoutMs: number;
+  interruptTimeoutMs: number;
   /**
-   * Persist a component block, mark the turn as waiting_checkpoint, and
-   * suspend until a user response or timeout resolves the checkpoint.
+   * Persist a component block, mark the turn as waiting_interrupt, and
+   * suspend until a user response or timeout resolves the interrupt.
    */
-  checkpoint(request: CheckpointRequest, timeoutMs?: number): Promise<CheckpointResponse>;
+  interrupt(request: AskRequest, timeoutMs?: number): Promise<InterruptResponse>;
   /**
    * Patch the persisted component block's `props` after resolution so replay
    * and cold-load can render the selected value/provenance.
    */
-  updateComponentBlock(checkpointId: string, propsPatch: JsonObject): Promise<void>;
+  updateComponentBlock(interruptId: string, propsPatch: JsonObject): Promise<void>;
 }
 
 /**
@@ -235,14 +235,14 @@ export interface ToolRegistration {
         type: "server";
         handler:
           | ToolHandler
-          | ToolHandler<CheckpointToolHandlerContext>
+          | ToolHandler<InterruptToolHandlerContext>
           | ToolHandler<SpawnToolHandlerContext>
           | ToolHandler<ReturnResultToolHandlerContext>;
       }
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "checkpoint" | "spawn" | "return_result";
+  capability?: "interrupt" | "spawn" | "return_result";
 }
 
 /**

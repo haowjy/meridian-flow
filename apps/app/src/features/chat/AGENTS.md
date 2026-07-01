@@ -2,7 +2,7 @@
 
 The chat frontend: how assistant turns render from `Block[]` onto the screen,
 including the `Thinking`/`ActivityBlock` composition model, tool rendering,
-checkpoint interaction, and the live→settled transition.
+interrupt interaction, and the live→settled transition.
 
 ## Purpose
 
@@ -14,7 +14,7 @@ composer — those are adjacent concerns in sibling files (`useChatThreadSession
 
 ## Mental model
 
-An assistant turn renders as a **stack of segments**, one per checkpoint round.
+An assistant turn renders as a **stack of segments**, one per interrupt round.
 Each segment has exactly two zones:
 
 - **`Thinking` disclosure** (collapsed) — process history: all reasoning blocks
@@ -27,10 +27,10 @@ type, never on streaming state. This guarantees a settled/reloaded turn renders
 the same structure the user saw live.
 
 When a new activity run begins, the previous frontier **rolls up** into `Thinking`
-in its chronological position. When a checkpoint is resolved, the segment is
+in its chronological position. When a interrupt is resolved, the segment is
 **frozen** and a new segment begins below.
 
-The full model — including the 6-state lifecycle table and checkpoint segmentation
+The full model — including the 6-state lifecycle table and interrupt segmentation
 diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 ## Key rules
@@ -39,8 +39,8 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
    whether streaming live or settled. No auto-open on streaming.
 2. **Streaming ≡ settled.** The partition logic must never branch on `isLive` or
    `turn.status`. Same `Block[]` order → same render structure.
-3. **Checkpoint segments are frozen.** Once a user responds to a checkpoint, that
-   segment's `ActivityBlock` (including the checkpoint) stays expanded forever —
+3. **Interrupt segments are frozen.** Once a user responds to a interrupt, that
+   segment's `ActivityBlock` (including the interrupt) stays expanded forever —
    never rolled up into a later segment's `Thinking`.
 4. **Block render keys are positional.** Use `blockRenderKey(block)` —
    `turnId::sequence`. Never key by `block.id`. This ensures the live→settled swap
@@ -64,10 +64,10 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | File | What it does |
 |---|---|
 | `AssistantTurn.tsx` | Top-level turn render — sorts blocks, partitions, mounts zones |
-| `partition-turn-segments.ts` | Structural checkpoint segmentation + run grouping for Thinking/Activity zones |
+| `partition-turn-segments.ts` | Structural interrupt segmentation + run grouping for Thinking/Activity zones |
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then groups adjacent logical tool runs |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle |
-| `CustomBlockRenderer.tsx` | Renders `custom` blocks; checkpoints route through `onRespondToCheckpoint` |
+| `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |

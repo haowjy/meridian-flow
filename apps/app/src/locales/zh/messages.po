@@ -98,7 +98,7 @@ msgstr "助手正在思考"
 msgid "Attach scans or reference files"
 msgstr "附上扫描件或参考资料"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "auto-selected"
@@ -145,28 +145,28 @@ msgstr ""
 msgid "Chats"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/project/lifecycle.ts
-msgid "Checkpoint"
+msgid "Needs your answer"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint auto-resume"
+msgid "Interrupt auto-resume"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint payload is malformed."
+#: src/features/chat/FormBlock.tsx
+msgid "Form payload is malformed."
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint resolved"
+#: src/features/chat/FormBlock.tsx
+msgid "Form resolved"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint timeout in milliseconds"
+msgid "Interrupt timeout in milliseconds"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr ""
 
@@ -184,7 +184,7 @@ msgstr ""
 msgid "Close {0}"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Close artifact preview"
 msgstr ""
 
@@ -228,7 +228,7 @@ msgstr ""
 msgid "Completed."
 msgstr "已完成。"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr ""
 
@@ -368,10 +368,10 @@ msgid "Enable auto-resume"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Enable checkpoint auto-resume"
+msgid "Enable interrupt auto-resume"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr ""
 
@@ -399,7 +399,7 @@ msgid "Expand sidebar"
 msgstr ""
 
 #. placeholder {0}: artifact.expiresAt
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "expires {0}"
 msgstr ""
 
@@ -483,7 +483,7 @@ msgstr ""
 msgid "Idle"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Image artifact"
 msgstr ""
 
@@ -540,11 +540,11 @@ msgstr ""
 msgid "Literature Review"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live artifact view"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live view"
 msgstr ""
 
@@ -606,19 +606,19 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a whole number"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at least {value}"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at most {value}"
 msgstr ""
 
@@ -662,7 +662,7 @@ msgstr ""
 msgid "No alt text yet"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "No answer"
@@ -682,7 +682,7 @@ msgstr ""
 msgid "No conversations yet"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
 msgstr ""
 
@@ -723,7 +723,7 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Object"
 msgstr ""
 
@@ -902,7 +902,7 @@ msgstr ""
 msgid "Reply to the agent, or steer the analysis…"
 msgstr "回复智能体，或引导分析方向…"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr ""
 
@@ -982,7 +982,7 @@ msgstr ""
 msgid "Select a document."
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Select…"
 msgstr ""
 
@@ -1047,7 +1047,7 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Stop run"
 msgstr ""
 
@@ -1073,7 +1073,7 @@ msgid "Suggested text is prefilled; edit it before submitting if needed."
 msgstr ""
 
 #. placeholder {0}: String(field.defaultValue)
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Suggested: {0}"
 msgstr ""
 
@@ -1240,7 +1240,7 @@ msgid "User Files"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Uses the checkpoint recommendation unless the model requires a human."
+msgid "Uses the interrupt recommendation unless the model requires a human."
 msgstr ""
 
 #. placeholder {0}: GROUP_LABELS[groupBy]
@@ -1316,7 +1316,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "you answered"

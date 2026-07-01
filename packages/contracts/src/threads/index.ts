@@ -71,9 +71,9 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
-  | "checkpoint.created"
-  | "checkpoint.resolved"
-  | "checkpoint.expired"
+  | "interrupt.created"
+  | "interrupt.resolved"
+  | "interrupt.expired"
   /** EPHEMERAL transport — live hub streaming delta, not durable journal authority. */
   | "stream.delta"
   | "tool.executing"
@@ -229,7 +229,7 @@ export interface Block {
 
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
-export { checkpointIdForBlock } from "./checkpoint-id-for-block.js";
+export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 

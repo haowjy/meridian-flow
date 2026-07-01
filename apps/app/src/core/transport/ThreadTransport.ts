@@ -22,8 +22,8 @@ export type ConnectionState =
   | { kind: "terminal"; reason: string; code?: number }
   | { kind: "unauthorized"; reason: string; code?: number };
 
-export type CheckpointRespondInput = Omit<
-  Extract<WsClientMessage, { type: "checkpoint.respond" }>,
+export type InterruptRespondInput = Omit<
+  Extract<WsClientMessage, { type: "interrupt.respond" }>,
   "type"
 >;
 
@@ -78,8 +78,8 @@ export interface ThreadTransport {
     opts?: ThreadTransportSubscribeOptions,
   ): () => void;
 
-  /** Send a checkpoint answer over the existing thread WebSocket. */
-  respondCheckpoint(input: CheckpointRespondInput): void;
+  /** Send a interrupt answer over the existing thread WebSocket. */
+  respondInterrupt(input: InterruptRespondInput): void;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

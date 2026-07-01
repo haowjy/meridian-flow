@@ -1,21 +1,21 @@
 /**
- * Purpose: Verifies the shared ask_user prop contract and checkpoint answer helpers that keep server builders and client renderers from drifting.
+ * Purpose: Verifies the shared ask_user prop contract and interrupt answer helpers that keep server builders and client renderers from drifting.
  */
 import { describe, expect, it } from "vitest";
 
 import {
   ASK_USER_TOOL_INPUT_SCHEMA,
   buildAskUserComponentContent,
-  checkpointResolvedPropsFromAnswer,
-  normalizeCheckpointAnswerValue,
+  interruptResolvedPropsFromAnswer,
+  normalizeInterruptAnswerValue,
   parseAskUserToolInput,
 } from "./index.js";
 
-describe("normalizeCheckpointAnswerValue", () => {
-  it("unwraps exactly one checkpoint answer envelope", () => {
-    expect(normalizeCheckpointAnswerValue("direct")).toBe("direct");
-    expect(normalizeCheckpointAnswerValue({ value: "wrapped" })).toBe("wrapped");
-    expect(normalizeCheckpointAnswerValue({ value: { value: "nested" } })).toBe(
+describe("normalizeInterruptAnswerValue", () => {
+  it("unwraps exactly one interrupt answer envelope", () => {
+    expect(normalizeInterruptAnswerValue("direct")).toBe("direct");
+    expect(normalizeInterruptAnswerValue({ value: "wrapped" })).toBe("wrapped");
+    expect(normalizeInterruptAnswerValue({ value: { value: "nested" } })).toBe(
       JSON.stringify({ value: "nested" }),
     );
   });
@@ -24,7 +24,7 @@ describe("normalizeCheckpointAnswerValue", () => {
 describe("ask_user component contract", () => {
   it("builds JSON-natural choice/free-text component props from one typed surface", () => {
     const choice = buildAskUserComponentContent({
-      checkpointId: "checkpoint_choice",
+      interruptId: "interrupt_choice",
       kind: "choice",
       question: "Which analysis?",
       options: [{ value: "quick", label: "Quick" }],
@@ -33,7 +33,7 @@ describe("ask_user component contract", () => {
       timeoutMs: 270_000,
     });
     const freeText = buildAskUserComponentContent({
-      checkpointId: "checkpoint_text",
+      interruptId: "interrupt_text",
       kind: "free-text",
       question: "What label?",
       recommended: null,
@@ -50,7 +50,7 @@ describe("ask_user component contract", () => {
         recommended: "quick",
         requiresHuman: false,
       },
-      checkpoint: { id: "checkpoint_choice", timeoutMs: 270_000 },
+      interrupt: { id: "interrupt_choice", timeoutMs: 270_000 },
     });
     expect(freeText).toMatchObject({
       kind: "free-text",
@@ -87,10 +87,10 @@ describe("ask_user component contract", () => {
   });
 });
 
-describe("checkpointResolvedPropsFromAnswer", () => {
+describe("interruptResolvedPropsFromAnswer", () => {
   it("normalizes the resolved patch shape applied to component props", () => {
     expect(
-      checkpointResolvedPropsFromAnswer({ value: { value: "quick" }, provenance: "user" }),
+      interruptResolvedPropsFromAnswer({ value: { value: "quick" }, provenance: "user" }),
     ).toEqual({
       resolvedValue: "quick",
       answerProvenance: "user",

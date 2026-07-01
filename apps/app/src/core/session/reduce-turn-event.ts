@@ -7,11 +7,11 @@
  * opaque block IDs.
  */
 import {
-  type CheckpointAnswerProvenance,
-  checkpointResolvedPropsFromAnswer,
+  type InterruptAnswerProvenance,
+  interruptResolvedPropsFromAnswer,
 } from "@meridian/contracts/components";
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
-import { blockContentRecord, checkpointIdForBlock, EventType } from "@meridian/contracts/protocol";
+import { blockContentRecord, EventType, interruptIdForBlock } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 
 import {
@@ -22,9 +22,9 @@ import {
   toBlockContent,
 } from "./state-helpers";
 
-type CheckpointLifecyclePayload = {
+type InterruptLifecyclePayload = {
   turnId: string;
-  checkpointId: string;
+  interruptId: string;
   state: "created" | "resolved" | "expired";
   blockSequence?: number;
   value?: JsonValue;
@@ -410,19 +410,19 @@ function warnMalformedToolOutputDelta(detail: string): void {
   }
 }
 
-function parseCheckpointLifecyclePayload(value: unknown): CheckpointLifecyclePayload | null {
+function parseInterruptLifecyclePayload(value: unknown): InterruptLifecyclePayload | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   const state = candidate.state;
   const turnId = candidate.turnId;
-  const checkpointId = candidate.checkpointId;
+  const interruptId = candidate.interruptId;
   if (state !== "created" && state !== "resolved" && state !== "expired") return null;
   if (typeof turnId !== "string" || turnId.length === 0) return null;
-  if (typeof checkpointId !== "string" || checkpointId.length === 0) return null;
+  if (typeof interruptId !== "string" || interruptId.length === 0) return null;
 
   return {
     turnId,
-    checkpointId,
+    interruptId,
     state,
     blockSequence:
       typeof candidate.blockSequence === "number" ? candidate.blockSequence : undefined,
@@ -434,12 +434,12 @@ function parseCheckpointLifecyclePayload(value: unknown): CheckpointLifecyclePay
   };
 }
 
-function checkpointBlockForPayload(turn: Turn, payload: CheckpointLifecyclePayload): Block | null {
+function interruptBlockForPayload(turn: Turn, payload: InterruptLifecyclePayload): Block | null {
   if (typeof payload.blockSequence === "number") {
     const sequenced = turn.blocks.find((block) => block.sequence === payload.blockSequence);
     if (
       sequenced?.blockType === "custom" &&
-      checkpointIdForBlock(sequenced) === payload.checkpointId
+      interruptIdForBlock(sequenced) === payload.interruptId
     ) {
       return sequenced;
     }
@@ -447,15 +447,14 @@ function checkpointBlockForPayload(turn: Turn, payload: CheckpointLifecyclePaylo
 
   return (
     turn.blocks.find(
-      (block) =>
-        block.blockType === "custom" && checkpointIdForBlock(block) === payload.checkpointId,
+      (block) => block.blockType === "custom" && interruptIdForBlock(block) === payload.interruptId,
     ) ?? null
   );
 }
 
-function resolvedCheckpointAnswer(payload: CheckpointLifecyclePayload): {
+function resolvedInterruptAnswer(payload: InterruptLifecyclePayload): {
   value: JsonValue;
-  provenance: CheckpointAnswerProvenance;
+  provenance: InterruptAnswerProvenance;
 } {
   // The server may omit an explicit expired answer in the lifecycle event; the
   // component still needs a durable sentinel so cold-load renders as resolved.
@@ -465,7 +464,7 @@ function resolvedCheckpointAnswer(payload: CheckpointLifecyclePayload): {
   };
 }
 
-function patchCheckpointBlock(block: Block, payload: CheckpointLifecyclePayload): Block {
+function patchInterruptBlock(block: Block, payload: InterruptLifecyclePayload): Block {
   const content = blockContentRecord(block);
   const props =
     content.props && typeof content.props === "object" && !Array.isArray(content.props)
@@ -478,49 +477,49 @@ function patchCheckpointBlock(block: Block, payload: CheckpointLifecyclePayload)
       ...content,
       props: {
         ...props,
-        ...checkpointResolvedPropsFromAnswer(resolvedCheckpointAnswer(payload)),
+        ...interruptResolvedPropsFromAnswer(resolvedInterruptAnswer(payload)),
       },
     },
   };
 }
 
 /**
- * Buffered checkpoint resolution patches keyed by thread/turn/checkpoint id.
+ * Buffered interrupt resolution patches keyed by thread/turn/interrupt id.
  *
- * The live hub can replay `meridian.checkpoint` before `meridian.block.upserted`
+ * The live hub can replay `meridian.interrupt` before `meridian.block.upserted`
  * when a client reconnects around an ask_user pause/resume boundary. The buffer
  * lets the late component block receive its resolved props, but entries must be
  * cleared on snapshot/terminal boundaries because this map is module-global,
  * not tied to a ThreadStore provider lifetime.
  */
-const pendingCheckpointPatches = new Map<string, CheckpointLifecyclePayload>();
+const pendingInterruptPatches = new Map<string, InterruptLifecyclePayload>();
 
-function pendingCheckpointPatchKey(threadId: string, turnId: string, checkpointId: string): string {
-  return `${threadId}\u0000${turnId}\u0000${checkpointId}`;
+function pendingInterruptPatchKey(threadId: string, turnId: string, interruptId: string): string {
+  return `${threadId}\u0000${turnId}\u0000${interruptId}`;
 }
 
-function pendingCheckpointPatchForBlock(
+function pendingInterruptPatchForBlock(
   threadId: string,
   block: Block,
-): CheckpointLifecyclePayload | null {
-  const checkpointId = checkpointIdForBlock(block);
-  if (!checkpointId) return null;
-  const key = pendingCheckpointPatchKey(threadId, block.turnId, checkpointId);
-  const payload = pendingCheckpointPatches.get(key);
+): InterruptLifecyclePayload | null {
+  const interruptId = interruptIdForBlock(block);
+  if (!interruptId) return null;
+  const key = pendingInterruptPatchKey(threadId, block.turnId, interruptId);
+  const payload = pendingInterruptPatches.get(key);
   if (!payload) return null;
-  pendingCheckpointPatches.delete(key);
+  pendingInterruptPatches.delete(key);
   return payload;
 }
 
-export function clearPendingCheckpointPatchesForThread(threadId: string): void {
-  for (const key of pendingCheckpointPatches.keys()) {
-    if (key.startsWith(`${threadId}\u0000`)) pendingCheckpointPatches.delete(key);
+export function clearPendingInterruptPatchesForThread(threadId: string): void {
+  for (const key of pendingInterruptPatches.keys()) {
+    if (key.startsWith(`${threadId}\u0000`)) pendingInterruptPatches.delete(key);
   }
 }
 
-export function clearPendingCheckpointPatchesForTurn(threadId: string, turnId: string): void {
-  for (const key of pendingCheckpointPatches.keys()) {
-    if (key.startsWith(`${threadId}\u0000${turnId}\u0000`)) pendingCheckpointPatches.delete(key);
+export function clearPendingInterruptPatchesForTurn(threadId: string, turnId: string): void {
+  for (const key of pendingInterruptPatches.keys()) {
+    if (key.startsWith(`${threadId}\u0000${turnId}\u0000`)) pendingInterruptPatches.delete(key);
   }
 }
 
@@ -534,35 +533,35 @@ function applyCustomBlockUpsertEvent(
   });
 
   let block = blockFromCustomUpsertPayload(payload);
-  const pendingPatch = pendingCheckpointPatchForBlock(threadId, block);
+  const pendingPatch = pendingInterruptPatchForBlock(threadId, block);
   if (pendingPatch) {
-    // Replay can legally deliver checkpoint resolution before the component
+    // Replay can legally deliver interrupt resolution before the component
     // block when a client reconnects around the pause/resume boundary.
-    block = patchCheckpointBlock(block, pendingPatch);
+    block = patchInterruptBlock(block, pendingPatch);
   }
 
   store.upsertAssistantBlock(threadId, payload.block.turnId, block);
 }
 
-function applyCheckpointLifecycleEvent(
+function applyInterruptLifecycleEvent(
   store: StoreEventTarget,
   threadId: string,
-  payload: CheckpointLifecyclePayload,
+  payload: InterruptLifecyclePayload,
 ): void {
   store.ensureAssistantTurn(threadId, payload.turnId, { createdAt: new Date().toISOString() });
 
   if (payload.state === "created") {
-    store.patchTurnStatus(threadId, payload.turnId, "waiting_checkpoint");
+    store.patchTurnStatus(threadId, payload.turnId, "waiting_interrupt");
     return;
   }
 
   const turn = turnById(store, threadId, payload.turnId);
-  const block = turn ? checkpointBlockForPayload(turn, payload) : null;
+  const block = turn ? interruptBlockForPayload(turn, payload) : null;
   if (block) {
-    store.upsertAssistantBlock(threadId, payload.turnId, patchCheckpointBlock(block, payload));
+    store.upsertAssistantBlock(threadId, payload.turnId, patchInterruptBlock(block, payload));
   } else {
-    pendingCheckpointPatches.set(
-      pendingCheckpointPatchKey(threadId, payload.turnId, payload.checkpointId),
+    pendingInterruptPatches.set(
+      pendingInterruptPatchKey(threadId, payload.turnId, payload.interruptId),
       payload,
     );
   }
@@ -917,7 +916,7 @@ export function applyAguiEventToStore(
           eventsApplied,
         }),
       );
-      if (snapshot.status === "streaming" || snapshot.status === "waiting_checkpoint") {
+      if (snapshot.status === "streaming" || snapshot.status === "waiting_interrupt") {
         store.patchTurnStatus(threadId, turn.id, "streaming");
       }
       return;
@@ -945,9 +944,9 @@ export function applyAguiEventToStore(
         if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
         return;
       }
-      if (event.name === "meridian.checkpoint") {
-        const payload = parseCheckpointLifecyclePayload(event.value);
-        if (payload) applyCheckpointLifecycleEvent(store, threadId, payload);
+      if (event.name === "meridian.interrupt") {
+        const payload = parseInterruptLifecyclePayload(event.value);
+        if (payload) applyInterruptLifecycleEvent(store, threadId, payload);
         return;
       }
       if (event.name === "meridian.tool.output_delta") {
@@ -1051,7 +1050,7 @@ export function applyAguiEventToStore(
         typeof event.result === "object" &&
         "stopReason" in event.result &&
         event.result.stopReason === "user_cancelled";
-      clearPendingCheckpointPatchesForTurn(threadId, turn.id);
+      clearPendingInterruptPatchesForTurn(threadId, turn.id);
       store.patchTurnStatus(threadId, turn.id, stopReason ? "cancelled" : "complete", {
         completedAt: new Date().toISOString(),
         finishReason: stopReason ? "stop_sequence" : "end_turn",
@@ -1062,7 +1061,7 @@ export function applyAguiEventToStore(
     case EventType.RUN_ERROR: {
       const turn = activeAssistantTurn(store, threadId);
       if (!turn) return;
-      clearPendingCheckpointPatchesForTurn(threadId, turn.id);
+      clearPendingInterruptPatchesForTurn(threadId, turn.id);
       store.patchTurnStatus(threadId, turn.id, "error", {
         completedAt: new Date().toISOString(),
         error: event.message,

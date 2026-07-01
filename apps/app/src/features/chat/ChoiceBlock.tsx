@@ -2,10 +2,10 @@
  * ChoiceBlock — inline ask_user component block for discrete options.
  *
  * Purpose: renders the `kind:"choice"` custom block as a waiting question with
- * option buttons, then as a compact resolved summary after the checkpoint
+ * option buttons, then as a compact resolved summary after the interrupt
  * lifecycle writes `resolvedValue` + `answerProvenance` into block props.
  * Key decision: the component only emits the component-protocol response value;
- * `CustomBlockRenderer` owns checkpoint/thread correlation for the WS message.
+ * `CustomBlockRenderer` owns interrupt/thread correlation for the WS message.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

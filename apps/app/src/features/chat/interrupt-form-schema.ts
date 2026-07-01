@@ -1,8 +1,8 @@
 /**
- * checkpoint-form-schema — small JSON-Schema-ish parser for the generic
- * checkpoint card's form generator.
+ * interrupt-form-schema — small JSON-Schema-ish parser for the generic
+ * interrupt card's form generator.
  *
- * Purpose: read the `answerSchema` on a `CheckpointRequest`, derive a flat list
+ * Purpose: read the `answerSchema` on a `AskRequest`, derive a flat list
  * of form fields the renderer can lay out, and validate user input before
  * submit. The runtime card is domain-agnostic — schema shape supplies all
  * semantics — so this module owns the only place where JSON Schema vocabulary
@@ -22,23 +22,23 @@
  */
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
-export type CheckpointFieldKind = "string" | "enum" | "number" | "integer" | "boolean";
+export type InterruptFieldKind = "string" | "enum" | "number" | "integer" | "boolean";
 
-export type CheckpointEnumOption = {
+export type InterruptEnumOption = {
   value: string;
   label: string;
 };
 
-export type CheckpointField = {
+export type InterruptField = {
   /** Property name in the answer object — also the form input id. */
   name: string;
-  kind: CheckpointFieldKind;
+  kind: InterruptFieldKind;
   required: boolean;
   description?: string;
   /** Schema-supplied default; also the suggested-default hint in the UI. */
   defaultValue?: string | number | boolean;
   /** Populated only for `kind === "enum"`. */
-  options?: CheckpointEnumOption[];
+  options?: InterruptEnumOption[];
   /** Numeric bounds (number/integer). */
   minimum?: number;
   maximum?: number;
@@ -59,7 +59,7 @@ function stringList(value: JsonValue | undefined): string[] | null {
   return out;
 }
 
-function parseField(name: string, raw: JsonValue, required: boolean): CheckpointField | null {
+function parseField(name: string, raw: JsonValue, required: boolean): InterruptField | null {
   const obj = asObject(raw);
   if (!obj) return null;
 
@@ -89,7 +89,7 @@ function parseField(name: string, raw: JsonValue, required: boolean): Checkpoint
     };
   }
   if (type === "number" || type === "integer") {
-    const field: CheckpointField = {
+    const field: InterruptField = {
       name,
       kind: type,
       required,
@@ -113,13 +113,13 @@ function parseField(name: string, raw: JsonValue, required: boolean): Checkpoint
   return null;
 }
 
-export function checkpointFieldsFromSchema(schema: JsonObject): CheckpointField[] {
+export function interruptFieldsFromSchema(schema: JsonObject): InterruptField[] {
   if (schema.type !== "object") return [];
   const properties = asObject(schema.properties);
   if (!properties) return [];
   const required = new Set(stringList(schema.required) ?? []);
 
-  const fields: CheckpointField[] = [];
+  const fields: InterruptField[] = [];
   for (const [name, raw] of Object.entries(properties)) {
     const field = parseField(name, raw as JsonValue, required.has(name));
     if (field) fields.push(field);
@@ -127,13 +127,13 @@ export function checkpointFieldsFromSchema(schema: JsonObject): CheckpointField[
   return fields;
 }
 
-export type CheckpointFormValues = Record<string, string | number | boolean>;
+export type InterruptFormValues = Record<string, string | number | boolean>;
 
 export function initialFormValues(
-  fields: CheckpointField[],
+  fields: InterruptField[],
   recommended: JsonValue | null,
-): CheckpointFormValues {
-  const values: CheckpointFormValues = {};
+): InterruptFormValues {
+  const values: InterruptFormValues = {};
   const recommendedObj = asObject(recommended ?? undefined);
 
   for (const field of fields) {
@@ -162,7 +162,7 @@ export function initialFormValues(
 }
 
 function coerceToFieldValue(
-  field: CheckpointField,
+  field: InterruptField,
   raw: JsonValue | undefined,
 ): string | number | boolean | undefined {
   if (raw === undefined || raw === null) return undefined;
@@ -178,7 +178,7 @@ function coerceToFieldValue(
   }
 }
 
-export type CheckpointFormErrors = Record<string, string>;
+export type InterruptFormErrors = Record<string, string>;
 
 /**
  * Validate the form against the field list. Returns the errors map and the
@@ -187,10 +187,10 @@ export type CheckpointFormErrors = Record<string, string>;
  * required check, but pass when optional.
  */
 export function validateFormValues(
-  fields: CheckpointField[],
-  values: CheckpointFormValues,
-): { errors: CheckpointFormErrors; answer: JsonObject } {
-  const errors: CheckpointFormErrors = {};
+  fields: InterruptField[],
+  values: InterruptFormValues,
+): { errors: InterruptFormErrors; answer: JsonObject } {
+  const errors: InterruptFormErrors = {};
   const answer: JsonObject = {};
 
   for (const field of fields) {

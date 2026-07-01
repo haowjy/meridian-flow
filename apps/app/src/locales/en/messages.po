@@ -98,7 +98,7 @@ msgstr "Assistant is thinking"
 msgid "Attach scans or reference files"
 msgstr "Attach scans or reference files"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "auto-selected"
@@ -145,28 +145,28 @@ msgstr "Chat"
 msgid "Chats"
 msgstr "Chats"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/project/lifecycle.ts
-msgid "Checkpoint"
-msgstr "Checkpoint"
+msgid "Needs your answer"
+msgstr "Needs your answer"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint auto-resume"
-msgstr "Checkpoint auto-resume"
+msgid "Interrupt auto-resume"
+msgstr "Interrupt auto-resume"
 
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint payload is malformed."
-msgstr "Checkpoint payload is malformed."
+#: src/features/chat/FormBlock.tsx
+msgid "Form payload is malformed."
+msgstr "Form payload is malformed."
 
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint resolved"
-msgstr "Checkpoint resolved"
+#: src/features/chat/FormBlock.tsx
+msgid "Form resolved"
+msgstr "Form resolved"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint timeout in milliseconds"
-msgstr "Checkpoint timeout in milliseconds"
+msgid "Interrupt timeout in milliseconds"
+msgstr "Interrupt timeout in milliseconds"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
 
@@ -184,7 +184,7 @@ msgstr "Close"
 msgid "Close {0}"
 msgstr "Close {0}"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Close artifact preview"
 msgstr "Close artifact preview"
 
@@ -228,7 +228,7 @@ msgstr "Completed"
 msgid "Completed."
 msgstr "Completed."
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr "Confirm"
 
@@ -368,10 +368,10 @@ msgid "Enable auto-resume"
 msgstr "Enable auto-resume"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Enable checkpoint auto-resume"
-msgstr "Enable checkpoint auto-resume"
+msgid "Enable interrupt auto-resume"
+msgstr "Enable interrupt auto-resume"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr "Enabled"
 
@@ -399,7 +399,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #. placeholder {0}: artifact.expiresAt
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "expires {0}"
 msgstr "expires {0}"
 
@@ -483,7 +483,7 @@ msgstr "Identity"
 msgid "Idle"
 msgstr "Idle"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Image artifact"
 msgstr "Image artifact"
 
@@ -540,11 +540,11 @@ msgstr "Listed directory"
 msgid "Literature Review"
 msgstr "Literature Review"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live artifact view"
 msgstr "Live artifact view"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live view"
 msgstr "Live view"
 
@@ -606,19 +606,19 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr "Must be a number"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a whole number"
 msgstr "Must be a whole number"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at least {value}"
 msgstr "Must be at least {value}"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
@@ -662,7 +662,7 @@ msgstr "New project started"
 msgid "No alt text yet"
 msgstr "No alt text yet"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "No answer"
@@ -682,7 +682,7 @@ msgstr "No context files yet."
 msgid "No conversations yet"
 msgstr "No conversations yet"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
 
@@ -723,7 +723,7 @@ msgstr "Nothing matches this filter."
 msgid "now"
 msgstr "now"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Object"
 msgstr "Object"
 
@@ -902,7 +902,7 @@ msgstr "Renamed to {trimmed}"
 msgid "Reply to the agent, or steer the analysis…"
 msgstr "Reply to the agent, or steer the analysis…"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr "Required"
 
@@ -982,7 +982,7 @@ msgstr "Select a document to begin."
 msgid "Select a document."
 msgstr "Select a document."
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Select…"
 msgstr "Select…"
 
@@ -1047,7 +1047,7 @@ msgstr "Status"
 msgid "Stop"
 msgstr "Stop"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Stop run"
 msgstr "Stop run"
 
@@ -1073,7 +1073,7 @@ msgid "Suggested text is prefilled; edit it before submitting if needed."
 msgstr "Suggested text is prefilled; edit it before submitting if needed."
 
 #. placeholder {0}: String(field.defaultValue)
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Suggested: {0}"
 msgstr "Suggested: {0}"
 
@@ -1240,8 +1240,8 @@ msgid "User Files"
 msgstr "User Files"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Uses the checkpoint recommendation unless the model requires a human."
-msgstr "Uses the checkpoint recommendation unless the model requires a human."
+msgid "Uses the interrupt recommendation unless the model requires a human."
+msgstr "Uses the interrupt recommendation unless the model requires a human."
 
 #. placeholder {0}: GROUP_LABELS[groupBy]
 #. placeholder {1}: FILTER_LABELS[filter]
@@ -1316,7 +1316,7 @@ msgstr "Wrote file"
 msgid "Yesterday"
 msgstr "Yesterday"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 #: src/features/chat/ChoiceCheckpoint.tsx
 #: src/features/chat/FreeTextCheckpoint.tsx
 msgid "you answered"
