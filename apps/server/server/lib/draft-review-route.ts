@@ -13,10 +13,24 @@ import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 
 type DraftRouteServices = {
-  threads: AppServices["threadRepos"]["threads"];
-  projects: AppServices["projectRepo"];
-  documentAccess: AppServices["documentAccess"];
-  documentSync: AppServices["documentSync"];
+  threads: Pick<AppServices["threadRepos"]["threads"], "findById">;
+  projects: Pick<AppServices["projectRepo"], "findById">;
+  documentAccess: Pick<
+    AppServices["documentAccess"],
+    "canAccessDocument" | "canAccessProjectDocument"
+  >;
+  documentSync: Pick<AppServices["documentSync"], "readAsMarkdown"> & {
+    drafts: Pick<
+      AppServices["documentSync"]["drafts"],
+      | "getActiveDraft"
+      | "previewDraft"
+      | "acceptDraft"
+      | "rejectDraft"
+      | "undoAcceptDraft"
+      | "undoRejectDraft"
+      | "listReviewableDrafts"
+    >;
+  };
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
