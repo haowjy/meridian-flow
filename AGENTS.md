@@ -25,7 +25,14 @@ source for engineering values (simplicity, deep modules, separation of concerns,
 naming discipline, commenting, aggressive deletion, consistency, testing
 restraint). Core principle: make the code easy to change.
 
-Modules should be written as if they are being prepared to be shared with other people to ccreate useful, flexible, powerful libraries so that 1. we may eventually split the module out to share with others, and 2. so that we can get the flexibility and make our future lives easier when we want to change something.
+Modules should be written as if they are being prepared to be shared with other people to create useful, flexible, powerful libraries so that 1. we may eventually split the module out to share with others, and 2. so that we can get the flexibility and make our future lives easier when we want to change something.
+
+**Structural improvements are never deferred.** When a review surfaces
+architectural debt — parallel hierarchies, leaking abstractions, shallow
+modules, split ownership — fix it in the same PR. Don't track it as a follow-up.
+Code quality, refactors, and simplification are part of the work, not separate
+from it. The cost of structural debt compounds; the cost of fixing it now is
+bounded.
 
 Meridian-specific: the primary writer primitive is a **Project** (a serial /
 book / body of work and everything scoped under it; formerly "workbench" — now

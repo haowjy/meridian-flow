@@ -1,0 +1,2 @@
+ALTER TABLE "threads" ADD COLUMN "ai_write_mode" text DEFAULT 'direct' NOT NULL;--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_ai_write_mode_valid" CHECK ("threads"."ai_write_mode" IN ('direct', 'draft'));

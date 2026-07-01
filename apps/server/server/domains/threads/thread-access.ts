@@ -16,7 +16,7 @@ interface ProjectOwnerRepository {
 
 /** Owner gate: 404 for missing, wrong user, deleted thread, or soft-deleted parent project. */
 export async function requireThreadOwner(
-  repos: { threads: ThreadRepository; projects: ProjectOwnerRepository },
+  repos: { threads: Pick<ThreadRepository, "findById">; projects: ProjectOwnerRepository },
   threadId: string,
   userId: UserId,
 ): Promise<Thread> {

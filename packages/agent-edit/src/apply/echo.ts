@@ -75,6 +75,20 @@ export function diffSnapshots(
   return { changed, deleted, inserted };
 }
 
+/** Return stable top-level block hashes whose content or presence differs between two docs. */
+export function touchedBlockHashesBetween(input: {
+  before: DocHandle;
+  after: DocHandle;
+  model: AgentEditModel;
+  codec: AgentEditCodec;
+}): Set<string> {
+  const diff = diffSnapshots(
+    snapshotBlocks(input.before, input.model, input.codec),
+    snapshotBlocks(input.after, input.model, input.codec),
+  );
+  return new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
+}
+
 /**
  * Apply re-sync updates one at a time so their changed blocks can be attributed
  * to their persisted origin metadata. Update bytes themselves do not carry that

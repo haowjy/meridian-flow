@@ -23,7 +23,12 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { AgentEditAccess, DocumentProjectionRefresher } from "../domains/collab/index.js";
+import type {
+  AgentEditAccess,
+  DocumentProjectionRefresher,
+  ResponseWriteFinalizer,
+  ThreadWriteModeResolver,
+} from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -53,7 +58,10 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher;
+  documentSync: AgentEditAccess &
+    DocumentProjectionRefresher &
+    ResponseWriteFinalizer &
+    ThreadWriteModeResolver;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
@@ -81,9 +89,16 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
+  ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(responseId: string): Promise<void>;
 }
+
+export type ResponseWriteLifecycleCommitResult =
+  | {
+      status: "committed";
+      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+    }
+  | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
@@ -254,38 +269,19 @@ function buildAgentWriteCommand(
   } as WriteCommand;
 }
 
-async function refreshProjectionAfterCommittedWrite(
-  deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
+async function refreshProjectionAfterToolWrite(
+  deps: Pick<ToolWiringDeps, "documentSync">,
   documentId: string,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ctx: Pick<ToolHandlerContext, "threadId">,
 ): Promise<void> {
-  try {
-    await deps.documentSync.refreshDocumentProjection({
-      documentId,
-      threadId: ctx.threadId,
-    });
-  } catch (error) {
-    emitEvent(deps.eventSink, {
-      level: "error",
-      source: "lib.wired-core-tools",
-      name: "document_projection_refresh.unhandled_failure",
-      correlation: {
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-        runId: ctx.turnId,
-      },
-      payload: {
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-        documentId,
-        ...unknownToEventPayload(error),
-      },
-    });
-  }
+  await deps.documentSync.refreshDocumentProjection({
+    documentId,
+    threadId: ctx.threadId,
+  });
 }
 
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
+  deps: Pick<ToolWiringDeps, "documentSync">,
 ): AgentEditResponseWriteLifecycle {
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
 
@@ -317,19 +313,18 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]> {
-      const result = await deps.documentSync.agentEdit().commitResponse(responseId);
-      await Promise.all(
-        result.documents.map((document) =>
-          refreshProjectionAfterCommittedWrite(deps, document.documentId, {
-            threadId: ctx.threadId,
-            turnId: ctx.turnId,
-          }),
-        ),
-      );
+    ): Promise<ResponseWriteLifecycleCommitResult> {
+      const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
-      return result.documents.flatMap((document) =>
+      if (result.status === "draft_closed") {
+        return {
+          status: "draft_closed",
+          responseId: result.responseId,
+          mode: result.mode,
+        };
+      }
+      const concurrentEdits = result.documents.flatMap((document) =>
         document.concurrentEdits
           ? [
               {
@@ -339,10 +334,11 @@ export function createAgentEditResponseWriteLifecycle(
             ]
           : [],
       );
+      return { status: "committed", concurrentEdits };
     },
 
     async rollbackResponse(responseId: string): Promise<void> {
-      const result = await deps.documentSync.agentEdit().rollbackResponse(responseId);
+      const result = await deps.documentSync.finalizeResponseRollback(responseId);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {
@@ -374,6 +370,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
+
+      if (
+        parsed.command === "create" &&
+        ctx.responseId !== undefined &&
+        (await deps.documentSync.resolveThreadWriteMode(ctx.threadId)) === "draft"
+      ) {
+        return toolError({ message: "Creating new documents in draft mode isn't supported yet" });
+      }
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
@@ -427,7 +431,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           parsed.command === "insert" ||
           parsed.command === "replace");
       if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
-        await refreshProjectionAfterCommittedWrite(deps, address.documentId, ctx);
+        await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
       }
       return {
         output: outcome.content ?? outcome.text,

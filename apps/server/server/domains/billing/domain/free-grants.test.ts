@@ -8,7 +8,7 @@ const clock = { now: () => new Date("2026-06-12T00:00:00.000Z") };
 
 describe("ensureFreeTier", () => {
   it("grants the monthly free tier when no subscription or free lot exists", async () => {
-    const ledger = createInMemoryCreditLedger();
+    const ledger = createInMemoryCreditLedger({ clock });
 
     await ensureFreeTier(ledger, userId, { clock });
 
@@ -23,7 +23,7 @@ describe("ensureFreeTier", () => {
   });
 
   it("skips when an unexpired subscription lot exists", async () => {
-    const ledger = createInMemoryCreditLedger();
+    const ledger = createInMemoryCreditLedger({ clock });
     await ledger.grant({
       userId,
       source: "subscription",
@@ -39,7 +39,7 @@ describe("ensureFreeTier", () => {
   });
 
   it("is idempotent under concurrent calls with the same deterministic key", async () => {
-    const ledger = createInMemoryCreditLedger();
+    const ledger = createInMemoryCreditLedger({ clock });
 
     await Promise.all(Array.from({ length: 8 }, () => ensureFreeTier(ledger, userId, { clock })));
 
@@ -51,7 +51,7 @@ describe("ensureFreeTier", () => {
   });
 
   it("does not expose the free-tier machine key as the transaction reason", async () => {
-    const ledger = createInMemoryCreditLedger();
+    const ledger = createInMemoryCreditLedger({ clock });
 
     await ensureFreeTier(ledger, userId, { clock });
 

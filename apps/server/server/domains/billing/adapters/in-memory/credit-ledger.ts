@@ -37,7 +37,14 @@ type Tx = {
   metadata: Record<string, unknown>;
 };
 
-function unexpired(lot: Lot, now = new Date()): boolean {
+type Clock = { now(): Date };
+
+type InMemoryCreditLedgerOptions = {
+  clock?: Clock;
+  initialTransactions?: Tx[];
+};
+
+function unexpired(lot: Lot, now: Date): boolean {
   return lot.expiresAt === null || lot.expiresAt > now || lot.source === "debt";
 }
 
@@ -58,9 +65,12 @@ function row(tx: Tx): CreditTransactionRow {
   };
 }
 
-export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): CreditLedger {
+export function createInMemoryCreditLedger(
+  options: InMemoryCreditLedgerOptions = {},
+): CreditLedger {
+  const clock = options.clock ?? { now: () => new Date() };
   const lots: Lot[] = [];
-  const transactions = [...initialTransactions];
+  const transactions = [...(options.initialTransactions ?? [])];
   const debitIds = new Map<string, string>();
 
   return {
@@ -84,7 +94,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
 
       const lotId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
-      const createdAt = new Date();
+      const createdAt = clock.now();
       lots.push({
         id: lotId,
         userId: input.userId,
@@ -130,10 +140,12 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
       if (existing) return { transactionId: existing };
 
       const consumptionGroupId = crypto.randomUUID();
+      const now = clock.now();
       let remaining = amount;
       const spendable = lots
         .filter(
-          (lot) => lot.userId === input.userId && unexpired(lot) && lot.balanceMillicredits > 0n,
+          (lot) =>
+            lot.userId === input.userId && unexpired(lot, now) && lot.balanceMillicredits > 0n,
         )
         .sort((a, b) => {
           const aExpiry = a.expiresAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -162,7 +174,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
             idempotencyKey: null,
             reason: null,
             metadata: {},
-            createdAt: new Date(),
+            createdAt: now,
           };
           lots.push(debt);
         }
@@ -178,7 +190,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
         sourceType: null,
         reason: null,
         usageEventId: input.usageEventId,
-        createdAt: new Date(),
+        createdAt: now,
         metadata: {
           rootThreadId: input.rootThreadId,
           threadId: input.threadId,
@@ -192,16 +204,18 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
     },
 
     async getBalance(input) {
+      const now = clock.now();
       return lots
-        .filter((lot) => lot.userId === input.userId && unexpired(lot))
+        .filter((lot) => lot.userId === input.userId && unexpired(lot, now))
         .reduce((sum, lot) => sum + lot.balanceMillicredits, 0n)
         .toString();
     },
 
     async getBalanceBreakdown(input) {
+      const now = clock.now();
       return {
         lots: lots
-          .filter((lot) => lot.userId === input.userId && unexpired(lot))
+          .filter((lot) => lot.userId === input.userId && unexpired(lot, now))
           .map((lot) => ({
             source: lot.source,
             balanceMillicredits: lot.balanceMillicredits.toString(),
@@ -234,7 +248,7 @@ export function createInMemoryCreditLedger(initialTransactions: Tx[] = []): Cred
 
     async hasUnexpiredLot(input) {
       const source = lotSourceForGrant(input.source);
-      const now = new Date();
+      const now = clock.now();
       return lots.some((lot) => {
         if (lot.userId !== input.userId || lot.source !== source) return false;
         if (input.source === "free" && !lot.reason?.startsWith("free_tier_")) return false;

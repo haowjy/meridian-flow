@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Tests: billing free-tier grants use deterministic ledger time, and draft/write-mode route
+  coverage now protects behavior without pinning route-core choreography.
+
+- `apps/server`, `apps/app`: accepting an AI draft is now its own user-attributed transcript event. The accept footer says "You accepted this draft · Undo", and undo reverses that accepted change instead of attaching to the proposing assistant turn.
+
+- `apps/server`: draft accept/reject is now DB-fenced. Concurrent accepts report in progress, stale draft responses cannot recreate closed drafts, and applied retry recovers the live Yjs doc after a crash between journal write and live apply.
+
 - `apps/server`: reloading the page or a dropped WebSocket no longer cancels an
   in-flight agent turn. The run finishes server-side and a reconnecting client
   reattaches via the existing snapshot/resume path — long turns survive accidental
@@ -86,6 +93,9 @@
 - Collab: pending undo/redo notifications coalesce deterministically (latest wins)
   even when several land in the same millisecond.
 
+- Collab: live undo/redo planning now ignores draft-scoped agent-edit rows, so
+  draft proposals cannot appear as reversible live writes before acceptance.
+
 - Collab: grouped undo/redo notifications now carry each write handle's original turn id
   instead of collapsing mixed-turn groups onto the seed turn.
 
@@ -109,9 +119,9 @@
 
 - Collab: reversal rows now persist the redo re-apply update seq so the next undo/redo lineage pass can stop guessing redo ownership. No planner behavior changes in this slice.
 
-- Chat: assistant turns that edited files now show a "N files changed" footer.
-  Expand it to see each file, click a filename to open it in the editor, and
-  undo/redo per file or all at once. Already-undone or expired edits show the
+- Chat: assistant turns that edited documents now show a "N documents changed" footer.
+  Expand it to see each document, click a document name to open it in the editor, and
+  undo/redo per document or all at once. Already-undone or expired edits show the
   right state.
 - Chat editing: when a writer undoes the agent's edits and then sends another
   message, the model is told which edits were reversed (net undo/redo state,
@@ -134,6 +144,8 @@
   and consumption work regardless. The recent-activity feed shows friendly labels
   ("Monthly usage", "Extra usage") instead of leaking raw Stripe ids, and the
   usage meter reads as a remaining-percentage gauge.
+
+- Preferences: projects store AI write mode (`direct`/`draft`) for future reviewable AI drafts.
 
 - `packages/agent-edit`: the resolver→apply write core is now CRDT-neutral — it
   works on opaque `BlockRef`/`DocHandle` handles with all Yjs (and Tier-2

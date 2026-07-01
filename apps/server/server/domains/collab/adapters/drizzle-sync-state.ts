@@ -1,14 +1,16 @@
 /** Drizzle adapter for durable agent-edit per-thread sync baselines. */
 import type { SyncState, SyncStateStore } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { agentEditSyncState } from "@meridian/database";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import {
+  LIVE_SCOPE,
+  scopedConflictTarget,
+  scopedValues,
+  scopedWhere,
+} from "./drizzle-agent-edit-scope";
 
 type SyncStateDb = Pick<Database, "select" | "insert" | "delete">;
-
-const asDocumentId = (value: string) => value as DocumentId;
-const asThreadId = (value: string) => value as ThreadId;
 
 function toBytes(buffer: Buffer): Uint8Array {
   return new Uint8Array(buffer);
@@ -28,12 +30,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
           committedSnapshot: agentEditSyncState.committedSnapshot,
         })
         .from(agentEditSyncState)
-        .where(
-          and(
-            eq(agentEditSyncState.documentId, asDocumentId(documentId)),
-            eq(agentEditSyncState.threadId, asThreadId(threadId)),
-          ),
-        )
+        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }))
         .limit(1);
       if (!row) return null;
       return {
@@ -47,14 +44,13 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
       await db
         .insert(agentEditSyncState)
         .values({
-          documentId: asDocumentId(documentId),
-          threadId: asThreadId(threadId),
+          ...scopedValues({ documentId, threadId, scopeId: LIVE_SCOPE }),
           stateVector: toBuffer(state.stateVector),
           syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
         })
         .onConflictDoUpdate({
-          target: [agentEditSyncState.documentId, agentEditSyncState.threadId],
+          target: scopedConflictTarget(agentEditSyncState),
           set: {
             stateVector: toBuffer(state.stateVector),
             syncedSnapshot: toBuffer(state.syncedSnapshot),
@@ -67,12 +63,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
     async delete(documentId, threadId): Promise<void> {
       await db
         .delete(agentEditSyncState)
-        .where(
-          and(
-            eq(agentEditSyncState.documentId, asDocumentId(documentId)),
-            eq(agentEditSyncState.threadId, asThreadId(threadId)),
-          ),
-        );
+        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }));
     },
   };
 }

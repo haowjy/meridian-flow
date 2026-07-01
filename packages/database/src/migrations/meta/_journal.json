@@ -71,6 +71,41 @@
       "when": 1782667522416,
       "tag": "0009_bouncy_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782695104007,
+      "tag": "0010_first_ogun",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782701023700,
+      "tag": "0011_stiff_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782701784286,
+      "tag": "0012_hard_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782710225037,
+      "tag": "0013_exotic_pyro",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782823676028,
+      "tag": "0014_sharp_james_howlett",
+      "breakpoints": true
     }
   ]
 }

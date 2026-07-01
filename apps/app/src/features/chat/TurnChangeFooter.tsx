@@ -1,10 +1,10 @@
 /**
  * TurnChangeFooter — compact per-turn summary and undo/redo controls.
  *
- * Scans settled assistant turns for write/edit tool calls, gathers the touched
- * documents into one footer, and calls the thread reverse API for per-document
- * or whole-turn undo/redo. Document content refresh is handled by Yjs sync; the
- * footer keeps only local affordance state.
+ * Receives the server-owned live-lineage documents for a settled assistant
+ * turn, then calls the thread reverse API for per-document or whole-turn
+ * undo/redo. Document content refresh is handled by Yjs sync; the footer keeps
+ * only local affordance state.
  */
 import { t } from "@lingui/core/macro";
 import type {
@@ -14,7 +14,7 @@ import type {
   WriteStatus,
 } from "@meridian/contracts/protocol";
 import { ChevronDown, LoaderCircle, Redo2, Undo2 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 
 import type { ReversalDirection } from "@/client/api/reverse-api";
 import {
@@ -24,12 +24,17 @@ import {
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { turnWrittenDocuments, type WrittenDocument } from "./turn-written-documents";
 
 export type TurnChangeFooterProps = {
   threadId: string;
   turn: Turn;
-  writtenDocuments?: WrittenDocument[];
+  documents: TurnChangeDocument[];
+  variant?: "assistant" | "draftAccept";
+};
+
+export type TurnChangeDocument = {
+  path: string;
+  uri: string;
 };
 
 type RowState = {
@@ -37,13 +42,14 @@ type RowState = {
   statusText?: string;
 };
 
-export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChangeFooterProps) {
+export function TurnChangeFooter({
+  threadId,
+  turn,
+  documents,
+  variant = "assistant",
+}: TurnChangeFooterProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
-  const documents = useMemo(
-    () => writtenDocuments ?? turnWrittenDocuments(turn),
-    [turn, writtenDocuments],
-  );
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [pendingUri, setPendingUri] = useState<string | null>(null);
@@ -60,11 +66,14 @@ export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChang
   const allActionableReversed =
     actionableDocuments.length > 0 &&
     actionableDocuments.every((doc) => rowState(doc.uri).disposition === "reversed");
-  const summary = `${documentIcon} ${fileCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
+  const summary = `${documentIcon} ${documentCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
+  const acceptSummary = allActionableReversed
+    ? t`You undid your acceptance`
+    : t`You accepted this draft`;
   const turnDirection: ReversalDirection = allActionableReversed ? "redo" : "undo";
   const turnActionDisabled = turnPending || Boolean(pendingUri) || actionableDocuments.length === 0;
 
-  async function reverseOne(doc: WrittenDocument) {
+  async function reverseOne(doc: TurnChangeDocument) {
     const current = rowState(doc.uri);
     if (current.disposition === "disabled" || pendingUri || turnPending) return;
     const direction: ReversalDirection = current.disposition === "reversed" ? "redo" : "undo";
@@ -121,6 +130,105 @@ export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChang
     }
   }
 
+  const details = expanded ? (
+    <div id={panelId} className="mt-2 space-y-1.5 border-t border-border pt-2">
+      <ul className="space-y-1">
+        {documents.map((doc) => {
+          const state = rowState(doc.uri);
+          const pending = pendingUri === doc.uri;
+          return (
+            <li key={doc.uri} className="flex min-w-0 items-center gap-2">
+              <DocumentName document={doc} onOpenContextUri={openContextUri} />
+              {state.statusText ? (
+                <span className="shrink truncate text-ink-subtle">{state.statusText}</span>
+              ) : null}
+              <button
+                type="button"
+                disabled={state.disposition === "disabled" || pending || turnPending}
+                onClick={() => void reverseOne(doc)}
+                className="focus-ring inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-2 font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
+              >
+                {pending ? (
+                  <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                ) : state.disposition === "reversed" ? (
+                  <Redo2 className="size-3.5" aria-hidden />
+                ) : (
+                  <Undo2 className="size-3.5" aria-hidden />
+                )}
+                {state.disposition === "reversed" ? t`Redo` : t`Undo`}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="flex justify-end pt-1">
+        <button
+          type="button"
+          disabled={turnActionDisabled}
+          onClick={() => void reverseAll()}
+          className="focus-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
+        >
+          {turnPending ? (
+            <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+          ) : turnDirection === "redo" ? (
+            <Redo2 className="size-3.5" aria-hidden />
+          ) : (
+            <Undo2 className="size-3.5" aria-hidden />
+          )}
+          {turnDirection === "redo" ? t`Redo all` : t`Undo all`}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  if (variant === "draftAccept") {
+    return (
+      <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">
+            {acceptSummary}
+          </span>
+          <span className="text-ink-subtle" aria-hidden>
+            ·
+          </span>
+          <button
+            type="button"
+            disabled={turnActionDisabled}
+            onClick={() => void reverseAll()}
+            className="focus-ring inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
+          >
+            {turnPending ? (
+              <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+            ) : turnDirection === "redo" ? (
+              <Redo2 className="size-3.5" aria-hidden />
+            ) : (
+              <Undo2 className="size-3.5" aria-hidden />
+            )}
+            {turnDirection === "redo" ? t`Redo` : t`Undo`}
+          </button>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            aria-label={t`Show changed documents`}
+            onClick={() => setExpanded((value) => !value)}
+            className="focus-ring -mr-1 inline-flex h-7 shrink-0 items-center rounded-md px-1 transition-colors hover:bg-card"
+          >
+            <ChevronDown
+              className={cn(
+                "size-3.5 text-ink-subtle transition-transform",
+                expanded && "rotate-180",
+              )}
+              aria-hidden
+            />
+          </button>
+        </div>
+        {details}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
       <button
@@ -139,58 +247,7 @@ export function TurnChangeFooter({ threadId, turn, writtenDocuments }: TurnChang
           aria-hidden
         />
       </button>
-
-      {expanded ? (
-        <div id={panelId} className="mt-2 space-y-1.5 border-t border-border pt-2">
-          <ul className="space-y-1">
-            {documents.map((doc) => {
-              const state = rowState(doc.uri);
-              const pending = pendingUri === doc.uri;
-              return (
-                <li key={doc.uri} className="flex min-w-0 items-center gap-2">
-                  <DocumentName document={doc} onOpenContextUri={openContextUri} />
-                  {state.statusText ? (
-                    <span className="shrink truncate text-ink-subtle">{state.statusText}</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={state.disposition === "disabled" || pending || turnPending}
-                    onClick={() => void reverseOne(doc)}
-                    className="focus-ring inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-2 font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
-                  >
-                    {pending ? (
-                      <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
-                    ) : state.disposition === "reversed" ? (
-                      <Redo2 className="size-3.5" aria-hidden />
-                    ) : (
-                      <Undo2 className="size-3.5" aria-hidden />
-                    )}
-                    {state.disposition === "reversed" ? t`Redo` : t`Undo`}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-
-          <div className="flex justify-end pt-1">
-            <button
-              type="button"
-              disabled={turnActionDisabled}
-              onClick={() => void reverseAll()}
-              className="focus-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
-            >
-              {turnPending ? (
-                <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
-              ) : turnDirection === "redo" ? (
-                <Redo2 className="size-3.5" aria-hidden />
-              ) : (
-                <Undo2 className="size-3.5" aria-hidden />
-              )}
-              {turnDirection === "redo" ? t`Redo all` : t`Undo all`}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {details}
     </div>
   );
 }
@@ -199,7 +256,7 @@ function DocumentName({
   document,
   onOpenContextUri,
 }: {
-  document: WrittenDocument;
+  document: TurnChangeDocument;
   onOpenContextUri: ((uri: string) => void) | null;
 }) {
   const label = basename(displayContextPath(document.uri, document.path));
@@ -253,7 +310,7 @@ function stateFromStatus(
     return { ...fallback, statusText: t`A later edit depends on this` };
   }
   if (status === "partial") {
-    return { ...fallback, statusText: t`Some files could not be updated` };
+    return { ...fallback, statusText: t`Some documents could not be updated` };
   }
   if (status === "success") return fallback;
   return { ...fallback, statusText: text || statusLabel(status) };
@@ -270,7 +327,7 @@ function statusLabel(status: WriteStatus): string {
     case "document_not_found":
       return t`Document not found`;
     case "partial_failure":
-      return t`Some files could not be updated`;
+      return t`Some documents could not be updated`;
     case "internal_error":
       return t`Undo failed`;
     default:
@@ -282,8 +339,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : t`Undo failed`;
 }
 
-function fileCountLabel(count: number): string {
-  return count === 1 ? t`1 file changed` : t`${count} files changed`;
+function documentCountLabel(count: number): string {
+  return count === 1 ? t`1 document changed` : t`${count} documents changed`;
 }
 
 function basename(path: string): string {

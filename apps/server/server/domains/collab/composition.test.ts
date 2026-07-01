@@ -10,6 +10,10 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
+import {
+  createInMemoryDraftAcceptJournal,
+  createInMemoryDraftStore,
+} from "./adapters/in-memory/drafts.js";
 import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
@@ -21,6 +25,7 @@ const TURN_ID = "00000000-0000-4000-8000-000000000304" as TurnId;
 type TestFacadeOptions = {
   hook?: DocumentWriteHook;
   eventSink?: EventSink;
+  aiWriteMode?: "direct" | "draft";
 };
 
 describe("createFacade document write hook", () => {
@@ -145,6 +150,127 @@ describe("createFacade document write hook", () => {
   });
 });
 
+describe("createFacade response write finalization", () => {
+  it("commits staged response writes and refreshes the live projection", async () => {
+    const hook = vi.fn<DocumentWriteHook>(async () => undefined);
+    const domain = createTestFacade({ hook });
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Alpha draft.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    hook.mockClear();
+    await domain
+      .agentEdit()
+      .write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+
+    const write = await domain
+      .agentEdit()
+      .write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Beta revision." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-commit" },
+      );
+    expect(write.isError).toBe(false);
+
+    const result = await domain.finalizeResponseCommit("response-commit", {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+    });
+    const read = await domain.readAsMarkdown(DOC_ID);
+
+    expect(result).toEqual({
+      documents: [{ documentId: DOC_ID, updateCount: 1 }],
+      stagedCreates: { committed: [], discarded: [] },
+    });
+    expect(read).toMatchObject({ ok: true, value: expect.stringContaining("Beta revision.") });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      markdown: expect.stringContaining("Beta revision."),
+      at: expect.any(Date),
+    });
+  });
+
+  it("rolls back staged response writes and returns staged-create outcomes", async () => {
+    const domain = createTestFacade();
+    const stagedDocumentId = "00000000-0000-4000-8000-000000000305" as DocumentId;
+
+    const write = await domain.agentEdit().write(
+      {
+        command: "create",
+        file: "new-chapter.md",
+        documentId: stagedDocumentId,
+        content: "Discarded draft.",
+      },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-rollback" },
+    );
+    expect(write.isError).toBe(false);
+
+    await expect(domain.finalizeResponseRollback("response-rollback")).resolves.toEqual({
+      stagedCreates: { committed: [], discarded: [stagedDocumentId] },
+    });
+    await expect(domain.readAsMarkdown(stagedDocumentId)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+  });
+
+  it("logs finalization projection hook failures under the response-finalize source", async () => {
+    const eventSink = createInMemoryEventSink();
+    const hook = vi.fn<DocumentWriteHook>(async () => {
+      throw new Error("projection database unavailable");
+    });
+    const domain = createTestFacade({ hook, eventSink });
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Alpha draft.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    eventSink.events.length = 0;
+    await domain
+      .agentEdit()
+      .write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+
+    const write = await domain
+      .agentEdit()
+      .write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Beta revision." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-hook-failure" },
+      );
+    expect(write.isError).toBe(false);
+
+    await expect(
+      domain.finalizeResponseCommit("response-hook-failure", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({
+      documents: [{ documentId: DOC_ID, updateCount: 1 }],
+    });
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        source: "collab.response_finalize",
+        name: "post_write_hook.failed",
+        payload: expect.objectContaining({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          message: "projection database unavailable",
+        }),
+      }),
+    );
+  });
+});
+
 describe("createFacade connection update ingest", () => {
   it.each([
     500,
@@ -216,6 +342,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
 } {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
+  const draftStore = createInMemoryDraftStore();
   return {
     domain: createFacade({
       journal,
@@ -226,6 +353,27 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       bindHocuspocus: (_instance: Hocuspocus) => {},
       eventSink: options.eventSink,
       documentWriteHook: options.hook,
+      draftStore,
+      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+      liveLineage: {
+        async listLiveDocumentsForTurn(threadId, turnId) {
+          return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+            documentId: documentId as DocumentId,
+            uri: documentId,
+          }));
+        },
+      },
+      threads: {
+        async findById(id) {
+          return id === THREAD_ID
+            ? {
+                userId: USER_ID,
+                projectId: "project-1",
+                aiWriteMode: options.aiWriteMode ?? "direct",
+              }
+            : null;
+        },
+      },
     }),
     journal,
   };
@@ -238,6 +386,7 @@ function storeFor(journal: ReturnType<typeof createInMemoryJournal>): CollabFaca
     getCheckpoint: (id) => journal.getCheckpoint(id),
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
+    latestUpdateSeq: (docId) => journal.latestUpdateSeq(docId),
   };
 }
 
