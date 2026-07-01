@@ -202,6 +202,7 @@ export function ContextViewerSurfaceController({
       dockToggle={dockToggle}
       activeContextScheme={activeContextScheme}
       activeContextPath={activeContextPath}
+      active={active}
       onSelectFile={handleSelectFile}
     />
   );

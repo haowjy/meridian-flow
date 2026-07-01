@@ -11,6 +11,7 @@ import { useCallback } from "react";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { promoteIndependentProject } from "@/client/stores";
 import { ChatView } from "@/features/chat/ChatView";
+import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 
 /**
  * Independent chat surface (`/chat/:threadId`) — a thread the user experiences
@@ -63,14 +64,16 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       </header>
 
       <main className="min-h-0 flex-1">
-        <ChatView
-          threadId={threadId}
-          projectId={projectId}
-          activeThread={thread}
-          snapshotLiveState={snapshotLiveState}
-          snapshotNextSeq={snapshotNextSeq}
-          key={threadId}
-        />
+        <DraftReviewProvider threadId={threadId}>
+          <ChatView
+            threadId={threadId}
+            projectId={projectId}
+            activeThread={thread}
+            snapshotLiveState={snapshotLiveState}
+            snapshotNextSeq={snapshotNextSeq}
+            key={threadId}
+          />
+        </DraftReviewProvider>
       </main>
     </div>
   );

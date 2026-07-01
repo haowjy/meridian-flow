@@ -16,6 +16,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
+import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
@@ -81,7 +82,11 @@ export function ProjectView(props: ProjectViewProps) {
   const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-      {hydrated ? <HydratedProject {...props} /> : null}
+      {hydrated ? (
+        <DraftReviewProvider threadId={props.activeThreadId}>
+          <HydratedProject {...props} />
+        </DraftReviewProvider>
+      ) : null}
     </div>
   );
 }

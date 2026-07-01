@@ -1,24 +1,4 @@
-/**
- * DraftPreviewOverlay — modal review surface for one document's active AI
- * draft. Owned and rendered by `ChatView` (not by `DraftReviewCard`): cards
- * inside an anchored assistant turn live in a react-virtuoso row that may
- * recycle/unmount as the writer scrolls, and a fixed-position modal mounted
- * under that row vanishes with it.
- *
- * Reuses the dialog/dock chrome pattern from `ResultViewerOverlay`: fixed
- * backdrop, dismissable via Escape or backdrop click, single panel frame.
- *
- * Renders strictly from API markdown (`useDraftPreview`). The live Yjs editor
- * is NEVER touched here — this surface is read-only on both sides. Only the
- * accept mutation eventually mutates the live document, and that happens on
- * the server.
- *
- * Two views:
- *  - "Show changes" — line-level prose diff (added emphasised, removed
- *    de-emphasised + struck), readable as prose not code.
- *  - "Clean preview" — the draft markdown rendered as final prose so the
- *    writer can read it without diff chrome before accepting.
- */
+/** DraftPreviewOverlay — fallback modal only when chat review has no matching editor bar. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2, X } from "lucide-react";
@@ -29,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { useDraftReview } from "./DraftReviewProvider";
 import { collapseDiffBlocks, type DiffBlock, diffLines } from "./diff-lines";
 import type { DraftReviewController } from "./useDraftReviewController";
 
@@ -39,52 +20,23 @@ export type DraftPreviewOverlayProps = {
 
 type ViewMode = "changes" | "preview";
 
-export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOverlayProps) {
+export function DraftPreviewOverlay() {
+  const { controller, groupForDocument, activeEditorDocumentId } = useDraftReview();
   const selectedDraft = controller.selectedDraft;
-  const documentId = selectedDraft?.documentId ?? null;
-  const draftId = selectedDraft?.draftId ?? null;
+  const documentName = groupForDocument(selectedDraft?.documentId)?.documentName ?? null;
+  const coveredByEditorBar =
+    selectedDraft != null && selectedDraft.documentId === activeEditorDocumentId;
+
+  if (selectedDraft == null || coveredByEditorBar) return null;
+
+  return <DraftPreviewModal controller={controller} documentName={documentName} />;
+}
+
+function DraftPreviewModal({ controller, documentName }: DraftPreviewOverlayProps) {
   useEscapeToClose(controller.closeReview);
-  const { preview, isFetching, isError } = useDraftPreview(
-    controller.threadId,
-    documentId,
-    draftId,
-  );
-  const [view, setView] = useState<ViewMode>("changes");
-  const needsOverlapConfirm = controller.overlap?.draftId === draftId;
-
-  useEffect(() => {
-    if (needsOverlapConfirm) setView("preview");
-  }, [needsOverlapConfirm]);
-
-  const isPending = controller.isPending;
+  const selectedDraft = controller.selectedDraft;
+  if (selectedDraft == null) return null;
   const heading = documentName ?? t`Document draft`;
-  const live = preview?.live ?? null;
-  const previewMarkdown = preview?.status === "active" ? preview.preview : null;
-  const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
-  const reviewLive =
-    controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
-  const reviewPreview =
-    controller.overlap?.draftId === draftId
-      ? (controller.overlap.preview ?? previewMarkdown)
-      : previewMarkdown;
-  const reviewLiveRevisionToken =
-    controller.overlap?.draftId === draftId
-      ? (controller.overlap.liveRevisionToken ?? liveRevisionToken)
-      : liveRevisionToken;
-
-  function handleAccept() {
-    if (isPending || documentId == null || draftId == null) return;
-    controller.accept(documentId, draftId, {
-      confirmedLiveRevisionToken: needsOverlapConfirm
-        ? (reviewLiveRevisionToken ?? undefined)
-        : undefined,
-    });
-  }
-
-  function handleDiscard() {
-    if (isPending || documentId == null || draftId == null) return;
-    controller.reject(documentId, draftId);
-  }
 
   return (
     <div
@@ -107,13 +59,7 @@ export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOv
             </p>
             <h2 className="mt-0.5 truncate text-foreground text-base font-medium">{heading}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {needsOverlapConfirm ? (
-                <Trans>
-                  Because you and the AI both edited this passage, review the merged result first.
-                </Trans>
-              ) : (
-                <Trans>Your live document is untouched until you accept.</Trans>
-              )}
+              <Trans>Your live document is untouched until you accept.</Trans>
             </p>
           </div>
           <button
@@ -125,61 +71,137 @@ export function DraftPreviewOverlay({ controller, documentName }: DraftPreviewOv
             <X className="size-4" aria-hidden />
           </button>
         </header>
+        <DraftDiffPanel
+          controller={controller}
+          documentId={selectedDraft.documentId}
+          draftId={selectedDraft.draftId}
+          className="min-h-0 flex-1"
+          bodyClassName="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+          footerClassName="px-5 py-3"
+          onKeepReading={controller.closeReview}
+        />
+      </div>
+    </div>
+  );
+}
 
-        <div className="flex items-center gap-1 border-border-subtle border-b px-5 py-2">
-          <ViewToggle view={view} onChange={setView} />
+export type DraftDiffPanelProps = {
+  controller: DraftReviewController;
+  documentId: string;
+  draftId: string;
+  className?: string;
+  bodyClassName?: string;
+  footerClassName?: string;
+  onKeepReading?: () => void;
+};
+
+export function DraftDiffPanel({
+  controller,
+  documentId,
+  draftId,
+  className,
+  bodyClassName,
+  footerClassName,
+  onKeepReading,
+}: DraftDiffPanelProps) {
+  const { preview, isFetching, isError } = useDraftPreview(
+    controller.threadId,
+    documentId,
+    draftId,
+  );
+  const [view, setView] = useState<ViewMode>("changes");
+  const needsOverlapConfirm = controller.overlap?.draftId === draftId;
+
+  useEffect(() => {
+    if (needsOverlapConfirm) setView("preview");
+  }, [needsOverlapConfirm]);
+
+  const isPending = controller.isPending;
+  const live = preview?.live ?? null;
+  const previewMarkdown = preview?.status === "active" ? preview.preview : null;
+  const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
+  const reviewLive =
+    controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
+  const reviewPreview =
+    controller.overlap?.draftId === draftId
+      ? (controller.overlap.preview ?? previewMarkdown)
+      : previewMarkdown;
+  const reviewLiveRevisionToken =
+    controller.overlap?.draftId === draftId
+      ? (controller.overlap.liveRevisionToken ?? liveRevisionToken)
+      : liveRevisionToken;
+
+  function handleAccept() {
+    if (isPending) return;
+    controller.accept(documentId, draftId, {
+      confirmedLiveRevisionToken: needsOverlapConfirm
+        ? (reviewLiveRevisionToken ?? undefined)
+        : undefined,
+    });
+  }
+
+  function handleDiscard() {
+    if (isPending) return;
+    controller.reject(documentId, draftId);
+  }
+
+  return (
+    <div className={cn("flex flex-col overflow-hidden", className)} data-draft-diff-panel>
+      <div className="flex items-center gap-1 border-border-subtle border-b px-4 py-2">
+        <ViewToggle view={view} onChange={setView} />
+      </div>
+
+      {needsOverlapConfirm ? (
+        <div className="border-border-subtle border-b bg-surface-subtle px-4 py-3 text-sm text-foreground">
+          <p className="font-medium">
+            <Trans>Review the merged passage before applying.</Trans>
+          </p>
+          <p className="mt-1 text-muted-foreground text-xs">
+            <Trans>The preview below includes your latest edits and the AI draft together.</Trans>
+          </p>
         </div>
+      ) : null}
 
-        {needsOverlapConfirm ? (
-          <div className="border-border-subtle border-b bg-surface-subtle px-5 py-3 text-sm text-foreground">
-            <p className="font-medium">
-              <Trans>Review the merged passage before applying.</Trans>
-            </p>
-            <p className="mt-1 text-muted-foreground text-xs">
-              <Trans>The preview below includes your latest edits and the AI draft together.</Trans>
-            </p>
-          </div>
-        ) : null}
+      <main className={cn("prose-tokens overflow-y-auto px-4 py-4", bodyClassName)}>
+        <PreviewBody
+          view={view}
+          live={reviewLive}
+          previewMarkdown={reviewPreview}
+          isFetching={isFetching}
+          isError={isError}
+        />
+      </main>
 
-        <main className="prose-tokens min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <PreviewBody
-            view={view}
-            live={reviewLive}
-            previewMarkdown={reviewPreview}
-            isFetching={isFetching}
-            isError={isError}
-          />
-        </main>
-
-        <footer className="flex flex-wrap items-center justify-end gap-2 border-border-subtle border-t bg-surface-subtle px-5 py-3">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleDiscard}
-            disabled={isPending}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {controller.isRejecting ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            ) : null}
-            <Trans>Discard draft</Trans>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={controller.closeReview}
-            disabled={isPending}
-          >
+      <footer
+        className={cn(
+          "flex flex-wrap items-center justify-end gap-2 border-border-subtle border-t bg-surface-subtle px-4 py-2",
+          footerClassName,
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleDiscard}
+          disabled={isPending}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          {controller.isRejecting ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : null}
+          <Trans>Discard draft</Trans>
+        </Button>
+        {onKeepReading ? (
+          <Button type="button" variant="outline" onClick={onKeepReading} disabled={isPending}>
             <Trans>Keep reading</Trans>
           </Button>
-          <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
-            {controller.isAccepting ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            ) : null}
-            <Trans>Apply to chapter</Trans>
-          </Button>
-        </footer>
-      </div>
+        ) : null}
+        <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
+          {controller.isAccepting ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : null}
+          <Trans>Apply to chapter</Trans>
+        </Button>
+      </footer>
     </div>
   );
 }
@@ -249,10 +271,6 @@ function PreviewBody({
       </StatusRow>
     );
   }
-  // `previewMarkdown == null` is "no active draft" (usually because the writer
-  // just accepted/discarded it). The empty string is a VALID draft that
-  // clears the document — it must flow through to the diff/clean-preview
-  // path so the writer can review the full-delete.
   if (previewMarkdown == null && live == null && isFetching) {
     return (
       <StatusRow tone="muted">
@@ -276,8 +294,6 @@ function PreviewBody({
 }
 
 function DiffView({ live, previewMarkdown }: { live: string; previewMarkdown: string }) {
-  // Heavy diff inputs would freeze the UI; if the LCS table would exceed our
-  // budget the helper returns null and we degrade to the clean preview.
   const blocks = useMemo<DiffBlock[] | null>(() => {
     const ops = diffLines(live, previewMarkdown);
     return ops ? collapseDiffBlocks(ops) : null;
@@ -294,8 +310,6 @@ function DiffView({ live, previewMarkdown }: { live: string; previewMarkdown: st
     );
   }
 
-  // If nothing actually changed, surface that honestly rather than rendering
-  // a wall of "equal" prose with no signal.
   const hasChange = blocks.some((block) => block.kind !== "equal");
   if (!hasChange) {
     return (
@@ -318,8 +332,6 @@ function DiffView({ live, previewMarkdown }: { live: string; previewMarkdown: st
 }
 
 function DiffBlockView({ block }: { block: DiffBlock }) {
-  // Each block is a contiguous run of one diff kind. Render as a paragraph so
-  // prose reads naturally; line breaks within a block become real breaks.
   const text = block.lines.join("\n");
   if (block.kind === "equal") {
     return <p className="whitespace-pre-wrap text-foreground/85">{text || " "}</p>;
