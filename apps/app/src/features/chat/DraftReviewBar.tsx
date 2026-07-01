@@ -101,6 +101,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
+    controller.closeReview();
     setSelectedDraftId(reviewableDrafts[nextIndex]?.draftId ?? null);
   }
 
