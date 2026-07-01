@@ -41,6 +41,8 @@ export type DraftReviewController = {
     options?: { confirmedLiveRevisionToken?: number },
   ) => void;
   reject: (documentId: string, draftId: string) => void;
+  acceptAll: (documentId: string, draftIds: readonly string[]) => void;
+  rejectAll: (documentId: string, draftIds: readonly string[]) => void;
 };
 
 export function useDraftReviewController(threadId: string): DraftReviewController {
@@ -48,10 +50,11 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const rejectMutation = useRejectDraft();
   const [selectedDraft, setSelectedDraft] = useState<DraftReviewSelection | null>(null);
   const [overlap, setOverlap] = useState<DraftReviewOverlap | null>(null);
+  const [isBatchPending, setIsBatchPending] = useState(false);
 
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
-  const isPending = isAccepting || isRejecting;
+  const isPending = isAccepting || isRejecting || isBatchPending;
 
   const openReview = useCallback(
     (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => {
@@ -121,6 +124,54 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
     [isPending, rejectMutation, threadId],
   );
 
+  const acceptAll = useCallback(
+    async (documentId: string, draftIds: readonly string[]) => {
+      if (isPending || draftIds.length === 0) return;
+      setIsBatchPending(true);
+      try {
+        for (const draftId of draftIds) {
+          const response = await acceptMutation.mutateAsync({ threadId, documentId, draftId });
+          if (response.status === "overlap") {
+            setOverlap({
+              draftId: response.draftId,
+              liveRevisionToken: response.liveRevisionToken,
+              live: response.live,
+              preview: response.preview,
+            });
+            setSelectedDraft({ documentId, draftId: response.draftId });
+            return;
+          }
+          setOverlap((current) => (current?.draftId === draftId ? null : current));
+          setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+        }
+      } catch {
+        // Mutation state carries the failure; the batch simply stops at the first error.
+      } finally {
+        setIsBatchPending(false);
+      }
+    },
+    [acceptMutation, isPending, threadId],
+  );
+
+  const rejectAll = useCallback(
+    async (documentId: string, draftIds: readonly string[]) => {
+      if (isPending || draftIds.length === 0) return;
+      setIsBatchPending(true);
+      try {
+        for (const draftId of draftIds) {
+          await rejectMutation.mutateAsync({ threadId, documentId, draftId });
+          setOverlap((current) => (current?.draftId === draftId ? null : current));
+          setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+        }
+      } catch {
+        // Mutation state carries the failure; the batch simply stops at the first error.
+      } finally {
+        setIsBatchPending(false);
+      }
+    },
+    [isPending, rejectMutation, threadId],
+  );
+
   return useMemo(
     () => ({
       threadId,
@@ -133,6 +184,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       closeReview,
       accept,
       reject,
+      acceptAll,
+      rejectAll,
     }),
     [
       threadId,
@@ -145,6 +198,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       closeReview,
       accept,
       reject,
+      acceptAll,
+      rejectAll,
     ],
   );
 }

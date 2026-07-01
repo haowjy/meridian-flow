@@ -13,7 +13,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { FileText, Loader2 } from "lucide-react";
-import { useMemo } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
@@ -23,34 +22,29 @@ import { relativeTime } from "@/features/project/relative-time";
 import { cn } from "@/lib/utils";
 
 import { ComponentCard } from "./ComponentCard";
+import { useDraftReview } from "./DraftReviewProvider";
 import type { DraftReviewController } from "./useDraftReviewController";
 
 export type DraftReviewCardProps = {
   group: ThreadDraftGroup;
-  /** Shared review state machine owned by ChatView. */
-  controller: DraftReviewController;
   /** Visual variant: anchored under an assistant turn, or stacked in the unanchored fallback strip. */
   variant?: "inline" | "compact";
 };
 
-export function DraftReviewCard({ group, controller, variant = "inline" }: DraftReviewCardProps) {
+export function DraftReviewCard({ group, variant = "inline" }: DraftReviewCardProps) {
+  const { controller, reviewableDraftsForGroup, nowMs } = useDraftReview();
   const undoAccept = useUndoDraftAccept();
   const undoReject = useUndoDraftReject();
-  const nowMs = Date.now();
-  const visibleDrafts = useMemo(
-    () =>
-      group.drafts.filter((draft) => draft.status === "active" || isDraftUndoable(draft, nowMs)),
-    [group.drafts, nowMs],
-  );
+  const { visible: reviewableDrafts, active: activeDrafts } = reviewableDraftsForGroup(group);
 
-  if (visibleDrafts.length === 0) return null;
+  if (reviewableDrafts.length === 0) return null;
 
   const documentName = group.documentName ?? t`Untitled document`;
-  const activeCount = visibleDrafts.filter((draft) => draft.status === "active").length;
-  const isUndoPending = undoAccept.isPending || undoReject.isPending;
+  const activeCount = activeDrafts.length;
+  const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
 
   function handleUndo(draft: ThreadDraftListItem) {
-    if (draft.status === "active" || isUndoPending || !isDraftUndoable(draft)) return;
+    if (draft.status === "active" || busy || !isDraftUndoable(draft, nowMs)) return;
     const mutation = draft.status === "applied" ? undoAccept : undoReject;
     mutation.mutate({
       threadId: controller.threadId,
@@ -77,14 +71,15 @@ export function DraftReviewCard({ group, controller, variant = "inline" }: Draft
         data-draft-card
         data-document-id={group.documentId}
       >
-        {visibleDrafts.map((draft) => (
+        {reviewableDrafts.map((draft) => (
           <DraftRow
             key={draft.draftId}
             draft={draft}
             documentId={group.documentId}
             documentName={documentName}
             controller={controller}
-            isUndoPending={isUndoPending}
+            nowMs={nowMs}
+            busy={busy}
             className="py-3 first:pt-0 last:pb-0"
             onUndo={handleUndo}
           />
@@ -99,7 +94,8 @@ function DraftRow({
   documentId,
   documentName,
   controller,
-  isUndoPending,
+  nowMs,
+  busy,
   className,
   onUndo,
 }: {
@@ -107,7 +103,8 @@ function DraftRow({
   documentId: string;
   documentName: string;
   controller: DraftReviewController;
-  isUndoPending: boolean;
+  nowMs: number;
+  busy: boolean;
   className?: string;
   onUndo: (draft: ThreadDraftListItem) => void;
 }) {
@@ -125,7 +122,7 @@ function DraftRow({
             variant="default"
             size="sm"
             onClick={() => controller.openReview(documentId, draft.draftId)}
-            disabled={controller.isPending}
+            disabled={busy}
           >
             <Trans>Review changes</Trans>
           </Button>
@@ -134,7 +131,7 @@ function DraftRow({
             variant="outline"
             size="sm"
             onClick={() => controller.accept(documentId, draft.draftId)}
-            disabled={controller.isPending}
+            disabled={busy}
           >
             {controller.isAccepting ? (
               <Loader2 className="size-3 animate-spin" aria-hidden />
@@ -146,7 +143,7 @@ function DraftRow({
             variant="ghost"
             size="sm"
             onClick={() => controller.reject(documentId, draft.draftId)}
-            disabled={controller.isPending}
+            disabled={busy}
             className="text-muted-foreground hover:text-foreground"
           >
             {controller.isRejecting ? (
@@ -160,7 +157,7 @@ function DraftRow({
   }
 
   const isApplied = draft.status === "applied";
-  const age = relativeTime(draft.updatedAt, Date.now());
+  const age = relativeTime(draft.updatedAt, nowMs);
 
   return (
     <div className={cn("min-w-0", className)} data-draft-status={draft.status}>
@@ -179,10 +176,10 @@ function DraftRow({
           variant="ghost"
           size="sm"
           onClick={() => onUndo(draft)}
-          disabled={isUndoPending}
+          disabled={busy}
           className="text-muted-foreground hover:text-foreground"
         >
-          {isUndoPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           {isApplied ? <Trans>Undo acceptance</Trans> : <Trans>Undo discard</Trans>}
         </Button>
       </div>

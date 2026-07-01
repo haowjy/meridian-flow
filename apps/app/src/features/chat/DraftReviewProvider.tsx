@@ -1,4 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import {
   createContext,
   type ReactNode,
@@ -8,20 +10,28 @@ import {
   useMemo,
   useState,
 } from "react";
-
+import { isDraftUndoable } from "@/client/query/draft-undoable";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
   useThreadDrafts,
 } from "@/client/query/useThreadDrafts";
-
+import { useThreadStore } from "@/client/stores";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
+
+export type ReviewableDrafts = {
+  visible: ThreadDraftListItem[];
+  active: ThreadDraftListItem[];
+};
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
   groups: ThreadDraftGroup[];
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
+  reviewableDraftsForDocument: (documentId: string | null | undefined) => ReviewableDrafts;
+  reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
+  nowMs: number;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (documentId: string | null) => void;
 };
@@ -36,6 +46,7 @@ export type DraftReviewProviderProps = {
 export function DraftReviewProvider({ threadId, children }: DraftReviewProviderProps) {
   const effectiveThreadId = threadId ?? "";
   const drafts = useThreadDrafts(threadId);
+  const nowMs = useThreadStore((state) => state.now);
   const controller = useDraftReviewController(effectiveThreadId);
   const [activeEditorDocumentId, setActiveEditorDocumentId] = useState<string | null>(null);
   const groups = drafts.groups ?? [];
@@ -50,6 +61,26 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
       return groups.find((group) => group.documentId === documentId) ?? null;
     },
     [groups],
+  );
+
+  const reviewableDraftsForGroup = useCallback(
+    (group: ThreadDraftGroup | null | undefined): ReviewableDrafts => {
+      const visible =
+        group?.drafts.filter(
+          (draft) => draft.status === "active" || isDraftUndoable(draft, nowMs),
+        ) ?? [];
+      return {
+        visible,
+        active: visible.filter((draft) => draft.status === "active"),
+      };
+    },
+    [nowMs],
+  );
+
+  const reviewableDraftsForDocument = useCallback(
+    (documentId: string | null | undefined) =>
+      reviewableDraftsForGroup(groupForDocument(documentId)),
+    [groupForDocument, reviewableDraftsForGroup],
   );
 
   const selectedDraft = controller.selectedDraft;
@@ -68,10 +99,22 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
       groups,
       drafts,
       groupForDocument,
+      reviewableDraftsForDocument,
+      reviewableDraftsForGroup,
+      nowMs,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [controller, groups, drafts, groupForDocument, activeEditorDocumentId],
+    [
+      controller,
+      groups,
+      drafts,
+      groupForDocument,
+      reviewableDraftsForDocument,
+      reviewableDraftsForGroup,
+      nowMs,
+      activeEditorDocumentId,
+    ],
   );
 
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
@@ -83,12 +126,4 @@ export function useDraftReview(): DraftReviewContextValue {
     throw new Error("useDraftReview must be used within DraftReviewProvider");
   }
   return value;
-}
-
-export function useRegisterDraftReviewEditor(documentId: string | null) {
-  const { setActiveEditorDocumentId } = useDraftReview();
-  useEffect(() => {
-    setActiveEditorDocumentId(documentId);
-    return () => setActiveEditorDocumentId(null);
-  }, [documentId, setActiveEditorDocumentId]);
 }

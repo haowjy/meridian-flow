@@ -33,7 +33,7 @@ import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DraftReviewBar } from "@/features/chat/DraftReviewBar";
-import { useRegisterDraftReviewEditor } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 
 const EditorView = lazy(() =>
@@ -93,7 +93,12 @@ export function ContextEditorMountHost({
   active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
-  useRegisterDraftReviewEditor(active ? activeTabId : null);
+  const { setActiveEditorDocumentId } = useDraftReview();
+  useEffect(() => {
+    const documentId = active ? activeTabId : null;
+    setActiveEditorDocumentId(documentId);
+    return () => setActiveEditorDocumentId(null);
+  }, [active, activeTabId, setActiveEditorDocumentId]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.

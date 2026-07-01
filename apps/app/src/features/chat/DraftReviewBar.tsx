@@ -10,14 +10,14 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/features/project/relative-time";
 
-import { DraftDiffPanel } from "./DraftPreviewOverlay";
+import { DraftDiffPanel } from "./DraftDiffPanel";
 import { useDraftReview } from "./DraftReviewProvider";
 
 export type DraftReviewBarProps = {
@@ -25,37 +25,40 @@ export type DraftReviewBarProps = {
 };
 
 export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
-  const { controller, groupForDocument } = useDraftReview();
+  const { controller, groupForDocument, reviewableDraftsForDocument, nowMs } = useDraftReview();
   const group = groupForDocument(documentId);
   const undoAccept = useUndoDraftAccept();
   const undoReject = useUndoDraftReject();
-  const [index, setIndex] = useState(0);
-  const nowMs = Date.now();
-  const visibleDrafts = useMemo(
-    () =>
-      group?.drafts.filter((draft) => draft.status === "active" || isDraftUndoable(draft, nowMs)) ??
-      [],
-    [group?.drafts, nowMs],
-  );
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const { visible: reviewableDrafts, active: activeDrafts } =
+    reviewableDraftsForDocument(documentId);
 
   const selectedDraft = controller.selectedDraft;
   useEffect(() => {
-    const selectedIndex = visibleDrafts.findIndex(
-      (draft) => draft.draftId === selectedDraft?.draftId,
-    );
-    if (selectedIndex >= 0) setIndex(selectedIndex);
-  }, [selectedDraft?.draftId, visibleDrafts]);
+    if (selectedDraft?.documentId === documentId) setSelectedDraftId(selectedDraft.draftId);
+  }, [documentId, selectedDraft?.documentId, selectedDraft?.draftId]);
+
+  const selectedVisibleDraft =
+    reviewableDrafts.find((item) => item.draftId === selectedDraftId) ?? null;
+  const draft =
+    selectedVisibleDraft?.status === "active" || activeDrafts.length === 0
+      ? (selectedVisibleDraft ?? activeDrafts[0] ?? reviewableDrafts[0] ?? null)
+      : (activeDrafts[0] ?? reviewableDrafts[0] ?? null);
 
   useEffect(() => {
-    if (index >= visibleDrafts.length) setIndex(Math.max(0, visibleDrafts.length - 1));
-  }, [index, visibleDrafts.length]);
+    if (!draft) {
+      setSelectedDraftId(null);
+      return;
+    }
+    if (draft.draftId !== selectedDraftId) setSelectedDraftId(draft.draftId);
+  }, [draft, selectedDraftId]);
 
-  if (!group || visibleDrafts.length === 0) return null;
+  if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
-  const draft = visibleDrafts[index] ?? visibleDrafts[0];
-  if (!draft) return null;
-
-  const activeDrafts = visibleDrafts.filter((item) => item.status === "active");
+  const index = Math.max(
+    0,
+    reviewableDrafts.findIndex((item) => item.draftId === draft.draftId),
+  );
   const isPanelOpen =
     draft.status === "active" &&
     selectedDraft?.documentId === documentId &&
@@ -63,7 +66,8 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
 
   function step(delta: -1 | 1) {
-    setIndex((current) => Math.min(visibleDrafts.length - 1, Math.max(0, current + delta)));
+    const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
+    setSelectedDraftId(reviewableDrafts[nextIndex]?.draftId ?? null);
   }
 
   function openCurrentDraft() {
@@ -80,15 +84,21 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   }
 
   function applyAll() {
-    for (const item of activeDrafts) controller.accept(documentId, item.draftId);
+    controller.acceptAll(
+      documentId,
+      activeDrafts.map((item) => item.draftId),
+    );
   }
 
   function discardAll() {
-    for (const item of activeDrafts) controller.reject(documentId, item.draftId);
+    controller.rejectAll(
+      documentId,
+      activeDrafts.map((item) => item.draftId),
+    );
   }
 
   function undoDraft(item: ThreadDraftListItem) {
-    if (item.status === "active" || !isDraftUndoable(item) || busy) return;
+    if (item.status === "active" || !isDraftUndoable(item, nowMs) || busy) return;
     const mutation = item.status === "applied" ? undoAccept : undoReject;
     mutation.mutate({ threadId: controller.threadId, documentId, draftId: item.draftId });
   }
@@ -115,10 +125,10 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
                 )}
               </p>
             ) : (
-              <ReversibleTitle draft={draft} />
+              <ReversibleTitle draft={draft} nowMs={nowMs} />
             )}
-            {visibleDrafts.length > 1 ? (
-              <Stepper index={index} count={visibleDrafts.length} onStep={step} />
+            {reviewableDrafts.length > 1 ? (
+              <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
             ) : null}
           </div>
           {draft.status === "active" ? (
@@ -260,8 +270,8 @@ function Stepper({
   );
 }
 
-function ReversibleTitle({ draft }: { draft: ThreadDraftListItem }) {
-  const age = relativeTime(draft.updatedAt, Date.now());
+function ReversibleTitle({ draft, nowMs }: { draft: ThreadDraftListItem; nowMs: number }) {
+  const age = relativeTime(draft.updatedAt, nowMs);
   const isApplied = draft.status === "applied";
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">

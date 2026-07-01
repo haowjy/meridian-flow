@@ -14,7 +14,6 @@ export type ComponentCardProps = {
   hint?: ReactNode;
   children?: ReactNode;
   className?: string;
-  contentClassName?: string;
 };
 
 export function ComponentCard({
@@ -25,7 +24,6 @@ export function ComponentCard({
   hint,
   children,
   className,
-  contentClassName,
 }: ComponentCardProps) {
   return (
     <section
@@ -43,7 +41,7 @@ export function ComponentCard({
         >
           <Icon className="size-3.5" aria-hidden />
         </div>
-        <div className={cn("min-w-0 flex-1", contentClassName)}>
+        <div className="min-w-0 flex-1">
           {eyebrow ? (
             <p className="text-meta font-medium uppercase tracking-wide text-muted-foreground">
               {eyebrow}

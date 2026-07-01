@@ -36,7 +36,6 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnChangeFooter } from "./TurnChangeFooter";
-import type { DraftReviewController } from "./useDraftReviewController";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -45,8 +44,6 @@ export type AssistantTurnProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Draft groups anchored to this turn (undefined when none — most rows). */
   draftGroups?: ThreadDraftGroup[];
-  /** Shared draft review state machine owned by ChatView. */
-  draftReviewController?: DraftReviewController;
 };
 
 function AssistantTurnComponent({
@@ -55,7 +52,6 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToInterrupt,
   draftGroups,
-  draftReviewController,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -108,14 +104,10 @@ function AssistantTurnComponent({
         </p>
       ) : null}
 
-      {draftGroups && draftGroups.length > 0 && draftReviewController ? (
+      {draftGroups && draftGroups.length > 0 ? (
         <div data-draft-anchor>
           {draftGroups.map((group) => (
-            <DraftReviewCard
-              key={group.documentId}
-              group={group}
-              controller={draftReviewController}
-            />
+            <DraftReviewCard key={group.documentId} group={group} />
           ))}
         </div>
       ) : null}
@@ -242,8 +234,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
     prev.onRespondToInterrupt === next.onRespondToInterrupt &&
-    prev.draftGroups === next.draftGroups &&
-    prev.draftReviewController === next.draftReviewController
+    prev.draftGroups === next.draftGroups
   );
 }
 

@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
-import { Check, ChevronDown, FileText, Pencil } from "lucide-react";
+import { Check, ChevronDown, Pencil } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { useRenameThread } from "@/client/query/useRenameThread";
@@ -20,8 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ThreadAgentProvenance } from "@/features/agents/ThreadAgentProvenance";
+import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
-import { draftIndicatorDisplay } from "@/features/project/lifecycle";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -177,20 +177,9 @@ function ThreadSwitchItem({
       className={cn(active && "bg-primary/10 font-medium text-foreground")}
     >
       <span className="min-w-0 flex-1 truncate">{displayThreadTitle(thread.title)}</span>
-      <DraftIndicator count={thread.pendingDraftCount} />
+      <DraftIndicatorChip count={thread.pendingDraftCount} />
       {active ? <Check className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
     </DropdownMenuItem>
-  );
-}
-
-function DraftIndicator({ count }: { count: number }) {
-  const display = draftIndicatorDisplay(count);
-  if (!display) return null;
-  return (
-    <span className={display.className} role="img" aria-label={display.label} title={display.label}>
-      <FileText className={display.iconClassName} aria-hidden />
-      <span>{count}</span>
-    </span>
   );
 }
 

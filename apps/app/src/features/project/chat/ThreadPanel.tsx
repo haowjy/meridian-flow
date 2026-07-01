@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadGroupBy } from "@meridian/contracts/preferences";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { Check, ChevronRight, FileText, PanelLeftClose, Pause, Plus, Star } from "lucide-react";
+import { Check, ChevronRight, PanelLeftClose, Pause, Plus, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -17,6 +17,7 @@ import {
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
 import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -530,7 +531,7 @@ function ThreadRow({
               {rel}
             </span>
           ) : null}
-          <DraftIndicator count={thread.pendingDraftCount} />
+          <DraftIndicatorChip count={thread.pendingDraftCount} />
           {dot}
         </button>
         <button
@@ -591,21 +592,10 @@ function SubagentRow({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <DraftIndicator count={thread.pendingDraftCount} />
+        <DraftIndicatorChip count={thread.pendingDraftCount} />
         <StatusDot lifecycle={lifecycle} small />
       </button>
     </li>
-  );
-}
-
-function DraftIndicator({ count }: { count: number }) {
-  const display = draftIndicatorDisplay(count);
-  if (!display) return null;
-  return (
-    <span className={display.className} role="img" aria-label={display.label} title={display.label}>
-      <FileText className={display.iconClassName} aria-hidden />
-      <span>{count}</span>
-    </span>
   );
 }
 

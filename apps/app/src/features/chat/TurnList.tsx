@@ -39,7 +39,6 @@ import { DraftRejectTurn } from "./DraftRejectTurn";
 import { isDraftAcceptTurn } from "./draft-accept-turn";
 import { isDraftRejectTurn } from "./draft-reject-turn";
 import { UserTurn } from "./UserTurn";
-import type { DraftReviewController } from "./useDraftReviewController";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
@@ -53,8 +52,6 @@ export type TurnListProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
-  /** Shared draft review state machine owned by ChatView. */
-  draftReviewController?: DraftReviewController;
 };
 
 /**
@@ -68,7 +65,6 @@ export function TurnList({
   tailFollowRevision,
   onRespondToInterrupt,
   draftsByTurnId,
-  draftReviewController,
 }: TurnListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -104,7 +100,6 @@ export function TurnList({
       // Lookup is per-row so most assistant turns get undefined (memo stable);
       // only turns with anchored drafts re-render when the map identity flips.
       const draftGroups = draftsByTurnId?.get(turn.id);
-      const rowDraftReviewController = draftGroups?.length ? draftReviewController : undefined;
       return (
         <AssistantTurn
           threadId={threadId}
@@ -112,11 +107,10 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
           draftGroups={draftGroups}
-          draftReviewController={rowDraftReviewController}
         />
       );
     },
-    [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToInterrupt, threadId],
+    [draftsByTurnId, lastAssistantIdx, onRespondToInterrupt, threadId],
   );
 
   const components = useMemo<Components<Turn>>(
