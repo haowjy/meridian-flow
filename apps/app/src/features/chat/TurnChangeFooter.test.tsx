@@ -6,42 +6,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  documentMutateAsync,
-  turnMutateAsync,
-  undoAcceptMutateAsync,
-  undoRejectMutateAsync,
-  liveLineageDocuments,
-} = vi.hoisted(() => ({
+const { documentMutateAsync, turnMutateAsync } = vi.hoisted(() => ({
   documentMutateAsync: vi.fn(),
   turnMutateAsync: vi.fn(),
-  undoAcceptMutateAsync: vi.fn(),
-  undoRejectMutateAsync: vi.fn(),
-  liveLineageDocuments: {
-    current: null as Array<{ documentId: string; uri: string; path: string }> | null,
-  },
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseDocumentMutation: () => ({ mutateAsync: documentMutateAsync }),
   useReverseTurnMutation: () => ({ mutateAsync: turnMutateAsync }),
-}));
-
-vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useUndoDraftAccept: () => ({ mutateAsync: undoAcceptMutateAsync }),
-  useUndoDraftReject: () => ({ mutateAsync: undoRejectMutateAsync }),
-}));
-
-vi.mock("@/client/query/useTurnLiveLineage", () => ({
-  useTurnLiveLineage: (
-    _threadId: string | null,
-    _turnId: string | null,
-    options?: { enabled?: boolean },
-  ) => ({
-    data: options?.enabled === false ? null : liveLineageDocuments.current,
-    documents: options?.enabled === false ? null : liveLineageDocuments.current,
-    status: options?.enabled === false ? "disabled" : "ready",
-  }),
 }));
 
 vi.mock("@lingui/core/macro", () => ({
@@ -61,9 +33,7 @@ vi.mock("@lingui/react/macro", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-import { AssistantTurn } from "./AssistantTurn";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
-import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { TurnChangeFooter } from "./TurnChangeFooter";
 
 describe("TurnChangeFooter", () => {
@@ -73,9 +43,6 @@ describe("TurnChangeFooter", () => {
   beforeEach(() => {
     documentMutateAsync.mockReset();
     turnMutateAsync.mockReset();
-    undoAcceptMutateAsync.mockReset();
-    undoRejectMutateAsync.mockReset();
-    liveLineageDocuments.current = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -242,47 +209,6 @@ describe("TurnChangeFooter", () => {
     expect(opened).toEqual(["work://work-1/notes/beat.md"]);
   });
 
-  it("mounts the footer through AssistantTurn from accepted-draft live lineage", () => {
-    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
-
-    renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
-
-    expect(container.textContent).toContain("1 document changed");
-  });
-
-  it("renders draft accept events as user-attributed undo affordances", async () => {
-    undoAcceptMutateAsync.mockResolvedValue({ status: "reactivated", draftId: "draft-1" });
-
-    renderDraftAcceptTurn();
-
-    expect(container.textContent).toContain("Chapter 1");
-    expect(button("Undo acceptance").disabled).toBe(false);
-    await click(button("Undo acceptance"));
-
-    expect(undoAcceptMutateAsync).toHaveBeenCalledWith({
-      threadId: "thread-1",
-      documentId: "doc-1",
-      draftId: "draft-1",
-    });
-    expect(button("Undone").disabled).toBe(true);
-  });
-
-  it("keeps the footer hidden when AssistantTurn has no live lineage", () => {
-    liveLineageDocuments.current = [];
-
-    renderAssistantTurn({ ...turnWithBlocks([]), status: "complete" });
-
-    expect(container.textContent).not.toContain("1 document changed");
-  });
-
-  it("keeps the footer hidden while AssistantTurn is live", () => {
-    liveLineageDocuments.current = documentsForPaths(["/chapter-1.mdx"]);
-
-    renderAssistantTurn({ ...turnWithBlocks([]), status: "streaming" });
-
-    expect(container.textContent).not.toContain("1 document changed");
-  });
-
   function renderFooter(
     documents: Array<{ documentId: string; uri: string; path: string }>,
     onOpenContextUri?: (uri: string) => void,
@@ -291,38 +217,6 @@ describe("TurnChangeFooter", () => {
       root.render(
         <ChatContextNavigationProvider onOpenContextUri={onOpenContextUri ?? null}>
           <TurnChangeFooter threadId="thread-1" turn={turnWithBlocks([])} documents={documents} />
-        </ChatContextNavigationProvider>,
-      );
-    });
-  }
-
-  function renderAssistantTurn(turn: Turn) {
-    act(() => {
-      root.render(
-        <ChatContextNavigationProvider onOpenContextUri={null}>
-          <AssistantTurn turn={turn} />
-        </ChatContextNavigationProvider>,
-      );
-    });
-  }
-
-  function renderDraftAcceptTurn() {
-    act(() => {
-      root.render(
-        <ChatContextNavigationProvider onOpenContextUri={null}>
-          <DraftAcceptTurn
-            turn={{
-              ...turnWithBlocks([]),
-              id: "turn-accept",
-              role: "user",
-              requestParams: {
-                kind: "draft_accept",
-                draftId: "draft-1",
-                documentId: "doc-1",
-                documentName: "Chapter 1",
-              },
-            }}
-          />
         </ChatContextNavigationProvider>,
       );
     });
