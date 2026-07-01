@@ -159,7 +159,13 @@ export interface OrchestratorDeps {
     commitResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<{ documentId: string; concurrentEdits: ConcurrentEditInfo }[]>;
+    ): Promise<
+      | {
+          status: "committed";
+          concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+        }
+      | { status: "draft_closed"; responseId: string; mode: "draft" }
+    >;
     rollbackResponse(responseId: string): Promise<void>;
   };
 }
@@ -1049,9 +1055,13 @@ async function* generateEvents(
           turnId: currentAssistantTurn.id,
         });
         activeResponseId = undefined;
+        if (concurrentEdits.status === "draft_closed") {
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          return;
+        }
 
         // Backfill concurrent edit info into the last write tool_result block per document.
-        for (const { documentId, concurrentEdits: edits } of concurrentEdits) {
+        for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
           const block = writeBlocksByDocument.get(documentId);
           if (!block) continue;
           const content = block.content as {

@@ -13,6 +13,7 @@ export interface ReverseTurnInput {
   turnId: TurnId;
   direction: "undo" | "redo";
   actor: ReversalActor;
+  documentIds?: DocumentId[];
 }
 
 export interface ReverseTurnDeps {
@@ -26,7 +27,8 @@ export async function reverseTurn(
   deps: ReverseTurnDeps,
   input: ReverseTurnInput,
 ): Promise<ReversalOutcome> {
-  const documentIds = await deps.reversalStore.documentsForTurn(input.threadId, input.turnId);
+  const documentIds =
+    input.documentIds ?? (await deps.reversalStore.documentsForTurn(input.threadId, input.turnId));
   if (documentIds.length === 0) {
     return {
       status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",

@@ -7,15 +7,26 @@
  * frontiers are partial blocks in the same array. Block render keys derive
  * from `(turnId, sequence)`, so the live→settled swap is an in-place
  * block-content replace, not a remount.
+ *
+ * DraftReviewCard anchoring: when the writer has at least one reviewable AI draft
+ * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
+ * the draft-review card(s) directly beneath its segments. The card opens the
+ * (ChatView-owned) preview overlay via the shared review controller for
+ * review/apply/discard actions. Groups that don't anchor are surfaced
+ * by ChatView in the unanchored fallback strip above the Composer.
  */
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
+
+import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { type CheckpointRespondRequest, CustomBlockRenderer } from "./CustomBlockRenderer";
+import { DraftReviewCard } from "./DraftReviewCard";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { LiveTurnStatusBar } from "./LiveTurnStatusBar";
@@ -25,13 +36,17 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnChangeFooter } from "./TurnChangeFooter";
-import { turnWrittenDocuments } from "./turn-written-documents";
+import type { DraftReviewController } from "./useDraftReviewController";
 
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  /** Draft groups anchored to this turn (undefined when none — most rows). */
+  draftGroups?: ThreadDraftGroup[];
+  /** Shared draft review state machine owned by ChatView. */
+  draftReviewController?: DraftReviewController;
 };
 
 function AssistantTurnComponent({
@@ -39,6 +54,8 @@ function AssistantTurnComponent({
   turn,
   isLatestAssistant = false,
   onRespondToCheckpoint,
+  draftGroups,
+  draftReviewController,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -50,11 +67,11 @@ function AssistantTurnComponent({
   // A turn is "live" iff its current status is still streaming. Settled turns
   // are anything terminal (`complete`/`cancelled`/`error`).
   const isLive = turn.status === "streaming" || turn.status === "pending";
-  const writtenDocuments = useMemo(
-    () => (isLive ? [] : turnWrittenDocuments(turn)),
-    [isLive, turn],
-  );
-  const hasReversibleWrites = writtenDocuments.length > 0;
+  const resolvedThreadId = threadId ?? turn.threadId;
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineageDocuments = liveLineage.documents ?? [];
+  const hasReversibleWrites = liveLineageDocuments.length > 0;
+  const hasReviewableDrafts = Boolean(draftGroups?.some((group) => group.drafts.length > 0));
 
   return (
     <div
@@ -68,17 +85,18 @@ function AssistantTurnComponent({
           key={segmentRenderKey(segment)}
           segment={segment}
           segmentIndex={index}
-          threadId={threadId ?? turn.threadId}
+          threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToCheckpoint={onRespondToCheckpoint}
+          draftWrite={hasReviewableDrafts}
         />
       ))}
 
       {hasReversibleWrites ? (
         <TurnChangeFooter
-          threadId={threadId ?? turn.threadId}
+          threadId={resolvedThreadId}
           turn={turn}
-          writtenDocuments={writtenDocuments}
+          documents={liveLineageDocuments}
         />
       ) : null}
 
@@ -88,6 +106,18 @@ function AssistantTurnComponent({
         <p className="mt-2 text-[12.5px] text-muted-foreground italic">
           <Trans>Turn cancelled.</Trans>
         </p>
+      ) : null}
+
+      {draftGroups && draftGroups.length > 0 && draftReviewController ? (
+        <div data-draft-anchor>
+          {draftGroups.map((group) => (
+            <DraftReviewCard
+              key={group.documentId}
+              group={group}
+              controller={draftReviewController}
+            />
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -99,12 +129,14 @@ function TurnSegmentView({
   threadId,
   turnStatus,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   segment: TurnSegment;
   segmentIndex: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   return (
     <div data-turn-segment={segmentIndex + 1}>
@@ -117,6 +149,7 @@ function TurnSegmentView({
               threadId={threadId}
               turnStatus={turnStatus}
               onRespondToCheckpoint={onRespondToCheckpoint}
+              draftWrite={draftWrite}
             />
           ))}
         </ProcessDisclosure>
@@ -130,6 +163,7 @@ function TurnSegmentView({
             turnStatus={turnStatus}
             mode="frontier"
             onRespondToCheckpoint={onRespondToCheckpoint}
+            draftWrite={draftWrite}
           />
         </div>
       ) : null}
@@ -148,11 +182,13 @@ function FoldRun({
   threadId,
   turnStatus,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   if (run.kind === "reasoning") {
     return (
@@ -172,6 +208,7 @@ function FoldRun({
         turnStatus={turnStatus}
         mode="fold"
         onRespondToCheckpoint={onRespondToCheckpoint}
+        draftWrite={draftWrite}
       />
     </div>
   );
@@ -204,7 +241,9 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.threadId === next.threadId &&
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToCheckpoint === next.onRespondToCheckpoint
+    prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
+    prev.draftGroups === next.draftGroups &&
+    prev.draftReviewController === next.draftReviewController
   );
 }
 
@@ -228,26 +267,34 @@ function DeliverySegments({
   turnStatus,
   mode,
   onRespondToCheckpoint,
+  draftWrite,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
   mode: DeliveryMode;
   onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  draftWrite: boolean;
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
     <>
       {segments.flatMap((segment) => {
         if (segment.kind === "tool") {
-          return [<ToolRow key={blockRenderKey(segment.tool.keyBlock)} tool={segment.tool} />];
+          return [
+            <ToolRow
+              key={blockRenderKey(segment.tool.keyBlock)}
+              tool={segment.tool}
+              draftWrite={draftWrite}
+            />,
+          ];
         }
         // Claude-style timeline: adjacent tools stack as siblings instead of
         // collapsing into a grouping disclosure. With text-altitude rows the
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
           return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} />
+            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} draftWrite={draftWrite} />
           ));
         }
         return [

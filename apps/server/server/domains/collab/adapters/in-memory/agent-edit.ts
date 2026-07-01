@@ -32,6 +32,11 @@ export type InMemoryJournal = UpdateJournal &
     getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
     listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
     latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+    latestUpdateSeq(docId: string): Promise<number>;
+    updateRecords(docId: string): PersistedUpdate[];
+    mutationRecords(
+      docId: string,
+    ): Array<{ threadId: string; turnId: string; writeId: string; createdSeq: number }>;
   };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
@@ -64,6 +69,10 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
 
   async latestUpdate(docId: string): Promise<PersistedUpdate | null> {
     return this.updateRecords(docId).at(-1) ?? null;
+  }
+
+  async latestUpdateSeq(docId: string): Promise<number> {
+    return Math.max(0, (this.debugEntry(docId)?.nextSeq ?? 1) - 1);
   }
 
   override async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {

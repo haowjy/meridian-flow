@@ -35,11 +35,15 @@ import type { ReactNode } from "react";
 import type { ToolView } from "./group-delivery-segments";
 import { normalizeToolResultRows, truncate } from "./tool-result-preview";
 
+export type ToolRenderContext = {
+  writeMode?: "direct" | "draft";
+};
+
 export type ToolRenderer = {
   Icon: LucideIcon;
   iconTint?: "muted" | "primary";
   /** Single-line summary of the tool action. Already i18n'd. */
-  title: (tool: ToolView) => ReactNode;
+  title: (tool: ToolView, context?: ToolRenderContext) => ReactNode;
   /**
    * Inline expansion content. `null` = no expand affordance on this row
    * (the row is a static announcement) or routes via `onClick` instead.
@@ -291,9 +295,11 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   write: {
     Icon: FilePen,
-    title: (tool) => {
+    title: (tool, context) => {
       const path = asString(inputObject(tool).path);
-      return path ? <PathTitle verb={t`Wrote`} path={path} /> : t`Wrote file`;
+      const verb = context?.writeMode === "draft" ? t`Drafted` : t`Wrote`;
+      if (path) return <PathTitle verb={verb} path={path} />;
+      return context?.writeMode === "draft" ? t`Drafted file` : t`Wrote file`;
     },
     // TODO(ux): wire onClick to open the written file.
   },

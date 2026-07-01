@@ -5,23 +5,39 @@
  * Composition root for the chat feature: reads canonical turns directly from
  * ThreadStore, wires snapshot sync, handoff, announcements, autoscroll hooks,
  * and renders `ChatSurface` + `TurnList` + `Composer`.
+ *
+ * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
+ * per-turn map to `TurnList` for inline cards under the producing turn, and
+ * renders the unanchored-drafts fallback strip directly above the Composer.
+ *
+ * Owns the AI-draft preview overlay. The DraftReviewCard sits inside a
+ * react-virtuoso row for anchored cards, so any modal it tried to own would
+ * vanish when Virtuoso recycles the row. Cards use the shared
+ * draft-review controller, and the overlay is rendered once here at the
+ * non-virtualized root.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useThreadDrafts } from "@/client/query/useThreadDrafts";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import type { ChatPlacement } from "@/features/project/chat/ChatSurface";
 import { displayThreadTitle } from "@/lib/thread-title";
+
+import { splitDraftGroupsByTurn } from "./anchor-drafts";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
 import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
+import { DraftReviewCard } from "./DraftReviewCard";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
+import { useDraftReviewController } from "./useDraftReviewController";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -86,6 +102,46 @@ export function ChatView({
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
+  const drafts = useThreadDrafts(threadId);
+
+  // The transcript turn objects are recreated on every streaming tick, but
+  // for anchoring all we care about is "is this turn id in the transcript?".
+  // Collapse to a joined string of ids (cheap) and rebuild the set only when
+  // the id list changes — so streaming/block churn does not bust the
+  // anchored-card memoization down the row tree.
+  const turnIdsKey = turns.map((turn) => turn.id).join("|");
+  const turnIdSet = useMemo<ReadonlySet<string>>(
+    () => new Set(turnIdsKey.length > 0 ? turnIdsKey.split("|") : []),
+    [turnIdsKey],
+  );
+  const { byTurnId: draftsByTurnId, unanchored: unanchoredDrafts } = useMemo(
+    () => splitDraftGroupsByTurn(drafts.groups, turnIdSet),
+    [drafts.groups, turnIdSet],
+  );
+
+  const draftReview = useDraftReviewController(threadId);
+  const selectedDraft = draftReview.selectedDraft;
+
+  const previewingDocumentName = useMemo(() => {
+    if (selectedDraft == null) return null;
+    return (
+      drafts.groups?.find((group) => group.documentId === selectedDraft.documentId)?.documentName ??
+      null
+    );
+  }, [selectedDraft, drafts.groups]);
+
+  // If the previewed draft disappears (writer accepted/discarded it from
+  // somewhere else, or the list reloaded without it), close the overlay so
+  // the chat doesn't show a stale modal over the conversation.
+  useEffect(() => {
+    if (selectedDraft == null) return;
+    if (drafts.status !== "ready" && drafts.status !== "empty") return;
+    const stillActive = drafts.groups?.some((group) =>
+      group.drafts.some((draft) => draft.draftId === selectedDraft.draftId),
+    );
+    if (!stillActive) draftReview.closeReview();
+  }, [selectedDraft, drafts.status, drafts.groups, draftReview.closeReview]);
+
   async function handleSubmit(text: string) {
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
@@ -114,41 +170,60 @@ export function ChatView({
   );
 
   return (
-    <ChatSurface
-      title={pageTitle}
-      surfaceRef={chatSurfaceRef}
-      scrollRef={scrollRef}
-      scrollAriaLabel={t`Conversation`}
-      // pb-36 clears the pinned composer; taller than --chat-scroll-fade-size (visual hint only).
-      scrollClassName="pt-6 pb-36"
-      scrollFadeBottom
-      footer={
-        <div data-debug-composer={threadId}>
-          <Composer
-            ref={composerRef}
-            variant="pinned"
-            placeholder={t`Reply to the agent, or steer the analysis…`}
-            streaming={isStreaming}
-            onSubmit={handleSubmit}
-            onStop={handleStop}
-            agent={{
-              projectId: projectId ?? null,
-              mode: composerAgentMode,
-              selectedSlug: composerAgentSlug,
-              onSelectedSlugChange: setDraftAgentSlug,
-              compact: placement === "dock",
-            }}
-          />
-        </div>
-      }
-    >
-      <TurnList
-        threadId={threadId}
-        turns={turns}
-        scrollParent={scrollParent}
-        tailFollowRevision={tailFollowRevision}
-        onRespondToCheckpoint={handleRespondToCheckpoint}
-      />
-    </ChatSurface>
+    <>
+      <ChatSurface
+        title={pageTitle}
+        surfaceRef={chatSurfaceRef}
+        scrollRef={scrollRef}
+        scrollAriaLabel={t`Conversation`}
+        scrollClassName="pt-6"
+        scrollFadeBottom
+        footer={
+          <div data-debug-composer={threadId} className="flex flex-col gap-2">
+            {unanchoredDrafts.length > 0 ? (
+              <div data-unanchored-drafts className="flex flex-col gap-2">
+                {unanchoredDrafts.map((group) => (
+                  <DraftReviewCard
+                    key={group.documentId}
+                    group={group}
+                    controller={draftReview}
+                    variant="compact"
+                  />
+                ))}
+              </div>
+            ) : null}
+            <Composer
+              ref={composerRef}
+              variant="pinned"
+              placeholder={t`Reply to the agent, or steer the analysis…`}
+              streaming={isStreaming}
+              onSubmit={handleSubmit}
+              onStop={handleStop}
+              agent={{
+                projectId: projectId ?? null,
+                mode: composerAgentMode,
+                selectedSlug: composerAgentSlug,
+                onSelectedSlugChange: setDraftAgentSlug,
+                compact: placement === "dock",
+              }}
+            />
+          </div>
+        }
+      >
+        <TurnList
+          threadId={threadId}
+          turns={turns}
+          scrollParent={scrollParent}
+          tailFollowRevision={tailFollowRevision}
+          onRespondToCheckpoint={handleRespondToCheckpoint}
+          draftsByTurnId={draftsByTurnId}
+          draftReviewController={draftReview}
+        />
+      </ChatSurface>
+
+      {selectedDraft != null ? (
+        <DraftPreviewOverlay controller={draftReview} documentName={previewingDocumentName} />
+      ) : null}
+    </>
   );
 }

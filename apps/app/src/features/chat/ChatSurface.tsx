@@ -7,6 +7,7 @@
  * children. Used by `ChatView` and the compose (draft) surfaces.
  */
 import type { ReactNode, Ref, RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -47,11 +48,70 @@ export function ChatSurface({
   scrollFadeBottom,
   composePinned = false,
 }: ChatSurfaceProps) {
-  const showScrollFadeBottom = scrollFadeBottom ?? Boolean(footer);
+  const hasFooter = Boolean(footer);
+  const showScrollFadeBottom = scrollFadeBottom ?? hasFooter;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLDivElement | null>(null);
+  const setRootRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      if (surfaceRef) surfaceRef.current = node;
+    },
+    [surfaceRef],
+  );
+
+  const setScrollElementRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollElementRef.current = node;
+      assignRef(scrollRef, node);
+    },
+    [scrollRef],
+  );
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    if (!hasFooter) {
+      root.style.removeProperty("--chat-footer-clearance");
+      return;
+    }
+
+    const footerElement = footerRef.current;
+    if (!footerElement) return;
+
+    const syncFooterClearance = () => {
+      const scrollElement = scrollElementRef.current;
+      const wasPinnedToBottom = scrollElement
+        ? scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight <= 8
+        : false;
+      const nextClearance = Math.ceil(footerElement.getBoundingClientRect().height);
+
+      root.style.setProperty("--chat-footer-clearance", `${nextClearance}px`);
+
+      if (scrollElement && wasPinnedToBottom) {
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => {
+            scrollElement.scrollTop = scrollElement.scrollHeight;
+          });
+        }
+      }
+    };
+
+    syncFooterClearance();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(syncFooterClearance);
+    observer.observe(footerElement);
+    return () => observer.disconnect();
+  }, [hasFooter]);
 
   return (
     <div
-      ref={surfaceRef}
+      ref={setRootRef}
       className="main-pane relative flex h-full w-full flex-col overflow-hidden"
     >
       <h1 className="visually-hidden">{title}</h1>
@@ -64,7 +124,7 @@ export function ChatSurface({
         </div>
       ) : (
         <div
-          ref={scrollRef}
+          ref={setScrollElementRef}
           onScroll={onScroll}
           role="log"
           aria-label={scrollAriaLabel}
@@ -72,6 +132,7 @@ export function ChatSurface({
             "main-pane flex-1 overflow-y-auto",
             showScrollFadeBottom && "chat-scroll-fade-bottom",
           )}
+          style={hasFooter ? { paddingBottom: "var(--chat-footer-clearance, 0px)" } : undefined}
           data-stable-layout-scroll
         >
           <ChatColumn className={scrollClassName}>{children}</ChatColumn>
@@ -79,7 +140,7 @@ export function ChatSurface({
       )}
 
       {footer ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0">
+        <div ref={footerRef} className="pointer-events-none absolute inset-x-0 bottom-0">
           <ChatColumn>
             <div
               className="pointer-events-auto pt-3"
@@ -95,4 +156,13 @@ export function ChatSurface({
       ) : null}
     </div>
   );
+}
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+  ref.current = value;
 }
