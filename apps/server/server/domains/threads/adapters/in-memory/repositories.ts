@@ -207,6 +207,7 @@ export function createInMemoryRepositories(
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       runningTurnId: runningTurn?.id ?? null,
+      pendingDraftCount: 0,
     });
   }
 

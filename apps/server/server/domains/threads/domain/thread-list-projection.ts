@@ -17,6 +17,7 @@ export interface ThreadListProjectionInput {
   lastTurnRole: TurnRole | null;
   lastTurnStatus: TurnStatus | null;
   runningTurnId: string | null;
+  pendingDraftCount: number;
 }
 
 export function isWaitingForUser(
@@ -36,6 +37,7 @@ export function toThreadListItem(input: ThreadListProjectionInput): ThreadListIt
         : null,
     waitingForUser: isWaitingForUser(input.thread.status, input.lastTurnRole, input.lastTurnStatus),
     runningTurnId: input.runningTurnId,
+    pendingDraftCount: input.pendingDraftCount,
   };
 }
 
