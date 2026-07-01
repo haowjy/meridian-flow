@@ -32,6 +32,7 @@ import type {
   DraftAcceptJournal,
   DraftStore,
   DraftUpdate,
+  ReviewableDraft,
 } from "../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
 import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
@@ -111,6 +112,32 @@ export function createDrizzleDraftStore(
         )
         .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
       return rows.map((row) => mapActiveDraft(row.draft, row.documentName));
+    },
+
+    async listReviewableDrafts(input) {
+      const retentionCutoff = sql`now() - interval '1 day'`;
+      const rows = await db
+        .select({ draft: documentYjsDrafts, documentName: documents.name })
+        .from(documentYjsDrafts)
+        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+        .where(
+          and(
+            eq(documentYjsDrafts.threadId, input.threadId),
+            or(
+              eq(documentYjsDrafts.status, "active"),
+              and(
+                eq(documentYjsDrafts.status, "applied"),
+                sql`${documentYjsDrafts.appliedAt} > ${retentionCutoff}`,
+              ),
+              and(
+                eq(documentYjsDrafts.status, "discarded"),
+                sql`${documentYjsDrafts.discardedAt} > ${retentionCutoff}`,
+              ),
+            ),
+          ),
+        )
+        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
+      return rows.map((row) => mapReviewableDraft(row.draft, row.documentName));
     },
 
     async createActiveDraft(input) {
@@ -583,7 +610,20 @@ function mapActiveDraft(
   row: typeof documentYjsDrafts.$inferSelect,
   documentName: string | null,
 ): ActiveDraft {
-  return { ...mapDraft(row), status: "active", documentName };
+  const draft = mapDraft(row);
+  if (draft.status !== "active") throw new Error(`Expected active draft: ${draft.id}`);
+  return { ...draft, status: draft.status, documentName };
+}
+
+function mapReviewableDraft(
+  row: typeof documentYjsDrafts.$inferSelect,
+  documentName: string | null,
+): ReviewableDraft {
+  const draft = mapDraft(row);
+  if (draft.status !== "active" && draft.status !== "applied" && draft.status !== "discarded") {
+    throw new Error(`Expected reviewable draft: ${draft.id}`);
+  }
+  return { ...draft, status: draft.status, documentName };
 }
 
 function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): DraftUpdate {

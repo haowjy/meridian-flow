@@ -1,5 +1,5 @@
 /**
- * anchor-drafts — split active thread draft groups into the assistant turn
+ * anchor-drafts — split reviewable thread draft groups into the assistant turn
  * that produced them vs. groups whose producing turn isn't in the transcript
  * (or is unknown). The chat surface renders the former inline beneath the
  * producing assistant turn and the latter in a single compact fallback strip

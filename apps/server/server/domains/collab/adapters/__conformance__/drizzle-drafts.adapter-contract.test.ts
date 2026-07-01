@@ -183,6 +183,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ],
       );
+
+      await expect(
+        store.listReviewableDrafts({ threadId: THREAD_ID as never }),
+      ).resolves.toMatchObject([
+        {
+          id: first.id,
+          documentId: DOC_ID,
+          documentName: "chapter",
+          threadId: THREAD_ID,
+          status: "discarded",
+          lastActorTurnId: TURN_A,
+        },
+        {
+          id: second.id,
+          documentId: DOC_B_ID,
+          documentName: "chapter-b",
+          threadId: THREAD_ID,
+          status: "active",
+          lastActorTurnId: TURN_B,
+        },
+      ]);
     });
 
     it("issues a fresh accept fencing token on reclaim and fences stale terminal writes", async () => {

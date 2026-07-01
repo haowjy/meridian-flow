@@ -44,6 +44,10 @@ export type Draft = {
 };
 
 export type ActiveDraft = Draft & { status: "active"; documentName: string | null };
+export type ReviewableDraft = Draft & {
+  status: "active" | "applied" | "discarded";
+  documentName: string | null;
+};
 
 export type DraftTurnContext = {
   documentName: string | null;
@@ -81,6 +85,7 @@ export type DraftStore = {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
+  listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -203,6 +208,7 @@ type DraftService = DraftProjectionCoordinator & {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
+  listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -282,6 +288,7 @@ export function createDraftService(deps: {
     getActiveDraft: deps.draftStore.getActiveDraft,
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
+    listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,
@@ -548,8 +555,8 @@ export function createDraftService(deps: {
         documentName: turnContext?.documentName ?? null,
         wIdRange: turnContext?.wIdRange ?? null,
       });
-    } catch {
-      // Reject is already committed; the transcript marker is best-effort.
+    } catch (cause) {
+      console.error("[draft] failed to create reject turn for draft %s: %O", draft.id, cause);
     }
 
     return { status: "discarded", draftId: draft.id, rejectTurnId };

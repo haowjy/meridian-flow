@@ -62,6 +62,32 @@ describe("draft store", () => {
       TURN_B,
     ]);
   });
+
+  it("lists active and recently terminal drafts as reviewable", async () => {
+    const store = createInMemoryDraftStore();
+    const discarded = await store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    await store.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: discarded.id });
+    const active = await store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_B,
+    });
+
+    await expect(store.listActiveDrafts({ threadId: THREAD_ID })).resolves.toMatchObject([
+      { id: active.id, status: "active" },
+    ]);
+    const reviewable = await store.listReviewableDrafts({ threadId: THREAD_ID });
+    expect(reviewable).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: active.id, status: "active" }),
+        expect.objectContaining({ id: discarded.id, status: "discarded" }),
+      ]),
+    );
+  });
 });
 
 describe("draft lifecycle service", () => {

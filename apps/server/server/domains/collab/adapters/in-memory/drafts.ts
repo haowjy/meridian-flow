@@ -1,5 +1,6 @@
 /** In-memory collab draft store for tests and local composition. */
 import { randomUUID } from "node:crypto";
+import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
 import type {
   ActiveDraft,
   AppliedDraft,
@@ -7,6 +8,7 @@ import type {
   DraftAcceptJournal,
   DraftStore,
   DraftUpdate,
+  ReviewableDraft,
 } from "../../domain/drafts.js";
 import {
   ActiveDraftConflictError,
@@ -41,6 +43,17 @@ export function createInMemoryDraftStore(): DraftStore {
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
         )
         .map((draft) => copyActiveDraft(draft));
+    },
+
+    async listReviewableDrafts(input) {
+      const now = Date.now();
+      return [...drafts.values()]
+        .filter((draft) => draft.threadId === input.threadId && isReviewableDraft(draft, now))
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
+        )
+        .map((draft) => copyReviewableDraft(draft));
     },
 
     async createActiveDraft(input) {
@@ -253,7 +266,26 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
 }
 
 function copyActiveDraft(draft: Draft): ActiveDraft {
-  return { ...(copyDraft(draft) ?? draft), status: "active", documentName: null };
+  if (draft.status !== "active") throw new Error(`Expected active draft: ${draft.id}`);
+  return { ...(copyDraft(draft) ?? draft), status: draft.status, documentName: null };
+}
+
+function copyReviewableDraft(draft: Draft): ReviewableDraft {
+  if (draft.status !== "active" && draft.status !== "applied" && draft.status !== "discarded") {
+    throw new Error(`Expected reviewable draft: ${draft.id}`);
+  }
+  return { ...(copyDraft(draft) ?? draft), status: draft.status, documentName: null };
+}
+
+function isReviewableDraft(draft: Draft, now: number): boolean {
+  if (draft.status === "active") return true;
+  if (draft.status === "applied" && draft.appliedAt) {
+    return now - draft.appliedAt.getTime() <= DRAFT_UNDO_RETENTION_MS;
+  }
+  if (draft.status === "discarded" && draft.discardedAt) {
+    return now - draft.discardedAt.getTime() <= DRAFT_UNDO_RETENTION_MS;
+  }
+  return false;
 }
 
 function copyUpdate(update: DraftUpdate): DraftUpdate {

@@ -11,6 +11,7 @@ import type {
   DraftAcceptResult,
   DraftRejectResult,
   DraftUndoDomainResult,
+  ReviewableDraft,
 } from "./domain/drafts.js";
 import type { LiveLineageDocument } from "./domain/turn-live-lineage.js";
 
@@ -179,6 +180,7 @@ export type CollabDrafts = {
   drafts: {
     getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
+    listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
     previewDraft(input: {
       documentId: DocumentId;

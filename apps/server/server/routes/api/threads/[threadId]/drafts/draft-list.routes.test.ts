@@ -56,7 +56,7 @@ function makeApp(
     },
     documentSync: {
       drafts: {
-        listActiveDrafts: vi.fn(async () => options.drafts ?? []),
+        listReviewableDrafts: vi.fn(async () => options.drafts ?? []),
       },
     },
   };
@@ -68,7 +68,7 @@ describe("thread draft list route", () => {
     auth.requireAppUser.mockReset();
   });
 
-  it("returns active drafts for a thread", async () => {
+  it("returns reviewable drafts for a thread", async () => {
     const app = makeApp({
       drafts: [
         {
@@ -83,7 +83,7 @@ describe("thread draft list route", () => {
           id: "draft-2",
           documentId: "doc-2",
           documentName: null,
-          status: "active",
+          status: "discarded",
           lastActorTurnId: null,
           updatedAt: new Date("2026-06-27T13:00:00.000Z"),
         },
@@ -108,13 +108,13 @@ describe("thread draft list route", () => {
           draftId: "draft-2",
           documentId: "doc-2",
           documentName: null,
-          status: "active",
+          status: "discarded",
           lastActorTurnId: null,
           updatedAt: "2026-06-27T13:00:00.000Z",
         },
       ],
     });
-    expect(app.documentSync.drafts.listActiveDrafts).toHaveBeenCalledWith({ threadId });
+    expect(app.documentSync.drafts.listReviewableDrafts).toHaveBeenCalledWith({ threadId });
   });
 
   it("excludes inaccessible draft documents but keeps unattached ones", async () => {
@@ -189,6 +189,6 @@ describe("thread draft list route", () => {
     await expect(route({ params: { threadId } })).rejects.toMatchObject({
       statusCode: 404,
     });
-    expect(app.documentSync.drafts.listActiveDrafts).not.toHaveBeenCalled();
+    expect(app.documentSync.drafts.listReviewableDrafts).not.toHaveBeenCalled();
   });
 });

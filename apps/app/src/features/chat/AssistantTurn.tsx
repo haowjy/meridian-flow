@@ -8,7 +8,7 @@
  * from `(turnId, sequence)`, so the live→settled swap is an in-place
  * block-content replace, not a remount.
  *
- * DraftReviewCard anchoring: when the writer has at least one active AI draft
+ * DraftReviewCard anchoring: when the writer has at least one reviewable AI draft
  * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
  * the draft-review card(s) directly beneath its segments. The card opens the
  * (ChatView-owned) preview overlay via the shared review controller for
@@ -71,7 +71,7 @@ function AssistantTurnComponent({
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
   const liveLineageDocuments = liveLineage.documents ?? [];
   const hasReversibleWrites = liveLineageDocuments.length > 0;
-  const hasActiveDrafts = Boolean(draftGroups?.some((group) => group.drafts.length > 0));
+  const hasReviewableDrafts = Boolean(draftGroups?.some((group) => group.drafts.length > 0));
 
   return (
     <div
@@ -88,7 +88,7 @@ function AssistantTurnComponent({
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToCheckpoint={onRespondToCheckpoint}
-          draftWrite={hasActiveDrafts}
+          draftWrite={hasReviewableDrafts}
         />
       ))}
 
