@@ -75,16 +75,18 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
   enterFollow: () => void;
 } {
   const [mode, setMode] = useState<FollowMode>("follow");
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
+  // `commitMode` below is the ONLY writer of this ref (no render-time sync — a
+  // render with stale state would clobber a transition committed between
+  // renders). The ref is therefore always the freshest intended mode, which is
+  // what event/timer callbacks must read in the gap before React commits.
+  const modeRef = useRef<FollowMode>("follow");
 
   const programmaticGuardRef = useRef(false);
   const guardTimeoutRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
 
-  // Single write path for mode. The ref mirrors state so event/timer callbacks
-  // read the current mode in the gap before React commits.
+  // Single write path for mode: ref for callbacks, state for rendering.
   const commitMode = useCallback((next: FollowMode) => {
     if (modeRef.current === next) return;
     modeRef.current = next;
