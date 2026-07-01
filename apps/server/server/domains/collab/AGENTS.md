@@ -7,6 +7,11 @@ the update journal, the live-document coordinator, and the **draft review
 subsystem** (per-thread AI drafts routed to a Yjs-delta draft log instead of
 the live document).
 
+Drafts go through a full lifecycle: active → accepting → applied | discarded.
+Both accept and discard are **undoable within 24 hours**, creating synthetic
+user turns in the transcript with document context. Undo reactivates the draft
+for re-review.
+
 ## What lives here
 
 - **Domain types** (`index.ts`) — `CollabDomain`, update origins, checkpoint
@@ -14,9 +19,11 @@ the live document).
   (`direct` | `draft`), `DraftClosedFinalizeResult`, and the `CollabDrafts`
   service surface.
 - **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
-  `DraftStore`, `DraftProjectionCoordinator`, accept/reject with
-  lifecycle operations (`beginAccept`/`completeAccept`/`reject`/`recoverAccepted`)
-  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`).
+  `DraftStore`, `DraftProjectionCoordinator`, accept/reject/undo lifecycle
+  operations (`beginAccept`/`completeAccept`/`reject`/`reactivate`/`recoverAccepted`)
+  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`),
+  and reactivate-first undo ordering. Accept/reject create synthetic user turns
+  with document context; both are undoable within 24 hours.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
   per-draft journal/sync-state/lifecycle adapters that persist response writes
   under `scope_id` without touching live Yjs state.
@@ -25,7 +32,8 @@ the live document).
 - **Composition** (`composition.ts`) — builds the codec/model, translates
   Meridian origins to journal meta, wires the markdown-document engine, handles
   checkpoint / restore, Hocuspocus hooks, in-memory/prod factory wiring, and
-  the draft-service lifecycle (accept/reject with claim-token fencing).
+  the draft-service lifecycle (accept/reject/undo with claim-token fencing
+  and reversal port injection).
 - **Draft write-mode routing** (`domain/draft-write-mode-router.ts`) — owns
   per-thread write-mode resolution, response-scoped live-vs-draft core routing,
   stale response invalidation, and response finalization for draft sessions.
@@ -63,6 +71,10 @@ the live document).
   listing and search, not a second live-document owner.
 - Stale-schema reads fail loud and head stamping is monotonic; rebuild recovery
   is not built. Keep that lifecycle invariant in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+- **Undo is reactivate-first.** The draft slot is claimed before touching live
+  state. See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the reasoning.
+- **DraftUndoResponse is success-only.** Non-success outcomes are HTTP errors.
+  The client does not parse error bodies for business logic.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Design: AI drafts & review](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md)
