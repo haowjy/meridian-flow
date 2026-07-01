@@ -13,10 +13,10 @@ import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ComponentType } from "react";
 
-import { Checkpoint } from "./Checkpoint";
-import { ChoiceCheckpoint } from "./ChoiceCheckpoint";
-import { FreeTextCheckpoint } from "./FreeTextCheckpoint";
+import { ChoiceBlock } from "./ChoiceBlock";
+import { FormBlock } from "./FormBlock";
 import { HelperResultBlock } from "./HelperResultBlock";
+import { TextBlock } from "./TextBlock";
 
 export type { ComponentBlockContent } from "@meridian/contracts/components";
 
@@ -29,8 +29,8 @@ export type ComponentBlockProps = {
 export type ComponentEntry = ComponentType<ComponentBlockProps>;
 
 export const COMPONENT_REGISTRY: Record<string, ComponentEntry> = {
-  choice: ChoiceCheckpoint,
-  "free-text": FreeTextCheckpoint,
-  checkpoint: Checkpoint,
+  choice: ChoiceBlock,
+  "free-text": TextBlock,
+  checkpoint: FormBlock,
   "helper-result": HelperResultBlock,
 };

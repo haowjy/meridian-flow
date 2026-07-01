@@ -1,5 +1,5 @@
 /**
- * FreeTextCheckpoint — inline ask_user checkpoint for open text answers.
+ * TextBlock — inline ask_user component block for open text answers.
  *
  * Purpose: renders the `kind:"free-text"` custom block as a waiting text form,
  * then as a compact resolved summary once checkpoint lifecycle events patch the
@@ -13,9 +13,10 @@ import { MessageSquareText } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { ComponentCard, ComponentResolvedSummary } from "./ComponentCard";
 import type { ComponentBlockProps } from "./component-registry";
 
-export function FreeTextCheckpoint({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
   const props = askUserFreeTextProps(content);
   const question = props?.question ?? t`Answer the question`;
   const recommended = props?.recommended ?? "";
@@ -27,10 +28,13 @@ export function FreeTextCheckpoint({ content, respond, isAwaitingResponse }: Com
 
   if (!isAwaitingResponse && hasResolvedValue) {
     return (
-      <ResolvedTextSummary
-        question={question}
-        answer={resolvedValue ?? t`No answer`}
-        provenance={provenance}
+      <ComponentResolvedSummary
+        icon={MessageSquareText}
+        title={question}
+        value={resolvedValue ?? t`No answer`}
+        statusLabel={
+          provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>
+        }
       />
     );
   }
@@ -43,21 +47,16 @@ export function FreeTextCheckpoint({ content, respond, isAwaitingResponse }: Com
   }
 
   return (
-    <section className="mb-4 rounded-lg border border-border-subtle bg-card p-3 shadow-xs">
-      <div className="mb-3 flex items-start gap-2">
-        <div className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-surface-subtle text-primary">
-          <MessageSquareText className="size-3.5" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{question}</p>
-          {recommended ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              <Trans>Suggested text is prefilled; edit it before submitting if needed.</Trans>
-            </p>
-          ) : null}
-        </div>
-      </div>
-
+    <ComponentCard
+      icon={MessageSquareText}
+      tone="pending"
+      title={question}
+      hint={
+        recommended ? (
+          <Trans>Suggested text is prefilled; edit it before submitting if needed.</Trans>
+        ) : undefined
+      }
+    >
       <form className="flex gap-2" onSubmit={handleSubmit}>
         <Input
           value={value}
@@ -75,28 +74,6 @@ export function FreeTextCheckpoint({ content, respond, isAwaitingResponse }: Com
           <Trans>Submit</Trans>
         </button>
       </form>
-    </section>
-  );
-}
-
-function ResolvedTextSummary({
-  question,
-  answer,
-  provenance,
-}: {
-  question: string;
-  answer: string;
-  provenance: "user" | "auto" | null;
-}) {
-  return (
-    <section className="mb-4 rounded-lg border border-border-subtle bg-surface-subtle px-3 py-2">
-      <p className="text-xs text-muted-foreground">{question}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-foreground">
-        <span className="font-medium">{answer}</span>
-        <span className="status-pill">
-          {provenance === "auto" ? <Trans>auto-selected</Trans> : <Trans>you answered</Trans>}
-        </span>
-      </div>
-    </section>
+    </ComponentCard>
   );
 }
