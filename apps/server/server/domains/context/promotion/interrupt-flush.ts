@@ -1,6 +1,6 @@
 /**
- * Checkpoint flush manifest + rehydrate: bulk-promote generated artifacts at a
- * checkpoint boundary; restore bytes from the manifest when the writable file
+ * Interrupt flush manifest + rehydrate: bulk-promote generated artifacts at a
+ * interrupt boundary; restore bytes from the manifest when the writable file
  * context is recreated. Mirror of input-ingest — reuses parent-folder helpers
  * and objectStore.get.
  */
@@ -21,7 +21,7 @@ export interface BinaryFileTarget {
   writeFileBinary(path: string, bytes: Uint8Array): Promise<void>;
 }
 
-export interface CheckpointFlushManifestEntry {
+export interface InterruptFlushManifestEntry {
   sourcePath: string;
   objectKey: string;
   storageUrl: string;
@@ -32,37 +32,37 @@ export interface CheckpointFlushManifestEntry {
 }
 
 /** JSON-natural manifest persisted or passed between flush and rehydrate. */
-export interface CheckpointFlushManifest {
+export interface InterruptFlushManifest {
   version: 1;
   rootThreadId: string;
   threadId: string;
   turnId: string;
   agentSlug: string;
   flushedAt: string;
-  entries: CheckpointFlushManifestEntry[];
+  entries: InterruptFlushManifestEntry[];
 }
 
-export type CheckpointFlushErrorCode =
+export type InterruptFlushErrorCode =
   | "invalid_input"
   | "context_unavailable"
   | "context_io_error"
   | "object_store_error"
   | "promotion_failed";
 
-export interface CheckpointFlushError {
-  code: CheckpointFlushErrorCode;
+export interface InterruptFlushError {
+  code: InterruptFlushErrorCode;
   message: string;
 }
 
-export type CheckpointFlushResult =
-  | { ok: true; value: CheckpointFlushManifest }
-  | { ok: false; error: CheckpointFlushError };
+export type InterruptFlushResult =
+  | { ok: true; value: InterruptFlushManifest }
+  | { ok: false; error: InterruptFlushError };
 
 export type RehydrateResult =
   | { ok: true; value: { restoredPaths: string[] } }
-  | { ok: false; error: CheckpointFlushError };
+  | { ok: false; error: InterruptFlushError };
 
-export interface FlushAtCheckpointInput {
+export interface FlushAtInterruptInput {
   projectId: string;
   workId: string;
   provenance: ResultProvenance;
@@ -71,31 +71,31 @@ export interface FlushAtCheckpointInput {
 }
 
 export interface RehydrateFromManifestInput {
-  manifest: CheckpointFlushManifest;
+  manifest: InterruptFlushManifest;
   signal?: AbortSignal;
 }
 
-export interface CheckpointFlushService {
-  flushAtCheckpoint(input: FlushAtCheckpointInput): Promise<CheckpointFlushResult>;
+export interface InterruptFlushService {
+  flushAtInterrupt(input: FlushAtInterruptInput): Promise<InterruptFlushResult>;
   rehydrateFromManifest(input: RehydrateFromManifestInput): Promise<RehydrateResult>;
 }
 
-export interface CheckpointFlushServiceDeps {
+export interface InterruptFlushServiceDeps {
   promotion: PromotionService;
   objectStore: ObjectStorePort;
   getReadableFiles: () => Promise<BinaryFileSource | null>;
   getWritableFiles: () => Promise<BinaryFileTarget | null>;
 }
 
-function flushErr(code: CheckpointFlushErrorCode, message: string): CheckpointFlushResult {
+function flushErr(code: InterruptFlushErrorCode, message: string): InterruptFlushResult {
   return { ok: false, error: { code, message } };
 }
 
-function rehydrateErr(code: CheckpointFlushErrorCode, message: string): RehydrateResult {
+function rehydrateErr(code: InterruptFlushErrorCode, message: string): RehydrateResult {
   return { ok: false, error: { code, message } };
 }
 
-/** Extract manuscript/bare source paths from checkpoint artifact refs. */
+/** Extract manuscript/bare source paths from interrupt artifact refs. */
 export function sourcePathsFromArtifactRefs(artifacts: ArtifactRef[]): string[] {
   const paths = new Set<string>();
   for (const artifact of artifacts) {
@@ -115,7 +115,7 @@ function artifactUriToSourcePath(uri: string): string | null {
   return null;
 }
 
-function manifestEntryFromPromotion(promoted: PromotedArtifact): CheckpointFlushManifestEntry {
+function manifestEntryFromPromotion(promoted: PromotedArtifact): InterruptFlushManifestEntry {
   return {
     sourcePath: promoted.sourcePath,
     objectKey: promoted.objectKey,
@@ -132,11 +132,11 @@ async function ensureParentFolders(files: BinaryFileTarget, remotePath: string):
   if (parent !== ".") await files.createFolder(parent);
 }
 
-export function createCheckpointFlushService(
-  deps: CheckpointFlushServiceDeps,
-): CheckpointFlushService {
+export function createInterruptFlushService(
+  deps: InterruptFlushServiceDeps,
+): InterruptFlushService {
   return {
-    async flushAtCheckpoint(input): Promise<CheckpointFlushResult> {
+    async flushAtInterrupt(input): Promise<InterruptFlushResult> {
       if (!input.projectId) return flushErr("invalid_input", "projectId is required");
       if (!input.workId) return flushErr("invalid_input", "workId is required");
       if (input.sourcePaths.length === 0) {
@@ -146,7 +146,7 @@ export function createCheckpointFlushService(
       const files = await deps.getReadableFiles();
       if (!files) return flushErr("context_unavailable", "Readable file context is unavailable");
 
-      const entries: CheckpointFlushManifestEntry[] = [];
+      const entries: InterruptFlushManifestEntry[] = [];
       const seen = new Set<string>();
 
       for (const rawPath of input.sourcePaths) {

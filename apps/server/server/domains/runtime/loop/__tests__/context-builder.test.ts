@@ -309,7 +309,7 @@ describe("buildContext", () => {
             recommended: "quick",
             requiresHuman: false,
           },
-          checkpoint: { id: "checkpoint-active", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-active", timeoutMs: 270_000 },
           label: "Which analysis should I run?",
         }),
         block("block-resolved", assistantTurn.id, 1, "custom", {
@@ -321,10 +321,10 @@ describe("buildContext", () => {
             resolvedValue: "0.8",
             answerProvenance: "user",
           },
-          checkpoint: { id: "checkpoint-resolved", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-resolved", timeoutMs: 270_000 },
           label: "What threshold should I use?",
         }),
-        block("block-non-checkpoint", assistantTurn.id, 2, "custom", {
+        block("block-non-interrupt", assistantTurn.id, 2, "custom", {
           kind: "chart",
           props: { title: "Not for the model" },
         }),
@@ -332,10 +332,10 @@ describe("buildContext", () => {
     });
 
     expect(context.messages.filter((message) => message.role === "assistant")).toEqual([]);
-    expect(JSON.stringify(context.messages)).not.toContain("Checkpoint");
+    expect(JSON.stringify(context.messages)).not.toContain("Interrupt");
   });
 
-  it("keeps resolved ask_user tool_use and tool_result adjacent despite the UI checkpoint block", () => {
+  it("keeps resolved ask_user tool_use and tool_result adjacent despite the UI interrupt block", () => {
     const assistantTurn = turn("turn-assistant", "assistant");
     const context = buildContext({
       thread: thread(),
@@ -351,7 +351,7 @@ describe("buildContext", () => {
             recommended: "quick",
           },
         }),
-        block("block-checkpoint-ui", assistantTurn.id, 1, "custom", {
+        block("block-interrupt-ui", assistantTurn.id, 1, "custom", {
           kind: "choice",
           props: {
             question: "Which analysis should I run?",
@@ -361,7 +361,7 @@ describe("buildContext", () => {
             resolvedValue: "quick",
             answerProvenance: "user",
           },
-          checkpoint: { id: "checkpoint-resolved", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-resolved", timeoutMs: 270_000 },
           label: "Which analysis should I run?",
         }),
         block("block-tool-result", assistantTurn.id, 2, "tool_result", {
@@ -398,7 +398,7 @@ describe("buildContext", () => {
         },
       ],
     });
-    expect(JSON.stringify(context.messages)).not.toContain("Checkpoint resolved");
+    expect(JSON.stringify(context.messages)).not.toContain("Interrupt resolved");
 
     const anthropic = toAnthropicMessageParams(
       { messages: context.messages },

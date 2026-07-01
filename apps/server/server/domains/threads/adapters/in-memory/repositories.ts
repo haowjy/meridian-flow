@@ -198,7 +198,7 @@ export function createInMemoryRepositories(
           turn.role === "assistant" &&
           (turn.status === "pending" ||
             turn.status === "streaming" ||
-            turn.status === "waiting_checkpoint"),
+            turn.status === "waiting_interrupt"),
       );
 
     return toThreadListItem({

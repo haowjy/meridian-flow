@@ -43,7 +43,7 @@ const runningTurnId = sql<string | null>`(
   FROM ${schema.turns}
   WHERE ${schema.turns.threadId} = ${schema.threads.id}
     AND ${schema.turns.role} = 'assistant'
-    AND ${schema.turns.status} IN ('pending', 'streaming', 'waiting_checkpoint')
+    AND ${schema.turns.status} IN ('pending', 'streaming', 'waiting_interrupt')
   ORDER BY ${schema.turns.createdAt} DESC
   LIMIT 1
 )`;

@@ -152,11 +152,11 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ask_user",
         description:
-          "Pause execution and present a question to the user. Execution suspends until the user responds or the checkpoint times out. The user's answer is returned as the tool result.",
+          "Pause execution and present a question to the user. Execution suspends until the user responds or the interrupt times out. The user's answer is returned as the tool result.",
         inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
       },
       execution: { type: "server", handler: handlers.ask_user },
-      capability: "checkpoint",
+      capability: "interrupt",
     },
   ];
 }

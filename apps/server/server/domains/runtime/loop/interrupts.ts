@@ -1,12 +1,12 @@
 /**
- * Purpose: Owns the in-memory checkpoint promise registry plus restart recovery for same-turn suspend/resume.
- * Key decisions: the registry is intentionally process-local for the MVP, while the journal remains the durable truth; restart recovery expires unresolved checkpoints because the awaiting orchestrator promise cannot survive process death.
+ * Purpose: Owns the in-memory interrupt promise registry plus restart recovery for same-turn suspend/resume.
+ * Key decisions: the registry is intentionally process-local for the MVP, while the journal remains the durable truth; restart recovery expires unresolved interrupts because the awaiting orchestrator promise cannot survive process death.
  */
 import type {
-  CheckpointAnswerEnvelope,
   ComponentBlockContent,
+  InterruptAnswerEnvelope,
 } from "@meridian/contracts/components";
-import type { CheckpointRequest } from "@meridian/contracts/interrupt";
+import type { AskRequest } from "@meridian/contracts/interrupt";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { DEFAULT_PROJECT_PREFERENCES } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -25,140 +25,140 @@ import {
   type ThreadRepositories,
 } from "../../threads/index.js";
 
-export const EXPIRED_CHECKPOINT_VALUE = "__expired__";
+export const EXPIRED_INTERRUPT_VALUE = "__expired__";
 
-export type CheckpointResponse = CheckpointAnswerEnvelope;
+export type InterruptResponse = InterruptAnswerEnvelope;
 
-export type CheckpointAutoResumePolicy = {
+export type InterruptAutoResumePolicy = {
   enabled: boolean;
   timeoutMs: number;
 };
 
-export type CheckpointWaitOptions = {
+export type InterruptWaitOptions = {
   threadId: ThreadId;
   turnId: TurnId;
   timeoutMs: number;
-  autoResume: CheckpointAutoResumePolicy;
+  autoResume: InterruptAutoResumePolicy;
   recommended: JsonValue | null;
   requiresHuman: boolean;
   signal?: AbortSignal;
 };
 
-type PendingCheckpoint = CheckpointWaitOptions & {
-  resolve: (response: CheckpointResponse) => void;
+type PendingInterrupt = InterruptWaitOptions & {
+  resolve: (response: InterruptResponse) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   abortListener?: () => void;
 };
 
-export interface CheckpointRegistry {
-  /** Number of checkpoint promises currently awaiting resolution. */
+export interface InterruptRegistry {
+  /** Number of interrupt promises currently awaiting resolution. */
   pendingCount(): number;
   hasPendingForThread(threadId: ThreadId): boolean;
   hasPendingForTurn(threadId: ThreadId, turnId: TurnId): boolean;
-  reject(checkpointId: string, error: Error): boolean;
-  waitForResponse(checkpointId: string, opts: CheckpointWaitOptions): Promise<CheckpointResponse>;
+  reject(interruptId: string, error: Error): boolean;
+  waitForResponse(interruptId: string, opts: InterruptWaitOptions): Promise<InterruptResponse>;
   resolve(input: {
     threadId: ThreadId;
     turnId: TurnId;
-    checkpointId: string;
+    interruptId: string;
     value: JsonValue;
-  }): ResolveCheckpointResult;
+  }): ResolveInterruptResult;
   /** Recovery deduplication map for restart recovery per thread. */
-  recoverPendingCheckpoints(deps: CheckpointRecoveryDeps): Promise<OrchestratorEvent[]>;
+  recoverPendingInterrupts(deps: InterruptRecoveryDeps): Promise<OrchestratorEvent[]>;
 }
 
-export function defaultCheckpointAutoResumePolicy(): CheckpointAutoResumePolicy {
+export function defaultInterruptAutoResumePolicy(): InterruptAutoResumePolicy {
   return {
     enabled: DEFAULT_PROJECT_PREFERENCES.autoResume?.enabled ?? true,
     timeoutMs: DEFAULT_PROJECT_PREFERENCES.autoResume?.timeoutMs ?? 270_000,
   };
 }
 
-function canAutoResume(entry: PendingCheckpoint): boolean {
+function canAutoResume(entry: PendingInterrupt): boolean {
   return entry.autoResume.enabled && !entry.requiresHuman && entry.recommended !== null;
 }
 
-function cleanupPendingCheckpoint(entry: PendingCheckpoint): void {
+function cleanupPendingInterrupt(entry: PendingInterrupt): void {
   clearTimeout(entry.timer);
   if (entry.abortListener) {
     entry.signal?.removeEventListener("abort", entry.abortListener);
   }
 }
 
-export type ResolveCheckpointResult =
+export type ResolveInterruptResult =
   | { ok: true }
   | { ok: false; reason: "not_found" | "correlation_mismatch"; message: string };
 
-export function createCheckpointRegistry(): CheckpointRegistry {
-  const pendingCheckpoints = new Map<string, PendingCheckpoint>();
-  const checkpointRecoveryByThread = new Map<string, Promise<OrchestratorEvent[]>>();
+export function createInterruptRegistry(): InterruptRegistry {
+  const pendingInterrupts = new Map<string, PendingInterrupt>();
+  const interruptRecoveryByThread = new Map<string, Promise<OrchestratorEvent[]>>();
 
   function pendingCount(): number {
-    return pendingCheckpoints.size;
+    return pendingInterrupts.size;
   }
 
   function hasPendingForThread(threadId: ThreadId): boolean {
-    for (const entry of pendingCheckpoints.values()) {
+    for (const entry of pendingInterrupts.values()) {
       if (entry.threadId === threadId) return true;
     }
     return false;
   }
 
   function hasPendingForTurn(threadId: ThreadId, turnId: TurnId): boolean {
-    for (const entry of pendingCheckpoints.values()) {
+    for (const entry of pendingInterrupts.values()) {
       if (entry.threadId === threadId && entry.turnId === turnId) return true;
     }
     return false;
   }
 
-  function reject(checkpointId: string, error: Error): boolean {
-    const entry = pendingCheckpoints.get(checkpointId);
+  function reject(interruptId: string, error: Error): boolean {
+    const entry = pendingInterrupts.get(interruptId);
     if (!entry) return false;
-    pendingCheckpoints.delete(checkpointId);
-    cleanupPendingCheckpoint(entry);
+    pendingInterrupts.delete(interruptId);
+    cleanupPendingInterrupt(entry);
     entry.reject(error);
     return true;
   }
 
   function waitForResponse(
-    checkpointId: string,
-    opts: CheckpointWaitOptions,
-  ): Promise<CheckpointResponse> {
-    if (pendingCheckpoints.has(checkpointId)) {
-      throw new Error(`Checkpoint already pending: ${checkpointId}`);
+    interruptId: string,
+    opts: InterruptWaitOptions,
+  ): Promise<InterruptResponse> {
+    if (pendingInterrupts.has(interruptId)) {
+      throw new Error(`Interrupt already pending: ${interruptId}`);
     }
 
     return new Promise((resolve, rejectPromise) => {
       const abortListener = () => {
-        const entry = pendingCheckpoints.get(checkpointId);
+        const entry = pendingInterrupts.get(interruptId);
         if (!entry) return;
-        pendingCheckpoints.delete(checkpointId);
-        cleanupPendingCheckpoint(entry);
-        rejectPromise(new Error("Checkpoint aborted"));
+        pendingInterrupts.delete(interruptId);
+        cleanupPendingInterrupt(entry);
+        rejectPromise(new Error("Interrupt aborted"));
       };
 
       if (opts.signal?.aborted) {
-        rejectPromise(new Error("Checkpoint aborted"));
+        rejectPromise(new Error("Interrupt aborted"));
         return;
       }
 
       const timer = setTimeout(() => {
-        const entry = pendingCheckpoints.get(checkpointId);
+        const entry = pendingInterrupts.get(interruptId);
         if (!entry) return;
         // Deleting before resolve is the late-response race guard: a WS response
         // arriving after this tick finds no pending entry and gets a clear error.
-        pendingCheckpoints.delete(checkpointId);
-        cleanupPendingCheckpoint(entry);
+        pendingInterrupts.delete(interruptId);
+        cleanupPendingInterrupt(entry);
         resolve({
-          value: canAutoResume(entry) ? entry.recommended : EXPIRED_CHECKPOINT_VALUE,
+          value: canAutoResume(entry) ? entry.recommended : EXPIRED_INTERRUPT_VALUE,
           provenance: "auto",
         });
       }, opts.timeoutMs);
 
       opts.signal?.addEventListener("abort", abortListener, { once: true });
 
-      pendingCheckpoints.set(checkpointId, {
+      pendingInterrupts.set(interruptId, {
         ...opts,
         resolve,
         reject: rejectPromise,
@@ -171,55 +171,55 @@ export function createCheckpointRegistry(): CheckpointRegistry {
   function resolve(input: {
     threadId: ThreadId;
     turnId: TurnId;
-    checkpointId: string;
+    interruptId: string;
     value: JsonValue;
-  }): ResolveCheckpointResult {
-    const entry = pendingCheckpoints.get(input.checkpointId);
+  }): ResolveInterruptResult {
+    const entry = pendingInterrupts.get(input.interruptId);
     if (!entry) {
-      return { ok: false, reason: "not_found", message: "No pending checkpoint" };
+      return { ok: false, reason: "not_found", message: "No pending interrupt" };
     }
     if (entry.threadId !== input.threadId || entry.turnId !== input.turnId) {
       return {
         ok: false,
         reason: "correlation_mismatch",
-        message: "Checkpoint correlation mismatch",
+        message: "Interrupt correlation mismatch",
       };
     }
-    cleanupPendingCheckpoint(entry);
-    pendingCheckpoints.delete(input.checkpointId);
+    cleanupPendingInterrupt(entry);
+    pendingInterrupts.delete(input.interruptId);
     entry.resolve({ value: input.value, provenance: "user" });
     return { ok: true };
   }
 
-  async function hasLiveCheckpointState(deps: CheckpointRecoveryDeps): Promise<boolean> {
-    if (deps.hasLivePendingCheckpoint?.(deps.threadId) ?? hasPendingForThread(deps.threadId)) {
+  async function hasLiveInterruptState(deps: InterruptRecoveryDeps): Promise<boolean> {
+    if (deps.hasLivePendingInterrupt?.(deps.threadId) ?? hasPendingForThread(deps.threadId)) {
       return true;
     }
     if (!deps.getLiveRunnerTurnId) return false;
     return deps.getLiveRunnerTurnId(deps.threadId) !== null;
   }
 
-  async function recoverPendingCheckpointsLocked(
-    deps: CheckpointRecoveryDeps,
+  async function recoverPendingInterruptsLocked(
+    deps: InterruptRecoveryDeps,
   ): Promise<OrchestratorEvent[]> {
-    if (await hasLiveCheckpointState(deps)) return [];
+    if (await hasLiveInterruptState(deps)) return [];
 
-    const created = await deps.journalReader.listByType(deps.threadId, "checkpoint.created");
+    const created = await deps.journalReader.listByType(deps.threadId, "interrupt.created");
     const recoveryEvents: OrchestratorEvent[] = [];
 
     for (const entry of created) {
       const payload = entry.payload;
-      if (payload.type !== "checkpoint.created") continue;
-      if (await checkpointHasClosingEvent(deps, payload.checkpointId)) continue;
+      if (payload.type !== "interrupt.created") continue;
+      if (await interruptHasClosingEvent(deps, payload.interruptId)) continue;
 
       const turn = await deps.repos.turns.findById(payload.turnId);
       if (!turn || turn.threadId !== deps.threadId || isTerminalTurn(turn)) continue;
 
       const events: OrchestratorEvent[] = [
         {
-          type: "checkpoint.expired",
+          type: "interrupt.expired",
           turnId: payload.turnId,
-          checkpointId: payload.checkpointId,
+          interruptId: payload.interruptId,
           blockSequence: payload.blockSequence,
         },
         restartInterruptedTurnEvent(turn),
@@ -228,8 +228,8 @@ export function createCheckpointRegistry(): CheckpointRegistry {
       await deps.repos.transaction(async () => {
         // Re-check immediately before the destructive append so concurrent
         // subscribe-triggered recovery remains idempotent even if a second caller
-        // observed the unresolved checkpoint before this transaction committed.
-        if (await checkpointHasClosingEvent(deps, payload.checkpointId)) return;
+        // observed the unresolved interrupt before this transaction committed.
+        if (await interruptHasClosingEvent(deps, payload.interruptId)) return;
         await deps.repos.threads.updateStatus(deps.threadId, "error");
         for (const event of events) {
           await deps.journalWriter.appendEvent(deps.threadId, event);
@@ -242,21 +242,21 @@ export function createCheckpointRegistry(): CheckpointRegistry {
     return recoveryEvents;
   }
 
-  async function recoverPendingCheckpoints(
-    deps: CheckpointRecoveryDeps,
+  async function recoverPendingInterrupts(
+    deps: InterruptRecoveryDeps,
   ): Promise<OrchestratorEvent[]> {
-    if (await hasLiveCheckpointState(deps)) return [];
+    if (await hasLiveInterruptState(deps)) return [];
 
     const key = deps.threadId as string;
-    const existing = checkpointRecoveryByThread.get(key);
+    const existing = interruptRecoveryByThread.get(key);
     if (existing) return existing;
 
-    const recovery = recoverPendingCheckpointsLocked(deps).finally(() => {
-      if (checkpointRecoveryByThread.get(key) === recovery) {
-        checkpointRecoveryByThread.delete(key);
+    const recovery = recoverPendingInterruptsLocked(deps).finally(() => {
+      if (interruptRecoveryByThread.get(key) === recovery) {
+        interruptRecoveryByThread.delete(key);
       }
     });
-    checkpointRecoveryByThread.set(key, recovery);
+    interruptRecoveryByThread.set(key, recovery);
     return recovery;
   }
 
@@ -267,13 +267,13 @@ export function createCheckpointRegistry(): CheckpointRegistry {
     reject,
     waitForResponse,
     resolve,
-    recoverPendingCheckpoints,
+    recoverPendingInterrupts,
   };
 }
 
-export function extractCheckpointHints(
+export function extractInterruptHints(
   content: JsonValue,
-  request?: CheckpointRequest,
+  request?: AskRequest,
 ): {
   recommended: JsonValue | null;
   requiresHuman: boolean;
@@ -298,42 +298,42 @@ export function extractCheckpointHints(
   };
 }
 
-export type CheckpointRecoveryDeps = {
+export type InterruptRecoveryDeps = {
   repos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   threadId: ThreadId;
   /**
-   * Recovery is destructive: it turns an unresolved checkpoint into a terminal
+   * Recovery is destructive: it turns an unresolved interrupt into a terminal
    * restart error. A live pending promise or active runner means this process
    * can still resume the turn, so subscribe-time recovery must stand down.
    */
   getLiveRunnerTurnId?: (threadId: ThreadId) => TurnId | null;
-  hasLivePendingCheckpoint?: (threadId: ThreadId) => boolean;
+  hasLivePendingInterrupt?: (threadId: ThreadId) => boolean;
 };
 
 function isTerminalTurn(turn: Turn | null): boolean {
   return turn != null && isTerminalTurnStatus(turn.status);
 }
 
-async function checkpointHasClosingEvent(
-  deps: CheckpointRecoveryDeps,
-  checkpointId: string,
+async function interruptHasClosingEvent(
+  deps: InterruptRecoveryDeps,
+  interruptId: string,
 ): Promise<boolean> {
   const [resolved, expired] = await Promise.all([
-    deps.journalReader.listByType(deps.threadId, "checkpoint.resolved"),
-    deps.journalReader.listByType(deps.threadId, "checkpoint.expired"),
+    deps.journalReader.listByType(deps.threadId, "interrupt.resolved"),
+    deps.journalReader.listByType(deps.threadId, "interrupt.expired"),
   ]);
   return [...resolved, ...expired].some((entry) => {
     const payload = entry.payload;
-    return "checkpointId" in payload && payload.checkpointId === checkpointId;
+    return "interruptId" in payload && payload.interruptId === interruptId;
   });
 }
 
 function restartInterruptedTurnEvent(turn: Turn): OrchestratorEvent {
   const error = meridianErrorFromSystem(
-    "checkpoint_interrupted",
-    "Checkpoint interrupted by server restart before it could be resumed.",
+    "interrupt_interrupted",
+    "Interrupt interrupted by server restart before it could be resumed.",
   );
   return {
     type: "turn.error",

@@ -18,7 +18,7 @@ import {
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
-import type { CheckpointRespondInput, ThreadTransport } from "@/core/transport";
+import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 
 type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
   assistantTurnId?: SendMessageResponse["assistantTurnId"];
@@ -122,8 +122,8 @@ export class ThreadRunController {
     this.attachLiveSubscription(threadId, token, options);
   }
 
-  respondCheckpoint(input: CheckpointRespondInput): void {
-    this.transport.respondCheckpoint(input);
+  respondInterrupt(input: InterruptRespondInput): void {
+    this.transport.respondInterrupt(input);
   }
 
   cancel(threadId: string): void {

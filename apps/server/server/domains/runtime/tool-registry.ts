@@ -186,17 +186,17 @@ export function createRuntimeToolRegistry(deps: {
 
     async askUser(ctx: ToolContext, prompt: string) {
       const blockId = randomUUID() as TurnBlockId;
-      const checkpointId = randomUUID();
+      const interruptId = randomUUID();
       const content = {
         ...buildAskUserComponentContent({
-          checkpointId,
+          interruptId,
           question: prompt,
           kind: "free-text",
           recommended: null,
           requiresHuman: true,
           timeoutMs: 0,
         }),
-        checkpoint: { id: checkpointId },
+        interrupt: { id: interruptId },
       } satisfies JsonValue;
       await deps.db.transaction(async (tx) => {
         const [assistantTurn] = await tx
@@ -240,10 +240,10 @@ export function createRuntimeToolRegistry(deps: {
         });
         await tx
           .update(turns)
-          .set({ status: "waiting_checkpoint", finishReason: "checkpoint", completedAt: null })
+          .set({ status: "waiting_interrupt", finishReason: "interrupt", completedAt: null })
           .where(eq(turns.id, ctx.assistantTurnId));
       });
-      return { result: { blockId, checkpointId, status: "waiting_checkpoint" } };
+      return { result: { blockId, interruptId, status: "waiting_interrupt" } };
     },
 
     async spawn(ctx: ToolContext, prompt: string) {

@@ -33,7 +33,7 @@ import { type Components, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 
 import { AssistantTurn } from "./AssistantTurn";
-import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftAcceptTurn } from "./DraftAcceptTurn";
 import { DraftRejectTurn } from "./DraftRejectTurn";
 import { isDraftAcceptTurn } from "./draft-accept-turn";
@@ -50,7 +50,7 @@ export type TurnListProps = {
   scrollParent: HTMLElement | null;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
   /** Shared draft review state machine owned by ChatView. */
@@ -66,7 +66,7 @@ export function TurnList({
   turns,
   scrollParent,
   tailFollowRevision,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftsByTurnId,
   draftReviewController,
 }: TurnListProps) {
@@ -110,13 +110,13 @@ export function TurnList({
           threadId={threadId}
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
-          onRespondToCheckpoint={onRespondToCheckpoint}
+          onRespondToInterrupt={onRespondToInterrupt}
           draftGroups={draftGroups}
           draftReviewController={rowDraftReviewController}
         />
       );
     },
-    [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, threadId],
+    [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToInterrupt, threadId],
   );
 
   const components = useMemo<Components<Turn>>(

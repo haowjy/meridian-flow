@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createToolExecutor } from "../tool-executor.js";
 import { createToolRegistry } from "../tool-registry.js";
 import type {
-  CheckpointToolHandlerContext,
+  InterruptToolHandlerContext,
   ToolHandler,
   ToolHandlerContext,
   ToolRegistration,
@@ -134,33 +134,33 @@ describe("createToolExecutor", () => {
     expect(emitted).toEqual([{ toolCallId: "call-stream", stream: "stdout", text: "hi" }]);
   });
 
-  it("injects checkpoint context only for checkpoint registrations", async () => {
+  it("injects interrupt context only for interrupt registrations", async () => {
     const registry = createToolRegistry();
     const seenContexts: unknown[] = [];
     registry.register(
       serverTool("base", async (_input, context) => {
         seenContexts.push(context);
-        return { hasCheckpoint: "checkpoint" in context };
+        return { hasInterrupt: "interrupt" in context };
       }),
     );
     registry.register(
-      serverTool<CheckpointToolHandlerContext>(
-        "checkpoint_tool",
+      serverTool<InterruptToolHandlerContext>(
+        "interrupt_tool",
         async (_input, context) => {
           seenContexts.push(context);
-          const response = await context.checkpoint(
+          const response = await context.interrupt(
             {
-              checkpointId: "checkpoint-1",
+              interruptId: "interrupt-1",
               prompt: "Confirm?",
               artifacts: [],
               answerSchema: { type: "object", properties: { value: { type: "string" } } },
             },
             100,
           );
-          await context.updateComponentBlock("checkpoint-1", { resolvedValue: response.value });
-          return { response, timeoutMs: context.checkpointTimeoutMs };
+          await context.updateComponentBlock("interrupt-1", { resolvedValue: response.value });
+          return { response, timeoutMs: context.interruptTimeoutMs };
         },
-        { capability: "checkpoint" },
+        { capability: "interrupt" },
       ),
     );
     const executor = createToolExecutor(registry);
@@ -169,16 +169,16 @@ describe("createToolExecutor", () => {
       executor.executeTool({ id: "call-1", name: "base", arguments: {} }, ctx),
     ).resolves.toEqual({
       toolCallId: "call-1",
-      output: { hasCheckpoint: false },
+      output: { hasInterrupt: false },
     });
 
     await expect(
       executor.executeTool(
-        { id: "call-2", name: "checkpoint_tool", arguments: {} },
+        { id: "call-2", name: "interrupt_tool", arguments: {} },
         {
           ...ctx,
-          checkpointTimeoutMs: 1234,
-          checkpoint: async () => ({ value: "ok", provenance: "user" }),
+          interruptTimeoutMs: 1234,
+          interrupt: async () => ({ value: "ok", provenance: "user" }),
           updateComponentBlock: async () => {},
         },
       ),
@@ -188,7 +188,7 @@ describe("createToolExecutor", () => {
     });
 
     expect(
-      seenContexts.map((context) => "checkpoint" in (context as Record<string, unknown>)),
+      seenContexts.map((context) => "interrupt" in (context as Record<string, unknown>)),
     ).toEqual([false, true]);
   });
 

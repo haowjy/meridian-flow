@@ -25,7 +25,7 @@ import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
-import { type CheckpointRespondRequest, CustomBlockRenderer } from "./CustomBlockRenderer";
+import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftReviewCard } from "./DraftReviewCard";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -42,7 +42,7 @@ export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
   isLatestAssistant?: boolean;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Draft groups anchored to this turn (undefined when none — most rows). */
   draftGroups?: ThreadDraftGroup[];
   /** Shared draft review state machine owned by ChatView. */
@@ -53,7 +53,7 @@ function AssistantTurnComponent({
   threadId,
   turn,
   isLatestAssistant = false,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftGroups,
   draftReviewController,
 }: AssistantTurnProps) {
@@ -87,7 +87,7 @@ function AssistantTurnComponent({
           segmentIndex={index}
           threadId={resolvedThreadId}
           turnStatus={turn.status}
-          onRespondToCheckpoint={onRespondToCheckpoint}
+          onRespondToInterrupt={onRespondToInterrupt}
           draftWrite={hasReviewableDrafts}
         />
       ))}
@@ -128,14 +128,14 @@ function TurnSegmentView({
   segmentIndex,
   threadId,
   turnStatus,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftWrite,
 }: {
   segment: TurnSegment;
   segmentIndex: number;
   threadId: string;
   turnStatus: Turn["status"];
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   draftWrite: boolean;
 }) {
   return (
@@ -148,7 +148,7 @@ function TurnSegmentView({
               run={run}
               threadId={threadId}
               turnStatus={turnStatus}
-              onRespondToCheckpoint={onRespondToCheckpoint}
+              onRespondToInterrupt={onRespondToInterrupt}
               draftWrite={draftWrite}
             />
           ))}
@@ -162,7 +162,7 @@ function TurnSegmentView({
             threadId={threadId}
             turnStatus={turnStatus}
             mode="frontier"
-            onRespondToCheckpoint={onRespondToCheckpoint}
+            onRespondToInterrupt={onRespondToInterrupt}
             draftWrite={draftWrite}
           />
         </div>
@@ -181,13 +181,13 @@ function FoldRun({
   run,
   threadId,
   turnStatus,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftWrite,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   draftWrite: boolean;
 }) {
   if (run.kind === "reasoning") {
@@ -207,7 +207,7 @@ function FoldRun({
         threadId={threadId}
         turnStatus={turnStatus}
         mode="fold"
-        onRespondToCheckpoint={onRespondToCheckpoint}
+        onRespondToInterrupt={onRespondToInterrupt}
         draftWrite={draftWrite}
       />
     </div>
@@ -241,7 +241,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.threadId === next.threadId &&
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToCheckpoint === next.onRespondToCheckpoint &&
+    prev.onRespondToInterrupt === next.onRespondToInterrupt &&
     prev.draftGroups === next.draftGroups &&
     prev.draftReviewController === next.draftReviewController
   );
@@ -266,14 +266,14 @@ function DeliverySegments({
   threadId,
   turnStatus,
   mode,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftWrite,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
   mode: DeliveryMode;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   draftWrite: boolean;
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
@@ -304,7 +304,7 @@ function DeliverySegments({
             threadId={threadId}
             turnStatus={turnStatus}
             mode={mode}
-            onRespondToCheckpoint={onRespondToCheckpoint}
+            onRespondToInterrupt={onRespondToInterrupt}
           />,
         ];
       })}
@@ -320,13 +320,13 @@ function DeliveryBlock({
   threadId,
   turnStatus,
   mode,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
 }: {
   block: Block;
   threadId: string;
   turnStatus: Turn["status"];
   mode: DeliveryMode;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
@@ -346,7 +346,7 @@ function DeliveryBlock({
         block={block}
         threadId={threadId}
         turnStatus={turnStatus}
-        onRespondToCheckpoint={onRespondToCheckpoint}
+        onRespondToInterrupt={onRespondToInterrupt}
       />
     );
   }

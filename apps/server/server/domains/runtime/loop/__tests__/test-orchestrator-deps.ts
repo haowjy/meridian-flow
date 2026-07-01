@@ -23,8 +23,8 @@ import { createInertGateway } from "../../gateway/test-gateway.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolRegistry, type ToolExecutor } from "../../tools/index.js";
-import { createNoopCheckpointArtifactFlushPort } from "../checkpoint-session.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import {
   computeEffectivePermissions,
@@ -80,9 +80,9 @@ export function createTestOrchestratorDeps(
     projectPreferences,
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
-    checkpointArtifacts: createNoopCheckpointArtifactFlushPort(),
+    interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
-    checkpointRegistry: createCheckpointRegistry(),
+    interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     undoNotifications: {

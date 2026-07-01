@@ -94,7 +94,7 @@ describe("createToolRegistry core tools", () => {
       },
     });
     expect(registry.getRegistration("ask_user")).toMatchObject({
-      capability: "checkpoint",
+      capability: "interrupt",
       definition: {
         inputSchema: {
           required: ["question", "kind"],

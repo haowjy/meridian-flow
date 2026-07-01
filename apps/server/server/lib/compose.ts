@@ -20,12 +20,12 @@ import {
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
-  createCheckpointArtifactFlush,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
+  createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
@@ -81,9 +81,9 @@ import {
   type TurnRunner,
 } from "../domains/runtime/index.js";
 import {
-  type CheckpointRegistry,
-  createCheckpointRegistry,
-} from "../domains/runtime/loop/checkpoints.js";
+  createInterruptRegistry,
+  type InterruptRegistry,
+} from "../domains/runtime/loop/interrupts.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
@@ -143,7 +143,7 @@ export type AppServices = {
   workRepo: ProjectWorkRepository;
   billing: BillingService;
   agents: AgentPackageStore;
-  checkpointRegistry: CheckpointRegistry;
+  interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
@@ -341,7 +341,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
   });
-  const checkpointRegistry = createCheckpointRegistry();
+  const interruptRegistry = createInterruptRegistry();
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
@@ -433,9 +433,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
-    checkpointRegistry,
+    interruptRegistry,
     billingUsage: ports.billingUsage,
-    checkpointArtifacts: createCheckpointArtifactFlush({
+    interruptArtifacts: createInterruptArtifactFlush({
       promotion: ports.promotionService,
       objectStore: ports.objectStore,
     }),
@@ -469,7 +469,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workRepo: ports.workRepo,
     billing: ports.billing,
     agents: ports.agents,
-    checkpointRegistry,
+    interruptRegistry,
     eventSink: ports.eventSink,
     packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
@@ -682,7 +682,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     billing: billingDomain.service,
     agents: { phase: "skeleton" },
-    checkpointRegistry: createCheckpointRegistry(),
+    interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
     packageRepository,
     marsPackageFetcher: {

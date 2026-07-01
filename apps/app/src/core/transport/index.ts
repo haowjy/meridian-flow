@@ -3,8 +3,8 @@
  * contract + connection/gap types, and `WsThreadTransport`.
  */
 export type {
-  CheckpointRespondInput,
   ConnectionState,
+  InterruptRespondInput,
   ThreadGapEvent,
   ThreadTransport,
   ThreadTransportHandlers,

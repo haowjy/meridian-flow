@@ -17,16 +17,16 @@ The zones are rendered by `ProcessDisclosure.tsx` (the fold) and `AssistantTurn.
 
 ## The unified rule (purely structural)
 
-**Step 1 — segment at checkpoints.** Split the turn's ordered `Block[]` into **segments**
-at each **checkpoint** (user-interaction / HITL) block: a checkpoint block is the *final*
-block of its segment. A turn with no checkpoints is one segment. Segments **stack
+**Step 1 — segment at interrupts.** Split the turn's ordered `Block[]` into **segments**
+at each **interrupt** (user-interaction / HITL) block: a interrupt block is the *final*
+block of its segment. A turn with no interrupts is one segment. Segments **stack
 vertically**, each rendered independently.
 
 **Step 2 — within each segment**, group its blocks into **maximal runs** by kind:
 
 - **reasoning** = `reasoning` | `thinking`
 - **activity** = everything else (`text`, `tool_use`, `tool_result`, `image`, `custom`,
-  and the **checkpoint** block, which is an activity block — the segment's frontier)
+  and the **interrupt** block, which is an activity block — the segment's frontier)
 
 Then, per segment:
 
@@ -61,34 +61,34 @@ Notation: `r#` = reasoning block, `a#` = activity block. `[fold]` = collapsed `T
   consequence of the structural rule (last *activity* run = `(a1,a2,a3)` until `a5`
   exists) — no special-casing required.
 
-## Checkpoints segment the turn
+## Interrupts segment the turn
 
-A **checkpoint** (user-interaction / HITL block — a `custom` block resolved via
-`onRespondToCheckpoint` in `CustomBlockRenderer.tsx`) is a **segment boundary**. It is the
+A **interrupt** (user-interaction / HITL block — a `custom` block resolved via
+`onRespondToInterrupt` in `CustomBlockRenderer.tsx`) is a **segment boundary**. It is the
 *final block of its segment* and the **frontier** of that segment's `ActivityBlock` (the
 round is waiting on the user).
 
 After the user responds:
 
-- The segment's `ActivityBlock` (including the checkpoint) is **frozen — kept expanded,
+- The segment's `ActivityBlock` (including the interrupt) is **frozen — kept expanded,
   never rolled up.** The reader must keep seeing what they acted on.
 - The continuation opens a **fresh `Thinking ptN+1`** disclosure *below*, and a new
   `ActivityBlock` — a new stacked segment.
 
 A turn renders as a **vertical stack of `(Thinking ptN  +  ActivityBlock)` segments**,
-one per checkpoint round. There can be **multiple visible `ActivityBlock`s** (one per
+one per interrupt round. There can be **multiple visible `ActivityBlock`s** (one per
 segment) — not just one.
 
-### Worked example (checkpoint round)
+### Worked example (interrupt round)
 
-Before the user responds — one segment, checkpoint `c7` is the frontier:
+Before the user responds — one segment, interrupt `c7` is the frontier:
 
 ```
 > Thinking                                    (collapsed)
 | [0] reasoning
 | ActivityBlock([1] text, [2] tool, [3] text)
 | [4] reasoning
-ActivityBlock([5] text, [6] tool, [7] checkpoint ← awaiting user)
+ActivityBlock([5] text, [6] tool, [7] interrupt ← awaiting user)
 ```
 
 After the user responds, segment 1 is **frozen as-is** and segment 2 begins below:
@@ -98,7 +98,7 @@ After the user responds, segment 1 is **frozen as-is** and segment 2 begins belo
 | [0] reasoning
 | ActivityBlock([1] text, [2] tool, [3] text)
 | [4] reasoning
-ActivityBlock([5] text, [6] tool, [7] checkpoint)   ← kept, frozen
+ActivityBlock([5] text, [6] tool, [7] interrupt)   ← kept, frozen
 
 > Thinking pt2                                (collapsed, segment 2)
 | [8] reasoning
@@ -115,8 +115,8 @@ folds into that segment's `Thinking`). This is identical live vs. settled.
 | **Process fold / `Thinking` disclosure** | The collapsible disclosure rendered by `ProcessDisclosure.tsx`. Holds process history: all reasoning blocks + all completed (non-latest) activity runs. Default-collapsed everywhere. |
 | **`ActivityBlock` (delivery frontier)** | The visible zone for the last activity run in a segment. Rendered inline by `AssistantTurn.tsx` → `DeliverySegments`. |
 | **Activity run** | A maximal contiguous run of activity blocks (non-reasoning). The last one in a segment is the visible frontier. |
-| **Segment** | A subdivision of the turn at checkpoint boundaries. Each segment has its own `Thinking ptN` + `ActivityBlock` pair. |
-| **Checkpoint boundary** | A `custom` block that partitions segments. It is the final block of its segment. |
+| **Segment** | A subdivision of the turn at interrupt boundaries. Each segment has its own `Thinking ptN` + `ActivityBlock` pair. |
+| **Interrupt boundary** | A `custom` block that partitions segments. It is the final block of its segment. |
 | **Roll-up** | When a new activity run begins, the previous frontier collapses into `Thinking` in its chronological position. |
 
 ## Contracts & invariants
@@ -128,8 +128,8 @@ folds into that segment's `Thinking`). This is identical live vs. settled.
 - **Streaming ≡ settled.** The composition rule depends only on `Block[]` order + block
   type. A settled reload produces the same render structure as the live stream. No
   `isLive` branching in the partition logic.
-- **Checkpoint segments are frozen.** Once a user responds to a checkpoint, that
-  segment's `ActivityBlock` (including the checkpoint) stays expanded forever — it
+- **Interrupt segments are frozen.** Once a user responds to a interrupt, that
+  segment's `ActivityBlock` (including the interrupt) stays expanded forever — it
   is never rolled up into a later segment's `Thinking`.
 - **Block render keys are positional.** `blockRenderKey` derives from `(turnId, sequence)`,
   never `block.id`. This ensures the live→settled swap is an in-place content replace, not
@@ -139,7 +139,7 @@ folds into that segment's `Thinking`). This is identical live vs. settled.
 
 - Branching on streaming state in the partition → settled reload shows a *different*
   structure than the user saw live (the classic "page refresh rearranges the turn" bug).
-- Rolling a checkpoint frontier into `Thinking` → user loses sight of what they acted on,
+- Rolling a interrupt frontier into `Thinking` → user loses sight of what they acted on,
   breaking the interaction contract.
 - Keying by `block.id` → the live→settled swap remounts DOM nodes, losing animation
   continuity and scroll position.
@@ -149,7 +149,7 @@ folds into that segment's `Thinking`). This is identical live vs. settled.
 ```mermaid
 flowchart TD
     Turn[Turn.blocks: Block[]] --> Sort[sort by sequence]
-    Sort --> Segment[segment at checkpoints]
+    Sort --> Segment[segment at interrupts]
     Segment --> S1[Segment 1]
     Segment --> S2[Segment 2]
     S1 --> Group1[group into maximal reason/activity runs]
@@ -162,13 +162,13 @@ Current code path:
 
 ```
 AssistantTurn.tsx
-  → partitionTurnSegments(sortedBlocks)    ← checkpoint segmentation + run grouping
+  → partitionTurnSegments(sortedBlocks)    ← interrupt segmentation + run grouping
   → ProcessDisclosure(label, children)     ← default-collapsed fold shell
       → TurnBlockStep | DeliverySegments   ← fold runs in chronological order
   → DeliverySegments(frontier)             ← visible activity frontier per segment
       → groupDeliverySegments(blocks)      ← pair tool_use/tool_result into ToolViews
           → ToolCard | ToolRunBlock | DeliveryBlock
-              → CustomBlockRenderer (checkpoints)
+              → CustomBlockRenderer (interrupts)
 ```
 
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Unknown
@@ -183,10 +183,10 @@ Key files:
 | File | Role |
 |---|---|
 | `AssistantTurn.tsx` | Top-level turn render; drives partition + zone mounting |
-| `partition-turn-segments.ts` | Structural checkpoint segmentation + run grouping for Thinking/Activity zones |
+| `partition-turn-segments.ts` | Structural interrupt segmentation + run grouping for Thinking/Activity zones |
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
-| `CustomBlockRenderer.tsx` | Renders `custom` blocks; checkpoints pass through `onRespondToCheckpoint` |
+| `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
 | `tool-renderers.tsx` | Tool renderer registry; unknown tools use the default renderer, known neutral tools can show streamed or settled output |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
@@ -202,12 +202,12 @@ Key files:
 | `text` | activity run | `Markdown variant="answer"` (settled) / `StreamingText` (partial) |
 | `tool_use`, `tool_result` | activity run | Paired into ToolViews by `groupDeliverySegments`, then rendered by `ToolCard` or `ToolRunBlock` |
 | `image` | activity run | `ImageBlock` |
-| `custom` | activity run (incl. checkpoints) | `CustomBlockRenderer` → component registry |
+| `custom` | activity run (incl. interrupts) | `CustomBlockRenderer` → component registry |
 
 ## Implementation status
 
 Implemented in `partition-turn-segments.ts`, `ProcessDisclosure.tsx`, and
-`AssistantTurn.tsx`. The partition returns checkpoint-bounded segments where
+`AssistantTurn.tsx`. The partition returns interrupt-bounded segments where
 `foldRuns` contains all non-frontier runs and `frontier` contains the last
 activity run. `ProcessDisclosure` is a default-collapsed shell; callers compose
 reasoning rows and folded activity runs.
@@ -262,7 +262,7 @@ this" message.
 - Don't branch on `isLive`/streaming state in the partition logic — the rule must be
   purely structural so settled reloads match.
 - Don't key blocks by `block.id` — use `blockRenderKey` (`turnId::sequence`).
-- Don't roll checkpoint segments into a later segment's `Thinking` — they are frozen.
+- Don't roll interrupt segments into a later segment's `Thinking` — they are frozen.
 - Don't auto-open `Thinking` disclosures during streaming — default-collapsed everywhere.
 - Don't duplicate tool rendering logic between the fold and the activity zone —
   `DeliverySegments` handles tools for folded activity runs and visible frontiers via

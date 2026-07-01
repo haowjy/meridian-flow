@@ -29,7 +29,7 @@ import { splitDraftGroupsByTurn } from "./anchor-drafts";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
 import { DraftReviewCard } from "./DraftReviewCard";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -138,8 +138,8 @@ export function ChatView({
     controller.cancel(threadId);
   }
 
-  const handleRespondToCheckpoint = useCallback(
-    (request: CheckpointRespondRequest) => controller.respondCheckpoint(request),
+  const handleRespondToInterrupt = useCallback(
+    (request: InterruptRespondRequest) => controller.respondInterrupt(request),
     [controller],
   );
 
@@ -189,7 +189,7 @@ export function ChatView({
           turns={turns}
           scrollParent={scrollParent}
           tailFollowRevision={tailFollowRevision}
-          onRespondToCheckpoint={handleRespondToCheckpoint}
+          onRespondToInterrupt={handleRespondToInterrupt}
           draftsByTurnId={draftsByTurnId}
           draftReviewController={draftReview}
         />

@@ -2,10 +2,10 @@
  * component-registry — custom chat block registry and prop contract.
  *
  * Purpose: Defines the frontend seam that maps `blockType: "custom"`
- * payloads to React components by `content.kind`. Adding a checkpoint kind
+ * payloads to React components by `content.kind`. Adding a interrupt kind
  * stays one component file plus one entry in `COMPONENT_REGISTRY`.
  * Key decision: the registry is deliberately lean — a kind maps directly to a
- * component. Component-block content and checkpoint answer contracts live in
+ * component. Component-block content and interrupt answer contracts live in
  * `@meridian/contracts/components`, so the client does not grow a parallel
  * schema.
  */
@@ -31,6 +31,6 @@ export type ComponentEntry = ComponentType<ComponentBlockProps>;
 export const COMPONENT_REGISTRY: Record<string, ComponentEntry> = {
   choice: ChoiceBlock,
   "free-text": TextBlock,
-  checkpoint: FormBlock,
+  form: FormBlock,
   "helper-result": HelperResultBlock,
 };

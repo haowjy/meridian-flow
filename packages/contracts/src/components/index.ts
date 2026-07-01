@@ -1,5 +1,5 @@
 /**
- * Purpose: Defines the shared custom component-block and checkpoint-answer contracts used by server persistence and client renderers.
+ * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
  * Key decisions: component block content stays JSON-natural and generic at the envelope, while the MVP `ask_user` component props are typed here so server builders, reducers, and renderers do not re-spell per-kind schemas.
  */
 import type { JsonObject, JsonValue } from "../threads/index.js";
@@ -7,13 +7,13 @@ import type { JsonObject, JsonValue } from "../threads/index.js";
 /** Registry key for a renderer/tool-owned custom component. */
 export type ComponentKind = string;
 
-export type CheckpointAnswerProvenance = "user" | "auto";
+export type InterruptAnswerProvenance = "user" | "auto";
 
 /**
- * Metadata that correlates a rendered component with the suspended orchestrator checkpoint.
- * `id` is the checkpoint registry id, not the block id; `timeoutMs` is milliseconds until auto-resume.
+ * Metadata that correlates a rendered component with the suspended orchestrator interrupt.
+ * `id` is the interrupt registry id, not the block id; `timeoutMs` is milliseconds until auto-resume.
  */
-export type ComponentCheckpoint = {
+export type ComponentInterrupt = {
   id: string;
   timeoutMs?: number;
 };
@@ -25,7 +25,7 @@ export type ComponentCheckpoint = {
 export type ComponentBlockContent = {
   kind: ComponentKind;
   props: JsonObject;
-  checkpoint?: ComponentCheckpoint;
+  interrupt?: ComponentInterrupt;
 };
 
 export type HelperResultStatus = "running" | "completed" | "failed";
@@ -55,16 +55,16 @@ export function buildHelperResultComponentContent(
   };
 }
 
-/** Answer returned to checkpoint tools after user response or auto-resume. */
-export type CheckpointAnswerEnvelope = {
+/** Answer returned to interrupt tools after user response or auto-resume. */
+export type InterruptAnswerEnvelope = {
   value: JsonValue;
-  provenance: CheckpointAnswerProvenance;
+  provenance: InterruptAnswerProvenance;
 };
 
-/** Props patched back onto a component block after a checkpoint resolves. */
-export type CheckpointResolvedProps = {
+/** Props patched back onto a component block after a interrupt resolves. */
+export type InterruptResolvedProps = {
   resolvedValue: string;
-  answerProvenance: CheckpointAnswerProvenance;
+  answerProvenance: InterruptAnswerProvenance;
 };
 
 export const ASK_USER_KIND_VALUES = ["choice", "free-text"] as const;
@@ -81,7 +81,7 @@ export type AskUserBaseProps = JsonObject & {
   recommended: string | null;
   requiresHuman: boolean;
   resolvedValue?: string;
-  answerProvenance?: CheckpointAnswerProvenance;
+  answerProvenance?: InterruptAnswerProvenance;
 };
 
 export type AskUserChoiceProps = AskUserBaseProps & {
@@ -103,7 +103,7 @@ export type AskUserComponentContent =
     });
 
 export type BuildAskUserComponentContentInput = {
-  checkpointId: string;
+  interruptId: string;
   question: string;
   kind: AskUserKind;
   options?: AskUserOption[];
@@ -167,7 +167,7 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
       type: "integer",
       minimum: 1,
       description:
-        "Optional checkpoint timeout in milliseconds. When omitted, the project/default checkpoint timeout is used.",
+        "Optional interrupt timeout in milliseconds. When omitted, the project/default interrupt timeout is used.",
     },
   },
   required: ["question", "kind"],
@@ -245,8 +245,8 @@ export function buildAskUserComponentContent(
   return {
     kind: input.kind,
     props,
-    checkpoint: {
-      id: input.checkpointId,
+    interrupt: {
+      id: input.interruptId,
       timeoutMs: input.timeoutMs,
     },
   } as AskUserComponentContent;
@@ -296,12 +296,12 @@ export function askUserFreeTextProps(content: ComponentBlockContent): AskUserFre
 }
 
 /**
- * Normalize the checkpoint response payload to the string value shown in component props and returned to the model.
+ * Normalize the interrupt response payload to the string value shown in component props and returned to the model.
  *
  * The websocket response frame wraps the component response payload under `value`, while the ask_user payload also uses a
  * `value` field. Peeling exactly one wrapper here avoids server/client copies that accidentally unwrap different depths.
  */
-export function normalizeCheckpointAnswerValue(responseValue: JsonValue): string {
+export function normalizeInterruptAnswerValue(responseValue: JsonValue): string {
   if (typeof responseValue === "string") return responseValue;
 
   if (responseValue && typeof responseValue === "object" && !Array.isArray(responseValue)) {
@@ -313,12 +313,12 @@ export function normalizeCheckpointAnswerValue(responseValue: JsonValue): string
   return JSON.stringify(responseValue);
 }
 
-export function checkpointResolvedPropsFromAnswer(input: {
+export function interruptResolvedPropsFromAnswer(input: {
   value: JsonValue;
-  provenance: CheckpointAnswerProvenance;
-}): CheckpointResolvedProps {
+  provenance: InterruptAnswerProvenance;
+}): InterruptResolvedProps {
   return {
-    resolvedValue: normalizeCheckpointAnswerValue(input.value),
+    resolvedValue: normalizeInterruptAnswerValue(input.value),
     answerProvenance: input.provenance,
   };
 }

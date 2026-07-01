@@ -40,16 +40,16 @@ function wsErrorToMeridianApiError(
   return new MeridianApiError(message.error);
 }
 
-function isNonFatalCheckpointResponseError(
+function isNonFatalInterruptResponseError(
   message: Extract<WsServerMessage, { type: "error" }>,
 ): boolean {
-  // A late/double checkpoint response is an allowed race: the server has
-  // already resumed or expired the checkpoint, and the active run subscription
+  // A late/double interrupt response is an allowed race: the server has
+  // already resumed or expired the interrupt, and the active run subscription
   // must stay alive to receive the assistant output that follows.
   return (
     Boolean(message.threadId) &&
-    (message.error.code === "checkpoint_not_pending" ||
-      message.error.code === "checkpoint_correlation_mismatch")
+    (message.error.code === "interrupt_not_pending" ||
+      message.error.code === "interrupt_correlation_mismatch")
   );
 }
 
@@ -99,7 +99,7 @@ export function dispatchWsServerMessage(
     }
 
     case "error": {
-      if (isNonFatalCheckpointResponseError(message)) return;
+      if (isNonFatalInterruptResponseError(message)) return;
       const error = wsErrorToMeridianApiError(message);
       if (message.threadId) {
         deps.onThreadError(message.threadId, error);

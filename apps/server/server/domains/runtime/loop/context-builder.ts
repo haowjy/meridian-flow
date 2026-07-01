@@ -32,7 +32,7 @@
  *   injected as a separate system message containing JSON-serialized state.
  *   This gives the model persistent scratch space across turns.
  *
- * - **Custom block filtering**: custom blocks are UI surfaces only. Checkpoint
+ * - **Custom block filtering**: custom blocks are UI surfaces only. Interrupt
  *   Q&A already travels through the ask_user tool_use input and tool_result
  *   output; projecting the UI block into the assistant message would break
  *   Anthropic's required tool_use→tool_result adjacency.
@@ -226,7 +226,7 @@ function blockToContentPart(block: Block): ContentPart | null {
       }
       return null;
     case "custom":
-      // Custom blocks are UI-only. For checkpoints, the tool_use input carries
+      // Custom blocks are UI-only. For interrupts, the tool_use input carries
       // the question/options and the tool_result carries the answer; adding a
       // text summary here would separate Anthropic tool_use blocks from their
       // required immediately-following tool_result blocks.

@@ -3,8 +3,8 @@
  *
  * The orchestrator decides whether a tool call is allowed; this module owns the
  * mechanics of running the allowed call: live output journal appends, spawn and
- * return-result bridges, checkpoint callback wiring, and durable tool_result
- * persistence. The caller supplies mutable turn/block state so checkpoint
+ * return-result bridges, interrupt callback wiring, and durable tool_result
+ * persistence. The caller supplies mutable turn/block state so interrupt
  * callbacks can update the active turn while the tool handler is awaited.
  */
 
@@ -14,8 +14,8 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import type { CheckpointSession, CheckpointTurnState } from "./checkpoint-session.js";
-import type { CheckpointAutoResumePolicy } from "./checkpoints.js";
+import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
+import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import type { ReturnResultCompleter } from "./run-turn-port.js";
 
@@ -29,9 +29,9 @@ export interface ToolDispatchDeps {
 export interface ToolDispatchContext {
   thread: Thread;
   responseId: string;
-  state: CheckpointTurnState;
-  checkpointSession: CheckpointSession;
-  checkpointAutoResume: CheckpointAutoResumePolicy;
+  state: InterruptTurnState;
+  interruptSession: InterruptSession;
+  interruptAutoResume: InterruptAutoResumePolicy;
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   returnResultCompleter?: ReturnResultCompleter;
@@ -145,16 +145,16 @@ export async function dispatchToolCall(
       responseId: ctx.responseId,
       agentSlug: ctx.thread.currentAgent,
       signal: ctx.state.signal,
-      checkpointTimeoutMs: ctx.checkpointAutoResume.timeoutMs,
+      interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
       emitOutputDelta,
-      checkpoint: ctx.checkpointSession.checkpoint,
-      updateComponentBlock: ctx.checkpointSession.updateComponentBlock,
+      interrupt: ctx.interruptSession.interrupt,
+      updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
       returnResult,
     },
   );
   await outputDeltaAppendChain;
-  events.push(...outputDeltaEventBuffer, ...ctx.checkpointSession.drainEvents());
+  events.push(...outputDeltaEventBuffer, ...ctx.interruptSession.drainEvents());
   if (ctx.state.signal?.aborted) {
     return { events, cancelled: true };
   }

@@ -6,13 +6,13 @@
 
 export type {
   ArtifactRef,
-  CheckpointRequest,
+  AskRequest,
   Interrupt,
   MeridianError,
 } from "../interrupt/index.js";
 export {
-  checkpointInterrupt,
-  componentContentForCheckpoint,
+  askInterrupt,
+  componentContentForAsk,
   errorInterrupt,
   httpErrorInterruptBody,
   meridianError,
@@ -27,7 +27,7 @@ export {
 } from "../interrupt/index.js";
 export { blockContentRecord } from "../threads/block-content-record.js";
 export { blockPlainText } from "../threads/block-plain-text.js";
-export { checkpointIdForBlock } from "../threads/checkpoint-id-for-block.js";
+export { interruptIdForBlock } from "../threads/interrupt-id-for-block.js";
 export type { TurnStatus } from "../threads/status.js";
 export { isTerminalTurnStatus } from "../threads/status.js";
 export * from "./agui.js";

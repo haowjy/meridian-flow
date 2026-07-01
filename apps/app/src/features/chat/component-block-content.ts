@@ -3,7 +3,7 @@
  *
  * Purpose: Validates the render-facing shape for custom component blocks: a
  * payload must name a registered component `kind` and carry object `props`.
- * Checkpoint id detection lives in @meridian/contracts so reducers and render
+ * Interrupt id detection lives in @meridian/contracts so reducers and render
  * partitioning share the same looser protocol predicate.
  */
 import type { ComponentBlockContent } from "@meridian/contracts/components";
