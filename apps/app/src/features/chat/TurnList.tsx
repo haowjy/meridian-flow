@@ -69,15 +69,6 @@ const ESTIMATED_TURN_HEIGHT = 160;
 /** Top breathing room above the first turn (virtual paddingStart, px). */
 const TOP_INSET = 24;
 
-/**
- * react-virtual@3.14's option type omits virtual-core@3.17's
- * `shouldAdjustScrollPositionOnItemSizeChange` (present at runtime). Widen it so
- * the anchoring predicate is type-checked rather than cast to `any`.
- */
-type TurnVirtualizerOptions = Parameters<typeof useVirtualizer<HTMLDivElement, Element>>[0] & {
-  shouldAdjustScrollPositionOnItemSizeChange?: (item: VirtualItem) => boolean;
-};
-
 export function TurnList({
   threadId,
   turns,
@@ -92,10 +83,7 @@ export function TurnList({
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
 
-  // react-virtual@3.14's option TYPE predates virtual-core@3.17's
-  // `shouldAdjustScrollPositionOnItemSizeChange`, but the installed core (3.17.2)
-  // supports it at runtime. Widen the options type so we can pass it type-safely.
-  const virtualizerOptions: TurnVirtualizerOptions = {
+  const virtualizer = useVirtualizer({
     count: visibleTurns.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
@@ -104,16 +92,21 @@ export function TurnList({
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
-    // Preserve the reader's place when a row ABOVE the viewport changes height (a
-    // disclosure expands, an image/code block renders). virtual-core's default
-    // compensates first-measurement but SKIPS re-measurement while `scrollDirection`
-    // is "backward" — which persists after a scroll-up, so expanding settled content
-    // above would jump the view. Compensate for every above-viewport size change.
-    // `scrollTop` is the scroll offset; a row starting above it is off the top.
-    shouldAdjustScrollPositionOnItemSizeChange: (item: VirtualItem) =>
-      item.start < (viewportRef.current?.scrollTop ?? 0),
-  };
-  const virtualizer = useVirtualizer(virtualizerOptions);
+  });
+
+  // Preserve the reader's place when a row ENTIRELY above the viewport changes
+  // height (a disclosure expands, an image/code block renders). Two traps here:
+  //   1. This is an INSTANCE property in virtual-core@3.17, not an option —
+  //      passing it in the options object is silently ignored (react-virtual's
+  //      option type omits it for the same reason). Assign it on the instance.
+  //   2. The row must be FULLY above (`item.end`, not the default `item.start`):
+  //      a straddling row grows below the reader's eyes (the streaming tail row
+  //      while scrolled a short way up inside it), and compensating that growth
+  //      slides the view back down toward the live edge — a creep that silently
+  //      re-captures follow. `item` carries the pre-resize measurement, which is
+  //      exactly what "was it above the viewport" should be judged against.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
+    item.end <= (viewportRef.current?.scrollTop ?? 0);
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
   // append, on measured streaming-row growth, and on composer-inset change — and

@@ -157,7 +157,16 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
         // delta is measured from where the viewport actually is.
         lastScrollTopRef.current = currentTop;
 
-        if (programmaticGuardRef.current) return;
+        if (programmaticGuardRef.current) {
+          // Value-aware escape hatch: our own writes land AT the live edge, so a
+          // guarded event that moved UP and sits well above the bottom band can
+          // only be the user (scrollbar drag mid-stream — the guard is re-armed
+          // continuously while streaming pins, so without this the drag would be
+          // swallowed and the next pin would yank the reader back down).
+          const farAboveBottom = maxScrollTop(el) - currentTop > 2 * BOTTOM_THRESHOLD_PX;
+          if (farAboveBottom && currentTop < prevTop - 1) releaseToFree();
+          return;
+        }
 
         // Near-bottom ALWAYS wins (invariant 2 in the header).
         if (isNearBottom(el)) {
@@ -182,9 +191,13 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
     if (mode !== "follow") return;
     const el = scrollRef.current;
     if (!el) return;
-    beginProgrammaticScroll();
     const top = maxScrollTop(el);
-    if (el.scrollTop !== top) el.scrollTop = top;
+    // Guard only when actually writing: an idle pin (already at the bottom) must
+    // not open a guard window that swallows the user's next real scroll.
+    if (el.scrollTop !== top) {
+      beginProgrammaticScroll();
+      el.scrollTop = top;
+    }
     lastScrollTopRef.current = el.scrollTop;
   }, [contentRevision, mode, beginProgrammaticScroll, scrollRef]);
 
