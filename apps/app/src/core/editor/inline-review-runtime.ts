@@ -9,8 +9,8 @@ import type { Editor } from "@tiptap/core";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
-import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
-import { HUNK_REJECT_ORIGIN } from "./DraftInlineReviewExtension";
+import { HUNK_REJECT_ORIGIN } from "./extensions/inline-review/DraftInlineReviewExtension";
+import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export function operationTargetSeqs(operation: ReviewOperation): ReadonlySet<number> {
   return new Set(operation.rejectSourceUpdateIds);

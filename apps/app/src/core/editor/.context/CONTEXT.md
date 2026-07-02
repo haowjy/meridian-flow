@@ -33,11 +33,12 @@ Yjs document session. It must stay structurally aligned with
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 
-## Draft review — DraftInlineReviewExtension
+## Draft review — view extension and reject runtime
 
 Colocated under `extensions/inline-review/`. The extension is a ProseMirror
 plugin that owns a single `DecorationSet` describing every hunk in the current
-server review model.
+server review model. Keep this directory view-only: plugin state, decorations,
+commands, and the lightweight hunk model used by the plugin.
 
 - Only installed when the editor is bound to a draft room. The
   `enableDraftInlineReview` flag on `createEditorExtensions` picks it up when
@@ -64,6 +65,14 @@ server review model.
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 
+Operation rejection runtime lives next to the editor core in
+`core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
+draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
+origin. That code depends on persisted journal semantics and Yjs undo-manager
+runtime behavior, so keeping it outside `extensions/inline-review/` preserves the
+extension boundary: view model in the extension, reconstruction side effect in
+the runtime module.
+
 ## Draft review sidebar (features/editor)
 
 `DraftReviewSidebar` renders one proposal card per operation as a
@@ -79,10 +88,11 @@ narrow viewports fall back to the docked diff panel from `DraftReviewBar`.
 - Editor→card: plugin's mousedown seam sets the active operation;
   `useEditorState` re-renders the sidebar and the effect scrolls the
   matching card into view.
-- Per-operation Discard is real and operation-scoped. The controller fetches
+- Per-operation Discard is real and operation-scoped. The controller state
+  machine owns pending/settling state by draft id. The reject command fetches
   the immutable draft journal for the model's `draftRevisionToken` (cached per
   revision), decodes base64 bytes into a `JournalSnapshot`, reconstructs the
-  inverse for that operation's `sourceUpdateIds`, calls
+  inverse for that operation's server-provided `rejectSourceUpdateIds`, calls
   `undoManager.stopCapturing()`, then applies the inverse to the draft Y.Doc
   with `HUNK_REJECT_ORIGIN`. The inverse syncs through Hocuspocus as a normal
   draft update row; decorations disappear on the normal debounced preview
