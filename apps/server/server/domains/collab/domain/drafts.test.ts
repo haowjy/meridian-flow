@@ -24,13 +24,15 @@ import {
 
 const DOC_ID = "doc-1" as never;
 const THREAD_ID = "thread-1" as never;
+const PEER_THREAD_ID = "thread-2" as never;
+const WORK_ID = "work-1" as never;
 const USER_ID = "user-1" as never;
 const TURN_A = "turn-a" as never;
 const TURN_B = "turn-b" as never;
 
 describe("draft store", () => {
   it("creates one active draft per document/thread and lists updates in append order", async () => {
-    const store = createInMemoryDraftStore();
+    const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
     const draft = await store.createActiveDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -63,8 +65,27 @@ describe("draft store", () => {
     ]);
   });
 
+  it("shares active drafts by work membership, not thread id", async () => {
+    const store = createInMemoryDraftStore([
+      [THREAD_ID, WORK_ID],
+      [PEER_THREAD_ID, WORK_ID],
+    ]);
+    const draft = await store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+
+    await expect(
+      store.getActiveDraft({ documentId: DOC_ID, threadId: PEER_THREAD_ID }),
+    ).resolves.toMatchObject({ id: draft.id, workId: WORK_ID });
+    await expect(
+      store.createActiveDraft({ documentId: DOC_ID, threadId: PEER_THREAD_ID }),
+    ).rejects.toBeInstanceOf(ActiveDraftConflictError);
+  });
+
   it("lists active and recently terminal drafts as reviewable", async () => {
-    const store = createInMemoryDraftStore();
+    const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
     const discarded = await store.createActiveDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -292,7 +313,7 @@ async function createScenario() {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   await lifecycle.ensureDocument(DOC_ID);
-  const store = createInMemoryDraftStore();
+  const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
   const completeAccept = vi.spyOn(store, "completeAccept");
   const reject = vi.spyOn(store, "reject");
   const service = createDraftService({

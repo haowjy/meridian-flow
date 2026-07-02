@@ -17,14 +17,25 @@ import {
 } from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
 
-export function createInMemoryDraftStore(): DraftStore {
+export type InMemoryDraftStore = DraftStore & {
+  registerThreadWork(threadId: Draft["workId"], workId: Draft["workId"]): void;
+};
+
+export function createInMemoryDraftStore(
+  memberships: Iterable<readonly [Draft["workId"], Draft["workId"]]> = [],
+): InMemoryDraftStore {
   const drafts = new Map<string, Draft>();
   const updates = new Map<string, DraftUpdate[]>();
+  const threadWorks = new Map<Draft["workId"], Draft["workId"]>(memberships);
   let nextUpdateId = 1;
 
   return {
+    registerThreadWork(threadId, workId) {
+      threadWorks.set(threadId, workId);
+    },
+
     async resolveWorkId(threadId) {
-      return threadId as never;
+      return threadWorks.get(threadId) ?? null;
     },
 
     async getDraft(draftId) {
@@ -41,7 +52,9 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async listActiveDrafts(input) {
       return [...drafts.values()]
-        .filter((draft) => draft.workId === (input.threadId as never) && draft.status === "active")
+        .filter(
+          (draft) => draft.workId === resolveWorkId(input.threadId) && draft.status === "active",
+        )
         .sort(
           (left, right) =>
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
@@ -53,7 +66,8 @@ export function createInMemoryDraftStore(): DraftStore {
       const now = Date.now();
       return [...drafts.values()]
         .filter(
-          (draft) => draft.workId === (input.threadId as never) && isReviewableDraft(draft, now),
+          (draft) =>
+            draft.workId === resolveWorkId(input.threadId) && isReviewableDraft(draft, now),
         )
         .sort(
           (left, right) =>
@@ -68,7 +82,7 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft: Draft = {
         id: createDraftId(),
         documentId: input.documentId,
-        workId: input.threadId as never,
+        workId: requireWorkId(input.threadId),
         status: "active",
         baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
         lastActorTurnId: input.lastActorTurnId ?? null,
@@ -116,7 +130,7 @@ export function createInMemoryDraftStore(): DraftStore {
         const applied = drafts.get(input.draftId);
         if (
           applied?.documentId === input.documentId &&
-          applied.workId === (input.threadId as never) &&
+          applied.workId === resolveWorkId(input.threadId) &&
           applied.status === "applied" &&
           applied.appliedUpdateSeq !== null
         ) {
@@ -152,7 +166,7 @@ export function createInMemoryDraftStore(): DraftStore {
       if (
         !draft ||
         draft.documentId !== input.documentId ||
-        draft.workId !== (input.threadId as never)
+        draft.workId !== resolveWorkId(input.threadId)
       )
         return null;
       if (input.acceptLease) {
@@ -172,7 +186,7 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft = drafts.get(input.draftId);
       if (!draft) return null;
       if (draft.status !== input.fromStatus) return null;
-      if (draft.documentId !== input.documentId || draft.workId !== (input.threadId as never))
+      if (draft.documentId !== input.documentId || draft.workId !== resolveWorkId(input.threadId))
         return null;
       if (findOpenDraft(input)) return null;
       draft.status = "active";
@@ -202,14 +216,25 @@ export function createInMemoryDraftStore(): DraftStore {
     async recoverAccepted(_input) {},
   };
 
+  function resolveWorkId(threadId: Draft["workId"]): Draft["workId"] | null {
+    return threadWorks.get(threadId) ?? null;
+  }
+
+  function requireWorkId(threadId: Draft["workId"]): Draft["workId"] {
+    const workId = resolveWorkId(threadId);
+    if (!workId) throw new Error(`Thread ${threadId} has no primary work`);
+    return workId;
+  }
+
   function findOpenDraft(input: {
     documentId: Draft["documentId"];
     threadId: Draft["workId"];
   }): Draft | undefined {
+    const workId = resolveWorkId(input.threadId);
     return [...drafts.values()].find(
       (draft) =>
         draft.documentId === input.documentId &&
-        draft.workId === (input.threadId as never) &&
+        draft.workId === workId &&
         (draft.status === "active" || draft.status === "accepting"),
     );
   }
@@ -220,11 +245,12 @@ export function createInMemoryDraftStore(): DraftStore {
     threadId: Draft["workId"];
     status: Draft["status"];
   }): Draft | undefined {
+    const workId = resolveWorkId(input.threadId);
     return [...drafts.values()].find(
       (draft) =>
         (input.draftId === undefined || draft.id === input.draftId) &&
         draft.documentId === input.documentId &&
-        draft.workId === (input.threadId as never) &&
+        draft.workId === workId &&
         draft.status === input.status,
     );
   }
