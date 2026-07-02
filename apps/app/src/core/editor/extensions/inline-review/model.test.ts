@@ -80,6 +80,7 @@ describe("buildInlineReviewModel", () => {
         {
           operationId: "op-a",
           sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
           kind: "agent",
           hunkCount: 2,
         },
@@ -101,7 +102,15 @@ describe("buildInlineReviewModel", () => {
     };
     const model = buildInlineReviewModel({
       draftRevisionToken: 1,
-      operations: [{ operationId: "op-a", sourceUpdateIds: [1], kind: "agent", hunkCount: 1 }],
+      operations: [
+        {
+          operationId: "op-a",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          hunkCount: 1,
+        },
+      ],
       hunks: [hunk],
     });
     expect(model.hunks[0].deletedText).toBe("removed prose");
@@ -110,7 +119,13 @@ describe("buildInlineReviewModel", () => {
 
 describe("hunkKind", () => {
   function operation(id: string, kind: "agent" | "writer"): ReviewOperation {
-    return { operationId: id, sourceUpdateIds: [1], kind, hunkCount: 1 };
+    return {
+      operationId: id,
+      sourceUpdateIds: [1],
+      rejectSourceUpdateIds: [1],
+      kind,
+      hunkCount: 1,
+    };
   }
 
   it("returns writer when any contributing operation is writer-attributed", () => {

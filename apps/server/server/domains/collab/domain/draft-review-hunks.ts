@@ -399,7 +399,11 @@ function groupOperationsForHunks(
     .map(([operationId, hunkCount]) => {
       const operation = attribution.byOperationId.get(operationId);
       if (!operation || operation.kind === "writer") return null;
-      return { ...operation, hunkCount } satisfies ReviewOperation;
+      return {
+        ...operation,
+        rejectSourceUpdateIds: operation.sourceUpdateIds,
+        hunkCount,
+      } satisfies ReviewOperation;
     })
     .filter((operation): operation is ReviewOperation => operation !== null)
     .sort((a, b) => a.operationId.localeCompare(b.operationId));
@@ -408,17 +412,77 @@ function groupOperationsForHunks(
       ({
         operationId: group.operationId,
         sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
+        rejectSourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
         actorUserId: group.actorUserId,
         kind: "writer",
         hunkCount: group.hunkIndexes.size,
       }) satisfies ReviewOperation,
   );
+  const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
+    operationSort(a.operationId, b.operationId),
+  );
   return {
     hunks,
-    operations: [...agentOperations, ...writerOperations].sort((a, b) =>
-      operationSort(a.operationId, b.operationId),
-    ),
+    operations: withRejectClosures(hunks, operations),
   };
+}
+
+export function withRejectClosures(
+  hunks: readonly ReviewHunk[],
+  operations: readonly ReviewOperation[],
+): ReviewOperation[] {
+  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
+  const hunkIndexesByOperation = new Map<string, number[]>();
+  for (const [hunkIndex, operationIds] of operationIdsByHunk.entries()) {
+    for (const operationId of operationIds) {
+      hunkIndexesByOperation.set(operationId, [
+        ...(hunkIndexesByOperation.get(operationId) ?? []),
+        hunkIndex,
+      ]);
+    }
+  }
+
+  const operationsById = new Map(operations.map((operation) => [operation.operationId, operation]));
+  const rejectSourceUpdateIdsByOperation = new Map<string, number[]>();
+  for (const operation of operations) {
+    if (rejectSourceUpdateIdsByOperation.has(operation.operationId)) continue;
+    const closure = hunkSharingClosure(
+      operation.operationId,
+      operationIdsByHunk,
+      hunkIndexesByOperation,
+    );
+    const rejectSourceUpdateIds = [...closure]
+      .flatMap((operationId) => operationsById.get(operationId)?.sourceUpdateIds ?? [])
+      .sort((a, b) => a - b);
+    for (const operationId of closure)
+      rejectSourceUpdateIdsByOperation.set(operationId, rejectSourceUpdateIds);
+  }
+
+  return operations.map((operation) => ({
+    ...operation,
+    rejectSourceUpdateIds:
+      rejectSourceUpdateIdsByOperation.get(operation.operationId) ?? operation.sourceUpdateIds,
+  }));
+}
+
+function hunkSharingClosure(
+  seedOperationId: string,
+  operationIdsByHunk: readonly Set<string>[],
+  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
+): Set<string> {
+  const closure = new Set<string>();
+  const queue = [seedOperationId];
+  while (queue.length > 0) {
+    const operationId = queue.shift();
+    if (!operationId || closure.has(operationId)) continue;
+    closure.add(operationId);
+    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
+      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
+        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
+      }
+    }
+  }
+  return closure;
 }
 
 function groupWriterOperationsByActor(

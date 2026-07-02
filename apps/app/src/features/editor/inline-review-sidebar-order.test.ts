@@ -13,7 +13,7 @@ import {
 } from "./inline-review-sidebar-order";
 
 function op(id: string, kind: ReviewOperation["kind"], hunkCount: number): ReviewOperation {
-  return { operationId: id, sourceUpdateIds: [], kind, hunkCount };
+  return { operationId: id, sourceUpdateIds: [], rejectSourceUpdateIds: [], kind, hunkCount };
 }
 
 function hunk(id: string, operationIds: string[], deletedText?: string): ReviewHunk {

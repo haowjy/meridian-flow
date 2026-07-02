@@ -34,6 +34,13 @@ export type DraftPreviewResponse =
 export interface ReviewOperation {
   operationId: string;
   sourceUpdateIds: number[];
+  /**
+   * Union of source update rows for this operation's hunk-sharing closure.
+   * Rejecting exactly this set returns every region affected by the connected
+   * hunks to the live document state; clients must not infer a narrower reject
+   * target from sourceUpdateIds.
+   */
+  rejectSourceUpdateIds: number[];
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
