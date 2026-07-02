@@ -53,9 +53,37 @@ server review model.
   `useInlineReviewSync` (debounced refetch of `useDraftPreview`).
 - Fallback: when `reviewMode: "panel"` comes back from the server, callers
   route the writer to the docked `DraftDiffPanel` — the plugin is passive here.
+- Editor-side click seam: mousedown on any decoration DOM
+  (`[data-review-operations]`) dispatches
+  `setInlineReviewActiveOperation` for the first listed operation. This is
+  the editor→sidebar direction of bidirectional linking; the sidebar
+  reads plugin state via `useEditorState` and reacts (scroll card into
+  view + emphasise). The event is not swallowed — the writer's caret
+  placement inside real editable text is preserved.
 
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
+
+## Draft review sidebar (features/editor)
+
+`DraftReviewSidebar` renders one proposal card per operation as a
+right-side rail inside `EditorView` during inline review. The rail is
+mounted via `EditorView`'s `renderRightRail` render-prop slot (composition
+root: `ContextEditorMountHost`) and hides below the `lg` breakpoint so
+narrow viewports fall back to the docked diff panel from `DraftReviewBar`.
+
+- Ordering + shape derivation lives in the pure
+  `features/editor/inline-review-sidebar-order.ts` helper (unit tested).
+- Card→editor: card click dispatches
+  `setInlineReviewActiveOperation` + `scrollInlineReviewOperationIntoView`.
+- Editor→card: plugin's mousedown seam sets the active operation;
+  `useEditorState` re-renders the sidebar and the effect scrolls the
+  matching card into view.
+- Per-operation Discard is stubbed for the current phase — the button
+  hits an `onDiscardOperation` callback and shows a spinner until it
+  resolves. The real reject flow (client-side `reconstructInverse` + Yjs
+  update under `HUNK_REJECT_ORIGIN`) lands next phase; the sidebar has a
+  `TODO(draft-reject-phase)` marker at the callback site.
 
 ## Math extension decision
 
