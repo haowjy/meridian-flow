@@ -351,9 +351,6 @@ export function createDraftService(deps: {
       }
     }
 
-    closeDraftRoom(input.draftId);
-    await drainDraftRoomPersistence(input.draftId);
-
     const accept = await deps.draftStore.beginAccept(input);
     if (accept.status === "in_progress") return { status: "in_progress", draftId: accept.draft.id };
     if (accept.status === "already_applied") {
@@ -370,8 +367,9 @@ export function createDraftService(deps: {
     }
 
     const { draft, lease } = accept;
-    await invalidateInFlight(input);
+    closeDraftRoom(draft.id);
     await drainDraftRoomPersistence(draft.id);
+    await invalidateInFlight(input);
 
     const updates = await deps.draftStore.listUpdates(draft.id);
     if (updates.length === 0) {
@@ -558,14 +556,13 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult> {
-    closeDraftRoom(input.draftId);
-    await drainDraftRoomPersistence(input.draftId);
-
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
     const turnContext = await deps.draftStore.draftTurnContext(input.draftId);
     const draft = await deps.draftStore.reject(input);
     if (!draft) return { status: "not_found" };
 
+    closeDraftRoom(draft.id);
+    await drainDraftRoomPersistence(draft.id);
     await invalidateInFlight(input);
 
     const rejectTurnId = createDraftRejectTurnId(draft.id);

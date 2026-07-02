@@ -96,15 +96,20 @@ separate branch — expect merge conflicts with the draft re-key migration.
    draft from `active` to `accepting` with an internal claim lease. Reject
    atomically moves `active` to `discarded`. This DB state is the fence; the
    in-memory response invalidation is advisory.
-3. **Invalidate** in-flight responses for this `(documentId, workId)`.
-4. **Merge** all draft deltas via `Y.mergeUpdates`.
-5. **Journal-first** persistence: create the user accept turn and append the
+3. **Close the draft Hocuspocus room** — reset connected clients after the DB
+   fence is in place, then drain pending draft-room persistence. Any keystroke
+   racing Apply/Discard reaches `appendUpdate` after the status transition and
+   is rejected by the in-transaction active check instead of being swept into
+   finalization.
+4. **Invalidate** in-flight responses for this `(documentId, workId)`.
+5. **Merge** all draft deltas via `Y.mergeUpdates`.
+6. **Journal-first** persistence: create the user accept turn and append the
    live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
    unique constraint prevents double-apply on retry. The mutation metadata keeps
    `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
-6. **Durable status**: `completeAccept` is claim-token fenced inside the store,
+7. **Durable status**: `completeAccept` is claim-token fenced inside the store,
    marks the draft `applied`, and cleans draft-scoped agent-edit state.
-7. **Side effects** (recoverable): apply/recover the live coordinator projection,
+8. **Side effects** (recoverable): apply/recover the live coordinator projection,
    refresh read models, delete draft-scoped agent-edit state.
 
 Draft response sessions capture the active draft id they read from. Draft-scoped
@@ -119,8 +124,9 @@ lineage to the proposing assistant turn.
 
 ## Reject lifecycle
 
-Reject atomically moves the active draft to `discarded`, cleans draft-scoped
-state inside the store, then invalidates in-flight responses. Updates never touch live.
+Reject atomically moves the active draft to `discarded`, closes the draft Hocuspocus
+room, drains pending draft-room persistence, cleans draft-scoped state inside the
+store, then invalidates in-flight responses. Updates never touch live.
 
 Reject also creates a synthetic user turn with document context (name + w-id range)
 so the LLM sees that a draft was discarded. The reject turn ID is deterministic from
