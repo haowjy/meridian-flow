@@ -216,7 +216,11 @@ export function createHocuspocusPersistenceService(
       trackAppend(
         queueKey,
         requireDraftStore()
-          .appendUpdate({ draftId: input.draftId, updateData: input.update })
+          .appendUpdate({
+            draftId: input.draftId,
+            updateData: input.update,
+            actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+          })
           .catch((cause) => {
             emitDraftAppendRejected(input.draftId, cause);
             throw cause;

@@ -107,6 +107,7 @@ export function createInMemoryDraftStore(
         id: nextUpdateId++,
         draftId: input.draftId,
         updateData: new Uint8Array(input.updateData),
+        actorUserId: input.actorUserId ?? null,
         actorTurnId: input.actorTurnId ?? null,
         createdAt: new Date(),
       };

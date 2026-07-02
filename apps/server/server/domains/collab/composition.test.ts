@@ -327,6 +327,8 @@ describe("createFacade connection update ingest", () => {
     const updates = await draftStore.listUpdates(draft.id);
     expect(updates).toHaveLength(1);
     expect([...(updates[0]?.updateData ?? [])]).toEqual([...foreign.update]);
+    expect(updates[0]?.actorUserId).toBe(USER_ID);
+    expect(updates[0]?.actorTurnId).toBeNull();
   });
 
   it("drops draft-room connection updates after finalization", async () => {
