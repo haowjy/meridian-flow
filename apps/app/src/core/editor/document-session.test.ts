@@ -278,6 +278,19 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("can suspend and restore local awareness presence without destroying the session", () => {
+    const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
+    const state = { user: { name: "Writer", color: "#fff" } };
+    session.awareness.setLocalState(state);
+
+    session.suspendPresence();
+    expect(session.awareness.getLocalState()).toBeNull();
+
+    session.resumePresence();
+    expect(session.awareness.getLocalState()).toEqual(state);
+    void session.destroy();
+  });
+
   it("emits destroyed after teardown and unsubscribes from transport", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({

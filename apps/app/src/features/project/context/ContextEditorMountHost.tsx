@@ -136,6 +136,17 @@ export function ContextEditorMountHost({
     };
   }, []);
 
+  const activeReviewDocumentId =
+    active && activeTabId && controller.inlineReview?.documentId === activeTabId
+      ? activeTabId
+      : null;
+  useEffect(() => {
+    if (!activeReviewDocumentId) return;
+    const session = getDocumentSessionRegistry().get(activeReviewDocumentId);
+    session.suspendPresence();
+    return () => session.resumePresence();
+  }, [activeReviewDocumentId]);
+
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
 
   return (

@@ -145,6 +145,8 @@ export class DocumentSession {
    * distinguish "connected & synced" from "disconnected" after that.
    */
   private transportState: ConnectionState | null = null;
+  private presenceSuspendDepth = 0;
+  private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
   private readonly syncedPromise: Promise<void>;
 
   constructor({
@@ -212,6 +214,25 @@ export class DocumentSession {
     await this.syncedPromise;
   }
 
+  suspendPresence(): void {
+    if (this.destroyed) return;
+    if (this.presenceSuspendDepth++ > 0) return;
+    this.suspendedLocalAwarenessState = this.awareness.getLocalState() as Record<
+      string,
+      unknown
+    > | null;
+    this.awareness.setLocalState(null);
+  }
+
+  resumePresence(): void {
+    if (this.destroyed || this.presenceSuspendDepth === 0) return;
+    this.presenceSuspendDepth -= 1;
+    if (this.presenceSuspendDepth > 0) return;
+    const state = this.suspendedLocalAwarenessState;
+    this.suspendedLocalAwarenessState = null;
+    if (state) this.awareness.setLocalState(state);
+  }
+
   /**
    * Cleanup ordering is intentionally caller-friendly: React unmounts the
    * TipTap editor first, then calls this method so providers can detach before
@@ -223,6 +244,8 @@ export class DocumentSession {
     this.status = "destroyed";
     this.emit();
 
+    this.presenceSuspendDepth = 0;
+    this.suspendedLocalAwarenessState = null;
     removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
 
     this.unsubscribeTransportStatus?.();
