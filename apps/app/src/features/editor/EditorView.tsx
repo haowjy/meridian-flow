@@ -108,7 +108,8 @@ export function EditorView(props: EditorViewProps) {
       if (
         snapshot.status === "destroyed" ||
         snapshot.connectionState?.kind === "terminal" ||
-        snapshot.connectionState?.kind === "unauthorized"
+        snapshot.connectionState?.kind === "unauthorized" ||
+        snapshot.connectionState?.kind === "reset"
       ) {
         props.onReviewSessionUnavailable?.();
       }

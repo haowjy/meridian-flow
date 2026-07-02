@@ -274,6 +274,7 @@ export class DocumentSession {
     // Terminal transport states pre-empt the initial-sync gate: first sync will
     // never complete after permanent denial or a session-level terminal close.
     if (state?.kind === "unauthorized") return "access-lost";
+    if (state?.kind === "reset") return "access-lost";
     if (state?.kind === "terminal") return "offline";
 
     // Empty local cache after a schema bump must resync from the server first.
