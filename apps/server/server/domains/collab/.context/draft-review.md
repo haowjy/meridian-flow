@@ -111,6 +111,15 @@ separate branch — expect merge conflicts with the draft re-key migration.
    and tells the writer, “The draft changed — review the latest changes before
    applying.” It does not auto-retry because the writer must see rows they did
    not review.
+
+The review lease that pauses agent draft writes while a writer is connected is
+single-node and in-memory. A server restart forgets that lease, so there is a
+short window before the reviewer reconnects where agent writes can resume. The
+accept freshness fence above is the hard backstop: unreviewed draft rows cannot
+be silently applied because the token changes and accept returns `stale_draft`.
+A durable lease is the known follow-up if Meridian moves to multi-node draft
+review or needs restart-persistent writer presence.
+
 5. **Invalidate** in-flight responses for this `(documentId, workId)`.
 6. **Merge** all draft deltas via `Y.mergeUpdates`.
 6. **Journal-first** persistence: create the user accept turn and append the
