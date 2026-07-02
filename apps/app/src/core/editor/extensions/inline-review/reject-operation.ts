@@ -16,12 +16,11 @@ export function operationTargetSeqs(operation: ReviewOperation): ReadonlySet<num
   return new Set(operation.rejectSourceUpdateIds);
 }
 
-export function operationRejectIsMixed(operation: ReviewOperation): boolean {
-  if (operation.rejectSourceUpdateIds.length === operation.sourceUpdateIds.length) {
-    const source = new Set(operation.sourceUpdateIds);
-    return operation.rejectSourceUpdateIds.some((seq) => !source.has(seq));
-  }
-  return true;
+export function operationRejectIsMixed(
+  _operation: ReviewOperation,
+  options: { includesWriterEdits?: boolean } = {},
+): boolean {
+  return _operation.kind === "agent" && options.includesWriterEdits === true;
 }
 
 export function decodeDraftJournalResponse(response: DraftJournalResponse): JournalSnapshot {

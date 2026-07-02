@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decodeDraftJournalResponse,
+  operationRejectIsMixed,
   operationTargetSeqs,
   stateVectorsEqual,
 } from "./reject-operation";
@@ -45,6 +46,19 @@ describe("inline review operation reject helpers", () => {
     expect([...operationTargetSeqs(operation)].sort((left, right) => left - right)).toEqual([
       3, 4, 9, 11,
     ]);
+  });
+
+  it("does not treat physical reject closure rows as writer-overlap confirmation", () => {
+    const operation: ReviewOperation = {
+      operationId: "op-1",
+      sourceUpdateIds: [124],
+      rejectSourceUpdateIds: [124, 129, 130],
+      kind: "agent",
+      hunkCount: 1,
+    };
+
+    expect(operationRejectIsMixed(operation)).toBe(false);
+    expect(operationRejectIsMixed(operation, { includesWriterEdits: true })).toBe(true);
   });
 
   it("compares state vectors byte-for-byte", () => {

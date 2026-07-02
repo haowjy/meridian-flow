@@ -1,6 +1,15 @@
 /** Runtime-captured Yjs rows that currently diverge from synthetic unit fixtures. */
-import { yProsemirrorModel } from "@meridian/agent-edit";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  type JournalSnapshot,
+  reconstructUndoUpdateFromSnapshot,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
@@ -114,6 +123,22 @@ describe("draft undo runtime fixtures", () => {
     expect(
       index.operationIdsForRanges({ insertedRanges: undoDiscardInsertedRanges, deletedRanges: [] }),
     ).toEqual(["124"]);
+
+    const draftDoc = applyDraftUpdates(liveDoc, SEQUENCE_A_UPDATES);
+    const result = computeDraftReviewHunks({
+      liveDoc,
+      draftDoc,
+      model,
+      draftUpdates: SEQUENCE_A_UPDATES,
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+
+    const agentOperation = result.operations.find((operation) => operation.operationId === "124");
+    expect(agentOperation?.sourceUpdateIds).toEqual([124]);
+    expect(agentOperation?.rejectSourceUpdateIds).toEqual([124, 129, 130]);
+    expectRejectReturnsFirstParagraphToLive(liveDoc, SEQUENCE_A_UPDATES, agentOperation);
   });
 
   it("Sequence B: mixed discard undo should keep reject lineage on the original AI+writer rows, not the undo row", () => {
@@ -135,20 +160,60 @@ describe("draft undo runtime fixtures", () => {
         expect.objectContaining({
           operationId: "131",
           sourceUpdateIds: [131],
-          rejectSourceUpdateIds: [131, 136],
+          rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
         expect.objectContaining({
           operationId: "writer:1",
           sourceUpdateIds: [136],
-          rejectSourceUpdateIds: [131, 136],
+          rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
       ]),
     );
     expect(result.operations.map((operation) => operation.sourceUpdateIds)).not.toContainEqual([
       138,
     ]);
+
+    const agentOperation = result.operations.find((operation) => operation.operationId === "131");
+    expectRejectReturnsFirstParagraphToLive(liveDoc, SEQUENCE_B_UPDATES, agentOperation);
   });
 });
+
+function expectRejectReturnsFirstParagraphToLive(
+  liveDoc: Y.Doc,
+  updates: readonly IndexedDraftUpdate[],
+  operation: { operationId: string; rejectSourceUpdateIds: number[] } | undefined,
+): void {
+  if (!operation) throw new Error("expected review operation");
+  const draftDoc = applyDraftUpdates(liveDoc, updates);
+  const undo = reconstructUndoUpdateFromSnapshot(snapshotFromFixture(liveDoc, updates), {
+    docId: "fixture-doc",
+    targetId: operation.operationId,
+    targetSeqs: new Set(operation.rejectSourceUpdateIds),
+    fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+  });
+
+  Y.applyUpdate(draftDoc, undo.undoUpdate);
+
+  expect(blockTexts(draftDoc)[0]).toBe(blockTexts(liveDoc)[0]);
+}
+
+function snapshotFromFixture(
+  liveDoc: Y.Doc,
+  updates: readonly IndexedDraftUpdate[],
+): JournalSnapshot {
+  return {
+    checkpoint: Y.encodeStateAsUpdate(liveDoc),
+    updates: updates.map((update) => ({
+      seq: update.id,
+      update: update.updateData,
+      meta: { origin: "system", seq: update.id },
+    })),
+  };
+}
+
+function blockTexts(doc: Y.Doc): string[] {
+  return model.getBlocks(toDocHandle(doc)).map((block) => model.getText(block));
+}
 
 function liveDocFromCheckpoint(): Y.Doc {
   const doc = createCollabYDoc({ gc: false });

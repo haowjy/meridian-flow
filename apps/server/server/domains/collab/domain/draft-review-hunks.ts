@@ -155,6 +155,7 @@ type AttributedHunk = {
 type WriterGroup = {
   operationId: string;
   sourceUpdateIds: Set<number>;
+  physicalSourceUpdateIds: Set<number>;
   actorUserId: string;
   hunkIndexes: Set<number>;
   lastBlockKey: string;
@@ -380,6 +381,7 @@ function groupOperationsForHunks(
         group = {
           operationId: `writer:${writerGroups.length + 1}`,
           sourceUpdateIds: new Set(),
+          physicalSourceUpdateIds: new Set(),
           actorUserId,
           hunkIndexes: new Set(),
           lastBlockKey: hunk.raw.blockKey,
@@ -389,6 +391,9 @@ function groupOperationsForHunks(
       }
       for (const operation of operations) {
         for (const updateId of operation.sourceUpdateIds) group.sourceUpdateIds.add(updateId);
+        for (const updateId of operation.physicalSourceUpdateIds) {
+          group.physicalSourceUpdateIds.add(updateId);
+        }
       }
       group.hunkIndexes.add(hunkIndex);
       group.lastBlockKey = hunk.raw.blockKey;
@@ -417,24 +422,25 @@ function groupOperationsForHunks(
       hunkCounts.set(operationId, (hunkCounts.get(operationId) ?? 0) + 1);
     }
   }
-  const agentOperations = [...hunkCounts.entries()]
-    .map(([operationId, hunkCount]) => {
+  const agentOperations: ReviewOperationWithPhysicalRows[] = [...hunkCounts.entries()]
+    .flatMap(([operationId, hunkCount]) => {
       const operation = attribution.byOperationId.get(operationId);
-      if (!operation || operation.kind === "writer") return null;
-      return {
-        ...operation,
-        rejectSourceUpdateIds: operation.sourceUpdateIds,
-        hunkCount,
-      } satisfies ReviewOperation;
+      if (!operation || operation.kind === "writer") return [];
+      return [
+        {
+          ...operation,
+          rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
+          hunkCount,
+        },
+      ];
     })
-    .filter((operation): operation is ReviewOperation => operation !== null)
     .sort((a, b) => a.operationId.localeCompare(b.operationId));
   const writerOperations = writerGroups.map(
     (group) =>
       ({
         operationId: group.operationId,
         sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
-        rejectSourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
+        rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
         actorUserId: group.actorUserId,
         kind: "writer",
         hunkCount: group.hunkIndexes.size,
@@ -449,9 +455,11 @@ function groupOperationsForHunks(
   };
 }
 
+type ReviewOperationWithPhysicalRows = ReviewOperation & { physicalSourceUpdateIds?: number[] };
+
 export function withRejectClosures(
   hunks: readonly ReviewHunk[],
-  operations: readonly ReviewOperation[],
+  operations: readonly ReviewOperationWithPhysicalRows[],
 ): ReviewOperation[] {
   const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
   const hunkIndexesByOperation = new Map<string, number[]>();
@@ -473,18 +481,26 @@ export function withRejectClosures(
       operationIdsByHunk,
       hunkIndexesByOperation,
     );
-    const rejectSourceUpdateIds = [...closure]
-      .flatMap((operationId) => operationsById.get(operationId)?.sourceUpdateIds ?? [])
-      .sort((a, b) => a - b);
+    const physicalRejectRows = [
+      ...new Set(
+        [...closure].flatMap((operationId) => {
+          const operation = operationsById.get(operationId);
+          return operation?.physicalSourceUpdateIds ?? operation?.sourceUpdateIds ?? [];
+        }),
+      ),
+    ].sort((a, b) => a - b);
     for (const operationId of closure)
-      rejectSourceUpdateIdsByOperation.set(operationId, rejectSourceUpdateIds);
+      rejectSourceUpdateIdsByOperation.set(operationId, physicalRejectRows);
   }
 
-  return operations.map((operation) => ({
-    ...operation,
-    rejectSourceUpdateIds:
-      rejectSourceUpdateIdsByOperation.get(operation.operationId) ?? operation.sourceUpdateIds,
-  }));
+  return operations.map((operation) => {
+    const { physicalSourceUpdateIds: _physicalSourceUpdateIds, ...wireOperation } = operation;
+    return {
+      ...wireOperation,
+      rejectSourceUpdateIds:
+        rejectSourceUpdateIdsByOperation.get(operation.operationId) ?? operation.sourceUpdateIds,
+    };
+  });
 }
 
 function hunkSharingClosure(

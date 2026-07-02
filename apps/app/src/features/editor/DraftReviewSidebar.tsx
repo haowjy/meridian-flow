@@ -210,7 +210,9 @@ export function DraftReviewSidebar({
                 pending={pendingDiscardIds.has(entry.operation.operationId)}
                 discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
                 confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
-                needsDiscardConfirm={operationRejectIsMixed(entry.operation)}
+                needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
+                  includesWriterEdits: entry.includesWriterEdits,
+                })}
                 onSelect={() => handleCardClick(entry.operation.operationId)}
                 onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
                 onCancelDiscard={() => setConfirmingDiscardId(null)}
