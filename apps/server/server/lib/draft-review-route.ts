@@ -98,6 +98,11 @@ export async function handleDraftPreviewRequest(
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
+    draftRevisionToken: preview.draftRevisionToken,
+    reviewMode: preview.reviewMode,
+    ...(preview.fallbackReason ? { fallbackReason: preview.fallbackReason } : {}),
+    ...(preview.operations ? { operations: preview.operations } : {}),
+    ...(preview.hunks ? { hunks: preview.hunks } : {}),
   };
 }
 

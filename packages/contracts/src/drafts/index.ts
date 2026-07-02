@@ -21,8 +21,32 @@ export type DraftPreviewResponse =
       live: string;
       preview: string;
       liveRevisionToken: number;
+      draftRevisionToken: number;
+      reviewMode: "inline" | "panel";
+      fallbackReason?: string;
+      operations?: ReviewOperation[];
+      hunks?: ReviewHunk[];
     }
   | { status: "gone"; live: string };
+
+export interface ReviewOperation {
+  operationId: string;
+  sourceUpdateIds: number[];
+  actorTurnId?: string;
+  actorUserId?: string;
+  kind: "agent" | "writer";
+  hunkCount: number;
+}
+
+export interface ReviewHunk {
+  hunkId: string;
+  operationIds: string[];
+  anchor: {
+    relStart: string;
+    relEnd: string;
+  };
+  deletedText?: string;
+}
 
 export type WIdRange = { min: number; max: number };
 

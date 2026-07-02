@@ -1,0 +1,227 @@
+/** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
+import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { describe, expect, it } from "vitest";
+import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import * as Y from "yjs";
+import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
+
+const schema = buildDocumentSchema();
+const codec = mdxCodec({ schema });
+const model = yProsemirrorModel(schema);
+
+describe("draft review hunk model", () => {
+  it("aligns stable block identities across insert, delete, edit, and move", () => {
+    const live = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+    const draft = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "e" }];
+
+    expect(alignBlocks(live, draft).map((entry) => entry.kind)).toEqual([
+      "delete",
+      "equal",
+      "insert",
+      "equal",
+      "delete",
+      "insert",
+    ]);
+  });
+
+  it("extracts word-level changed-block hunks anchored in the draft doc", () => {
+    const live = createDoc(
+      "Alpha sword. This paragraph has enough unchanged surrounding text for inline review.\n\nBeta stays.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 11 }, "blade"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 10, actorTurnId: "turn-a", updateData: update }],
+    });
+
+    expect(result).toMatchObject({ reviewMode: "inline" });
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
+    expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
+    expect(result.operations).toEqual([
+      {
+        operationId: "10",
+        sourceUpdateIds: [10],
+        actorTurnId: "turn-a",
+        kind: "agent",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
+  it("attributes deleted live text to the row whose delete set covers it", () => {
+    const live = createDoc(
+      "Alpha sword remains with enough unchanged surrounding text for inline review density.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, ""),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 21, actorTurnId: "turn-delete", updateData: update }],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks).toEqual([
+      expect.objectContaining({ operationIds: ["21"], deletedText: "sword " }),
+    ]);
+  });
+
+  it("maps a coalesced visual hunk spanning two rows to both operations", () => {
+    const live = createDoc(
+      "Alpha. Tail text keeps the rewrite ratio low and the hunk density below the fallback cutoff.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const firstUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 5, to: 5 }, " brave"),
+    );
+    const secondUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 12, to: 12 }, " new"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 31, actorTurnId: "turn-a", updateData: firstUpdate },
+        { id: 32, actorTurnId: "turn-b", updateData: secondUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0].operationIds).toEqual(["31", "32"]);
+    expect(result.operations.map((operation) => operation.operationId)).toEqual(["31", "32"]);
+  });
+
+  it("groups rows without actor turns into one synthetic writer operation", () => {
+    const live = createDoc(
+      "Alpha. Tail text keeps hunk density below the fallback cutoff for this writer edit.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 5, to: 5 }, " writer"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 41, actorTurnId: null, updateData: update }],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks[0].operationIds).toEqual(["writer:draft"]);
+    expect(result.operations).toEqual([
+      { operationId: "writer:draft", sourceUpdateIds: [41], kind: "writer", hunkCount: 1 },
+    ]);
+  });
+
+  it("falls back to panel mode when configured thresholds are exceeded", () => {
+    const live = createDoc("A ".repeat(200));
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: 0, to: model.getText(first).length },
+        "B ".repeat(200),
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 51, actorTurnId: "turn-rewrite", updateData: update }],
+    });
+
+    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "rewrite_threshold" });
+  });
+  it("falls back to panel mode when hunk density is too high", () => {
+    const paragraph = "Stable text around edit point.";
+    const live = createDoc(
+      Array.from({ length: 20 }, (_, index) => `${paragraph} ${index}`).join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const blocks = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => {
+      for (const block of blocks) {
+        model.applyTextEdit(toDocHandle(draft), block, { from: 4, to: 4 }, "X");
+      }
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 52, actorTurnId: "turn-many", updateData: update }],
+    });
+
+    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "hunk_density" });
+  });
+
+  it("falls back to panel mode when block churn is too high", () => {
+    const live = createDoc("One\n\nTwo\n\nThree\n\nFour");
+    const draft = cloneDoc(live);
+    const [, two, three, four] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => {
+      model.deleteBlock(toDocHandle(draft), two);
+      model.deleteBlock(toDocHandle(draft), three);
+      model.deleteBlock(toDocHandle(draft), four);
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 53, actorTurnId: "turn-churn", updateData: update }],
+    });
+
+    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "block_churn" });
+  });
+});
+
+function createDoc(markdown: string): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  const parsed = codec.parse(markdown);
+  const root = schema.node("doc", null, parsed.blocks);
+  prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+  return doc;
+}
+
+function cloneDoc(source: Y.Doc): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 2;
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  return doc;
+}
+
+function captureUpdate(doc: Y.Doc, mutate: () => void): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  mutate();
+  return Y.encodeStateAsUpdate(doc, before);
+}

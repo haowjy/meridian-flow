@@ -280,3 +280,25 @@ re-entering review with a fresh hunk model).
   draft rather than a desynchronized live document.
 - **Undo retention is 24 hours.** Past the window, undo returns `expired` and
   the client grays out the undo button. The draft row persists for audit.
+
+## Draft preview hunk model (server)
+
+`previewDraft` now returns an inline-review hunk model for active drafts. The
+server computes the model against one consistent live/draft snapshot: live at the
+current live update seq, draft after replaying the listed draft update rows, and
+`draftRevisionToken = max(document_yjs_draft_updates.id)` for those rows.
+
+The computation lives in `domain/draft-review-hunks.ts` as a deep module over the
+model port. It aligns top-level blocks by stable Yjs-backed block id, runs
+`@sanity/diff-match-patch` within changed blocks, anchors hunk ranges with
+serialized `Y.RelativePosition`s in the draft doc, and attributes each hunk by
+indexing decoded draft update structs/delete sets once by `{client, clock}`
+ranges. Rows with `actorTurnId` are agent operations (`operationId = row id`);
+rows without `actorTurnId` currently collapse into the synthetic writer
+operation `writer:draft` until writer-area grouping lands.
+
+Fallback policy is server-side and per preview: `reviewMode: "panel"` is returned
+for rewrite threshold (>60% chars changed), hunk density (>15 hunks per 1000
+chars), block churn (>50% inserted/deleted blocks), or
+unsupported changed top-level node types. Panel fallback omits `operations` and
+`hunks`.
