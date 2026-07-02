@@ -26,6 +26,19 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("classifies same-identity blocks with different content as changed", () => {
+    const live = [
+      { id: "a", text: "Alpha" },
+      { id: "b", text: "Beta" },
+    ];
+    const draft = [
+      { id: "a", text: "Alpha" },
+      { id: "b", text: "Beta writer edit" },
+    ];
+
+    expect(alignBlocks(live, draft).map((entry) => entry.kind)).toEqual(["equal", "change"]);
+  });
+
   it("extracts word-level changed-block hunks anchored in the draft doc", () => {
     const live = createDoc(
       "Alpha sword. This paragraph has enough unchanged surrounding text for inline review.\n\nBeta stays.",
@@ -442,6 +455,107 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [212],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
+  it("surfaces writer edits inside unchanged-identity blocks untouched by the agent", () => {
+    const live = createDoc(
+      [
+        "Alpha remains unchanged with enough surrounding text for review attribution.",
+        "Beta target remains with enough unchanged surrounding text for agent attribution.",
+        "Gamma remains unchanged with enough surrounding text for review attribution.",
+        "Delta remains unchanged with enough surrounding text for writer attribution.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [, second, , fourth] = model.getBlocks(toDocHandle(draft));
+    const agentUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), second, { from: 11, to: 11 }, " agent"),
+    );
+    const writerUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), fourth, { from: 5, to: 5 }, " writer"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 241, actorTurnId: "turn-agent", updateData: agentUpdate },
+        { id: 242, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["241"], ["writer:1"]]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "241",
+        sourceUpdateIds: [241],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [242],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
+  it("surfaces writer deletion of an entire unchanged-identity block", () => {
+    const live = createDoc(
+      [
+        "Alpha remains unchanged with enough surrounding text for review attribution.",
+        "Beta target remains with enough unchanged surrounding text for agent attribution.",
+        "Gamma remains unchanged with enough surrounding text for review attribution.",
+        "Delta deleted block keeps enough text for writer deletion attribution.",
+        "Epsilon remains as an anchor after the deleted writer block.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [, second, , fourth] = model.getBlocks(toDocHandle(draft));
+    const agentUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), second, { from: 11, to: 11 }, " agent"),
+    );
+    const writerUpdate = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), fourth));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 251, actorTurnId: "turn-agent", updateData: agentUpdate },
+        { id: 252, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["251"], ["writer:1"]]);
+    expect(result.hunks[1]).toMatchObject({
+      operationIds: ["writer:1"],
+      deletedText: "Delta deleted block keeps enough text for writer deletion attribution.",
+    });
+    expect(result.operations).toEqual([
+      {
+        operationId: "251",
+        sourceUpdateIds: [251],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [252],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
