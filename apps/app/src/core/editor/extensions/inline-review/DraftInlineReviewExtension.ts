@@ -37,6 +37,9 @@ export interface DraftInlineReviewOptions {
   onFocusOperation?: (payload: { operationId: string; firstPos: number | null }) => void;
 }
 
+/** A decoration DOM node carries operation attribution on `data-review-operations`. */
+const OPERATION_ATTR = "data-review-operations";
+
 export interface InlineReviewPluginState {
   model: InlineReviewModel | null;
   activeOperationId: string | null;
@@ -171,6 +174,32 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
     props: {
       decorations(state) {
         return draftInlineReviewPluginKey.getState(state)?.decorations ?? DecorationSet.empty;
+      },
+      // Editor-side click seam. A click on any hunk decoration DOM adopts its
+      // first-listed operation as the active one — the sidebar reads plugin
+      // state and reacts (scroll card into view + emphasize). The plugin's
+      // `view` hook fires `onFocusOperation` on the resulting state change.
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          const target = event.target as HTMLElement | null;
+          const hit = target?.closest?.(`[${OPERATION_ATTR}]`);
+          if (!hit) return false;
+          const raw = hit.getAttribute(OPERATION_ATTR);
+          const [operationId] = (raw ?? "").split(" ").filter(Boolean);
+          if (!operationId) return false;
+          const current = draftInlineReviewPluginKey.getState(view.state)?.activeOperationId;
+          if (current === operationId) return false;
+          const tr = view.state.tr;
+          tr.setMeta(draftInlineReviewPluginKey, {
+            kind: "set-active-operation",
+            operationId,
+          });
+          tr.setMeta("addToHistory", false);
+          view.dispatch(tr);
+          // Do not swallow the event — the writer's caret placement is expected
+          // behaviour for a click inside real editable text.
+          return false;
+        },
       },
     },
     view() {
