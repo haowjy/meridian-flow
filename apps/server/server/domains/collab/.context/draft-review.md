@@ -58,8 +58,9 @@ so adapters compose the partition without code duplication.
   draft, but it blocks new draft creation and marks the live accept as already
   underway. An expired `accepting` claim can be reclaimed by accept retry; fresh
   concurrent accepts report in-progress.
-- **`document_yjs_draft_updates`** — append-only agent deltas per draft
-  (no seed, no live updates in the log).
+- **`document_yjs_draft_updates`** — append-only deltas per draft (no seed, no
+  live updates in the log). Agent pipeline rows carry `actorTurnId`; writer
+  draft-room rows carry `actorUserId`.
 
 ### Work-scoped draft identity
 
@@ -69,8 +70,9 @@ so adapters compose the partition without code duplication.
 - `document_yjs_drafts.workId` references `works.id`
 - `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting')` enforces
   one active/accepting draft per document in a Work
-- Per-update attribution is unchanged: `document_yjs_draft_updates.actorTurnId`
-  tracks which turn (and therefore which thread/agent) produced each update
+- Per-update attribution mirrors live Yjs updates:
+  `document_yjs_draft_updates.actorTurnId` tracks agent/turn rows, and
+  `actorUserId` tracks writer rows created through the draft Hocuspocus room.
 
 **Current state of works:** currently 1 work per project, auto-created. No API
 to create additional works yet. New work creation is being developed on a
@@ -235,8 +237,18 @@ enters review, cleanup when draft transitions to applied/discarded.
 ### Writer edits during review = new draft update rows
 
 During review, the writer edits the draft freely. Their edits persist as
-`document_yjs_draft_updates` rows with `actorTurnId` = writer's review
-session turn. Same attribution pipeline as AI writes — no new schema.
+`document_yjs_draft_updates` rows with `actorUserId` and no `actorTurnId`.
+Attribution rule:
+
+| Row attribution | Review operation kind |
+|---|---|
+| `actorTurnId` present | `kind: "agent"` linked to that turn |
+| `actorTurnId` null, `actorUserId` present | `kind: "writer"` linked to that user |
+| both null | `kind: "agent"` with no turn linkage |
+
+The both-null case is intentionally **not** writer attribution: a deleted AI turn
+can be nulled by `ON DELETE SET NULL`, and that prose must not masquerade as the
+writer's own edit.
 
 ### Reject = reverse Yjs updates on draft
 
@@ -268,7 +280,8 @@ re-entering review with a fresh hunk model).
 ## Invariants
 
 - **Live is always canonical.** A draft is proposed changes, not a document.
-- **Draft updates are agent-only.** No seed, no live updates in the draft log.
+- **Draft updates are review deltas only.** No seed, no live updates in the draft
+  log. Agent rows are attributed by turn; writer rows are attributed by user.
 - **Accept is journal-first.** Journal is authoritative; live projection and
   status update are recoverable side effects.
 - **Draft finalization invalidates in-flight responses.** Accept or reject
@@ -293,9 +306,22 @@ model port. It aligns top-level blocks by stable Yjs-backed block id, runs
 `@sanity/diff-match-patch` within changed blocks, anchors hunk ranges with
 serialized `Y.RelativePosition`s in the draft doc, and attributes each hunk by
 indexing decoded draft update structs/delete sets once by `{client, clock}`
-ranges. Rows with `actorTurnId` are agent operations (`operationId = row id`);
-rows without `actorTurnId` currently collapse into the synthetic writer
-operation `writer:draft` until writer-area grouping lands.
+ranges. Delete-set attribution tracks a running known-delete-set and credits
+only newly introduced delete ranges to each row, because Yjs incremental update
+delete sets can redeclare earlier deletions.
+
+Rows with `actorTurnId` are agent operations (`operationId = row id`). Rows with
+`actorUserId` are writer-attributed rows; after hunk attribution, writer hunks are
+clustered by spatial proximity into synthetic operations (`writer:1`,
+`writer:2`, ...):
+
+- hunks in the same top-level block join the same writer operation;
+- hunks in adjacent changed blocks join the same writer operation;
+- hunks separated by any unchanged block start a new writer operation.
+
+Grouping is view-layer only. Source rows stay fine-grained, and each writer
+operation exposes `sourceUpdateIds` as the union of rows contributing to its
+hunks.
 
 Fallback policy is server-side and per preview: `reviewMode: "panel"` is returned
 for rewrite threshold (>60% chars changed), hunk density (>15 hunks per 1000
