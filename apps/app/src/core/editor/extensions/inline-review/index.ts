@@ -21,6 +21,8 @@ export {
 export {
   applyRejectUpdate,
   decodeDraftJournalResponse,
+  operationRejectIsMixed,
   operationTargetSeqs,
   reconstructOperationRejectUpdate,
+  stateVectorsEqual,
 } from "./reject-operation";

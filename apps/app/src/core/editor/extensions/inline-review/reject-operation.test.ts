@@ -1,7 +1,11 @@
 import type { DraftJournalResponse, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { decodeDraftJournalResponse, operationTargetSeqs } from "./reject-operation";
+import {
+  decodeDraftJournalResponse,
+  operationTargetSeqs,
+  stateVectorsEqual,
+} from "./reject-operation";
 
 describe("inline review operation reject helpers", () => {
   it("decodes the base64 journal wire shape into a reconstruction snapshot", () => {
@@ -29,17 +33,23 @@ describe("inline review operation reject helpers", () => {
     ]);
   });
 
-  it("uses the operation source update ids as reconstruct target seqs", () => {
+  it("uses the server reject closure as reconstruct target seqs", () => {
     const operation: ReviewOperation = {
       operationId: "op-1",
       sourceUpdateIds: [3, 9, 4],
-      rejectSourceUpdateIds: [3, 9, 4],
+      rejectSourceUpdateIds: [3, 9, 4, 11],
       kind: "agent",
       hunkCount: 2,
     };
 
     expect([...operationTargetSeqs(operation)].sort((left, right) => left - right)).toEqual([
-      3, 4, 9,
+      3, 4, 9, 11,
     ]);
+  });
+
+  it("compares state vectors byte-for-byte", () => {
+    expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true);
+    expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 3]))).toBe(false);
+    expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3]))).toBe(false);
   });
 });

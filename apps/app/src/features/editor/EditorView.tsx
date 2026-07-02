@@ -30,7 +30,10 @@ import { cn } from "@/lib/utils";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
-import { useInlineReviewRejectOperation } from "./useInlineReviewRejectOperation";
+import {
+  type InlineReviewRejectOutcome,
+  useInlineReviewRejectOperation,
+} from "./useInlineReviewRejectOperation";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
@@ -58,7 +61,7 @@ export type EditorViewProps = {
    */
   renderRightRail?: (
     editor: Editor | null,
-    controls: { onDiscardOperation?: (operationId: string) => Promise<void> },
+    controls: { onDiscardOperation?: (operationId: string) => Promise<InlineReviewRejectOutcome> },
   ) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;

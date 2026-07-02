@@ -22,20 +22,23 @@ import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
+  operationRejectIsMixed,
 } from "@/core/editor/extensions/inline-review";
 import { cn } from "@/lib/utils";
-
 import {
   type HunkPositionRange,
   type OrderedOperation,
   orderOperationsForSidebar,
 } from "./inline-review-sidebar-order";
+import type { InlineReviewRejectOutcome } from "./useInlineReviewRejectOperation";
 
 export type DraftReviewSidebarProps = {
   editor: Editor | null;
   className?: string;
   /** Runs the undoable client-side reject for a single operation. */
-  onDiscardOperation?: (operationId: string) => Promise<void> | void;
+  onDiscardOperation?: (
+    operationId: string,
+  ) => Promise<InlineReviewRejectOutcome> | InlineReviewRejectOutcome;
 };
 
 interface SidebarSnapshot {
@@ -51,7 +54,9 @@ export function DraftReviewSidebar({
   onDiscardOperation,
 }: DraftReviewSidebarProps) {
   const [pendingDiscardIds, setPendingDiscardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
+  const pendingTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const snapshot =
     useEditorState<SidebarSnapshot>({
@@ -87,6 +92,28 @@ export function DraftReviewSidebar({
     node?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeOperationId]);
 
+  useEffect(() => {
+    setPendingDiscardIds((current) => {
+      let next: Set<string> | null = null;
+      const entryIds = new Set(entries.map((entry) => entry.operation.operationId));
+      for (const pendingId of current) {
+        if (entryIds.has(pendingId)) continue;
+        window.clearTimeout(pendingTimeoutsRef.current.get(pendingId));
+        pendingTimeoutsRef.current.delete(pendingId);
+        next ??= new Set(current);
+        next.delete(pendingId);
+      }
+      return next ?? current;
+    });
+  }, [entries]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of pendingTimeoutsRef.current.values()) window.clearTimeout(timer);
+      pendingTimeoutsRef.current.clear();
+    };
+  }, []);
+
   const handleCardClick = useCallback(
     (operationId: string) => {
       if (!editor || editor.isDestroyed) return;
@@ -98,24 +125,32 @@ export function DraftReviewSidebar({
 
   const handleDiscard = useCallback(
     async (operationId: string) => {
-      if (pendingDiscardIds.has(operationId)) return;
-      setPendingDiscardIds((current) => {
-        const next = new Set(current);
-        next.add(operationId);
-        return next;
-      });
+      if (pendingDiscardIds.size > 0) return;
+      setConfirmingDiscardId(null);
+      setPendingDiscardIds(new Set([operationId]));
       setDiscardError(null);
       try {
         if (!onDiscardOperation) throw new Error("Discard is not available yet.");
-        await onDiscardOperation(operationId);
+        const outcome = await onDiscardOperation(operationId);
+        if (outcome.status !== "applied") {
+          setDiscardError(messageForRejectOutcome(outcome));
+          setPendingDiscardIds(new Set());
+          return;
+        }
+        const timer = window.setTimeout(() => {
+          pendingTimeoutsRef.current.delete(operationId);
+          setPendingDiscardIds((current) => {
+            if (!current.has(operationId)) return current;
+            setDiscardError("Discard didn't stick — the draft may have been finalized.");
+            const next = new Set(current);
+            next.delete(operationId);
+            return next;
+          });
+        }, 4500);
+        pendingTimeoutsRef.current.set(operationId, timer);
       } catch {
-        setDiscardError("Couldn't discard — the draft changed. Try again.");
-      } finally {
-        setPendingDiscardIds((current) => {
-          const next = new Set(current);
-          next.delete(operationId);
-          return next;
-        });
+        setDiscardError("Couldn't discard. Check your connection and try again.");
+        setPendingDiscardIds(new Set());
       }
     },
     [onDiscardOperation, pendingDiscardIds],
@@ -173,8 +208,12 @@ export function DraftReviewSidebar({
                 entry={entry}
                 active={entry.operation.operationId === activeOperationId}
                 pending={pendingDiscardIds.has(entry.operation.operationId)}
-                discardAvailable={Boolean(onDiscardOperation)}
+                discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
+                confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
+                needsDiscardConfirm={operationRejectIsMixed(entry.operation)}
                 onSelect={() => handleCardClick(entry.operation.operationId)}
+                onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
+                onCancelDiscard={() => setConfirmingDiscardId(null)}
                 onDiscard={() => handleDiscard(entry.operation.operationId)}
               />
             ))}
@@ -190,7 +229,11 @@ type OperationCardProps = {
   active: boolean;
   pending: boolean;
   discardAvailable: boolean;
+  confirmingDiscard: boolean;
+  needsDiscardConfirm: boolean;
   onSelect: () => void;
+  onConfirmDiscard: () => void;
+  onCancelDiscard: () => void;
   onDiscard: () => void;
   ref?: (node: HTMLElement | null) => void;
 };
@@ -200,7 +243,11 @@ function OperationCard({
   active,
   pending,
   discardAvailable,
+  confirmingDiscard,
+  needsDiscardConfirm,
   onSelect,
+  onConfirmDiscard,
+  onCancelDiscard,
   onDiscard,
   ref,
 }: OperationCardProps) {
@@ -249,19 +296,35 @@ function OperationCard({
           </p>
         ) : null}
       </button>
-      <div className="mt-2 flex items-center justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onDiscard}
-          disabled={pending || !discardAvailable}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-          <Trans>Discard</Trans>
-        </Button>
-      </div>
+      {confirmingDiscard ? (
+        <div className="mt-2 rounded-md border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
+          <p className="text-[11px] text-foreground">
+            <Trans>This also removes your edits in this passage.</Trans>
+          </p>
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            <Button type="button" variant="ghost" size="sm" onClick={onCancelDiscard}>
+              <Trans>Keep</Trans>
+            </Button>
+            <Button type="button" variant="destructive" size="sm" onClick={onDiscard}>
+              <Trans>Discard</Trans>
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
+            disabled={pending || !discardAvailable}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+            <Trans>Discard</Trans>
+          </Button>
+        </div>
+      )}
     </li>
   );
 }
@@ -383,4 +446,17 @@ function sidebarSnapshotEqual(a: SidebarSnapshot, b: SidebarSnapshot): boolean {
     if (ae.includesWriterEdits !== be.includesWriterEdits) return false;
   }
   return true;
+}
+
+function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
+  switch (outcome.status) {
+    case "stale":
+      return "Couldn't discard — your latest edits are still syncing. Try again in a moment.";
+    case "finalized":
+      return "Couldn't discard — this draft may have been finalized.";
+    case "offline":
+      return "Couldn't discard. Check your connection and try again.";
+    default:
+      return "Couldn't discard. Try again.";
+  }
 }
