@@ -276,6 +276,8 @@ export function createDraftService(deps: {
   model: AgentEditModel;
   codec: AgentEditCodec;
   invalidateInFlight?: InvalidateInFlightDrafts;
+  drainDraftRoomPersistence?(draftId: string): Promise<void>;
+  closeDraftRoom?(draftId: string): void;
   refreshAcceptedProjection?: RefreshAcceptedDraftProjection;
   reverseTurn?(input: {
     documentId: DocumentId;
@@ -285,6 +287,8 @@ export function createDraftService(deps: {
   }): Promise<"reversed" | "not_reversed">;
 }): DraftService {
   const invalidateInFlight = deps.invalidateInFlight ?? (async () => {});
+  const drainDraftRoomPersistence = deps.drainDraftRoomPersistence ?? (async () => {});
+  const closeDraftRoom = deps.closeDraftRoom ?? (() => {});
   const projection = createDraftProjectionCoordinator({
     liveCoordinator: deps.liveCoordinator,
     draftStore: deps.draftStore,
@@ -316,6 +320,9 @@ export function createDraftService(deps: {
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
   }): Promise<DraftAcceptResult> {
+    closeDraftRoom(input.draftId);
+    await drainDraftRoomPersistence(input.draftId);
+
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
     if (
       requestedDraft?.documentId === input.documentId &&
@@ -362,6 +369,7 @@ export function createDraftService(deps: {
 
     const { draft, lease } = accept;
     await invalidateInFlight(input);
+    await drainDraftRoomPersistence(draft.id);
 
     const updates = await deps.draftStore.listUpdates(draft.id);
     if (updates.length === 0) {
@@ -548,6 +556,9 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult> {
+    closeDraftRoom(input.draftId);
+    await drainDraftRoomPersistence(input.draftId);
+
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
     const turnContext = await deps.draftStore.draftTurnContext(input.draftId);
     const draft = await deps.draftStore.reject(input);

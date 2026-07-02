@@ -73,15 +73,28 @@ export type CollabPersistenceMetrics = {
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
+  resolveDraftHocuspocusRoom(
+    draftId: string,
+  ): Promise<{ draftId: string; documentId: DocumentId; status: "active" } | null>;
   loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
+  loadHocuspocusDraft(draftId: string): Promise<Uint8Array | undefined>;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
   }): void;
+  persistDraftConnectionUpdate(input: {
+    draftId: string;
+    update: Uint8Array;
+    origin: UpdateOrigin;
+    document: Y.Doc;
+  }): void;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
+  storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
+  drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
+  closeHocuspocusDraftRoom(draftId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 

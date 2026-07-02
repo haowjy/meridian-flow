@@ -306,6 +306,58 @@ describe("createFacade connection update ingest", () => {
     );
   });
 
+  it("persists draft-room connection updates to the draft journal", async () => {
+    const { domain, draftStore } = createTestHarness();
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    const foreign = updateAuthoredBy(RESERVED_CLIENT_ID_MAX + 1);
+
+    domain.persistDraftConnectionUpdate({
+      draftId: draft.id,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusDraftPersistence(draft.id);
+
+    const updates = await draftStore.listUpdates(draft.id);
+    expect(updates).toHaveLength(1);
+    expect([...(updates[0]?.updateData ?? [])]).toEqual([...foreign.update]);
+  });
+
+  it("drops draft-room connection updates after finalization", async () => {
+    const eventSink = createInMemoryEventSink();
+    const { domain, draftStore } = createTestHarness({ eventSink });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id });
+    const foreign = updateAuthoredBy(RESERVED_CLIENT_ID_MAX + 1);
+
+    domain.persistDraftConnectionUpdate({
+      draftId: draft.id,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusDraftPersistence(draft.id);
+
+    await expect(draftStore.listUpdates(draft.id)).resolves.toEqual([]);
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        source: "collab.hocuspocus",
+        name: "draft_append.rejected",
+        payload: expect.objectContaining({ draftId: draft.id }),
+      }),
+    );
+  });
+
   it("persists normal connection updates unchanged", async () => {
     const eventSink = createInMemoryEventSink();
     const { domain, journal } = createTestHarness({ eventSink });
@@ -339,6 +391,7 @@ function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
 function createTestHarness(options: TestFacadeOptions = {}): {
   domain: CollabDomain;
   journal: ReturnType<typeof createInMemoryJournal>;
+  draftStore: ReturnType<typeof createInMemoryDraftStore>;
 } {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
@@ -376,6 +429,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       },
     }),
     journal,
+    draftStore,
   };
 }
 

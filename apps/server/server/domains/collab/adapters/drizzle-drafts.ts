@@ -170,12 +170,8 @@ export function createDrizzleDraftStore(
 
     async appendUpdate(input) {
       await db.transaction(async (tx) => {
-        await (tx as DraftDb).insert(documentYjsDraftUpdates).values({
-          draftId: input.draftId,
-          updateData: Buffer.from(input.updateData),
-          actorTurnId: input.actorTurnId ?? null,
-        });
-        const updated = await (tx as DraftDb)
+        const txDb = tx as DraftDb;
+        const updated = await txDb
           .update(documentYjsDrafts)
           .set({
             ...(input.actorTurnId ? { lastActorTurnId: input.actorTurnId } : {}),
@@ -186,6 +182,12 @@ export function createDrizzleDraftStore(
           )
           .returning({ id: documentYjsDrafts.id });
         if (updated.length === 0) throw new Error(`Draft is closed: ${input.draftId}`);
+
+        await txDb.insert(documentYjsDraftUpdates).values({
+          draftId: input.draftId,
+          updateData: Buffer.from(input.updateData),
+          actorTurnId: input.actorTurnId ?? null,
+        });
       });
     },
 
