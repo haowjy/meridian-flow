@@ -190,7 +190,14 @@ export function ContextEditorMountHost({
                     : undefined
                 }
                 renderRightRail={
-                  reviewDraftId ? (editor) => <DraftReviewSidebar editor={editor} /> : undefined
+                  reviewDraftId
+                    ? (editor, controls) => (
+                        <DraftReviewSidebar
+                          editor={editor}
+                          onDiscardOperation={controls.onDiscardOperation}
+                        />
+                      )
+                    : undefined
                 }
               />
             </div>

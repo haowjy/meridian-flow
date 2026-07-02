@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
+import { useInlineReviewRejectOperation } from "./useInlineReviewRejectOperation";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
@@ -55,7 +56,10 @@ export type EditorViewProps = {
    * back to the manuscript-only layout with the docked diff panel available
    * from `DraftReviewBar` instead.
    */
-  renderRightRail?: (editor: Editor | null) => ReactNode;
+  renderRightRail?: (
+    editor: Editor | null,
+    controls: { onDiscardOperation?: (operationId: string) => Promise<void> },
+  ) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -311,6 +315,14 @@ function SessionEditorView({
     ],
   );
 
+  const rejectInlineReviewOperation = useInlineReviewRejectOperation({
+    editor,
+    draftDoc: session.document,
+    threadId: reviewThreadId ?? "",
+    documentId,
+    draftId: reviewDraftId ?? "",
+  });
+
   useInlineReviewSync({
     editor,
     liveSession: liveReviewSession,
@@ -422,7 +434,11 @@ function SessionEditorView({
           // Rail is auxiliary — hidden below the `lg` breakpoint so the
           // manuscript keeps its full width on narrow screens; the writer
           // still has the docked diff panel via the DraftReviewBar.
-          <div className="hidden lg:flex">{renderRightRail(editor)}</div>
+          <div className="hidden lg:flex">
+            {renderRightRail(editor, {
+              onDiscardOperation: inReview ? rejectInlineReviewOperation : undefined,
+            })}
+          </div>
         ) : null}
       </div>
     </section>

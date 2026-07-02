@@ -57,7 +57,12 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { buildDraftDoc, buildLiveDocAtSeq, serializePreview } from "./domain/draft-projection.js";
+import {
+  buildDraftDoc,
+  buildDraftJournalSnapshot,
+  buildLiveDocAtSeq,
+  serializePreview,
+} from "./domain/draft-projection.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createDraftWriteModeRouter,
@@ -377,6 +382,24 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const draftService = {
     ...draftLifecycle,
+    async getDraftJournal(input: { documentId: DocumentId; draftId: string }) {
+      const result = await buildDraftJournalSnapshot(
+        deps.journal,
+        deps.draftStore,
+        input.documentId,
+        input.draftId,
+      );
+      if (result.status === "not_found") return result;
+      return {
+        status: "active" as const,
+        revisionToken: result.revisionToken,
+        checkpoint: result.snapshot.checkpoint,
+        updates: result.snapshot.updates.map((update) => ({
+          seq: update.seq,
+          update: update.update,
+        })),
+      };
+    },
     async previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }) {
       const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
       const liveDoc = await buildLiveDocAtSeq(deps.journal, input.documentId, liveRevisionToken);

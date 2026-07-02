@@ -1,6 +1,7 @@
 /** Route core for authenticated AI draft preview/accept/reject over thread routes backed by work-scoped draft documents. */
 import type {
   DraftAcceptResponse,
+  DraftJournalResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
   DraftReviewSurface,
@@ -31,6 +32,7 @@ type DraftRouteServices = {
       | "undoAcceptDraft"
       | "undoRejectDraft"
       | "listReviewableDrafts"
+      | "getDraftJournal"
     >;
   };
 };
@@ -111,6 +113,50 @@ export async function handleDraftPreviewRequest(
     ...(preview.fallbackReason ? { fallbackReason: preview.fallbackReason } : {}),
     ...(preview.operations ? { operations: preview.operations } : {}),
     ...(preview.hunks ? { hunks: preview.hunks } : {}),
+  };
+}
+
+export async function handleDraftJournalRequest(
+  deps: DraftRouteServices,
+  input: {
+    threadId: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    revisionToken: number;
+    userId: UserId;
+  },
+): Promise<DraftJournalResponse> {
+  await requireDraftDocumentAccess(deps, input);
+  const activeDraft = await deps.documentSync.drafts.getActiveDraft({
+    documentId: input.documentId,
+    threadId: input.threadId,
+  });
+  if (!activeDraft || activeDraft.id !== input.draftId) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+
+  const result = await deps.documentSync.drafts.getDraftJournal({
+    documentId: input.documentId,
+    draftId: input.draftId,
+  });
+  if (result.status === "not_found") {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  if (result.revisionToken !== input.revisionToken) {
+    throw createError({
+      statusCode: 409,
+      message: "Draft revision is stale",
+      data: { code: "stale_revision", currentRevisionToken: result.revisionToken },
+    });
+  }
+  return {
+    draftId: input.draftId,
+    revisionToken: result.revisionToken,
+    checkpoint: result.checkpoint ? bytesToBase64(result.checkpoint) : null,
+    updates: result.updates.map((update) => ({
+      seq: update.seq,
+      update: bytesToBase64(update.update),
+    })),
   };
 }
 
@@ -263,4 +309,8 @@ function serializeThreadDraft(draft: {
 function throwReadFailure(code: string): never {
   if (code === "not_found") throw createError({ statusCode: 404, message: "Document not found" });
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
 }

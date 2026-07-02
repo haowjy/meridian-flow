@@ -8,6 +8,7 @@
 import type {
   DraftAcceptRequest,
   DraftAcceptResponse,
+  DraftJournalResponse,
   DraftPreviewResponse,
   DraftRejectRequest,
   DraftRejectResponse,
@@ -16,6 +17,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import {
   apiThreadDocumentDraftAcceptPath,
+  apiThreadDocumentDraftJournalPath,
   apiThreadDocumentDraftPath,
   apiThreadDocumentDraftRejectPath,
   apiThreadDocumentDraftUndoAcceptPath,
@@ -23,7 +25,7 @@ import {
   apiThreadDraftsPath,
 } from "@meridian/contracts/protocol";
 
-import { getJson, postJson } from "./http-client";
+import { errorMessageFromPayload, getJson, postJson, readResponsePayload } from "./http-client";
 
 export async function listThreadDrafts(threadId: string): Promise<ThreadDraftListResponse> {
   return getJson<ThreadDraftListResponse>(apiThreadDraftsPath(threadId));
@@ -40,6 +42,30 @@ export async function getDraftPreview(
   return getJson<DraftPreviewResponse>(
     `${apiThreadDocumentDraftPath(threadId, documentId)}?${params}`,
   );
+}
+
+export class StaleDraftJournalError extends Error {
+  constructor() {
+    super("Draft revision is stale");
+    this.name = "StaleDraftJournalError";
+  }
+}
+
+export async function getDraftJournal(
+  threadId: string,
+  documentId: string,
+  draftId: string,
+  revisionToken: number,
+): Promise<DraftJournalResponse> {
+  const params = new URLSearchParams({ draftId, revisionToken: String(revisionToken) });
+  const response = await fetch(
+    `${apiThreadDocumentDraftJournalPath(threadId, documentId)}?${params}`,
+  );
+  const payload = await readResponsePayload(response);
+  if (response.status === 409 && isStaleRevisionPayload(payload))
+    throw new StaleDraftJournalError();
+  if (!response.ok) throw new Error(errorMessageFromPayload(payload, response.status));
+  return payload as DraftJournalResponse;
 }
 
 export async function acceptDraft(
@@ -84,4 +110,13 @@ export async function undoRejectDraft(
     apiThreadDocumentDraftUndoRejectPath(threadId, documentId),
     body,
   );
+}
+
+function isStaleRevisionPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as { data?: unknown };
+  if (record.data && typeof record.data === "object") {
+    return (record.data as { code?: unknown }).code === "stale_revision";
+  }
+  return (payload as { code?: unknown }).code === "stale_revision";
 }

@@ -15,7 +15,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { DraftInlineReviewExtension } from "./extensions/inline-review";
+import { DraftInlineReviewExtension, HUNK_REJECT_ORIGIN } from "./extensions/inline-review";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -166,6 +166,9 @@ function createCollaborationExtensions({
       // Passing the concrete Y.XmlFragment keeps the shared type name at the
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+      // Uniform across live + draft editors: live rooms never emit this origin,
+      // while draft review uses it so Ctrl+Z restores a discarded operation.
+      yUndoOptions: { trackedOrigins: [HUNK_REJECT_ORIGIN] },
     }),
   ];
 

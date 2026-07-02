@@ -342,3 +342,24 @@ and `hunks` so the inline session is not rug-pulled mid-review. Unsupported
 changed top-level node types are the hard fallback: even with `surface=inline`,
 the server returns panel mode and omits the inline model because the client cannot
 render those regions safely.
+
+## Client-side per-operation reject journal
+
+Inline review now has a strict authenticated journal fetch:
+`GET /api/threads/:threadId/documents/:documentId/draft/journal?draftId=&revisionToken=`.
+It uses the same `requireDraftDocumentAccess` gate as preview/accept/reject
+(thread owner + document access + project document + primary Work) and only
+serves active drafts. The response is immutable for a draft revision token:
+
+- `checkpoint`: base64 Yjs state update for the live document at the draft's
+  `baseLiveUpdateSeq` (the draft fork point)
+- `updates`: all draft update rows in ascending row-id order as
+  `{ seq: rowId, update: base64 }`
+- `revisionToken`: max draft update row id
+
+If the requested `revisionToken` differs from the current max draft row id, the
+route returns HTTP 409 with `data.code = "stale_revision"`; clients must refetch
+the preview/hunk model and retry at most once. This route does not perform
+reject bookkeeping. The client reconstructs the inverse from the checkpoint +
+rows, applies it to the draft Y.Doc, and Hocuspocus persists the inverse as a
+normal writer-attributed draft update row.
