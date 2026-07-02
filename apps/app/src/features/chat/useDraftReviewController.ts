@@ -6,6 +6,7 @@
  * confirmation and overlay cleanup cannot drift between surfaces.
  */
 
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
@@ -150,10 +151,13 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         return;
       }
       const needsOverlapConfirm = overlap?.draftId === draftId;
-      await waitForLiveDocumentSync(documentId);
-      const draftRevisionToken =
-        options?.draftRevisionToken ??
-        (await latestPreviewDraftRevisionToken(queryClient, threadId, documentId, draftId));
+      await waitForDraftDocumentSync(draftId);
+      const draftRevisionToken = await latestPreviewDraftRevisionToken(
+        queryClient,
+        threadId,
+        documentId,
+        draftId,
+      );
       acceptMutation.mutate(
         {
           threadId,
@@ -212,7 +216,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       setIsBatchPending(true);
       try {
         for (const draftId of draftIds) {
-          await waitForLiveDocumentSync(documentId);
+          await waitForDraftDocumentSync(draftId);
           const draftRevisionToken = await latestPreviewDraftRevisionToken(
             queryClient,
             threadId,
@@ -323,17 +327,17 @@ async function latestPreviewDraftRevisionToken(
   documentId: string,
   draftId: string,
 ): Promise<number> {
-  const preview = await queryClient.ensureQueryData({
-    queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
-    queryFn: () => getDraftPreview(threadId, documentId, draftId),
-  });
+  const queryKey = threadQueryKeys.draftPreview(threadId, documentId, draftId, null);
+  const preview = await getDraftPreview(threadId, documentId, draftId);
+  queryClient.setQueryData(queryKey, preview);
   return preview.status === "active" ? preview.draftRevisionToken : -1;
 }
 
-async function waitForLiveDocumentSync(documentId: string): Promise<void> {
+async function waitForDraftDocumentSync(draftId: string): Promise<void> {
   const registry = getDocumentSessionRegistry();
-  if (!registry.has(documentId)) return;
-  const session = registry.get(documentId);
+  const roomKey = draftRoomName(draftId);
+  if (!registry.has(roomKey)) return;
+  const session = registry.getRoom(roomKey);
   if (session.getSnapshot().status === "synced") return;
   await session.waitForCurrentSync(ACCEPT_SYNC_WAIT_MS);
 }
