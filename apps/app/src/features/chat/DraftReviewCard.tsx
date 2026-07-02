@@ -6,8 +6,9 @@
  * to review", "Apply to chapter", "Discard draft"). No code-review jargon.
  *
  * The card does not own the preview overlay. Cards inside an anchored
- * assistant turn live inside a react-virtuoso row that can recycle/unmount
- * when the writer scrolls; `ChatView` owns the single overlay instance.
+ * assistant turn live inside a virtualized `TurnList` row that can
+ * recycle/unmount when the writer scrolls; `ChatView` owns the single
+ * overlay instance.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

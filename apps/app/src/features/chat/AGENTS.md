@@ -1,16 +1,18 @@
-# features/chat — Assistant turn rendering surface
+# features/chat — Turn render surface + transcript viewport
 
 The chat frontend: how assistant turns render from `Block[]` onto the screen,
 including the `Thinking`/`ActivityBlock` composition model, tool rendering,
-interrupt interaction, and the live→settled transition.
+interrupt interaction, and the live→settled transition — AND how the
+conversation transcript scrolls (the explicit `follow | free` policy).
 
 ## Purpose
 
 This directory owns the **assistant turn render surface** — the components and
 partition logic that convert an ordered `Block[]` (from `@meridian/contracts` `Turn`)
-into what the reader sees. It is NOT the chat session, thread management, or
-composer — those are adjacent concerns in sibling files (`useChatThreadSession`,
-`Composer.tsx`).
+into what the reader sees — and the **transcript viewport** (`TurnList.tsx`), the
+single scroll container for the conversation. It is NOT the chat session, thread
+management, or composer — those are adjacent concerns in sibling files
+(`useChatThreadSession`, `Composer.tsx`).
 
 ## Mental model
 
@@ -94,6 +96,28 @@ From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
 - **reasoning run** = `reasoning` | `thinking` (rendered in `TurnBlockStep`, italic prose)
 - **activity run** = everything else (text/image/custom rendered directly; tool_use/tool_result
   normalized into ToolViews and rendered as `ToolCard` or `ToolRunBlock`)
+
+## Transcript viewport (TurnList)
+
+`TurnList.tsx` is the **single scroll owner** for the conversation. There is no
+second scroll engine and no nested scroller — the viewport is one plain
+`overflow-y:auto` div with `[overflow-anchor:none]` so browser scroll anchoring
+doesn't compete with TanStack Virtual's own compensation.
+
+TanStack Virtual owns **geometry** (row layout, measured heights, above-viewport
+size-change compensation). `useChatFollowScroll` owns **policy** — the explicit
+`follow | free` state machine. Geometry never doubles as policy state; deriving
+"at bottom" per-frame from offsets is what made the pill flicker and
+follow-release feel inconsistent.
+
+Key contract: **no child component may own a scroller**. Assistant turn
+rendering (`AssistantTurn.tsx`, `ProcessDisclosure.tsx`) owns only the
+disclosure expand/collapse — the viewport is TurnList's invariant.
+
+→ TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
+→ useChatFollowScroll.ts header comment (state machine invariants +
+  re-armable 180ms guard + near-bottom-wins ordering)
+→ [KB: chat scroll follow-state decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
