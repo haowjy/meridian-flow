@@ -40,6 +40,7 @@ export type DraftReviewController = {
   closeReview: () => void;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
+  fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
   accept: (
     documentId: string,
     draftId: string,
@@ -87,6 +88,12 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
 
   const exitInlineReview = useCallback(() => {
     setInlineReview(null);
+  }, []);
+
+  const fallbackInlineReviewToPanel = useCallback((documentId: string, draftId: string) => {
+    setInlineReview((current) => (current?.draftId === draftId ? null : current));
+    setOverlap(null);
+    setSelectedDraft({ documentId, draftId });
   }, []);
 
   const accept = useCallback(
@@ -205,6 +212,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       closeReview,
       enterInlineReview,
       exitInlineReview,
+      fallbackInlineReviewToPanel,
       accept,
       reject,
       acceptAll,
@@ -222,6 +230,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       closeReview,
       enterInlineReview,
       exitInlineReview,
+      fallbackInlineReviewToPanel,
       accept,
       reject,
       acceptAll,

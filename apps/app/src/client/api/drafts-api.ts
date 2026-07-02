@@ -33,8 +33,10 @@ export async function getDraftPreview(
   threadId: string,
   documentId: string,
   draftId: string,
+  options?: { surface?: "inline" },
 ): Promise<DraftPreviewResponse> {
   const params = new URLSearchParams({ draftId });
+  if (options?.surface) params.set("surface", options.surface);
   return getJson<DraftPreviewResponse>(
     `${apiThreadDocumentDraftPath(threadId, documentId)}?${params}`,
   );

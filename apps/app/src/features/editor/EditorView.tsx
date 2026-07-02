@@ -70,6 +70,8 @@ export type EditorViewProps = {
   reviewThreadId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
+  /** Called when inline review cannot keep a hunk model and must show the docked panel. */
+  onInlineReviewHardFallback?: () => void;
 };
 
 type FigureUploadState =
@@ -153,10 +155,13 @@ function SessionEditorView({
   showCollaborationDecorations = true,
   reviewDraftId = null,
   reviewThreadId = null,
+  onInlineReviewHardFallback,
   renderRightRail,
   session,
 }: SessionEditorViewProps) {
   const inReview = Boolean(reviewDraftId);
+  const registry = getDocumentSessionRegistry();
+  const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
@@ -308,10 +313,12 @@ function SessionEditorView({
 
   useInlineReviewSync({
     editor,
+    liveSession: liveReviewSession,
     threadId: reviewThreadId,
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
+    onHardFallback: onInlineReviewHardFallback,
   });
 
   useEffect(() => {
