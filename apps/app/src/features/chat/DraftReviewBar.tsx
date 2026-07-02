@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
+import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/features/project/relative-time";
@@ -88,8 +89,23 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     if (draft.draftId !== selectedDraftId) setSelectedDraftId(draft.draftId);
   }, [draft, selectedDraftId, firstActiveDraft]);
 
+  // Prefetch the review preview so the "Review draft" button can pick inline
+  // vs panel before entering review mode. `DraftDiffPanel` reads from the same
+  // query cache, so this doesn't add a second network trip. The hook is
+  // called unconditionally (rules-of-hooks) and guarded by the enabled flag.
+  const activeDraftIdForPreview = draft?.status === "active" ? draft.draftId : null;
+  const activePreview = useDraftPreview(controller.threadId, documentId, activeDraftIdForPreview, {
+    enabled: Boolean(activeDraftIdForPreview),
+  });
+
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
+  const previewMode: "inline" | "panel" | null =
+    activePreview.preview?.status === "active" ? activePreview.preview.reviewMode : null;
+  const fallbackReason =
+    activePreview.preview?.status === "active" && activePreview.preview.reviewMode === "panel"
+      ? (activePreview.preview.fallbackReason ?? null)
+      : null;
   const index = Math.max(
     0,
     reviewableDrafts.findIndex((item) => item.draftId === draft.draftId),
@@ -129,6 +145,14 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     if (draft.status !== "active") return;
     if (isInlineReviewing) {
       controller.exitInlineReview();
+      return;
+    }
+    // Server-side thresholds may downgrade this diff to the docked panel.
+    // Route the writer to the same "Review draft" affordance either way — the
+    // fallbackReason surfaces below as subtle copy.
+    if (previewMode === "panel") {
+      controller.exitInlineReview();
+      openCurrentDraft();
       return;
     }
     controller.enterInlineReview(documentId, draft.draftId);
@@ -188,6 +212,8 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             <p className="text-xs text-muted-foreground">
               {isInlineReviewing ? (
                 <Trans>You are editing the draft. Your live manuscript is untouched.</Trans>
+              ) : previewMode === "panel" ? (
+                <PanelFallbackCopy reason={fallbackReason} />
               ) : (
                 <Trans>Your live text is untouched.</Trans>
               )}
@@ -338,6 +364,28 @@ function Stepper({
       </button>
     </div>
   );
+}
+
+/** Subtle reason line beneath the review bar when the server downgraded a
+ *  diff from inline to the docked panel. Keeps the writer from wondering
+ *  why "Review draft" opened a panel instead of coloring the manuscript. */
+function PanelFallbackCopy({ reason }: { reason: string | null }) {
+  switch (reason) {
+    case "rewrite_threshold":
+      return (
+        <Trans>This draft rewrites too much to review inline — showing the changes panel.</Trans>
+      );
+    case "hunk_density":
+      return <Trans>The edits are too dense to color inline — showing the changes panel.</Trans>;
+    case "block_churn":
+      return (
+        <Trans>
+          Whole paragraphs moved — showing the changes panel instead of inline highlights.
+        </Trans>
+      );
+    default:
+      return <Trans>Showing the changes panel — this diff isn't a fit for inline review.</Trans>;
+  }
 }
 
 function ReversibleTitle({ draft, nowMs }: { draft: ThreadDraftListItem; nowMs: number }) {

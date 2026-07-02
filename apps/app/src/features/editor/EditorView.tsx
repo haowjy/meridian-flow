@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
+import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
 export type EditorViewProps = {
@@ -56,6 +57,8 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
+  /** Thread that owns the draft review — required to query the hunk model when reviewing. */
+  reviewThreadId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
 };
@@ -139,8 +142,11 @@ function SessionEditorView({
   showToolbar = true,
   ariaLabel,
   showCollaborationDecorations = true,
+  reviewDraftId = null,
+  reviewThreadId = null,
   session,
 }: SessionEditorViewProps) {
+  const inReview = Boolean(reviewDraftId);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
@@ -221,6 +227,7 @@ function SessionEditorView({
         autofocus: false,
         figureRenderContext: { projectId, documentId },
         showCollaborationDecorations,
+        enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
             class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
@@ -285,8 +292,17 @@ function SessionEditorView({
       editable,
       ariaLabel,
       showCollaborationDecorations,
+      inReview,
     ],
   );
+
+  useInlineReviewSync({
+    editor,
+    threadId: reviewThreadId,
+    documentId,
+    draftId: reviewDraftId,
+    enabled: inReview,
+  });
 
   useEffect(() => {
     editorRef.current = editor;
