@@ -261,3 +261,9 @@ Before enabling any production caller of `journal.compact` for live documents, c
   mutation, and transcript-turn concerns are mixed in one surface. Split into
   `drafts.query`, `drafts.lifecycle`, and a dedicated journal/audit port for
   transcript event creation.
+
+- **DB DraftStore conformance is local-only.** The shared DraftStore contract is
+  exercised by the in-memory store in ordinary test runs and by the Drizzle
+  adapter only when `RUN_DB_TESTS=1` and `DATABASE_URL` are set. That database
+  conformance is not currently merge protection; deciding whether to provision
+  Postgres in CI is an infra/human decision, not part of the test cleanup pass.
