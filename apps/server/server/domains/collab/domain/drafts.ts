@@ -320,7 +320,6 @@ export function createDraftService(deps: {
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
   }): Promise<DraftAcceptResult> {
-    closeDraftRoom(input.draftId);
     await drainDraftRoomPersistence(input.draftId);
 
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
@@ -351,6 +350,9 @@ export function createDraftService(deps: {
         return overlapReview(input.documentId, requestedDraft, overlappingBlocks ?? []);
       }
     }
+
+    closeDraftRoom(input.draftId);
+    await drainDraftRoomPersistence(input.draftId);
 
     const accept = await deps.draftStore.beginAccept(input);
     if (accept.status === "in_progress") return { status: "in_progress", draftId: accept.draft.id };
